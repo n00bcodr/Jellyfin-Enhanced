@@ -31,6 +31,7 @@ Quick links:
 - [Features Overview](https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/enhanced-features/)
 - [Seerr Integration](https://n00bcodr.github.io/Jellyfin-Enhanced/seerr/seerr-features/)
 - [ARR Integration](https://n00bcodr.github.io/Jellyfin-Enhanced/arr/arr-features/)
+- [Spoiler Guard](https://n00bcodr.github.io/Jellyfin-Enhanced/spoiler-guard/spoiler-guard-features/)
 - [FAQ & Troubleshooting](https://n00bcodr.github.io/Jellyfin-Enhanced/faq-support/faq/)
 - [CSS Customization](https://n00bcodr.github.io/Jellyfin-Enhanced/advanced/css-customization/)
 
@@ -71,6 +72,7 @@ For detailed installation instructions and troubleshooting, see the [Installatio
 - **Hidden Content System** - Per-user content hiding with server-side storage
 - **Granular Filtering** - Control visibility across library, discovery, search, and more
 - **Management Panel** - Search, unhide, and bulk operations
+- **Spoiler Guard** - Per-user opt-in blur and metadata stripping for unwatched content, enforced server-side on every client
 
 ### 🪼 Seerr Integration
 - **Search & Request** - Request media directly from Jellyfin search

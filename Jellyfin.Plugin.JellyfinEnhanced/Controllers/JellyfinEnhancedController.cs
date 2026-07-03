@@ -55,6 +55,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.TagCacheService _tagCacheService;
         private readonly MediaBrowser.Controller.Session.ISessionManager _sessionManager;
         private readonly Services.MaintenanceModeService _maintenanceModeService;
+        private readonly Services.SpoilerUserResolver _spoilerResolver;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
         // upstream Seerr on every request. Entries expire after 1 hour.
@@ -165,7 +166,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             IDbContextFactory<JellyfinDbContext> dbContextFactory,
             Services.TagCacheService tagCacheService,
             MediaBrowser.Controller.Session.ISessionManager sessionManager,
-            Services.MaintenanceModeService maintenanceModeService)
+            Services.MaintenanceModeService maintenanceModeService,
+            Services.SpoilerUserResolver spoilerResolver)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -179,6 +181,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _tagCacheService = tagCacheService;
             _sessionManager = sessionManager;
             _maintenanceModeService = maintenanceModeService;
+            _spoilerResolver = spoilerResolver;
         }
 
         private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId, bool bypassCache = false, bool allowAutoImport = true)
@@ -1262,7 +1265,142 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> JellyseerrRequest([FromBody] JsonElement requestBody)
         {
-            return await ProxyJellyseerrRequest("/api/v1/request", HttpMethod.Post, requestBody.ToString());
+            var result = await ProxyJellyseerrRequest("/api/v1/request", HttpMethod.Post, requestBody.ToString());
+
+            // Auto-on-request Spoiler Guard pending — best-effort, never
+            // blocks the request. Gated by SpoilerBlurEnabled (master)
+            // AND SpoilerAutoEnableOnSeerrRequest (admin opt-in). Only a 2xx
+            // from Seerr counts as successfully-expressed user intent
+            // (see IsSeerrRequestResultSuccessful); 409 (MEDIA_EXISTS /
+            // QUOTA_EXCEEDED / NO_PERMISSION_4K_MOVIE) fails closed — we do
+            // NOT sniff its body, because SeerrHttpHelper replaces the
+            // upstream body with a synthesized envelope anyway.
+            try
+            {
+                var cfg = JellyfinEnhanced.Instance?.Configuration;
+                if (cfg?.SpoilerBlurEnabled == true
+                    && cfg?.SpoilerAutoEnableOnSeerrRequest == true
+                    && IsSeerrRequestResultSuccessful(result))
+                {
+                    // Snapshot identity + body BEFORE the Task.Run — HttpContext
+                    // (and User) are bound to the request and become invalid
+                    // after we return. requestBody is a JsonElement valid for
+                    // the lifetime of the request; we materialize into a clone.
+                    var userId = UserHelper.GetCurrentUserId(User);
+                    if (userId != null && userId != Guid.Empty)
+                    {
+                        var capturedUserId = userId.Value;
+                        // JsonElement.Clone returns a detached element backed by
+                        // its own document, safe to read off-thread.
+                        JsonElement bodyClone;
+                        try { bodyClone = requestBody.Clone(); }
+                        catch { bodyClone = default; }
+
+                        if (bodyClone.ValueKind == JsonValueKind.Object)
+                        {
+                            _ = Task.Run(() => TryAutoEnablePendingFromSeerrRequest(capturedUserId, bodyClone));
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Spoiler Guard auto-on-request hook threw {ex.GetType().Name}: {ex.Message}");
+            }
+
+            return result;
+        }
+
+        // Inspects a Seerr proxy result for "user successfully expressed
+        // intent". Only 2xx counts as success. 409 is a Seerr conflict
+        // that could mean MEDIA_EXISTS (re-request of existing) or
+        // QUOTA_EXCEEDED / NO_PERMISSION_4K_MOVIE (denial) — and the
+        // upstream Seerr body is replaced by SeerrHttpHelper with a
+        // synthesized envelope, so we can't reliably distinguish them
+        // here. Fail closed on 409: the user can still manually click
+        // the modal toggle when re-requesting an existing title.
+        //
+        // Defensive: null StatusCode is only allowed for ContentResult
+        // (the proxy's `Content(json, "application/json")` success path,
+        // which ASP.NET defaults to 200). ObjectResult / StatusCodeResult
+        // with null StatusCode is treated as failure — guards against a
+        // future Ok(errorEnvelope) misclassification.
+        private static bool IsSeerrRequestResultSuccessful(IActionResult result)
+        {
+            int? status;
+            bool allowNullAsOk = false;
+            if (result is ContentResult cr)
+            {
+                status = cr.StatusCode;
+                allowNullAsOk = true;
+            }
+            else if (result is ObjectResult or)
+            {
+                status = or.StatusCode;
+            }
+            else if (result is StatusCodeResult sr)
+            {
+                status = sr.StatusCode;
+            }
+            else
+            {
+                return false;
+            }
+
+            if (status is null)
+            {
+                if (!allowNullAsOk) return false;
+                status = 200;
+            }
+            int sc = status.Value;
+            return sc >= 200 && sc < 300;
+        }
+
+        // Off-thread continuation — must NOT touch HttpContext / User.
+        // userId is captured by the caller before Task.Run was scheduled.
+        private void TryAutoEnablePendingFromSeerrRequest(Guid userId, JsonElement requestBody)
+        {
+            try
+            {
+                if (requestBody.ValueKind != JsonValueKind.Object) return;
+                if (!requestBody.TryGetProperty("mediaType", out var mtProp) || mtProp.ValueKind != JsonValueKind.String) return;
+                if (!requestBody.TryGetProperty("mediaId", out var miProp)) return;
+
+                var rawType = mtProp.GetString();
+                if (string.IsNullOrEmpty(rawType)) return;
+                var mediaType = rawType.ToLowerInvariant();
+                if (mediaType != "tv" && mediaType != "movie") return;
+
+                int tmdbInt;
+                if (miProp.ValueKind == JsonValueKind.Number)
+                {
+                    if (!miProp.TryGetInt32(out tmdbInt) || tmdbInt <= 0) return;
+                }
+                else if (miProp.ValueKind == JsonValueKind.String)
+                {
+                    if (!int.TryParse(miProp.GetString(), System.Globalization.NumberStyles.Integer,
+                                      System.Globalization.CultureInfo.InvariantCulture, out tmdbInt)
+                        || tmdbInt <= 0) return;
+                }
+                else
+                {
+                    return;
+                }
+
+                var jUser = _userManager.GetUserById(userId);
+                if (jUser == null) return;
+
+                var canonicalTmdb = tmdbInt.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                var summary = AddSpoilerBlurPendingInternal(userId, jUser, mediaType, canonicalTmdb, displayName: null);
+                if (summary.WroteSomething)
+                {
+                    _logger.Info($"Spoiler Guard auto-on-request {summary.Promoted} for {mediaType}:{canonicalTmdb} by {ResolveUserDisplay(userId.ToString("N"))}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Spoiler Guard auto-on-request task threw {ex.GetType().Name}: {ex.Message}");
+            }
         }
 
         [HttpGet("jellyseerr/request")]
@@ -2815,6 +2953,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.MaintenanceModeAction,
                 config.MaintenanceModeAffectedUsers,
 
+                // Spoiler Guard — frontend uses these to decide whether the per-show
+                // toggle should appear at all and (eventually) for client-side previews.
+                config.SpoilerBlurEnabled,
+                config.SpoilerBlurIntensity,
+                config.SpoilerBlurStrictRefresh,
+                // Strip-policy fields drive the per-user override UI in the
+                // settings panel — only categories the admin has enabled
+                // surface an opt-out toggle.
+                config.SpoilerStripOverview,
+                config.SpoilerStripTags,
+                config.SpoilerStripChapters,
+                config.SpoilerStripTaglines,
+                config.SpoilerStripRatings,
+                config.SpoilerStripPremiereDate,
+                config.SpoilerReplaceTitle,
+                config.SpoilerStripCast,
+                config.SpoilerStripReviews,
             });
         }
 
@@ -3529,6 +3684,142 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        // Self-or-admin accessor pair for spoilerblur.json, mirroring the other
+        // per-user files (settings/shortcuts/elsewhere/bookmark/hidden-content).
+        // Without these, spoilerblur.json would be the only per-user JE file an
+        // administrator cannot inspect or repair remotely.
+        [HttpGet("user-settings/{userId}/spoilerblur.json")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetUserSpoilerBlur(string userId)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            // Lenient read on purpose: this is an inspection surface, so a corrupt
+            // file should still return the (empty) default rather than 503 — the
+            // user-facing spoiler-blur endpoints already handle strict reads,
+            // backups and corruption reporting.
+            var state = _userConfigurationManager.GetUserConfiguration<UserSpoilerBlur>(
+                authorizedUserId, Services.SpoilerBlurImageFilter.SpoilerBlurFileName);
+            return Ok(state);
+        }
+
+        // Hard cap on each spoiler-list dictionary written through the raw
+        // full-state save endpoint. Bounds the file the image/field-strip
+        // filters iterate on every request (IsMovieInSpoilerScope walks the
+        // whole Collections dict with a library lookup per key), so a single
+        // authenticated user can't persist a giant payload that then
+        // amplifies into millions of GetItemById calls per library view.
+        // Well above any plausible real watchlist; mirrors the pending path's
+        // MaxPendingTmdbPerUser cap that this endpoint would otherwise bypass.
+        private const int MaxSpoilerEntriesPerDict = 1000;
+
+        [HttpPost("user-settings/{userId}/spoilerblur.json")]
+        [Authorize]
+        [Produces("application/json")]
+        [Consumes("application/json")]
+        // Cap the request body: a full spoiler list of 4×1000 entries is a
+        // few hundred KB even with long names; 2 MB leaves generous headroom
+        // while removing Kestrel's ~28 MB default as a memory-pressure lever.
+        [RequestSizeLimit(2 * 1024 * 1024)]
+        public IActionResult SaveUserSpoilerBlur(string userId, [FromBody] UserSpoilerBlur userConfiguration)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            if (userConfiguration == null)
+            {
+                return BadRequest(new { success = false, message = "Invalid Spoiler Guard payload." });
+            }
+
+            // Reject oversized payloads outright rather than silently truncating —
+            // a client sending more than the cap is either buggy or hostile, and
+            // silently dropping entries would confuse a legitimate large list.
+            if (userConfiguration.Series.Count > MaxSpoilerEntriesPerDict
+                || userConfiguration.Movies.Count > MaxSpoilerEntriesPerDict
+                || userConfiguration.Collections.Count > MaxSpoilerEntriesPerDict
+                || userConfiguration.PendingTmdb.Count > MaxSpoilerEntriesPerDict)
+            {
+                _logger.Warning($"Rejecting oversized Spoiler Guard payload for {ResolveUserDisplay(authorizedUserId)} (series={userConfiguration.Series.Count}, movies={userConfiguration.Movies.Count}, collections={userConfiguration.Collections.Count}, pending={userConfiguration.PendingTmdb.Count}; cap {MaxSpoilerEntriesPerDict}).");
+                return StatusCode(413, new { success = false, message = $"Spoiler Guard list exceeds the maximum of {MaxSpoilerEntriesPerDict} entries per category." });
+            }
+
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            // Snapshot the pre-write pending keys so we can diff the promoter
+            // gate after the save (this endpoint is a pending writer too, and
+            // like every other pending writer it must keep the gate in sync).
+            HashSet<string> priorPending;
+            try
+            {
+                var prior = _userConfigurationManager.GetUserConfiguration<UserSpoilerBlur>(authorizedUserId, fileName);
+                priorPending = new HashSet<string>(prior.PendingTmdb.Keys, StringComparer.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                priorPending = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            try
+            {
+                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, fileName))
+                {
+                    // Pre-write strict read so a corrupt existing file 503s + backs up
+                    // instead of being silently overwritten (same as hidden-content).
+                    try
+                    {
+                        _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(
+                            authorizedUserId, fileName);
+                    }
+                    catch (Exception strictEx) when (strictEx is InvalidDataException
+                                                  || strictEx is Newtonsoft.Json.JsonException)
+                    {
+                        _logger.Warning($"{fileName} corrupt for {ResolveUserDisplay(authorizedUserId)} (backed up): {strictEx.Message}");
+                        return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                    }
+                    catch (IOException ioEx)
+                    {
+                        _logger.Warning($"{fileName} temporarily unreadable for {ResolveUserDisplay(authorizedUserId)}: {ioEx.Message}");
+                        return StatusCode(500, new { success = false, message = "Spoiler Guard store is temporarily unavailable. Please retry." });
+                    }
+
+                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, fileName, userConfiguration);
+                }
+
+                // Reconcile the promoter's fast-path gate with the new PendingTmdb
+                // set: register keys the payload added, unregister keys it removed.
+                // Registration is idempotent, so re-registering survivors is harmless.
+                if (Guid.TryParseExact(authorizedUserId, "N", out var gateUserId))
+                {
+                    foreach (var key in userConfiguration.PendingTmdb.Keys)
+                    {
+                        Services.SpoilerSeerrPendingPromoter.RegisterPending(key, gateUserId);
+                    }
+                    foreach (var stale in priorPending)
+                    {
+                        if (!userConfiguration.PendingTmdb.ContainsKey(stale))
+                        {
+                            Services.SpoilerSeerrPendingPromoter.UnregisterPending(stale, gateUserId);
+                        }
+                    }
+                }
+
+                _logger.Info($"Saved Spoiler Guard state for {ResolveUserDisplay(authorizedUserId)} to {fileName}");
+                return Ok(new { success = true, file = fileName });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save Spoiler Guard state for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save Spoiler Guard state." });
+            }
+        }
+
         // ─── Admin cross-user hidden-content visibility ───
         // Lets an admin see what other users have hidden, surfaced as a read-only user filter on
         // the Hidden Content page/tab. Both endpoints are admin-gated server-side via IsAdminUser()
@@ -3809,6 +4100,1103 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(500, new { success = false, message = "Failed to update hidden content." });
             }
         }
+        // ─── Spoiler Guard ─── Per-user list of series IDs the user has opted
+        // into Spoiler Guard for. The image filter (Services/SpoilerBlurImageFilter.cs)
+        // reads spoilerblur.json on every image request and blurs every UNWATCHED
+        // episode of any series in that list. Watched episodes pass through unblurred.
+
+        // Returns a snapshot of any spoilerblur.json corruption events
+        // that have been logged this process-lifetime. Diagnostic endpoint:
+        // there is no UI consumer yet — it exists so an admin (or a user,
+        // for their own events) can check whether Spoiler Guard preferences
+        // were reset after a corrupt-file backup, without shell access.
+        // Per-user — each user only sees their OWN corruption events.
+        // Admins see all users (so they can advise affected users).
+        [HttpGet("spoiler-blur/health")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetSpoilerBlurHealth()
+        {
+            // Role-first admin check so Administrator API keys (role claim,
+            // no user id) work — same pattern as IsAdminUser() everywhere else.
+            var isAdmin = IsAdminUser();
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (!isAdmin && (userId == null || userId == Guid.Empty)) return Forbid();
+            var userKey = userId.HasValue && userId.Value != Guid.Empty
+                ? userId.Value.ToString("N")
+                : null; // admin API key: no user identity, sees all events
+
+            var log = Services.SpoilerUserResolver.GetCorruptionLog();
+            var events = new List<object>();
+            foreach (var kvp in log)
+            {
+                if (!isAdmin && kvp.Key != userKey) continue; // non-admin: only own
+                events.Add(new
+                {
+                    userId = kvp.Key,
+                    userDisplay = kvp.Value.UserDisplay,
+                    at = kvp.Value.At.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    reason = kvp.Value.Reason,
+                });
+            }
+            return Ok(new
+            {
+                healthy = events.Count == 0,
+                corruptionEvents = events,
+            });
+        }
+
+        // Admin acknowledges a corruption event, clearing it from the
+        // banner. Users acknowledge their own.
+        [HttpDelete("spoiler-blur/health/{targetUserId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult AckSpoilerBlurCorruption(string targetUserId)
+        {
+            // Role-first admin check so Administrator API keys can ack any
+            // user's events; non-admins need a user identity and may only
+            // ack their own.
+            var isAdmin = IsAdminUser();
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (!isAdmin && (userId == null || userId == Guid.Empty)) return Forbid();
+            var userKey = userId.HasValue && userId.Value != Guid.Empty
+                ? userId.Value.ToString("N")
+                : null;
+
+            if (!Guid.TryParse(targetUserId, out var tGuid)
+                && !Guid.TryParseExact(targetUserId, "N", out tGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid userId." });
+            }
+            var tKey = tGuid.ToString("N");
+            // Non-admins can only ack their own.
+            if (!isAdmin && tKey != userKey) return Forbid();
+            Services.SpoilerUserResolver.ClearCorruption(tKey);
+            return Ok(new { success = true });
+        }
+
+        [HttpGet("spoiler-blur/series")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetSpoilerBlurSeries()
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+            var userKey = userId.Value.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+
+            // Distinguish "file missing" (return empty + 200, normal
+            // first-time state) from "file unreadable / corrupt" (return
+            // 503 with a backup-already-made hint). Lenient read silently
+            // returns empty on parse error, which would make the user
+            // think their spoiler list was wiped.
+            if (!_userConfigurationManager.UserConfigurationExists(userKey, fileName))
+            {
+                return Ok(new UserSpoilerBlur());
+            }
+            try
+            {
+                var state = _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(
+                    userKey, fileName);
+                return Ok(state);
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+        }
+
+        // Per-user override toggles for the admin's strip categories.
+        // Returned shape mirrors SpoilerBlurUserPrefs — nullable bools where
+        // null means "inherit admin policy", and a permanent SkipDisableConfirm
+        // flag that replaces the per-session "Don't ask for 15 minutes" snooze.
+        [HttpGet("spoiler-blur/user-prefs")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetSpoilerBlurUserPrefs()
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+            var userKey = userId.Value.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+
+            if (!_userConfigurationManager.UserConfigurationExists(userKey, fileName))
+            {
+                return Ok(new SpoilerBlurUserPrefs());
+            }
+            try
+            {
+                var state = _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(
+                    userKey, fileName);
+                return Ok(state.Prefs ?? new SpoilerBlurUserPrefs());
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+        }
+
+        [HttpPost("spoiler-blur/user-prefs")]
+        [Authorize]
+        [Produces("application/json")]
+        [Consumes("application/json")]
+        [RequestSizeLimit(8 * 1024)]
+        public IActionResult SetSpoilerBlurUserPrefs([FromBody] SpoilerBlurUserPrefs? body)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+            if (body == null) return BadRequest(new { success = false, message = "Missing body." });
+
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+
+            try
+            {
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                {
+                    state.Prefs = new SpoilerBlurUserPrefs
+                    {
+                        HideEpisodeDescriptions = body.HideEpisodeDescriptions,
+                        HideTags = body.HideTags,
+                        HideChapterNames = body.HideChapterNames,
+                        HideTaglines = body.HideTaglines,
+                        HideRatings = body.HideRatings,
+                        HideAirDate = body.HideAirDate,
+                        ReplaceEpisodeTitles = body.ReplaceEpisodeTitles,
+                        HideCast = body.HideCast,
+                        HideReviews = body.HideReviews,
+                        SkipDisableConfirm = body.SkipDisableConfirm,
+                    };
+                    return 1;
+                });
+                return Ok(new { success = true, prefs = body });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save Spoiler Guard user prefs for {ResolveUserDisplay(userKey)}: {ex.GetType().Name}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save user prefs." });
+            }
+        }
+
+        [HttpPost("spoiler-blur/series/{seriesId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult EnableSpoilerBlurForSeries(string seriesId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(seriesId, out var seriesGuid)
+                && !Guid.TryParseExact(seriesId, "N", out seriesGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid seriesId." });
+            }
+
+            // Confirm the item exists and is a series the user has access to.
+            // GetItemById<T>(id, user) returns null when the item is filtered
+            // out by library access — fail with 404 so we don't leak existence.
+            //
+            // Test-bug fix: arbitrary GUIDs that hit a partially-stored
+            // library row throw InvalidOperationException from Jellyfin's
+            // deserializer ("Cannot deserialize unknown type"). Treat any
+            // lookup throw as 404 — the user can't act on something that
+            // isn't a valid item anyway.
+            var jUser = _userManager.GetUserById(userId.Value);
+            if (jUser == null) return Forbid();
+            MediaBrowser.Controller.Entities.BaseItem? item = null;
+            try
+            {
+                item = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(seriesGuid, jUser);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"GetItemById<BaseItem> threw for {seriesGuid}: {ex.GetType().Name}: {ex.Message}");
+            }
+            if (item is not MediaBrowser.Controller.Entities.TV.Series series)
+            {
+                return NotFound(new { success = false, message = "Series not found or not accessible." });
+            }
+
+            var key = seriesGuid.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+
+            try
+            {
+                // M2: RmwUserConfiguration uses GetUserConfigurationStrict, which
+                // refuses corrupt JSON (and backs up to *.corrupt-<ts>) instead
+                // of silently returning empty + clobbering the user's other opt-ins.
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                {
+                    // Preserve original EnabledAt when re-toggling an
+                    // already-enabled series. Update SeriesName
+                    // opportunistically (covers shows the user renamed in
+                    // a metadata refresh). Return 0 (no-write) when truly
+                    // unchanged so we don't burn a disk write on every
+                    // re-toggle of the same series with the same name.
+                    if (state.Series.TryGetValue(key, out var existing))
+                    {
+                        var newName = series.Name ?? existing.SeriesName;
+                        if (string.Equals(existing.SeriesName, newName, StringComparison.Ordinal))
+                        {
+                            return 0;
+                        }
+                        existing.SeriesName = newName;
+                        return 1;
+                    }
+                    state.Series[key] = new SpoilerBlurSeriesEntry
+                    {
+                        SeriesId = key,
+                        SeriesName = series.Name ?? string.Empty,
+                        EnabledAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    };
+                    return 1;
+                });
+                _logger.Info($"Spoiler Guard enabled for series '{series.Name}' ({key}) by {ResolveUserDisplay(userKey)}");
+                return Ok(new { success = true, seriesId = key, name = series.Name });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to enable spoiler blur for series {key}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler blur state." });
+            }
+        }
+
+        [HttpDelete("spoiler-blur/series/{seriesId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult DisableSpoilerBlurForSeries(string seriesId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(seriesId, out var seriesGuid)
+                && !Guid.TryParseExact(seriesId, "N", out seriesGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid seriesId." });
+            }
+
+            var key = seriesGuid.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+
+            try
+            {
+                bool removed = false;
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                {
+                    removed = state.Series.Remove(key);
+                    return removed ? 1 : 0;
+                });
+                if (!removed)
+                {
+                    // Log so a desync between client and server (two
+                    // tabs, stale local cache, etc.) is observable instead
+                    // of silently returning success.
+                    _logger.Info($"Spoiler Guard disable was a no-op for series {key} by {ResolveUserDisplay(userKey)} — series was not in the user's spoiler-blur list.");
+                    return Ok(new { success = true, seriesId = key, removed = false });
+                }
+                _logger.Info($"Spoiler Guard disabled for series {key} by {ResolveUserDisplay(userKey)}");
+                return Ok(new { success = true, seriesId = key, removed = true });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to disable spoiler blur for series {key}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler blur state." });
+            }
+        }
+
+        public class SpoilerBlurMovieRequest
+        {
+            public string? MovieName { get; set; }
+        }
+
+        // Per-movie Spoiler Guard opt-in. Movies stored separately from
+        // Series in the same spoilerblur.json file (UserSpoilerBlur.Movies
+        // dict). Movie-level Spoiler Guard blurs the movie's own poster /
+        // backdrop and field-strips its metadata until the user marks the
+        // movie Played.
+        [HttpPost("spoiler-blur/movies/{movieId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult EnableSpoilerBlurForMovie(string movieId, [FromBody] SpoilerBlurMovieRequest? body = null)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(movieId, out var movieGuid)
+                && !Guid.TryParseExact(movieId, "N", out movieGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid movieId." });
+            }
+
+            // Same protection as the Series endpoint: bogus GUID can throw
+            // InvalidOperationException from Jellyfin's deserializer.
+            var jUser = _userManager.GetUserById(userId.Value);
+            if (jUser == null) return Forbid();
+            MediaBrowser.Controller.Entities.BaseItem? item = null;
+            try
+            {
+                item = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(movieGuid, jUser);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"GetItemById<BaseItem> threw for {movieGuid}: {ex.GetType().Name}: {ex.Message}");
+            }
+            if (item is not MediaBrowser.Controller.Entities.Movies.Movie movie)
+            {
+                return NotFound(new { success = false, message = "Movie not found or not accessible." });
+            }
+
+            var key = movieGuid.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+
+            // Sanitize provided MovieName: strip HTML tags + angle
+            // brackets, cap length. Do NOT strip
+            // apostrophes/quotes/backticks — movie titles legitimately
+            // contain them (e.g. "Don't Look Up", "Crocodile Dundee II")
+            // and stripping them mangles the management-UI display
+            // value. Consumers must render via textContent (not
+            // innerHTML); HTML/`<>` strip is enough defense-in-depth at
+            // the storage layer.
+            string movieNameSanitized = (movie.Name ?? string.Empty);
+            if (body?.MovieName is string clientName && !string.IsNullOrEmpty(clientName))
+            {
+                var cleaned = System.Text.RegularExpressions.Regex.Replace(clientName, "<[^>]+>", string.Empty);
+                cleaned = cleaned.Replace("<", string.Empty).Replace(">", string.Empty);
+                if (cleaned.Length > 200) cleaned = cleaned.Substring(0, 200);
+                if (!string.IsNullOrWhiteSpace(cleaned)) movieNameSanitized = cleaned;
+            }
+
+            try
+            {
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                {
+                    if (state.Movies.TryGetValue(key, out var existing))
+                    {
+                        if (string.Equals(existing.MovieName, movieNameSanitized, StringComparison.Ordinal))
+                        {
+                            return 0;
+                        }
+                        existing.MovieName = movieNameSanitized;
+                        return 1;
+                    }
+                    state.Movies[key] = new SpoilerBlurMovieEntry
+                    {
+                        MovieId = key,
+                        MovieName = movieNameSanitized,
+                        EnabledAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    };
+                    return 1;
+                });
+                _logger.Info($"Spoiler Guard enabled for movie '{movie.Name}' ({key}) by {ResolveUserDisplay(userKey)}");
+                return Ok(new { success = true, movieId = key, name = movie.Name });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to enable spoiler blur for movie {key}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler blur state." });
+            }
+        }
+
+        [HttpDelete("spoiler-blur/movies/{movieId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult DisableSpoilerBlurForMovie(string movieId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(movieId, out var movieGuid)
+                && !Guid.TryParseExact(movieId, "N", out movieGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid movieId." });
+            }
+
+            var key = movieGuid.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+
+            try
+            {
+                bool removed = false;
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                {
+                    removed = state.Movies.Remove(key);
+                    return removed ? 1 : 0;
+                });
+                if (!removed)
+                {
+                    _logger.Info($"Spoiler Guard disable was a no-op for movie {key} by {ResolveUserDisplay(userKey)} — movie was not in the user's spoiler-blur list.");
+                    return Ok(new { success = true, movieId = key, removed = false });
+                }
+                _logger.Info($"Spoiler Guard disabled for movie {key} by {ResolveUserDisplay(userKey)}");
+                return Ok(new { success = true, movieId = key, removed = true });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to disable spoiler blur for movie {key}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler blur state." });
+            }
+        }
+
+        public class SpoilerBlurCollectionRequest
+        {
+            public string? CollectionName { get; set; }
+        }
+
+        // Per-collection Spoiler Guard opt-in. Collections (BoxSet) are
+        // user/admin-curated groupings used as a SHORTCUT: toggling here
+        // protects every movie inside the collection (each until it's
+        // individually watched), while the collection's OWN art and DTO
+        // pass through clear — it's the entry point the user just clicked.
+        [HttpPost("spoiler-blur/collections/{collectionId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult EnableSpoilerBlurForCollection(string collectionId, [FromBody] SpoilerBlurCollectionRequest? body = null)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(collectionId, out var collGuid)
+                && !Guid.TryParseExact(collectionId, "N", out collGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid collectionId." });
+            }
+
+            var jUser = _userManager.GetUserById(userId.Value);
+            if (jUser == null) return Forbid();
+            MediaBrowser.Controller.Entities.BaseItem? item = null;
+            try
+            {
+                item = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(collGuid, jUser);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"GetItemById<BaseItem> threw for {collGuid}: {ex.GetType().Name}: {ex.Message}");
+            }
+            if (item is not MediaBrowser.Controller.Entities.Movies.BoxSet boxSet)
+            {
+                return NotFound(new { success = false, message = "Collection not found or not accessible." });
+            }
+
+            var key = collGuid.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+
+            string collNameSanitized = (boxSet.Name ?? string.Empty);
+            if (body?.CollectionName is string clientName && !string.IsNullOrEmpty(clientName))
+            {
+                var cleaned = System.Text.RegularExpressions.Regex.Replace(clientName, "<[^>]+>", string.Empty);
+                cleaned = cleaned.Replace("<", string.Empty).Replace(">", string.Empty);
+                if (cleaned.Length > 200) cleaned = cleaned.Substring(0, 200);
+                if (!string.IsNullOrWhiteSpace(cleaned)) collNameSanitized = cleaned;
+            }
+
+            try
+            {
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                {
+                    if (state.Collections.TryGetValue(key, out var existing))
+                    {
+                        if (string.Equals(existing.CollectionName, collNameSanitized, StringComparison.Ordinal))
+                        {
+                            return 0;
+                        }
+                        existing.CollectionName = collNameSanitized;
+                        return 1;
+                    }
+                    state.Collections[key] = new SpoilerBlurCollectionEntry
+                    {
+                        CollectionId = key,
+                        CollectionName = collNameSanitized,
+                        EnabledAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    };
+                    return 1;
+                });
+                _logger.Info($"Spoiler Guard enabled for collection '{boxSet.Name}' ({key}) by {ResolveUserDisplay(userKey)}");
+                return Ok(new { success = true, collectionId = key, name = boxSet.Name });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to enable spoiler blur for collection {key}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler blur state." });
+            }
+        }
+
+        [HttpDelete("spoiler-blur/collections/{collectionId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult DisableSpoilerBlurForCollection(string collectionId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            if (!Guid.TryParse(collectionId, out var collGuid)
+                && !Guid.TryParseExact(collectionId, "N", out collGuid))
+            {
+                return BadRequest(new { success = false, message = "Invalid collectionId." });
+            }
+
+            var key = collGuid.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+
+            try
+            {
+                bool removed = false;
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                {
+                    removed = state.Collections.Remove(key);
+                    return removed ? 1 : 0;
+                });
+                if (!removed)
+                {
+                    _logger.Info($"Spoiler Guard disable was a no-op for collection {key} by {ResolveUserDisplay(userKey)} — collection was not in the user's spoiler-blur list.");
+                    return Ok(new { success = true, collectionId = key, removed = false });
+                }
+                _logger.Info($"Spoiler Guard disabled for collection {key} by {ResolveUserDisplay(userKey)}");
+                return Ok(new { success = true, collectionId = key, removed = true });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to disable spoiler blur for collection {key}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler blur state." });
+            }
+        }
+
+        // ─── Pre-acquisition pending Spoiler Guard (Seerr / not-yet-downloaded) ───
+        // Registers Spoiler Guard intent for a TMDB id that may or may not
+        // already be in the Jellyfin library. Source of two flows:
+        // (a) Seerr more-info modal manual "Enable spoiler" button (always
+        //     allowed when SpoilerBlurEnabled = true — works even when
+        //     another user has already requested the title and the Request
+        //     button is disabled),
+        // (b) auto on Seerr request (admin toggle SpoilerAutoEnableOnSeerrRequest).
+        // If the TMDB id resolves to an existing library item the user has
+        // access to, we promote directly into Series/Movies — pending is
+        // skipped. Otherwise we record into PendingTmdb and
+        // SpoilerSeerrPendingPromoter promotes it on ItemAdded.
+        [HttpPost("spoiler-blur/pending/{mediaType}/{tmdbId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult EnableSpoilerBlurPending(string mediaType, string tmdbId, [FromQuery] string? displayName = null)
+        {
+            var cfg = JellyfinEnhanced.Instance?.Configuration;
+            if (cfg?.SpoilerBlurEnabled != true)
+            {
+                return StatusCode(503, new { success = false, message = "Spoiler Guard is disabled by the administrator." });
+            }
+
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            var normalizedType = (mediaType ?? string.Empty).ToLowerInvariant();
+            if (normalizedType != "tv" && normalizedType != "movie")
+            {
+                return BadRequest(new { success = false, message = "mediaType must be 'tv' or 'movie'." });
+            }
+            // TMDB ids are positive integers; reject anything else so we don't
+            // store junk keys that the promoter would never match.
+            if (string.IsNullOrWhiteSpace(tmdbId)
+                || !int.TryParse(tmdbId, System.Globalization.NumberStyles.Integer,
+                                 System.Globalization.CultureInfo.InvariantCulture, out var tmdbInt)
+                || tmdbInt <= 0)
+            {
+                return BadRequest(new { success = false, message = "Invalid tmdbId." });
+            }
+            var canonicalTmdb = tmdbInt.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+            // Library lookup: if the TMDB id already resolves to a Series /
+            // Movie the user can access, promote straight into the real
+            // Series / Movies dict and skip pending. This handles the
+            // "already in library" case (Seerr returns "already available"
+            // or the user opens the modal for an existing title) cleanly.
+            var jUser = _userManager.GetUserById(userId.Value);
+            if (jUser == null) return Forbid();
+
+            try
+            {
+                var summary = AddSpoilerBlurPendingInternal(userId.Value, jUser, normalizedType, canonicalTmdb, displayName);
+                if (summary.Promoted == "cap-exceeded")
+                {
+                    return StatusCode(429, new
+                    {
+                        success = false,
+                        code = "pending_cap_exceeded",
+                        message = $"You already have the maximum of {MaxPendingTmdbPerUser} pending spoiler-blur entries. Remove some via the management UI before adding more."
+                    });
+                }
+                return Ok(new { success = true, promoted = summary.Promoted, jellyfinId = summary.JellyfinId, name = summary.Name });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                var ukey = userId.Value.ToString("N");
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(ukey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(ukey, ResolveUserDisplay(ukey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                var ukey = userId.Value.ToString("N");
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(ukey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(ukey, ResolveUserDisplay(ukey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to record spoiler-blur pending {normalizedType}:{canonicalTmdb}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler-blur pending state." });
+            }
+        }
+
+        // Shared core for both the manual modal-button POST and the auto-
+        // on-Seerr-request hook. Performs library lookup, RMW, and returns
+        // a structured result so the HTTP layer and the fire-and-forget
+        // log/notification layer can both reason about what happened.
+        private SpoilerBlurPendingResult AddSpoilerBlurPendingInternal(
+            Guid userId,
+            Jellyfin.Database.Implementations.Entities.User jUser,
+            string mediaType,
+            string canonicalTmdb,
+            string? displayName)
+        {
+            var pendingKey = $"{mediaType}:{canonicalTmdb}";
+            var userKey = userId.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var existingItem = FindLibraryItemByTmdb(jUser, mediaType, canonicalTmdb);
+
+            if (existingItem is MediaBrowser.Controller.Entities.TV.Series existingSeries)
+            {
+                var seriesKey = existingSeries.Id.ToString("N");
+                var changed = _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                    {
+                        var pendingRemoved = state.PendingTmdb.Remove(pendingKey);
+                        if (state.Series.ContainsKey(seriesKey)) return pendingRemoved ? 1 : 0;
+                        state.Series[seriesKey] = new SpoilerBlurSeriesEntry
+                        {
+                            SeriesId = seriesKey,
+                            SeriesName = existingSeries.Name ?? string.Empty,
+                            EnabledAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                        };
+                        return 1;
+                    });
+                // The pending row (if any) was just consumed — keep the
+                // promoter's gate consistent so it stops sweeping this user.
+                Services.SpoilerSeerrPendingPromoter.UnregisterPending(pendingKey, userId);
+                _logger.Info($"Spoiler Guard pending resolved to existing series '{existingSeries.Name}' ({seriesKey}) for {ResolveUserDisplay(userKey)}");
+                return new SpoilerBlurPendingResult("series", seriesKey, existingSeries.Name, changed > 0);
+            }
+            if (existingItem is MediaBrowser.Controller.Entities.Movies.Movie existingMovie)
+            {
+                var movieKey = existingMovie.Id.ToString("N");
+                var changed = _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                    {
+                        var pendingRemoved = state.PendingTmdb.Remove(pendingKey);
+                        if (state.Movies.ContainsKey(movieKey)) return pendingRemoved ? 1 : 0;
+                        state.Movies[movieKey] = new SpoilerBlurMovieEntry
+                        {
+                            MovieId = movieKey,
+                            MovieName = existingMovie.Name ?? string.Empty,
+                            EnabledAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                        };
+                        return 1;
+                    });
+                Services.SpoilerSeerrPendingPromoter.UnregisterPending(pendingKey, userId);
+                _logger.Info($"Spoiler Guard pending resolved to existing movie '{existingMovie.Name}' ({movieKey}) for {ResolveUserDisplay(userKey)}");
+                return new SpoilerBlurPendingResult("movie", movieKey, existingMovie.Name, changed > 0);
+            }
+
+            var sanitized = SanitizePendingDisplayName(displayName);
+            var capExceeded = new[] { false };
+            var pendingChanged = _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                userKey, fileName, state =>
+                {
+                    if (state.PendingTmdb.TryGetValue(pendingKey, out var existing))
+                    {
+                        if (string.Equals(existing.DisplayName, sanitized, StringComparison.Ordinal))
+                        {
+                            return 0;
+                        }
+                        existing.DisplayName = sanitized;
+                        return 1;
+                    }
+                    if (state.PendingTmdb.Count >= MaxPendingTmdbPerUser)
+                    {
+                        capExceeded[0] = true;
+                        return 0;
+                    }
+                    state.PendingTmdb[pendingKey] = new SpoilerBlurPendingEntry
+                    {
+                        MediaType = mediaType,
+                        TmdbId = canonicalTmdb,
+                        DisplayName = sanitized,
+                        RequestedAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    };
+                    return 1;
+                });
+            if (capExceeded[0])
+            {
+                _logger.Warning($"Spoiler Guard pending: cap of {MaxPendingTmdbPerUser} reached for {ResolveUserDisplay(userKey)} — rejecting new {pendingKey}");
+                return new SpoilerBlurPendingResult("cap-exceeded", null, null, false);
+            }
+            // Prime the promoter's fast-path gate so the next ItemAdded
+            // matching this TMDB id sweeps THIS user instead of bailing.
+            Services.SpoilerSeerrPendingPromoter.RegisterPending(pendingKey, userId);
+            _logger.Info($"Spoiler Guard pending recorded {pendingKey} for {ResolveUserDisplay(userKey)} (not yet in library)");
+
+            // TOCTOU recovery: between the library lookup at the top of this
+            // method and the RMW write, the library scanner may have added
+            // the matching item — ItemAdded fired BEFORE our pending row
+            // existed, so the promoter saw nothing and skipped this user.
+            // Re-check once after the write and promote inline if so.
+            try
+            {
+                var raceItem = FindLibraryItemByTmdb(jUser, mediaType, canonicalTmdb);
+                if (raceItem is MediaBrowser.Controller.Entities.TV.Series rs)
+                {
+                    return PromotePendingToSeries(userKey, fileName, rs, pendingKey);
+                }
+                if (raceItem is MediaBrowser.Controller.Entities.Movies.Movie rm)
+                {
+                    return PromotePendingToMovie(userKey, fileName, rm, pendingKey);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Spoiler Guard pending TOCTOU recheck threw {ex.GetType().Name}: {ex.Message}");
+            }
+            return new SpoilerBlurPendingResult("pending", null, null, pendingChanged > 0);
+        }
+
+        // TOCTOU recovery helper: a pending row was just written but a
+        // matching library item is already present. Promote into Series.
+        private SpoilerBlurPendingResult PromotePendingToSeries(
+            string userKey, string fileName,
+            MediaBrowser.Controller.Entities.TV.Series series, string pendingKey)
+        {
+            var seriesKey = series.Id.ToString("N");
+            _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                userKey, fileName, state =>
+                {
+                    var pendingRemoved = state.PendingTmdb.Remove(pendingKey);
+                    if (state.Series.ContainsKey(seriesKey)) return pendingRemoved ? 1 : 0;
+                    state.Series[seriesKey] = new SpoilerBlurSeriesEntry
+                    {
+                        SeriesId = seriesKey,
+                        SeriesName = series.Name ?? string.Empty,
+                        EnabledAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    };
+                    return 1;
+                });
+            // Pending row consumed inline — release the promoter's gate for
+            // this user (harmless no-op if it was never registered).
+            if (Guid.TryParseExact(userKey, "N", out var promotedSeriesUserId))
+            {
+                Services.SpoilerSeerrPendingPromoter.UnregisterPending(pendingKey, promotedSeriesUserId);
+            }
+            _logger.Info($"Spoiler Guard pending TOCTOU-promoted to series '{series.Name}' ({seriesKey}) for {ResolveUserDisplay(userKey)}");
+            return new SpoilerBlurPendingResult("series", seriesKey, series.Name, true);
+        }
+
+        private SpoilerBlurPendingResult PromotePendingToMovie(
+            string userKey, string fileName,
+            MediaBrowser.Controller.Entities.Movies.Movie movie, string pendingKey)
+        {
+            var movieKey = movie.Id.ToString("N");
+            _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                userKey, fileName, state =>
+                {
+                    var pendingRemoved = state.PendingTmdb.Remove(pendingKey);
+                    if (state.Movies.ContainsKey(movieKey)) return pendingRemoved ? 1 : 0;
+                    state.Movies[movieKey] = new SpoilerBlurMovieEntry
+                    {
+                        MovieId = movieKey,
+                        MovieName = movie.Name ?? string.Empty,
+                        EnabledAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    };
+                    return 1;
+                });
+            if (Guid.TryParseExact(userKey, "N", out var promotedMovieUserId))
+            {
+                Services.SpoilerSeerrPendingPromoter.UnregisterPending(pendingKey, promotedMovieUserId);
+            }
+            _logger.Info($"Spoiler Guard pending TOCTOU-promoted to movie '{movie.Name}' ({movieKey}) for {ResolveUserDisplay(userKey)}");
+            return new SpoilerBlurPendingResult("movie", movieKey, movie.Name, true);
+        }
+
+        private sealed record SpoilerBlurPendingResult(string Promoted, string? JellyfinId, string? Name, bool WroteSomething);
+
+        [HttpDelete("spoiler-blur/pending/{mediaType}/{tmdbId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult DisableSpoilerBlurPending(string mediaType, string tmdbId)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+
+            var normalizedType = (mediaType ?? string.Empty).ToLowerInvariant();
+            if (normalizedType != "tv" && normalizedType != "movie")
+            {
+                return BadRequest(new { success = false, message = "mediaType must be 'tv' or 'movie'." });
+            }
+            if (string.IsNullOrWhiteSpace(tmdbId)
+                || !int.TryParse(tmdbId, System.Globalization.NumberStyles.Integer,
+                                 System.Globalization.CultureInfo.InvariantCulture, out var tmdbInt)
+                || tmdbInt <= 0)
+            {
+                return BadRequest(new { success = false, message = "Invalid tmdbId." });
+            }
+            var canonicalTmdb = tmdbInt.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var pendingKey = $"{normalizedType}:{canonicalTmdb}";
+            var userKey = userId.Value.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+
+            // Mirror the POST abstraction: the modal's "Disable spoiler" click
+            // shouldn't have to know whether the entry is in PendingTmdb or
+            // in the real Series/Movies dict. Resolve TMDB -> Jellyfin id
+            // and remove from whichever side holds the row. Pre-compute the
+            // candidate jellyfin id outside the RMW so we don't capture
+            // mutated locals into the lambda (robust to future async-RMW).
+            var jUser = _userManager.GetUserById(userId.Value);
+            try
+            {
+                var existingItem = jUser != null
+                    ? FindLibraryItemByTmdb(jUser, normalizedType, canonicalTmdb)
+                    : null;
+                var seriesKeyToRemove = (existingItem as MediaBrowser.Controller.Entities.TV.Series)?.Id.ToString("N");
+                var movieKeyToRemove = (existingItem as MediaBrowser.Controller.Entities.Movies.Movie)?.Id.ToString("N");
+                var resultBox = new[] { (Removed: false, From: "none", JellyfinId: (string?)null) };
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                    userKey, fileName, state =>
+                    {
+                        bool pendingRemoved = state.PendingTmdb.Remove(pendingKey);
+                        bool seriesRemoved = seriesKeyToRemove != null && state.Series.Remove(seriesKeyToRemove);
+                        bool movieRemoved = movieKeyToRemove != null && state.Movies.Remove(movieKeyToRemove);
+                        if (seriesRemoved) resultBox[0] = (true, "series", seriesKeyToRemove);
+                        else if (movieRemoved) resultBox[0] = (true, "movie", movieKeyToRemove);
+                        else if (pendingRemoved) resultBox[0] = (true, "pending", null);
+                        return resultBox[0].Removed ? 1 : 0;
+                    });
+                // Whatever the outcome, this user no longer has the key pending
+                // (either we just removed it, or it was never there) — keep the
+                // promoter's gate consistent so it stops sweeping this user.
+                Services.SpoilerSeerrPendingPromoter.UnregisterPending(pendingKey, userId.Value);
+                var (removedAnything, removedFrom, removedJellyfinId) = resultBox[0];
+                if (!removedAnything)
+                {
+                    return Ok(new { success = true, removed = false, removedFrom = "none" });
+                }
+                _logger.Info($"Spoiler Guard pending DELETE removed {pendingKey} ({removedFrom}) for {ResolveUserDisplay(userKey)}");
+                return Ok(new { success = true, removed = true, removedFrom, jellyfinId = removedJellyfinId });
+            }
+            catch (InvalidDataException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Newtonsoft.Json.JsonException strictEx)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to remove spoiler-blur pending {pendingKey}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save spoiler-blur pending state." });
+            }
+        }
+
+        // Returns the Jellyfin library item that matches the TMDB id for the
+        // given media type, filtered by the user's library access. Returns
+        // null when not found / not accessible. Uses HasAnyProviderId so
+        // the SQL filter does the matching at the DB layer (indexed) rather
+        // than pulling every TMDB-tagged item and scanning client-side.
+        private MediaBrowser.Controller.Entities.BaseItem? FindLibraryItemByTmdb(
+            Jellyfin.Database.Implementations.Entities.User user,
+            string mediaType,
+            string tmdbId)
+        {
+            var kind = mediaType == "movie"
+                ? Jellyfin.Data.Enums.BaseItemKind.Movie
+                : Jellyfin.Data.Enums.BaseItemKind.Series;
+            try
+            {
+                var query = new MediaBrowser.Controller.Entities.InternalItemsQuery(user)
+                {
+                    IncludeItemTypes = new[] { kind },
+                    HasAnyProviderId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        { "Tmdb", tmdbId },
+                    },
+                    Recursive = true,
+                    Limit = 1,
+                };
+                var items = _libraryManager.GetItemList(query);
+                if (items != null && items.Count > 0)
+                {
+                    return items[0];
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"FindLibraryItemByTmdb({mediaType}, {tmdbId}) threw {ex.GetType().Name}: {ex.Message}");
+            }
+            return null;
+        }
+
+        // Clamp + strip control / format chars so a poisoned modal
+        // payload can't grow spoilerblur.json without bound or sneak null
+        // bytes / bidi-override (U+202E) tricks through the JSON
+        // serializer + management UI. Strips Unicode Cf (Format) and Cc
+        // (Control) categories explicitly so RTL spoofing
+        // (e.g. `‮gnP.exe`) is neutralized. Truncates surrogate-pair-
+        // safe so we don't emit lone surrogates that round-trip as U+FFFD
+        // through Newtonsoft.
+        private static string SanitizePendingDisplayName(string? raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return string.Empty;
+            const int max = 200;
+            int end = raw.Length > max ? max : raw.Length;
+            if (end > 0 && end < raw.Length && char.IsHighSurrogate(raw[end - 1]))
+            {
+                end -= 1;
+            }
+            var s = raw.Substring(0, end);
+            var buf = new System.Text.StringBuilder(s.Length);
+            foreach (var c in s)
+            {
+                if (c == '\r' || c == '\n' || c == '\t') { buf.Append(' '); continue; }
+                var cat = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
+                if (cat == System.Globalization.UnicodeCategory.Control
+                    || cat == System.Globalization.UnicodeCategory.Format)
+                {
+                    continue;
+                }
+                buf.Append(c);
+            }
+            return buf.ToString().Normalize(System.Text.NormalizationForm.FormC);
+        }
+
+        // Hard cap on PendingTmdb size — defensive against an auth'd
+        // user spamming the modal/Seerr-request hook to grow
+        // spoilerblur.json without bound. 500 is well above any plausible
+        // legitimate watchlist (Seerr's own quotas are typically <100/yr).
+        // Reaching the cap rejects NEW inserts; existing entries still
+        // promote and DELETE still works, so users can prune to recover.
+        private const int MaxPendingTmdbPerUser = 500;
 
         // ─── Remove from Continue Watching ─── HideScope=continuewatching in hidden-content.json; surfaced via HC's management page.
 
@@ -4453,6 +5841,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     _logger.Warning($"Skipping HC settings reset for {ResolveUserDisplay(userId)}: {ex.Message}");
                     skippedHc.Add(userId);
                 }
+
+                // Spoiler Guard: reset only the settings-like override Prefs back to
+                // "inherit admin policy". The Series/Movies/Collections/PendingTmdb
+                // lists are user DATA (like HC Items) and are deliberately preserved.
+                // Only touch existing files — creating spoilerblur.json for users who
+                // never used Spoiler Guard would just seed empty state everywhere.
+                try
+                {
+                    if (_userConfigurationManager.UserConfigurationExists(
+                            userId, Services.SpoilerBlurImageFilter.SpoilerBlurFileName))
+                    {
+                        _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                            userId, Services.SpoilerBlurImageFilter.SpoilerBlurFileName, sb =>
+                            {
+                                sb.Prefs = new SpoilerBlurUserPrefs();
+                                return 1;
+                            });
+                    }
+                }
+                catch (Exception ex) when (ex is InvalidDataException
+                                        || ex is Newtonsoft.Json.JsonException
+                                        || ex is IOException
+                                        || ex is UnauthorizedAccessException)
+                {
+                    _logger.Warning($"Skipping Spoiler Guard prefs reset for {ResolveUserDisplay(userId)}: {ex.Message}");
+                }
             }
 
             _logger.Info($"Reset settings for {userCount}/{userIds.Count()} users to plugin defaults. Skipped settings: {skippedSettings.Count}, skipped HC: {skippedHc.Count}.");
@@ -4484,6 +5898,230 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var items = _tagCacheService.GetCacheForUser(user, since);
 
+            // Spoiler Guard tag-strip: when the user has SpoilerBlur on
+            // with any tag-relevant strip toggle, walk the cache and
+            // zero-out matching fields for unwatched episodes whose parent
+            // series is in the user's spoiler list. Without this, the JE
+            // tag-pipeline reads from serverCache BEFORE calling
+            // GetTagData (the per-batch endpoint), so card overlays would
+            // still render despite the toggle being on. Mirrors the
+            // per-batch strip in GetTagData.
+            var spCfg = JellyfinEnhanced.Instance?.Configuration;
+            // Each downstream tag overlay has its own admin toggle; enter
+            // the strip block if ANY of them is on, then gate each field
+            // individually below. Gating only on SpoilerStripTags would
+            // silently leak ratings for users who turned on rating-strip
+            // but not tag-strip.
+            var stripGenresEnabled = spCfg?.SpoilerStripTags == true;
+            var stripRatingsEnabled = spCfg?.SpoilerStripRatings == true;
+            // Title replacement on its own should ALSO trigger the
+            // tag-cache strip so the StreamData title-bearing fields
+            // don't leak the episode title via the tag-cache pipeline.
+            var sanitizeTitleStreams = spCfg?.SpoilerReplaceTitle == true || spCfg?.SpoilerStripOverview == true;
+            var anyStripEnabled = stripGenresEnabled || stripRatingsEnabled || sanitizeTitleStreams;
+            if (spCfg?.SpoilerBlurEnabled == true && anyStripEnabled)
+            {
+                // Strict-read so corruption is observable (rate-limited
+                // warn) rather than silently passing through.
+                UserSpoilerBlur? spState = LoadSpoilerStateForTagStrip(userId);
+
+                if (spState != null && (spState.Series.Count > 0 || spState.Movies.Count > 0 || spState.Collections.Count > 0))
+                {
+                    // Apply the per-user override prefs on top of admin policy —
+                    // same "user opt-out wins" contract SpoilerFieldStripFilter
+                    // uses (ShouldStrip). A user who set HideRatings to "show me"
+                    // must NOT have ratings stripped from their card overlays
+                    // either. Prefs is per-user (constant for this request), so
+                    // recompute the flags once here rather than per item.
+                    // (null override = inherit admin = strip.)
+                    var spPrefs = spState.Prefs;
+                    stripGenresEnabled = stripGenresEnabled && (spPrefs?.HideTags ?? true);
+                    stripRatingsEnabled = stripRatingsEnabled && (spPrefs?.HideRatings ?? true);
+                    sanitizeTitleStreams =
+                        (spCfg?.SpoilerReplaceTitle == true && (spPrefs?.ReplaceEpisodeTitles ?? true))
+                        || (spCfg?.SpoilerStripOverview == true && (spPrefs?.HideEpisodeDescriptions ?? true));
+
+                    foreach (var kvp in items.ToList())
+                    {
+                        var entry = kvp.Value;
+                        if (entry == null) continue;
+                        var isEpisode = string.Equals(entry.Type, "Episode", StringComparison.Ordinal);
+                        var isSeason = string.Equals(entry.Type, "Season", StringComparison.Ordinal);
+                        var isMovie = string.Equals(entry.Type, "Movie", StringComparison.Ordinal);
+                        var isSeries = string.Equals(entry.Type, "Series", StringComparison.Ordinal);
+                        if (!isEpisode && !isSeason && !isMovie && !isSeries) continue;
+                        if (isMovie)
+                        {
+                            // A movie is in scope if directly in Movies
+                            // dict OR a child of an opted-in collection
+                            // (BoxSet).
+                            if (!Guid.TryParse(kvp.Key, out var mGuid)) continue;
+                            if (!IsMovieIdInSpoilerScope(spState, mGuid)) continue;
+                        }
+                        else if (isSeries)
+                        {
+                            // Series-level entry: only strip when the user has
+                            // Spoiler Guard on for THIS series (key == series ID).
+                            // Covers home-rail cards bound to seriesId — e.g. when
+                            // "Use episode images in Next Up / Continue Watching"
+                            // is OFF in Jellyfin's Display settings, the cards use
+                            // series posters and the JE tag pipeline asks for
+                            // series-level tag data.
+                            if (!spState.Series.ContainsKey(kvp.Key)) continue;
+                        }
+                        else
+                        {
+                            if (string.IsNullOrEmpty(entry.SeriesId)) continue;
+                            if (!spState.Series.ContainsKey(entry.SeriesId)) continue;
+                        }
+
+                        // Look up played state via IUserDataManager (cached
+                        // in memory, no disk hit). Avoids requiring a
+                        // library lookup per entry — IUserDataManager
+                        // works on (user, itemId) directly. Per-entry
+                        // watched check: for Episodes, ud?.Played == true
+                        // skips the strip; for Seasons, IndexNumber<=1 OR
+                        // any-episode-watched skips the strip (mirrors
+                        // SpoilerBlurImageFilter and
+                        // SpoilerFieldStripFilter Season blur logic).
+                        if (Guid.TryParse(kvp.Key, out var entryGuid))
+                        {
+                            var entryItem = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(entryGuid);
+                            if (entryItem != null)
+                            {
+                                if (isEpisode)
+                                {
+                                    var ud = _userDataManager.GetUserData(user, entryItem);
+                                    if (ud?.Played == true) continue;
+                                }
+                                else if (isMovie)
+                                {
+                                    var ud = _userDataManager.GetUserData(user, entryItem);
+                                    if (ud?.Played == true) continue;
+                                }
+                                else if (isSeason
+                                    && entryItem is MediaBrowser.Controller.Entities.TV.Season seasonItem)
+                                {
+                                    var sNum = seasonItem.IndexNumber.GetValueOrDefault(int.MaxValue);
+                                    // S0/S1 posters always pass (their existence
+                                    // isn't a spoiler); so do seasons with any
+                                    // watched episode. Those are "exempt".
+                                    bool seasonExempt = sNum <= 1;
+                                    if (!seasonExempt)
+                                    {
+                                        // Any-episode-watched probe.
+                                        bool anyWatched = false;
+                                        try
+                                        {
+                                            foreach (var ep in seasonItem.GetEpisodes(user, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false))
+                                            {
+                                                if (ep == null) continue;
+                                                var ud = _userDataManager.GetUserData(user, ep);
+                                                if (ud?.Played == true) { anyWatched = true; break; }
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            _spoilerResolver.WarnRateLimited(
+                                                "tagcache-season-probe:" + ex.GetType().FullName,
+                                                $"Spoiler Guard tag-cache strip: season any-watched probe failed for {seasonItem.Id}: {ex.Message}");
+                                            // Fail-CLOSED: assume not watched, proceed to strip.
+                                        }
+                                        seasonExempt = anyWatched;
+                                    }
+                                    if (seasonExempt)
+                                    {
+                                        // Exempt seasons keep their poster + non-rating
+                                        // tags — but a season carries only the
+                                        // series-FALLBACK rating, which is hidden on the
+                                        // guarded series everywhere else. Strip just the
+                                        // rating so it can't surface on the season card
+                                        // via the server tag cache (renderFromServerCache).
+                                        if (stripRatingsEnabled
+                                            && (entry.CommunityRating != null || entry.CriticRating != null))
+                                        {
+                                            var seasonStripped = entry.Clone();
+                                            seasonStripped.CommunityRating = null;
+                                            seasonStripped.CriticRating = null;
+                                            items[kvp.Key] = seasonStripped;
+                                        }
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Cache-key format drift would silently strip
+                            // every user's tag rail with no diagnostic.
+                            // Rate-limited warn so a future change to the
+                            // TagCacheService key format is observable.
+                            _spoilerResolver.WarnRateLimited(
+                                "tagcache-key-not-guid",
+                                $"Spoiler Guard tag-cache strip: TagCacheService key '{kvp.Key}' did not parse as Guid; played-state check skipped. Possible cache-key format change.");
+                        }
+
+                        // TagCacheService stores ONE shared TagCacheEntry
+                        // instance per item across ALL users. Mutating in
+                        // place would leak this user's strip into every
+                        // other user's cache response (and into the user's
+                        // OWN later watched-state response, until the
+                        // cache rebuilds). Clone before mutating.
+                        var stripped = entry.Clone();
+                        if (stripGenresEnabled)
+                        {
+                            stripped.Genres = System.Array.Empty<string>();
+                            stripped.AudioLanguages = null;
+                            stripped.StreamData = null;
+                        }
+                        if (stripRatingsEnabled)
+                        {
+                            stripped.CommunityRating = null;
+                            stripped.CriticRating = null;
+                        }
+                        // When StreamData wasn't already wiped by the
+                        // tag-strip toggle but title replacement /
+                        // overview strip is on, sanitize the title-bearing
+                        // fields inside StreamData. Clone the StreamData
+                        // to avoid the same cross-user-mutation hazard.
+                        // qualitytags.js recomputes overlay text from
+                        // Codec / Height / VideoRangeType, so losing
+                        // DisplayTitle / ItemName / ItemPath / Source
+                        // Path/Name on stripped items is an acceptable
+                        // trade-off.
+                        if (sanitizeTitleStreams && stripped.StreamData != null && !stripGenresEnabled)
+                        {
+                            var sd = stripped.StreamData;
+                            var clonedSd = new Jellyfin.Plugin.JellyfinEnhanced.Model.TagStreamData
+                            {
+                                ItemName = null,
+                                ItemPath = null,
+                                Streams = sd.Streams?.Select(st => new Jellyfin.Plugin.JellyfinEnhanced.Model.TagMediaStream
+                                {
+                                    Type = st.Type,
+                                    Language = st.Language,
+                                    Codec = st.Codec,
+                                    CodecTag = st.CodecTag,
+                                    Profile = st.Profile,
+                                    Height = st.Height,
+                                    Channels = st.Channels,
+                                    ChannelLayout = st.ChannelLayout,
+                                    VideoRangeType = st.VideoRangeType,
+                                    DisplayTitle = null,
+                                }).ToList(),
+                                Sources = sd.Sources?.Select(_ => new Jellyfin.Plugin.JellyfinEnhanced.Model.TagMediaSource
+                                {
+                                    Path = null,
+                                    Name = null,
+                                }).ToList(),
+                            };
+                            stripped.StreamData = clonedSd;
+                        }
+                        items[kvp.Key] = stripped;
+                    }
+                }
+            }
+
             return Ok(new
             {
                 version = _tagCacheService.Version,
@@ -4514,6 +6152,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { error = "Maximum 200 items per request" });
             }
 
+            // Spoiler Guard short-circuit: if the user has the plugin's
+            // master switch on, has any tag-relevant strip toggle on, and
+            // has at least one series in their spoiler list, we'll need
+            // to skip tag data for unwatched episodes of those series.
+            // Loaded once per request to avoid 50× JSON reads on a
+            // typical home-page batch.
+            UserSpoilerBlur? spoilerState = null;
+            var spoilerCfg = JellyfinEnhanced.Instance?.Configuration;
+            var spStripGenres = spoilerCfg?.SpoilerStripTags == true;
+            var spStripRatings = spoilerCfg?.SpoilerStripRatings == true;
+            // Title replacement / overview strip MUST also enter the stub
+            // path. Otherwise the non-stub projection returns raw
+            // item.Path / MediaStreams[].DisplayTitle /
+            // MediaSources[].Path/Name even though the admin enabled
+            // SpoilerReplaceTitle — closing the per-batch endpoint as
+            // well.
+            var spReplaceTitle = spoilerCfg?.SpoilerReplaceTitle == true;
+            var spStripOverview = spoilerCfg?.SpoilerStripOverview == true;
+            var stripTagsEnabled = spoilerCfg?.SpoilerBlurEnabled == true
+                && (spStripGenres || spStripRatings || spReplaceTitle || spStripOverview);
+            if (stripTagsEnabled)
+            {
+                spoilerState = LoadSpoilerStateForTagStrip(userId);
+                // Empty list = nothing to strip. Treat as off for this request.
+                // A movies-only user (no series in spoiler list) would
+                // short-circuit the strip entirely if we only checked
+                // Series.Count. Mirror the GetTagCache + image-filter
+                // checks.
+                if (spoilerState == null || (spoilerState.Series.Count == 0 && spoilerState.Movies.Count == 0 && spoilerState.Collections.Count == 0))
+                {
+                    stripTagsEnabled = false;
+                }
+                else
+                {
+                    // Honour the user's per-category overrides on top of admin
+                    // policy (same "opt-out wins" contract as ShouldStrip). A
+                    // user who chose to keep, say, ratings or real titles must
+                    // not have them stripped from this per-batch endpoint either.
+                    var tdPrefs = spoilerState.Prefs;
+                    spStripGenres = spStripGenres && (tdPrefs?.HideTags ?? true);
+                    spStripRatings = spStripRatings && (tdPrefs?.HideRatings ?? true);
+                    spReplaceTitle = spReplaceTitle && (tdPrefs?.ReplaceEpisodeTitles ?? true);
+                    spStripOverview = spStripOverview && (tdPrefs?.HideEpisodeDescriptions ?? true);
+                    // Re-evaluate the master gate: if the user opted out of
+                    // everything the admin enabled, there's nothing left to do.
+                    stripTagsEnabled = spStripGenres || spStripRatings || spReplaceTitle || spStripOverview;
+                }
+            }
+
             var itemIds = ids;
             var results = new List<object>(itemIds.Length);
 
@@ -4529,6 +6216,288 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 var kind = item.GetBaseItemKind();
                 var isContainer = kind == BaseItemKind.Series || kind == BaseItemKind.Season;
+
+                // Spoiler Guard tag-strip: when the item is an Episode of
+                // a series the user has Spoiler Guard on for, AND the
+                // user hasn't watched it yet, return an Id+Type-only stub so
+                // the frontend tag renderers have nothing to draw. The
+                // pipeline still considers the item processed (no retry
+                // loop), it just produces zero overlays.
+                if (stripTagsEnabled
+                    && spoilerState != null
+                    && item is MediaBrowser.Controller.Entities.TV.Episode spEp
+                    && spEp.SeriesId != Guid.Empty
+                    && spoilerState.Series.ContainsKey(spEp.SeriesId.ToString("N")))
+                {
+                    var spUd = _userDataManager.GetUserData(user, spEp);
+                    if (spUd?.Played != true)
+                    {
+                        // When SpoilerReplaceTitle is on, the field-strip
+                        // filter rewrites Name to "Season X, Episode Y".
+                        // The tag-data stub must agree — leaking the raw
+                        // Name here defeats the whole point of the title
+                        // toggle.
+                        string? stubName = item.Name;
+                        if (spReplaceTitle
+                            && spEp.IndexNumber.HasValue
+                            && spEp.ParentIndexNumber.HasValue)
+                        {
+                            stubName = $"Season {spEp.ParentIndexNumber.Value}, Episode {spEp.IndexNumber.Value}";
+                        }
+
+                        // Compute MediaStreams here when the user hasn't
+                        // enabled SpoilerStripTags so quality / language
+                        // overlays still render under rating-only strip.
+                        //
+                        // MediaSources is intentionally LEFT NULL even
+                        // when streams are computed: MediaSources exposes
+                        // filename + display name which commonly leak the
+                        // raw episode title (e.g. "S05E14 - The Death of
+                        // Optimus Prime.mkv"). For an unwatched-spoiler
+                        // episode under SpoilerReplaceTitle that defeats
+                        // the title toggle entirely. The IMAX/3D/media-
+                        // stub overlays that consume MediaSources are
+                        // tag-rendering features — losing them on
+                        // stripped episodes only is the correct trade-off.
+                        List<object>? stubStreams = null;
+                        List<object>? stubSources = null;
+                        if (!spStripGenres)
+                        {
+                            var stubMediaSources = spEp.GetMediaSources(false);
+                            stubStreams = stubMediaSources
+                                .SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>())
+                                .Where(s => s.Type == MediaStreamType.Video || s.Type == MediaStreamType.Audio)
+                                .Select(s => (object)new
+                                {
+                                    Type = s.Type.ToString(),
+                                    Language = s.Language,
+                                    Codec = s.Codec,
+                                    CodecTag = s.CodecTag,
+                                    Profile = s.Profile,
+                                    Height = s.Height,
+                                    Channels = s.Channels,
+                                    ChannelLayout = s.ChannelLayout,
+                                    VideoRangeType = s.VideoRangeType,
+                                    // DisplayTitle's GETTER prepends the
+                                    // raw `Title` field, which on user-
+                                    // muxed mkvs (MakeMKV / Plex / Sonarr
+                                    // renamers) commonly carries the
+                                    // episode name. Under
+                                    // SpoilerReplaceTitle, that would leak
+                                    // the title via the stream projection.
+                                    // Null it; qualitytags.js recomputes
+                                    // overlay text from Codec / Height /
+                                    // VideoRangeType / Profile — none of
+                                    // which depend on Title.
+                                    DisplayTitle = (string?)null,
+                                })
+                                .ToList();
+                            // stubSources stays null — see comment above.
+                        }
+
+                        // Per-field strip. When a rating toggle is OFF the
+                        // stub preserves that field so the overlay renders
+                        // normally; when the toggle is ON the field is
+                        // nulled. SeriesId is only nulled when ratings
+                        // are stripped (it controls the rating-fallback
+                        // to parent series).
+                        results.Add(new
+                        {
+                            Id = item.Id,
+                            Type = kind.ToString(),
+                            Genres = spStripGenres ? Array.Empty<string>() : (spEp.Genres ?? Array.Empty<string>()),
+                            CommunityRating = spStripRatings ? (float?)null : spEp.CommunityRating,
+                            CriticRating = spStripRatings ? (float?)null : spEp.CriticRating,
+                            // Only suppress the parent-series rating
+                            // fallback when the rating strip is actually
+                            // requested. Leaving SeriesId set when the
+                            // user only stripped tags lets the rating
+                            // overlay continue to render.
+                            SeriesId = spStripRatings ? (Guid?)null : spEp.SeriesId,
+                            ProviderIds = (IDictionary<string, string>?)null,
+                            Name = stubName,
+                            Path = (string?)null,
+                            MediaStreams = stubStreams,
+                            MediaSources = stubSources,
+                            FirstEpisode = (object?)null,
+                            // Align with field-strip filter (which sets
+                            // Tags = Array.Empty<string>()).
+                            Tags = spStripGenres ? Array.Empty<string>() : (spEp.Tags ?? Array.Empty<string>()),
+                        });
+                        continue;
+                    }
+                }
+
+                // Series-stub: when the item is a Series the user has
+                // Spoiler Guard enabled for, return the strip stub. Covers
+                // home-rail cards bound to seriesId — e.g. NextUp /
+                // Continue Watching with "Use episode images" turned OFF
+                // in Jellyfin's Display settings, where the cards display
+                // the series poster and the JE tag pipeline fetches
+                // series-level tag data.
+                if (stripTagsEnabled
+                    && spoilerState != null
+                    && item is MediaBrowser.Controller.Entities.TV.Series spSeries
+                    && spoilerState.Series.ContainsKey(spSeries.Id.ToString("N")))
+                {
+                    string? stubName = item.Name;
+                    if (spReplaceTitle)
+                    {
+                        // Series titles are rarely spoilery on their own; only
+                        // replace under explicit title-strip toggle to match
+                        // the field-strip filter's behaviour.
+                        stubName = string.IsNullOrWhiteSpace(spoilerCfg!.SpoilerOverviewPlaceholder)
+                            ? "Spoiler Guard activated"
+                            : spoilerCfg.SpoilerOverviewPlaceholder;
+                    }
+                    results.Add(new
+                    {
+                        Id = item.Id,
+                        Type = kind.ToString(),
+                        Genres = spStripGenres ? Array.Empty<string>() : (spSeries.Genres ?? Array.Empty<string>()),
+                        CommunityRating = spStripRatings ? (float?)null : spSeries.CommunityRating,
+                        CriticRating = spStripRatings ? (float?)null : spSeries.CriticRating,
+                        SeriesId = (Guid?)null,
+                        ProviderIds = (IDictionary<string, string>?)null,
+                        Name = stubName,
+                        Path = (string?)null,
+                        MediaStreams = (List<object>?)null,
+                        MediaSources = (List<object>?)null,
+                        FirstEpisode = (object?)null,
+                        Tags = spStripGenres ? Array.Empty<string>() : (spSeries.Tags ?? Array.Empty<string>()),
+                    });
+                    continue;
+                }
+
+                // Movie-stub: when the item is a Movie the user has spoiler
+                // mode enabled for AND it's unwatched, return the same
+                // Id+Type stub shape so JE tag overlays don't render on the
+                // blurred poster. Mirrors the Episode stub.
+                if (stripTagsEnabled
+                    && spoilerState != null
+                    && item is MediaBrowser.Controller.Entities.Movies.Movie spMovie
+                    && IsMovieIdInSpoilerScope(spoilerState, spMovie.Id))
+                {
+                    var spMovieUd = _userDataManager.GetUserData(user, spMovie);
+                    if (spMovieUd?.Played != true)
+                    {
+                        // Movie title NOT rewritten under
+                        // SpoilerReplaceTitle — the title remains visible
+                        // in tag overlays and tooltips (consistent with
+                        // the field-strip filter's movie-title carve-out).
+                        string? stubName = item.Name;
+
+                        List<object>? stubStreams = null;
+                        if (!spStripGenres)
+                        {
+                            var stubMs = spMovie.GetMediaSources(false);
+                            stubStreams = stubMs
+                                .SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>())
+                                .Where(s => s.Type == MediaStreamType.Video || s.Type == MediaStreamType.Audio)
+                                .Select(s => (object)new
+                                {
+                                    Type = s.Type.ToString(),
+                                    Language = s.Language,
+                                    Codec = s.Codec,
+                                    CodecTag = s.CodecTag,
+                                    Profile = s.Profile,
+                                    Height = s.Height,
+                                    Channels = s.Channels,
+                                    ChannelLayout = s.ChannelLayout,
+                                    VideoRangeType = s.VideoRangeType,
+                                    DisplayTitle = (string?)null,
+                                })
+                                .ToList();
+                        }
+
+                        results.Add(new
+                        {
+                            Id = item.Id,
+                            Type = kind.ToString(),
+                            Genres = spStripGenres ? Array.Empty<string>() : (spMovie.Genres ?? Array.Empty<string>()),
+                            CommunityRating = spStripRatings ? (float?)null : spMovie.CommunityRating,
+                            CriticRating = spStripRatings ? (float?)null : spMovie.CriticRating,
+                            SeriesId = (Guid?)null,
+                            ProviderIds = (IDictionary<string, string>?)null,
+                            Name = stubName,
+                            Path = (string?)null,
+                            MediaStreams = stubStreams,
+                            MediaSources = (List<object>?)null,
+                            FirstEpisode = (object?)null,
+                            Tags = spStripGenres ? Array.Empty<string>() : (spMovie.Tags ?? Array.Empty<string>()),
+                        });
+                        continue;
+                    }
+                }
+
+                // BoxSet (Collection) DTOs pass through unstripped from
+                // the tag-data endpoint. The collection's own art is the
+                // entry point the user just clicked (like Series);
+                // blurring it would spoil the user's own navigation. The
+                // Movie-stub above already handles movies inside
+                // opted-in collections via IsMovieIdInSpoilerScope.
+
+                // When the item is a Season of a series the user has
+                // Spoiler Guard on for, AND no episode in that season has
+                // been watched, AND it's not S0/S1, return an Id+Type
+                // stub so the JE tag overlays don't render on the blurred
+                // season poster. Mirrors the field-strip filter's Season
+                // strip + the image filter's HasWatchedAnyEpisodeInSeason
+                // gate.
+                if (stripTagsEnabled
+                    && spoilerState != null
+                    && item is MediaBrowser.Controller.Entities.TV.Season spSeason
+                    && spSeason.SeriesId != Guid.Empty
+                    && spoilerState.Series.ContainsKey(spSeason.SeriesId.ToString("N")))
+                {
+                    var sNum = spSeason.IndexNumber.GetValueOrDefault(int.MaxValue);
+                    if (sNum > 1)
+                    {
+                        bool anyWatched = false;
+                        try
+                        {
+                            foreach (var ep in spSeason.GetEpisodes(user, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false))
+                            {
+                                if (ep == null) continue;
+                                var ud = _userDataManager.GetUserData(user, ep);
+                                if (ud?.Played == true) { anyWatched = true; break; }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _spoilerResolver.WarnRateLimited(
+                                "tagdata-season-probe:" + ex.GetType().FullName,
+                                $"Spoiler Guard tag-data: season any-watched probe failed for {spSeason.Id}: {ex.Message}");
+                            // Fail-CLOSED: assume not watched, proceed to stub.
+                        }
+
+                        if (!anyWatched)
+                        {
+                            string? stubName = item.Name;
+                            if (spReplaceTitle && spSeason.IndexNumber.HasValue)
+                            {
+                                stubName = $"Season {spSeason.IndexNumber.Value}";
+                            }
+                            results.Add(new
+                            {
+                                Id = item.Id,
+                                Type = kind.ToString(),
+                                Genres = spStripGenres ? Array.Empty<string>() : (spSeason.Genres ?? Array.Empty<string>()),
+                                CommunityRating = spStripRatings ? (float?)null : spSeason.CommunityRating,
+                                CriticRating = spStripRatings ? (float?)null : spSeason.CriticRating,
+                                SeriesId = spStripRatings ? (Guid?)null : spSeason.SeriesId,
+                                ProviderIds = (IDictionary<string, string>?)null,
+                                Name = stubName,
+                                Path = (string?)null,
+                                MediaStreams = (List<object>?)null,
+                                MediaSources = (List<object>?)null,
+                                FirstEpisode = (object?)null,
+                                Tags = spStripGenres ? Array.Empty<string>() : (spSeason.Tags ?? Array.Empty<string>()),
+                            });
+                            continue;
+                        }
+                    }
+                }
 
                 // OPT-3: Only get media sources/streams for playable items (Movies, Episodes)
                 // Series and Season are containers with no media files — skip the expensive call
@@ -5541,6 +7510,100 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _pollLogDedup = new();
         private static readonly TimeSpan _pollLogInterval = TimeSpan.FromMinutes(5);
 
+        // Tag-cache + tag-data both load the user's spoiler state. Use
+        // strict reads so corruption is detected (rate-limited warn);
+        // fall back to null so the strip silently no-ops rather than
+        // returning 503 for the unrelated tag-cache request. The user's
+        // actual /spoiler-blur/series endpoint will return 503 next call.
+        // See SpoilerFieldStripFilter.IsMovieIdInSpoilerScope for the
+        // same semantics: direct membership OR via opted-in BoxSet's
+        // LinkedChildren.
+        private bool IsMovieIdInSpoilerScope(UserSpoilerBlur userState, Guid movieId)
+        {
+            if (movieId == Guid.Empty) return false;
+            if (userState.Movies.ContainsKey(movieId.ToString("N"))) return true;
+            if (userState.Collections.Count == 0) return false;
+            try
+            {
+                foreach (var collKeyN in userState.Collections.Keys)
+                {
+                    if (!Guid.TryParse(collKeyN, out var collGuid)) continue;
+                    var bs = _libraryManager.GetItemById(collGuid)
+                        as MediaBrowser.Controller.Entities.Movies.BoxSet;
+                    if (bs == null) continue;
+                    foreach (var child in bs.GetLinkedChildren())
+                    {
+                        if (child != null && child.Id == movieId) return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _spoilerResolver.WarnRateLimited(
+                    "tagstrip-movie-collection:" + ex.GetType().FullName,
+                    $"Spoiler Guard tag-strip: IsMovieIdInSpoilerScope linked-children walk failed for {movieId}: {ex.Message}");
+            }
+            return false;
+        }
+
+        private UserSpoilerBlur? LoadSpoilerStateForTagStrip(Guid userId)
+        {
+            var userKey = userId.ToString("N");
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            if (!_userConfigurationManager.UserConfigurationExists(userKey, fileName))
+            {
+                return null;
+            }
+            try
+            {
+                return _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(userKey, fileName);
+            }
+            catch (InvalidDataException ex)
+            {
+                _spoilerResolver.WarnRateLimited(
+                    "tagstrip-corrupt:" + userKey,
+                    $"Spoiler Guard tag-strip: spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {ex.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), ex.Message);
+                return null;
+            }
+            catch (Newtonsoft.Json.JsonException ex)
+            {
+                _spoilerResolver.WarnRateLimited(
+                    "tagstrip-corrupt:" + userKey,
+                    $"Spoiler Guard tag-strip: spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {ex.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), ex.Message);
+                return null;
+            }
+            catch (IOException ex)
+            {
+                _spoilerResolver.WarnRateLimited(
+                    "tagstrip-io:" + ex.GetType().FullName,
+                    $"Spoiler Guard tag-strip: IO error reading state for {ResolveUserDisplay(userKey)}: {ex.Message}");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                // The specific catches above handle InvalidDataException
+                // / JsonException / IOException. UnauthorizedAccessException
+                // (chmod-mangled config dir), SecurityException (host
+                // policy), PathTooLongException, DirectoryNotFoundException
+                // etc. would otherwise escape and 500 the entire
+                // tag-cache/tag-data request — breaking every client's
+                // tag rail on every poll. Catch-all returns null (skip
+                // strip) with rate-limited warn so a real failure mode is
+                // observable but doesn't take down the unrelated
+                // tag-cache surface.
+                _spoilerResolver.WarnRateLimited(
+                    "tagstrip-unexpected:" + ex.GetType().FullName,
+                    $"Spoiler Guard tag-strip: unexpected {ex.GetType().Name} reading state for {ResolveUserDisplay(userKey)}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Logs a high-frequency polling request, consolidating repeated identical calls into a
+        /// single summary line every <see cref="_pollLogInterval"/> rather than one line per poll.
+        /// </summary>
         private void LogPollingRequest(string userDisplay, string requestUri, string dedupKey)
         {
             var now = DateTime.UtcNow;

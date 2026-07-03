@@ -288,7 +288,13 @@
      * A generation counter ensures stale chunk chains from previous scans
      * are cancelled when a new scan starts (e.g., rapid page changes).
      */
+    let isInvalidating = false;
     function runScan() {
+        // While a server-cache invalidation is in flight (after a
+        // Spoiler Guard toggle), suppress concurrent scans so cards
+        // aren't processed against a half-loaded cache and marked done
+        // before the fresh data arrives.
+        if (isInvalidating) return;
         if (!hasAnyEnabledRenderer()) return;
         if (typeof ApiClient === 'undefined') return;
 
@@ -737,6 +743,73 @@
             batchGeneration++;
             firstEpisodeCache.clear();
             parentSeriesCache.clear();
+        },
+        // Bust the server cache so the next scan re-fetches everything
+        // through the spoiler-strip pipeline. Used after toggling
+        // Spoiler Guard for a series/movie so newly-eligible items lose
+        // their cached unstripped tag data.
+        async invalidateServerCache() {
+            // Hold a flag for the duration of the reload so concurrent
+            // scheduleScan() calls (triggered by body MutationObserver
+            // during the await window) no-op instead of processing cards
+            // against the empty cache. Reset processedCards a SECOND time
+            // after load so cards that
+            // were partially marked during the await get re-scanned.
+            isInvalidating = true;
+            try {
+                serverCache = null;
+                serverCacheVersion = 0;
+                serverCacheTimestamp = 0;
+                processedCards = new WeakSet();
+                requestQueue = [];
+                batchGeneration++;
+                firstEpisodeCache.clear();
+                parentSeriesCache.clear();
+                // Clear each renderer's derived cache (e.g. quality's
+                // serverQualityCache) so it recomputes from the refreshed,
+                // spoiler-stripped server data instead of a stale entry.
+                for (const [, renderer] of renderers) {
+                    if (renderer.onServerCacheRefresh) {
+                        try { renderer.onServerCacheRefresh(null); } catch {}
+                    }
+                }
+                // Remove overlays ALREADY inserted into the DOM and clear the
+                // per-card "tagged" markers. Without this the re-scan skips
+                // cards it considers already-processed, so genre/quality/
+                // rating overlays inserted BEFORE Spoiler Guard was enabled
+                // linger on unwatched-episode cards until a full page reload.
+                // Mirrors what each feature's own reinitialize does.
+                try {
+                    document.querySelectorAll(
+                        '.quality-overlay-container, .rating-overlay-container, '
+                        + '.genre-overlay-container, .language-overlay-container'
+                    ).forEach(function (el) { el.remove(); });
+                    document.querySelectorAll(
+                        '[data-je-quality-tagged], [data-je-rating-tagged], '
+                        + '[data-je-genre-tagged], [data-je-language-tagged]'
+                    ).forEach(function (el) {
+                        delete el.dataset.jeQualityTagged;
+                        delete el.dataset.jeRatingTagged;
+                        delete el.dataset.jeGenreTagged;
+                        delete el.dataset.jeLanguageTagged;
+                    });
+                } catch (domErr) {
+                    console.warn(`${logPrefix} overlay cleanup during invalidate failed:`, domErr);
+                }
+                if (typeof loadServerCache === 'function') {
+                    await loadServerCache();
+                }
+                processedCards = new WeakSet();
+            } catch (e) {
+                console.warn(`${logPrefix} invalidateServerCache failed:`, e);
+            } finally {
+                isInvalidating = false;
+            }
+            try {
+                runScan();
+            } catch (e) {
+                console.warn(`${logPrefix} post-invalidate scan failed:`, e);
+            }
         },
         scheduleScan,
     };

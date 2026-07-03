@@ -157,7 +157,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
             try
             {
-                var parsed = JsonConvert.DeserializeObject<T>(json);
+                // Same null-skipping policy as the lenient GetUserConfiguration above:
+                // a stored JSON null for a field that has since become non-nullable
+                // (bool? -> bool migrations) is schema drift, not corruption. Without
+                // this the strict path would back the file up as .corrupt-* and 503,
+                // losing the user's real data — the exact failure the lenient reader
+                // was fixed to avoid. The empty/"null"-literal checks above still
+                // treat genuinely unusable files as corruption.
+                var parsed = JsonConvert.DeserializeObject<T>(json, new JsonSerializerSettings
+                {
+                    NullValueHandling = NullValueHandling.Ignore
+                });
                 if (parsed == null)
                 {
                     _logger.Error($"'{fileName}' for user '{userId}' deserialized to null; refusing to overwrite.");
@@ -233,19 +243,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         {
             try
             {
-                // Millisecond resolution so two corruption events in the same UTC second get distinct backups.
-                var backupPath = filePath + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
-                if (File.Exists(backupPath))
-                {
-                    _logger.Warning($"Corrupt config backup already exists at {backupPath} — skipping new copy.");
-                    return;
-                }
-                File.Copy(filePath, backupPath);
-                _logger.Warning($"Corrupt config backed up to {backupPath}");
+                // MOVE (quarantine), not copy: the strict read that triggers this
+                // sits on hot read paths (e.g. the tag-cache strip runs on every
+                // poll). If the corrupt original stayed in place, every read would
+                // re-throw 503 AND drop another .corrupt-* file — a permanent loop
+                // that also makes the client's "reset to defaults" message a lie.
+                // Moving it out of the way means the next read finds no file and
+                // returns defaults, so the store self-heals after exactly one
+                // backup. Unique suffix so multiple quarantines never collide.
+                var backupPath = filePath + ".corrupt-"
+                    + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
+                    + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+                File.Move(filePath, backupPath);
+                _logger.Warning($"Corrupt config quarantined to {backupPath} (store will reset to defaults on next read)");
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to back up corrupt config: {ex.Message}");
+                _logger.Error($"Failed to quarantine corrupt config '{filePath}': {ex.Message}");
+                // Last resort: if the move failed, delete the unreadable file so
+                // the 503-per-request loop still breaks. The content is already
+                // unparseable, and the failure is logged above for forensics.
+                try { File.Delete(filePath); }
+                catch (Exception delEx)
+                {
+                    _logger.Error($"Also failed to delete corrupt config '{filePath}': {delEx.Message}");
+                }
             }
         }
 

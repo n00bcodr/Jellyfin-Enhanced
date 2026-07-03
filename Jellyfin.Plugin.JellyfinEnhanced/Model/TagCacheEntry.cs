@@ -22,6 +22,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public string[]? AudioLanguages { get; set; }
         public TagStreamData? StreamData { get; set; }
         public long LastUpdated { get; set; }
+        // Series ID in N format (no dashes, lowercase). Set for Episodes
+        // and Seasons; null for everything else. Used by the Spoiler Guard
+        // filter to strip cache entries for unwatched episodes whose parent
+        // series is in the requesting user's spoiler list — avoids a
+        // per-request library lookup for every episode in a 1000-item
+        // cache.
+        public string? SeriesId { get; set; }
+
+        // Shallow copy. Required by per-user mutators (spoiler tag-strip)
+        // because the underlying TagCacheService stores ONE shared instance
+        // per item across ALL users. Mutating in place would leak one user's
+        // strip into every other user's cache response. Arrays are kept by
+        // reference; spoiler strip only ever REPLACES them (with empty/null),
+        // never mutates an existing array, so the shallow copy is safe.
+        //
+        // R6-L2 caveat: StreamData (TagStreamData object) is also reference-
+        // shared. Today's strip code replaces the reference (Stream Data =
+        // null) — safe. If a future feature mutates `clone.StreamData.Streams.Add(...)`
+        // or similar, every user's cache silently corrupts. Treat StreamData
+        // as immutable across users; replace the whole object, never mutate
+        // its fields.
+        public TagCacheEntry Clone() => new()
+        {
+            Type = Type,
+            // Copy EVERY property: the spoiler tag-strip replaces the shared
+            // instance with this clone in the response, so any field omitted
+            // here is silently blanked for the client. TmdbId / SeriesTmdbId /
+            // SeasonNumber / EpisodeNumber build the review key — dropping them
+            // broke reviews on cloned entries even when reviews weren't the
+            // field being stripped.
+            TmdbId = TmdbId,
+            SeriesTmdbId = SeriesTmdbId,
+            SeasonNumber = SeasonNumber,
+            EpisodeNumber = EpisodeNumber,
+            Genres = Genres,
+            CommunityRating = CommunityRating,
+            CriticRating = CriticRating,
+            AudioLanguages = AudioLanguages,
+            StreamData = StreamData,
+            LastUpdated = LastUpdated,
+            SeriesId = SeriesId,
+        };
     }
 
     /// <summary>

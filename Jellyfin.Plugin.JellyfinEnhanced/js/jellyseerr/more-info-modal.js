@@ -623,6 +623,7 @@ function buildModalContent(data, mediaType) {
                                     ${data.tagline ? `<p class="tagline">${escapeHtml(data.tagline)}</p>` : ''}
                                     <div class="je-downloads" data-mount="je-downloads"></div>
                                     <div class="je-more-info-actions" data-mount="je-actions"></div>
+                                    <div class="je-more-info-secondary-actions" data-mount="je-secondary-actions"></div>
                                 </div>
                             </div>
 
@@ -1750,6 +1751,18 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
 // Token guards against stale chip insertion when the user navigates between items.
 let _quotaRenderToken = 0;
 
+// Token guard for renderActions itself. A single request can trigger
+// renderActions multiple times in rapid succession (mountRequestedChip
+// runs it directly + api.js emits jellyseerr-tv-requested which the
+// TV-route listener also reacts to with another renderActions call).
+// Each call clears the mounts synchronously, but the TV path's
+// checkForUnrequestedSeasons.then() callback lands AFTER both clears —
+// so each pending callback appends its own copy of the Request More /
+// Spoiler buttons, producing visible duplicates after the request is
+// submitted. Bump the token at the top of every renderActions call
+// and bail in the async tail if a newer render has superseded us.
+let _renderActionsToken = 0;
+
 async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType) {
     if (!actionMount) return;
     const myToken = ++_quotaRenderToken;
@@ -1770,15 +1783,124 @@ async function maybeRenderMoreInfoQuotaChip(actionMount, mediaType) {
     }
 }
 
+// Toggle button that lets the user enable Spoiler Guard for a title in the
+// modal regardless of request status. Two use cases:
+//   (a) the user is about to Request it — they can pre-arm Spoiler Guard so
+//       the title is already blurred when it lands in their library.
+//   (b) another user has already requested it (Request button disabled) —
+//       this user can still register spoiler intent and have it auto-apply
+//       once the content arrives.
+// Server resolves "already in library" itself and promotes Series/Movies
+// directly, so the UI doesn't need to special-case that path.
+function buildSpoilerToggleButton(data, mediaType) {
+    if (!JE.pluginConfig || JE.pluginConfig.SpoilerBlurEnabled !== true) return null;
+    if (!JE.spoilerBlur || typeof JE.spoilerBlur.enableForTmdb !== 'function') return null;
+    if (mediaType !== 'tv' && mediaType !== 'movie') return null;
+    var tmdbId = data && data.id;
+    if (!tmdbId) return null;
+
+    var jellyfinMediaId = (data && data.mediaInfo && data.mediaInfo.jellyfinMediaId) || null;
+    var displayName = (data && (data.title || data.name)) || '';
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    // Deliberately NOT using .jellyseerr-request-button — that class is for
+    // the primary request CTA stack. This is a secondary action with its
+    // own quieter styling (see CSS in this file).
+    btn.className = 'je-spoiler-pending-btn';
+    btn.setAttribute('data-je-tmdb-id', String(tmdbId));
+    btn.setAttribute('data-je-media-type', mediaType);
+
+    var iconSpan = document.createElement('span');
+    iconSpan.className = 'material-icons';
+    var labelSpan = document.createElement('span');
+    btn.appendChild(iconSpan);
+    btn.appendChild(labelSpan);
+
+    function refreshLabel() {
+        var enabled = !!JE.spoilerBlur.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
+        var label = enabled
+            ? JE.t('spoiler_blur_pending_button_on')
+            : JE.t('spoiler_blur_pending_button_off');
+        btn.classList.toggle('je-spoiler-pending-on', enabled);
+        btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+        btn.setAttribute('title', label);
+        iconSpan.textContent = enabled ? 'blur_on' : 'blur_off';
+        labelSpan.textContent = label;
+    }
+    refreshLabel();
+    // Cold-load fix: Spoiler Guard state may load after the modal mounts,
+    // so the initial refreshLabel above could read empty sets and show
+    // "Enable" for a TMDB id that's actually pending. whenLoaded resolves
+    // immediately if already loaded; otherwise awaits the in-flight load.
+    if (typeof JE.spoilerBlur.whenLoaded === 'function') {
+        JE.spoilerBlur.whenLoaded().then(refreshLabel).catch(function () {});
+    }
+
+    btn.addEventListener('click', async function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (btn.disabled) return;
+        btn.disabled = true;
+        var wasEnabled = !!JE.spoilerBlur.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
+        try {
+            if (wasEnabled) {
+                if (typeof JE.spoilerBlur.confirmDisableSpoiler === 'function') {
+                    var proceed = await JE.spoilerBlur.confirmDisableSpoiler();
+                    if (!proceed) return;
+                } else {
+                    // Older spoilerBlur build — log so the missing confirm
+                    // gate is visible in the console rather than failing
+                    // open silently.
+                    console.warn('🪼 Jellyfin Enhanced: spoiler-blur.confirmDisableSpoiler unavailable; disabling without prompt');
+                }
+                await JE.spoilerBlur.disableForTmdb(mediaType, tmdbId);
+                if (typeof JE.toast === 'function') JE.toast(JE.t('spoiler_blur_pending_disabled_toast'));
+            } else {
+                await JE.spoilerBlur.enableForTmdb(mediaType, tmdbId, displayName);
+                if (typeof JE.toast === 'function') JE.toast(JE.t('spoiler_blur_pending_enabled_toast'));
+            }
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: spoiler-blur pending toggle failed:', err);
+            if (typeof JE.toast === 'function') JE.toast(JE.t('spoiler_blur_pending_error_toast'));
+        } finally {
+            refreshLabel();
+            btn.disabled = false;
+        }
+    });
+
+    return btn;
+}
+
+// Append the Spoiler Guard toggle button into the secondary-actions mount
+// so it sits visually below the primary Request CTA with its own spacing
+// — not stacked flush inside the .je-more-info-actions group (which has
+// overflow:hidden + gap:0 to "weld" related buttons together).
+function appendSpoilerToggleIfApplicable(_actionMount, data, mediaType) {
+    if (!currentModal) return;
+    const secondary = currentModal.querySelector('[data-mount="je-secondary-actions"]');
+    if (!secondary) return;
+    try {
+        const spoilerBtn = buildSpoilerToggleButton(data, mediaType);
+        if (spoilerBtn) secondary.appendChild(spoilerBtn);
+    } catch (err) {
+        console.warn('🪼 Jellyfin Enhanced: failed to render spoiler toggle button:', err);
+    }
+}
+
 function renderActions(data, mediaType) {
     if (!currentModal) return;
 
     const actionMount = currentModal.querySelector('[data-mount="je-actions"]');
     const chipMount = currentModal.querySelector('[data-mount="je-status-chip"]');
     const downloadsMount = currentModal.querySelector('[data-mount="je-downloads"]');
+    const secondaryMount = currentModal.querySelector('[data-mount="je-secondary-actions"]');
     if (actionMount) actionMount.innerHTML = '';
     if (chipMount) chipMount.innerHTML = '';
     if (downloadsMount) downloadsMount.innerHTML = '';
+    if (secondaryMount) secondaryMount.innerHTML = '';
+
+    const myToken = ++_renderActionsToken;
 
     if (mediaType === 'movie') {
         const mediaInfo = data.mediaInfo || {};
@@ -1830,12 +1952,14 @@ function renderActions(data, mediaType) {
                 if (followUp) actionMount.appendChild(followUp);
                 maybeRenderMoreInfoQuotaChip(actionMount, 'movie');
             }
+            appendSpoilerToggleIfApplicable(actionMount, data, 'movie');
             return;
         }
 
         const actions = buildMovieActions(data, actionMount, chipMount, show4k);
         if (actions && actionMount) actionMount.appendChild(actions);
         maybeRenderMoreInfoQuotaChip(actionMount, 'movie');
+        appendSpoilerToggleIfApplicable(actionMount, data, 'movie');
     } else {
         const mediaInfo = data.mediaInfo || {};
         const status = mediaInfo.status ?? 1;
@@ -1883,6 +2007,7 @@ function renderActions(data, mediaType) {
             const actions = buildTvActions(data, show4kTv);
             if (actions && actionMount) actionMount.appendChild(actions);
             maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
+            appendSpoilerToggleIfApplicable(actionMount, data, 'tv');
             return;
         }
 
@@ -1895,9 +2020,14 @@ function renderActions(data, mediaType) {
                 const requestMoreButton = buildTvRequestMoreButton(data, show4kTv, canRequest4k);
                 if (requestMoreButton) actionMount.appendChild(requestMoreButton);
                 maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
+                appendSpoilerToggleIfApplicable(actionMount, data, 'tv');
                 return;
             }
             checkForUnrequestedSeasons(data).then(hasUnrequestedSeasons => {
+                // A later renderActions has clobbered the mounts — bail
+                // so we don't double-append the buttons after both
+                // callbacks land. See _renderActionsToken comment.
+                if (myToken !== _renderActionsToken) return;
                 if (hasUnrequestedSeasons && actionMount) {
                     const requestMoreButton = buildTvRequestMoreButton(data, show4kTv, canRequest4k);
                     if (requestMoreButton) actionMount.appendChild(requestMoreButton);
@@ -1907,6 +2037,7 @@ function renderActions(data, mediaType) {
                     if (followUp4k) actionMount.appendChild(followUp4k);
                     maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
                 }
+                appendSpoilerToggleIfApplicable(actionMount, data, 'tv');
             });
             return;
         }
@@ -1914,6 +2045,7 @@ function renderActions(data, mediaType) {
         const actions = buildTvActions(data);
         if (actions && actionMount) actionMount.appendChild(actions);
         maybeRenderMoreInfoQuotaChip(actionMount, 'tv');
+        appendSpoilerToggleIfApplicable(actionMount, data, 'tv');
     }
 }
 
@@ -2317,6 +2449,58 @@ function injectStyles() {
             align-items: stretch;
             border-radius: 8px;
             overflow: hidden;
+        }
+
+        /* Secondary actions: subtle, sits below the primary Request CTA
+           with explicit breathing room. Buttons here use the
+           .je-spoiler-pending-btn ghost style — quieter visual weight than
+           the Request button so the primary CTA stays dominant. */
+        .je-more-info-modal .je-more-info-secondary-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+        }
+        .je-more-info-modal .je-more-info-secondary-actions:empty {
+            display: none;
+        }
+
+        .je-spoiler-pending-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4em;
+            padding: 0.45em 0.9em;
+            font-size: 0.85em;
+            font-weight: 500;
+            line-height: 1.2;
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255, 255, 255, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s, color 0.2s;
+        }
+        .je-spoiler-pending-btn:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.25);
+            color: #fff;
+        }
+        .je-spoiler-pending-btn:disabled {
+            opacity: 0.55;
+            cursor: progress;
+        }
+        .je-spoiler-pending-btn.je-spoiler-pending-on {
+            background: rgba(90, 63, 184, 0.22);
+            color: #d6c8ff;
+            border-color: rgba(90, 63, 184, 0.55);
+        }
+        .je-spoiler-pending-btn.je-spoiler-pending-on:hover:not(:disabled) {
+            background: rgba(90, 63, 184, 0.32);
+            border-color: rgba(90, 63, 184, 0.75);
+            color: #fff;
+        }
+        .je-spoiler-pending-btn .material-icons {
+            font-size: 1.1em;
         }
 
         /* Quota chip in more-info modal — tighter spacing than the season modal. */

@@ -1,0 +1,1276 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Jellyfin.Database.Implementations.Entities;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
+using MediaBrowser.Controller.Chapters;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Controller.Library;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+
+namespace Jellyfin.Plugin.JellyfinEnhanced.Services
+{
+    // Replaces spoiler-bearing image bytes (parent-art substitution in
+    // "hide" mode, or a Gaussian blur in "blur" mode) when Spoiler Guard is
+    // enabled server-wide AND the requesting user has opted in for the item,
+    // for these protected surfaces:
+    //   • Episodes of an opted-in series the user has NOT played
+    //   • Season posters for S2+ of an opted-in series with no episode watched
+    //   • Movies opted in directly OR via an opted-in collection (until played;
+    //     SpoilerKeepMoviePosters can exempt the Primary/Thumb poster)
+    //   • Trickplay tile-sheets and (when SpoilerBlurArtwork is on) backdrops
+    // A collection's (BoxSet's) OWN art always passes through — it's a shortcut
+    // that protects the movies inside, not itself. Per-user state lives in
+    // spoilerblur.json (Series / Movies / Collections / PendingTmdb / Prefs).
+    //
+    // Runs as an MVC action filter scoped to Jellyfin's image + trickplay
+    // controller actions so EVERY client (web, TV, iOS, Android) receives the
+    // protected bytes from the native image API. No client-side awareness or
+    // DOM manipulation needed.
+    public sealed class SpoilerBlurImageFilter : IAsyncActionFilter, IDisposable
+    {
+        private const string ImageController = "Image";
+        // Trickplay tile-sheet endpoint (Videos/{id}/Trickplay/{w}/{i}.jpg).
+        // Each tile is a sprite-sheet JPEG containing many small thumbnails for
+        // timeline scrubbing previews. For Spoiler Guard unwatched items, these
+        // thumbnails reveal scenes the user explicitly opted to hide.
+        private const string TrickplayController = "Trickplay";
+        public const string SpoilerBlurFileName = "spoilerblur.json";
+
+        // Image controller actions we care about. Jellyfin 10.11.x decorates
+        // the same C# methods with both [HttpGet] and [HttpHead(Name="HeadItemImage")];
+        // Name= only affects link generation, so RouteValues["action"] for a HEAD
+        // request still resolves to the GET method name. We therefore only need
+        // the GetItem* names.
+        private static readonly HashSet<string> _imageActions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "GetItemImage",
+            "GetItemImageByIndex",
+            "GetItemImage2",
+        };
+
+        // Image-type allowlist split into two tiers.
+        //
+        // Always blur (poster surface — where most spoiler risk lives,
+        // typically curated marketing art that conveys plot):
+        //   Primary, Thumb, Screenshot
+        //
+        // Optional blur — admin-toggled via SpoilerBlurArtwork
+        // (default false). Backdrops/Art are wider aesthetic images
+        // shown on detail pages and collections; many users find blurring
+        // those over-aggressive, so they pass through by default.
+        private static readonly HashSet<string> _alwaysBlurImageTypes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Primary",
+            "Thumb",
+            "Screenshot",
+            // Chapter thumbnails — the Scenes rail in jellyfin-web's
+            // movie/episode detail pages. For movies these are
+            // progressive-revealed below in the Movie path (chapters past
+            // PlaybackPositionTicks blur, before pass through). For
+            // episodes the entire chapter set blurs alongside the rest
+            // of the unwatched-episode metadata.
+            "Chapter",
+        };
+        private static readonly HashSet<string> _artworkImageTypes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Backdrop",
+            "Art",
+        };
+
+        // Re-warn at most once per hour per surface so a real Jellyfin upgrade
+        // changing the response shape isn't permanently invisible.
+        private static readonly TimeSpan ShapeWarnInterval = TimeSpan.FromHours(1);
+        private static readonly ConcurrentDictionary<string, DateTime> _warnedShapeAt = new();
+
+        // Rate-limited warning helper + per-request user-state caching now
+        // live on SpoilerUserResolver (single shared HttpContext.Items key
+        // across both filters).
+
+        private readonly ILibraryManager _libraryManager;
+        private readonly IChapterManager _chapterManager;
+        private readonly IUserManager _userManager;
+        private readonly IUserDataManager _userDataManager;
+        private readonly SpoilerUserResolver _resolver;
+        private readonly ImageBlurService _blurService;
+        private readonly Logger _logger;
+
+        public SpoilerBlurImageFilter(
+            ILibraryManager libraryManager,
+            IUserManager userManager,
+            IUserDataManager userDataManager,
+            IChapterManager chapterManager,
+            SpoilerUserResolver resolver,
+            ImageBlurService blurService,
+            Logger logger)
+        {
+            _libraryManager = libraryManager;
+            _userManager = userManager;
+            _userDataManager = userDataManager;
+            _chapterManager = chapterManager;
+            _resolver = resolver;
+            _blurService = blurService;
+            _logger = logger;
+
+            // When a user marks an episode (or season/series) played or
+            // unplayed, evict the per-(user, season) "any episode watched?"
+            // cache for that season so the next image fetch reflects the
+            // new state immediately. Without this, the 30-second TTL
+            // produces a stale-blur window in the wrong direction —
+            // marking an episode UN-played returns the cached "any-watched=
+            // true" entry and renders the season poster CLEAR for up to
+            // 30s, a privacy regression.
+            _userDataManager.UserDataSaved += OnUserDataSaved;
+        }
+
+        private void OnUserDataSaved(object? sender, MediaBrowser.Controller.Library.UserDataSaveEventArgs e)
+        {
+            // Dispatch off the IUserDataManager publish thread. Other
+            // UserDataSaved consumers (resume tracking, scheduled tasks,
+            // integrations) share that thread; a malicious user
+            // burst-toggling Played would otherwise pile up synchronous
+            // O(K) cache scans on the publish path. Task.Run drops the
+            // work onto the threadpool — fire-and-forget is safe because
+            // a missed eviction just leaves stale cache for ≤30s (TTL).
+            if (e?.Item == null || e.UserId == Guid.Empty) return;
+
+            // Snapshot the values we need so the lambda captures don't
+            // race against post-event mutation.
+            var userId = e.UserId;
+            Guid? seasonId = null;
+            Guid? seriesId = null;
+            switch (e.Item)
+            {
+                case Episode ep:
+                    seasonId = ep.SeasonId;
+                    seriesId = ep.SeriesId;
+                    break;
+                case Season s:
+                    seasonId = s.Id;
+                    seriesId = s.SeriesId;
+                    break;
+                case Series ser:
+                    seriesId = ser.Id;
+                    break;
+                // Explicit Movie no-op. The Movie image path doesn't use
+                // _watchedCache (it reads UserData.Played directly per
+                // request), so there's nothing to invalidate here. Listed
+                // for future-proofing — if a movie-level server cache is
+                // added later, this is the hook.
+                case MediaBrowser.Controller.Entities.Movies.Movie:
+                    return;
+            }
+
+            if (!seasonId.HasValue && !seriesId.HasValue) return;
+
+            // Per-(user, scope) coalesce. A "Mark season watched" sweep on
+            // a 24-episode season fires 24 events → 24 queued threadpool
+            // tasks all racing the same _watchedCache; coalescing per-user
+            // only would collapse cross-season events (seasons A and B for
+            // the same user collide and drop B's eviction). Keyed by
+            // (userId, scopeId) where scopeId is seasonId for
+            // episode/season events and seriesId for series events.
+            // Same-season repeats coalesce; cross-season events each get
+            // their own dispatch.
+            var scopeId = seasonId.HasValue && seasonId.Value != Guid.Empty
+                ? seasonId.Value
+                : seriesId!.Value;
+            var dedupKey = (userId, scopeId);
+            if (!_pendingInvalidations.TryAdd(dedupKey, 0))
+            {
+                return;
+            }
+
+            // Protect the dispatcher itself. If Task.Run throws
+            // synchronously (OOM, threadpool denial-of-service), the
+            // lambda's `finally` never runs — the dedup key would stay
+            // in the dictionary forever and that scope's events would
+            // be silently dropped until process restart. Catch + remove.
+            try
+            {
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        // Instance-field _disposed read at execution time
+                        // so post-Dispose lambdas no-op fast.
+                        if (_disposed) return;
+                        if (seasonId.HasValue && seasonId.Value != Guid.Empty)
+                        {
+                            var key = userId.ToString("N") + ":" + seasonId.Value.ToString("N");
+                            // Surface eviction-key-mismatch as a debug
+                            // breadcrumb. If a future refactor desyncs the
+                            // build-key from the read-key, evictions
+                            // silently become no-ops; counting the
+                            // no-removal cases makes that observable.
+                            if (!_watchedCache.TryRemove(key, out _))
+                            {
+                                // Hit may simply not exist (cold cache); not an
+                                // error. Logging at Debug, not Warning.
+                                // _logger.Info($"[SpoilerBlur] UserDataSaved: no cache entry for season key {key} (cold cache or already evicted).");
+                            }
+                        }
+                        else if (seriesId.HasValue && seriesId.Value != Guid.Empty)
+                        {
+                            // Series-level event — invalidate every cached season
+                            // for this user under this series. Cache keys are
+                            // "{userN}:{seasonN}" so we'd have to iterate. Cheap
+                            // because the cache is small (≤512 entries) and this
+                            // event is rare.
+                            // ToArray for symmetry with the eviction site
+                            // at the bottom of this file.
+                            // ConcurrentDictionary.Keys is a snapshot in
+                            // current .NET but ToArray makes intent
+                            // explicit and survives framework changes.
+                            var prefix = userId.ToString("N") + ":";
+                            foreach (var k in _watchedCache.Keys.ToArray())
+                            {
+                                if (k.StartsWith(prefix, StringComparison.Ordinal))
+                                    _watchedCache.TryRemove(k, out _);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _resolver.WarnRateLimited(
+                            "userdata-saved-handler:" + ex.GetType().FullName,
+                            $"Spoiler Guard: failed to invalidate season cache on UserDataSaved: {ex.Message}");
+                    }
+                    finally
+                    {
+                        _pendingInvalidations.TryRemove(dedupKey, out _);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                // Synchronous Task.Run failure (rare). Release the dedup
+                // slot so subsequent events for this scope can dispatch
+                // again, and surface the failure with rate-limited warn.
+                _pendingInvalidations.TryRemove(dedupKey, out _);
+                _resolver.WarnRateLimited(
+                    "userdata-saved-dispatch:" + ex.GetType().FullName,
+                    $"Spoiler Guard: Task.Run dispatch threw synchronously: {ex.Message}");
+            }
+        }
+
+        // Per-(user, scope) dedup gate for the OnUserDataSaved Task.Run
+        // dispatch. Scope is seasonId for episode/season events, seriesId
+        // for series events. Static so a hot-reload preserves the dedup
+        // state across plugin instances (matches _watchedCache,
+        // _warnedShapeAt pattern in this file).
+        private static readonly ConcurrentDictionary<(Guid, Guid), byte> _pendingInvalidations = new();
+
+        // This filter is a Singleton subscribed to
+        // IUserDataManager.UserDataSaved. Without an unsubscribe path,
+        // hot-reload / plugin disable+re-enable leaks the event handler
+        // delegate (memory leak + double-fire on next event). DI containers
+        // dispose Singletons at host shutdown; the plugin's OnUninstalling
+        // also calls Dispose via the service provider.
+        private bool _disposed;
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            try
+            {
+                _userDataManager.UserDataSaved -= OnUserDataSaved;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"SpoilerBlurImageFilter: unsubscribe on Dispose threw: {ex.Message}");
+            }
+        }
+
+        public Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
+        {
+            // Sync fast-path. The filter runs on every MVC action; for
+            // non-image routes we want to add zero overhead by returning
+            // the existing Task directly without entering an async state
+            // machine.
+            if (!IsImageAction(context))
+            {
+                return next();
+            }
+
+            // Plugin-level master switch. Saves the per-user file read on every image.
+            var pluginConfig = JellyfinEnhanced.Instance?.Configuration;
+            if (pluginConfig?.SpoilerBlurEnabled != true)
+            {
+                return next();
+            }
+            return RunImageFilterAsync(context, next, pluginConfig);
+        }
+
+        private async Task RunImageFilterAsync(
+            ActionExecutingContext context,
+            ActionExecutionDelegate next,
+            Configuration.PluginConfiguration pluginConfig)
+        {
+
+            if (!TryGetItemId(context, out var itemId))
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+            // Trickplay routes don't carry an `imageType` argument —
+            // they're sprite-sheet tiles for a video's scrubbing previews.
+            // Treat them as always-blur (the entire sheet contains scene
+            // previews that the user opted to hide).
+            bool isTrickplay = IsTrickplayRoute(context);
+            string imageType;
+            bool inAlways, inArtwork;
+            if (isTrickplay)
+            {
+                imageType = "Trickplay";
+                inAlways = true;
+                inArtwork = false;
+            }
+            else
+            {
+                if (!TryGetImageType(context, out imageType))
+                {
+                    await next().ConfigureAwait(false);
+                    return;
+                }
+                // Always-blur tier (poster surface) vs artwork tier (Backdrop/
+                // Art) gated behind SpoilerBlurArtwork. Anything else (logos,
+                // banners, etc.) passes through unchanged.
+                inAlways = _alwaysBlurImageTypes.Contains(imageType);
+                inArtwork = !inAlways && _artworkImageTypes.Contains(imageType);
+                if (!inAlways && !inArtwork)
+                {
+                    await next().ConfigureAwait(false);
+                    return;
+                }
+            }
+            // Do NOT short-circuit Backdrop/Art on SpoilerBlurArtwork=false
+            // here — we still need the eligibility check below so
+            // spoiler-list artwork can be served with `no-store`. Otherwise
+            // Jellyfin's default long-lived public cache headers would let
+            // a browser/proxy hold the unblurred bytes; if the admin later
+            // toggles SpoilerBlurArtwork on, the client never re-fetches
+            // and never sees the blurred response.
+            //
+            // Decision is deferred to the post-eligibility branch:
+            //   inAlways                          → blur (existing path)
+            //   inArtwork && SpoilerBlurArtwork   → blur
+            //   inArtwork && !SpoilerBlurArtwork  → pass-through w/ no-store
+
+            // Read the item from Jellyfin's library. Cheap in-memory lookup.
+            // Needed up front so we can pick the effective user by spoiler
+            // scope (below) rather than by identity alone.
+            var item = _libraryManager.GetItemById(itemId);
+            if (item == null)
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            // User identification — handles ClaimsPrincipal first, then falls
+            // back to session-by-IP for anonymous browser <img> requests and
+            // native-client image fetches. On a shared IP the fallback can
+            // yield several candidates; we protect the item if ANY of them
+            // opted into it (fail-CLOSED by scope), instead of leaking the
+            // original bytes. For the common authenticated request there is
+            // exactly one candidate, so this is identical to a direct lookup.
+            // Resolution lives in SpoilerUserResolver so both filters share it.
+            var candidates = _resolver.ResolveCandidateUserIds(context.HttpContext);
+            Guid effectiveUserId = Guid.Empty;
+            UserSpoilerBlur? userState = null;
+            foreach (var candidate in candidates)
+            {
+                if (candidate == Guid.Empty) continue;
+                var candidateState = _resolver.LoadUserState(context.HttpContext, candidate);
+                if (candidateState.Series.Count == 0
+                    && candidateState.Movies.Count == 0
+                    && candidateState.Collections.Count == 0)
+                {
+                    continue; // this candidate protects nothing
+                }
+                if (ItemInSpoilerScope(candidateState, item))
+                {
+                    effectiveUserId = candidate;
+                    userState = candidateState;
+                    break;
+                }
+            }
+            if (userState == null)
+            {
+                // No candidate has this item on their Spoiler Guard list — pass through.
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            var jUser = _userManager.GetUserById(effectiveUserId);
+            if (jUser == null)
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            // Collections are a SHORTCUT for "blur all movies in this
+            // collection" — the collection's own art and Overview pass
+            // through clear (it's the entry point the user just clicked,
+            // same model as Series). The blur is applied per-movie based
+            // on each movie's individual watched state.
+            if (item is MediaBrowser.Controller.Entities.Movies.BoxSet)
+            {
+                // Collection's own art: pass through unconditionally.
+                await next().ConfigureAwait(false);
+                return;
+            }
+            else if (item is MediaBrowser.Controller.Entities.Movies.Movie movie)
+            {
+                if (!IsMovieInSpoilerScope(userState, movie))
+                {
+                    await next().ConfigureAwait(false);
+                    return;
+                }
+                var movieUd = _userDataManager.GetUserData(jUser, movie);
+                if (movieUd?.Played == true)
+                {
+                    RegisterNoStoreOnStarting(context.HttpContext);
+                    await next().ConfigureAwait(false);
+                    return;
+                }
+                // Admin opt-out for movie posters: when SpoilerKeepMoviePosters
+                // is on, the Primary and Thumb image types (the movie's
+                // poster surface) pass through unblurred. Chapter thumbs,
+                // Screenshots, and (when SpoilerBlurArtwork is on)
+                // Backdrop / Art continue to follow the protection logic.
+                if (pluginConfig.SpoilerKeepMoviePosters
+                    && (string.Equals(imageType, "Primary", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(imageType, "Thumb", StringComparison.OrdinalIgnoreCase)))
+                {
+                    RegisterNoStoreOnStarting(context.HttpContext, imageType);
+                    await next().ConfigureAwait(false);
+                    return;
+                }
+                // Progressive chapter ("Scenes" rail) blur for unwatched
+                // movies in the spoiler list: chapters whose
+                // StartPositionTicks are BEFORE the user's resume point
+                // pass through unblurred (they've already seen those
+                // scenes); chapters at-or-after the resume point blur.
+                if (string.Equals(imageType, "Chapter", StringComparison.OrdinalIgnoreCase)
+                    && TryGetImageIndex(context, out var chapterIdx))
+                {
+                    long? watchedThroughTicks = null;
+                    if (movieUd != null)
+                    {
+                        if (movieUd.Played) watchedThroughTicks = long.MaxValue;
+                        else if (movieUd.PlaybackPositionTicks > 0) watchedThroughTicks = movieUd.PlaybackPositionTicks;
+                    }
+                    if (watchedThroughTicks.HasValue)
+                    {
+                        try
+                        {
+                            var chapter = _chapterManager.GetChapter(movie.Id, chapterIdx);
+                            if (chapter != null
+                                && chapter.StartPositionTicks < watchedThroughTicks.Value)
+                            {
+                                // Pre-resume-point scene — pass through.
+                                // Short-cache (30s) so timeline-hover scrubbing
+                                // doesn't round-trip every hover.
+                                RegisterNoStoreOnStarting(context.HttpContext, imageType);
+                                await next().ConfigureAwait(false);
+                                return;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            // Lookup failure — fail-CLOSED (blur all chapters
+                            // by falling through). Rate-limited warn so a
+                            // future Jellyfin API change is observable.
+                            _resolver.WarnRateLimited(
+                                "image-chapter-lookup:" + ex.GetType().FullName,
+                                $"Spoiler Guard: chapter lookup failed for movie {movie.Id} idx {chapterIdx}: {ex.Message}");
+                        }
+                    }
+                }
+                // Fall through to blur.
+            }
+            else
+            {
+                // Episode / Season path: spoiler-list keyed by parent series.
+                Guid seriesId;
+                switch (item)
+                {
+                    case Episode ep:
+                        seriesId = ep.SeriesId;
+                        break;
+                    case Season seasonItem:
+                        seriesId = seasonItem.SeriesId;
+                        break;
+                    default:
+                        await next().ConfigureAwait(false);
+                        return;
+                }
+
+                if (seriesId == Guid.Empty
+                    || !userState.Series.ContainsKey(seriesId.ToString("N")))
+                {
+                    // Item's series isn't on the user's Spoiler Guard list.
+                    await next().ConfigureAwait(false);
+                    return;
+                }
+
+                if (item is Episode episode)
+                {
+                    var userData = _userDataManager.GetUserData(jUser, episode);
+                    if (userData?.Played == true)
+                    {
+                        // Pass-through, but force `no-store` so a watched
+                        // episode's image isn't cached permanently in the
+                        // user's browser. If the user later marks the
+                        // episode unwatched again, the next fetch must
+                        // re-evaluate through this filter.
+                        //
+                        // Register on Response.OnStarting BEFORE awaiting
+                        // next(). For streaming FileStreamResult paths the
+                        // response headers can be flushed inside next()'s
+                        // execution, so a post-next() header write would
+                        // be a no-op.
+                        RegisterNoStoreOnStarting(context.HttpContext);
+                        await next().ConfigureAwait(false);
+                        return;
+                    }
+                    // Else fall through to blur path below.
+                }
+                else
+                {
+                    // Season path: blur if S2+ and the user has watched zero
+                    // episodes from this season; pass-through otherwise.
+                    var season = (Season)item;
+                    var seasonNum = season.IndexNumber.GetValueOrDefault(int.MaxValue);
+                    // Always show Season 1 (and Specials S0) so the user has some
+                    // entry point. Future seasons get blurred until at least one
+                    // episode is watched.
+                    if (seasonNum <= 1)
+                    {
+                        await next().ConfigureAwait(false);
+                        return;
+                    }
+                    if (HasWatchedAnyEpisodeInSeason(jUser, season))
+                    {
+                        // User started this season — pass-through.
+                        RegisterNoStoreOnStarting(context.HttpContext);
+                        await next().ConfigureAwait(false);
+                        return;
+                    }
+                    // Else fall through to blur path below.
+                }
+            }
+
+            // Artwork tier with the toggle OFF — pass through the original
+            // bytes BUT with no-store so the browser/proxy can't keep them
+            // past a future toggle-on. We still want spoiler-list artwork
+            // to re-evaluate through this filter on every request.
+            if (inArtwork && pluginConfig.SpoilerBlurArtwork != true)
+            {
+                RegisterNoStoreOnStarting(context.HttpContext);
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            // Stash the cache key so the post-action code doesn't recompute.
+            // Cache key incorporates the blur mode so toggling between
+            // "blur" and "hide" doesn't serve stale entries from the
+            // wrong mode.
+            var spoilerMode = string.Equals(pluginConfig.SpoilerBlurMode, "hide", StringComparison.OrdinalIgnoreCase)
+                ? "hide" : "blur";
+            var cacheKey = BuildItemCacheKey(item, imageType, context, pluginConfig.SpoilerBlurIntensity)
+                + ":" + spoilerMode;
+
+            var executed = await next().ConfigureAwait(false);
+            if (executed.Canceled || executed.Exception != null) return;
+
+            try
+            {
+                if (spoilerMode == "hide")
+                {
+                    await ReplaceWithStockCardAsync(executed, pluginConfig.SpoilerBlurIntensity, cacheKey, imageType, item, userState).ConfigureAwait(false);
+                }
+                else
+                {
+                    await ReplaceWithBlurredAsync(executed, pluginConfig.SpoilerBlurIntensity, cacheKey, imageType).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Spoiler Guard post-processing failed for episode {itemId} ({imageType}, {spoilerMode}): {ex.Message}");
+
+                // Hide-mode has a stricter contract: an exception thrown
+                // BEFORE ReplaceWithStockCardAsync assigned executed.Result
+                // (e.g. ExtractBytesAsync stream-copy IOException, OOM on a
+                // 4K backdrop decode, ObjectDisposedException on a cancelled
+                // request) would otherwise let MVC write the original
+                // FileStreamResult body — leaking the spoiler image. Force
+                // the hardcoded fallback so the fail-closed invariant holds
+                // structurally regardless of where in the pipeline the
+                // failure occurred. Blur-mode is best-effort by design and
+                // is allowed to pass through.
+                if (spoilerMode == "hide" && !executed.HttpContext.Response.HasStarted)
+                {
+                    try
+                    {
+                        executed.Result = new FileContentResult(_blurService.HardcodedFallbackJpeg, "image/jpeg");
+                        ApplyNoStoreToResponse(executed.HttpContext);
+                    }
+                    catch (Exception fallbackEx)
+                    {
+                        _logger.Error($"Spoiler Guard: hide-mode fallback assignment failed for {itemId}: {fallbackEx.Message}");
+                    }
+                }
+            }
+        }
+
+        // When an item that SHOULD be considered for blur (user has the
+        // series enabled) takes a pass-through code path — watched, blur
+        // failed, item not yet resolvable, etc. — strip 1-year public
+        // caching. Uses the SAME header set as the blurred-response path
+        // (`private, no-store, max-age=0, must-revalidate` + drop ETag /
+        // Last-Modified) because `private, no-cache` still permits 304
+        // revalidation and reuse of the cached unblurred bytes — defeating
+        // the whole point of the pass-through scrub.
+        //
+        // For paths where the response has already begun streaming (the
+        // watched-pass-through case after `next()`), we register on
+        // `Response.OnStarting` so the override runs JUST BEFORE headers
+        // flush.
+        private void ApplyNoStoreToResponse(Microsoft.AspNetCore.Http.HttpContext httpContext)
+        {
+            try
+            {
+                if (httpContext.Response.HasStarted)
+                {
+                    // Response already flushed — too late to mutate
+                    // headers. Surface so operators can diagnose when the
+                    // cache-scrub silently fails for streaming results.
+                    // Rate-limited so a misbehaving response shape doesn't
+                    // spam logs on every image fetch.
+                    _resolver.WarnRateLimited(
+                        "no-store-already-started",
+                        "Spoiler Guard: ApplyNoStoreToResponse called after Response.HasStarted=true; cache headers NOT applied. Cache-scrub may not have taken effect for this code path. (For watched-pass-through, use RegisterNoStoreOnStarting BEFORE awaiting next() instead.)");
+                    return;
+                }
+                ApplyNoStoreHeadersDirect(httpContext);
+            }
+            catch (Exception ex)
+            {
+                // Don't silently swallow; surface so operators can
+                // diagnose when the cache headers aren't actually
+                // being applied.
+                _logger.Warning($"ApplyNoStoreToResponse failed: {ex.Message}");
+            }
+        }
+
+        // Registers an OnStarting callback that overrides the cache headers
+        // immediately before MVC writes them. Use this for pass-through
+        // paths that occur AFTER awaiting `next()` for streaming results
+        // where the response may already be on its way out.
+        private void RegisterNoStoreOnStarting(Microsoft.AspNetCore.Http.HttpContext httpContext, string imageType = "")
+        {
+            try
+            {
+                if (httpContext.Response.HasStarted)
+                {
+                    return;
+                }
+                httpContext.Response.OnStarting(() =>
+                {
+                    try { ApplyNoStoreHeadersDirect(httpContext, imageType); }
+                    catch (Exception ex) { _logger.Warning($"OnStarting no-store override failed: {ex.Message}"); }
+                    return Task.CompletedTask;
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"RegisterNoStoreOnStarting failed: {ex.Message}");
+            }
+        }
+
+        private static void ApplyNoStoreHeadersDirect(Microsoft.AspNetCore.Http.HttpContext httpContext, string imageType = "")
+        {
+            var headers = httpContext.Response.Headers;
+            // Chapter / scene preview images render in a hover-tooltip on
+            // the player timeline. Strict no-store made every hover round-
+            // trip and produced a visible "gray box → image swap" jank as
+            // the browser had no cached copy. Allow a short private cache
+            // (30s) for chapter images so subsequent hovers within the
+            // same session are instant. Trade-off: a watched-state change
+            // (e.g. user advances past a chapter) re-renders within 30s
+            // instead of immediately — acceptable for Spoiler Guard UX.
+            // Other image types keep strict no-store: posters / thumbs
+            // change blur status on a per-watch event, where caching past
+            // a state change would defeat the feature.
+            var isChapter = string.Equals(imageType, "Chapter", StringComparison.OrdinalIgnoreCase);
+            headers["Cache-Control"] = isChapter
+                ? "private, max-age=30, must-revalidate"
+                : "private, no-store, max-age=0, must-revalidate";
+            headers.Remove("ETag");
+            headers.Remove("Last-Modified");
+        }
+
+        // User resolution (ClaimsPrincipal, then session-by-IP with shared-IP
+        // disambiguation) lives in SpoilerUserResolver — see
+        // ResolveCandidateUserIds / ScanActiveSessionUsers.
+        private static bool IsImageAction(ActionExecutingContext context)
+        {
+            var rv = context.ActionDescriptor.RouteValues;
+            if (rv == null) return false;
+            if (!rv.TryGetValue("controller", out var controller) || controller == null) return false;
+            if (!rv.TryGetValue("action", out var action) || action == null) return false;
+            if (string.Equals(controller, ImageController, StringComparison.OrdinalIgnoreCase))
+            {
+                return _imageActions.Contains(action);
+            }
+            // Trickplay tiles. Same image-mutation pipeline; the tile is
+            // just a JPEG of stitched-together thumbnails.
+            if (string.Equals(controller, TrickplayController, StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Equals(action, "GetTrickplayTileImage", StringComparison.OrdinalIgnoreCase);
+            }
+            return false;
+        }
+
+        private static bool IsTrickplayRoute(ActionExecutingContext context)
+        {
+            var rv = context.ActionDescriptor.RouteValues;
+            if (rv == null) return false;
+            if (!rv.TryGetValue("controller", out var c) || c == null) return false;
+            return string.Equals(c, TrickplayController, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryGetItemId(ActionExecutingContext context, out Guid itemId)
+        {
+            itemId = Guid.Empty;
+            if (!context.ActionArguments.TryGetValue("itemId", out var raw)) return false;
+            switch (raw)
+            {
+                case Guid g when g != Guid.Empty:
+                    itemId = g;
+                    return true;
+                case string s when Guid.TryParse(s, out var parsed) && parsed != Guid.Empty:
+                    itemId = parsed;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static bool TryGetImageType(ActionExecutingContext context, out string imageType)
+        {
+            imageType = string.Empty;
+            if (!context.ActionArguments.TryGetValue("imageType", out var raw) || raw == null) return false;
+            // Jellyfin's ImageType is an enum; ToString() yields the member name (Primary, Thumb, etc.).
+            imageType = raw.ToString() ?? string.Empty;
+            return imageType.Length > 0;
+        }
+
+        // Read the imageIndex action argument used by chapter image
+        // requests (`/Items/{id}/Images/Chapter/{index}`). Returns false
+        // when the parameter is missing or non-integer.
+        private static bool TryGetImageIndex(ActionExecutingContext context, out int imageIndex)
+        {
+            imageIndex = 0;
+            if (!context.ActionArguments.TryGetValue("imageIndex", out var raw) || raw == null) return false;
+            if (raw is int i) { imageIndex = i; return true; }
+            return int.TryParse(raw.ToString(), out imageIndex);
+        }
+
+        // Query params Jellyfin's image controller uses to shape the
+        // output (resize / re-encode). Two clients requesting the same
+        // episode at different sizes must NOT share the same cached
+        // blurred bytes — a TV asking for 720p must not receive a
+        // 300px-encoded thumb cached for the web client.
+        private static readonly string[] _sizeShapingParams =
+        {
+            "maxWidth", "maxHeight", "fillWidth", "fillHeight",
+            "width", "height", "quality", "format",
+        };
+
+        private static string BuildItemCacheKey(BaseItem item, string imageType, ActionExecutingContext context, int sigma)
+        {
+            string? tag = null;
+            string? index = null;
+            var query = context.HttpContext.Request.Query;
+            if (query.TryGetValue("tag", out var t)) tag = t.ToString();
+            if (context.ActionArguments.TryGetValue("imageIndex", out var idx) && idx != null)
+                index = idx.ToString();
+
+            // Trickplay tiles bind their size + tile position as ROUTE
+            // arguments (GetTrickplayTileImage(itemId, width, index)), not
+            // query params, so _sizeShapingParams (which scans the query
+            // string) and `imageIndex` both miss them. Without folding these
+            // in, every tile-sheet width and every tile of an item would
+            // collapse onto one cache entry and serve the wrong blurred tile.
+            var routeKey = new System.Text.StringBuilder();
+            if (context.ActionArguments.TryGetValue("width", out var w) && w != null)
+                routeKey.Append("w=").Append(w).Append(';');
+            if (context.ActionArguments.TryGetValue("index", out var i) && i != null)
+                routeKey.Append("i=").Append(i).Append(';');
+
+            // Include the size-shaping query params so different output
+            // sizes get distinct cache entries. Use the FULL param name in
+            // the key — using just the first letter caused maxWidth=300
+            // and maxHeight=300 to collide on `m300;`.
+            var sizeKey = new System.Text.StringBuilder();
+            foreach (var p in _sizeShapingParams)
+            {
+                if (query.TryGetValue(p, out var v))
+                {
+                    sizeKey.Append(p).Append('=').Append(v.ToString()).Append(';');
+                }
+            }
+
+            return $"{item.Id:N}|{imageType}|{index ?? "_"}|{tag ?? "_"}|{sigma}|{routeKey}{sizeKey}";
+        }
+
+        // Per-(user, season) "any episode watched?" cache. Home-page rows can
+        // request the same season's Primary + Backdrop + Thumb in quick
+        // succession; without caching we'd hit the library DB three times for
+        // the same answer. The cache TTL is short because a user marking an
+        // episode watched should flip the season's poster from blurred to
+        // clear on next page load — too long a TTL means stale state. 30s is
+        // long enough to cover a full home-page render but short enough that
+        // mark-watched → next-navigation roundtrips see fresh data.
+        private static readonly TimeSpan SeasonWatchedCacheTtl = TimeSpan.FromSeconds(30);
+
+        private sealed class WatchedCacheEntry
+        {
+            public required bool AnyWatched { get; init; }
+            public required DateTime ExpiresAt { get; init; }
+        }
+
+        private static readonly ConcurrentDictionary<string, WatchedCacheEntry> _watchedCache = new();
+
+        // Does this candidate's spoiler state cover the item at all? Used to
+        // pick the effective user when a shared-IP request yields several
+        // candidates: the first candidate that protects the item wins, so an
+        // anonymous request never leaks an opted-in user's artwork. Mirrors
+        // the per-branch scope checks in the main filter body:
+        //   Episode / Season → parent series on the user's Series list
+        //   Movie            → IsMovieInSpoilerScope (direct or via collection)
+        //   BoxSet / other   → not protected here (its own art passes through)
+        private bool ItemInSpoilerScope(UserSpoilerBlur userState, BaseItem item)
+        {
+            switch (item)
+            {
+                case Episode ep:
+                    return ep.SeriesId != Guid.Empty
+                        && userState.Series.ContainsKey(ep.SeriesId.ToString("N"));
+                case Season season:
+                    return season.SeriesId != Guid.Empty
+                        && userState.Series.ContainsKey(season.SeriesId.ToString("N"));
+                case MediaBrowser.Controller.Entities.Movies.Movie movie:
+                    return IsMovieInSpoilerScope(userState, movie);
+                default:
+                    return false;
+            }
+        }
+
+        // A movie is "in spoiler scope" when either (a) the user has it
+        // directly opted in via the per-movie toggle, OR (b) the movie is
+        // a member of a collection (BoxSet) the user has opted in.
+        // BoxSets are NOT direct parents of their member movies in
+        // Jellyfin's data model — they reference movies via
+        // LinkedChildren. So we iterate opted-in collections, check
+        // whether each contains the movie ID.
+        private bool IsMovieInSpoilerScope(UserSpoilerBlur userState, MediaBrowser.Controller.Entities.Movies.Movie movie)
+        {
+            if (movie == null) return false;
+            var key = movie.Id.ToString("N");
+            if (userState.Movies.ContainsKey(key)) return true;
+            if (userState.Collections.Count == 0) return false;
+            try
+            {
+                foreach (var collKeyN in userState.Collections.Keys)
+                {
+                    if (!Guid.TryParse(collKeyN, out var collGuid)) continue;
+                    var bs = _libraryManager.GetItemById(collGuid)
+                        as MediaBrowser.Controller.Entities.Movies.BoxSet;
+                    if (bs == null) continue;
+                    foreach (var child in bs.GetLinkedChildren())
+                    {
+                        if (child != null && child.Id == movie.Id) return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _resolver.WarnRateLimited(
+                    "movie-in-collection:" + ex.GetType().FullName,
+                    $"Spoiler Guard: IsMovieInSpoilerScope linked-children walk failed for {movie.Id}: {ex.Message}");
+            }
+            return false;
+        }
+
+        private bool HasWatchedAnyEpisodeInSeason(JUser user, Season season)
+        {
+            var key = user.Id.ToString("N") + ":" + season.Id.ToString("N");
+            var now = DateTime.UtcNow;
+            if (_watchedCache.TryGetValue(key, out var hit) && hit.ExpiresAt > now)
+            {
+                return hit.AnyWatched;
+            }
+
+            bool anyWatched = false;
+            bool determinationFailed = false;
+            // Diagnostic counters — kept (commented logger) for future
+            // troubleshooting if the season-watched cache produces
+            // unexpected blur/passthrough decisions. Uncomment the
+            // _logger.Info line below to surface per-call results.
+            int total = 0, withUd = 0;
+            try
+            {
+                // Enumerate the season's episodes; bail as soon as we find a
+                // played one. `shouldIncludeMissingEpisodes: false` skips
+                // episodes Jellyfin has metadata for but no media file —
+                // those obviously can't have been "played" so they'd just
+                // waste iterations.
+                foreach (var child in season.GetEpisodes(user, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false))
+                {
+                    total++;
+                    if (child is not Episode ep) continue;
+                    var ud = _userDataManager.GetUserData(user, ep);
+                    if (ud != null) withUd++;
+                    if (ud?.Played == true)
+                    {
+                        anyWatched = true;
+                        break;
+                    }
+                }
+                // _logger.Info($"[seasondiag] season={season.Id} {season.Name} total={total} withUd={withUd} anyWatched={anyWatched}");
+            }
+            catch (Exception ex)
+            {
+                // Fail CLOSED (assume not watched → BLUR). The user opted
+                // into spoiler protection for this series; defaulting to
+                // pass-through on a transient DB-contention exception
+                // can produce a real bug pattern: 24 simultaneous
+                // season-image requests overwhelm GetEpisodes for the
+                // late seasons in the burst, exceptions cache as
+                // "watched" for 30s, and the user sees later seasons
+                // unblurred until the cache TTL expires. If the user
+                // enabled Spoiler Guard, they want blur on uncertainty,
+                // not exposure.
+                _resolver.WarnRateLimited(
+                    "season-watched:" + ex.GetType().FullName,
+                    $"Spoiler Guard: HasWatchedAnyEpisodeInSeason failed for season {season.Id} — failing CLOSED (blur). {ex.Message}");
+                anyWatched = false;
+                determinationFailed = true;
+            }
+
+            // Don't cache exception results. Caching a fail-open
+            // `anyWatched=true` for 30s would make one transient DB
+            // hiccup persist across the full TTL even after the
+            // contention subsided. Only cache successful determinations;
+            // let the next call retry, which under typical conditions
+            // succeeds.
+            if (!determinationFailed)
+            {
+                _watchedCache[key] = new WatchedCacheEntry
+                {
+                    AnyWatched = anyWatched,
+                    ExpiresAt = now + SeasonWatchedCacheTtl,
+                };
+            }
+
+            // Periodic eviction so the dictionary doesn't grow unbounded
+            // across long server uptimes. Snapshot via ToArray so a
+            // concurrent insert during the scan can't trip
+            // InvalidOperationException — `ConcurrentDictionary` enumerator
+            // only guarantees stable iteration when snapshotted.
+            if (_watchedCache.Count > 512)
+            {
+                foreach (var kvp in _watchedCache.ToArray())
+                {
+                    if (kvp.Value.ExpiresAt < now) _watchedCache.TryRemove(kvp.Key, out _);
+                }
+            }
+
+            return anyWatched;
+        }
+
+        // Stock-card replacement path. Used when SpoilerBlurMode == "hide".
+        // Instead of returning a flat dark-grey rectangle, try a "safe
+        // parent" art image first so the user gets a visually-consistent
+        // grid of "this show / this franchise" art rather than a sea of
+        // blank dark cards. The parent image type is picked by source
+        // aspect to avoid distortion:
+        //   Episode (16:9 thumb)        → Series Backdrop (16:9)
+        //   Season (2:3 poster)         → Series Primary (2:3)
+        //   Movie via Collection (2:3)  → Collection Primary (2:3)
+        // When no safe parent art exists (movie directly opted in, series
+        // without a Backdrop, etc.) the fallback chain is: blur the original →
+        // a flat dark stock card → the pre-encoded #101010 fallback JPEG (only
+        // if Skia itself fails). Mirrors ReplaceWithBlurredAsync's no-store policy.
+        private async Task ReplaceWithStockCardAsync(
+            ActionExecutedContext executed,
+            int sigma,
+            string cacheKey,
+            string imageType,
+            MediaBrowser.Controller.Entities.BaseItem item,
+            UserSpoilerBlur userState)
+        {
+            if (executed.Result == null) return;
+            if (string.Equals(executed.HttpContext.Request.Method, "HEAD", StringComparison.OrdinalIgnoreCase))
+            {
+                ApplyNoStoreToResponse(executed.HttpContext);
+                return;
+            }
+
+            var (originalBytes, originalContentType) = await ExtractBytesAsync(executed.Result).ConfigureAwait(false);
+            if (originalBytes == null || originalBytes.Length == 0)
+            {
+                MaybeWarnShapeMismatch(executed.Result);
+                ApplyNoStoreToResponse(executed.HttpContext);
+                return;
+            }
+
+            // Try parent art first.
+            var parentBytes = TryGetParentArtBytes(item, userState, originalBytes, cacheKey + ":pp");
+            if (parentBytes != null && parentBytes.Length > 0)
+            {
+                executed.Result = new FileContentResult(parentBytes, "image/jpeg");
+                if (executed.HttpContext.Response.HasStarted) return;
+                ApplyNoStoreHeadersDirect(executed.HttpContext, imageType);
+                return;
+            }
+
+            // No safe parent art available (e.g. movie directly opted in,
+            // series without a Backdrop, season without a Series Primary).
+            // Fall back to a blur of the original bytes so the card still
+            // has content rather than rendering as a flat dark "broken"
+            // tile. Visually consistent with what the user would see in
+            // blur-mode for the same item.
+            var blurred = _blurService.Blur(originalBytes, sigma, cacheKey);
+            if (blurred != null)
+            {
+                executed.Result = new FileContentResult(blurred, "image/jpeg");
+                if (executed.HttpContext.Response.HasStarted) return;
+                ApplyNoStoreHeadersDirect(executed.HttpContext, imageType);
+                return;
+            }
+
+            var stock = _blurService.StockCard(originalBytes, cacheKey);
+            if (stock == null)
+            {
+                // Skia render failed on a flat-fill — practically unreachable
+                // (Jellyfin's whole image pipeline shares the same Skia copy)
+                // but the hide-mode spoiler contract is "never serve original
+                // bytes through this path". Fall back to the pre-encoded
+                // 16x16 #101010 JPEG so the invariant is structural, not
+                // dependent on Skia liveness.
+                executed.Result = new FileContentResult(_blurService.HardcodedFallbackJpeg, "image/jpeg");
+                ApplyNoStoreToResponse(executed.HttpContext);
+                return;
+            }
+
+            executed.Result = new FileContentResult(stock, "image/jpeg");
+            if (executed.HttpContext.Response.HasStarted) return;
+            ApplyNoStoreHeadersDirect(executed.HttpContext, imageType);
+        }
+
+        // Returns the bytes of a "safe parent" art image scaled to roughly
+        // match the original-image dimensions. Picks the parent image type
+        // by the source's aspect so ResizeToMatch's non-uniform scale stays
+        // proportional:
+        //
+        //   Episode (16:9 thumb)        → Series Backdrop
+        //   Season (2:3 poster)         → Series Primary
+        //   Movie via Collection (2:3)  → Collection Primary
+        //
+        // Returns null when no safe parent exists (movie directly opted in,
+        // or the picked image type is missing on the parent) — caller then
+        // falls back to blurring the original (then a flat dark stock card,
+        // then the hardcoded fallback JPEG). JPEG-encoded, suitable for
+        // FileContentResult.
+        private byte[]? TryGetParentArtBytes(
+            MediaBrowser.Controller.Entities.BaseItem item,
+            UserSpoilerBlur userState,
+            byte[] originalBytes,
+            string cacheKey)
+        {
+            try
+            {
+                Guid parentId = Guid.Empty;
+                var parentImageType = MediaBrowser.Model.Entities.ImageType.Primary;
+
+                if (item is Episode ep)
+                {
+                    // Episode Primary is the episode thumbnail (16:9). Series
+                    // Backdrop is also 16:9, so ResizeToMatch's non-uniform
+                    // scale stays proportional.
+                    parentId = ep.SeriesId;
+                    parentImageType = MediaBrowser.Model.Entities.ImageType.Backdrop;
+                }
+                else if (item is Season s)
+                {
+                    // Season Primary is the season poster (2:3). Keep Primary
+                    // here so we feed a 2:3 source into a 2:3 target slot — a
+                    // Series Backdrop would squash 16:9 → 2:3, which is what
+                    // we just fixed in the inverse direction for episodes.
+                    parentId = s.SeriesId;
+                    parentImageType = MediaBrowser.Model.Entities.ImageType.Primary;
+                }
+                else if (item is MediaBrowser.Controller.Entities.Movies.Movie movie)
+                {
+                    // Movie directly opted-in has no safe parent (its own
+                    // Primary IS the spoiler). For collection-opted movies,
+                    // fall back to the collection's Primary art (2:3, same
+                    // aspect as the movie's own poster).
+                    if (!userState.Movies.ContainsKey(movie.Id.ToString("N")))
+                    {
+                        foreach (var collKeyN in userState.Collections.Keys)
+                        {
+                            if (!Guid.TryParse(collKeyN, out var collGuid)) continue;
+                            var bs = _libraryManager.GetItemById(collGuid)
+                                as MediaBrowser.Controller.Entities.Movies.BoxSet;
+                            if (bs == null) continue;
+                            foreach (var child in bs.GetLinkedChildren())
+                            {
+                                if (child != null && child.Id == movie.Id)
+                                {
+                                    parentId = collGuid;
+                                    break;
+                                }
+                            }
+                            if (parentId != Guid.Empty) break;
+                        }
+                    }
+                }
+
+                if (parentId == Guid.Empty) return null;
+                var parent = _libraryManager.GetItemById(parentId);
+                if (parent == null) return null;
+
+                var imgInfo = parent.GetImageInfo(parentImageType, 0);
+                if (imgInfo == null || string.IsNullOrEmpty(imgInfo.Path)) return null;
+                if (!System.IO.File.Exists(imgInfo.Path)) return null;
+
+                // Cache via the same LRU as StockCard — same cacheKey
+                // shape so successive identical requests are free.
+                var fileBytes = System.IO.File.ReadAllBytes(imgInfo.Path);
+                if (fileBytes == null || fileBytes.Length == 0) return null;
+
+                // Resize to roughly match the original dimensions so the
+                // card layout doesn't shift. Use the original's probe
+                // dimensions; cap at MaxDecodeEdgePx via ImageBlurService.
+                //
+                // The resize cache key MUST include the chosen parent id +
+                // image type: for a collection-opted movie the parent is
+                // picked from the requesting user's Collections, so the same
+                // movie/size/mode key can resolve to DIFFERENT collection art
+                // for two users. Without this, user B (movie in Collection B)
+                // could be served user A's Collection A art from the cache.
+                var parentArtKey = cacheKey + ":" + parentId.ToString("N") + ":" + parentImageType;
+                return _blurService.ResizeToMatch(fileBytes, originalBytes, parentArtKey);
+            }
+            catch (Exception ex)
+            {
+                _resolver.WarnRateLimited(
+                    "parent-art:" + ex.GetType().FullName,
+                    $"Spoiler Guard: parent-art fallback failed for item {item?.Id}: {ex.Message}");
+                return null;
+            }
+        }
+
+        private async Task ReplaceWithBlurredAsync(ActionExecutedContext executed, int sigma, string cacheKey, string imageType = "")
+        {
+            if (executed.Result == null) return;
+
+            // HEAD requests carry no body — pass through.
+            if (string.Equals(executed.HttpContext.Request.Method, "HEAD", StringComparison.OrdinalIgnoreCase))
+            {
+                ApplyNoStoreToResponse(executed.HttpContext);
+                return;
+            }
+
+            var (originalBytes, originalContentType) = await ExtractBytesAsync(executed.Result).ConfigureAwait(false);
+            if (originalBytes == null || originalBytes.Length == 0)
+            {
+                MaybeWarnShapeMismatch(executed.Result);
+                ApplyNoStoreToResponse(executed.HttpContext);
+                return;
+            }
+
+            var blurred = _blurService.Blur(originalBytes, sigma, cacheKey);
+            if (blurred == null)
+            {
+                // Blur failed but we already consumed the original
+                // FileStreamResult's stream during ExtractBytesAsync.
+                // Replace the result with the original bytes we captured
+                // so MVC writes a complete body, not an empty one. Force
+                // `no-store` so the browser doesn't permanently cache
+                // this transient failure.
+                executed.Result = new FileContentResult(originalBytes, originalContentType ?? "image/jpeg");
+                ApplyNoStoreToResponse(executed.HttpContext);
+                return;
+            }
+
+            // We always re-encode as JPEG (the blur service does), so set the
+            // content type explicitly. Cache-Control: private, no-store keeps
+            // clients from holding the blurred copy after the user marks the
+            // episode watched or disables Spoiler Guard for the series.
+            // Chapter images get a short browser-cache window via
+            // ApplyNoStoreHeadersDirect so timeline-hover preview thumbs
+            // don't round-trip on every cursor move.
+            executed.Result = new FileContentResult(blurred, "image/jpeg");
+
+            if (executed.HttpContext.Response.HasStarted) return;
+            ApplyNoStoreHeadersDirect(executed.HttpContext, imageType);
+        }
+
+        private static async Task<(byte[]? Bytes, string? ContentType)> ExtractBytesAsync(IActionResult result)
+        {
+            switch (result)
+            {
+                case FileContentResult fcr:
+                    return (fcr.FileContents, fcr.ContentType);
+
+                case FileStreamResult fsr:
+                    if (fsr.FileStream == null) return (null, fsr.ContentType);
+                    using (var ms = new MemoryStream())
+                    {
+                        await fsr.FileStream.CopyToAsync(ms).ConfigureAwait(false);
+                        return (ms.ToArray(), fsr.ContentType);
+                    }
+
+                case PhysicalFileResult pfr:
+                    if (string.IsNullOrEmpty(pfr.FileName) || !File.Exists(pfr.FileName))
+                        return (null, pfr.ContentType);
+                    return (await File.ReadAllBytesAsync(pfr.FileName).ConfigureAwait(false), pfr.ContentType);
+
+                case VirtualFileResult vfr:
+                    if (string.IsNullOrEmpty(vfr.FileName)) return (null, vfr.ContentType);
+                    var fp = vfr.FileName;
+                    return File.Exists(fp)
+                        ? (await File.ReadAllBytesAsync(fp).ConfigureAwait(false), vfr.ContentType)
+                        : (null, vfr.ContentType);
+
+                default:
+                    return (null, null);
+            }
+        }
+
+        private void MaybeWarnShapeMismatch(IActionResult result)
+        {
+            var key = result?.GetType().FullName ?? "(null)";
+            var now = DateTime.UtcNow;
+            var stored = _warnedShapeAt.AddOrUpdate(
+                key,
+                now,
+                (_, last) => (now - last) >= ShapeWarnInterval ? now : last);
+            if (stored != now) return;
+            _logger.Warning($"Spoiler Guard: image action produced an unrecognized result type ({key}); blur is no-op for this shape. Re-warns hourly. Likely a Jellyfin upgrade changed the image controller's return type.");
+        }
+    }
+}

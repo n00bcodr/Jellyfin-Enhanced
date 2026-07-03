@@ -47,6 +47,62 @@
     }
 
     /**
+     * True when the community/critic rating tag must be SUPPRESSED for this
+     * item because it belongs to (or is) a Spoiler-Guarded series and ratings
+     * are actually being hidden for this user. Covers every card surface the
+     * overlay renders on:
+     *   • Series  — the guarded show's own card (home rails, library grid).
+     *   • Season  — a season card of a guarded show. Seasons carry no rating
+     *               of their own, so the renderer would otherwise fall back to
+     *               the SERIES rating and leak it onto the season poster.
+     *   • Episode — an UNWATCHED episode of a guarded show. The server strips
+     *               the episode's own rating, and the client fallback would
+     *               otherwise substitute the series rating. Watched episodes
+     *               are no longer spoilers, so they reveal normally (matching
+     *               the server-side field-strip, which only strips unwatched).
+     *
+     * Gated on ratings ACTUALLY being stripped for this user: if the admin
+     * disabled rating stripping (SpoilerStripRatings === false) or the user
+     * opted to keep ratings (HideRatings === false), this returns false so the
+     * normal rating (including the parent-series fallback) still shows.
+     *
+     * Defensive: only ever true when the master switch is on and JE.spoilerBlur
+     * (with isEnabledFor) is present. Movies, non-guarded series, watched
+     * episodes, and Spoiler-Guard-off all return false — their rating tags
+     * render exactly as before.
+     * @param {object} item - Jellyfin item DTO (or a synthetic {Type, Id, SeriesId, UserData}).
+     * @returns {boolean}
+     */
+    function shouldSuppressRatingTag(item) {
+        try {
+            if (!item) return false;
+            if (!JE.pluginConfig || JE.pluginConfig.SpoilerBlurEnabled !== true) return false;
+            // Only when ratings are truly being hidden for this user.
+            if (JE.pluginConfig.SpoilerStripRatings === false) return false;
+            const sg = JE.spoilerBlur;
+            if (!sg || typeof sg.isEnabledFor !== 'function') return false;
+            if (typeof sg.getUserPrefs === 'function') {
+                var prefs = sg.getUserPrefs() || {};
+                if (prefs.HideRatings === false) return false; // user opted to keep ratings
+            }
+            if (item.Type === 'Series') {
+                return !!item.Id && sg.isEnabledFor(item.Id) === true;
+            }
+            if (item.Type === 'Season') {
+                return !!item.SeriesId && sg.isEnabledFor(item.SeriesId) === true;
+            }
+            if (item.Type === 'Episode') {
+                // Watched episode is no longer a spoiler — reveal its rating.
+                if (item.UserData && item.UserData.Played === true) return false;
+                return !!item.SeriesId && sg.isEnabledFor(item.SeriesId) === true;
+            }
+            return false;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    /**
      * Retrieve a cached rating entry from localStorage or hot cache.
      * @param {string} itemId - Jellyfin item ID.
      * @returns {{tmdb: string|null, critic: number|null}|null} Cached rating or null.
@@ -328,6 +384,21 @@
                     if (el.closest('.je-hidden')) return;
 
                     const itemId = item.Id;
+
+                    // Spoiler Guard: suppress the community/critic rating tag for
+                    // guarded series/seasons/unwatched-episodes when ratings are
+                    // being hidden. Checked BEFORE the hot-cache path so a rating
+                    // cached before the show was guarded (or a season's
+                    // parent-series fallback cached earlier) can't replay onto the
+                    // card. The user's OWN rating is not a spoiler — keep it.
+                    if (shouldSuppressRatingTag(item)) {
+                        markCardTagged(el);
+                        if (typeof JE.appendUserRatingToContainer === 'function') {
+                            JE.appendUserRatingToContainer(el, item, extras);
+                        }
+                        return;
+                    }
+
                     // Check hot cache
                     const cached = getCachedEntry(itemId);
                     if (cached && cached.tmdb !== undefined) {
@@ -341,7 +412,9 @@
                         return;
                     }
 
-                    // Extract ratings from item, falling back to parent series for Season/Episode
+                    // Extract ratings from item, falling back to parent series for
+                    // Season/Episode. (Guarded items already returned above, so the
+                    // fallback here only runs for non-guarded cards.)
                     var sourceItem = item;
                     if (extras.ratingParentSeries && !item.CommunityRating && !item.CriticRating) {
                         sourceItem = extras.ratingParentSeries;
@@ -355,14 +428,19 @@
                         : null;
 
                     const rating = { tmdb, critic };
-                    // Store tmdbId in cache entry so renderFromCache can call appendUserRatingToContainer
+                    // Store tmdbId in cache entry so renderFromCache can call appendUserRatingToContainer.
+                    // Also store the Jellyfin series id / type / played so renderFromCache can
+                    // re-evaluate Spoiler-Guard suppression without the full item DTO.
                     const tmdbId = item.ProviderIds?.Tmdb || item.ProviderIds?.tmdb || null;
                     const seriesTmdbId = extras?.parentSeries?.ProviderIds?.Tmdb || extras?.parentSeries?.ProviderIds?.tmdb || null;
                     const tmdbMediaType = item.Type === 'Series' ? 'tv' : 'movie';
                     setCachedEntry(itemId, { ...rating, tmdbId, seriesTmdbId, tmdbMediaType,
                         seasonNumber: item.IndexNumber ?? null,
                         episodeNumber: item.Type === 'Episode' ? item.IndexNumber : null,
-                        parentSeasonNumber: item.Type === 'Episode' ? item.ParentIndexNumber : null });
+                        parentSeasonNumber: item.Type === 'Episode' ? item.ParentIndexNumber : null,
+                        sgType: item.Type,
+                        sgSeriesId: item.SeriesId || (item.Type === 'Series' ? item.Id : null),
+                        sgPlayed: item.UserData ? item.UserData.Played === true : false });
 
                     if (tmdb || critic !== null) {
                         applyRatingTag(el, rating);
@@ -379,6 +457,16 @@
                     if (el.closest('.je-hidden')) return true;
                     const cached = getCachedEntry(itemId);
                     if (!cached) return false;
+                    // Re-evaluate Spoiler-Guard suppression from the guard fields
+                    // stashed at cache time — a rating cached before the show was
+                    // guarded must not replay onto the card. Keep the user rating.
+                    if (shouldSuppressRatingTag({ Type: cached.sgType, Id: itemId, SeriesId: cached.sgSeriesId, UserData: { Played: cached.sgPlayed } })) {
+                        markCardTagged(el);
+                        if (typeof JE.appendUserRatingToContainer === 'function' && (cached.tmdbId || cached.seriesTmdbId)) {
+                            JE.appendUserRatingToContainer(el, { Type: cached.sgType, ProviderIds: cached.tmdbId ? { Tmdb: cached.tmdbId } : {}, SeriesProviderIds: cached.seriesTmdbId ? { Tmdb: cached.seriesTmdbId } : {} });
+                        }
+                        return true;
+                    }
                     if (cached.tmdb || cached.critic !== null) {
                         applyRatingTag(el, cached);
                     }
@@ -406,6 +494,19 @@
                 renderFromServerCache: function(el, entry) {
                     if (isCardAlreadyTagged(el)) return;
                     if (shouldIgnoreElement(el)) return;
+                    // Series / Season guard: the server tag-cache entry for a
+                    // guarded show's season CAN carry the series-fallback rating
+                    // (seasons have no rating of their own, and the server's
+                    // tag-cache strip exempts S0/S1), so suppress it here. Episodes
+                    // are intentionally NOT gated on this path: the server strip is
+                    // watched-aware (nulls unwatched, keeps watched), and this path
+                    // has no Played info — suppressing episodes here would wrongly
+                    // hide a WATCHED guarded episode's real rating.
+                    if ((entry.Type === 'Series' || entry.Type === 'Season')
+                        && shouldSuppressRatingTag({ Type: entry.Type, Id: entry.Id, SeriesId: entry.SeriesId })) {
+                        markCardTagged(el);
+                        return;
+                    }
                     const tmdb = entry.CommunityRating != null
                         ? parseFloat(entry.CommunityRating).toFixed(1)
                         : null;
