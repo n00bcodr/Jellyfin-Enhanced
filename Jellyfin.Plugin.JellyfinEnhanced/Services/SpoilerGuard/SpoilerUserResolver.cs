@@ -26,6 +26,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static readonly TimeSpan PerKeyWarnInterval = TimeSpan.FromHours(1);
         private static readonly ConcurrentDictionary<string, DateTime> _warnedAt = new();
 
+        // Per-browser identity cookie the web client sets on load (see
+        // js/enhanced/spoiler-blur.js). Browsers attach it to every same-origin
+        // request INCLUDING anonymous <img>/CSS-background image fetches, which
+        // on Jellyfin 12 carry no other user identity (the image endpoint ignores
+        // the api_key query param for identity, and <img> tags can't send an
+        // Authorization header). We trust it ONLY to disambiguate among users
+        // that actually have an active session from the request IP, so a forged
+        // value can't impersonate a user who isn't even present.
+        public const string SpoilerUidCookie = "je-spoiler-uid";
+
+        // Short-TTL cache of the per-IP session scan. A single page load fires a
+        // burst of image requests from one IP; without this each one would
+        // re-enumerate ISessionManager.Sessions (O(sessions) + an allocation),
+        // which is exactly the per-image latency that shows up as the BlurHash
+        // placeholder lingering — and it gets worse the more sessions exist
+        // (e.g. a Seerr instance polling the server). Cache the scan result for a
+        // couple of seconds so the burst pays for one scan, not dozens.
+        private static readonly TimeSpan IpScanCacheTtl = TimeSpan.FromSeconds(2);
+        private static readonly ConcurrentDictionary<string, IpScanCacheEntry> _ipScanCache = new();
+
+        private sealed class IpScanCacheEntry
+        {
+            public required DateTime CachedAt { get; init; }
+            public required IReadOnlyList<Guid> Recent { get; init; }
+            public required IReadOnlyCollection<Guid> IpUsers { get; init; }
+            public required Guid? Best { get; init; }
+        }
+
         private readonly UserConfigurationManager _userConfigManager;
         private readonly ISessionManager _sessionManager;
         private readonly Logger _logger;
@@ -73,7 +101,72 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 return new[] { primary.Value };
             }
-            return ScanActiveSessionUsers(httpContext);
+
+            // Anonymous request (browser <img>/CSS-background, or a native
+            // TV/mobile image fetch). Resolve by the users with a session from
+            // the request IP (cached briefly — see below).
+            var (recent, ipUsers, best) = ScanActiveSessionUsersCached(httpContext);
+
+            // Per-browser cookie disambiguation. The je-spoiler-uid cookie pins
+            // THIS request to its browser's user — trusted ONLY when that user
+            // genuinely has a session from this IP (so a stale/forged value can't
+            // impersonate an absent user). We validate against ALL IP sessions,
+            // not just recently-active ones, because passively viewing images
+            // doesn't refresh a session — a quietly-scrolling user would
+            // otherwise age out of the active window and lose their own identity.
+            if (httpContext.Request.Cookies.TryGetValue(SpoilerUidCookie, out var raw)
+                && Guid.TryParse(raw, out var cookieUid)
+                && cookieUid != Guid.Empty
+                && ipUsers.Contains(cookieUid))
+            {
+                return new[] { cookieUid };
+            }
+
+            if (recent.Count > 1)
+            {
+                // Shared IP with no usable cookie (native client, or a
+                // forged/stale value naming an absent user): return ALL active
+                // users so the image filter fails CLOSED by scope (protect if
+                // ANY opted in) rather than leaking the original bytes.
+                WarnRateLimited(
+                    "shared-ip-nocookie",
+                    $"Spoiler Guard resolver: {recent.Count} users active from one IP with no matching {SpoilerUidCookie} cookie (native client, or cookie names an absent user). Disambiguating by spoiler scope. Configure Jellyfin KnownProxies so proxied requests carry the real client IP to restore per-user precision.");
+                return recent;
+            }
+
+            if (recent.Count == 1) return recent;
+            return best.HasValue ? new[] { best.Value } : Array.Empty<Guid>();
+        }
+
+        // Cached wrapper over the session scan. Keyed by normalized request IP;
+        // entries live for IpScanCacheTtl so a page-load burst of image requests
+        // scans ISessionManager.Sessions once instead of once per image.
+        private (IReadOnlyList<Guid> Recent, IReadOnlyCollection<Guid> IpUsers, Guid? Best) ScanActiveSessionUsersCached(Microsoft.AspNetCore.Http.HttpContext httpContext)
+        {
+            var remoteIpRaw = httpContext.Connection.RemoteIpAddress;
+            if (remoteIpRaw == null) return (Array.Empty<Guid>(), Array.Empty<Guid>(), null);
+            var ipKey = NormalizeIp(remoteIpRaw).ToString();
+            var now = DateTime.UtcNow;
+
+            if (_ipScanCache.TryGetValue(ipKey, out var hit) && (now - hit.CachedAt) < IpScanCacheTtl)
+            {
+                return (hit.Recent, hit.IpUsers, hit.Best);
+            }
+
+            var scanned = ScanActiveSessionUsers(httpContext);
+            _ipScanCache[ipKey] = new IpScanCacheEntry { CachedAt = now, Recent = scanned.Recent, IpUsers = scanned.IpUsers, Best = scanned.Best };
+
+            // Opportunistic prune so the cache can't grow unbounded across many
+            // distinct client IPs over a long uptime.
+            if (_ipScanCache.Count > 512)
+            {
+                foreach (var kvp in _ipScanCache)
+                {
+                    if ((now - kvp.Value.CachedAt) >= IpScanCacheTtl) _ipScanCache.TryRemove(kvp.Key, out _);
+                }
+            }
+
+            return (scanned.Recent, scanned.IpUsers, scanned.Best);
         }
 
         // Loads (and caches per-request, keyed by userId) the user's
@@ -127,10 +220,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         //     window. The caller (image filter) resolves this by spoiler
         //     scope; the single-identity caller (field-strip) treats it as
         //     "no single user" and passes through.
-        private IReadOnlyList<Guid> ScanActiveSessionUsers(Microsoft.AspNetCore.Http.HttpContext httpContext)
+        private (IReadOnlyList<Guid> Recent, IReadOnlyCollection<Guid> IpUsers, Guid? Best) ScanActiveSessionUsers(Microsoft.AspNetCore.Http.HttpContext httpContext)
         {
             var remoteIpRaw = httpContext.Connection.RemoteIpAddress;
-            if (remoteIpRaw == null) return Array.Empty<Guid>();
+            if (remoteIpRaw == null) return (Array.Empty<Guid>(), Array.Empty<Guid>(), null);
             var remoteIp = NormalizeIp(remoteIpRaw);
 
             // Per-session try/catch instead of one outer try around the
@@ -141,6 +234,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             SessionInfo? best = null;
             Guid? bestUser = null;
             var recentlyActiveUsers = new HashSet<Guid>();
+            // Every distinct user with a session from this IP, regardless of how
+            // recently active — the cookie-disambiguation set (a passively
+            // image-viewing user stays here even after their session idles).
+            var allIpUsers = new HashSet<Guid>();
             var now = DateTime.UtcNow;
 
             // Snapshot the live IEnumerable INSIDE the outer try.
@@ -159,7 +256,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 WarnRateLimited(
                     "session-list:" + ex.GetType().FullName,
                     $"Spoiler Guard resolver: ISessionManager.Sessions enumeration threw: {ex.Message}");
-                return Array.Empty<Guid>();
+                return (Array.Empty<Guid>(), Array.Empty<Guid>(), null);
             }
 
             foreach (var s in sessions)
@@ -169,6 +266,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if (s.UserId == Guid.Empty) continue;
                     if (!RemoteEndpointIpEquals(s.RemoteEndPoint, remoteIp)) continue;
 
+                    allIpUsers.Add(s.UserId);
                     if ((now - s.LastActivityDate) < SharedIpAmbiguityWindow)
                     {
                         recentlyActiveUsers.Add(s.UserId);
@@ -188,18 +286,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            if (recentlyActiveUsers.Count > 1)
-            {
-                // Shared-IP ambiguity: return ALL recently-active users so the
-                // image filter can protect the item if any of them opted in
-                // (fail-closed by scope), instead of leaking the original.
-                WarnRateLimited(
-                    "shared-ip:" + remoteIp.ToString(),
-                    $"Spoiler Guard resolver: ambiguous session-by-IP match for {remoteIp} — {recentlyActiveUsers.Count} distinct users active within {SharedIpAmbiguityWindow.TotalSeconds}s. Disambiguating by spoiler scope (protect if any candidate opted in). To pin requests to one user, configure Jellyfin's KnownProxies if behind a reverse proxy so the request IP reflects the actual client.");
-                return recentlyActiveUsers.ToArray();
-            }
-
-            return bestUser.HasValue ? new[] { bestUser.Value } : Array.Empty<Guid>();
+            // Return the recently-active set (for the no-cookie fail-closed
+            // fallback), the full IP-user set (for cookie validation), and the
+            // single best match. ResolveCandidateUserIds applies the cookie
+            // first, then falls back to fail-closed-by-scope.
+            return (recentlyActiveUsers.ToArray(), allIpUsers, bestUser);
         }
 
         // Returns the canonical IPAddress for comparison: IPv4-mapped-IPv6

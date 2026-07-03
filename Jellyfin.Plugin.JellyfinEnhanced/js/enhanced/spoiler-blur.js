@@ -899,24 +899,43 @@
         }
     }
 
+    /**
+     * Writes a per-browser identity cookie (je-spoiler-uid=<currentUserId>) so
+     * the server-side image filter can attribute anonymous <img>/CSS-background
+     * image requests to the right user.
+     *
+     * Why a cookie and not a URL param: on Jellyfin 12 the image endpoint no
+     * longer accepts the api_key query param for USER identity (only an
+     * Authorization header authenticates, and <img> tags can't send headers).
+     * An earlier build globally rewrote HTMLImageElement.src to append api_key;
+     * that both stopped working for identity on v12 AND, because it mutated URLs
+     * after the browser had begun loading them, double-fetched every card image
+     * (native → BlurHash → api_key → BlurHash) — a visible flicker on EVERY show.
+     * A cookie rides along automatically with same-origin image requests without
+     * touching the URL, so there is no re-fetch and no flicker.
+     *
+     * Trust model: this is an identity HINT, not an auth token — no secret rides
+     * in it. The server (SpoilerUserResolver) trusts it ONLY to pick between
+     * users that already have an active session from the request IP, so a
+     * forged/stale value can't impersonate an absent user. Session-scoped
+     * (clears on browser close) and refreshed on every load, so switching
+     * accounts updates it. Do NOT reintroduce image-URL rewriting here.
+     */
+    function setIdentityCookie() {
+        try {
+            var uid = (typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId)
+                ? ApiClient.getCurrentUserId() : null;
+            if (uid) {
+                document.cookie = 'je-spoiler-uid=' + encodeURIComponent(uid) + '; path=/; SameSite=Lax';
+            }
+        } catch (e) {
+            console.warn(logPrefix, 'identity cookie set failed:', e);
+        }
+    }
+
     function init() {
         if (!JE.pluginConfig || JE.pluginConfig.SpoilerBlurEnabled !== true) return;
-        // NOTE: we deliberately do NOT rewrite image URLs client-side.
-        //
-        // The server-side SpoilerBlurImageFilter identifies the requesting
-        // user on its own — by ClaimsPrincipal for authenticated requests
-        // (native TV/mobile clients, and the web client's own api_key'd
-        // requests) and by session-by-IP for anonymous browser <img>/CSS
-        // background requests — so it blurs the right bytes for every client
-        // without any client help. An earlier build globally patched
-        // HTMLImageElement.src / CSSStyleDeclaration to append api_key so the
-        // filter could attribute anonymous <img> loads. That changed image
-        // URLs AFTER the browser had already begun loading the native URL,
-        // forcing a second fetch of every card image (native → BlurHash →
-        // api_key → BlurHash again) — visible as a blur/flicker on EVERY
-        // show, guarded or not. Since the server resolves the user by session
-        // anyway, the rewrite bought no protection and only cost jank, so it
-        // is gone. Do not reintroduce URL rewriting here.
+        setIdentityCookie();
         try { installWatchedMutationHook(); }
         catch (e) { console.warn(logPrefix, 'watched-mutation hook install failed:', e); }
         loadState();
