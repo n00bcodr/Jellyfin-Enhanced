@@ -11,6 +11,7 @@ using MediaBrowser.Controller.Chapters;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Trickplay;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -494,6 +495,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         }
                     }
                 }
+                // Progressive trickplay reveal, mirroring the chapter reveal
+                // above: a scrubbing-preview tile SHEET whose entire timeline
+                // range is before the user's resume point holds only
+                // already-watched scenes, so pass it through unblurred. The
+                // played case is handled earlier, so here the movie is
+                // partially watched (PlaybackPositionTicks > 0). Tiles that
+                // straddle or lead the resume point still blur (fail-closed).
+                if (isTrickplay
+                    && movieUd != null && !movieUd.Played && movieUd.PlaybackPositionTicks > 0
+                    && await TrickplayTileFullyWatchedAsync(context, movie.Id, movieUd.PlaybackPositionTicks).ConfigureAwait(false))
+                {
+                    RegisterNoStoreOnStarting(context.HttpContext, imageType);
+                    await next().ConfigureAwait(false);
+                    return;
+                }
                 // Fall through to blur.
             }
             else
@@ -537,6 +553,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         // response headers can be flushed inside next()'s
                         // execution, so a post-next() header write would
                         // be a no-op.
+                        RegisterNoStoreOnStarting(context.HttpContext);
+                        await next().ConfigureAwait(false);
+                        return;
+                    }
+                    // Progressive trickplay reveal for a partially-watched
+                    // episode: tile sheets whose whole range is before the
+                    // resume point are scenes already seen — pass them through.
+                    if (isTrickplay
+                        && userData != null && userData.PlaybackPositionTicks > 0
+                        && await TrickplayTileFullyWatchedAsync(context, episode.Id, userData.PlaybackPositionTicks).ConfigureAwait(false))
+                    {
                         RegisterNoStoreOnStarting(context.HttpContext);
                         await next().ConfigureAwait(false);
                         return;
@@ -783,6 +810,53 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (!context.ActionArguments.TryGetValue("imageIndex", out var raw) || raw == null) return false;
             if (raw is int i) { imageIndex = i; return true; }
             return int.TryParse(raw.ToString(), out imageIndex);
+        }
+
+        // Exclusive END time (in ticks) of the trickplay tile SHEET being
+        // requested (route GetTrickplayTileImage(itemId, width, index)), or null
+        // if it can't be determined. A `width` sheet packs TileWidth*TileHeight
+        // thumbnails, each `Interval` ms apart, so tile N covers the timeline
+        // range [N*perSheet*Interval, (N+1)*perSheet*Interval) ms. Resolves
+        // ITrickplayManager from the request scope (this filter is a singleton;
+        // the manager is request-scoped) rather than via constructor injection.
+        private static async Task<long?> TryGetTrickplayTileEndTicksAsync(ActionExecutingContext context, Guid itemId)
+        {
+            if (!context.ActionArguments.TryGetValue("width", out var wRaw) || wRaw == null) return null;
+            if (!context.ActionArguments.TryGetValue("index", out var iRaw) || iRaw == null) return null;
+            if (!int.TryParse(wRaw.ToString(), out var width)) return null;
+            if (!int.TryParse(iRaw.ToString(), out var tileIndex) || tileIndex < 0) return null;
+
+            if (context.HttpContext.RequestServices.GetService(typeof(ITrickplayManager)) is not ITrickplayManager mgr)
+                return null;
+
+            var resolutions = await mgr.GetTrickplayResolutions(itemId).ConfigureAwait(false);
+            if (resolutions == null || !resolutions.TryGetValue(width, out var info)) return null;
+
+            long perSheet = (long)info.TileWidth * info.TileHeight;
+            if (perSheet <= 0 || info.Interval <= 0) return null;
+            long endMs = (tileIndex + 1L) * perSheet * info.Interval;
+            return endMs * TimeSpan.TicksPerMillisecond;
+        }
+
+        // True when the requested trickplay tile sheet's timeline range lies
+        // ENTIRELY at or before the user's resume point — i.e. every thumbnail
+        // in it is a scene already watched, so it's safe to pass through
+        // unblurred. Fail-CLOSED (returns false → blur) on any lookup failure
+        // or a tile that straddles / is ahead of the resume point.
+        private async Task<bool> TrickplayTileFullyWatchedAsync(ActionExecutingContext context, Guid itemId, long watchedThroughTicks)
+        {
+            try
+            {
+                var tileEnd = await TryGetTrickplayTileEndTicksAsync(context, itemId).ConfigureAwait(false);
+                return tileEnd.HasValue && tileEnd.Value <= watchedThroughTicks;
+            }
+            catch (Exception ex)
+            {
+                _resolver.WarnRateLimited(
+                    "image-trickplay-lookup:" + ex.GetType().FullName,
+                    $"Spoiler Guard: trickplay lookup failed for {itemId}: {ex.Message}");
+                return false;
+            }
         }
 
         // Query params Jellyfin's image controller uses to shape the
