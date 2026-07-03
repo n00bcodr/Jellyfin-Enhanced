@@ -9,7 +9,7 @@ Settings for custom branding, icon styles, extras, timeouts, and more — all fo
 Upload your own logos, banners, and favicon to personalize your Jellyfin instance.
 
 !!! info "Requirements"
-    The [File Transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) must be installed.
+    On **Jellyfin 10.11**, the [File Transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) must be installed. On **Jellyfin 12**, Enhanced serves branding assets itself — no extra plugin needed.
 
 | Setting | Description |
 |---|---|

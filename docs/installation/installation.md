@@ -5,9 +5,12 @@
 
     **Prerequisites:**
 
-    - Jellyfin server version 10.11.x
+    - Jellyfin server version **10.11.x** or **12.x**
     - Admin access to your Jellyfin server
     - Modern web browser (Chrome, Firefox, Edge, Safari)
+
+    !!! note "Jellyfin 12"
+        On **Jellyfin 12**, Jellyfin Enhanced injects its client script and branding assets itself — the **File Transformation** plugin (Step 3 below) is **not required and is not compatible** with Jellyfin 12. Skip it on 12. File Transformation remains recommended on **10.11**.
 
 
 ## Standard Installation
@@ -31,12 +34,12 @@
 3. Click **Install**
 4. Wait for the installation to complete
 
-### Step 3: Install File Transformation Plugin (Recommended)
+### Step 3: Install File Transformation Plugin (Recommended — Jellyfin 10.11 only)
 
 <!-- use a custom title -->
 !!! info "Important"
 
-    **It is highly recommended to install the [File Transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)**
+    **Skip this step on Jellyfin 12** — Enhanced self-injects there and File Transformation is not compatible. On **Jellyfin 10.11** it is highly recommended to install the [File Transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)**
 
     Why?
 
