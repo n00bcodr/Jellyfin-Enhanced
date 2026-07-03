@@ -197,7 +197,7 @@ A short list of things Spoiler Guard deliberately leaves alone:
 - **Series titles, posters, and series-level overviews** — the user-facing series identity. You opted in for this series, so its name and "this show is about X" description stay visible. Per-episode plot details are what get hidden.
 - **Collection posters** — same reasoning. The collection art is your entry point.
 - **The "this episode is here" indicator** — episode rows and counts in the season grid stay so you can navigate. Only the thumbnail / title / synopsis / chapters etc. are hidden.
-- **Season 0 (Specials) and Season 1** — these always pass through. You need an entry point into a brand-new show without all seasons being walls of placeholders.
+- **Season 0 (Specials) and Season 1 *posters*** — the season poster and season overview always pass through so you have an entry point into a brand-new show without every season being a wall of placeholders. Unwatched **episodes** inside Season 0/1 are still protected (their thumbnails/titles/synopses are hidden until you watch them) — it's only the season-level art that's exempt.
 - **External-player playback** — if you launch playback in an external player (mpv, VLC, infuse, etc.), that player fetches metadata directly from Jellyfin's regular APIs and may show un-stripped fields. Spoiler Guard runs inside the JE plugin's response filters, which external players bypass.
 
 ---

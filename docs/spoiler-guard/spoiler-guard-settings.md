@@ -41,7 +41,7 @@ Useful when partial-blur feels like a tease — the user sees a consistent grid 
 
 The original image runs through SkiaSharp's `CreateBlur` (a separable Gaussian, native code, ~130 ms on a 1280×720 frame). Silhouettes and dominant colours stay visible — useful for users who prefer a softer "something is there" hint over a clean placeholder.
 
-The **Blur intensity** slider (5-100, default 40) controls the sigma. 5 is mild, 40 hides scene content while keeping silhouettes and dominant colours visible, 100 is a solid blob. The slider also applies in Show stock cards mode — it sets the intensity of the fallback blur used when no safe parent art is available.
+The **Blur intensity** field (5-100, default 40) controls the sigma. 5 is mild, 40 hides scene content while keeping silhouettes and dominant colours visible, 100 is a solid blob. The value also applies in Show stock cards mode — it sets the intensity of the fallback blur used when no safe parent art is available.
 
 ![Heavily blurred episode card](web-03-bluey-s2.png)
 

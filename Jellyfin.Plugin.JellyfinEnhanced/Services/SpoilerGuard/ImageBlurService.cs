@@ -105,8 +105,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             catch (Exception ex)
             {
                 // Decoder failed on probe — fall through to default 600x900.
-                // Rate-limited so a malformed-image flood (corrupt poster
-                // somewhere in the library) can't fill the log.
+                // Logged at Debug (suppressed in normal operation) so a
+                // malformed-image flood (a corrupt poster somewhere in the
+                // library) can't fill the log.
                 _logger.Debug($"Spoiler Guard stock-card probe failed for input ({input?.Length ?? 0} bytes): {ex.GetType().Name}: {ex.Message}. Using default dims 600x900.");
             }
 

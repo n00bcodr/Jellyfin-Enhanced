@@ -421,7 +421,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // movie's own UserData.Played. Mirrors StripItem.
                 if (parent is MediaBrowser.Controller.Entities.Movies.Movie movieParent)
                 {
-                    if (!IsMovieIdInSpoilerScope(userState, movieParent.Id)) return false;
+                    if (!_resolver.IsMovieInSpoilerScope(userState,movieParent.Id)) return false;
                     if (ResolvePlayedServerSide(userId, itemId)) return false;
                     return true;
                 }
@@ -519,7 +519,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // (like Series); blurring its art/Overview would spoil the
             // user's own navigation. The collection toggle's effect is on
             // the MOVIES inside (handled in the Movie arm via
-            // IsMovieInSpoilerScope / IsMovieIdInSpoilerScope).
+            // SpoilerUserResolver.IsMovieInSpoilerScope).
 
             // Movie path: a movie is in spoiler scope when either it's
             // directly opted in (Movies dict) OR it's a child of a
@@ -527,7 +527,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie)
             {
                 if (item.Id == Guid.Empty) return;
-                if (!IsMovieIdInSpoilerScope(userState, item.Id)) return;
+                if (!_resolver.IsMovieInSpoilerScope(userState,item.Id)) return;
                 bool moviePlayed;
                 long moviePlayPos = 0;
                 if (item.UserData != null)
@@ -660,34 +660,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // (collection) the user has opted in. BoxSets are NOT direct
         // parents in Jellyfin's data model — they reference movies via
         // LinkedChildren.
-        private bool IsMovieIdInSpoilerScope(UserSpoilerBlur userState, Guid movieId)
-        {
-            if (movieId == Guid.Empty) return false;
-            if (userState.Movies.ContainsKey(movieId.ToString("N"))) return true;
-            if (userState.Collections.Count == 0) return false;
-            try
-            {
-                foreach (var collKeyN in userState.Collections.Keys)
-                {
-                    if (!Guid.TryParse(collKeyN, out var collGuid)) continue;
-                    var bs = _libraryManager.GetItemById(collGuid)
-                        as MediaBrowser.Controller.Entities.Movies.BoxSet;
-                    if (bs == null) continue;
-                    foreach (var child in bs.GetLinkedChildren())
-                    {
-                        if (child != null && child.Id == movieId) return true;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _resolver.WarnRateLimited(
-                    "fieldstrip-movie-collection:" + ex.GetType().FullName,
-                    $"Spoiler Guard field strip: IsMovieIdInSpoilerScope linked-children walk failed for {movieId}: {ex.Message}");
-            }
-            return false;
-        }
-
         private bool ResolvePlayedServerSide(Guid userId, Guid itemId)
         {
             try
@@ -879,7 +851,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // is still nulled below to suppress autocomplete
                     // substring leak of any non-title-bearing match).
                     if (actualItem is not MediaBrowser.Controller.Entities.Movies.Movie) continue;
-                    if (!IsMovieIdInSpoilerScope(userState, hint.Id)) continue;
+                    if (!_resolver.IsMovieInSpoilerScope(userState,hint.Id)) continue;
                     if (ResolvePlayedServerSide(userId, hint.Id)) continue;
                 }
 
