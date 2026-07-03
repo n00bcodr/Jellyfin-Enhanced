@@ -953,7 +953,7 @@
                                     <div>
                                         <strong>Requests Page</strong> shows a Requests Button in sidebar with a dedicated view of active downloads from Sonarr/Radarr and requests from Seerr.
                                         <div id="requestsPageRequirementsLine" style="display: none; margin-top: 10px;">
-                                            <strong>Requirements:</strong> <span id="requestsPageRequirementsList">Configure Sonarr/Radarr and Seerr URLs and API keys.</span>
+                                            <strong>Requirements:</strong> <span id="requestsPageRequirementsList">Configure Sonarr and/or Radarr, plus Seerr, URLs and API keys.</span>
                                         </div>
                                     </div>
                                 </div>
@@ -3992,12 +3992,13 @@
             });
         }
 
-        // Requests Page requirements line — hides once Sonarr, Radarr AND
-        // Seerr all have URL + API key configured, shows with a dynamic list
-        // of what's still missing otherwise. The surrounding info banner
-        // itself stays visible; only the "Requirements:" sentence toggles.
-        // Runs off the live DOM so typing a URL/API key updates immediately
-        // without needing a save-and-reload.
+        // Requests Page requirements line — hides once at least one of Sonarr/Radarr
+        // AND Seerr have URL + API key configured (Sonarr and Radarr are each optional
+        // on their own — the backend just skips whichever one is unconfigured — but at
+        // least one of the two is needed for the page to show anything). Shows a dynamic
+        // list of what's still missing otherwise. The surrounding info banner itself
+        // stays visible; only the "Requirements:" sentence toggles. Runs off the live DOM
+        // so typing a URL/API key updates immediately without needing a save-and-reload.
         function updateRequestsRequirementsBanner() {
             var line = document.getElementById('requestsPageRequirementsLine');
             if (!line) return;
@@ -4028,22 +4029,19 @@
             var seerrOK = seerrUrlsEl && (seerrUrlsEl.value || '').trim().length > 0 &&
                           seerrKeyEl && (seerrKeyEl.value || '').trim().length > 0;
 
-            if (sonarrOK && radarrOK && seerrOK) {
+            if ((sonarrOK || radarrOK) && seerrOK) {
                 line.style.display = 'none';
                 return;
             }
 
             var missing = [];
-            if (!sonarrOK) missing.push('Sonarr');
-            if (!radarrOK) missing.push('Radarr');
+            if (!sonarrOK && !radarrOK) missing.push('Sonarr or Radarr');
             if (!seerrOK) missing.push('Seerr');
             var missingText;
             if (missing.length === 1) {
                 missingText = missing[0] + ' (URL and API key)';
-            } else if (missing.length === 2) {
-                missingText = missing.join(' and ') + ' (URL and API key each)';
             } else {
-                missingText = missing.slice(0, -1).join(', ') + ', and ' + missing[missing.length - 1] + ' (URL and API key each)';
+                missingText = missing.join(' and ') + ' (URL and API key each)';
             }
             if (list) list.textContent = 'Still to configure: ' + missingText + '.';
             line.style.display = '';
