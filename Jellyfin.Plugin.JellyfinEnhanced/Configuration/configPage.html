@@ -4918,13 +4918,14 @@
             config.SpoilerBlurMode = (__sbModeSave && __sbModeSave.value === 'blur') ? 'blur' : 'hide';
             var __sbPlaceholderSave = document.querySelector('#spoilerOverviewPlaceholder');
             if (__sbPlaceholderSave) {
-                // Strip HTML tags so a stored-XSS gadget via the
-                // placeholder can't reach a JE consumer that uses
-                // innerHTML on Overview. The server-side filter inserts
-                // this string verbatim into BaseItemDto.Overview;
-                // defense-in-depth.
+                // Remove every character that could open a tag, attribute or
+                // template context so this stored placeholder can't become markup
+                // in a JE consumer that uses innerHTML on Overview (the server
+                // inserts it into BaseItemDto.Overview; defense-in-depth). A single
+                // character-class strip is complete — unlike a tag-shaped regex it
+                // can't be bypassed by nested or split tags.
                 var __raw = (__sbPlaceholderSave.value || 'Spoiler Guard activated').slice(0, 200);
-                __raw = __raw.replace(/<\/?[^>]+>/g, '').replace(/[<>"'`]/g, '');
+                __raw = __raw.replace(/[<>"'`]/g, '');
                 config.SpoilerOverviewPlaceholder = __raw || 'Spoiler Guard activated';
             }
 
