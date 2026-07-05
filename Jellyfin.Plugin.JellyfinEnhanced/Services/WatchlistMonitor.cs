@@ -80,16 +80,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Handle library item added events to check if they match pending watchlist items.
-        private void OnItemAdded(object? sender, ItemChangeEventArgs e)
-        {
-            _ = ProcessItemForWatchlist(e, "ItemAdded");
-        }
-
+        private void OnItemAdded(object? sender, ItemChangeEventArgs e) => ScheduleWatchlistCheck(e, "ItemAdded");
 
         // Handle library item updated events (fires after metadata refresh) to check if they match pending watchlist items.
-        private void OnItemUpdated(object? sender, ItemChangeEventArgs e)
+        private void OnItemUpdated(object? sender, ItemChangeEventArgs e) => ScheduleWatchlistCheck(e, "ItemUpdated");
+
+        // ItemAdded/ItemUpdated fire synchronously on Jellyfin's library-scan thread. Do only
+        // the cheap Movie/Series reject here, then run the Seerr request lookup + per-user watchlist
+        // writes off-thread. (Awaiting ProcessItemForWatchlist is NOT enough: GetAllJellyseerrRequests
+        // returns synchronously on a cache hit, so the continuation would run on the scan thread.)
+        private void ScheduleWatchlistCheck(ItemChangeEventArgs e, string eventType)
         {
-            _ = ProcessItemForWatchlist(e, "ItemUpdated");
+            var kind = e.Item?.GetBaseItemKind();
+            if (kind != BaseItemKind.Movie && kind != BaseItemKind.Series) return;
+            _ = Task.Run(() => ProcessItemForWatchlist(e, eventType));
         }
 
 
