@@ -31,6 +31,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private Timer? _debounceSaveTimer;
         private volatile bool _dirty;
 
+        // Bump whenever a TagCacheEntry field the STRIP paths depend on is added,
+        // so a cache serialized by an older build is discarded and rebuilt. v2
+        // added SeriesId, which the Spoiler Guard tag-strip requires: a v1 cache
+        // has null SeriesId on every episode, so the strip skips them and unstripped
+        // ratings leak onto guarded cards via renderFromServerCache. Discarding
+        // starts empty (client falls back to the live/per-batch strip) until rebuild.
+        private const int CurrentCacheSchemaVersion = 2;
+
         // User access cache: avoids expensive GetItemIds query on every request
         private readonly ConcurrentDictionary<string, (HashSet<string> Ids, DateTime CachedAt)> _userAccessCache = new();
         private static readonly TimeSpan UserAccessCacheTtl = TimeSpan.FromSeconds(60);
@@ -202,11 +210,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var data = JsonSerializer.Deserialize<TagCacheDiskFormat>(json);
                 if (data?.Items != null)
                 {
+                    // Discard a cache written by an older schema (e.g. predating
+                    // SeriesId) rather than serving entries the strip paths can't
+                    // process. Starting empty is safe — the Build task rebuilds it.
+                    if (data.SchemaVersion != CurrentCacheSchemaVersion)
+                    {
+                        _logger.Info($"[TagCache] On-disk cache schema v{data.SchemaVersion} != current v{CurrentCacheSchemaVersion}; discarding {data.Items.Count} entries and rebuilding on next scan.");
+                        return;
+                    }
                     var loaded = new ConcurrentDictionary<string, TagCacheEntry>(data.Items);
                     _cache = loaded;
                     Interlocked.Exchange(ref _version, data.Version);
                     Interlocked.Exchange(ref _lastModified, data.LastModified);
-                    _logger.Info($"[TagCache] Loaded {_cache.Count} entries from disk (v{data.Version})");
+                    _logger.Info($"[TagCache] Loaded {_cache.Count} entries from disk (v{data.Version}, schema v{data.SchemaVersion})");
                 }
             }
             catch (Exception ex)
@@ -229,6 +245,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     var data = new TagCacheDiskFormat
                     {
+                        SchemaVersion = CurrentCacheSchemaVersion,
                         Version = Interlocked.Read(ref _version),
                         LastModified = Interlocked.Read(ref _lastModified),
                         Items = new Dictionary<string, TagCacheEntry>(_cache)
@@ -292,6 +309,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var kind = item.GetBaseItemKind();
                 var isContainer = kind == BaseItemKind.Series || kind == BaseItemKind.Season;
 
+                // Capture parent series ID for Episodes/Seasons so the Spoiler
+                // Guard filter can strip unwatched-episode entries without a
+                // library lookup per entry on every GetTagCache request.
+                string? seriesIdN = null;
+                if (item is MediaBrowser.Controller.Entities.TV.Episode tcEp)
+                {
+                    if (tcEp.SeriesId != Guid.Empty) seriesIdN = tcEp.SeriesId.ToString("N");
+                }
+                else if (item is MediaBrowser.Controller.Entities.TV.Season tcSeason)
+                {
+                    if (tcSeason.SeriesId != Guid.Empty) seriesIdN = tcSeason.SeriesId.ToString("N");
+                }
+
                 var entry = new TagCacheEntry
                 {
                     Type = kind.ToString(),
@@ -299,7 +329,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     Genres = item.Genres,
                     CommunityRating = item.CommunityRating,
                     CriticRating = item.CriticRating,
-                    LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    SeriesId = seriesIdN,
                 };
 
                 if (isContainer)
@@ -489,6 +520,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private class TagCacheDiskFormat
         {
+            // On-disk entry schema. Absent (0) in caches written before this
+            // field existed, so they read as != CurrentCacheSchemaVersion and
+            // are discarded + rebuilt. Distinct from Version (content revision).
+            public int SchemaVersion { get; set; }
             public long Version { get; set; }
             public long LastModified { get; set; }
             public Dictionary<string, TagCacheEntry> Items { get; set; } = new();

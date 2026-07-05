@@ -22,6 +22,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public string[]? AudioLanguages { get; set; }
         public TagStreamData? StreamData { get; set; }
         public long LastUpdated { get; set; }
+        // Series ID in N format (lowercase). Set for Episodes and Seasons, null
+        // otherwise. Lets the Spoiler Guard filter strip cache entries for
+        // unwatched episodes whose parent series is in the user's spoiler list
+        // without a per-episode library lookup on every request.
+        public string? SeriesId { get; set; }
+
+        // Shallow copy required by per-user mutators (spoiler tag-strip): the
+        // TagCacheService stores ONE shared instance per item across ALL users,
+        // so mutating in place would leak one user's strip into every other user's
+        // cache response. Arrays are kept by reference, but the strip only REPLACES
+        // them (with empty/null), never mutates in place, so this is safe.
+        //
+        // Same caveat for StreamData (also reference-shared): treat it as immutable
+        // across users — replace the whole object (StreamData = null), never mutate
+        // its fields, or every user's cache silently corrupts.
+        public TagCacheEntry Clone() => new()
+        {
+            Type = Type,
+            // Copy EVERY property: this clone replaces the shared instance in the
+            // response, so any field omitted here is silently blanked for the
+            // client. TmdbId/SeriesTmdbId/SeasonNumber/EpisodeNumber build the
+            // review key — dropping them broke reviews on cloned entries.
+            TmdbId = TmdbId,
+            SeriesTmdbId = SeriesTmdbId,
+            SeasonNumber = SeasonNumber,
+            EpisodeNumber = EpisodeNumber,
+            Genres = Genres,
+            CommunityRating = CommunityRating,
+            CriticRating = CriticRating,
+            AudioLanguages = AudioLanguages,
+            StreamData = StreamData,
+            LastUpdated = LastUpdated,
+            SeriesId = SeriesId,
+        };
     }
 
     /// <summary>

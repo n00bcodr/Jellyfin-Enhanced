@@ -138,6 +138,17 @@ nav:
 
 
   # ——————————————
+  # Spoiler Guard
+  # ——————————————
+  - Spoiler Guard:
+    # Features overview
+    - Spoiler Guard Features: spoiler-guard/spoiler-guard-features.md
+
+    # Spoiler Guard Settings
+    - Spoiler Guard Settings: spoiler-guard/spoiler-guard-settings.md
+
+
+  # ——————————————
   # *arr
   # ——————————————
   - "*arr":

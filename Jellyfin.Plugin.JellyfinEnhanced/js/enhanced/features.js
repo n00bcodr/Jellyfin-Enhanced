@@ -1248,6 +1248,16 @@
                 addHideContentButton(itemId, visiblePage);
             }
 
+            // Spoiler Guard toggle on Series (blurs all unwatched episode images
+            // via the server filter), Movie (blurs the movie's own poster/backdrop
+            // until marked Played), and Collection/BoxSet (protects every movie
+            // inside; the collection's own art stays clear) detail pages.
+            if ((lastDetailsItemType === 'Series' || lastDetailsItemType === 'Movie' || lastDetailsItemType === 'BoxSet')
+                && JE.spoilerBlur
+                && typeof JE.spoilerBlur.addSpoilerBlurButton === 'function') {
+                JE.spoilerBlur.addSpoilerBlurButton(itemId, visiblePage, lastDetailsItemType);
+            }
+
             // Skip unsupported item types for media features
             if (!FEATURES_SUPPORTED_TYPES.includes(lastDetailsItemType)) {
                 return;

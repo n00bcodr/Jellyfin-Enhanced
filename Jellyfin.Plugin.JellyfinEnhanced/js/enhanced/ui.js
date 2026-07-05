@@ -1223,6 +1223,56 @@
                             </div>
                         </div>
                     </details>` : ''}
+                    ${/* Spoiler Guard user-side override panel — only rendered when the admin master switch is on. */ ''}
+                    ${JE.pluginConfig?.SpoilerBlurEnabled && JE.spoilerBlur ? (() => {
+                        const sbPrefs = JE.spoilerBlur.getUserPrefs ? JE.spoilerBlur.getUserPrefs() : {};
+                        // Each row only renders when the admin has the underlying strip enabled —
+                        // a user can't opt out of a category the admin already disabled.
+                        const adminOn = {
+                            overview: JE.pluginConfig.SpoilerStripOverview !== false,
+                            tags: JE.pluginConfig.SpoilerStripTags !== false,
+                            chapters: JE.pluginConfig.SpoilerStripChapters !== false,
+                            taglines: JE.pluginConfig.SpoilerStripTaglines !== false,
+                            ratings: JE.pluginConfig.SpoilerStripRatings !== false,
+                            premiereDate: JE.pluginConfig.SpoilerStripPremiereDate !== false,
+                            replaceTitle: JE.pluginConfig.SpoilerReplaceTitle !== false,
+                            cast: JE.pluginConfig.SpoilerStripCast !== false,
+                            reviews: JE.pluginConfig.SpoilerStripReviews !== false,
+                        };
+                        // Override-checked semantics: a checkbox is "checked" when the user is
+                        // following the admin (pref is null/undefined OR true). Unchecking it
+                        // writes `false` — the user-opted-out signal that the server respects.
+                        const rowChecked = v => (v === false ? '' : 'checked');
+                        const row = (id, prefKey, labelKey, descKey, gate) => gate ? `
+                            <div style="margin-bottom: 8px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid rgba(255,255,255,0.15);">
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                    <input type="checkbox" id="${id}" ${rowChecked(sbPrefs[prefKey])} data-pref="${prefKey}" style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                    <div><div style="font-weight:500; font-size:13px;">${JE.t(labelKey)}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t(descKey)}</div></div>
+                                </label>
+                            </div>` : '';
+                        return `
+                        <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
+                            <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.BLUR_ON)} ${JE.t('panel_settings_spoiler_guard')}</summary>
+                            <div style="padding: 0 16px 16px 16px;">
+                                <div style="font-weight:500; font-size:13px; color:rgba(255,255,255,0.7); margin-bottom:8px; padding-left:4px;">${JE.t('panel_settings_spoiler_guard_overrides_section')}</div>
+                                ${row('sbPrefHideOverview',         'HideEpisodeDescriptions', 'panel_settings_spoiler_guard_override_overview',         'panel_settings_spoiler_guard_override_overview_desc',         adminOn.overview)}
+                                ${row('sbPrefReplaceTitle',         'ReplaceEpisodeTitles',    'panel_settings_spoiler_guard_override_titles',           'panel_settings_spoiler_guard_override_titles_desc',           adminOn.replaceTitle)}
+                                ${row('sbPrefHideChapters',         'HideChapterNames',        'panel_settings_spoiler_guard_override_chapters',         'panel_settings_spoiler_guard_override_chapters_desc',         adminOn.chapters)}
+                                ${row('sbPrefHideCast',             'HideCast',                'panel_settings_spoiler_guard_override_cast',             'panel_settings_spoiler_guard_override_cast_desc',             adminOn.cast)}
+                                ${row('sbPrefHideRatings',          'HideRatings',             'panel_settings_spoiler_guard_override_ratings',         'panel_settings_spoiler_guard_override_ratings_desc',         adminOn.ratings)}
+                                ${row('sbPrefHideAirDate',          'HideAirDate',             'panel_settings_spoiler_guard_override_air_date',         'panel_settings_spoiler_guard_override_air_date_desc',         adminOn.premiereDate)}
+                                ${row('sbPrefHideTaglines',         'HideTaglines',            'panel_settings_spoiler_guard_override_taglines',         'panel_settings_spoiler_guard_override_taglines_desc',         adminOn.taglines)}
+                                ${row('sbPrefHideTags',             'HideTags',                'panel_settings_spoiler_guard_override_tags',             'panel_settings_spoiler_guard_override_tags_desc',             adminOn.tags)}
+                                ${row('sbPrefHideReviews',          'HideReviews',             'panel_settings_spoiler_guard_override_reviews',          'panel_settings_spoiler_guard_override_reviews_desc',          adminOn.reviews)}
+                                <div style="margin-top: 12px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                        <input type="checkbox" id="sbPrefSkipDisableConfirm" ${sbPrefs.SkipDisableConfirm ? 'checked' : ''} data-pref="SkipDisableConfirm" style="width:16px; height:16px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                        <div><div style="font-weight:500; font-size:13px;">${JE.t('panel_settings_spoiler_guard_skip_confirm')}</div><div style="font-size:11px; color:rgba(255,255,255,0.5); margin-top:1px;">${JE.t('panel_settings_spoiler_guard_skip_confirm_desc')}</div></div>
+                                    </label>
+                                </div>
+                            </div>
+                        </details>`;
+                    })() : ''}
                     <details style="margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: ${detailsBackground};">
                         <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.LANGUAGE)} ${JE.t('panel_settings_language')}</summary>
                         <div style="padding: 0 16px 16px 16px;">
@@ -1883,6 +1933,104 @@
                         JE.hiddenContent.showManagementPanel();
                     }
                 });
+            }
+        }
+
+        // Spoiler Guard per-user override toggles. Each checkbox has a data-pref
+        // (the SpoilerBlurUserPrefs field) and an id prefixed "sbPref" — the
+        // selector anchors on that prefix so an unrelated module using a bare
+        // data-pref can't trigger this save path. Checked = inherit admin
+        // (pref=null); unchecked = user opt-out (pref=false). SkipDisableConfirm
+        // is the one exception: direct boolean (checked = skip dialog), stores true.
+        // Lives outside the JE.hiddenContent gate so this section works even where
+        // Hidden Content is disabled.
+        if (JE.spoilerBlur && JE.spoilerBlur.setUserPrefs) {
+            const sbPrefBoxes = document.querySelectorAll('input[type="checkbox"][id^="sbPref"][data-pref]');
+            if (sbPrefBoxes.length > 0) {
+                // Lock all override checkboxes while a save is in flight so
+                // the user can't race two POSTs against each other.
+                const setBoxesDisabled = (disabled) => {
+                    sbPrefBoxes.forEach(b => { b.disabled = disabled; });
+                };
+                const saveSbPrefs = async (changedBox, previousChecked) => {
+                    setBoxesDisabled(true);
+                    try {
+                        // Avoid the cold-load race: don't write to the server from
+                        // the in-memory cache until loadState() has populated it, or a
+                        // toggle during early page load POSTs an empty-cache payload
+                        // that silently clobbers stored prefs.
+                        if (typeof JE.spoilerBlur.whenLoaded === 'function') {
+                            await JE.spoilerBlur.whenLoaded();
+                        }
+                        // Refuse to save when the initial GET failed — the cache is
+                        // empty and writing from it would clobber stored prefs.
+                        if (typeof JE.spoilerBlur.isLoadOk === 'function' && !JE.spoilerBlur.isLoadOk()) {
+                            throw new Error('Initial Spoiler Guard load failed; refusing to overwrite stored prefs.');
+                        }
+                        // Build the payload from the authoritative cache, then
+                        // overlay ONLY the box just clicked. A full-DOM read is unsafe:
+                        // if the panel rendered before loadState() resolved, unrelated
+                        // boxes default to "checked" (inherit) from an empty cache and
+                        // would serialize as null, clobbering stored opt-outs.
+                        const current = JE.spoilerBlur.getUserPrefs ? JE.spoilerBlur.getUserPrefs() : {};
+                        if (changedBox) {
+                            const k = changedBox.dataset.pref;
+                            if (k === 'SkipDisableConfirm') {
+                                current[k] = !!changedBox.checked;
+                            } else {
+                                // Unchecked = user opts to SEE the field (false); checked =
+                                // follow admin (null, so later admin policy flips track through).
+                                current[k] = changedBox.checked ? null : false;
+                            }
+                        }
+                        await JE.spoilerBlur.setUserPrefs(current);
+                    } catch (err) {
+                        // Log even though the toast covers the visible case, so a dev
+                        // triaging "panel isn't saving" sees the real error.
+                        console.error('🪼 Jellyfin Enhanced [SpoilerBlur] saveSbPrefs failed:', err);
+                        // Revert the visual state of the box the user just clicked
+                        // so they can see the change didn't stick.
+                        if (changedBox) changedBox.checked = previousChecked;
+                        if (JE.toast && JE.t) {
+                            JE.toast(JE.t('spoiler_blur_error_toast'));
+                        }
+                    } finally {
+                        setBoxesDisabled(false);
+                    }
+                };
+                sbPrefBoxes.forEach(box => {
+                    box.addEventListener('change', () => {
+                        // .checked has already flipped by the time `change` fires;
+                        // the negation gives us the pre-click state for revert.
+                        const previousChecked = !box.checked;
+                        saveSbPrefs(box, previousChecked);
+                        resetAutoCloseTimer();
+                    });
+                });
+                // Rows render from a synchronous getUserPrefs() that may run before
+                // the initial load resolves (or after it fails), defaulting every box
+                // to "checked" (inherit). Re-sync once the load settles; if it failed,
+                // disable the section rather than show editable-but-wrong checkboxes.
+                (async () => {
+                    try {
+                        if (typeof JE.spoilerBlur.whenLoaded === 'function') {
+                            await JE.spoilerBlur.whenLoaded();
+                        }
+                        if (typeof JE.spoilerBlur.isLoadOk === 'function' && !JE.spoilerBlur.isLoadOk()) {
+                            setBoxesDisabled(true);
+                            return;
+                        }
+                        const loaded = JE.spoilerBlur.getUserPrefs ? JE.spoilerBlur.getUserPrefs() : {};
+                        sbPrefBoxes.forEach(b => {
+                            const k = b.dataset.pref;
+                            b.checked = (k === 'SkipDisableConfirm')
+                                ? !!loaded[k]
+                                : (loaded[k] !== false); // checked = inherit; unchecked = opt-out(false)
+                        });
+                    } catch (syncErr) {
+                        console.warn('🪼 Jellyfin Enhanced [SpoilerBlur] pref re-sync failed:', syncErr);
+                    }
+                })();
             }
         }
 
