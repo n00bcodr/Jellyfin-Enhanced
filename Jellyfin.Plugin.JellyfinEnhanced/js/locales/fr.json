@@ -479,7 +479,6 @@
     "spoiler_disable_confirm_body": "Les images non floutées et les détails des épisodes seront à nouveau visibles immédiatement.",
     "spoiler_disable_confirm_snooze": "Ne plus demander pendant 15 minutes",
     "panel_settings_spoiler_guard": "Protection anti-spoilers",
-    "panel_settings_spoiler_guard_desc": "Dérogations par utilisateur en plus de la politique de protection anti-spoilers de l'administrateur. En décochant une catégorie, vous pouvez voir ces informations même lorsque la protection anti-spoilers est activée pour la série. L'administrateur décide toujours quelles catégories peuvent être dérogées.",
     "panel_settings_spoiler_guard_overrides_section": "M'afficher ceci même avec la protection anti-spoilers activée",
     "panel_settings_spoiler_guard_override_overview": "Descriptions des épisodes",
     "panel_settings_spoiler_guard_override_overview_desc": "Décochez pour voir le synopsis original au lieu du texte de remplacement.",

@@ -479,7 +479,6 @@
     "spoiler_disable_confirm_body": "Le immagini non sfocate e i dettagli degli episodi saranno di nuovo visibili subito.",
     "spoiler_disable_confirm_snooze": "Non chiedere di nuovo per 15 minuti",
     "panel_settings_spoiler_guard": "Protezione spoiler",
-    "panel_settings_spoiler_guard_desc": "Eccezioni per utente in aggiunta alla policy di protezione spoiler dell'amministratore. Deselezionando una categoria potrai vedere quelle informazioni anche quando la protezione spoiler è attiva per la serie. L'amministratore decide comunque quali categorie possono essere escluse.",
     "panel_settings_spoiler_guard_overrides_section": "Mostrami questo anche con la protezione spoiler attiva",
     "panel_settings_spoiler_guard_override_overview": "Descrizioni degli episodi",
     "panel_settings_spoiler_guard_override_overview_desc": "Deseleziona per vedere la sinossi originale invece del segnaposto.",

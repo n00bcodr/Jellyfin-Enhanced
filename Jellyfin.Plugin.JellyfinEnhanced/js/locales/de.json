@@ -479,7 +479,6 @@
     "spoiler_disable_confirm_body": "Nicht weichgezeichnete Bilder und Episodendetails sind sofort wieder sichtbar.",
     "spoiler_disable_confirm_snooze": "15 Minuten lang nicht erneut fragen",
     "panel_settings_spoiler_guard": "Spoiler Guard",
-    "panel_settings_spoiler_guard_desc": "Benutzerspezifische Überschreibungen zusätzlich zur Spoiler Guard-Richtlinie des Administrators. Wenn du eine Kategorie abwählst, kannst du diese Informationen sehen, auch wenn Spoiler Guard für die Serie aktiviert ist. Der Administrator legt weiterhin fest, welche Kategorien überschrieben werden können.",
     "panel_settings_spoiler_guard_overrides_section": "Dies auch bei aktiviertem Spoiler Guard anzeigen",
     "panel_settings_spoiler_guard_override_overview": "Episodenbeschreibungen",
     "panel_settings_spoiler_guard_override_overview_desc": "Abwählen, um die ursprüngliche Inhaltsangabe statt des Platzhalters zu sehen.",

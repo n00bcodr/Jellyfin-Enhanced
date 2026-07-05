@@ -479,7 +479,6 @@
     "spoiler_disable_confirm_body": "未模糊的图片和剧集详情将会立即重新可见。",
     "spoiler_disable_confirm_snooze": "15 分钟内不再询问",
     "panel_settings_spoiler_guard": "Spoiler Guard",
-    "panel_settings_spoiler_guard_desc": "在管理员的 Spoiler Guard 策略之上，为每个用户设置覆盖项。取消勾选某个类别后，即使该剧集已开启 Spoiler Guard，你也可以看到这些信息。哪些类别允许覆盖仍由管理员决定。",
     "panel_settings_spoiler_guard_overrides_section": "即使 Spoiler Guard 已开启也显示这些内容",
     "panel_settings_spoiler_guard_override_overview": "分集简介",
     "panel_settings_spoiler_guard_override_overview_desc": "取消勾选可查看原始剧情简介，而不是占位内容。",

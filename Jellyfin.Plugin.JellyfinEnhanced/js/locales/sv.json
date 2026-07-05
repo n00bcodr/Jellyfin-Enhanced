@@ -479,7 +479,6 @@
     "spoiler_disable_confirm_body": "Osuddiga bilder och avsnittsdetaljer blir synliga igen direkt.",
     "spoiler_disable_confirm_snooze": "Fråga inte igen på 15 minuter",
     "panel_settings_spoiler_guard": "Spoilerskydd",
-    "panel_settings_spoiler_guard_desc": "Användarspecifika åsidosättningar ovanpå administratörens policy för spoilerskydd. Om du avmarkerar en kategori kan du se den informationen även när spoilerskydd är aktiverat för serien. Administratören bestämmer fortfarande vilka kategorier som kan åsidosättas.",
     "panel_settings_spoiler_guard_overrides_section": "Visa mig detta även med spoilerskydd aktiverat",
     "panel_settings_spoiler_guard_override_overview": "Avsnittsbeskrivningar",
     "panel_settings_spoiler_guard_override_overview_desc": "Avmarkera för att se den ursprungliga synopsisen i stället för platshållaren.",

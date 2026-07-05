@@ -479,7 +479,6 @@
     "spoiler_disable_confirm_body": "Uslørede billeder og episodedetaljer bliver synlige igen med det samme.",
     "spoiler_disable_confirm_snooze": "Spørg ikke igen i 15 minutter",
     "panel_settings_spoiler_guard": "Spoilerbeskyttelse",
-    "panel_settings_spoiler_guard_desc": "Brugerindividuelle tilsidesættelser oven på administratorens politik for spoilerbeskyttelse. Hvis du fjerner markeringen af en kategori, kan du se disse oplysninger, selv når spoilerbeskyttelse er slået til for serien. Administratoren bestemmer stadig, hvilke kategorier der kan tilsidesættes.",
     "panel_settings_spoiler_guard_overrides_section": "Vis mig dette, selv når spoilerbeskyttelse er slået til",
     "panel_settings_spoiler_guard_override_overview": "Episodebeskrivelser",
     "panel_settings_spoiler_guard_override_overview_desc": "Fjern markeringen for at se det oprindelige synopsis i stedet for pladsholderen.",

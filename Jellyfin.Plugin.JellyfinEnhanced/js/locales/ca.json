@@ -479,7 +479,6 @@
     "spoiler_disable_confirm_body": "Les imatges sense difuminar i els detalls dels episodis tornaran a ser visibles immediatament.",
     "spoiler_disable_confirm_snooze": "No ho tornis a preguntar durant 15 minuts",
     "panel_settings_spoiler_guard": "Protecció contra espòilers",
-    "panel_settings_spoiler_guard_desc": "Excepcions per usuari sobre la política de protecció contra espòilers de l'administrador. Si desmarques una categoria, veuràs aquesta informació encara que la protecció contra espòilers estigui activada per a la sèrie. L'administrador continua decidint quines categories es poden exceptuar.",
     "panel_settings_spoiler_guard_overrides_section": "Mostra'm això encara que la protecció contra espòilers estigui activada",
     "panel_settings_spoiler_guard_override_overview": "Descripcions dels episodis",
     "panel_settings_spoiler_guard_override_overview_desc": "Desmarca-ho per veure la sinopsi original en lloc del marcador de posició.",

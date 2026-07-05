@@ -479,7 +479,6 @@
     "spoiler_disable_confirm_body": "Nerozmazané obrázky a podrobnosti epizód budú okamžite znova viditeľné.",
     "spoiler_disable_confirm_snooze": "Nepýtať sa znova 15 minút",
     "panel_settings_spoiler_guard": "Ochrana pred spoilermi",
-    "panel_settings_spoiler_guard_desc": "Používateľské prepísania nad rámec pravidiel ochrany pred spoilermi nastavených správcom. Zrušením zaškrtnutia kategórie uvidíte tieto informácie aj vtedy, keď je ochrana pred spoilermi pre seriál zapnutá. Správca stále rozhoduje, ktoré kategórie možno prepísať.",
     "panel_settings_spoiler_guard_overrides_section": "Zobraziť mi to aj pri zapnutej ochrane pred spoilermi",
     "panel_settings_spoiler_guard_override_overview": "Opisy epizód",
     "panel_settings_spoiler_guard_override_overview_desc": "Zrušte zaškrtnutie, ak chcete vidieť pôvodnú synopsu namiesto zástupného textu.",

@@ -235,7 +235,6 @@
     "spoiler_disable_confirm_body": "תמונות ללא טשטוש ופרטי פרקים יהיו גלויים שוב באופן מיידי.",
     "spoiler_disable_confirm_snooze": "אל תשאל שוב במשך 15 דקות",
     "panel_settings_spoiler_guard": "מגן ספוילרים",
-    "panel_settings_spoiler_guard_desc": "עקיפות אישיות מעל מדיניות מגן הספוילרים של המנהל. ביטול סימון של קטגוריה מאפשר לך לראות מידע זה גם כשמגן הספוילרים פעיל עבור הסדרה. המנהל עדיין קובע אילו קטגוריות זמינות לעקיפה.",
     "panel_settings_spoiler_guard_overrides_section": "הצג לי את זה גם כשמגן הספוילרים פעיל",
     "panel_settings_spoiler_guard_override_overview": "תיאורי פרקים",
     "panel_settings_spoiler_guard_override_overview_desc": "בטלו סימון כדי לראות את התקציר המקורי במקום ממלא המקום.",

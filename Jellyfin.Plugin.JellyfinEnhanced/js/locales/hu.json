@@ -479,7 +479,6 @@
     "spoiler_disable_confirm_body": "A nem homályosított képek és epizódrészletek azonnal újra láthatók lesznek.",
     "spoiler_disable_confirm_snooze": "Ne kérdezze újra 15 percig",
     "panel_settings_spoiler_guard": "Spoiler-védelem",
-    "panel_settings_spoiler_guard_desc": "Felhasználónkénti felülbírálások az adminisztrátor spoiler-védelmi szabályzatán felül. Egy kategória kijelölésének törlésével akkor is láthatod az adott információt, ha a spoiler-védelem be van kapcsolva a sorozatnál. Az adminisztrátor továbbra is eldönti, mely kategóriák bírálhatók felül.",
     "panel_settings_spoiler_guard_overrides_section": "Mutasd ezt akkor is, ha a spoiler-védelem be van kapcsolva",
     "panel_settings_spoiler_guard_override_overview": "Epizódleírások",
     "panel_settings_spoiler_guard_override_overview_desc": "Töröld a kijelölést az eredeti szinopszis megjelenítéséhez a helykitöltő helyett.",

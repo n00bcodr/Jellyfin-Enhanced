@@ -479,7 +479,6 @@
     "spoiler_disable_confirm_body": "Onvervaagde afbeeldingen en afleveringsdetails zijn meteen weer zichtbaar.",
     "spoiler_disable_confirm_snooze": "15 minuten niet opnieuw vragen",
     "panel_settings_spoiler_guard": "Spoilerbescherming",
-    "panel_settings_spoiler_guard_desc": "Gebruikersspecifieke uitzonderingen bovenop het beleid voor spoilerbescherming van de beheerder. Als je een categorie uitvinkt, kun je die informatie zien, zelfs wanneer spoilerbescherming voor de serie is ingeschakeld. De beheerder bepaalt nog steeds welke categorieën kunnen worden overschreven.",
     "panel_settings_spoiler_guard_overrides_section": "Laat mij dit zien, zelfs met spoilerbescherming aan",
     "panel_settings_spoiler_guard_override_overview": "Afleveringsbeschrijvingen",
     "panel_settings_spoiler_guard_override_overview_desc": "Vink uit om de oorspronkelijke synopsis te zien in plaats van de tijdelijke tekst.",

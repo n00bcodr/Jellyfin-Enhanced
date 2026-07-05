@@ -478,7 +478,6 @@
     "spoiler_disable_confirm_body": "Nierozmyte obrazy i szczegóły odcinków będą od razu ponownie widoczne.",
     "spoiler_disable_confirm_snooze": "Nie pytaj ponownie przez 15 minut",
     "panel_settings_spoiler_guard": "Ochrona przed spoilerami",
-    "panel_settings_spoiler_guard_desc": "Nadpisania dla poszczególnych użytkowników ponad polityką ochrony przed spoilerami ustawioną przez administratora. Odznaczenie kategorii pozwala zobaczyć te informacje nawet wtedy, gdy ochrona przed spoilerami jest włączona dla serialu. Administrator nadal decyduje, które kategorie można nadpisywać.",
     "panel_settings_spoiler_guard_overrides_section": "Pokazuj mi to nawet przy włączonej ochronie przed spoilerami",
     "panel_settings_spoiler_guard_override_overview": "Opisy odcinków",
     "panel_settings_spoiler_guard_override_overview_desc": "Odznacz, aby zobaczyć oryginalny opis zamiast tekstu zastępczego.",

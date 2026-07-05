@@ -479,7 +479,6 @@
     "spoiler_disable_confirm_body": "Bulanık olmayan görseller ve bölüm ayrıntıları hemen tekrar görünür olacak.",
     "spoiler_disable_confirm_snooze": "15 dakika boyunca tekrar sorma",
     "panel_settings_spoiler_guard": "Spoiler koruması",
-    "panel_settings_spoiler_guard_desc": "Yöneticinin spoiler koruması ilkesine ek olarak kullanıcı bazlı geçersiz kılmalar. Bir kategorinin işaretini kaldırmak, spoiler koruması dizi için açık olsa bile o bilgileri görmeni sağlar. Hangi kategorilerin geçersiz kılınabileceğine yine yönetici karar verir.",
     "panel_settings_spoiler_guard_overrides_section": "Spoiler koruması açıkken bile bunu göster",
     "panel_settings_spoiler_guard_override_overview": "Bölüm açıklamaları",
     "panel_settings_spoiler_guard_override_overview_desc": "Yer tutucu yerine özgün özeti görmek için işaretini kaldır.",

@@ -479,7 +479,6 @@
     "spoiler_disable_confirm_body": "Imagens sem desfoque e detalhes dos episódios ficarão visíveis novamente imediatamente.",
     "spoiler_disable_confirm_snooze": "Não perguntar novamente por 15 minutos",
     "panel_settings_spoiler_guard": "Proteção contra spoilers",
-    "panel_settings_spoiler_guard_desc": "Substituições por usuário sobre a política de proteção contra spoilers do administrador. Desmarcar uma categoria permite ver essa informação mesmo quando a proteção contra spoilers está ativa para a série. O administrador ainda decide quais categorias podem ser substituídas.",
     "panel_settings_spoiler_guard_overrides_section": "Mostrar isto mesmo com a proteção contra spoilers ativada",
     "panel_settings_spoiler_guard_override_overview": "Descrições dos episódios",
     "panel_settings_spoiler_guard_override_overview_desc": "Desmarque para ver a sinopse original em vez do marcador de posição.",

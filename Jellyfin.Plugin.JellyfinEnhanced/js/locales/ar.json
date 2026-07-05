@@ -479,7 +479,6 @@
     "spoiler_disable_confirm_body": "ستظهر الصور غير المموهة وتفاصيل الحلقات مرة أخرى فورًا.",
     "spoiler_disable_confirm_snooze": "لا تسأل مرة أخرى لمدة 15 دقيقة",
     "panel_settings_spoiler_guard": "الحماية من الحرق",
-    "panel_settings_spoiler_guard_desc": "تجاوزات لكل مستخدم فوق سياسة الحماية من الحرق التي يحددها المسؤول. إلغاء تحديد فئة يتيح لك رؤية تلك المعلومات حتى عند تشغيل الحماية من الحرق للمسلسل. يظل المسؤول هو من يقرر الفئات المتاحة للتجاوز.",
     "panel_settings_spoiler_guard_overrides_section": "أظهر لي هذا حتى مع تشغيل الحماية من الحرق",
     "panel_settings_spoiler_guard_override_overview": "أوصاف الحلقات",
     "panel_settings_spoiler_guard_override_overview_desc": "ألغِ التحديد لرؤية الملخص الأصلي بدلًا من النص البديل.",

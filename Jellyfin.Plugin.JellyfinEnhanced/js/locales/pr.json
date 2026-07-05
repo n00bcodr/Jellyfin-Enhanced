@@ -479,7 +479,6 @@
     "spoiler_disable_confirm_body": "Unfogged images 'n episode details will be back in plain sight straight away.",
     "spoiler_disable_confirm_snooze": "Don't ask again fer 15 minutes",
     "panel_settings_spoiler_guard": "Spoiler Guard",
-    "panel_settings_spoiler_guard_desc": "Per-sailor overrides atop th' cap'n's Spoiler Guard orders. Unchecking a category lets ye spy that information even when Spoiler Guard be hoisted fer th' tale. Th' cap'n still decides which categories ye may override.",
     "panel_settings_spoiler_guard_overrides_section": "Show me this even with Spoiler Guard hoisted",
     "panel_settings_spoiler_guard_override_overview": "Episode yarns",
     "panel_settings_spoiler_guard_override_overview_desc": "Uncheck to spy th' original yarn instead o' th' stand-in text.",

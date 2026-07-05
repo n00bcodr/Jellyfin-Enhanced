@@ -485,7 +485,6 @@
     "spoiler_disable_confirm_body": "Unblurred images and episode details will be visible again straight away.",
     "spoiler_disable_confirm_snooze": "Don't ask again for 15 minutes",
     "panel_settings_spoiler_guard": "Spoiler Guard",
-    "panel_settings_spoiler_guard_desc": "Per-user overrides on top of the admin's Spoiler Guard policy. Unchecking a category lets you see that information even when Spoiler Guard is on for the show. The admin still decides which categories are available to override.",
     "panel_settings_spoiler_guard_overrides_section": "Show me this even with Spoiler Guard on",
     "panel_settings_spoiler_guard_override_overview": "Episode descriptions",
     "panel_settings_spoiler_guard_override_overview_desc": "Uncheck to see the original synopsis instead of the placeholder.",
