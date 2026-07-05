@@ -16,7 +16,7 @@
         let processedItemIds = new Set(); // Cache of items we've already processed
         let lastVisibleItemId = null; // Track the currently visible item
 
-        const LETTERBOXD_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/letterboxd.svg';
+        const LETTERBOXD_ICON_URL = JE.cdn.selfhst('svg/letterboxd.svg');
 
         // Safe fallback for helpers.js Stage-3 load-order races.
         const extLink = JE.helpers?.createExternalLink || ((u, o) => {

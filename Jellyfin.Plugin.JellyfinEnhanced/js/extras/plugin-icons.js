@@ -201,13 +201,13 @@
                 {
                     selector: 'a[href*="Jellyfin%20Enhanced"]',
                     type: 'image',
-                    src: 'https://cdn.jsdelivr.net/gh/n00bcodr/jellyfish/logos/favicon.ico',
+                    src: window.JellyfinEnhanced.cdn.url('jellyfish', 'logos/favicon.ico'),
                     alt: 'Jellyfin Enhanced'
                 },
                 {
                     selector: 'a[href*="JavaScript%20Injector"]',
                     type: 'image',
-                    src: 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/javascript.svg',
+                    src: window.JellyfinEnhanced.cdn.url('dashboard-icons', 'svg/javascript.svg'),
                     alt: 'JavaScript'
                 },
                 {
@@ -248,7 +248,7 @@
                 {
                     selector: 'a[href*="Jellyfin%20Helper"]',
                     type: 'image',
-                    src: 'https://cdn.jsdelivr.net/gh/JellyPlugins/jellyfin-helper@2.0.0.2/media/favicon.ico',
+                    src: window.JellyfinEnhanced.cdn.url('jelly-helper', 'media/favicon.ico'),
                     alt: 'Jellyfin Helper'
                 }
             ];

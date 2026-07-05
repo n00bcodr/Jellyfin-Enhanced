@@ -87,7 +87,7 @@
                     font-style: normal;
                     font-weight: 100 700;
                     font-display: block;
-                    src: url(https://fonts.gstatic.com/s/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2) format('woff2');
+                    src: url(${JE.cdn.url('gfont', 's/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2')}) format('woff2');
                 }
 
                 .material-symbols-rounded {
@@ -361,7 +361,7 @@
                 if (countryCode) {
                     const flagImg = document.createElement('img');
                     flagImg.className = 'je-people-flag';
-                    flagImg.src = `https://flagcdn.com/w20/${countryCode.toLowerCase()}.png`;
+                    flagImg.src = JE.cdn.flagPng(countryCode);
                     flagImg.style.cssText = 'width: 16px; height: 12px; border-radius: 2px; object-fit: cover;';
                     flagImg.alt = countryCode;
                     placeContainer.appendChild(flagImg);
