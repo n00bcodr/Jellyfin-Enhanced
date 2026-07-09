@@ -317,6 +317,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerAutoEnableOnSeerrRequest = false;
             SpoilerBlurStrictRefresh = false;
             SpoilerKeepMoviePosters = true;
+            SpoilerIdentityTags = true;
             SpoilerOverviewPlaceholder = "Spoiler Guard activated";
         }
 
@@ -718,6 +719,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // are usually curated marketing art, while chapter scene-thumbs (and
         // synopsis/cast) are the real spoiler vector. Off = hide posters too.
         public bool SpoilerKeepMoviePosters { get; set; } = true;
+        // Appends a per-user marker to image tags in authenticated DTO responses
+        // so anonymous native-client image requests can be attributed without
+        // relying on the client IP. Unknown or missing markers fall back to the
+        // existing cookie/IP identity ladder.
+        public bool SpoilerIdentityTags { get; set; } = true;
         // Placeholder for stripped Overview so the client doesn't render a
         // "Description" header over blank. Configurable for localisation.
         public string SpoilerOverviewPlaceholder { get; set; } = "Spoiler Guard activated";

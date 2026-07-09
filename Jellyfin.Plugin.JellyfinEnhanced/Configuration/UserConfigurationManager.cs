@@ -229,6 +229,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
                 File.WriteAllText(tempPath, jsonToSave);
                 File.Move(tempPath, configPath, overwrite: true);
+                if (string.Equals(fileName, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.InvalidateUser(userId);
+                }
             }
             catch (Exception ex)
             {

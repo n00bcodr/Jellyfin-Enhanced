@@ -208,6 +208,8 @@ Spoiler Guard preferences are **per user**. Your spoiler list doesn't affect any
 
 Cache-bust tokens are also per-user, so two users on the same family network seeing different blur states of the same image is fully supported. Native-client image caches (Glide, Coil, SDWebImage) automatically refetch when your watched-state changes, even though they otherwise cache strictly by URL.
 
+How the server knows *which* user an image request belongs to: image fetches are anonymous in Jellyfin, so the plugin embeds a small per-user **identity marker** in the image `tag` values each user receives. Every client — web, Android TV, iOS, Roku — echoes that value back when it fetches the image, letting Spoiler Guard apply exactly your blur state without depending on your device's IP address. This works out of the box behind reverse proxies, VPNs, and shared/NAT networks. Requests without a marker, such as a client replaying an old cached URL, fall back to IP matching and fail closed if that is ambiguous.
+
 ---
 
 ## Troubleshooting
@@ -224,8 +226,10 @@ The admin needs to flip the master **Enable Spoiler Guard** switch in the plugin
 
 **Android TV (Wholphin / Moonfin / Findroid) shows the original images on first load after enabling Spoiler Guard.**
 
-Android TV clients cache image bytes locally using Glide / Coil. If you enabled Spoiler Guard for a series while that client already had the unblurred thumbnails cached on disk, the client serves them from cache instead of re-fetching from the server. **Clear the image cache once** in the client's settings (or force-stop the app and reopen) and the protected images will load correctly from that point onward. After this first clear, Spoiler Guard's per-user cache-bust tokens automatically invalidate the cache whenever your spoiler state changes — you won't need to clear it again.
+Android TV clients cache image bytes locally using Glide / Coil. If you enabled Spoiler Guard for a series while that client already had the unblurred thumbnails cached on disk, the client serves them from cache instead of re-fetching from the server. **Clear the image cache once** in the client's settings (or force-stop the app and reopen) and the protected images will load correctly from that point onward. After this first clear, Spoiler Guard's per-user cache-bust tokens and identity markers automatically invalidate the cache whenever your spoiler state changes — you won't need to clear it again.
 
 **A user sees another user's shows blurred (or their own non-guarded shows blurred) behind a reverse proxy.**
 
-Spoiler Guard protects images per user. Web browsers carry the user's identity to each image request automatically; other clients (Android TV, mobile) are matched by the **IP address** their request comes from. If Jellyfin is behind a reverse proxy (Caddy, Nginx, Traefik, etc.) that isn't configured to forward the real client IP, *every* remote user appears to come from the proxy's single IP — so Spoiler Guard can't tell them apart and, to avoid leaking a spoiler, it fails **closed** (blurs the image if *any* of those users guarded it). Fix it by configuring the proxy to send `X-Forwarded-For` and adding the proxy to **Dashboard → Networking → Known proxies** so Jellyfin sees each real client IP. On a normal LAN (each device has its own IP) this never happens.
+This should no longer happen in normal operation. Spoiler Guard identifies image requests by the per-user **identity marker** embedded in image tags, which every client echoes back regardless of the IP address Jellyfin sees.
+
+If it still happens, the affected client is probably fetching images from old cached URLs minted before this feature. Those URLs carry no marker, so the server falls back to IP matching and fails closed on a shared IP. Clear the client's image cache once so it refetches fresh marker-carrying URLs, or configure the proxy to send `X-Forwarded-For` and add it to **Dashboard → Networking → Known proxies** so the fallback path can see real client IPs too. The **Per-user image identity tags** admin setting must remain enabled, which it is by default.

@@ -2944,6 +2944,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.SpoilerBlurEnabled,
                 config.SpoilerBlurIntensity,
                 config.SpoilerBlurStrictRefresh,
+                config.SpoilerIdentityTags,
                 // Strip-policy fields drive the per-user override UI — only
                 // admin-enabled categories surface an opt-out toggle.
                 config.SpoilerStripOverview,
