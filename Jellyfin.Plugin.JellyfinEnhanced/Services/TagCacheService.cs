@@ -26,8 +26,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly Logger _logger;
         private volatile ConcurrentDictionary<string, TagCacheEntry> _cache = new();
         private readonly object _saveLock = new();
+        private readonly SemaphoreSlim _rebuildLock = new(1, 1);
         private long _version;
         private long _lastModified;
+        private long _lastReconciledUtcTicks;
         private Timer? _debounceSaveTimer;
         private volatile bool _dirty;
 
@@ -75,6 +77,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public void BuildFullCache(IProgress<double>? progress, CancellationToken cancellationToken)
         {
+            _rebuildLock.Wait(cancellationToken);
+            try
+            {
+                BuildFullCacheCore(progress, cancellationToken, DateTime.UtcNow);
+            }
+            finally
+            {
+                _rebuildLock.Release();
+            }
+        }
+
+        private void BuildFullCacheCore(IProgress<double>? progress, CancellationToken cancellationToken, DateTime reconciliationStartedUtc)
+        {
             _logger.Info("[TagCache] Starting full cache build...");
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
@@ -112,6 +127,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _cache = newCache;
             Interlocked.Increment(ref _version);
             Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciliationStartedUtc.Ticks);
             // Invalidate user access cache since items may have changed
             _userAccessCache.Clear();
             progress?.Report(100);
@@ -120,6 +136,114 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _logger.Info($"[TagCache] Full cache build complete: {_cache.Count} entries in {sw.Elapsed.TotalSeconds:F1}s");
 
             SaveToDisk();
+        }
+
+        /// <summary>
+        /// Reconcile the persisted tag cache with Jellyfin's saved-item timestamps.
+        /// Rebuilds only items saved since the previous successful run, then sweeps
+        /// cached IDs that no longer exist in the live library.
+        /// </summary>
+        public void ReconcileCache(IProgress<double>? progress, CancellationToken cancellationToken)
+        {
+            _rebuildLock.Wait(cancellationToken);
+            try
+            {
+                ReconcileCacheCore(progress, cancellationToken);
+            }
+            finally
+            {
+                _rebuildLock.Release();
+            }
+        }
+
+        private void ReconcileCacheCore(IProgress<double>? progress, CancellationToken cancellationToken)
+        {
+            var reconciliationStartedUtc = DateTime.UtcNow;
+            var previousTicks = Interlocked.Read(ref _lastReconciledUtcTicks);
+
+            if (previousTicks <= 0 || _cache.IsEmpty)
+            {
+                _logger.Info("[TagCache] No previous reconciliation marker or cache is empty; running full build");
+                BuildFullCacheCore(progress, cancellationToken, reconciliationStartedUtc);
+                return;
+            }
+
+            var changedSinceUtc = new DateTime(previousTicks, DateTimeKind.Utc).Subtract(TimeSpan.FromMinutes(2));
+            _logger.Info($"[TagCache] Reconciling changes since {changedSinceUtc:O}");
+
+            var changedItems = _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = TaggableTypes.ToArray(),
+                IsVirtualItem = false,
+                Recursive = true,
+                MinDateLastSaved = changedSinceUtc
+            }).ToList();
+
+            var idsToRebuild = new HashSet<Guid>();
+            foreach (var item in changedItems)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                idsToRebuild.Add(item.Id);
+
+                if (item is MediaBrowser.Controller.Entities.TV.Episode episode)
+                {
+                    if (episode.SeriesId != Guid.Empty)
+                    {
+                        idsToRebuild.Add(episode.SeriesId);
+                    }
+
+                    if (episode.SeasonId != Guid.Empty)
+                    {
+                        idsToRebuild.Add(episode.SeasonId);
+                    }
+                }
+            }
+
+            var changed = false;
+            var processed = 0;
+            foreach (var id in idsToRebuild)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                changed |= RebuildEntry(id);
+                processed++;
+                progress?.Report(idsToRebuild.Count == 0 ? 50 : (double)processed / idsToRebuild.Count * 80);
+            }
+
+            var currentIds = _libraryManager.GetItemIds(new InternalItemsQuery
+            {
+                IncludeItemTypes = TaggableTypes.ToArray(),
+                IsVirtualItem = false,
+                Recursive = true
+            });
+
+            var liveKeys = currentIds
+                .Select(id => id.ToString("N").ToLowerInvariant())
+                .ToHashSet(StringComparer.Ordinal);
+
+            foreach (var cachedKey in _cache.Keys)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!liveKeys.Contains(cachedKey) && _cache.TryRemove(cachedKey, out _))
+                {
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                Interlocked.Increment(ref _version);
+                Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                _userAccessCache.Clear();
+            }
+
+            Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciliationStartedUtc.Ticks);
+            progress?.Report(100);
+            SaveToDisk();
+
+            _logger.Info($"[TagCache] Reconciliation complete: {changedItems.Count} changed items, {idsToRebuild.Count} entries checked");
         }
 
         /// <summary>
@@ -362,6 +486,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _cache = loaded;
                     Interlocked.Exchange(ref _version, data.Version);
                     Interlocked.Exchange(ref _lastModified, data.LastModified);
+                    Interlocked.Exchange(ref _lastReconciledUtcTicks, data.LastReconciledUtcTicks);
                     _logger.Info($"[TagCache] Loaded {_cache.Count} entries from disk (v{data.Version})");
                 }
             }
@@ -387,6 +512,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         Version = Interlocked.Read(ref _version),
                         LastModified = Interlocked.Read(ref _lastModified),
+                        LastReconciledUtcTicks = Interlocked.Read(ref _lastReconciledUtcTicks),
                         Items = new Dictionary<string, TagCacheEntry>(_cache)
                     };
 
@@ -713,6 +839,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             public long Version { get; set; }
             public long LastModified { get; set; }
+            public long LastReconciledUtcTicks { get; set; }
             public Dictionary<string, TagCacheEntry> Items { get; set; } = new();
         }
     }
