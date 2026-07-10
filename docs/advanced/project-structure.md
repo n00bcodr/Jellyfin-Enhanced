@@ -4,10 +4,21 @@ The plugin architecture uses a single entry point (`plugin.js`) that dynamically
 
 ### File Structure
 
-All client-side scripts are now located in the `Jellyfin.Plugin.JellyfinEnhanced/js/` directory.
+All client-side scripts are now located in the `Jellyfin.Plugin.JellyfinEnhanced/js/` directory. Server-side Spoiler Guard components live under `Services/SpoilerGuard/`.
 
 ```text
 Jellyfin.Plugin.JellyfinEnhanced/
+├── EventHandlers/
+│   └── SpoilerAutoEnableEvents.cs
+├── Model/
+│   └── TagCacheEntry.cs
+├── Services/
+│   └── SpoilerGuard/
+│       ├── ImageBlurService.cs
+│       ├── SpoilerBlurImageFilter.cs
+│       ├── SpoilerFieldStripFilter.cs
+│       ├── SpoilerSeerrPendingPromoter.cs
+│       └── SpoilerUserResolver.cs
 └── js/
     ├── locales/
     │   ├── da.json
@@ -32,6 +43,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── icons.js
     │   ├── osd-rating.js
     │   ├── playback.js
+    │   ├── spoiler-blur.js
     │   ├── subtitles.js
     │   ├── themer.js
     │   └── ui.js
@@ -77,6 +89,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── osd-rating.js
     │   ├── pausescreen.js
     │   ├── playback.js
+    │   ├── spoiler-blur.js
     │   ├── subtitles.js
     │   ├── themer.js
     │   └── ui.js
@@ -114,6 +127,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     * **`osd-rating.js`**: Displays TMDB and Rotten Tomatoes ratings in the video player OSD controls next to the time display.
     * **`pausescreen.js`**: Displays a custom, informative overlay when a video is paused.
     * **`playback.js`**: Centralizes all functions that directly control the video player, such as changing speed, seeking, cycling through tracks, and auto-skip logic.
+    * **`spoiler-blur.js`**: Client-side companion for Spoiler Guard. Renders the per-show / per-movie / per-collection toggle button, keeps an in-memory cache of the user's opt-in list and override prefs, and performs the soft image refresh after toggles and watched-state changes. The actual blur / strip happens server-side.
     * **`subtitles.js`**: Isolates all logic related to subtitle styling, including presets and the function that applies styles to the video player.
     * **`themer.js`**: Handles theme detection and applies appropriate styling to the Enhanced Panel based on the active Jellyfin theme.
     * **`ui.js`**: Responsible for creating, injecting, and managing all visual elements like the main settings panel, toast notifications, and various buttons.
@@ -163,4 +177,17 @@ Jellyfin.Plugin.JellyfinEnhanced/
 * **`/others/`**: Contains miscellaneous utility scripts.
     * **`letterboxd-links.js`**: Adds Letterboxd external links to movie item detail pages.
     * **`splashscreen.js`**: Manages the custom splash screen that appears when the application is loading.
+
+* **`/Services/SpoilerGuard/`**: Server-side C# services that implement Spoiler Guard.
+    * **`ImageBlurService.cs`**: SkiaSharp Gaussian blur, stock-card rendering, and the pre-encoded fail-closed fallback JPEG, with result caching.
+    * **`SpoilerBlurImageFilter.cs`**: Intercepts image responses and replaces the bytes for unwatched items — safe parent art, blur, or the fail-closed dark card, depending on mode and availability.
+    * **`SpoilerFieldStripFilter.cs`**: Strips or rewrites metadata (titles, synopses, ratings, chapter names, cast, tags, taglines, air dates) in API responses for unwatched items, honoring per-user overrides.
+    * **`SpoilerSeerrPendingPromoter.cs`**: Promotes pending pre-acquisition entries (registered from the Seerr More Info modal or auto-enable on request) into real per-item protection when the content lands in the library.
+    * **`SpoilerUserResolver.cs`**: Resolves the requesting user for the filters so spoiler state is applied per-user.
+
+* **`/EventHandlers/`** (Spoiler Guard):
+    * **`SpoilerAutoEnableEvents.cs`**: Implements "Auto-enable on first play of a new show" — adds a series to the user's Spoiler Guard list on a fresh S1E1 play.
+
+* **`/Model/`** (Spoiler Guard):
+    * **`TagCacheEntry.cs`**: Pre-computed per-item tag data served to clients in bulk; carries the parent-series ID so the Spoiler Guard filter can strip cache entries for unwatched episodes without per-request library lookups.
 

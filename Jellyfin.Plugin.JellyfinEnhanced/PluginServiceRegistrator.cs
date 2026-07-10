@@ -70,7 +70,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<HiddenContentResponseFilter>();
             serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, ContinueWatchingPlaybackConsumer>();
             serviceCollection.AddHostedService<ContinueWatchingLibraryHook>();
-            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<HiddenContentResponseFilter>());
+
+            // Spoiler Guard: an MVC action filter on the Image controller blurs
+            // guarded-episode image bytes, so every client gets them via the native image API.
+            serviceCollection.AddSingleton<ImageBlurService>();
+            // Shared user-resolution + state-load helper. One instance, both filters use it
+            // so the IPv6 / shared-IP / fail-closed logic stays in ONE place.
+            serviceCollection.AddSingleton<SpoilerUserResolver>();
+            serviceCollection.AddSingleton<SpoilerBlurImageFilter>();
+            // Spoiler Field Strip: removes spoiler-y metadata (Overview, ratings,
+            // title, cast, etc.) from BaseItemDto responses for guarded unwatched episodes.
+            serviceCollection.AddSingleton<SpoilerFieldStripFilter>();
+            // Auto-enable spoiler mode for a series on first play of S1E1.
+            // Gated by SpoilerAutoEnableOnFirstPlay; runs on every PlaybackStart.
+            serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, SpoilerAutoEnableOnFirstPlayConsumer>();
+
+            // Promotes pending pre-acquisition Spoiler Guard entries (PendingTmdb)
+            // into real Series/Movies entries when matching library items land.
+            serviceCollection.AddHostedService<SpoilerSeerrPendingPromoter>();
+
+            serviceCollection.Configure<MvcOptions>(o =>
+            {
+                // All three are IAsyncActionFilters that rewrite the response after
+                // `await next()`, so post-processing runs in REVERSE registration order.
+                // Composition is order-independent anyway (HC drops whole items; the
+                // spoiler filters edit fields of survivors), but keep HC registered
+                // first so its short-circuit paths run last on the way out.
+                o.Filters.AddService<HiddenContentResponseFilter>();
+                o.Filters.AddService<SpoilerFieldStripFilter>();
+                o.Filters.AddService<SpoilerBlurImageFilter>();
+            });
         }
     }
 }

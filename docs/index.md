@@ -51,6 +51,11 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 - **Tag Links** - Display and filter *arr tags
 - **Calendar View** - Upcoming releases from Sonarr/Radarr
 
+### 🫣 [Spoiler Guard](spoiler-guard/spoiler-guard-features.md)
+- **Per-User Opt-In** - Protect individual shows, movies, and collections
+- **Image Protection** - Blur or stock-replace unwatched thumbnails, server-side
+- **Metadata Stripping** - Hide titles, synopses, ratings, chapters, and cast until watched
+
 ### 🎨 Other Features
 - **Custom Branding** - Upload your own logos and banners
 - **Theme Selector** - Choose from multiple color variants

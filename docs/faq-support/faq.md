@@ -212,6 +212,8 @@ Option B (manual in Seerr):
 
     - [Bookmark **data** `bookmarks.json`](../advanced/api.md#bookmark-api--info)
 
+    - Spoiler Guard **per-user list and override prefs** `spoilerblur.json`
+
    ** Stored in browsers' `localStorage`:**
 
     - [Users' **settings**](../enhanced/enhanced-features.md#smart-bookmarks)
