@@ -213,8 +213,12 @@
      * @param {HTMLElement} modalElement - The root element of the modal.
      * @param {object} data - The data fetched from the API, containing servers, profiles, and folders.
      * @param {string} idPrefix - The prefix ('movie' or 'tv') used for the element IDs.
+     * @param {boolean} [is4k] - The request's 4K mode. When provided, only a
+     *   server whose `is4k` matches is auto-selected -- Seerr flags one regular
+     *   AND one 4K instance as `isDefault: true` each, so without this the last
+     *   `isDefault` instance processed always wins regardless of request mode.
      */
-    modal.populateAdvancedOptions = function(modalElement, data, idPrefix) {
+    modal.populateAdvancedOptions = function(modalElement, data, idPrefix, is4k) {
         // Use a timer to ensure emby-select elements are ready
         let attempts = 0;
         const maxAttempts = 50; // 5 seconds
@@ -230,11 +234,19 @@
                 qualitySelect.innerHTML = '<option value="">Select Quality...</option>';
                 folderSelect.innerHTML = '<option value="">Select Folder...</option>';
 
-                data.servers.forEach(server => {
+                // Seerr returns instances in its own internal order (e.g. 4K
+                // instance first) -- sort alphabetically by name so the list is
+                // predictable regardless of how Seerr ordered them.
+                const sortedServers = [...data.servers].sort((a, b) =>
+                    (a.name || '').localeCompare(b.name || ''));
+
+                sortedServers.forEach(server => {
                     const option = document.createElement('option');
                     option.value = server.id;
                     option.textContent = server.name || `Server ${server.id}`;
-                    if (server.isDefault) option.selected = true;
+                    if (server.isDefault && (is4k === undefined || !!server.is4k === !!is4k)) {
+                        option.selected = true;
+                    }
                     serverSelect.appendChild(option);
                 });
 

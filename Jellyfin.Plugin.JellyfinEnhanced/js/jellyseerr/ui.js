@@ -2049,7 +2049,7 @@
 
         try {
             const data = await fetchAdvancedRequestData('movie');
-            populateAdvancedOptions(modalElement, data, 'movie');
+            populateAdvancedOptions(modalElement, data, 'movie', is4k);
         } catch (error) {
             console.error(`${logPrefix} Failed to load advanced options:`, error);
             JE.toast(JE.t('jellyseerr_err_load_server_options'), 3000);
@@ -2352,7 +2352,7 @@
         if (showAdvanced) {
             try {
                 const data = await fetchAdvancedRequestData('tv');
-                populateAdvancedOptions(modalInstance.modalElement, data, 'tv');
+                populateAdvancedOptions(modalInstance.modalElement, data, 'tv', is4k);
             } catch (error) {
                 console.error(`${logPrefix} Failed to load TV advanced options:`, error);
                 JE.toast(JE.t('jellyseerr_err_load_server_options'), 3000);
@@ -2648,7 +2648,7 @@
         if (showAdvanced) {
             try {
                 const advancedData = await fetchAdvancedRequestData('movie');
-                populateAdvancedOptions(modalInstance.modalElement, advancedData, 'movie');
+                populateAdvancedOptions(modalInstance.modalElement, advancedData, 'movie', false);
             } catch (error) {
                 console.error('Failed to load advanced options:', error);
             }
