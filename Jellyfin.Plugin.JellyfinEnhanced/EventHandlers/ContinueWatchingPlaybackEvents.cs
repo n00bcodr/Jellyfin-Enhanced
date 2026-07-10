@@ -162,34 +162,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
 
         private void OnItemRemoved(object? sender, ItemChangeEventArgs e)
         {
-            try
+            // ItemRemoved fires synchronously on Jellyfin's library-scan thread. Capture
+            // only the id here (O(1)); the user enumeration and the per-user hidden-content prune
+            // (file I/O) run off-thread. IUserManager is a thread-safe singleton, safe to read from
+            // the worker.
+            var id = e?.Item?.Id ?? Guid.Empty;
+            if (id == Guid.Empty) return;
+            var idStr = id.ToString();
+
+            _ = Task.Run(() =>
             {
-                var id = e?.Item?.Id ?? Guid.Empty;
-                if (id == Guid.Empty) return;
-                var idStr = id.ToString();
-
-                // Snapshot users sync (EventArgs/userManager not safe past handler return); offload the per-user loop.
-                var userIds = _userManager.GetAllUsers().Select(u => u.Id).ToArray();
-
-                _ = Task.Run(() =>
+                try
                 {
-                    try
+                    foreach (var userId in _userManager.GetAllUsers().Select(u => u.Id))
                     {
-                        foreach (var userId in userIds)
-                        {
-                            PruneOrphan(userId, idStr);
-                        }
+                        PruneOrphan(userId, idStr);
                     }
-                    catch (Exception ex)
-                    {
-                        _logger.Warning($"CW: orphan-prune background task failed: {ex.Message}");
-                    }
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"CW: orphan-prune failed before scheduling: {ex.Message}");
-            }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"CW: orphan-prune background task failed: {ex.Message}");
+                }
+            });
         }
 
         private void PruneOrphan(Guid userId, string targetId)

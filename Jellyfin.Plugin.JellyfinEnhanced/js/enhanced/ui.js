@@ -284,7 +284,7 @@
               font-style: normal;
               font-weight: 100 700;
               font-display: block;
-              src: url(https://fonts.gstatic.com/s/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2) format('woff2');
+              src: url(${JE.cdn.url('gfont', 's/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2')}) format('woff2');
             }
             .mediaInfoItem-fileSize .material-icons,
             .mediaInfoItem-watchProgress .material-icons,
@@ -523,6 +523,8 @@
      * Injects the "Jellyfin Enhanced" link into the user preferences menu (mypreferencesmenu.html).
      * Adds it as the last item in the first vertical section (after Controls).
      */
+    let userPrefsLinkObserver = null;
+
     JE.addUserPreferencesLink = () => {
         const addLinkToMenu = () => {
             const menuContainer = document.querySelector('#myPreferencesMenuPage:not(.hide) .verticalSection');
@@ -564,14 +566,20 @@
         // Try to add immediately
         if (addLinkToMenu()) return;
 
-        // If not found, observe for when the menu is loaded and visible
-        const observer = new MutationObserver(() => {
+        // If not found, observe for when the menu is loaded and visible.
+        // Keep at most one pending observer: this function is called on every
+        // DOM change (see the dom-observer in events.js), and creating a new
+        // body-wide observer per call leaks observers until the menu is opened.
+        if (userPrefsLinkObserver) return;
+
+        userPrefsLinkObserver = new MutationObserver(() => {
             if (addLinkToMenu()) {
-                observer.disconnect();
+                userPrefsLinkObserver.disconnect();
+                userPrefsLinkObserver = null;
             }
         });
 
-        observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+        userPrefsLinkObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     };
 
     /**

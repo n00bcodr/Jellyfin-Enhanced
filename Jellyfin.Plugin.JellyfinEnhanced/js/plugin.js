@@ -8,6 +8,25 @@
         userConfig: { settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } },
         translations: {},
         pluginVersion: 'unknown',
+        // Local CDN helper. Every third-party static asset (icons, fonts, flags, theme
+        // sheets, remote locales) is served from the plugin's own route
+        // (/JellyfinEnhanced/cdn/{source}/{path}) — backed by an on-disk cache refreshed
+        // every 24h — so the client never contacts an external CDN directly.
+        // Defined here (not in a loaded module) because component scripts load in parallel
+        // and reference these URLs at eval time, so JE.cdn must exist before they run.
+        cdn: {
+            // Build a local CDN route URL for an allow-listed {source} + sub-{path}.
+            url(source, path) {
+                const clean = String(path == null ? '' : path).replace(/^\/+/, '');
+                return ApiClient.getUrl(`/JellyfinEnhanced/cdn/${source}/${clean}`);
+            },
+            // selfhst icon pack, e.g. selfhst('svg/sonarr.svg') or selfhst('png/youtube.png')
+            selfhst(file) { return this.url('selfhst', file); },
+            // Country flag as a raster PNG (flagcdn), size like 'w20'
+            flagPng(code, size = 'w20') { return this.url('flagcdn', `${size}/${String(code).toLowerCase()}.png`); },
+            // Country flag as an SVG (cdnjs flag-icons, 4x3)
+            flagSvg(code) { return this.url('flag-icons', `flags/4x3/${String(code).toLowerCase()}.svg`); }
+        },
         // Stub functions that will be overwritten by modules
         icon: (name) => {
             // Fallback icon function until icons.js loads
@@ -157,7 +176,7 @@
             const link = document.createElement('link');
             link.id = 'metadataIconsCss';
             link.rel = 'stylesheet';
-            link.href = 'https://cdn.jsdelivr.net/gh/Druidblack/jellyfin-icon-metadata/public-icon.css';
+            link.href = JE.cdn.url('icon-metadata', 'public-icon.css');
             document.head.appendChild(link);
         } else if (!enabled && existing) {
             existing.remove();

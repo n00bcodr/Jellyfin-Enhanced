@@ -725,7 +725,7 @@ function buildRightPanel(data, mediaType, { budget, revenue, releaseDate, tmdbId
                         <div class="je-more-info-stat-value">${data.productionCountries.map(c => {
                             const disp = c?.name === 'United States of America' ? 'United States' : (c?.name || '');
                             const code = (c?.iso_3166_1 || '').toLowerCase();
-                            return `<div><img src="https://flagcdn.com/w20/${code}.png" alt="${escapeHtml(disp)}" title="${escapeHtml(disp)}" style="margin-right: 6px; vertical-align: middle;" /> ${escapeHtml(disp)}</div>`;
+                            return `<div><img src="${JE.cdn.flagPng(code)}" alt="${escapeHtml(disp)}" title="${escapeHtml(disp)}" style="margin-right: 6px; vertical-align: middle;" /> ${escapeHtml(disp)}</div>`;
                         }).join('')}</div>
                     </div>
                 ` : ''}
@@ -1061,7 +1061,7 @@ function buildTrailersSection(data) {
                     const thumbnailUrl = trailer.site === 'YouTube'
                         ? `https://img.youtube.com/vi/${trailer.key}/mqdefault.jpg`
                         : '';
-                    const youtubeIcon = trailer.site === 'YouTube' ? '<img src="https://cdn.jsdelivr.net/gh/selfhst/icons@main/png/youtube.png" alt="YouTube" class="trailer-youtube-icon" />' : '';
+                    const youtubeIcon = trailer.site === 'YouTube' ? `<img src="${JE.cdn.selfhst('png/youtube.png')}" alt="YouTube" class="trailer-youtube-icon" />` : '';
 
                     return `
                         <a is="emby-linkbutton" href="${escapeHtml(trailer.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(trailer.name)}" class="trailer-item">

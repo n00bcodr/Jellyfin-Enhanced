@@ -51,6 +51,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<SeerrScanTriggerService>();
             serviceCollection.AddSingleton<TagCacheService>();
             serviceCollection.AddSingleton<TagCacheMonitor>();
+            // Local CDN subsystem: serves every third-party static asset (icons, fonts,
+            // theme sheets, flags, remote locales) from the plugin's own route, backed by
+            // an on-disk cache that the RefreshCdnAssetsTask warms/refreshes every 24h.
+            serviceCollection.AddSingleton<CdnAssetService>();
+            serviceCollection.AddTransient<RefreshCdnAssetsTask>();
             serviceCollection.AddTransient<ArrTagsSyncTask>();
             serviceCollection.AddTransient<BuildTagCacheTask>();
             serviceCollection.AddTransient<JellyseerrWatchlistSyncTask>();

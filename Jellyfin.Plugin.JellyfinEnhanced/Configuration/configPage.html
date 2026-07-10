@@ -10,15 +10,21 @@
         link.rel = 'stylesheet';
         link.href = ApiClient.getUrl('/JellyfinEnhanced/Configuration/configPage.css');
         document.head.appendChild(link);
+
+        // Local CDN route helper. Every external CDN asset this admin page used to load
+        // directly (icons, screenshots, the Material Symbols font) is served from the
+        // plugin's own /JellyfinEnhanced/cdn/ route instead. Base-path-safe via
+        // ApiClient.getUrl so it works behind a reverse-proxy sub-path.
+        window.jeCdnUrl = function (subpath) {
+            return ApiClient.getUrl('/JellyfinEnhanced/cdn/' + subpath);
+        };
+        // Inject the Material Symbols Rounded @font-face pointing at the local gfont route
+        // (replaces the former fonts.gstatic.com @font-face).
+        var jeFontStyle = document.createElement('style');
+        jeFontStyle.textContent = "@font-face{font-family:'Material Symbols Rounded';font-style:normal;font-weight:100 700;font-display:block;src:url(" + jeCdnUrl('gfont/s/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2') + ") format('woff2');}";
+        document.head.appendChild(jeFontStyle);
     </script>
     <style>
-        @font-face {
-            font-family: 'Material Symbols Rounded';
-            font-style: normal;
-            font-weight: 100 700;
-            font-display: block;
-            src: url(https://fonts.gstatic.com/s/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2) format('woff2');
-        }
         .material-symbols-rounded {
             font-family: 'Material Symbols Rounded';
             font-weight: normal;
@@ -65,7 +71,7 @@
                 <button class="jellyfin-tab-button" data-tab="display"><h3><i class="material-icons je-tab-icon" aria-hidden="true">palette</i>Display</h3></button>
                 <button class="jellyfin-tab-button" data-tab="playback"><h3><i class="material-icons je-tab-icon" aria-hidden="true">play_circle</i>Playback</h3></button>
                 <button class="jellyfin-tab-button" data-tab="pages"><h3><i class="material-icons je-tab-icon" aria-hidden="true">view_list</i>Pages</h3></button>
-                <button class="jellyfin-tab-button" data-tab="seerr"><h3><img src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/seerr.svg" alt="" class="je-tab-icon-img">Seerr</h3></button>
+                <button class="jellyfin-tab-button" data-tab="seerr"><h3><img data-je-cdn="selfhst/svg/seerr.svg" alt="" class="je-tab-icon-img">Seerr</h3></button>
                 <button class="jellyfin-tab-button" data-tab="arr"><h3><i class="material-icons je-tab-icon" aria-hidden="true">dns</i>*arr</h3></button>
                 <button class="jellyfin-tab-button" data-tab="elsewhere"><h3><i class="material-icons je-tab-icon" aria-hidden="true">travel_explore</i>Elsewhere</h3></button>
                 <button class="jellyfin-tab-button" data-tab="extras"><h3><i class="material-icons je-tab-icon" aria-hidden="true">auto_awesome</i>Extras</h3></button>
@@ -1655,7 +1661,7 @@
                     </div>
 
                     <fieldset data-dep-setup>
-                        <legend class="sectionTitle"><img class="je-legend-icon-img" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg" alt="">Sonarr</legend>
+                        <legend class="sectionTitle"><img class="je-legend-icon-img" data-je-cdn="selfhst/svg/sonarr.svg" alt="">Sonarr</legend>
                         <div class="configSection">
                             <div class="je-setting-description" data-desc-for="sonarrInstancesList">
                                 <div class="fieldDescription">Automated TV show collection management and monitoring. Add one instance per Sonarr server.</div>
@@ -1670,7 +1676,7 @@
                     </fieldset>
 
                     <fieldset data-dep-setup>
-                        <legend class="sectionTitle"><img class="je-legend-icon-img" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr-light-hybrid-light.svg" alt="">Radarr</legend>
+                        <legend class="sectionTitle"><img class="je-legend-icon-img" data-je-cdn="selfhst/svg/radarr-light-hybrid-light.svg" alt="">Radarr</legend>
                         <div class="configSection">
                             <div class="je-setting-description" data-desc-for="radarrInstancesList">
                                 <div class="fieldDescription">Automated movie collection management and monitoring. Add one instance per Radarr server.</div>
@@ -1685,7 +1691,7 @@
                     </fieldset>
 
                     <fieldset data-dep-setup>
-                        <legend class="sectionTitle"><img class="je-legend-icon-img" src="https://cdn.jsdelivr.net/gh/selfhst/icons/svg/bazarr.svg" alt="">Bazarr</legend>
+                        <legend class="sectionTitle"><img class="je-legend-icon-img" data-je-cdn="selfhst/svg/bazarr.svg" alt="">Bazarr</legend>
                         <div class="configSection">
                             <div class="je-setting-description" data-desc-for="bazarrUrl">
                                 <div class="fieldDescription">Automated subtitle downloading and management for Sonarr and Radarr. Single instance, no API key — detail-page links only.</div>
@@ -1938,7 +1944,7 @@
                                     <details class="je-screenshot-details">
                                 <summary class="je-screenshot-summary">View Screenshot</summary>
                                 <a href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/docs/images/ratings.png" target="_blank">
-                                <img alt="Colored Ratings Example" class="je-screenshot-img" src="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/docs/images/ratings.png"/>
+                                <img alt="Colored Ratings Example" class="je-screenshot-img" data-je-cdn="je-docs-img/ratings.png"/>
                                 </a>
                                 </details>
                                 If you notice missing or incorrect ratings, please submit a PR to <a class="sectionTitle" href="https://github.com/n00bcodr/Jellyfin-Enhanced/" target="_blank">Jellyfin-Enhanced</a>.
@@ -1951,7 +1957,7 @@
                                     <details class="je-screenshot-details">
                                 <summary class="je-screenshot-summary">View Screenshot</summary>
                                 <a href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/docs/images/theme-selector.png" target="_blank">
-                                <img alt="Theme Selector Example" class="je-screenshot-img" src="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/docs/images/theme-selector.png"/>
+                                <img alt="Theme Selector Example" class="je-screenshot-img" data-je-cdn="je-docs-img/theme-selector.png"/>
                                 </a>
                                 </details>
                                 </div>
@@ -1969,7 +1975,7 @@
                                     <details class="je-screenshot-details">
                                 <summary class="je-screenshot-summary">View Screenshot</summary>
                                 <a href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/docs/images/colored-activity-icons.png" target="_blank">
-                                <img alt="Colored Activity Icons Example" class="je-screenshot-img" src="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/docs/images/colored-activity-icons.png"/>
+                                <img alt="Colored Activity Icons Example" class="je-screenshot-img" data-je-cdn="je-docs-img/colored-activity-icons.png"/>
                                 </a>
                                 </details>
                                 </div>
@@ -1981,7 +1987,7 @@
                                     <details class="je-screenshot-details">
                                 <summary class="je-screenshot-summary">View Screenshot</summary>
                                 <a href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/docs/images/login-image.png" target="_blank">
-                                <img alt="Login Image Example" class="je-screenshot-img" src="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/docs/images/login-image.png"/>
+                                <img alt="Login Image Example" class="je-screenshot-img" data-je-cdn="je-docs-img/login-image.png"/>
                                 </a>
                                 </details>
                                 </div>
@@ -1993,7 +1999,7 @@
                                     <details class="je-screenshot-details">
                                 <summary class="je-screenshot-summary">View Screenshot</summary>
                                 <a href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/docs/images/plugin-icons.png" target="_blank">
-                                <img alt="Plugin Icons Example" class="je-screenshot-img-sm" src="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/docs/images/plugin-icons.png"/>
+                                <img alt="Plugin Icons Example" class="je-screenshot-img-sm" data-je-cdn="je-docs-img/plugin-icons.png"/>
                                 </a>
                                 </details>
                                 </div>
@@ -2342,6 +2348,18 @@
 
             const page = document.querySelector('#JellyfinEnhancedPage');
             const form = document.querySelector('#JellyfinEnhancedForm');
+
+            // Point every CDN-backed image on this page at the local plugin CDN route.
+            // Images carry a data-je-cdn="<source>/<path>" attribute instead of a hardcoded
+            // external src, so the browser never contacts an external CDN. jeCdnUrl is
+            // defined in the head <script> above and is base-path-safe.
+            try {
+                document.querySelectorAll('img[data-je-cdn]').forEach((img) => {
+                    img.src = jeCdnUrl(img.getAttribute('data-je-cdn'));
+                });
+            } catch (e) {
+                console.warn('[JE] Failed to rewrite CDN image sources', e);
+            }
 
             // Theme detector: Jellyfin's themes hard-swap theme.css (no CSS
             // variable contract) so we infer dark vs. light from the computed

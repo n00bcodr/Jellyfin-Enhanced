@@ -23,7 +23,9 @@
         'Watermelon': 'watermelon.css'
     });
 
-    const THEME_BASE_URL = 'https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfish/colors/';
+    // Served locally via the plugin CDN route (jellyfish/colors/<theme>.css) instead of
+    // jsDelivr; trailing slash is preserved so `${THEME_BASE_URL}${filename}` still works.
+    const THEME_BASE_URL = window.JellyfinEnhanced.cdn.url('jellyfish', 'colors/');
     const RANDOM_THEME_DEFAULT = false;
     const CSS_STYLE_ID = 'jellyfin-theme-selector-css';
     const SELECTOR_ID = 'jellyfin-theme-selector';

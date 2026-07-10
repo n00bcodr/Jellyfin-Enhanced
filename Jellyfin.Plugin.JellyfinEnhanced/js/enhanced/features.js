@@ -626,7 +626,7 @@
                 const countryCode = languageToCountryMap[lang.name] || languageToCountryMap[lang.code];
                 if (countryCode) {
                     const flag = document.createElement('img');
-                    flag.src = `https://cdnjs.cloudflare.com/ajax/libs/flag-icons/7.2.1/flags/4x3/${countryCode.toLowerCase()}.svg`;
+                    flag.src = JE.cdn.flagSvg(countryCode);
                     flag.alt = `${lang.name} flag`;
                     flag.style.width = '18px';
                     flag.style.marginRight = '0.3em';
@@ -954,7 +954,7 @@
                 font-style: normal;
                 font-weight: 100 700;
                 font-display: block;
-                src: url(https://fonts.gstatic.com/s/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2) format('woff2');
+                src: url(${JE.cdn.url('gfont', 's/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2')}) format('woff2');
             }
             .je-release-date-icon {
                 font-family: 'Material Symbols Rounded';

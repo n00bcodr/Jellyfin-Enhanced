@@ -49,8 +49,8 @@
     Episode: "#4caf50",
   };
 
-  const SONARR_ICON_URL = "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg";
-  const RADARR_ICON_URL = "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr-light-hybrid-light.svg";
+  const SONARR_ICON_URL = window.JellyfinEnhanced.cdn.selfhst('svg/sonarr.svg');
+  const RADARR_ICON_URL = window.JellyfinEnhanced.cdn.selfhst('svg/radarr-light-hybrid-light.svg');
 
   // CSS Styles
   const CSS_STYLES = `
@@ -59,7 +59,7 @@
       font-style: normal;
       font-weight: 100 700;
       font-display: block;
-      src: url(https://fonts.gstatic.com/s/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2) format('woff2');
+      src: url(${window.JellyfinEnhanced.cdn.url('gfont', 's/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2')}) format('woff2');
     }
 
     .material-symbols-rounded {
