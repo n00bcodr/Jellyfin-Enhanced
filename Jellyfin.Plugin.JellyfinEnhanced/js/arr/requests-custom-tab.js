@@ -154,6 +154,15 @@
 
       var container = findActiveContainer();
       if (!container) {
+        // Still on the home page, but our tab panel isn't the active one
+        // (user switched to a sibling tab like Home/Favorites) -- stop
+        // polling so it doesn't keep running against a hidden tab.
+        if (lastMountedContainer) {
+          JE.downloadsPage.stopPolling?.();
+          if (JE.downloadsPage._state) {
+            JE.downloadsPage._state._customTabMode = false;
+          }
+        }
         lastMountedContainer = null;
         return;
       }
