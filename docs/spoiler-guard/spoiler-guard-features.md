@@ -24,6 +24,7 @@ Once you turn Spoiler Guard on for a show or movie, the plugin hides every spoil
 |---|---|
 | **Episode thumbnails** | Replaced with a parent-level placeholder (Series Backdrop, Series Primary, or Collection art) or blurred, depending on the admin's Image Replacement mode. |
 | **Season posters** | Same treatment as episode thumbnails — Season 1 always shows so you have an entry point; later seasons hide until any episode in them is watched. |
+| **TV show descriptions** | Replaced with the configured placeholder when the admin's independent TV-show-description option is enabled. |
 | **Episode titles** | Replaced with `Season X, Episode Y` so a title like "The Death of Y" can't spoil the reveal. |
 | **Episode synopses** | Replaced with a configurable placeholder (default: `Spoiler Guard activated`). |
 | **Tags** | Story tags like "Death of a main character" are dropped. |
@@ -51,7 +52,7 @@ Open any series detail page. The Spoiler Guard toggle button sits in the action 
 
 Click it. The button flips to **Spoiler Guard: On** and you'll see a toast confirmation:
 
-> Spoiler Guard on. Unwatched episodes will be blurred.
+> Spoiler Guard: On
 
 Every other Jellyfin client you use will pick up the same protection on its next image fetch — the server holds the opt-in list, not the browser.
 
@@ -63,7 +64,7 @@ The same toggle button appears on Movie detail pages. Click the toggle and the p
 |---|---|
 | ![Back to the Future Part II — Spoiler Guard off](web-bttf2-movie-before.png) | ![Back to the Future Part II — Spoiler Guard on](web-bttf2-movie-after.png) |
 
-> Spoiler Guard on. Movie images will be blurred until watched.
+> Spoiler Guard: On
 
 ### Per collection
 
@@ -75,7 +76,7 @@ With Spoiler Guard on, the collection art stays visible but the individual movie
 |---|---|
 | ![Back to the Future Collection — Spoiler Guard off](web-bttf-collection-before.png) | ![Back to the Future Collection — Spoiler Guard on](web-bttf-collection-after.png) |
 
-> Spoiler Guard on. Movies in this collection will be blurred until each is watched.
+> Spoiler Guard: On
 
 ### Pre-arming (for titles not yet in your library)
 
@@ -168,7 +169,7 @@ Both are admin-level (off by default). Ask your admin to turn them on if you wan
 Turning Spoiler Guard **off** prompts a brief confirmation:
 
 > **Disable Spoiler Guard?**  
-> Unblurred images and episode details will be visible again straight away.
+> Original images and episode details will be visible again straight away.
 
 A "Don't ask again for 15 minutes" checkbox lets you batch-disable a few series without re-confirming each time. The snooze is per-browser and self-expires.
 
@@ -180,9 +181,9 @@ This catches accidental clicks (the toggle is right next to Play / Mark Watched)
 
 Your admin decides which spoiler surfaces get stripped, but you can relax any of them for yourself. Open the JE settings panel (gear icon → **Jellyfin Enhanced**) and expand the **Spoiler Guard** section. Under **"Show me this even with Spoiler Guard on"** there's a checkbox per category:
 
-Episode descriptions, Episode titles, Chapter names, Cast list, Ratings, Air date, Taglines, Tags, and Reviews.
+TV show descriptions, Episode descriptions, Episode titles, Chapter names, Cast list, Ratings, Air date, Taglines, Tags, and Reviews.
 
-Every box starts checked (following your admin's policy). Uncheck one and that information becomes visible to you again on unwatched episodes of your Spoiler Guard shows — for example, uncheck **Ratings** if you like seeing community and critic scores but still want synopses and images hidden. Overrides only affect your account; images always stay protected regardless.
+Every box starts checked (following your admin's policy). Uncheck one and that information becomes visible to you again on the relevant protected show or unwatched episode — for example, uncheck **Ratings** if you like seeing community and critic scores but still want synopses and images hidden. Overrides only affect your account; images always stay protected regardless.
 
 A category only appears in the list when your admin has that strip enabled — there's nothing to opt out of for a category that's already off server-wide.
 
@@ -194,7 +195,7 @@ The same section has a **"Don't ask me to confirm when turning Spoiler Guard off
 
 A short list of things Spoiler Guard deliberately leaves alone:
 
-- **Series titles, posters, and series-level overviews** — the user-facing series identity. You opted in for this series, so its name and "this show is about X" description stay visible. Per-episode plot details are what get hidden.
+- **Series titles and posters** — the user-facing series identity stays visible. Series-level overviews are independently configurable: they stay visible when **Hide TV show descriptions** is off and use the placeholder when it is on.
 - **Collection posters** — same reasoning. The collection art is your entry point.
 - **The "this episode is here" indicator** — episode rows and counts in the season grid stay so you can navigate. Only the thumbnail / title / synopsis / chapters etc. are hidden.
 - **Season 0 (Specials) and Season 1 *posters*** — the season poster and season overview always pass through so you have an entry point into a brand-new show without every season being a wall of placeholders. Unwatched **episodes** inside Season 0/1 are still protected (their thumbnails/titles/synopses are hidden until you watch them) — it's only the season-level art that's exempt.
@@ -207,6 +208,8 @@ A short list of things Spoiler Guard deliberately leaves alone:
 Spoiler Guard preferences are **per user**. Your spoiler list doesn't affect anyone else on your server — and theirs doesn't affect yours.
 
 Cache-bust tokens are also per-user, so two users on the same family network seeing different blur states of the same image is fully supported. Native-client image caches (Glide, Coil, SDWebImage) automatically refetch when your watched-state changes, even though they otherwise cache strictly by URL.
+
+How the server knows *which* user an image request belongs to: image fetches are anonymous in Jellyfin, so the plugin embeds a small per-user **identity marker** in the image `tag` values each user receives. Every client — web, Android TV, iOS, Roku — echoes that value back when it fetches the image, letting Spoiler Guard apply exactly your protection state without depending on your device's IP address. This works out of the box behind reverse proxies, VPNs, and shared/NAT networks. Requests without a marker, such as a client replaying an old cached URL, fall back through the existing single-user, cookie, and shared-IP identity ladder and fail closed if the remaining candidates are ambiguous.
 
 ---
 
@@ -224,8 +227,10 @@ The admin needs to flip the master **Enable Spoiler Guard** switch in the plugin
 
 **Android TV (Wholphin / Moonfin / Findroid) shows the original images on first load after enabling Spoiler Guard.**
 
-Android TV clients cache image bytes locally using Glide / Coil. If you enabled Spoiler Guard for a series while that client already had the unblurred thumbnails cached on disk, the client serves them from cache instead of re-fetching from the server. **Clear the image cache once** in the client's settings (or force-stop the app and reopen) and the protected images will load correctly from that point onward. After this first clear, Spoiler Guard's per-user cache-bust tokens automatically invalidate the cache whenever your spoiler state changes — you won't need to clear it again.
+Android TV clients cache image bytes locally using Glide / Coil. If you enabled Spoiler Guard for a series while that client already had the original thumbnails cached on disk, the client serves them from cache instead of re-fetching from the server. **Clear the image cache once** in the client's settings (or force-stop the app and reopen) and the protected images will load correctly from that point onward. After this first clear, Spoiler Guard's per-user cache-bust tokens and identity markers automatically invalidate the cache whenever your spoiler state changes — you won't need to clear it again.
 
 **A user sees another user's shows blurred (or their own non-guarded shows blurred) behind a reverse proxy.**
 
-Spoiler Guard protects images per user. Web browsers carry the user's identity to each image request automatically; other clients (Android TV, mobile) are matched by the **IP address** their request comes from. If Jellyfin is behind a reverse proxy (Caddy, Nginx, Traefik, etc.) that isn't configured to forward the real client IP, *every* remote user appears to come from the proxy's single IP — so Spoiler Guard can't tell them apart and, to avoid leaking a spoiler, it fails **closed** (blurs the image if *any* of those users guarded it). Fix it by configuring the proxy to send `X-Forwarded-For` and adding the proxy to **Dashboard → Networking → Known proxies** so Jellyfin sees each real client IP. On a normal LAN (each device has its own IP) this never happens.
+This should no longer happen in normal operation. Spoiler Guard identifies image requests by the per-user **identity marker** embedded in image tags, which every client echoes back regardless of the IP address Jellyfin sees.
+
+If it still happens, the affected client is probably fetching images from old cached URLs minted before this feature. Those URLs carry no marker, so the server falls back to IP matching and fails closed on a shared IP. Clear the client's image cache once so it refetches fresh marker-carrying URLs, or configure the proxy to send `X-Forwarded-For` and add it to **Dashboard → Networking → Known proxies** so the fallback path can see real client IPs too. Identity tags are automatic whenever Spoiler Guard is enabled.

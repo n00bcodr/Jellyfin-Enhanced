@@ -9,13 +9,18 @@ All client-side scripts are now located in the `Jellyfin.Plugin.JellyfinEnhanced
 ```text
 Jellyfin.Plugin.JellyfinEnhanced/
 ├── EventHandlers/
-│   └── SpoilerAutoEnableEvents.cs
+│   ├── SpoilerAutoEnableEvents.cs
+│   └── UserTopologyEvents.cs
 ├── Model/
 │   └── TagCacheEntry.cs
 ├── Services/
+│   ├── Identity/
+│   │   └── RequestIdentityService.cs
 │   └── SpoilerGuard/
 │       ├── ImageBlurService.cs
 │       ├── SpoilerBlurImageFilter.cs
+│       ├── SpoilerIdentityService.cs
+│       ├── SpoilerIdentityTagFilter.cs
 │       ├── SpoilerFieldStripFilter.cs
 │       ├── SpoilerSeerrPendingPromoter.cs
 │       └── SpoilerUserResolver.cs
@@ -181,13 +186,18 @@ Jellyfin.Plugin.JellyfinEnhanced/
 * **`/Services/SpoilerGuard/`**: Server-side C# services that implement Spoiler Guard.
     * **`ImageBlurService.cs`**: SkiaSharp Gaussian blur, stock-card rendering, and the pre-encoded fail-closed fallback JPEG, with result caching.
     * **`SpoilerBlurImageFilter.cs`**: Intercepts image responses and replaces the bytes for unwatched items — safe parent art, blur, or the fail-closed dark card, depending on mode and availability.
+    * **`SpoilerIdentityService.cs`**: Mints and resolves stable per-user image identity markers.
+    * **`SpoilerIdentityTagFilter.cs`**: Stamps item DTO image tags with per-user identity markers so native image requests can be resolved without relying on IP address.
     * **`SpoilerFieldStripFilter.cs`**: Strips or rewrites metadata (titles, synopses, ratings, chapter names, cast, tags, taglines, air dates) in API responses for unwatched items, honoring per-user overrides.
     * **`SpoilerSeerrPendingPromoter.cs`**: Promotes pending pre-acquisition entries (registered from the Seerr More Info modal or auto-enable on request) into real per-item protection when the content lands in the library.
-    * **`SpoilerUserResolver.cs`**: Resolves the requesting user for the filters so spoiler state is applied per-user.
+    * **`SpoilerUserResolver.cs`**: Loads per-user Spoiler Guard state for the requesting user identified by `RequestIdentityService`.
+
+* **`/Services/Identity/`**: Shared request identity helpers.
+    * **`RequestIdentityService.cs`**: Resolves the current request identity using authenticated claims first, then image identity markers, single-user installs, cookies, and shared-IP session candidates.
 
 * **`/EventHandlers/`** (Spoiler Guard):
     * **`SpoilerAutoEnableEvents.cs`**: Implements "Auto-enable on first play of a new show" — adds a series to the user's Spoiler Guard list on a fresh S1E1 play.
+    * **`UserTopologyEvents.cs`**: Invalidates single-user and marker lookup caches when users are created or deleted.
 
 * **`/Model/`** (Spoiler Guard):
     * **`TagCacheEntry.cs`**: Pre-computed per-item tag data served to clients in bulk; carries the parent-series ID so the Spoiler Guard filter can strip cache entries for unwatched episodes without per-request library lookups.
-

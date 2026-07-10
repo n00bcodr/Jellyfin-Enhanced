@@ -74,6 +74,16 @@ Series and Episodes are unaffected by this toggle — they have their own per-as
 
 ---
 
+## Automatic per-user image identity tags (reverse-proxy safe)
+
+Whenever Spoiler Guard is enabled, the plugin automatically appends a small per-user **identity marker** to image `tag` values inside each user's API responses. Every client (web, Android TV, iOS, Roku, etc.) echoes that tag back when it fetches the image, letting Spoiler Guard apply exactly that user's protection state without relying on the request IP address. This keeps per-user protection precise behind reverse proxies, VPNs, and shared/NAT networks.
+
+There is no separate setting to disable identity tags. The marker is not a credential: a hand-crafted request can at most opt itself into another user's protection policy, not bypass authentication.
+
+Requests without a marker, such as a native client replaying an image URL cached before this feature, automatically fall back through the existing single-user, cookie, and shared-IP identity ladder.
+
+---
+
 ## Auto-enable on first play of a new show
 
 **Default: Off.** When on, the first time a user plays S1E1 of a series they've never watched before, the plugin automatically adds that series to their Spoiler Guard list. They don't have to remember to toggle it before starting.
@@ -107,9 +117,13 @@ The in-place refresh is also what runs automatically when a user marks an episod
 
 ---
 
-## Hide metadata on unwatched episodes
+## Hide metadata on protected content
 
 A collapsible sub-section of per-field hide toggles. When the master switch is on **all of these default to on** — that's the strict-by-default posture a user opted into when they enabled Spoiler Guard for a show. Admins can relax anything they don't want.
+
+### Hide TV show descriptions
+
+**Default: On.** Replaces the overview on a protected TV show's own detail page with the configured placeholder. This is independent from episode descriptions, so admins can keep a show's general premise visible while still hiding episode plots.
 
 ### Hide episode descriptions
 
@@ -117,7 +131,7 @@ A collapsible sub-section of per-field hide toggles. When the master switch is o
 
 #### Placeholder text
 
-**Default: `Spoiler Guard activated`.** Shown in place of the description so the client doesn't render an empty section header. The text is server-side-sanitized (HTML tags + angle brackets stripped, capped at 200 chars) whenever it is served — so even an admin who edits the plugin XML directly gets the same defense-in-depth at render time.
+**Default: `Spoiler Guard activated`.** Shown in place of a protected TV show or episode description so the client doesn't render an empty section header. The text is server-side-sanitized (HTML tags + angle brackets stripped, capped at 200 chars) whenever it is served — so even an admin who edits the plugin XML directly gets the same defense-in-depth at render time.
 
 ### Hide tags
 
@@ -168,7 +182,7 @@ In both modes the character name (`Role`) is also stripped from any surviving Pe
 
 ## Per-user overrides
 
-The metadata toggles above set server-wide policy, but individual users can opt back **out** of any strip category for themselves. The JE user settings panel (gear icon → **Jellyfin Enhanced** → **Spoiler Guard**) has a **"Show me this even with Spoiler Guard on"** area with one checkbox per category: Episode descriptions, Episode titles, Chapter names, Cast list, Ratings, Air date, Taglines, Tags, and Reviews.
+The metadata toggles above set server-wide policy, but individual users can opt back **out** of any strip category for themselves. The JE user settings panel (gear icon → **Jellyfin Enhanced** → **Spoiler Guard**) has a **"Show me this even with Spoiler Guard on"** area with one checkbox per category: TV show descriptions, Episode descriptions, Episode titles, Chapter names, Cast list, Ratings, Air date, Taglines, Tags, and Reviews.
 
 The gating is one-directional — the admin still decides what's available:
 
@@ -215,6 +229,7 @@ Most logs are at INFO; corruption + unexpected shapes log at WARNING.
 | Auto-enable on first play | Off |
 | Auto-enable on Seerr request | Off |
 | Strict refresh mode | Off |
+| Hide TV show descriptions | On |
 | Hide episode descriptions | On |
 | Placeholder text | `Spoiler Guard activated` |
 | Hide tags | On |

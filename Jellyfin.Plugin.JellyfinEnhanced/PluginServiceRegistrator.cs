@@ -76,6 +76,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<ImageBlurService>();
             // Shared user-resolution + state-load helper. One instance, both filters use it
             // so the IPv6 / shared-IP / fail-closed logic stays in ONE place.
+            serviceCollection.AddSingleton<SpoilerIdentityService>();
+            serviceCollection.AddSingleton<RequestIdentityService>();
+            serviceCollection.AddSingleton<SpoilerIdentityTagFilter>();
             serviceCollection.AddSingleton<SpoilerUserResolver>();
             serviceCollection.AddSingleton<SpoilerBlurImageFilter>();
             // Spoiler Field Strip: removes spoiler-y metadata (Overview, ratings,
@@ -84,6 +87,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Auto-enable spoiler mode for a series on first play of S1E1.
             // Gated by SpoilerAutoEnableOnFirstPlay; runs on every PlaybackStart.
             serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, SpoilerAutoEnableOnFirstPlayConsumer>();
+            serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserCreatedEventArgs>, UserCreatedIdentityInvalidator>();
+            serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, UserDeletedIdentityInvalidator>();
 
             // Promotes pending pre-acquisition Spoiler Guard entries (PendingTmdb)
             // into real Series/Movies entries when matching library items land.
@@ -93,10 +98,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             {
                 // All three are IAsyncActionFilters that rewrite the response after
                 // `await next()`, so post-processing runs in REVERSE registration order.
-                // Composition is order-independent anyway (HC drops whole items; the
-                // spoiler filters edit fields of survivors), but keep HC registered
-                // first so its short-circuit paths run last on the way out.
+                // Identity-tag stamping must run after field-strip cache-busting so
+                // clients echo the final "sb-...-jeu..." tag on image requests.
                 o.Filters.AddService<HiddenContentResponseFilter>();
+                o.Filters.AddService<SpoilerIdentityTagFilter>();
                 o.Filters.AddService<SpoilerFieldStripFilter>();
                 o.Filters.AddService<SpoilerBlurImageFilter>();
             });
