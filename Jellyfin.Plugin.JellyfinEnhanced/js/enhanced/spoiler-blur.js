@@ -699,8 +699,9 @@
         promise.then(function () {
             renderButton(button, willBeEnabled);
             button.setAttribute('data-je-spoiler-state', willBeEnabled ? 'on' : 'off');
-            // Per-kind toast wording: series mentions "unwatched
-            // episodes"; movie/collection don't fit that phrasing.
+            // Keep separate per-kind keys so translators can tailor the
+            // wording later; all enabled messages are deliberately
+            // mode-neutral because images may be hidden or blurred.
             var msg;
             if (willBeEnabled) {
                 if (kind === 'movie') msg = JE.t('spoiler_blur_enabled_movie_toast');

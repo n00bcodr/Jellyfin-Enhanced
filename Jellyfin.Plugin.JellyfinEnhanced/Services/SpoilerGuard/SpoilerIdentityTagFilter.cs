@@ -29,10 +29,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // guarded (that's precisely how a non-guarding user proves they're not
     // the guarding one and gets clean bytes on a shared IP). Unknown response
     // shapes are simply left unstamped; the resolver then falls back to the
-    // existing IP ladder for those images (fail-safe, strictly additive).
+    // existing single-user / cookie / shared-IP identity ladder for those
+    // images (fail-safe, strictly additive).
     //
-    // PERF(R-series server analogue): gates are three cheap checks before
-    // any work (master switch, toggle, authenticated user), and the stamp
+    // PERF(R-series server analogue): gates are two cheap checks before
+    // any work (master switch, authenticated user), and the stamp
     // itself is a handful of string appends + dictionary re-keys per item —
     // no I/O, no DB, no allocation beyond the new tag strings.
     public sealed class SpoilerIdentityTagFilter : IAsyncActionFilter
@@ -56,7 +57,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
             var cfg = JellyfinEnhanced.Instance?.Configuration;
-            if (cfg?.SpoilerBlurEnabled != true || !cfg.SpoilerIdentityTags)
+            if (cfg?.SpoilerBlurEnabled != true)
             {
                 return next();
             }
@@ -86,7 +87,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _resolver.WarnRateLimited(
                     "identitytag-apply:" + ex.GetType().FullName,
-                    $"Spoiler Guard identity tags: stamping failed — response served unstamped (image identity falls back to IP matching). {ex.Message}");
+                    $"Spoiler Guard identity tags: stamping failed — response served unstamped (image identity falls back to single-user/cookie/IP resolution). {ex.Message}");
             }
         }
 

@@ -123,6 +123,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     // never enables a strip the admin disabled — the admin cap still wins.
     public class SpoilerBlurUserPrefs
     {
+        public bool? HideSeriesDescriptions { get; set; }
         public bool? HideEpisodeDescriptions { get; set; }
         public bool? HideTags { get; set; }
         public bool? HideChapterNames { get; set; }

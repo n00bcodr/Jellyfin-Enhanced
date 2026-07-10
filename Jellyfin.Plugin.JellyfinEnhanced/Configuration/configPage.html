@@ -389,11 +389,6 @@
                                 <div class="fieldDescription">When on, a protected movie's poster still shows in full — the scene thumbnails inside the movie's detail page (chapters, screenshots) stay hidden. Useful if you find movie posters are usually marketing art that doesn't give plot away, while the chapter scene-thumbs inside the movie do. Doesn't affect TV shows.</div>
                             </div>
 
-                            <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerIdentityTags" is="emby-checkbox" type="checkbox"/><span>Per-user image identity tags</span></label></div>
-                            <div class="je-setting-description" data-desc-for="spoilerIdentityTags" data-gated-by="spoilerBlurEnabled">
-                                <div class="fieldDescription">Embeds a per-user marker in image tags so Spoiler Guard can tell users apart on native clients even behind reverse proxies that hide the real client IP. Leave on unless you are diagnosing image-cache issues; when off, anonymous native image requests fall back to cookie/IP matching.</div>
-                            </div>
-
                             <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerAutoEnableOnFirstPlay" is="emby-checkbox" type="checkbox"/><span>Auto-enable Spoiler Guard on first play of a new show</span></label></div>
                             <div class="je-setting-description" data-desc-for="spoilerAutoEnableOnFirstPlay" data-gated-by="spoilerBlurEnabled">
                                 <div class="fieldDescription">When on, Spoiler Guard turns itself on for a series the moment a user starts Season 1 Episode 1 of a show they've never watched. They don't have to remember to flip the toggle before pressing play. Rewatches and jumping in at later episodes are ignored — only a fresh first-play counts.</div>
@@ -416,9 +411,14 @@
                                         <div class="je-info-banner-row">
                                             <i class="material-icons je-info-icon">visibility_off</i>
                                             <div>
-                                                These options hide the various pieces of text on unwatched episodes of shows the user has Spoiler Guard on for. Hidden centrally so the protection works the same in every Jellyfin client.
+                                                These options hide spoiler-bearing text on protected TV shows and their unwatched episodes. Hidden centrally so the protection works the same in every Jellyfin client.
                                             </div>
                                         </div>
+                                    </div>
+
+                                    <div class="checkboxContainer"><label><input id="spoilerStripSeriesOverview" is="emby-checkbox" type="checkbox"/><span>Hide TV show descriptions</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="spoilerStripSeriesOverview">
+                                        <div class="fieldDescription">Swaps the description on a protected TV show's own detail page for the placeholder text below. Independent from episode descriptions, so you can keep the show's general premise visible while still hiding episode plots.</div>
                                     </div>
 
                                     <div class="checkboxContainer"><label><input id="spoilerStripOverview" is="emby-checkbox" type="checkbox"/><span>Hide episode descriptions</span></label></div>
@@ -426,12 +426,12 @@
                                         <div class="fieldDescription">Swaps the per-episode plot summary for the placeholder text below. The single biggest source of leaks — strongly recommended on.</div>
                                     </div>
 
-                                    <div class="inputContainer" data-gated-by="spoilerStripOverview">
+                                    <div class="inputContainer">
                                         <label class="inputLabel inputLabelUnfocused" for="spoilerOverviewPlaceholder">Placeholder text</label>
                                         <input id="spoilerOverviewPlaceholder" type="text" is="emby-input" maxlength="200"/>
                                     </div>
-                                    <div class="je-setting-description" data-desc-for="spoilerOverviewPlaceholder" data-gated-by="spoilerStripOverview">
-                                        <div class="fieldDescription">Text shown where the episode description would normally appear, so the page doesn't have an empty gap. Default: "Spoiler Guard activated".</div>
+                                    <div class="je-setting-description" data-desc-for="spoilerOverviewPlaceholder">
+                                        <div class="fieldDescription">Text shown where a protected TV show or episode description would normally appear, so the page doesn't have an empty gap. Default: "Spoiler Guard activated".</div>
                                     </div>
 
                                     <div class="checkboxContainer"><label><input id="spoilerStripTags" is="emby-checkbox" type="checkbox"/><span>Hide tags</span></label></div>
@@ -4529,6 +4529,10 @@
                 // when the admin enables Spoiler Guard); the artwork +
                 // auto-enable toggles default OFF.
                 [
+                    // A null value means this config predates the independent
+                    // Series switch. Mirror the old episode-overview value on
+                    // first load so upgrading does not silently change policy.
+                    ['spoilerStripSeriesOverview',  'SpoilerStripSeriesOverview',  config.SpoilerStripOverview !== false],
                     ['spoilerStripOverview',        'SpoilerStripOverview',        true],
                     ['spoilerStripTags',            'SpoilerStripTags',            true],
                     ['spoilerStripChapters',        'SpoilerStripChapters',        true],
@@ -4543,7 +4547,6 @@
                     ['spoilerAutoEnableOnSeerrRequest','SpoilerAutoEnableOnSeerrRequest',false],
                     ['spoilerBlurStrictRefresh',    'SpoilerBlurStrictRefresh',    false],
                     ['spoilerKeepMoviePosters',     'SpoilerKeepMoviePosters',     true],
-                    ['spoilerIdentityTags',         'SpoilerIdentityTags',         true],
                 ].forEach(function (t) {
                     var el = document.querySelector('#' + t[0]);
                     if (!el) return;
@@ -4903,13 +4906,14 @@
             }
             // Field-strip toggles
             [
-                'spoilerStripOverview', 'spoilerStripTags', 'spoilerStripChapters',
+                'spoilerStripSeriesOverview', 'spoilerStripOverview',
+                'spoilerStripTags', 'spoilerStripChapters',
                 'spoilerStripTaglines', 'spoilerStripRatings',
                 'spoilerStripPremiereDate',
                 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerStripReviews',
                 'spoilerBlurArtwork', 'spoilerAutoEnableOnFirstPlay',
                 'spoilerAutoEnableOnSeerrRequest', 'spoilerBlurStrictRefresh',
-                'spoilerKeepMoviePosters', 'spoilerIdentityTags',
+                'spoilerKeepMoviePosters',
             ].forEach(function (id) {
                 var el = document.querySelector('#' + id);
                 if (!el) return;
@@ -5988,8 +5992,7 @@
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
             { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseNativeTab', 'bookmarksUseCustomTabs'] },
             { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseNativeTab', 'hiddenContentUseCustomTabs'] },
-            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Guard', children: ['spoilerBlurIntensity', 'spoilerBlurArtwork', 'spoilerStripOverview', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripRatings', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerBlurStrictRefresh', 'spoilerKeepMoviePosters', 'spoilerIdentityTags'] },
-            { parent: 'spoilerStripOverview', label: 'Hide episode descriptions', children: ['spoilerOverviewPlaceholder'] },
+            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Guard', children: ['spoilerBlurIntensity', 'spoilerBlurArtwork', 'spoilerStripSeriesOverview', 'spoilerStripOverview', 'spoilerOverviewPlaceholder', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripRatings', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerBlurStrictRefresh', 'spoilerKeepMoviePosters'] },
             { parent: 'spoilerStripCast',     label: 'Hide cast on unwatched episodes', children: ['spoilerStripCastMode'] }
         ];
 

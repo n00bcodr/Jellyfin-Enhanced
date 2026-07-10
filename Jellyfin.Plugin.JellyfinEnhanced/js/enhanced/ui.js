@@ -1229,6 +1229,7 @@
                         // Each row only renders when the admin has the underlying strip enabled —
                         // a user can't opt out of a category the admin already disabled.
                         const adminOn = {
+                            seriesOverview: JE.pluginConfig.SpoilerStripSeriesOverview !== false,
                             overview: JE.pluginConfig.SpoilerStripOverview !== false,
                             tags: JE.pluginConfig.SpoilerStripTags !== false,
                             chapters: JE.pluginConfig.SpoilerStripChapters !== false,
@@ -1255,6 +1256,7 @@
                             <summary style="padding: 16px; font-weight: 600; color: ${primaryAccentColor}; cursor: pointer; user-select: none; font-family: inherit;">${JE.icon(JE.IconName.BLUR_ON)} ${JE.t('panel_settings_spoiler_guard')}</summary>
                             <div style="padding: 0 16px 16px 16px;">
                                 <div style="font-weight:500; font-size:13px; color:rgba(255,255,255,0.7); margin-bottom:8px; padding-left:4px;">${JE.t('panel_settings_spoiler_guard_overrides_section')}</div>
+                                ${row('sbPrefHideSeriesOverview',   'HideSeriesDescriptions',  'panel_settings_spoiler_guard_override_series_overview',  'panel_settings_spoiler_guard_override_series_overview_desc',  adminOn.seriesOverview)}
                                 ${row('sbPrefHideOverview',         'HideEpisodeDescriptions', 'panel_settings_spoiler_guard_override_overview',         'panel_settings_spoiler_guard_override_overview_desc',         adminOn.overview)}
                                 ${row('sbPrefReplaceTitle',         'ReplaceEpisodeTitles',    'panel_settings_spoiler_guard_override_titles',           'panel_settings_spoiler_guard_override_titles_desc',           adminOn.replaceTitle)}
                                 ${row('sbPrefHideChapters',         'HideChapterNames',        'panel_settings_spoiler_guard_override_chapters',         'panel_settings_spoiler_guard_override_chapters_desc',         adminOn.chapters)}

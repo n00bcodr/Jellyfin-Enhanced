@@ -15,7 +15,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // Strips spoiler-y metadata fields (Overview, Tags, Chapter names,
     // Taglines, ratings, premiere date, episode title, cast) from
     // BaseItemDto responses for UNWATCHED episodes whose parent series
-    // is in the requesting user's Spoiler Guard list.
+    // is in the requesting user's Spoiler Guard list. Series-level DTOs
+    // use a separate overview policy so admins and users can keep the
+    // show's general description without exposing episode plots.
     //
     // Runs as an MVC action filter scoped to the standard item-listing
     // endpoints (Items, NextUp, Episodes, Suggestions, etc.) so every
@@ -776,6 +778,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static bool ShouldStrip(bool adminOn, bool? userOverride)
             => adminOn && (userOverride ?? true);
 
+        // Series descriptions are independently configurable from episode,
+        // season, movie, and extra descriptions. The generic ApplyStripping
+        // path handles every guarded item kind, so choose the correct policy
+        // before touching Overview instead of coupling Series back to the
+        // legacy episode-description switch.
+        private static bool ShouldStripOverview(
+            BaseItemDto item,
+            UserSpoilerBlur userState,
+            PluginConfiguration cfg)
+            => item.Type == Jellyfin.Data.Enums.BaseItemKind.Series
+                ? ShouldStrip(
+                    cfg.SpoilerStripSeriesOverview ?? cfg.SpoilerStripOverview,
+                    userState.Prefs?.HideSeriesDescriptions)
+                : ShouldStrip(cfg.SpoilerStripOverview, userState.Prefs?.HideEpisodeDescriptions);
+
         private static string SanitizePlaceholder(string? raw)
         {
             if (string.IsNullOrEmpty(raw)) return "Spoiler Guard activated";
@@ -956,7 +973,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // only by that fallback path.
         private void ApplyStripping(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
         {
-            // Overview (episode synopsis) — single biggest spoiler vector.
+            var stripOverview = ShouldStripOverview(item, userState, cfg);
+
+            // Overview (episode / item synopsis) — single biggest spoiler vector.
+            // Series uses its own policy; every other guarded DTO keeps the
+            // established episode-description policy for compatibility.
             // Replace with the admin-configured placeholder so clients
             // don't render an empty "Description" header. We *replace*
             // rather than null because a literal null causes some clients
@@ -967,7 +988,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // even though the configPage save handler also strips tags.
             // Defends against a config XML that was edited directly on
             // disk bypassing the JS save path.
-            if (ShouldStrip(cfg.SpoilerStripOverview, userState.Prefs?.HideEpisodeDescriptions) && !string.IsNullOrEmpty(item.Overview))
+            if (stripOverview && !string.IsNullOrEmpty(item.Overview))
             {
                 item.Overview = SanitizePlaceholder(cfg.SpoilerOverviewPlaceholder);
             }
@@ -1164,7 +1185,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // carry the episode title. Future BaseItemDto fields added by
             // Jellyfin must be assumed-leaky until proven otherwise.
             if (ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles)
-                || ShouldStrip(cfg.SpoilerStripOverview, userState.Prefs?.HideEpisodeDescriptions))
+                || stripOverview)
             {
                 // Top-level title-bearing string fields.
                 if (!string.IsNullOrEmpty(item.Path)) item.Path = null;

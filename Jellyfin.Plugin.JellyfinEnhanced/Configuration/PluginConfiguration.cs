@@ -317,7 +317,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerAutoEnableOnSeerrRequest = false;
             SpoilerBlurStrictRefresh = false;
             SpoilerKeepMoviePosters = true;
-            SpoilerIdentityTags = true;
             SpoilerOverviewPlaceholder = "Spoiler Guard activated";
         }
 
@@ -663,6 +662,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // their spoiler list AND the episode is unwatched, an MVC action filter
         // nulls/replaces these BaseItemDto fields. Each toggle is independent and
         // defaults ON (strictest posture); admins relax them in the configPage.
+        // Series descriptions have their own toggle because the Series DTO has no
+        // watched state and some users still want the show's high-level premise
+        // visible while episode-level plot details remain protected. Null means
+        // this is an upgraded config that predates the split; consumers fall back
+        // to SpoilerStripOverview so the server's previous behavior is preserved
+        // until the admin saves an explicit independent choice.
+        public bool? SpoilerStripSeriesOverview { get; set; }
         public bool SpoilerStripOverview { get; set; } = true;
         public bool SpoilerStripTags { get; set; } = true;
         public bool SpoilerStripChapters { get; set; } = true;
@@ -719,11 +725,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // are usually curated marketing art, while chapter scene-thumbs (and
         // synopsis/cast) are the real spoiler vector. Off = hide posters too.
         public bool SpoilerKeepMoviePosters { get; set; } = true;
-        // Appends a per-user marker to image tags in authenticated DTO responses
-        // so anonymous native-client image requests can be attributed without
-        // relying on the client IP. Unknown or missing markers fall back to the
-        // existing cookie/IP identity ladder.
-        public bool SpoilerIdentityTags { get; set; } = true;
         // Placeholder for stripped Overview so the client doesn't render a
         // "Description" header over blank. Configurable for localisation.
         public string SpoilerOverviewPlaceholder { get; set; } = "Spoiler Guard activated";

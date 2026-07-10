@@ -2944,9 +2944,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.SpoilerBlurEnabled,
                 config.SpoilerBlurIntensity,
                 config.SpoilerBlurStrictRefresh,
-                config.SpoilerIdentityTags,
                 // Strip-policy fields drive the per-user override UI — only
                 // admin-enabled categories surface an opt-out toggle.
+                SpoilerStripSeriesOverview = config.SpoilerStripSeriesOverview ?? config.SpoilerStripOverview,
                 config.SpoilerStripOverview,
                 config.SpoilerStripTags,
                 config.SpoilerStripChapters,
@@ -4248,6 +4248,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     state.Prefs = new SpoilerBlurUserPrefs
                     {
+                        HideSeriesDescriptions = body.HideSeriesDescriptions,
                         HideEpisodeDescriptions = body.HideEpisodeDescriptions,
                         HideTags = body.HideTags,
                         HideChapterNames = body.HideChapterNames,
