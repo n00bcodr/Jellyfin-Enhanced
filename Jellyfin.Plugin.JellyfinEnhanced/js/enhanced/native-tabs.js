@@ -25,6 +25,8 @@
     /** Ordered list of {id, title, onMount, index}. Order determines data-index assignment. */
     var entries = [];
     var injectPending = false;
+    /** Whether the last ensureInjected() call found us off the home page -- logged only on change. */
+    var wasOffHomePage = false;
 
     function isOnHomePage() {
         var hash = window.location.hash;
@@ -58,9 +60,13 @@
         if (entries.length === 0) return;
 
         if (!isOnHomePage()) {
-            console.debug('🪼 Jellyfin Enhanced: [native-tabs] not on home page (hash=' + window.location.hash + '), skipping');
+            if (!wasOffHomePage) {
+                wasOffHomePage = true;
+                console.debug('🪼 Jellyfin Enhanced: [native-tabs] not on home page (hash=' + window.location.hash + '), skipping');
+            }
             return;
         }
+        wasOffHomePage = false;
 
         var slider = document.querySelector('.emby-tabs-slider');
         var root = getTabsRoot();
