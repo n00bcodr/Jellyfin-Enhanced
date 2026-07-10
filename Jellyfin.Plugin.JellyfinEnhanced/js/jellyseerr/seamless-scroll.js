@@ -243,6 +243,13 @@
             };
         });
         const scrollHandler = throttleFn(() => {
+            if (!sentinel.isConnected) {
+                // Sentinel was removed from the DOM (e.g. user navigated away) without
+                // cleanupInfiniteScroll being called. Self-heal so this listener doesn't
+                // keep firing requests forever from other pages.
+                window.removeEventListener('scroll', scrollHandler);
+                return;
+            }
             if (!hasMoreCheck() || isLoadingCheck()) return;
 
             const rect = sentinel.getBoundingClientRect();

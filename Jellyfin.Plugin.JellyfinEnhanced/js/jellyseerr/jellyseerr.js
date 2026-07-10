@@ -379,6 +379,25 @@
                 }
             }
 
+            /**
+             * Called on every SPA navigation. If we've navigated away from the search
+             * page entirely, tear down pagination/infinite-scroll state so stale
+             * scroll listeners don't keep hitting the search endpoint from other pages.
+             * Otherwise, (re)attach the search listener as usual.
+             */
+            function handleNavigate() {
+                const searchInput = document.querySelector('#searchPage #searchTextInput');
+                if (!searchInput) {
+                    clearTimeout(debounceTimeout);
+                    lastProcessedQuery = null;
+                    isJellyseerrOnlyMode = false;
+                    resetSearchPagination();
+                    document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
+                    return;
+                }
+                tryAttachSearchListener();
+            }
+
             // Listen for manual refresh events from the UI
             document.addEventListener('jellyseerr-manual-refresh', function(e) {
                 const searchInput = document.querySelector('#searchPage #searchTextInput');
@@ -398,12 +417,12 @@
             // Uses the shared je:navigate event (from helpers.js) which already
             // patches pushState/replaceState, plus popstate and hashchange.
             if (JE.helpers?.onNavigate) {
-                JE.helpers.onNavigate(() => setTimeout(tryAttachSearchListener, 200));
+                JE.helpers.onNavigate(() => setTimeout(handleNavigate, 200));
             } else {
                 // Fallback if helpers.js hasn't loaded yet — may double-fire with
                 // onNavigate if helpers loads later, but tryAttachSearchListener is
                 // idempotent (guarded by dataset.jellyseerrListener) so this is safe.
-                const onNav = () => setTimeout(tryAttachSearchListener, 200);
+                const onNav = () => setTimeout(handleNavigate, 200);
                 window.addEventListener('popstate', onNav);
                 window.addEventListener('hashchange', onNav);
             }
