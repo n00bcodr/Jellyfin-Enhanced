@@ -61,9 +61,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             }
             catch (Exception ex)
             {
-                // Never let a refresh failure surface as a task error — the route still
-                // serves lazily/on-demand, and stale copies remain usable.
-                _logger.Error($"[CDN] CDN asset refresh failed: {ex.Message}");
+                _logger.Error($"[CDN] CDN asset refresh failed: {ex}");
+                throw;
             }
             finally
             {
