@@ -630,7 +630,11 @@
             .jellyseerr-season-item { display: grid; grid-template-columns: 40px 1fr auto auto; align-items: center; gap: 16px; padding: 16px 20px; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(51, 65, 85, 0.3); border-radius: 12px; transition: all 0.2s ease; position: relative; }
             .jellyseerr-season-item:hover:not(.disabled) { background: rgba(30, 41, 59, 0.7); border-color: rgba(59, 130, 246, 0.3); transform: translateY(-1px); }
             .jellyseerr-season-item.disabled { background: rgba(15, 23, 42, 0.6); opacity: 0.6; border-color: rgba(51, 65, 85, 0.2); }
-            .jellyseerr-season-checkbox { width: 20px; height: 20px; accent-color: #4f46e5; border-radius: 4px; }
+            .jellyseerr-season-checkbox { appearance: none; -webkit-appearance: none; width: 40px; height: 22px; min-width: 40px; border-radius: 999px; background: rgba(71, 85, 105, 0.6); position: relative; cursor: pointer; transition: background-color 0.2s ease; }
+            .jellyseerr-season-checkbox::before { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform 0.2s ease; }
+            .jellyseerr-season-checkbox:checked { background: #4f46e5; }
+            .jellyseerr-season-checkbox:checked::before { transform: translateX(18px); }
+            .jellyseerr-season-checkbox:focus-visible { outline: 2px solid rgba(59, 130, 246, 0.8); outline-offset: 2px; }
             .jellyseerr-season-checkbox:disabled { opacity: 0.4; cursor: not-allowed; }
             .jellyseerr-season-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
             .jellyseerr-season-name { font-weight: 600; color: #e2e8f0; font-size: 1rem; }
@@ -650,7 +654,11 @@
             .jellyseerr-collection-header-row { display: grid; grid-template-columns: 40px 1fr auto auto; align-items: center; gap: 16px; padding: 12px 20px; background: rgba(51, 65, 85, 0.3); border: 1px solid rgba(71, 85, 105, 0.4); border-radius: 12px; margin-bottom: 8px; font-weight: 600; color: #e2e8f0; }
             .jellyseerr-collection-header-row .jellyseerr-collection-checkbox { cursor: pointer; }
             .jellyseerr-collection-header-label { font-size: 0.95rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #cbd5e1; }
-            .jellyseerr-collection-checkbox { width: 20px; height: 20px; accent-color: #4f46e5; border-radius: 4px; cursor: pointer; }
+            .jellyseerr-collection-checkbox { appearance: none; -webkit-appearance: none; width: 40px; height: 22px; min-width: 40px; border-radius: 999px; background: rgba(71, 85, 105, 0.6); position: relative; cursor: pointer; transition: background-color 0.2s ease; }
+            .jellyseerr-collection-checkbox::before { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform 0.2s ease; }
+            .jellyseerr-collection-checkbox:checked { background: #4f46e5; }
+            .jellyseerr-collection-checkbox:checked::before { transform: translateX(18px); }
+            .jellyseerr-collection-checkbox:focus-visible { outline: 2px solid rgba(59, 130, 246, 0.8); outline-offset: 2px; }
             .jellyseerr-collection-checkbox:disabled { opacity: 0.4; cursor: not-allowed; }
             .jellyseerr-collection-movie-row { display: grid; grid-template-columns: 40px 46px 1fr auto; align-items: center; gap: 16px; padding: 16px 20px; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(51, 65, 85, 0.3); border-radius: 8px; transition: all 0.2s ease; }
             .jellyseerr-collection-movie-row:hover:not(:has(input:disabled)) { background: rgba(30, 41, 59, 0.7); border-color: rgba(59, 130, 246, 0.3); }
