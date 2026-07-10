@@ -55,6 +55,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.TagCacheService _tagCacheService;
         private readonly MediaBrowser.Controller.Session.ISessionManager _sessionManager;
         private readonly Services.MaintenanceModeService _maintenanceModeService;
+        private readonly Services.CdnAssetService _cdnAssetService;
         private readonly Services.SpoilerUserResolver _spoilerResolver;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
@@ -167,6 +168,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.TagCacheService tagCacheService,
             MediaBrowser.Controller.Session.ISessionManager sessionManager,
             Services.MaintenanceModeService maintenanceModeService,
+            Services.CdnAssetService cdnAssetService,
             Services.SpoilerUserResolver spoilerResolver)
         {
             _httpClientFactory = httpClientFactory;
@@ -181,6 +183,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _tagCacheService = tagCacheService;
             _sessionManager = sessionManager;
             _maintenanceModeService = maintenanceModeService;
+            _cdnAssetService = cdnAssetService;
             _spoilerResolver = spoilerResolver;
         }
 
@@ -3008,6 +3011,54 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 .ToArray();
 
             return Ok(locales);
+        }
+
+        /// <summary>
+        /// Local CDN route. Serves a third-party static asset (icon, font, flag, theme
+        /// sheet, remote locale, …) from the plugin's on-disk cache, fetching it from the
+        /// fixed upstream CDN on a cache miss. This is the ONLY endpoint clients use for
+        /// these assets — they never contact an external host directly.
+        ///
+        /// Anonymous by design: these are public assets loaded via &lt;img&gt;, CSS
+        /// @import and &lt;link&gt;, none of which can carry a Jellyfin auth token, and no
+        /// user data is exposed. The {source} is validated against a fixed allow-list and
+        /// {path} is strictly sanitized in the service, so this cannot be used as an open
+        /// proxy.
+        /// </summary>
+        [HttpGet("cdn/{source}/{**path}")]
+        public async Task<IActionResult> GetCdnAsset(string source, string path, CancellationToken cancellationToken)
+        {
+            if (!_cdnAssetService.IsValidSource(source))
+            {
+                return NotFound();
+            }
+
+            var asset = await _cdnAssetService.GetAsync(source, path ?? string.Empty, forceRefresh: false, cancellationToken).ConfigureAwait(false);
+            if (asset == null)
+            {
+                return NotFound();
+            }
+
+            // Long-lived immutable caching: after the first hit the browser serves these
+            // from its own cache and rarely re-requests. Conditional requests get a 304.
+            Response.Headers["Cache-Control"] = "public, max-age=86400";
+            Response.Headers["ETag"] = asset.ETag;
+            // Defence in depth for SVG served same-origin: forbid MIME sniffing and, for
+            // SVG specifically, sandbox it so an embedded <script> can never execute if it
+            // were opened directly.
+            Response.Headers["X-Content-Type-Options"] = "nosniff";
+            if (asset.ContentType.Equals("image/svg+xml", StringComparison.OrdinalIgnoreCase))
+            {
+                Response.Headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+            }
+
+            if (Request.Headers.TryGetValue("If-None-Match", out var ifNoneMatch)
+                && ifNoneMatch.ToString().Contains(asset.ETag, StringComparison.Ordinal))
+            {
+                return StatusCode(304);
+            }
+
+            return File(asset.Content, asset.ContentType);
         }
 
         [HttpGet("locales/{lang}.json")]

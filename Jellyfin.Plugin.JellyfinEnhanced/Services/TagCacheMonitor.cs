@@ -1,6 +1,5 @@
 using System;
 using Jellyfin.Data.Enums;
-using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
@@ -57,43 +56,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var kind = item.GetBaseItemKind();
             if (!TagCacheService.TaggableTypes.Contains(kind)) return;
 
-            try
-            {
-                _tagCacheService.UpdateItem(item);
+            // Only record ids here — no DB query, no media probe. Jellyfin raises
+            // these events synchronously on the library-scan thread (once per item, many times
+            // during a scan), so the heavy BuildEntryForItem work is coalesced and run
+            // off-thread by the service. See TagCacheService.EnqueueUpdate.
+            _tagCacheService.EnqueueUpdate(item.Id);
 
-                // If an episode changed, update its parent Series and Season too
-                // (first-episode data may have changed)
-                if (kind == BaseItemKind.Episode && item is MediaBrowser.Controller.Entities.TV.Episode ep)
-                {
-                    if (ep.SeriesId != Guid.Empty)
-                    {
-                        var series = _libraryManager.GetItemById<BaseItem>(ep.SeriesId);
-                        if (series != null) _tagCacheService.UpdateItem(series);
-                    }
-                    if (ep.SeasonId != Guid.Empty)
-                    {
-                        var season = _libraryManager.GetItemById<BaseItem>(ep.SeasonId);
-                        if (season != null) _tagCacheService.UpdateItem(season);
-                    }
-                }
-            }
-            catch (Exception ex)
+            // An episode change can alter its parent Series/Season derived data
+            // (first-episode genres/streams/ratings), so queue those too. SeriesId and
+            // SeasonId are in-memory properties, so reading them costs nothing and never
+            // touches the database. Empty guids are ignored by EnqueueUpdate.
+            if (kind == BaseItemKind.Episode && item is MediaBrowser.Controller.Entities.TV.Episode ep)
             {
-                _logger.Warning($"[TagCacheMonitor] Error updating cache for {item.Id}: {ex.Message}");
+                _tagCacheService.EnqueueUpdate(ep.SeriesId);
+                _tagCacheService.EnqueueUpdate(ep.SeasonId);
             }
         }
 
         private void OnItemRemoved(object? sender, ItemChangeEventArgs e)
         {
             if (e.Item == null) return;
-            try
-            {
-                _tagCacheService.RemoveItem(e.Item.Id);
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"[TagCacheMonitor] Error removing {e.Item.Id} from cache: {ex.Message}");
-            }
+            _tagCacheService.EnqueueRemoval(e.Item.Id);
         }
 
         public void Dispose()

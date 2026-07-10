@@ -141,9 +141,9 @@
         }
 
         try {
-            const SONARR_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/sonarr.svg';
-            const RADARR_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/radarr-light-hybrid-light.svg';
-            const BAZARR_ICON_URL = 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/bazarr.svg';
+            const SONARR_ICON_URL = JE.cdn.selfhst('svg/sonarr.svg');
+            const RADARR_ICON_URL = JE.cdn.selfhst('svg/radarr-light-hybrid-light.svg');
+            const BAZARR_ICON_URL = JE.cdn.selfhst('svg/bazarr.svg');
 
             // Multi-instance support: read instance arrays from private-config, drop disabled
             // entries so the dropdown never offers a link to an instance the admin has toggled

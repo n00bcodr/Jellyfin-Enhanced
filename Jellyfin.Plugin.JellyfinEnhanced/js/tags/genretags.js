@@ -344,7 +344,9 @@
             const link = document.createElement('link');
             link.id = 'mat-sym';
             link.rel = 'stylesheet';
-            link.href = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@48,400,0,0';
+            // Served locally: the plugin proxies the Google Fonts css2 sheet and rewrites
+            // its @font-face URLs to the local gfont route, so no request reaches Google.
+            link.href = JE.cdn.url('gfontcss', 'material-symbols-outlined');
             document.head.appendChild(link);
         }
 

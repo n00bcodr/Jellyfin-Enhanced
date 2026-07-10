@@ -65,7 +65,7 @@
                     blur: '--rounding',
                     blurFallback: '12px',
                     logo: null, // Zesty doesn't use a separate CSS variable for logo
-                    logoFallback: 'https://cdn.jsdelivr.net/gh/stpnwf/ZestyTheme@latest/images/logo/jellyfin-logo-light.png'
+                    logoFallback: JE.cdn.url('zesty', 'images/logo/jellyfin-logo-light.png')
                 }
             },
 

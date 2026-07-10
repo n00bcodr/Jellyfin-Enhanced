@@ -26,10 +26,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly Logger _logger;
         private volatile ConcurrentDictionary<string, TagCacheEntry> _cache = new();
         private readonly object _saveLock = new();
+        private readonly SemaphoreSlim _rebuildLock = new(1, 1);
         private long _version;
         private long _lastModified;
+        private long _lastReconciledUtcTicks;
         private Timer? _debounceSaveTimer;
         private volatile bool _dirty;
+
+        // Incremental cache maintenance. Library-scan events are recorded here (O(1),
+        // no DB/probe work) and drained by a debounced background worker so scans are
+        // never blocked and repeated hits on the same id coalesce to one rebuild.
+        private readonly TagCachePendingChanges _pending = new();
+        private Timer? _flushTimer;
+        private long _firstPendingTicks; // 0 = nothing pending since last flush
+        private int _flushing;           // 0/1 non-reentrancy guard for the worker
+        private volatile bool _disposed; // set in Dispose; stops timer resurrection after teardown
+        private static readonly TimeSpan FlushDebounce = TimeSpan.FromSeconds(3);
+        private static readonly TimeSpan FlushMaxWait = TimeSpan.FromSeconds(30);
 
         // Bump whenever a TagCacheEntry field the STRIP paths depend on is added,
         // so a cache serialized by an older build is discarded and rebuilt. v2
@@ -72,6 +85,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public void BuildFullCache(IProgress<double>? progress, CancellationToken cancellationToken)
         {
+            _rebuildLock.Wait(cancellationToken);
+            try
+            {
+                BuildFullCacheCore(progress, cancellationToken, DateTime.UtcNow);
+            }
+            finally
+            {
+                _rebuildLock.Release();
+            }
+        }
+
+        private void BuildFullCacheCore(IProgress<double>? progress, CancellationToken cancellationToken, DateTime reconciliationStartedUtc)
+        {
             _logger.Info("[TagCache] Starting full cache build...");
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
@@ -109,6 +135,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _cache = newCache;
             Interlocked.Increment(ref _version);
             Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciliationStartedUtc.Ticks);
             // Invalidate user access cache since items may have changed
             _userAccessCache.Clear();
             progress?.Report(100);
@@ -120,35 +147,295 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
-        /// Update (or insert) a single item in the cache.
-        /// Called by TagCacheMonitor on ItemAdded/ItemUpdated events.
+        /// Reconcile the persisted tag cache with Jellyfin's saved-item timestamps.
+        /// Rebuilds only items saved since the previous successful run, then sweeps
+        /// cached IDs that no longer exist in the live library.
         /// </summary>
-        public void UpdateItem(BaseItem item)
+        public void ReconcileCache(IProgress<double>? progress, CancellationToken cancellationToken)
         {
-            var kind = item.GetBaseItemKind();
-            if (!TaggableTypes.Contains(kind)) return;
-
-            var entry = BuildEntryForItem(item);
-            if (entry != null)
+            _rebuildLock.Wait(cancellationToken);
+            try
             {
-                var key = item.Id.ToString("N").ToLowerInvariant();
-                _cache[key] = entry;
+                ReconcileCacheCore(progress, cancellationToken);
+            }
+            finally
+            {
+                _rebuildLock.Release();
+            }
+        }
+
+        private void ReconcileCacheCore(IProgress<double>? progress, CancellationToken cancellationToken)
+        {
+            var reconciliationStartedUtc = DateTime.UtcNow;
+            var previousTicks = Interlocked.Read(ref _lastReconciledUtcTicks);
+
+            if (_cache.IsEmpty)
+            {
+                _logger.Info("[TagCache] Cache is empty; running full build");
+                BuildFullCacheCore(progress, cancellationToken, reconciliationStartedUtc);
+                return;
+            }
+
+            if (previousTicks <= 0)
+            {
+                previousTicks = reconciliationStartedUtc.Ticks;
+                Interlocked.Exchange(ref _lastReconciledUtcTicks, previousTicks);
+                _logger.Info("[TagCache] No previous reconciliation marker; seeding marker and running delta reconciliation");
+            }
+
+            var changedSinceUtc = new DateTime(previousTicks, DateTimeKind.Utc).Subtract(TimeSpan.FromMinutes(2));
+            _logger.Info($"[TagCache] Reconciling changes since {changedSinceUtc:O}");
+
+            var changedItems = _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = TaggableTypes.ToArray(),
+                IsVirtualItem = false,
+                Recursive = true,
+                MinDateLastSaved = changedSinceUtc
+            }).ToList();
+
+            var idsToRebuild = new HashSet<Guid>();
+            foreach (var item in changedItems)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                idsToRebuild.Add(item.Id);
+
+                if (item is MediaBrowser.Controller.Entities.TV.Episode episode)
+                {
+                    if (episode.SeriesId != Guid.Empty)
+                    {
+                        idsToRebuild.Add(episode.SeriesId);
+                    }
+
+                    if (episode.SeasonId != Guid.Empty)
+                    {
+                        idsToRebuild.Add(episode.SeasonId);
+                    }
+                }
+            }
+
+            var changed = false;
+            var processed = 0;
+            foreach (var id in idsToRebuild)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                changed |= RebuildEntry(id);
+                processed++;
+                progress?.Report(idsToRebuild.Count == 0 ? 50 : (double)processed / idsToRebuild.Count * 80);
+            }
+
+            var currentIds = _libraryManager.GetItemIds(new InternalItemsQuery
+            {
+                IncludeItemTypes = TaggableTypes.ToArray(),
+                IsVirtualItem = false,
+                Recursive = true
+            });
+
+            var liveKeys = currentIds
+                .Select(id => id.ToString("N").ToLowerInvariant())
+                .ToHashSet(StringComparer.Ordinal);
+
+            foreach (var cachedKey in _cache.Keys)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!liveKeys.Contains(cachedKey) && _cache.TryRemove(cachedKey, out _))
+                {
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                Interlocked.Increment(ref _version);
                 Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-                ScheduleDebouncedSave();
+                _userAccessCache.Clear();
+            }
+
+            Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciliationStartedUtc.Ticks);
+            progress?.Report(100);
+            SaveToDisk();
+
+            _logger.Info($"[TagCache] Reconciliation complete: {changedItems.Count} changed items, {idsToRebuild.Count} entries checked");
+        }
+
+        /// <summary>
+        /// Queue an item to be (re)built in the cache. Called by TagCacheMonitor on
+        /// ItemAdded/ItemUpdated. This only records the id and arms a debounced
+        /// background flush — it performs NO database query and NO media probe, so it
+        /// is safe to call on Jellyfin's synchronous library-scan thread. The heavy
+        /// BuildEntryForItem work happens off-thread in <see cref="FlushPending"/>,
+        /// and a burst of events for the same id collapses to a single rebuild.
+        /// </summary>
+        public void EnqueueUpdate(Guid itemId)
+        {
+            if (itemId == Guid.Empty) return;
+            _pending.Record(itemId, removed: false); // O(1) record-and-defer, safe on the scan thread
+            ScheduleFlush();
+        }
+
+        /// <summary>
+        /// Queue an item to be removed from the cache. Called by TagCacheMonitor on
+        /// ItemRemoved. Like <see cref="EnqueueUpdate"/>, this does no work on the
+        /// caller's thread beyond recording the id.
+        /// </summary>
+        public void EnqueueRemoval(Guid itemId)
+        {
+            if (itemId == Guid.Empty) return;
+            _pending.Record(itemId, removed: true);
+            ScheduleFlush();
+        }
+
+        /// <summary>
+        /// Stamp the first-pending time (if unset) and arm the debounced background flush.
+        /// </summary>
+        private void ScheduleFlush()
+        {
+            Interlocked.CompareExchange(ref _firstPendingTicks, DateTime.UtcNow.Ticks, 0);
+            ArmFlushTimer(ComputeFlushDelay());
+        }
+
+        /// <summary>
+        /// Arm (or reset) the single flush timer to fire once after <paramref name="due"/>.
+        /// </summary>
+        private void ArmFlushTimer(TimeSpan due)
+        {
+            // Never resurrect a timer after Dispose: a concurrent FlushPending's finally
+            // re-arm (or a late library event) could otherwise create a live Timer after
+            // Dispose already nulled/disposed it, leaking a callback into a torn-down service.
+            if (_disposed) return;
+
+            var existing = _flushTimer;
+            if (existing != null)
+            {
+                try
+                {
+                    existing.Change(due, Timeout.InfiniteTimeSpan);
+                    return;
+                }
+                catch (ObjectDisposedException) { }
+            }
+
+            var timer = new Timer(_ => FlushPending(), null, due, Timeout.InfiniteTimeSpan);
+            var old = Interlocked.Exchange(ref _flushTimer, timer);
+            if (old != null && !ReferenceEquals(old, timer))
+            {
+                old.Dispose();
+            }
+
+            // Close the check-then-create race with Dispose: if Dispose set _disposed after we
+            // passed the guard above but our timer was already published, reclaim and dispose it
+            // so we never leave a live callback on a torn-down service.
+            if (_disposed)
+            {
+                var orphan = Interlocked.Exchange(ref _flushTimer, null);
+                orphan?.Dispose();
+            }
+        }
+
+        private TimeSpan ComputeFlushDelay() =>
+            ComputeFlushDelay(Interlocked.Read(ref _firstPendingTicks), DateTime.UtcNow, FlushDebounce, FlushMaxWait);
+
+        /// <summary>
+        /// Debounced due-time with a hard cap: normally <paramref name="debounce"/> after the last
+        /// change, but never later than <paramref name="maxWait"/> after the first pending change,
+        /// so a continuous scan that keeps resetting the debounce still flushes periodically. Pure
+        /// (clock passed in) so the cap math is unit-testable without wall-clock waits.
+        /// </summary>
+        internal static TimeSpan ComputeFlushDelay(long firstPendingTicks, DateTime nowUtc, TimeSpan debounce, TimeSpan maxWait)
+        {
+            if (firstPendingTicks == 0) return debounce;
+
+            var elapsed = nowUtc - new DateTime(firstPendingTicks, DateTimeKind.Utc);
+            var remainingCap = maxWait - elapsed;
+            if (remainingCap <= TimeSpan.Zero) return TimeSpan.Zero;
+            return remainingCap < debounce ? remainingCap : debounce;
+        }
+
+        /// <summary>
+        /// Drain the pending set and apply each change on a background thread. Never
+        /// runs on the scan thread. Non-reentrant: an overlapping timer tick re-arms
+        /// instead of running a second concurrent flush.
+        /// </summary>
+        private void FlushPending()
+        {
+            // Non-reentrant: if a flush already owns the batch, retry after the debounce.
+            // (Retry via ArmFlushTimer, NOT ScheduleFlush: once the first pending change is older
+            // than FlushMaxWait, ScheduleFlush would compute a zero delay and busy-spin the timer
+            // until the running flush exits.)
+            if (Interlocked.Exchange(ref _flushing, 1) == 1)
+            {
+                ArmFlushTimer(FlushDebounce);
+                return;
+            }
+
+            try
+            {
+                Interlocked.Exchange(ref _firstPendingTicks, 0);
+                if (ApplyBatch(_pending.Drain(), RebuildEntry, RemoveEntry))
+                {
+                    Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                    ScheduleDebouncedSave();
+                }
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _flushing, 0);
+                // Ids recorded while we were draining/applying: run again (cap-aware).
+                if (!_pending.IsEmpty) ScheduleFlush();
             }
         }
 
         /// <summary>
-        /// Remove an item from the cache.
+        /// Apply a drained batch: removals -> <paramref name="remove"/>, updates -> <paramref name="rebuild"/>.
+        /// A failing entry is logged and skipped, never aborting the rest of the batch. Returns true if any
+        /// change modified the cache. The host lookups live behind the delegates so the dispatch, resilience
+        /// and change-aggregation can be unit-tested without a live library.
         /// </summary>
-        public void RemoveItem(Guid itemId)
+        internal bool ApplyBatch(IReadOnlyList<(Guid Id, bool Removed)> batch, Func<Guid, bool> rebuild, Func<Guid, bool> remove)
         {
-            var key = itemId.ToString("N").ToLowerInvariant();
-            if (_cache.TryRemove(key, out _))
+            var changed = false;
+            foreach (var (id, removed) in batch)
             {
-                Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-                ScheduleDebouncedSave();
+                try
+                {
+                    changed |= removed ? remove(id) : rebuild(id);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"[TagCache] Failed to apply pending change for {id}: {ex.Message}");
+                }
             }
+
+            return changed;
+        }
+
+        /// <summary>
+        /// Resolve an id to its live library item and (re)build its cache entry.
+        /// Returns true if the cache was modified. Runs on the flush worker only.
+        /// </summary>
+        private bool RebuildEntry(Guid id)
+        {
+            var item = _libraryManager.GetItemById<BaseItem>(id);
+            if (item == null) return false; // gone before we processed it; ItemRemoved cleans up
+
+            var kind = item.GetBaseItemKind();
+            if (!TaggableTypes.Contains(kind)) return false;
+
+            var entry = BuildEntryForItem(item);
+            if (entry == null) return false;
+
+            var key = id.ToString("N").ToLowerInvariant();
+            _cache[key] = entry;
+            return true;
+        }
+
+        private bool RemoveEntry(Guid id)
+        {
+            var key = id.ToString("N").ToLowerInvariant();
+            return _cache.TryRemove(key, out _);
         }
 
         /// <summary>
@@ -212,7 +499,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     // Discard a cache written by an older schema (e.g. predating
                     // SeriesId) rather than serving entries the strip paths can't
-                    // process. Starting empty is safe — the Build task rebuilds it.
+                    // process. Starting empty is safe — the refresh task rebuilds it.
                     if (data.SchemaVersion != CurrentCacheSchemaVersion)
                     {
                         _logger.Info($"[TagCache] On-disk cache schema v{data.SchemaVersion} != current v{CurrentCacheSchemaVersion}; discarding {data.Items.Count} entries and rebuilding on next scan.");
@@ -222,6 +509,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _cache = loaded;
                     Interlocked.Exchange(ref _version, data.Version);
                     Interlocked.Exchange(ref _lastModified, data.LastModified);
+                    var reconciledTicks = data.LastReconciledUtcTicks;
+                    if (reconciledTicks <= 0 && data.Items.Count > 0)
+                    {
+                        reconciledTicks = File.GetLastWriteTimeUtc(path).Ticks;
+                        _logger.Info($"[TagCache] On-disk cache has no reconciliation marker; using cache file timestamp {new DateTime(reconciledTicks, DateTimeKind.Utc):O}");
+                    }
+                    Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciledTicks);
                     _logger.Info($"[TagCache] Loaded {_cache.Count} entries from disk (v{data.Version}, schema v{data.SchemaVersion})");
                 }
             }
@@ -248,6 +542,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         SchemaVersion = CurrentCacheSchemaVersion,
                         Version = Interlocked.Read(ref _version),
                         LastModified = Interlocked.Read(ref _lastModified),
+                        LastReconciledUtcTicks = Interlocked.Read(ref _lastReconciledUtcTicks),
                         Items = new Dictionary<string, TagCacheEntry>(_cache)
                     };
 
@@ -268,6 +563,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private void ScheduleDebouncedSave()
         {
             _dirty = true;
+            // During/after shutdown, persist synchronously instead of arming a timer that a
+            // torn-down service would never fire. This is what keeps a flush that finishes
+            // AFTER Dispose's (bounded) wait from losing its applied changes — it saves them
+            // now rather than relying on a debounce timer that will never run.
+            if (_disposed)
+            {
+                SaveToDisk();
+                return;
+            }
             // Reuse existing timer if possible, otherwise create a new one.
             // Change() resets the countdown without creating a new object.
             var existing = _debounceSaveTimer;
@@ -289,10 +593,67 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 old.Dispose();
             }
+
+            // Same check-then-create/Dispose race guard as ArmFlushTimer: reclaim a timer
+            // published concurrently with Dispose so none is left live after teardown, and
+            // persist now since that reclaimed timer will never fire the save.
+            if (_disposed)
+            {
+                var orphan = Interlocked.Exchange(ref _debounceSaveTimer, null);
+                orphan?.Dispose();
+                SaveToDisk();
+            }
         }
 
         public void Dispose()
         {
+            // Mark disposed first so any concurrent flush re-arm / late library event is a no-op
+            // (ArmFlushTimer and ScheduleDebouncedSave both bail on _disposed) instead of
+            // resurrecting a timer after teardown.
+            _disposed = true;
+
+            var flush = Interlocked.Exchange(ref _flushTimer, null);
+            flush?.Dispose(); // stops future callbacks; an in-flight one may still be applying
+
+            // Take ownership of the flush guard before persisting. Timer.Dispose() does not wait
+            // for a running callback, so without this Dispose could drain an already-emptied
+            // _pending, skip the save, and lose the in-flight flush's applied batch (it only
+            // schedules a debounced save that never fires during shutdown). Waiting for _flushing
+            // to release means that flush has finished and set _dirty, so the save below catches it.
+            var acquired = false;
+            for (var i = 0; i < 500; i++) // ~5s cap, well under the shutdown grace period
+            {
+                if (Interlocked.CompareExchange(ref _flushing, 1, 0) == 0)
+                {
+                    acquired = true;
+                    break;
+                }
+
+                Thread.Sleep(10);
+            }
+
+            // Apply anything still queued in the debounce window so a change made moments before
+            // shutdown is persisted — matching the old synchronous handler, which applied to the
+            // cache inline and let the trailing SaveToDisk() flush it. Without this, queued-but-
+            // unflushed changes (and the fact that startup only rebuilds when the cache is empty)
+            // would leave those items stale until the next event or the daily rebuild.
+            try
+            {
+                if (ApplyBatch(_pending.Drain(), RebuildEntry, RemoveEntry))
+                {
+                    Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                    _dirty = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[TagCache] Failed to flush pending changes on dispose: {ex.Message}");
+            }
+            finally
+            {
+                if (acquired) Interlocked.Exchange(ref _flushing, 0);
+            }
+
             var timer = Interlocked.Exchange(ref _debounceSaveTimer, null);
             timer?.Dispose();
             if (_dirty) SaveToDisk();
@@ -526,6 +887,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public int SchemaVersion { get; set; }
             public long Version { get; set; }
             public long LastModified { get; set; }
+            public long LastReconciledUtcTicks { get; set; }
             public Dictionary<string, TagCacheEntry> Items { get; set; } = new();
         }
     }

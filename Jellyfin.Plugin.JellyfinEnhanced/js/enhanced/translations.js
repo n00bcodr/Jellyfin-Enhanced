@@ -2,7 +2,10 @@
 (function(JE) {
     'use strict';
 
-    const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/main/Jellyfin.Plugin.JellyfinEnhanced/js/locales';
+    // Newer-than-bundled locales are fetched via the plugin's local CDN route
+    // (JE.cdn source 'locales'), which server-side proxies + caches the upstream repo's
+    // raw locale JSON. The client never contacts raw.githubusercontent.com directly.
+    const remoteLocaleUrl = (code) => JE.cdn.url('locales', `${code}.json`);
     const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
     function normalizeLangCode(code) {
@@ -107,7 +110,7 @@
 
         try {
             console.log(`🪼 Jellyfin Enhanced: Fetching translations for ${code} from GitHub...`);
-            const githubResponse = await fetch(`${GITHUB_RAW_BASE}/${code}.json`, {
+            const githubResponse = await fetch(remoteLocaleUrl(code), {
                 method: 'GET',
                 cache: 'no-cache',
                 headers: { 'Accept': 'application/json' }
@@ -127,7 +130,7 @@
 
             if (githubResponse.status === 404 && code !== 'en') {
                 console.warn(`🪼 Jellyfin Enhanced: Language ${code} not found on GitHub, falling back to English`);
-                const englishResponse = await fetch(`${GITHUB_RAW_BASE}/en.json`, {
+                const englishResponse = await fetch(remoteLocaleUrl('en'), {
                     method: 'GET',
                     cache: 'no-cache',
                     headers: { 'Accept': 'application/json' }
