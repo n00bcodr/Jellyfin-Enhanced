@@ -26,11 +26,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             _logger = logger;
         }
 
-        public string Name => "Build Tag Cache";
+        public string Name => "Refresh Tag Cache";
 
         public string Key => "JellyfinEnhancedBuildTagCache";
 
-        public string Description => "Checks for added, changed, and removed library items and updates only the affected tag-cache entries. Performs a full build only when the cache is missing or has not been reconciled before.";
+        public string Description => "Builds the tag cache when needed, otherwise refreshes only entries for added, changed, and removed library items.";
 
         public string Category => "Jellyfin Enhanced";
 

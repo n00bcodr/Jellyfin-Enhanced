@@ -169,11 +169,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var reconciliationStartedUtc = DateTime.UtcNow;
             var previousTicks = Interlocked.Read(ref _lastReconciledUtcTicks);
 
-            if (previousTicks <= 0 || _cache.IsEmpty)
+            if (_cache.IsEmpty)
             {
-                _logger.Info("[TagCache] No previous reconciliation marker or cache is empty; running full build");
+                _logger.Info("[TagCache] Cache is empty; running full build");
                 BuildFullCacheCore(progress, cancellationToken, reconciliationStartedUtc);
                 return;
+            }
+
+            if (previousTicks <= 0)
+            {
+                previousTicks = reconciliationStartedUtc.Ticks;
+                Interlocked.Exchange(ref _lastReconciledUtcTicks, previousTicks);
+                _logger.Info("[TagCache] No previous reconciliation marker; seeding marker and running delta reconciliation");
             }
 
             var changedSinceUtc = new DateTime(previousTicks, DateTimeKind.Utc).Subtract(TimeSpan.FromMinutes(2));
@@ -492,7 +499,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     // Discard a cache written by an older schema (e.g. predating
                     // SeriesId) rather than serving entries the strip paths can't
-                    // process. Starting empty is safe — the Build task rebuilds it.
+                    // process. Starting empty is safe — the refresh task rebuilds it.
                     if (data.SchemaVersion != CurrentCacheSchemaVersion)
                     {
                         _logger.Info($"[TagCache] On-disk cache schema v{data.SchemaVersion} != current v{CurrentCacheSchemaVersion}; discarding {data.Items.Count} entries and rebuilding on next scan.");
@@ -502,7 +509,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _cache = loaded;
                     Interlocked.Exchange(ref _version, data.Version);
                     Interlocked.Exchange(ref _lastModified, data.LastModified);
-                    Interlocked.Exchange(ref _lastReconciledUtcTicks, data.LastReconciledUtcTicks);
+                    var reconciledTicks = data.LastReconciledUtcTicks;
+                    if (reconciledTicks <= 0 && data.Items.Count > 0)
+                    {
+                        reconciledTicks = File.GetLastWriteTimeUtc(path).Ticks;
+                        _logger.Info($"[TagCache] On-disk cache has no reconciliation marker; using cache file timestamp {new DateTime(reconciledTicks, DateTimeKind.Utc):O}");
+                    }
+                    Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciledTicks);
                     _logger.Info($"[TagCache] Loaded {_cache.Count} entries from disk (v{data.Version}, schema v{data.SchemaVersion})");
                 }
             }
