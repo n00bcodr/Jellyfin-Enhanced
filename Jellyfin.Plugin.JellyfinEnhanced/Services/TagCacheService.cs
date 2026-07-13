@@ -32,6 +32,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private long _lastReconciledUtcTicks;
         private Timer? _debounceSaveTimer;
         private volatile bool _dirty;
+        private long _firstDirtyTicks; // 0 = nothing dirty since the last disk save
+
+        // Disk-save cadence: a save runs 30s after the last applied change, but under
+        // sustained change (a metadata refresh where values really do change on every
+        // item) the trailing debounce would keep pushing the save out — so cap the
+        // deferral at 5 minutes from the first unsaved change. Worst case is one
+        // full-cache write per 5 minutes instead of one per flush cycle (~30s).
+        private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan SaveMaxWait = TimeSpan.FromMinutes(5);
 
         // Incremental cache maintenance. Library-scan events are recorded here (O(1),
         // no DB/probe work) and drained by a debounced background worker so scans are
@@ -428,6 +437,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (entry == null) return false;
 
             var key = id.ToString("N").ToLowerInvariant();
+
+            // No-op guard: Jellyfin raises ItemUpdated for every item a nightly
+            // library scan (or chapter/trickplay task) re-saves, whether or not any
+            // tag-relevant data changed. Reporting those rebuilds as changes made
+            // every scan re-serialize the entire cache to disk every ~30s for the
+            // scan's duration. Keeping the existing entry also preserves its
+            // LastUpdated stamp, so delta requests (?since=) correctly skip it.
+            if (_cache.TryGetValue(key, out var existing) && TagCacheEntry.ContentEquals(existing, entry))
+            {
+                return false;
+            }
+
             _cache[key] = entry;
             return true;
         }
@@ -435,7 +456,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private bool RemoveEntry(Guid id)
         {
             var key = id.ToString("N").ToLowerInvariant();
-            return _cache.TryRemove(key, out _);
+            if (!_cache.TryRemove(key, out _)) return false;
+
+            // Removals are the one mutation the ?since delta protocol cannot express
+            // (a deleted key simply stops appearing), so clients only purge a removed
+            // entry when the version changes and they do a full reload. Bump it here:
+            // with the no-op rebuild guard, a quiet night no longer bumps the version
+            // via reconciliation, which used to mask this gap.
+            Interlocked.Increment(ref _version);
+            return true;
         }
 
         /// <summary>
@@ -532,6 +561,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             lock (_saveLock)
             {
+                // Clear the dirty state BEFORE snapshotting, not after the write: a change
+                // applied while serialization is in progress isn't in the snapshot, and
+                // clearing afterwards would wipe its flag — the armed save timer would then
+                // see _dirty == false and skip, leaving that change unpersisted until the
+                // next event. Cleared first, a concurrent ScheduleDebouncedSave re-marks
+                // dirty and its timer performs a follow-up save that includes the change.
+                _dirty = false;
+                var previousStamp = Interlocked.Exchange(ref _firstDirtyTicks, 0);
+
                 try
                 {
                     var dir = Path.GetDirectoryName(CacheFilePath);
@@ -550,11 +588,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var tempPath = CacheFilePath + ".tmp";
                     File.WriteAllText(tempPath, json);
                     File.Move(tempPath, CacheFilePath, overwrite: true);
-                    _dirty = false;
+
                     _logger.Info($"[TagCache] Saved {_cache.Count} entries to disk");
                 }
                 catch (Exception ex)
                 {
+                    // Failed write: restore the dirty state so Dispose's final
+                    // `if (_dirty) SaveToDisk()` and the next debounce cycle retry it.
+                    // Intentionally NOT re-arming the save timer here: with the cap
+                    // window already elapsed the due time would be zero, and a
+                    // persistent disk failure would spin fire-fail-rearm. The next
+                    // library event, shutdown, or daily reconcile retries instead.
+                    // Restore the ORIGINAL first-dirty stamp (not "now"): re-seeding
+                    // with the current time would restart the SaveMaxWait cap window
+                    // on every failed attempt and stretch the retry cadence. If a
+                    // concurrent ScheduleDebouncedSave already stamped a newer window,
+                    // keep that one — a slightly later cap is harmless.
+                    _dirty = true;
+                    if (previousStamp != 0)
+                    {
+                        Interlocked.CompareExchange(ref _firstDirtyTicks, previousStamp, 0);
+                    }
+
                     _logger.Error($"[TagCache] Failed to save cache to disk: {ex.Message}");
                 }
             }
@@ -563,6 +618,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private void ScheduleDebouncedSave()
         {
             _dirty = true;
+            Interlocked.CompareExchange(ref _firstDirtyTicks, DateTime.UtcNow.Ticks, 0);
             // During/after shutdown, persist synchronously instead of arming a timer that a
             // torn-down service would never fire. This is what keeps a flush that finishes
             // AFTER Dispose's (bounded) wait from losing its applied changes — it saves them
@@ -572,6 +628,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 SaveToDisk();
                 return;
             }
+
+            // Trailing debounce with a hard cap (same math as the flush timer): 30s after
+            // the last change, but never more than 5 minutes after the first unsaved one,
+            // so sustained real changes can't starve persistence NOR write every cycle.
+            var due = ComputeFlushDelay(Interlocked.Read(ref _firstDirtyTicks), DateTime.UtcNow, SaveDebounce, SaveMaxWait);
+
             // Reuse existing timer if possible, otherwise create a new one.
             // Change() resets the countdown without creating a new object.
             var existing = _debounceSaveTimer;
@@ -579,7 +641,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 try
                 {
-                    existing.Change(TimeSpan.FromSeconds(30), Timeout.InfiniteTimeSpan);
+                    existing.Change(due, Timeout.InfiniteTimeSpan);
                     return;
                 }
                 catch (ObjectDisposedException) { }
@@ -587,7 +649,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var timer = new Timer(_ =>
             {
                 if (_dirty) SaveToDisk();
-            }, null, TimeSpan.FromSeconds(30), Timeout.InfiniteTimeSpan);
+            }, null, due, Timeout.InfiniteTimeSpan);
             var old = Interlocked.Exchange(ref _debounceSaveTimer, timer);
             if (old != null && !ReferenceEquals(old, timer))
             {
