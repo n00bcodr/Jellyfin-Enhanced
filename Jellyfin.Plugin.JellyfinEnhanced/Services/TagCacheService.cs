@@ -595,6 +595,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     // Failed write: restore the dirty state so Dispose's final
                     // `if (_dirty) SaveToDisk()` and the next debounce cycle retry it.
+                    // Intentionally NOT re-arming the save timer here: with the cap
+                    // window already elapsed the due time would be zero, and a
+                    // persistent disk failure would spin fire-fail-rearm. The next
+                    // library event, shutdown, or daily reconcile retries instead.
                     // Restore the ORIGINAL first-dirty stamp (not "now"): re-seeding
                     // with the current time would restart the SaveMaxWait cap window
                     // on every failed attempt and stretch the retry cadence. If a
