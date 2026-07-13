@@ -456,7 +456,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private bool RemoveEntry(Guid id)
         {
             var key = id.ToString("N").ToLowerInvariant();
-            return _cache.TryRemove(key, out _);
+            if (!_cache.TryRemove(key, out _)) return false;
+
+            // Removals are the one mutation the ?since delta protocol cannot express
+            // (a deleted key simply stops appearing), so clients only purge a removed
+            // entry when the version changes and they do a full reload. Bump it here:
+            // with the no-op rebuild guard, a quiet night no longer bumps the version
+            // via reconciliation, which used to mask this gap.
+            Interlocked.Increment(ref _version);
+            return true;
         }
 
         /// <summary>
@@ -553,6 +561,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             lock (_saveLock)
             {
+                // Clear the dirty state BEFORE snapshotting, not after the write: a change
+                // applied while serialization is in progress isn't in the snapshot, and
+                // clearing afterwards would wipe its flag — the armed save timer would then
+                // see _dirty == false and skip, leaving that change unpersisted until the
+                // next event. Cleared first, a concurrent ScheduleDebouncedSave re-marks
+                // dirty and its timer performs a follow-up save that includes the change.
+                _dirty = false;
+                var previousStamp = Interlocked.Exchange(ref _firstDirtyTicks, 0);
+
                 try
                 {
                     var dir = Path.GetDirectoryName(CacheFilePath);
@@ -571,13 +588,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var tempPath = CacheFilePath + ".tmp";
                     File.WriteAllText(tempPath, json);
                     File.Move(tempPath, CacheFilePath, overwrite: true);
-                    _dirty = false;
-                    Interlocked.Exchange(ref _firstDirtyTicks, 0); // open a fresh debounce/cap window
 
                     _logger.Info($"[TagCache] Saved {_cache.Count} entries to disk");
                 }
                 catch (Exception ex)
                 {
+                    // Failed write: restore the dirty state so Dispose's final
+                    // `if (_dirty) SaveToDisk()` and the next debounce cycle retry it.
+                    // Restore the ORIGINAL first-dirty stamp (not "now"): re-seeding
+                    // with the current time would restart the SaveMaxWait cap window
+                    // on every failed attempt and stretch the retry cadence. If a
+                    // concurrent ScheduleDebouncedSave already stamped a newer window,
+                    // keep that one — a slightly later cap is harmless.
+                    _dirty = true;
+                    if (previousStamp != 0)
+                    {
+                        Interlocked.CompareExchange(ref _firstDirtyTicks, previousStamp, 0);
+                    }
+
                     _logger.Error($"[TagCache] Failed to save cache to disk: {ex.Message}");
                 }
             }

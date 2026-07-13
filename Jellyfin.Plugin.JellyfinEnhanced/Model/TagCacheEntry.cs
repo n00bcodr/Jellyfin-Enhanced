@@ -77,23 +77,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         private static bool SequencesEqual(string[]? a, string[]? b)
         {
             if (ReferenceEquals(a, b)) return true;
-            if (a == null || b == null) return a == null && b == null;
+            if (a == null || b == null) return false;
             if (a.Length != b.Length) return false;
             for (var i = 0; i < a.Length; i++)
             {
-                if (!string.Equals(a[i], b[i], System.StringComparison.Ordinal)) return false;
+                if (!string.Equals(a[i], b[i], StringComparison.Ordinal)) return false;
             }
 
             return true;
         }
 
         /// <summary>
-        /// Exact nullable-float compare. Exactness is safe here: both values are read
-        /// from the same database column, so an unchanged rating is bit-identical.
-        /// Nullable.Equals also treats NaN as equal to NaN, so a NaN rating can't
-        /// keep an entry perpetually "changed".
+        /// Exact nullable-float compare. Exactness is safe on both legs: a freshly
+        /// rebuilt value is read from the same database column as the last rebuild,
+        /// and a disk-loaded value round-trips bit-exactly because System.Text.Json
+        /// writes floats in shortest round-trippable form. Nullable.Equals also
+        /// treats NaN as equal to NaN, so a NaN rating can't keep an entry
+        /// perpetually "changed".
         /// </summary>
-        private static bool NullableFloatEquals(float? a, float? b) => System.Nullable.Equals(a, b);
+        private static bool NullableFloatEquals(float? a, float? b) => Nullable.Equals(a, b);
 
         public TagCacheEntry Clone() => new()
         {
@@ -102,6 +104,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             // response, so any field omitted here is silently blanked for the
             // client. TmdbId/SeriesTmdbId/SeasonNumber/EpisodeNumber build the
             // review key — dropping them broke reviews on cloned entries.
+            // When adding a field, also add it to ContentEquals above — a field
+            // missing there makes real changes to it invisible to the incremental
+            // rebuild, so stale data would be served until the next full rebuild.
             TmdbId = TmdbId,
             SeriesTmdbId = SeriesTmdbId,
             SeasonNumber = SeasonNumber,
@@ -142,14 +147,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && ListsEqual(a.Sources, b.Sources, TagMediaSource.ContentEquals);
         }
 
-        private static bool ListsEqual<T>(List<T>? a, List<T>? b, System.Func<T, T, bool> equals)
+        private static bool ListsEqual<T>(List<T>? a, List<T>? b, Func<T, T, bool> equals)
+            where T : class
         {
             if (ReferenceEquals(a, b)) return true;
             if (a == null || b == null) return false;
             if (a.Count != b.Count) return false;
             for (var i = 0; i < a.Count; i++)
             {
-                if (!equals(a[i], b[i])) return false;
+                var x = a[i];
+                var y = b[i];
+
+                // Guard null ELEMENTS before invoking the comparer: the plugin never
+                // writes them, but the existing side is deserialized from disk and
+                // System.Text.Json happily materializes a JSON null array element as a
+                // null item. Without this, one corrupt entry would throw on every
+                // rebuild — poisoning that item's incremental updates and aborting the
+                // nightly reconcile task, which has no per-item catch.
+                if (ReferenceEquals(x, y)) continue;
+                if (x == null || y == null) return false;
+                if (!equals(x, y)) return false;
             }
 
             return true;
