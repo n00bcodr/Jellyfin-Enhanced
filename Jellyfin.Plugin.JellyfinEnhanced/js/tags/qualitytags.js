@@ -815,10 +815,18 @@
          * @returns {boolean} True if the element should be ignored.
          */
         function shouldIgnoreElement(el) {
+            // The tag pipeline renders into `.je-tag-host`, inserted as a sibling of
+            // `.cardImageContainer` inside `.cardScalable` — not a descendant of it.
+            // IGNORE_SELECTORS targets `.cardImageContainer`/`.card`, so resolve back
+            // to the actual card image container before matching, otherwise these
+            // rules (e.g. the search-page toggle) can never match.
+            const target = el.closest('.cardImageContainer')
+                || el.closest('.cardScalable')?.querySelector('.cardImageContainer')
+                || el;
             return IGNORE_SELECTORS.some(selector => {
                 try {
-                    if (el.matches(selector)) return true;
-                    return el.closest(selector) !== null;
+                    if (target.matches(selector)) return true;
+                    return target.closest(selector) !== null;
                 } catch {
                     return false; // Silently handle potential errors with complex selectors
                 }

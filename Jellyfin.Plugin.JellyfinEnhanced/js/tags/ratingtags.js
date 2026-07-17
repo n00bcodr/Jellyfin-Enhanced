@@ -177,7 +177,15 @@
      * @returns {boolean} True if the element should be skipped.
      */
     function shouldIgnoreElement(el) {
-        return IGNORE_SELECTORS.some(sel => el.matches(sel) || el.closest(sel));
+        // The tag pipeline renders into `.je-tag-host`, inserted as a sibling of
+        // `.cardImageContainer` inside `.cardScalable` — not a descendant of it.
+        // IGNORE_SELECTORS targets `.cardImageContainer`/`.card`, so resolve back
+        // to the actual card image container before matching, otherwise these
+        // rules (e.g. the search-page toggle) can never match.
+        const target = el.closest('.cardImageContainer')
+            || el.closest('.cardScalable')?.querySelector('.cardImageContainer')
+            || el;
+        return IGNORE_SELECTORS.some(sel => target.matches(sel) || target.closest(sel));
     }
 
     /**
