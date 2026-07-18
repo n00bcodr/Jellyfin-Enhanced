@@ -177,7 +177,7 @@
                 break;
         }
 
-        if (key.match(/^[0-9]$/)) {
+        if (activeShortcuts.JumpToPercentage !== '' && !e.altKey && !e.ctrlKey && !e.metaKey && key.match(/^[0-9]$/)) {
             JE.jumpToPercentage(parseInt(key) * 10);
         }
     };

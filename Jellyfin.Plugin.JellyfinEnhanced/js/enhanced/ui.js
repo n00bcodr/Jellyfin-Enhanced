@@ -780,26 +780,39 @@
                         <div style="flex: 1; min-width: 400px;">
                             <h3 style="margin: 0 0 12px 0; font-size: 18px; color: ${primaryAccentColor}; font-family: inherit;">${JE.t('panel_shortcuts_global')}</h3>
                             <div style="display: grid; gap: 8px; font-size: 14px;">
-                                ${(JE.pluginConfig.Shortcuts || []).filter((s, index, self) => s.Category === 'Global' && index === self.findIndex(t => t.Name === s.Name)).map(action => `
-                                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                                        <span class="shortcut-key" tabindex="0" data-action="${escapeHtml(action.Name)}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${escapeHtml(JE.state.activeShortcuts[action.Name] || '')}</span>
+                                ${(JE.pluginConfig.Shortcuts || []).filter((s, index, self) => s.Category === 'Global' && index === self.findIndex(t => t.Name === s.Name)).map(action => {
+                                    const isDisabled = JE.state.activeShortcuts[action.Name] === '';
+                                    return `
+                                    <div style="display: flex; justify-content: space-between; align-items: center; ${isDisabled ? 'opacity: 0.5;' : ''}">
+                                        <div style="display: flex; align-items: center; gap: 6px;">
+                                            <span class="shortcut-key" tabindex="0" data-action="${escapeHtml(action.Name)}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${escapeHtml(isDisabled ? tWithFallback('panel_shortcuts_disabled', 'Disabled') : (JE.state.activeShortcuts[action.Name] || ''))}</span>
+                                            <button class="shortcut-toggle" data-action="${escapeHtml(action.Name)}" style="background:transparent; border:none; color:rgba(255,255,255,0.5); cursor:pointer; padding:2px; display:flex; align-items:center;">${JE.icon(JE.IconName.NO_ENTRY)}</button>
+                                        </div>
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             ${userShortcuts.hasOwnProperty(action.Name) ? `<span title="Modified by user" class="modified-indicator" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
                                             <span>${escapeHtml(tWithFallback('shortcut_' + action.Name, action.Label))}</span>
                                         </div>
                                     </div>
-                                `).join('')}
+                                `;
+                                }).join('')}
                             </div>
                         </div>
                         <div style="flex: 1; min-width: 400px;">
                             <h3 style="margin: 0 0 12px 0; font-size: 18px; color: ${primaryAccentColor}; font-family: inherit;">${JE.t('panel_shortcuts_player')}</h3>
                             <div style="display: grid; gap: 8px; font-size: 14px;">
-                                ${['CycleAspectRatio', 'ShowPlaybackInfo', 'SubtitleMenu', 'CycleSubtitleTracks', 'CycleAudioTracks', 'IncreasePlaybackSpeed', 'DecreasePlaybackSpeed', 'ResetPlaybackSpeed', 'BookmarkCurrentTime', 'OpenEpisodePreview', 'SkipIntroOutro', 'FrameStepBack', 'FrameStepForward', 'JumpToLastPosition'].map(action => {
+                                ${['CycleAspectRatio', 'ShowPlaybackInfo', 'SubtitleMenu', 'CycleSubtitleTracks', 'CycleAudioTracks', 'IncreasePlaybackSpeed', 'DecreasePlaybackSpeed', 'ResetPlaybackSpeed', 'BookmarkCurrentTime', 'OpenEpisodePreview', 'SkipIntroOutro', 'FrameStepBack', 'FrameStepForward', 'JumpToLastPosition', 'JumpToPercentage'].map(action => {
                                     const a = (JE.pluginConfig.Shortcuts || []).find(s => s.Name === action);
                                     const fallbackLabel = a?.Label || action;
+                                    const isDisabled = JE.state.activeShortcuts[action] === '';
+                                    // JumpToPercentage covers the whole 0-9 digit range, not a single combo, so it can be
+                                    // disabled like any other shortcut but not rebound to a different key.
+                                    const isReadonly = action === 'JumpToPercentage';
                                     return `
-                                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                                        <span class="shortcut-key" tabindex="0" data-action="${escapeHtml(action)}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${escapeHtml(JE.state.activeShortcuts[action] || '')}</span>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; ${isDisabled ? 'opacity: 0.5;' : ''}">
+                                        <div style="display: flex; align-items: center; gap: 6px;">
+                                            <span class="shortcut-key" ${isReadonly ? 'data-readonly="1"' : 'tabindex="0"'} data-action="${escapeHtml(action)}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; ${isReadonly ? '' : 'cursor:pointer;'} transition: all 0.2s;">${escapeHtml(isDisabled ? tWithFallback('panel_shortcuts_disabled', 'Disabled') : (JE.state.activeShortcuts[action] || ''))}</span>
+                                            <button class="shortcut-toggle" data-action="${escapeHtml(action)}" style="background:transparent; border:none; color:rgba(255,255,255,0.5); cursor:pointer; padding:2px; display:flex; align-items:center;">${JE.icon(JE.IconName.NO_ENTRY)}</button>
+                                        </div>
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             ${userShortcuts.hasOwnProperty(action) ? `<span class="modified-indicator" title="Modified by user" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
                                             <span>${escapeHtml(tWithFallback('shortcut_' + action, fallbackLabel))}${action === 'OpenEpisodePreview' ? ' <span style="font-size: 11px; opacity: 0.7;" title="Requires InPlayerEpisodePreview plugin from https://github.com/Namo2/InPlayerEpisodePreview/">ⓘ</span>' : ''}</span>
@@ -807,10 +820,6 @@
                                     </div>
                                 `;
                                 }).join('')}
-                                <div style="display: flex; justify-content: space-between;">
-                                    <span style="background:${kbdBackground}; padding:2px 8px; border-radius:3px;">0-9</span>
-                                    <span>${JE.t('shortcut_JumpToPercentage')}</span>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -1319,7 +1328,65 @@
 
         // --- Shortcut Key Binding Logic ---
         if (!JE.pluginConfig.DisableAllShortcuts) {
-            const shortcutKeys = help.querySelectorAll('.shortcut-key');
+            const displayKey = (key) => key || tWithFallback('panel_shortcuts_disabled', 'Disabled');
+
+            // Reflects a shortcut's enabled/disabled state onto its row (dimming).
+            const applyDisabledVisuals = (action) => {
+                const keyElement = help.querySelector(`.shortcut-key[data-action="${action}"]`);
+                if (!keyElement) return;
+                const isDisabled = JE.state.activeShortcuts[action] === '';
+                const row = keyElement.closest('div[style*="justify-content: space-between"]');
+                if (row) row.style.opacity = isDisabled ? '0.5' : '';
+            };
+
+            // Disables a shortcut by saving an explicit empty-key user override, or re-enables
+            // it by removing the override so it reverts back to the plugin default.
+            const setShortcutDisabled = (action, disabled) => {
+                const shortcutIndex = JE.userConfig.shortcuts.Shortcuts.findIndex(s => s.Name === action);
+
+                if (disabled) {
+                    if (shortcutIndex > -1) {
+                        JE.userConfig.shortcuts.Shortcuts[shortcutIndex].Key = '';
+                    } else {
+                        const defaultConfig = pluginShortcuts.find(s => s.Name === action);
+                        JE.userConfig.shortcuts.Shortcuts.push({ ...defaultConfig, Key: '' });
+                    }
+                    JE.state.activeShortcuts[action] = '';
+                } else {
+                    const defaultConfig = pluginShortcuts.find(s => s.Name === action);
+                    const defaultKey = defaultConfig ? defaultConfig.Key : '';
+                    if (shortcutIndex > -1) {
+                        JE.userConfig.shortcuts.Shortcuts.splice(shortcutIndex, 1);
+                    }
+                    JE.state.activeShortcuts[action] = defaultKey;
+                }
+
+                JE.saveUserSettings('shortcuts.json', JE.userConfig.shortcuts);
+
+                const keyElement = help.querySelector(`.shortcut-key[data-action="${action}"]`);
+                if (keyElement && document.activeElement !== keyElement) {
+                    keyElement.textContent = displayKey(JE.state.activeShortcuts[action]);
+                }
+
+                const labelWrapper = keyElement ? keyElement.parentElement.nextElementSibling : null;
+                const indicator = labelWrapper ? labelWrapper.querySelector('.modified-indicator') : null;
+                if (disabled) {
+                    if (labelWrapper && !indicator) {
+                        const newIndicator = document.createElement('span');
+                        newIndicator.className = 'modified-indicator';
+                        newIndicator.title = 'Modified by user';
+                        newIndicator.style.cssText = `color:${primaryAccentColor}; font-size: 20px; line-height: 1;`;
+                        newIndicator.textContent = '•';
+                        labelWrapper.prepend(newIndicator);
+                    }
+                } else if (indicator) {
+                    indicator.remove();
+                }
+
+                applyDisabledVisuals(action);
+            };
+
+            const shortcutKeys = help.querySelectorAll('.shortcut-key:not([data-readonly])');
             shortcutKeys.forEach(keyElement => {
                 const getOriginalKey = () => JE.state.activeShortcuts[keyElement.dataset.action];
 
@@ -1332,7 +1399,7 @@
                 });
 
                 keyElement.addEventListener('blur', () => {
-                    keyElement.textContent = getOriginalKey();
+                    keyElement.textContent = displayKey(getOriginalKey());
                     keyElement.style.borderColor = 'transparent';
                     keyElement.style.width = 'auto';
                 });
@@ -1341,28 +1408,16 @@
                     e.preventDefault();
                     e.stopPropagation();
 
-                    const labelWrapper = keyElement.nextElementSibling;
                     const action = keyElement.dataset.action;
 
                     if (e.key === 'Backspace') {
-                        const defaultConfig = pluginShortcuts.find(s => s.Name === action);
-                        const defaultKey = defaultConfig ? defaultConfig.Key : '';
+                        setShortcutDisabled(action, false);
+                        keyElement.blur(); // Exit the "Listening..." mode
+                        return;
+                    }
 
-                        const shortcutIndex = JE.userConfig.shortcuts.Shortcuts.findIndex(s => s.Name === action);
-                        if (shortcutIndex > -1) {
-                            JE.userConfig.shortcuts.Shortcuts.splice(shortcutIndex, 1);
-                        }
-
-                        JE.saveUserSettings('shortcuts.json', JE.userConfig.shortcuts);
-
-                        // Update the active shortcuts in memory and what's shown on screen
-                        JE.state.activeShortcuts[action] = defaultKey;
-                        keyElement.textContent = defaultKey;
-
-                        const indicator = labelWrapper.querySelector('.modified-indicator');
-                        if (indicator) {
-                            indicator.remove();
-                        }
+                    if (e.key === 'Delete') {
+                        setShortcutDisabled(action, true);
                         keyElement.blur(); // Exit the "Listening..." mode
                         return;
                     }
@@ -1371,6 +1426,7 @@
                         return; // Don't allow setting only a modifier key
                     }
 
+                    const labelWrapper = keyElement.parentElement.nextElementSibling;
                     const combo = (e.metaKey ? 'Meta+' : '') + (e.ctrlKey ? 'Ctrl+' : '') + (e.altKey ? 'Alt+' : '') + (e.shiftKey ? 'Shift+' : '') + (e.key.match(/^[a-zA-Z]$/) ? e.key.toUpperCase() : e.key);
                     const existingAction = Object.keys(JE.state.activeShortcuts).find(name => JE.state.activeShortcuts[name] === combo);
                     if (existingAction && existingAction !== action) {
@@ -1409,10 +1465,21 @@
                         indicator.textContent = '•';
                         labelWrapper.prepend(indicator);
                     }
+                    applyDisabledVisuals(action);
                     keyElement.blur(); // Triggers the blur event to clean up styles
                 });
             });
+
+            help.querySelectorAll('.shortcut-toggle').forEach(toggleButton => {
+                toggleButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const action = toggleButton.dataset.action;
+                    const isDisabled = JE.state.activeShortcuts[action] === '';
+                    setShortcutDisabled(action, !isDisabled);
+                });
+            });
         }
+
         resetAutoCloseTimer();
 
         // --- Tab Logic ---

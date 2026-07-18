@@ -2300,7 +2300,9 @@
                                     </p>
                                 </div>
                                 <button is="emby-button" type="button" id="add-shortcut-btn" class="emby-button raised">Add</button>
+                                <button is="emby-button" type="button" id="disable-shortcut-btn" class="emby-button raised button-cancel" title="Disables this shortcut for every user on the server">Disable</button>
                             </div>
+                            <div class="fieldDescription je-field-desc-mt">Select a shortcut above and click <b>Disable</b> to turn it off server-wide (the key field is ignored). Users can still re-enable it for themselves from their own Enhanced Panel.</div>
                             <div id="shortcut-error-comment" style="display: none; color: #ff6b6b; margin-top:5px;"></div>
 
                             <h4 style="margin-top:20px;">Current Overrides</h4>
@@ -2408,6 +2410,7 @@
             const addShortcutSelect = document.getElementById('add-shortcut-select');
             const addShortcutKeyInput = document.getElementById('add-shortcut-key');
             const addShortcutBtn = document.getElementById('add-shortcut-btn');
+            const disableShortcutBtn = document.getElementById('disable-shortcut-btn');
             const shortcutErrorComment = document.getElementById('shortcut-error-comment');
 
             const testJellyseerrBtn = document.getElementById('testJellyseerrBtn');
@@ -3017,7 +3020,8 @@
             { Name: "SkipIntroOutro", Key: "O", Label: "Skip Intro/Outro", Category: "Player" },
             { Name: "FrameStepBack", Key: ",", Label: "Step Back One Frame", Category: "Player" },
             { Name: "FrameStepForward", Key: ".", Label: "Step Forward One Frame", Category: "Player" },
-            { Name: "JumpToLastPosition", Key: "Z", Label: "Jump to Last Position", Category: "Player" }
+            { Name: "JumpToLastPosition", Key: "Z", Label: "Jump to Last Position", Category: "Player" },
+            { Name: "JumpToPercentage", Key: "0-9", Label: "Jump to % of video", Category: "Player" }
         ];
 
         function renderOverrides() {
@@ -3043,6 +3047,11 @@
                 input.value = shortcut.Key;
                 input.style.flex = '1';
                 input.style.textAlign = 'center';
+                if (shortcut.Key === '') {
+                    input.placeholder = 'Disabled';
+                    input.style.opacity = '0.6';
+                    input.title = 'This shortcut is disabled server-wide. Type a key here to re-enable it with that binding, or click Remove to revert to the default.';
+                }
                 input.addEventListener('input', (e) => {
                     let value = e.target.value;
                     // Automatically convert single lowercase letters to uppercase ***
@@ -3050,6 +3059,8 @@
                         value = value.toUpperCase();
                         e.target.value = value;
                     }
+                    input.style.opacity = value === '' ? '0.6' : '';
+                    input.placeholder = value === '' ? 'Disabled' : '';
                     shortcutOverrides[index].Key = value;
                 });
 
@@ -3088,6 +3099,7 @@
             });
             addShortcutBtn.disabled = availableShortcuts.length === 0;
             addShortcutKeyInput.disabled = availableShortcuts.length === 0;
+            disableShortcutBtn.disabled = availableShortcuts.length === 0;
         }
 
         function showValidationError(elementToShake, message) {
@@ -3137,6 +3149,21 @@
             const defaultConfig = defaultShortcuts.find(s => s.Name === selectedName);
             if (defaultConfig) {
                 shortcutOverrides.push({ ...defaultConfig, Key: newKey });
+                renderOverrides();
+                populateAddShortcutDropdown();
+                addShortcutKeyInput.value = '';
+            }
+        });
+
+        disableShortcutBtn.addEventListener('click', () => {
+            const selectedName = addShortcutSelect.value;
+            if (!selectedName) return;
+
+            const defaultConfig = defaultShortcuts.find(s => s.Name === selectedName);
+            if (defaultConfig) {
+                // An empty Key is the same "disabled" sentinel the per-user Enhanced Panel
+                // uses — it can never match a real keypress, so the shortcut just no-ops.
+                shortcutOverrides.push({ ...defaultConfig, Key: '' });
                 renderOverrides();
                 populateAddShortcutDropdown();
                 addShortcutKeyInput.value = '';
