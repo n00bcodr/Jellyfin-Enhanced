@@ -505,6 +505,32 @@
         };
     }
 
+    // --- Generic request concurrency limiter ---
+    // Shared by any module that fires one fetch per card (rating chips, provider
+    // icons, etc.) so a page full of results doesn't open one connection per card.
+    const CONCURRENCY_LIMIT = 6;
+    let activeRequestCount = 0;
+    const concurrencyQueue = [];
+
+    /**
+     * Run fn once fewer than CONCURRENCY_LIMIT calls are in flight; queues callers beyond that.
+     * @param {Function} fn - Async function to run.
+     * @returns {Promise<any>}
+     */
+    async function withConcurrencyLimit(fn) {
+        if (activeRequestCount >= CONCURRENCY_LIMIT) {
+            await new Promise((resolve) => concurrencyQueue.push(resolve));
+        }
+        activeRequestCount++;
+        try {
+            return await fn();
+        } finally {
+            activeRequestCount--;
+            const next = concurrencyQueue.shift();
+            if (next) next();
+        }
+    }
+
     /**
      * Throttle a function call
      * @param {Function} func - The function to throttle
@@ -801,6 +827,7 @@
         waitForCondition,
         debounce,
         throttle,
+        withConcurrencyLimit,
         retry,
         isElementVisible,
         addCSS,

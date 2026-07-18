@@ -1394,17 +1394,39 @@
         const IGNORE_PROVIDERS = JE.pluginConfig.IGNORE_PROVIDERS ? JE.pluginConfig.IGNORE_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
 
         try {
-            const response = await fetch(url, {
-                headers: {
-                    // Jellyfin 12 authenticates from the Authorization header; the
-                    // legacy X-Emby-Token is kept for 10.11 back-compat.
-                    "Authorization": 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
-                    "X-Emby-Token": ApiClient.accessToken()
-                }
-            });
-            if (!response.ok) return;
+            const headers = {
+                // Jellyfin 12 authenticates from the Authorization header; the
+                // legacy X-Emby-Token is kept for 10.11 back-compat.
+                "Authorization": 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
+                "X-Emby-Token": ApiClient.accessToken()
+            };
 
-            const data = await response.json();
+            // Route through the shared request manager: caches per tmdbId/mediaType
+            // and caps concurrency so a page full of Seerr cards doesn't fire one
+            // simultaneous request per card. Falls back to raw fetch if the request
+            // manager hasn't loaded yet.
+            let data;
+            if (JE.requestManager) {
+                const cacheKey = `providers:${mediaType}:${tmdbId}`;
+                const cached = JE.requestManager.getCached(cacheKey);
+                if (cached) {
+                    data = cached;
+                } else {
+                    data = await JE.requestManager.withConcurrencyLimit(() =>
+                        JE.requestManager.deduplicatedFetch(cacheKey, async () => {
+                            const response = await JE.requestManager.fetchWithRetry(url, { headers });
+                            const json = await response.json();
+                            JE.requestManager.setCache(cacheKey, json);
+                            return json;
+                        })
+                    );
+                }
+            } else {
+                const response = await fetch(url, { headers });
+                if (!response.ok) return;
+                data = await response.json();
+            }
+
             let providers = data.results?.[DEFAULT_REGION]?.flatrate;
 
             if (providers && providers.length > 0) {

@@ -25,9 +25,15 @@
         const promise = (async () => {
             try {
                 const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/${mediaType}/${tmdbKey}`);
-                const response = await fetch(url, {
+                const doFetch = () => fetch(url, {
                     headers: { 'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"', 'X-Emby-Token': ApiClient.accessToken() }
                 });
+                // Cap concurrent requests so a page full of cards doesn't open one
+                // connection per card and starve native poster image loads on the
+                // same origin. Falls back to a plain fetch if helpers hasn't loaded yet.
+                const response = JE.helpers?.withConcurrencyLimit
+                    ? await JE.helpers.withConcurrencyLimit(doFetch)
+                    : await doFetch();
                 if (!response.ok) {
                     _reviewCache.set(tmdbKey, null);
                     return null;
