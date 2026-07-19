@@ -146,6 +146,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrShowTagDiscovery = true;
             JellyseerrShowPersonDiscovery = true;
             JellyseerrShowCollectionDiscovery = true;
+            JellyseerrShowDetailPageLink = true;
+            JellyseerrShowDetailPageLinkAsText = false;
             ShowElsewhereOnJellyseerr = false;
             JellyseerrUseMoreInfoModal = false;
             JellyseerrUrls = "";
@@ -443,6 +445,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrShowTagDiscovery { get; set; }
         public bool JellyseerrShowPersonDiscovery { get; set; }
         public bool JellyseerrShowCollectionDiscovery { get; set; }
+        public bool JellyseerrShowDetailPageLink { get; set; }
+        public bool JellyseerrShowDetailPageLinkAsText { get; set; }
         public bool JellyseerrExcludeLibraryItems { get; set; } = true;
         public bool JellyseerrExcludeBlocklistedItems { get; set; } = false;
         public bool ShowElsewhereOnJellyseerr { get; set; }

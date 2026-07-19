@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} \"{title}\" dizisinin {count} sezonu istendi",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Sezon isteği başarısız oldu",
     "jellyseerr_modal_title_movie": "Film İsteği",
+    "jellyseerr_modal_requested_by": "İsteyen",
     "jellyseerr_modal_overview": "Genel Bakış",
     "jellyseerr_modal_created_by": "Oluşturan",
     "jellyseerr_modal_director": "Yönetmen",

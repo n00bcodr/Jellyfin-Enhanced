@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} Sol·licitud enviada: {count} temporades de \"{title}\"",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Error en sol·licitar les temporades",
     "jellyseerr_modal_title_movie": "Sol·licitar pel·lícula",
+    "jellyseerr_modal_requested_by": "Sol·licitat per",
     "jellyseerr_modal_overview": "Sinopsi",
     "jellyseerr_modal_created_by": "Creat per",
     "jellyseerr_modal_director": "Director",

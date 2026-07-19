@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} Požiadané o {count} série z \"{title}\"",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Nepodarilo sa požiadať o série",
     "jellyseerr_modal_title_movie": "Požiadať film",
+    "jellyseerr_modal_requested_by": "Vyžiadal(a)",
     "jellyseerr_modal_overview": "Prehľad",
     "jellyseerr_modal_created_by": "Vytvoril",
     "jellyseerr_modal_director": "Réžia",

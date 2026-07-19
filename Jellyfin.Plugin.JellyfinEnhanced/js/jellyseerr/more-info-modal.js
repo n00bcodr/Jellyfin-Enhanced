@@ -226,28 +226,51 @@ async function fetchRatings(tmdbId, mediaType) {
     }
 }
 
+// Seerr sets jellyfinMediaId4k to the same Jellyfin item as jellyfinMediaId whenever there's a
+// single shared library (no separate 4K library) — populated as soon as the item is found
+// there, regardless of whether a distinct 4K file/request actually exists. Left uncorrected,
+// every AVAILABLE-status4k consumer in this file (status chips, request-action buttons, the
+// "Open in Jellyfin" fact-link) shows a duplicate "4K Available" for an item that only exists
+// in one quality. These items were never actually touched in 4K at all — no request record,
+// nothing to consider "removed" — so demote status4k to UNKNOWN (not DELETED: that still counts
+// as "has status" via seerrStatus.hasStatus and would render a "Deleted" chip instead of no chip)
+// unless jellyfinMediaId4k actually points at a distinct library item. Runs once at fetch time
+// so every downstream reader of data.mediaInfo.status4k sees the corrected value.
+function sanitizeMediaInfo4kStatus(data) {
+    const mediaInfo = data?.mediaInfo;
+    if (!mediaInfo || mediaInfo.status4k !== MediaStatus.AVAILABLE) return;
+    const hasDistinct4kLibraryItem = mediaInfo.jellyfinMediaId4k
+        && mediaInfo.jellyfinMediaId4k !== mediaInfo.jellyfinMediaId;
+    if (!hasDistinct4kLibraryItem) {
+        mediaInfo.status4k = MediaStatus.UNKNOWN;
+    }
+}
+
 /**
  * Fetch media details from Jellyseerr API via proxy.  */
 async function fetchMediaDetails(tmdbId, mediaType) {
     try {
         const JE = window.JellyfinEnhanced;
+        let data;
         if (JE && JE.jellyseerrAPI) {
-            return mediaType === 'movie'
+            data = mediaType === 'movie'
                 ? await JE.jellyseerrAPI.fetchMovieDetails(tmdbId)
                 : await JE.jellyseerrAPI.fetchTvShowDetails(tmdbId);
+        } else {
+            const endpoint = mediaType === 'movie'
+                ? `/movie/${tmdbId}`
+                : `/tv/${tmdbId}`;
+
+            data = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr${endpoint}`),
+                headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
+                dataType: 'json'
+            });
         }
-        const endpoint = mediaType === 'movie'
-            ? `/movie/${tmdbId}`
-            : `/tv/${tmdbId}`;
 
-        const response = await ApiClient.ajax({
-            type: 'GET',
-            url: ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr${endpoint}`),
-            headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
-            dataType: 'json'
-        });
-
-        return response;
+        sanitizeMediaInfo4kStatus(data);
+        return data;
     } catch (error) {
         console.error(`${logPrefix} Failed to fetch ${mediaType} details for TMDB ID ${tmdbId}:`, error);
         throw error;
@@ -621,6 +644,7 @@ function buildModalContent(data, mediaType) {
                                         <span class="genres">${data.genres?.map(g => escapeHtml(g.name)).join(', ') || 'N/A'}</span>
                                     </div>
                                     ${data.tagline ? `<p class="tagline">${escapeHtml(data.tagline)}</p>` : ''}
+                                    <div class="je-requested-by" data-mount="je-requested-by"></div>
                                     <div class="je-downloads" data-mount="je-downloads"></div>
                                     <div class="je-more-info-actions" data-mount="je-actions"></div>
                                     <div class="je-more-info-secondary-actions" data-mount="je-secondary-actions"></div>
@@ -918,9 +942,18 @@ function buildMediaFacts(data, mediaType, tmdbId) {
     const jellyseerrBaseUrl = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl() || '';
     const jellyseerrLink = jellyseerrBaseUrl ? `${jellyseerrBaseUrl}/${mediaType}/${tmdbId}` : null;
 
-    // Jellyfin library IDs (set when item is available in the local library)
+    // Jellyfin library IDs (set when item is available in the local library). Seerr points
+    // jellyfinMediaId4k at the same Jellyfin item as jellyfinMediaId whenever there's a single
+    // shared library (no separate 4K library) — it's set as soon as the item is found there,
+    // regardless of whether the 4K variant itself was ever requested/available. Without gating
+    // on the actual 4K status, that renders two identical "Open in Jellyfin" fact links for an
+    // item that only exists in one quality. Only surface the 4K link when 4K is genuinely
+    // available AND it points at a distinct Jellyfin item.
     const jellyfinMediaId = data.mediaInfo?.jellyfinMediaId || null;
-    const jellyfinMediaId4k = data.mediaInfo?.jellyfinMediaId4k || null;
+    const is4kAvailable = data.mediaInfo?.status4k === JE.seerrStatus.MEDIA.AVAILABLE;
+    const jellyfinMediaId4k = (is4kAvailable && data.mediaInfo?.jellyfinMediaId4k && data.mediaInfo.jellyfinMediaId4k !== jellyfinMediaId)
+        ? data.mediaInfo.jellyfinMediaId4k
+        : null;
 
     const jellyfinSvg = '<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="0 0 512 512"><defs><linearGradient id="je_jfl_a" x1="97.487" x2="522.047" y1="483.902" y2="729.018" gradientTransform="translate(0 -278)" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:#aa5cc3"/><stop offset="1" style="stop-color:#00a4dc"/></linearGradient><linearGradient id="je_jfl_b" x1="94.186" x2="518.747" y1="489.619" y2="734.735" gradientTransform="translate(0 -278)" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:#aa5cc3"/><stop offset="1" style="stop-color:#00a4dc"/></linearGradient></defs><path d="M256 196.2c-22.4 0-94.8 131.3-83.8 153.4s156.8 21.9 167.7 0-61.3-153.4-83.9-153.4" style="fill:url(#je_jfl_a)"/><path d="M256 0C188.3 0-29.8 395.4 3.4 462.2s472.3 66 505.2 0S323.8 0 256 0m165.6 404.3c-21.6 43.2-309.3 43.8-331.1 0S211.7 101.4 256 101.4 443.2 361 421.6 404.3" style="fill:url(#je_jfl_b)"/></svg>';
     const jellyfinSvg4k = '<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="0 0 512 512"><defs><linearGradient id="jf4k-a" x1="97.487" x2="522.047" y1="483.902" y2="729.018" gradientTransform="translate(0 -278)" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:#aa5cc3"/><stop offset="1" style="stop-color:#00a4dc"/></linearGradient><linearGradient id="jf4k-b" x1="94.186" x2="518.747" y1="489.619" y2="734.735" gradientTransform="translate(0 -278)" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:#aa5cc3"/><stop offset="1" style="stop-color:#00a4dc"/></linearGradient><linearGradient id="jf4k-c" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#1a1a2e"/><stop offset="100%" style="stop-color:#16213e"/></linearGradient></defs><path d="M256 196.2c-22.4 0-94.8 131.3-83.8 153.4s156.8 21.9 167.7 0-61.3-153.4-83.9-153.4" style="fill:url(#jf4k-a)"/><path d="M256 0C188.3 0-29.8 395.4 3.4 462.2s472.3 66 505.2 0S323.8 0 256 0m165.6 404.3c-21.6 43.2-309.3 43.8-331.1 0S211.7 101.4 256 101.4 443.2 361 421.6 404.3" style="fill:url(#jf4k-b)"/><rect x="310" y="330" width="202" height="170" rx="20" fill="url(#jf4k-c)"/><rect x="312" y="332" width="198" height="166" rx="19" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="2"/><text x="411" y="462" text-anchor="middle" fill="#fff" font-weight="900" font-size="140" font-family="Arial Black, Arial, sans-serif" letter-spacing="-3">4K</text></svg>';
@@ -1880,6 +1913,76 @@ function appendSpoilerToggleIfApplicable(_actionMount, data, mediaType) {
     }
 }
 
+// Seerr's raw requestedBy.avatar is either a relative Seerr-internal path (needs our
+// /JellyfinEnhanced/proxy/avatar proxy for CORS/auth) or an already-absolute URL (gravatar,
+// Plex, etc. — safe to use directly). Mirrors getIssueAvatarUrl in requests-page.js.
+function resolveRequesterAvatarSrc(avatar) {
+    if (!avatar) return null;
+    if (avatar.startsWith('/')) {
+        return ApiClient.getUrl('/JellyfinEnhanced/proxy/avatar', { path: avatar });
+    }
+    return avatar;
+}
+
+// Shows who requested this item, when the Seerr API key backing the proxy has permission to
+// see it (mediaInfo.requests is only populated for callers with MANAGE_REQUESTS or their own
+// requests — same visibility the admin "Requests" tab already relies on). Silently renders
+// nothing when there's no request data, rather than showing an empty "Requested by" line.
+// Avatars reuse the same proxy/blob-cache pipeline as the Requests page (JE.helpers), so a
+// requester whose avatar is already cached there doesn't get re-downloaded here.
+function renderRequestedBy(mount, mediaInfo) {
+    if (!mount) return;
+    const requests = Array.isArray(mediaInfo?.requests) ? mediaInfo.requests : [];
+    if (requests.length === 0) return;
+
+    const seen = new Set();
+    const entries = [];
+    requests.forEach(req => {
+        const requestedBy = req?.requestedBy;
+        const name = requestedBy?.displayName || requestedBy?.username;
+        if (!name) return;
+        const label = req.is4k ? `${name} (4K)` : name;
+        if (seen.has(label)) return;
+        seen.add(label);
+        entries.push({ label, avatarSrc: resolveRequesterAvatarSrc(requestedBy?.avatar) });
+    });
+    if (entries.length === 0) return;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'je-requested-by-row';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'je-requested-by-label';
+    labelEl.textContent = JE.t('jellyseerr_modal_requested_by') || 'Requested by';
+    wrapper.appendChild(labelEl);
+
+    entries.forEach(entry => {
+        const item = document.createElement('span');
+        item.className = 'je-requested-by-item';
+
+        if (entry.avatarSrc) {
+            const img = document.createElement('img');
+            img.className = 'je-request-avatar';
+            img.setAttribute('data-avatar-src', entry.avatarSrc);
+            img.alt = '';
+            img.loading = 'lazy';
+            img.style.display = 'none';
+            img.addEventListener('error', () => { img.style.display = 'none'; });
+            item.appendChild(img);
+        }
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'je-requested-by-name';
+        nameEl.textContent = entry.label;
+        item.appendChild(nameEl);
+
+        wrapper.appendChild(item);
+    });
+
+    mount.appendChild(wrapper);
+    JE.helpers?.hydrateAvatarImages?.(mount);
+}
+
 function renderActions(data, mediaType) {
     if (!currentModal) return;
 
@@ -1887,12 +1990,19 @@ function renderActions(data, mediaType) {
     const chipMount = currentModal.querySelector('[data-mount="je-status-chip"]');
     const downloadsMount = currentModal.querySelector('[data-mount="je-downloads"]');
     const secondaryMount = currentModal.querySelector('[data-mount="je-secondary-actions"]');
+    const requestedByMount = currentModal.querySelector('[data-mount="je-requested-by"]');
     if (actionMount) actionMount.innerHTML = '';
     if (chipMount) chipMount.innerHTML = '';
     if (downloadsMount) downloadsMount.innerHTML = '';
     if (secondaryMount) secondaryMount.innerHTML = '';
+    if (requestedByMount) requestedByMount.innerHTML = '';
 
     const myToken = ++_renderActionsToken;
+
+    // "Requested by" is the same for movies and TV shows — mediaInfo.requests carries a
+    // requestedBy on each request regardless of media type, so this runs once up front
+    // rather than being duplicated in both branches below.
+    renderRequestedBy(requestedByMount, data.mediaInfo);
 
     if (mediaType === 'movie') {
         const mediaInfo = data.mediaInfo || {};
@@ -2429,6 +2539,37 @@ function injectStyles() {
             font-style: italic;
             opacity: 0.7;
             margin: 0;
+        }
+
+        .je-more-info-modal .je-requested-by:empty {
+            display: none;
+        }
+
+        .je-more-info-modal .je-requested-by-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            font-size: 0.85rem;
+            opacity: 0.85;
+            margin-top: 0.3rem;
+        }
+
+        .je-more-info-modal .je-requested-by-label {
+            opacity: 0.7;
+        }
+
+        .je-more-info-modal .je-requested-by-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .je-more-info-modal .je-request-avatar {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            object-fit: cover;
         }
 
         .je-more-info-modal .je-more-info-actions {

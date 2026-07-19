@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} Richieste {count} stagione/i di \"{title}\"",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Impossibile richiedere stagioni",
     "jellyseerr_modal_title_movie": "Richiedi film",
+    "jellyseerr_modal_requested_by": "Richiesto da",
     "jellyseerr_modal_overview": "Panoramica",
     "jellyseerr_modal_created_by": "Creato da",
     "jellyseerr_modal_director": "Regista",

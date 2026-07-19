@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} Solicitadas {count} temporada(s) de \"{title}\"",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Error al solicitar temporadas",
     "jellyseerr_modal_title_movie": "Solicitar película",
+    "jellyseerr_modal_requested_by": "Solicitado por",
     "jellyseerr_modal_overview": "Sinopsis",
     "jellyseerr_modal_created_by": "Creado por",
     "jellyseerr_modal_director": "Director",

@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} تم طلب {count} موسم/مواسم من \"{title}\"",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} فشل في طلب المواسم",
     "jellyseerr_modal_title_movie": "طلب فيلم",
+    "jellyseerr_modal_requested_by": "طلبه",
     "jellyseerr_modal_overview": "نظرة عامة",
     "jellyseerr_modal_created_by": "من إعداد",
     "jellyseerr_modal_director": "المخرج",

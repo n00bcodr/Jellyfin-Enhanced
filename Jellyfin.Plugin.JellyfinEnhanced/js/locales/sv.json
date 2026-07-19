@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} Begärde {count} säsong(er) av \"{title}\"",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Misslyckades med att begära säsonger",
     "jellyseerr_modal_title_movie": "Begär film",
+    "jellyseerr_modal_requested_by": "Begärd av",
     "jellyseerr_modal_overview": "Översikt",
     "jellyseerr_modal_created_by": "Skapad av",
     "jellyseerr_modal_director": "Regissör",

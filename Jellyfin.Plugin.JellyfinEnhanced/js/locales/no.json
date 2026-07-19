@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} Forespurt {count} sesong(er) av \"{title}\"",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Kunne ikke forespørre sesonger",
     "jellyseerr_modal_title_movie": "Be om film",
+    "jellyseerr_modal_requested_by": "Forespurt av",
     "jellyseerr_modal_overview": "Oversikt",
     "jellyseerr_modal_created_by": "Opprettet av",
     "jellyseerr_modal_director": "Regissør",

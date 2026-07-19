@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} {count} évad kérve a \"{title}\" sorozathoz",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Nem sikerült évadot kérni",
     "jellyseerr_modal_title_movie": "Film Kérése",
+    "jellyseerr_modal_requested_by": "Kérte",
     "jellyseerr_modal_overview": "Áttekintés",
     "jellyseerr_modal_created_by": "Készítette",
     "jellyseerr_modal_director": "Rendező",

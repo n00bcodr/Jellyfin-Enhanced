@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} {count} seizoen(en) van \"{title}\" aangevraagd",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Seizoenen aanvragen mislukt",
     "jellyseerr_modal_title_movie": "Aanvragen Film",
+    "jellyseerr_modal_requested_by": "Aangevraagd door",
     "jellyseerr_modal_overview": "Overzicht",
     "jellyseerr_modal_created_by": "Gemaakt door",
     "jellyseerr_modal_director": "Regisseur",

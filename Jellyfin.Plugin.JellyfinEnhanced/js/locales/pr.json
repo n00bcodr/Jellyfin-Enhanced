@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} Demanded {count} season(s) of \"{title}\"",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Failed to demand seasons, blast!",
     "jellyseerr_modal_title_movie": "Demand a Film",
+    "jellyseerr_modal_requested_by": "Called for by",
     "jellyseerr_modal_overview": "Tale's Overview",
     "jellyseerr_modal_created_by": "Crafted By",
     "jellyseerr_modal_director": "Cap'n of th' Crew",

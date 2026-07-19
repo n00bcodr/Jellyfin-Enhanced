@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} Anmodede om {count} sæson(er) af \"{title}\"",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Kunne ikke anmode om sæsoner",
     "jellyseerr_modal_title_movie": "Anmod om film",
+    "jellyseerr_modal_requested_by": "Anmodet af",
     "jellyseerr_modal_overview": "Oversigt",
     "jellyseerr_modal_created_by": "Skabt af",
     "jellyseerr_modal_director": "Instruktør",

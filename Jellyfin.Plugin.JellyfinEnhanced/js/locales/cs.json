@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} Požádáno o {count} řadu/y z \"{title}\"",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Nepodařilo se požádat o řady",
     "jellyseerr_modal_title_movie": "Požádat film",
+    "jellyseerr_modal_requested_by": "Vyžádal(a)",
     "jellyseerr_modal_overview": "Přehled",
     "jellyseerr_modal_created_by": "Vytvořil",
     "jellyseerr_modal_director": "Režie",

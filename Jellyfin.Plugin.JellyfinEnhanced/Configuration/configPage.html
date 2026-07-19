@@ -1313,6 +1313,14 @@
                             <div class="je-setting-description" data-desc-for="showElsewhereOnJellyseerr">
                                 <div class="fieldDescription je-field-desc-xl">Displays icons of available streaming services (from your default region) on Seerr Posters.<br/><br/><b>Requires TMDB API Key to be configured in Elsewhere Settings</b></div>
                             </div>
+                            <div class="checkboxContainer"><label><input id="jellyseerrShowDetailPageLink" is="emby-checkbox" type="checkbox"/><span>Show Seerr link on item detail pages</span></label></div>
+                            <div class="je-setting-description" data-desc-for="jellyseerrShowDetailPageLink">
+                                <div class="fieldDescription je-field-desc-xl">Adds a Seerr tag to the External Links row on movie/show detail pages (the same row TMDB/IMDb icons appear in, and *arr links when enabled — it shows there regardless of whether *arr links are configured). If "Open results in More Info modal" above is enabled, clicking it opens that modal (status, downloads, and who requested it); otherwise it links straight to the item on Seerr.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="jellyseerrShowDetailPageLinkAsText" is="emby-checkbox" type="checkbox"/><span>Show as text instead of icon</span></label></div>
+                            <div class="je-setting-description" data-desc-for="jellyseerrShowDetailPageLinkAsText">
+                                <div class="fieldDescription je-field-desc-xl">Renders the Seerr detail-page link as the word "Seerr" instead of the icon. Independent of the *arr links "show as text" setting, so it applies even when *arr links are disabled.</div>
+                            </div>
 
                             <details class="je-details-section">
                                 <summary>Item Pages Discovery</summary>
@@ -4411,6 +4419,8 @@
                 document.querySelector('#jellyseerrShowCollectionDiscovery').checked = config.JellyseerrShowCollectionDiscovery !== false;
                 document.querySelector('#jellyseerrShowReportButton').checked = !!config.JellyseerrShowReportButton;
                 document.querySelector('#jellyseerrShowIssueIndicator').checked = !!config.JellyseerrShowIssueIndicator;
+                document.querySelector('#jellyseerrShowDetailPageLink').checked = config.JellyseerrShowDetailPageLink !== false;
+                document.querySelector('#jellyseerrShowDetailPageLinkAsText').checked = !!config.JellyseerrShowDetailPageLinkAsText;
                 document.querySelector('#jellyseerrExcludeBlocklistedItems').checked = !!config.JellyseerrExcludeBlocklistedItems;
                 document.querySelector('#jellyseerrDisableCache').checked = !!config.JellyseerrDisableCache;
                 document.querySelector('#jellyseerrResponseCacheTtlMinutes').value = config.JellyseerrResponseCacheTtlMinutes || 10;
@@ -4750,6 +4760,8 @@
             config.JellyseerrShowCollectionDiscovery = document.querySelector('#jellyseerrShowCollectionDiscovery').checked;
             config.JellyseerrShowReportButton = document.querySelector('#jellyseerrShowReportButton').checked;
             config.JellyseerrShowIssueIndicator = document.querySelector('#jellyseerrShowIssueIndicator').checked;
+            config.JellyseerrShowDetailPageLink = document.querySelector('#jellyseerrShowDetailPageLink').checked;
+            config.JellyseerrShowDetailPageLinkAsText = document.querySelector('#jellyseerrShowDetailPageLinkAsText').checked;
             config.ShowElsewhereOnJellyseerr = document.querySelector('#showElsewhereOnJellyseerr').checked;
             // validate scheme on save. Lines that don't parse as
             // http(s) are dropped with a warning so we never persist garbage
@@ -6024,6 +6036,7 @@
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },
             { parent: 'jellyseerrShowSearchResults', label: 'Show Seerr Results in Search', children: ['showCollectionsInSearch'] },
             { parent: 'jellyseerrShowReportButton', label: 'Show Report Issue button', children: ['jellyseerrShowIssueIndicator'] },
+            { parent: 'jellyseerrShowDetailPageLink', label: 'Show Seerr link on item detail pages', children: ['jellyseerrShowDetailPageLinkAsText'] },
             { parent: 'downloadsPageEnabled', label: 'Enable Requests Page', children: ['showDownloadsInRequests', 'downloadsPageShowIssues', 'downloadsUsePluginPages', 'downloadsUseNativeTab', 'downloadsUseCustomTabs', 'downloadsPagePollingEnabled'] },
             { parent: 'showDownloadsInRequests', label: 'Show Downloads in Requests Page', children: ['downloadsFilterByUserRequests'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
@@ -6519,6 +6532,12 @@
             feat('Seerr integration', bool('jellyseerrEnabled'), 'seerr',
                 seerrWarn ? 'Enabled but Seerr URL or API key missing' : 'Enabled',
                 seerrWarn);
+
+            var seerrLinkOn = bool('jellyseerrEnabled') && bool('jellyseerrShowDetailPageLink');
+            var seerrLinkWarn = seerrLinkOn && !seerrConfigured();
+            feat('Seerr detail-page link', seerrLinkOn, 'seerr',
+                seerrLinkWarn ? 'Enabled but Seerr URL or API key missing' : 'Enabled',
+                seerrLinkWarn);
 
             // Watchlist (Seerr tab). Sync and "add requested → watchlist" both
             // need KefinTweaks to actually render the watchlist UI in Jellyfin;

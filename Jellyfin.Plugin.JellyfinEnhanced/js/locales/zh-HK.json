@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} 已申請「{title}」的 {count} 季",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} 申請季度失敗",
     "jellyseerr_modal_title_movie": "申請電影",
+    "jellyseerr_modal_requested_by": "由",
     "jellyseerr_modal_overview": "簡介",
     "jellyseerr_modal_created_by": "創作人",
     "jellyseerr_modal_director": "導演",

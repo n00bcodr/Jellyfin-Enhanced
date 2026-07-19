@@ -24,6 +24,7 @@
     "panel_shortcuts_listening": "ממתין…",
     "panel_shortcuts_disabled": "מושבת",
     "jellyseerr_modal_title_movie": "Request Movie",
+    "jellyseerr_modal_requested_by": "התבקש על ידי",
     "bookmark_deleted_all": "All bookmarks deleted",
     "panel_settings_ui_remove_continue_watching": "Add Remove from Continue Watching Button",
     "panel_settings_auto_pip": "Auto Picture-in-Picture",

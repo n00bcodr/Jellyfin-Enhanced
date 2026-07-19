@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} Заявени са {count} сезон(а) от „{title}“",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Неуспешна заявка за сезони",
     "jellyseerr_modal_title_movie": "Заявка за филм",
+    "jellyseerr_modal_requested_by": "Заявено от",
     "jellyseerr_modal_overview": "Резюме",
     "jellyseerr_modal_created_by": "Създаден от",
     "jellyseerr_modal_director": "Режисьор",

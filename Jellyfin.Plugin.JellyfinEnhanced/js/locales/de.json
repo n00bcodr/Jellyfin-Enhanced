@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} {count} Staffel(n) von \"{title}\" angefragt",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Staffeln konnten nicht angefragt werden",
     "jellyseerr_modal_title_movie": "Film anfordern",
+    "jellyseerr_modal_requested_by": "Angefordert von",
     "jellyseerr_modal_overview": "Übersicht",
     "jellyseerr_modal_created_by": "Erstellt von",
     "jellyseerr_modal_director": "Regie",

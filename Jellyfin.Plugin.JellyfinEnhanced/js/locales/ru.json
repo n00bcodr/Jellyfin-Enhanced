@@ -176,6 +176,7 @@
     "jellyseerr_modal_toast_request_success": "{{icon:tv}} Запрошено {count} сезон(ов) \"{title}\"",
     "jellyseerr_modal_toast_request_fail": "{{icon:error}} Ошибка при запросе сезонов",
     "jellyseerr_modal_title_movie": "Запросить фильм",
+    "jellyseerr_modal_requested_by": "Запросил(а)",
     "jellyseerr_modal_overview": "Обзор",
     "jellyseerr_modal_created_by": "Создатель",
     "jellyseerr_modal_director": "Режиссер",

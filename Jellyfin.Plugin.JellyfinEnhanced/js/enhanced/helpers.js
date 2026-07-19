@@ -18,6 +18,138 @@
     // Active observers registry for lifecycle management (non-body targets only)
     const activeObservers = new Map();
 
+    // --- Protected avatar image resolution ---
+    // Seerr avatar URLs are proxied through /JellyfinEnhanced/proxy/avatar, which requires the
+    // same auth headers as any other plugin endpoint — a plain <img src> can't send those, so
+    // avatars are fetched as an authenticated blob and swapped in. Shared across every module
+    // that renders a requester's avatar (Requests page, Seerr more-info modal) so the same
+    // avatar isn't downloaded twice and both share one cache.
+    const avatarObjectUrlCache = new Map();
+    const avatarFetchPromises = new Map();
+
+    function getAvatarAuthHeaders() {
+        const token = ApiClient.accessToken ? ApiClient.accessToken() : '';
+        return {
+            'Authorization': 'MediaBrowser Token="' + token + '"',
+            'X-MediaBrowser-Token': token,
+        };
+    }
+
+    function isSafeAvatarUrl(url) {
+        if (!url || typeof url !== 'string') return false;
+
+        // Relative paths are resolved by the browser against current origin and are allowed.
+        if (url.startsWith('/')) return true;
+
+        if (url.startsWith('blob:')) return true;
+
+        try {
+            const parsed = new URL(url, window.location.origin);
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                return true;
+            }
+
+            // Only allow image data URLs.
+            if (parsed.protocol === 'data:') {
+                return /^data:image\//i.test(url);
+            }
+        } catch {
+            return false;
+        }
+
+        return false;
+    }
+
+    /**
+     * Resolve a protected avatar URL (our /JellyfinEnhanced/proxy/avatar path) to a blob object
+     * URL. Deduplicates concurrent fetches so multiple callers referencing the same avatar
+     * share a single network request, and caches the result.
+     * @param {string} avatarUrl - The avatar proxy URL to resolve
+     * @returns {Promise<string>} A blob: object URL, or "" on failure
+     */
+    async function resolveProtectedAvatarUrl(avatarUrl) {
+        if (!avatarUrl) return '';
+
+        if (!isSafeAvatarUrl(avatarUrl)) {
+            return '';
+        }
+
+        if (!avatarUrl.startsWith('/JellyfinEnhanced/proxy/avatar')) return avatarUrl;
+
+        if (avatarObjectUrlCache.has(avatarUrl)) {
+            return avatarObjectUrlCache.get(avatarUrl);
+        }
+
+        if (avatarFetchPromises.has(avatarUrl)) {
+            return avatarFetchPromises.get(avatarUrl);
+        }
+
+        const fetchPromise = (async () => {
+            try {
+                const response = await fetch(ApiClient.getUrl(avatarUrl), { headers: getAvatarAuthHeaders() });
+                if (!response.ok) return '';
+                const blob = await response.blob();
+                const objectUrl = URL.createObjectURL(blob);
+                avatarObjectUrlCache.set(avatarUrl, objectUrl);
+                return objectUrl;
+            } catch {
+                return '';
+            } finally {
+                avatarFetchPromises.delete(avatarUrl);
+            }
+        })();
+
+        avatarFetchPromises.set(avatarUrl, fetchPromise);
+        return fetchPromise;
+    }
+
+    /**
+     * Hydrates every `img.je-request-avatar[data-avatar-src]` inside container: resolves the
+     * protected proxy URL to a blob and swaps it in, hiding the image entirely on failure.
+     * @param {HTMLElement} container
+     */
+    function hydrateAvatarImages(container) {
+        const avatarImgs = container.querySelectorAll('img.je-request-avatar[data-avatar-src]');
+        avatarImgs.forEach(async (img) => {
+            const sourceUrl = img.getAttribute('data-avatar-src');
+            if (!sourceUrl) {
+                img.style.display = 'none';
+                return;
+            }
+
+            const resolvedUrl = await resolveProtectedAvatarUrl(sourceUrl);
+            if (!img.isConnected) return;
+
+            if (!resolvedUrl) {
+                img.style.display = 'none';
+                return;
+            }
+
+            if (!isSafeAvatarUrl(resolvedUrl)) {
+                img.style.display = 'none';
+                return;
+            }
+
+            img.src = resolvedUrl;
+            img.style.display = '';
+        });
+    }
+
+    /**
+     * Revoke all cached avatar blob URLs and clear the result cache.
+     * @param {boolean} [includeInFlight] - If true, also cancel pending fetch promises.
+     *   Pass true on page teardown; omit on re-render to let in-flight fetches complete.
+     */
+    function clearAvatarObjectUrlCache(includeInFlight) {
+        avatarObjectUrlCache.forEach((objectUrl) => URL.revokeObjectURL(objectUrl));
+        avatarObjectUrlCache.clear();
+        // Only clear in-flight promises on page teardown, not on re-render.
+        // Clearing mid-flight would cause duplicate downloads for the same avatar.
+        if (includeInFlight) {
+            avatarFetchPromises.clear();
+        }
+    }
+
     // --- Multiplexed Body Observer ---
     // Single MutationObserver on document.body that dispatches to all registered subscribers.
     // This replaces the previous pattern of N separate observers on document.body,
@@ -834,6 +966,10 @@
         removeCSS,
         escHtml,
         createExternalLink,
+        isSafeAvatarUrl,
+        resolveProtectedAvatarUrl,
+        hydrateAvatarImages,
+        clearAvatarObjectUrlCache,
         getHandlerCount: () => handlers.length,
         getObserverCount: () => activeObservers.size,
         getBodySubscriberCount: () => bodySubscribers.size
