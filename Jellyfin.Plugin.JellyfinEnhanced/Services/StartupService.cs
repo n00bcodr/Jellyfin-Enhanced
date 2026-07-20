@@ -62,21 +62,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // A full rebuild runs daily at 3 AM or can be triggered manually.
                 // Wrapped in try/catch so a cache failure never prevents the rest of
                 // the plugin from working (tags just fall back to batch mode).
-                try
+                //
+                // Honor the "Server-Side Tag Cache" admin setting here: when it is
+                // disabled, the cache is fully out of service, so skip the load,
+                // the monitor, and the initial full build — an admin who opted out
+                // must not pay any cache cost at startup (historically the
+                // unconditional build here OOM-killed large-library servers in a
+                // startup crash loop; the build is paged now, but off means off).
+                // Clients fall back to per-page batch tag requests while the
+                // tag-cache endpoint returns 404 with the setting off.
+                if (JellyfinEnhanced.Instance?.Configuration?.TagCacheServerMode != true)
                 {
-                    _tagCacheService.LoadFromDisk();
-                    _tagCacheMonitor.Initialize();
-
-                    // First install: if no cache exists, build it now so tags work immediately
-                    if (_tagCacheService.Count == 0)
-                    {
-                        _logger.Info("[TagCache] No cache on disk, building initial cache...");
-                        _tagCacheService.BuildFullCache(null, CancellationToken.None);
-                    }
+                    _logger.Info("[TagCache] Server-Side Tag Cache is disabled; skipping cache load and build (tags will use batch fallback).");
                 }
-                catch (System.Exception ex)
+                else
                 {
-                    _logger.Error($"[TagCache] Failed to initialize tag cache (tags will use batch fallback): {ex.Message}");
+                    try
+                    {
+                        _tagCacheService.LoadFromDisk();
+                        _tagCacheMonitor.Initialize();
+
+                        // First install: if no cache exists, build it now so tags work immediately
+                        if (_tagCacheService.Count == 0)
+                        {
+                            _logger.Info("[TagCache] No cache on disk, building initial cache...");
+                            _tagCacheService.BuildFullCache(null, CancellationToken.None);
+                        }
+                    }
+                    catch (System.Exception ex)
+                    {
+                        _logger.Error($"[TagCache] Failed to initialize tag cache (tags will use batch fallback): {ex.Message}");
+                    }
                 }
 
                 _logger.Info("Jellyfin Enhanced Startup Task completed successfully.");

@@ -5897,7 +5897,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            var items = _tagCacheService.GetCacheForUser(user, since);
+            // Version/timestamp come from the same generation capture as the
+            // cache contents (see GetCacheForUser): a cursor newer than the
+            // returned items would let clients skip updates permanently, and a
+            // mixed pre-publish stamp (timestamp 0) would disable their delta
+            // refresh entirely.
+            var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, since);
 
             // Spoiler Guard tag-strip: when SpoilerBlur is on with any tag-relevant
             // strip toggle, walk the cache and zero out matching fields for unwatched
@@ -6094,8 +6099,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             return Ok(new
             {
-                version = _tagCacheService.Version,
-                timestamp = _tagCacheService.LastModified,
+                version = cacheVersion,
+                timestamp = cacheTimestamp,
                 count = items.Count,
                 items
             });

@@ -197,13 +197,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             base.OnUninstalling();
         }
 
-        // Flush every Seerr-related cache the moment the admin saves config.
-        // Without this, fixing a bad URL/key/blocklist takes 10-30 minutes to
-        // take effect because of the user-id and response caches — admins see
-        // "still broken" after their fix and assume it didn't work
-        //.
+        // Config-save side effects: flush every Seerr-related cache (fixing a bad
+        // URL/key/blocklist must not take 10-30 minutes of cache TTL to appear
+        // fixed), and hand Server-Side Tag Cache OFF<->ON flips to the tag-cache
+        // transition queue — turning it off must actually release the cache
+        // memory, and turning it on must catch up on the off window right away
+        // rather than serving a stale snapshot until the daily 3 AM refresh.
         public override void UpdateConfiguration(BasePluginConfiguration configuration)
         {
+            // Capture the outgoing value BEFORE base.UpdateConfiguration replaces
+            // Configuration, so an actual OFF<->ON transition is distinguishable
+            // from an unrelated config save (this method fires on every save).
+            var tagCacheWasEnabled = Configuration?.TagCacheServerMode == true;
+
             base.UpdateConfiguration(configuration);
             try
             {
@@ -213,6 +219,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             catch (Exception ex)
             {
                 _logger.Warning($"Jellyfin Enhanced: failed to clear Seerr caches on config update: {ex.Message}");
+            }
+
+            // The transitions themselves run on a serialized background queue in
+            // TagCacheService (the save request must not block behind cache work).
+            if (tagCacheWasEnabled != (Configuration?.TagCacheServerMode == true))
+            {
+                Services.TagCacheService.Instance?.QueueServerModeTransition();
             }
         }
         private void CleanupOldScript()

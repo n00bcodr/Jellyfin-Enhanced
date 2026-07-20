@@ -330,7 +330,7 @@
 
                             <div class="checkboxContainer"><label><input id="tagCacheServerMode" is="emby-checkbox" type="checkbox"/><span>Server-Side Tag Cache</span></label></div>
                             <div class="je-setting-description" data-desc-for="tagCacheServerMode">
-                                <div class="fieldDescription je-field-desc-sm-font-lg">Pre-computes tag data on the server and serves it in a single request. Tags load instantly without per-page API calls. Disable to use the legacy per-page batch mode (not recommended).</div>
+                                <div class="fieldDescription je-field-desc-sm-font-lg">Pre-computes tag data on the server and serves it in a single request. Tags load instantly without per-page API calls. Disable to use the legacy per-page batch mode: the cache is not loaded, built, or maintained while off, and the in-memory cache is released. Re-enabling restores the last snapshot and catches up on missed changes automatically in the background.</div>
                             </div>
 
                             <div id="tagsLocalStorageFallbackContainer" class="checkboxContainer">
