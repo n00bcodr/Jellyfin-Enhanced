@@ -46,7 +46,7 @@ jobs:
       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9
+      uses: github/codeql-action/init@7188fc363630916deb702c7fdcf4e481b751f97a
       with:
         languages: ${{ matrix.language }}
         build-mode: ${{ matrix.build-mode }}
@@ -63,6 +63,6 @@ jobs:
       run: dotnet build Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj --configuration Release
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9
+      uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a
       with:
         category: "/language:${{matrix.language}}"
