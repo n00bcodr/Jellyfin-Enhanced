@@ -54,7 +54,7 @@ jobs:
 
     - if: matrix.build-mode == 'manual'
       name: Setup .NET
-      uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
       with:
         dotnet-version: '9.0.x'
 
