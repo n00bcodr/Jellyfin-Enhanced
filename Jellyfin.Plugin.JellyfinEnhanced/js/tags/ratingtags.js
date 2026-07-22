@@ -35,15 +35,14 @@
 
     /**
      * Normalize a raw critic rating to a 0-100 integer percentage.
-     * @param {*} raw - Raw critic rating value (may be on a 0-10 or 0-100 scale).
+     * @param {*} raw - Raw critic rating value.
      * @returns {number|null} Normalized percentage or null if invalid.
      */
     function normalizeCriticPercent(raw) {
         if (raw === null || raw === undefined) return null;
         const num = Number(raw);
         if (!Number.isFinite(num)) return null;
-        const percent = num <= 10 ? Math.round(num * 10) : Math.round(num);
-        return Math.max(0, Math.min(100, percent));
+        return Math.max(0, Math.min(100, Math.round(num)));
     }
 
     /**

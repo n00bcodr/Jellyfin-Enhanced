@@ -20,8 +20,7 @@
     if (raw === null || raw === undefined) return null;
     const num = Number(raw);
     if (!Number.isFinite(num)) return null;
-    const percent = num <= 10 ? Math.round(num * 10) : Math.round(num);
-    return Math.max(0, Math.min(100, percent));
+    return Math.max(0, Math.min(100, Math.round(num)));
   }
 
   function createTomatoIcon(isRotten) {
