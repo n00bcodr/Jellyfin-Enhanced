@@ -13,6 +13,16 @@ What this lets a client build, using only these HTTP endpoints:
 - A "bookmark this moment" button on the video player, and a bookmarks list/library screen (see [Bookmarks API](#bookmarks-api))
 - Star ratings and written reviews on a movie/show/season/episode details page, shared across every user on the server (see [Reviews API](#reviews-api))
 
+!!! danger "Jellyfin 10.11 vs 12: the auth header that works is not the same"
+
+    This plugin builds one identical set of endpoints for both Jellyfin 10.11 and 12, so the request/response shapes on this page don't change between server versions, only **which auth header Jellyfin Server itself accepts** does. Confirmed live against both a 10.11.11 and a 12.0.0 server:
+
+    - `X-Emby-Token` and `X-Emby-Authorization` work on Jellyfin **10.11**
+    - On Jellyfin **12**, both of the above are rejected by default (`401`/`400`) — Jellyfin 12 ships with `ServerConfiguration.EnableLegacyAuthorization` **off**, and a server-side migration force-disables it even on servers upgraded from 10.x
+    - `Authorization: MediaBrowser Token="..."` (and, for the one pre-login call below, `Authorization: MediaBrowser Client="...", Device="...", DeviceId="...", Version="..."`) works on **both** versions, unaffected by that setting
+
+    A client that only wants to support one code path, rather than detecting the server version and switching headers, should always send `Authorization`, never `X-Emby-Token`/`X-Emby-Authorization` alone. Some examples below still show `X-Emby-Token` because that's what a plain server API key traditionally uses; substitute `Authorization: MediaBrowser Token="{apiKeyOrUserToken}"` for the same call if the target server might be running Jellyfin 12.
+
 **`/JellyfinEnhanced`**
 
 ???+ dev "Check version"
@@ -48,12 +58,12 @@ Log in as that user to get a per-user access token, then use that token in `Auth
         ``` bash title="Bash" hl_lines="2-4"
         curl -X POST \
           -H 'Content-Type: application/json' \
-          -H 'X-Emby-Authorization: MediaBrowser Client="MyApp", Device="MyApp", DeviceId="my-app-1", Version="1.0.0"' \
+          -H 'Authorization: MediaBrowser Client="MyApp", Device="MyApp", DeviceId="my-app-1", Version="1.0.0"' \
           -d '{"Username": "JELLYFIN_USERNAME", "Pw": "JELLYFIN_PASSWORD"}' \
           'JELLYFIN_SERVER_URL/Users/AuthenticateByName'
         ```
 
-    The `X-Emby-Authorization` header is required, Jellyfin rejects the request without it even though no token exists yet at this point. `Client`, `Device`, `DeviceId`, and `Version` can be any values that identify your app.
+    A client-identification header (`Client`, `Device`, `DeviceId`, `Version`, any values that identify your app) is required here, Jellyfin rejects the request without it even though no token exists yet at this point. Use the **`Authorization`** header for it, not `X-Emby-Authorization`: confirmed live against a Jellyfin 12 server, `X-Emby-Authorization` alone gets a bare `400 Error processing request` there, because Jellyfin 12 disables the legacy `X-Emby-*`/`X-MediaBrowser-*` header family by default (`ServerConfiguration.EnableLegacyAuthorization`). `Authorization: MediaBrowser ...` is never gated by that setting, on 10.11 or 12, so it is the one header name safe to hard-code in a client.
 
     The response body includes an `AccessToken` field, that is `JELLYFIN_USER_ACCESS_TOKEN`. It does not expire on its own, it stays valid until the user signs out or an admin revokes it from the Jellyfin Dashboard.
 
@@ -122,20 +132,24 @@ Bookmarks are stored as `bookmark.json` (singular), inside a folder named after 
 {
   "Bookmarks": {
     "unique-bookmark-id": {
-      "itemId": "jellyfin-item-id",
-      "tmdbId": "12345",
-      "tvdbId": "67890",
-      "mediaType": "movie" | "tv",
-      "name": "Item Name",
-      "timestamp": 123.45,
-      "label": "Epic scene",
-      "createdAt": "2026-01-03T12:00:00.000Z",
-      "updatedAt": "2026-01-03T12:00:00.000Z",
-      "syncedFrom": "original-item-id"
+      "ItemId": "jellyfin-item-id",
+      "TmdbId": "12345",
+      "TvdbId": "67890",
+      "MediaType": "movie" | "tv",
+      "Name": "Item Name",
+      "Timestamp": 123.45,
+      "Label": "Epic scene",
+      "CreatedAt": "2026-01-03T12:00:00.000Z",
+      "UpdatedAt": "2026-01-03T12:00:00.000Z",
+      "SyncedFrom": "original-item-id"
     }
   }
 }
 ```
+
+!!! warning "Field casing is PascalCase, except on `add`"
+
+    The Get, Replace-all, and Remove endpoints below all read/write `BookmarkItem` fields in **PascalCase** (`ItemId`, `TmdbId`, `MediaType`, `Timestamp`, ...) as shown above — confirmed against a live server, not just the source. The one exception is the **Add one Bookmark** endpoint: its request body accepts either casing (ASP.NET Core's model binder is case-insensitive), but its own success response is a separate small object using **camelCase** (`{"success": true, "id": "..."}`). Don't assume one casing convention across every Bookmarks endpoint.
 
 ### Authentication: two ways to call these
 
@@ -202,7 +216,7 @@ A non-admin user calling with someone else's `JELLYFIN_USER_ID` is rejected.
 
     - `JELLYFIN_TOKEN`: a per-user access token for `JELLYFIN_USER_ID`, or an Administrator API key
     - Jellyfin Server URL `JELLYFIN_SERVER_URL`
-    - The request body is the raw bookmarks object itself, not wrapped in `{ "fileName": ..., "data": ... }`.
+    - The request body is the raw bookmarks object itself, not wrapped in `{ "fileName": ..., "data": ... }`. Each bookmark item's fields are **PascalCase** (`ItemId`, `TmdbId`, `MediaType`, `Timestamp`, `Label`, ...), matching the [Example Data structure](#bookmarks-storage-directory) above.
 
 ???+ dev "Add one Bookmark"
 
@@ -312,8 +326,8 @@ Any other shape (letters, missing digits, extra segments) is rejected with `400 
     ```
 
     - `reviews` is `[]`, never missing, when nobody has reviewed the item yet
-    - `rating` is `null` for a text-only review
-    - Average rating and review count are not pre-computed by the server, a client wanting those should reduce over the `rating` field of the returned array itself
+    - `rating` is **omitted from the object entirely** for a text-only review, it is not present as `rating: null`. Check `"rating" in review` (or the equivalent in your language) rather than a null check if you need to tell "no rating given" apart from "rated 0". `content` behaves differently: a rating-only review still gets `content: ""` rather than omitting the key
+    - Average rating and review count are not pre-computed by the server, a client wanting those should reduce over the `rating` field of the returned array itself, skipping entries where the key is absent
 
 ???+ dev "Add or edit your own review"
 
