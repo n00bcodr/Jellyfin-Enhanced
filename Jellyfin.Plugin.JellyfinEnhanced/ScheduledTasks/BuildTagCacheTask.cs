@@ -48,9 +48,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
         public Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
         {
-            _tagCacheService.ReconcileCache(progress, cancellationToken);
-            // Ensure the monitor is subscribed to events after the first build
+            // Honor the "Server-Side Tag Cache" admin setting: when disabled, the
+            // cache is fully out of service (released by the config transition
+            // hook), so this task must not build or reconcile anything. Re-enable
+            // catch-up is handled by that hook; this gate just keeps the daily
+            // trigger and manual runs from doing work the admin opted out of.
+            if (JellyfinEnhanced.Instance?.Configuration?.TagCacheServerMode != true)
+            {
+                _logger.Info("[TagCache] Server-Side Tag Cache is disabled; skipping cache refresh (tags will use batch fallback).");
+                progress.Report(100);
+                return Task.CompletedTask;
+            }
+
+            // Subscribe BEFORE building, not after: on the first run after
+            // re-enabling the setting, no monitor is attached yet, and a long
+            // full build would miss every item changed while it runs. Subscribed
+            // first, those changes queue as pending ids (the flush defers while
+            // the rebuild lock is held) and apply to the new cache after the swap.
             _tagCacheMonitor.EnsureSubscribed();
+            _tagCacheService.ReconcileCache(progress, cancellationToken);
             return Task.CompletedTask;
         }
     }
