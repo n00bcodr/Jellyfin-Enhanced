@@ -210,11 +210,11 @@ Option B (manual in Seerr):
 
     **Stored on Jellyfin server:**
 
-    - [Bookmark **data** `bookmarks.json`](../advanced/api.md#bookmark-api--info)
+    - [Bookmark **data** `bookmark.json`](../advanced/api.md#bookmarks-api)
 
     - Spoiler Guard **per-user list and override prefs** `spoilerblur.json`
 
-   ** Stored in browsers' `localStorage`:**
+    **Stored in browsers' `localStorage`:**
 
     - [Users' **settings**](../enhanced/enhanced-features.md#smart-bookmarks)
 
@@ -226,7 +226,7 @@ Option B (manual in Seerr):
 
 - Check bookmark file exists on server
 
-- Look in `/config/data/users/{userId}/jellyfin-enhanced/bookmarks.json`
+- Look in `{JELLYFIN_DATA_DIR}/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/{userId}/bookmark.json`
 
 - Check browser console for errors
 
