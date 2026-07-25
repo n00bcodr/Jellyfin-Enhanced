@@ -814,6 +814,15 @@
         const legacy = document.querySelector('.mainDrawer-scrollContainer');
         if (legacy && legacy.offsetParent !== null) return legacy;
 
+        // The dashboard/settings pages render their own MUI drawer (admin nav),
+        // which also matches `.MuiDrawer-paper` - there's nothing in the class
+        // name that distinguishes it from the home/library drawer. Plugin nav
+        // links belong in the home sidebar only, so bail out here rather than
+        // injecting into the admin drawer.
+        if (document.body.classList.contains('dashboardDocument')) {
+            return null;
+        }
+
         // MUI's global stable class for the drawer's sliding panel. `keepMounted`
         // on the SwipeableDrawer means this exists in the DOM even while closed.
         const muiDrawerPanel = document.querySelector('.MuiDrawer-paper');
