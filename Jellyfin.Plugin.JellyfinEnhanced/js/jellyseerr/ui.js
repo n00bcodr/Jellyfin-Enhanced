@@ -4,8 +4,6 @@
 
     const ui = {};
     const logPrefix = '🪼 Jellyfin Enhanced: Seerr UI:';
-    let pendingRepositionObserver = null;
-    let pendingRepositionTimeout = null;
     const escapeHtml = JE.escapeHtml;
     const MediaStatus = JE.seerrStatus.MEDIA;
     const DisplayStatus = JE.seerrStatus.DISPLAY;
@@ -814,16 +812,8 @@
             return;
         }
 
-        if (pendingRepositionObserver) {
-            pendingRepositionObserver.disconnect();
-            pendingRepositionObserver = null;
-        }
-        if (pendingRepositionTimeout) {
-            clearTimeout(pendingRepositionTimeout);
-            pendingRepositionTimeout = null;
-        }
-
-        searchPage.querySelectorAll('.jellyseerr-section').forEach(section => section.remove());
+        const oldSection = searchPage.querySelector('.jellyseerr-section');
+        if(oldSection) oldSection.remove();
 
         const sectionToInject = createJellyseerrSection(results, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
 
@@ -880,22 +870,15 @@
         // and reposition once they do
         if (!isAfterPrimary) {
             const observer = new MutationObserver(() => {
-                if (!sectionToInject.isConnected) {
-                    // A newer render call has replaced this section — stop watching.
-                    observer.disconnect();
-                    return;
-                }
                 if (findLastPrimarySection()) {
                     observer.disconnect();
-                    clearTimeout(pendingRepositionTimeout);
-                    pendingRepositionObserver = null;
+                    clearTimeout(fallbackTimeout);
                     positionSection();
                 }
             });
             observer.observe(searchPage, { childList: true, subtree: true });
-            pendingRepositionObserver = observer;
             // Safety timeout — disconnect if primary sections never appear
-            pendingRepositionTimeout = setTimeout(() => observer.disconnect(), 5000);
+            const fallbackTimeout = setTimeout(() => observer.disconnect(), 5000);
         }
     };
 
