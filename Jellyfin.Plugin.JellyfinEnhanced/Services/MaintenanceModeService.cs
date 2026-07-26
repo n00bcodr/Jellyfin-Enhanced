@@ -16,7 +16,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     {
         public bool IsActive { get; set; }
         public string Message { get; set; } = string.Empty;
-        /// <summary>"disable_accounts" | "disable_remote" | "both"</summary>
+        /// <summary>"none" | "disable_accounts" | "disable_remote" | "both"</summary>
         public string Action { get; set; } = "disable_accounts";
         public DateTime StartedAt { get; set; }
         public DateTime? EndsAt { get; set; }
@@ -53,7 +53,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return state;
         }
 
-        /// <param name="action">"disable_accounts" | "disable_remote" | "both"</param>
+        /// <param name="action">"none" | "disable_accounts" | "disable_remote" | "both"</param>
         /// <param name="affectedUserIds">Specific user IDs to affect; null or empty = all non-admin users.</param>
         public async Task EnableAsync(string message, int durationMinutes, string action, List<string>? affectedUserIds)
         {
@@ -142,7 +142,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             };
 
             SaveState(newState);
-            _logger.Info($"[Maintenance] Mode enabled. Action={action}, " +
+            _logger.Info($"[Maintenance Mode] Enabled. Action={action}, " +
                 $"AccountsDisabled={accountDisabled.Count}, RemoteDisabled={remoteDisabled.Count}");
         }
 
@@ -193,7 +193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            _logger.Info("[Maintenance] Mode disabled.");
+            _logger.Info("[Maintenance Mode] Disabled.");
         }
 
         private MaintenanceState LoadState()

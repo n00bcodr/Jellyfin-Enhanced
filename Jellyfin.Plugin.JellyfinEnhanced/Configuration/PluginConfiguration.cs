@@ -337,7 +337,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string MaintenanceModeMessage { get; set; } = string.Empty;
         /// <summary>Sent as a native Jellyfin broadcast to all active sessions.</summary>
         public string MaintenanceModeNotificationMessage { get; set; } = string.Empty;
-        /// <summary>"disable_accounts" | "disable_remote" | "both"</summary>
+        /// <summary>"none" | "disable_accounts" | "disable_remote" | "both"</summary>
         public string MaintenanceModeAction { get; set; } = "disable_accounts";
         /// <summary>"all" or a JSON array of user ID strings.</summary>
         public string MaintenanceModeAffectedUsers { get; set; } = "all";

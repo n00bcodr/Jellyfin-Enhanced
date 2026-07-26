@@ -4743,8 +4743,9 @@
             const mmAccounts = document.getElementById('mmAction_accounts').checked;
             const mmRemote   = document.getElementById('mmAction_remote').checked;
             config.MaintenanceModeAction = (mmAccounts && mmRemote) ? 'both'
+                                         : mmAccounts               ? 'disable_accounts'
                                          : mmRemote                 ? 'disable_remote'
-                                         :                            'disable_accounts';
+                                         :                            'none';
             const mmUsersMode = (document.querySelector('input[name="maintenanceModeUsers"]:checked') || {}).value || 'all';
             if (mmUsersMode === 'all') {
                 config.MaintenanceModeAffectedUsers = 'all';
