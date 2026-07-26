@@ -495,6 +495,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 new PluginPageInfo {
                     Name = "hiddenContentPage",
                     EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.HiddenContentPage.html"
+                },
+                new PluginPageInfo {
+                    Name = "recommendationsPage",
+                    EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.RecommendationsPage.html"
                 }
             };
         }

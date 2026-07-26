@@ -630,6 +630,8 @@
                 'jellyseerr/genre-discovery.js',
                 'jellyseerr/tag-discovery.js',
                 'jellyseerr/collection-discovery.js',
+                'jellyseerr/recommendations.js',
+                'jellyseerr/recommendations-custom-tab.js',
 
                 // tags
                 'tags/genretags.js',

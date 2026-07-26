@@ -1609,6 +1609,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/movies?page={page}&studio={studioId}"), HttpMethod.Get);
         }
 
+        [HttpGet("jellyseerr/discover/trending")]
+        [Authorize]
+        public Task<IActionResult> DiscoverTrending([FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/trending?page={page}"), HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/discover/movies")]
+        [Authorize]
+        public Task<IActionResult> DiscoverMovies([FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/movies?page={page}"), HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/discover/tv")]
+        [Authorize]
+        public Task<IActionResult> DiscoverTv([FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/tv?page={page}"), HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/discover/movies/upcoming")]
+        [Authorize]
+        public Task<IActionResult> DiscoverUpcomingMovies([FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/movies/upcoming?page={page}"), HttpMethod.Get);
+        }
+
+        [HttpGet("jellyseerr/discover/tv/upcoming")]
+        [Authorize]
+        public Task<IActionResult> DiscoverUpcomingTv([FromQuery] int page = 1)
+        {
+            return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/tv/upcoming?page={page}"), HttpMethod.Get);
+        }
+
         [HttpGet("studio/{studioId}")]
         [Authorize]
         public IActionResult GetStudioInfo(Guid studioId)
@@ -2931,6 +2966,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.CalendarFilterByLibraryAccess,
                 config.CalendarShowOnlyRequested,
                 config.CalendarForceOnlyRequested,
+
+                // Recommendations Page Settings
+                config.RecommendationsPageEnabled,
+                config.RecommendationsUseCustomTabs,
+                config.RecommendationsUseNativeTab,
 
                 // Hidden Content Settings
                 config.HiddenContentEnabled,

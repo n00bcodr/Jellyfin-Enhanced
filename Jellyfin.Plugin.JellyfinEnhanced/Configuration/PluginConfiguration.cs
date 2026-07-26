@@ -266,6 +266,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             CalendarShowOnlyRequested = false;
             CalendarForceOnlyRequested = false;
 
+            // Recommendations Page Settings (Jellyseerr discover rows)
+            RecommendationsPageEnabled = false;
+            RecommendationsUsePluginPages = false;
+            RecommendationsUseCustomTabs = false;
+            RecommendationsUseNativeTab = false;
+            RecommendationsAutoCreateCustomTab = false;
+            RecommendationsCustomTabJeOwned = false;
+
             // Hidden Content Settings
             HiddenContentEnabled = false;
             HiddenContentUsePluginPages = false;
@@ -615,6 +623,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool CalendarFilterByLibraryAccess { get; set; }
         public bool CalendarShowOnlyRequested { get; set; }
         public bool CalendarForceOnlyRequested { get; set; }
+
+        // Recommendations Page Settings (Jellyseerr discover rows)
+        public bool RecommendationsPageEnabled { get; set; }
+        public bool RecommendationsUsePluginPages { get; set; }
+        public bool RecommendationsUseCustomTabs { get; set; }
+        public bool RecommendationsUseNativeTab { get; set; }
+        public bool RecommendationsAutoCreateCustomTab { get; set; }
+        public bool RecommendationsCustomTabJeOwned { get; set; }
 
         // Hidden Content Settings
         public bool HiddenContentEnabled { get; set; }
