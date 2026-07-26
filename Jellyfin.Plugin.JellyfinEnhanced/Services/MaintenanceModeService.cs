@@ -24,6 +24,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public List<string> AccountDisabledUserIds { get; set; } = new();
         /// <summary>Users whose remote access was disabled by maintenance mode.</summary>
         public List<string> RemoteDisabledUserIds { get; set; } = new();
+        /// <summary>The affected-user selection last requested (null/empty = all non-admin users). Compared
+        /// against on a re-enable call so a changed Action/selection while already active is actually
+        /// re-applied instead of silently ignored.</summary>
+        public List<string>? RequestedAffectedUserIds { get; set; }
     }
 
     public class MaintenanceModeService
@@ -60,12 +64,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var currentState = LoadState();
             if (currentState.IsActive)
             {
-                // Already active — just update message/duration; do not re-apply user changes
-                currentState.Message = message ?? string.Empty;
-                currentState.EndsAt = durationMinutes > 0 ? DateTime.UtcNow.AddMinutes(durationMinutes) : null;
-                SaveState(currentState);
-                _logger.Info("[Maintenance] Message/duration updated (already active).");
-                return;
+                bool sameAction = currentState.Action == action;
+                bool sameTargets = AffectedUserSetsEqual(currentState.RequestedAffectedUserIds, affectedUserIds);
+                if (sameAction && sameTargets)
+                {
+                    // Nothing about who's affected changed - just update message/duration.
+                    currentState.Message = message ?? string.Empty;
+                    currentState.EndsAt = durationMinutes > 0 ? DateTime.UtcNow.AddMinutes(durationMinutes) : null;
+                    SaveState(currentState);
+                    _logger.Info("[Maintenance] Message/duration updated (already active).");
+                    return;
+                }
+
+                // Action or affected-user selection changed while already active - a save-only
+                // "update the message" shortcut here previously left this permanently stuck at
+                // whatever was first applied, silently ignoring every checkbox change afterward.
+                // Undo whatever this instance previously applied, then fall through to re-apply
+                // fresh against the new action/target below.
+                _logger.Info("[Maintenance] Action/targets changed while active - reconciling.");
+                await RestoreUsersAsync(currentState).ConfigureAwait(false);
             }
 
             bool doAccounts = action == "disable_accounts" || action == "both";
@@ -138,7 +155,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 StartedAt = DateTime.UtcNow,
                 EndsAt   = durationMinutes > 0 ? DateTime.UtcNow.AddMinutes(durationMinutes) : null,
                 AccountDisabledUserIds = accountDisabled,
-                RemoteDisabledUserIds  = remoteDisabled
+                RemoteDisabledUserIds  = remoteDisabled,
+                RequestedAffectedUserIds = affectedUserIds
             };
 
             SaveState(newState);
@@ -154,14 +172,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 state = LoadState();
                 if (!state.IsActive)
                 {
-                    _logger.Info("[Maintenance] Already inactive — skipping disable.");
+                    _logger.Info("[Maintenance] Already inactive - skipping disable.");
                     return;
                 }
                 // Mark inactive immediately so concurrent calls short-circuit
                 SaveState(new MaintenanceState { IsActive = false });
             }
 
-            // Collect all unique user IDs that need updating
+            await RestoreUsersAsync(state).ConfigureAwait(false);
+            _logger.Info("[Maintenance Mode] Disabled.");
+        }
+
+        /// <summary>
+        /// Reverts whatever account/remote-access changes a given state recorded as applied.
+        /// Used both by DisableAsync (turning maintenance mode off entirely) and by EnableAsync
+        /// (reconciling a changed Action/target selection while still active) - callers own
+        /// updating IsActive/persisting the resulting state themselves.
+        /// </summary>
+        private async Task RestoreUsersAsync(MaintenanceState state)
+        {
             var allIds = state.AccountDisabledUserIds
                 .Union(state.RemoteDisabledUserIds)
                 .Distinct()
@@ -192,8 +221,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _logger.Error($"[Maintenance] Failed to restore user {idStr}: {ex.Message}");
                 }
             }
+        }
 
-            _logger.Info("[Maintenance Mode] Disabled.");
+        /// <summary>Order-independent comparison; null/empty both mean "all non-admin users".</summary>
+        private static bool AffectedUserSetsEqual(List<string>? a, List<string>? b)
+        {
+            var setA = new HashSet<string>(a ?? new List<string>());
+            var setB = new HashSet<string>(b ?? new List<string>());
+            return setA.SetEquals(setB);
         }
 
         private MaintenanceState LoadState()
