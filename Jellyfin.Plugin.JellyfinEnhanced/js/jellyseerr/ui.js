@@ -725,7 +725,11 @@
             };
 
             icon.addEventListener('click', handleIconInteraction);
-            icon.addEventListener('touchend', (e) => { e.preventDefault(); handleIconInteraction(); }, { passive: false });
+            // Tap detection (rather than a bare touchend) so a scroll gesture that
+            // happens to start on the icon is not miscounted toward the double-tap
+            // filter toggle; preventDefault() suppresses the synthetic click that
+            // would otherwise double-count the tap via the click listener above.
+            addTouchTapListener(icon, (e) => { e.preventDefault(); handleIconInteraction(); });
             icon.setAttribute('tabindex', '0');
             icon.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -1020,6 +1024,105 @@
     }
 
     /**
+     * Registers a scroll-friendly touch "tap" handler on an element.
+     *
+     * A non-passive `touchstart` handler that calls `preventDefault()` cancels the
+     * native scroll gesture, so any swipe starting on the element goes dead — on
+     * phones this froze the horizontal Seerr results row, whose surface is almost
+     * entirely posters/buttons. Instead, listen passively and only treat the touch
+     * as a tap on `touchend` when the finger has not moved beyond a small
+     * threshold; swipes fall through to the browser's native scrolling.
+     *
+     * @param {HTMLElement} element - Element to attach the tap handler to.
+     * @param {Function} onTap - Called with the `touchend` event for genuine taps.
+     *                           May call `event.preventDefault()` to suppress the
+     *                           synthetic click that follows a tap.
+     */
+    // Most recent scroll seen anywhere in the document (capture phase sees the
+    // results row's own scroll events too). Lets tap detection tell a
+    // tap-that-stops-a-momentum-fling — for which browsers suppress the synthetic
+    // click, so native cards do nothing — apart from a deliberate tap. The target
+    // is kept so only scrolls of a container that actually holds the tapped
+    // element count; a sibling row still coasting must not reject taps here.
+    let lastScrollTs = 0;
+    let lastScrollTarget = null;
+    document.addEventListener('scroll', (e) => {
+        lastScrollTs = Date.now();
+        lastScrollTarget = e.target;
+    }, { capture: true, passive: true });
+
+    function addTouchTapListener(element, onTap) {
+        // Movement beyond this many pixels means the touch is a scroll/swipe, not a tap.
+        const TAP_MOVE_THRESHOLD_PX = 10;
+        // A touch starting within this window of a scroll event is stopping a
+        // momentum fling, not tapping — momentum emits scroll events continuously.
+        const SCROLL_QUIET_WINDOW_MS = 100;
+        let trackedTouchId = null;
+        let startX = 0;
+        let startY = 0;
+        let moved = false;
+        let stoppedFling = false;
+
+        const exceedsThreshold = (touch) =>
+            Math.abs(touch.clientX - startX) > TAP_MOVE_THRESHOLD_PX ||
+            Math.abs(touch.clientY - startY) > TAP_MOVE_THRESHOLD_PX;
+
+        element.addEventListener('touchstart', (e) => {
+            // A second concurrent finger on the element is never a tap — cancel the
+            // gesture and wait for a fresh single-finger touch. `targetTouches` is
+            // scoped to this element on purpose: an unrelated resting contact
+            // elsewhere on the screen (palm edge, holding thumb) must not make the
+            // row unresponsive.
+            if (trackedTouchId !== null || e.targetTouches.length > 1) {
+                trackedTouchId = null;
+                return;
+            }
+            // changedTouches can carry simultaneous contacts from other elements
+            // in one hardware event — track the one that actually began here.
+            const touch = Array.from(e.changedTouches).find(t => element.contains(t.target)) ||
+                e.changedTouches[0];
+            trackedTouchId = touch.identifier;
+            moved = false;
+            stoppedFling = (Date.now() - lastScrollTs < SCROLL_QUIET_WINDOW_MS) &&
+                !!(lastScrollTarget && lastScrollTarget.contains && lastScrollTarget.contains(element));
+            startX = touch.clientX;
+            startY = touch.clientY;
+        }, { passive: true });
+
+        element.addEventListener('touchmove', (e) => {
+            if (moved || trackedTouchId === null) return;
+            const touch = Array.from(e.touches).find(t => t.identifier === trackedTouchId);
+            if (touch && exceedsThreshold(touch)) {
+                moved = true;
+            }
+        }, { passive: true });
+
+        // System gestures (e.g. iOS edge swipes) cancel the touch without a touchend.
+        element.addEventListener('touchcancel', () => {
+            trackedTouchId = null;
+        }, { passive: true });
+
+        // Non-passive so the synthetic click can be suppressed via preventDefault();
+        // preventDefault on touchend cannot block scrolling.
+        element.addEventListener('touchend', (e) => {
+            const touch = Array.from(e.changedTouches).find(t => t.identifier === trackedTouchId);
+            if (!touch) return;
+            trackedTouchId = null;
+            // Reject flick-stops, second-finger gestures on the element, and
+            // touches that ended far from where they started (fast flicks can
+            // outrun touchmove sampling without `moved` ever flipping).
+            if (moved || stoppedFling || e.targetTouches.length > 0 || exceedsThreshold(touch)) {
+                // The browser's own tap classifier is more tolerant than ours; if it
+                // disagrees, its synthetic click would reach unguarded click
+                // handlers (real request flow, instant modal). Suppress it.
+                e.preventDefault();
+                return;
+            }
+            onTap(e);
+        }, { passive: false });
+    }
+
+    /**
      * Creates an individual Seerr result card.
      * @param {Object} item - Search result item from Seerr API.
      * @param {boolean} isJellyseerrActive - If the server is reachable.
@@ -1189,11 +1292,13 @@
                 removeOverview();
             });
 
-            // Mobile/Touch: touchstart to show overview, second tap (click) on overview opens modal
+            // Mobile/Touch: tap to show overview, second tap (click) on overview opens modal
             imageContainer.style.cursor = 'pointer';
 
-            // Use touchstart for mobile to create overview (prevents touchend from immediately opening modal)
-            imageContainer.addEventListener('touchstart', (e) => {
+            // Tap (not swipe) creates the overview; preventDefault() on the tap's
+            // touchend suppresses the synthetic click so the fresh overview isn't
+            // immediately activated. Swipes keep scrolling the results row natively.
+            addTouchTapListener(imageContainer, (e) => {
                 if (e.target.closest('.jellyseerr-overview') || e.target.closest('.jellyseerr-request-button')) {
                     return;
                 }
@@ -1205,11 +1310,11 @@
                         document.addEventListener('click', handleOutsideClick);
                     }, 0);
                 }
-            }, { passive: false });
+            });
 
             // Desktop: use click event
             imageContainer.addEventListener('click', (e) => {
-                // Skip if touch device (touchstart already handled it)
+                // Skip if touch device (the tap handler already handled it)
                 if (e.type === 'click' && 'ontouchstart' in window) {
                     return;
                 }
@@ -1814,7 +1919,9 @@
             ui.toggleHoverPopoverLock(false);
             ui.hideHoverPopover();
         });
-        button.addEventListener('touchstart', (e) => {
+        // Tap (not swipe) toggles the popover; swipes starting on the request
+        // button keep scrolling the results row natively.
+        addTouchTapListener(button, (e) => {
             e.preventDefault();
             const popover = fillHoverPopover(item);
             if (popover) {
@@ -1832,7 +1939,7 @@
                     popover.classList.remove('show');
                 }
             }
-        }, { passive: false });
+        });
     }
 
     /**
