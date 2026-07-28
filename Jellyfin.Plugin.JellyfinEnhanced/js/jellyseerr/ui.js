@@ -725,7 +725,11 @@
             };
 
             icon.addEventListener('click', handleIconInteraction);
-            icon.addEventListener('touchend', (e) => { e.preventDefault(); handleIconInteraction(); }, { passive: false });
+            // Tap detection (rather than a bare touchend) so a scroll gesture that
+            // happens to start on the icon is not miscounted toward the double-tap
+            // filter toggle; preventDefault() suppresses the synthetic click that
+            // would otherwise double-count the tap via the click listener above.
+            addTouchTapListener(icon, (e) => { e.preventDefault(); handleIconInteraction(); });
             icon.setAttribute('tabindex', '0');
             icon.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
