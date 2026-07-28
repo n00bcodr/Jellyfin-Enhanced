@@ -1034,28 +1034,43 @@
      *                           May call `event.preventDefault()` to suppress the
      *                           synthetic click that follows a tap.
      */
+    // Timestamp of the most recent scroll anywhere in the document (capture phase
+    // sees the results row's own scroll events too). Lets tap detection tell a
+    // tap-that-stops-a-momentum-fling — for which browsers suppress the synthetic
+    // click, so native cards do nothing — apart from a deliberate tap.
+    let lastScrollTs = 0;
+    document.addEventListener('scroll', () => { lastScrollTs = Date.now(); }, { capture: true, passive: true });
+
     function addTouchTapListener(element, onTap) {
         // Movement beyond this many pixels means the touch is a scroll/swipe, not a tap.
         const TAP_MOVE_THRESHOLD_PX = 10;
+        // A touch starting within this window of a scroll event is stopping a
+        // momentum fling, not tapping — momentum emits scroll events continuously.
+        const SCROLL_QUIET_WINDOW_MS = 100;
         let trackedTouchId = null;
         let startX = 0;
         let startY = 0;
         let moved = false;
+        let stoppedFling = false;
 
         const exceedsThreshold = (touch) =>
             Math.abs(touch.clientX - startX) > TAP_MOVE_THRESHOLD_PX ||
             Math.abs(touch.clientY - startY) > TAP_MOVE_THRESHOLD_PX;
 
         element.addEventListener('touchstart', (e) => {
-            // A second concurrent finger is never a tap — cancel the gesture and
-            // wait for a fresh single-finger touch.
-            if (trackedTouchId !== null || e.touches.length > 1) {
+            // A second concurrent finger on the element is never a tap — cancel the
+            // gesture and wait for a fresh single-finger touch. `targetTouches` is
+            // scoped to this element on purpose: an unrelated resting contact
+            // elsewhere on the screen (palm edge, holding thumb) must not make the
+            // row unresponsive.
+            if (trackedTouchId !== null || e.targetTouches.length > 1) {
                 trackedTouchId = null;
                 return;
             }
             const touch = e.changedTouches[0];
             trackedTouchId = touch.identifier;
             moved = false;
+            stoppedFling = Date.now() - lastScrollTs < SCROLL_QUIET_WINDOW_MS;
             startX = touch.clientX;
             startY = touch.clientY;
         }, { passive: true });
@@ -1073,17 +1088,22 @@
             trackedTouchId = null;
         }, { passive: true });
 
-        // Non-passive so onTap may preventDefault() the synthetic click;
+        // Non-passive so the synthetic click can be suppressed via preventDefault();
         // preventDefault on touchend cannot block scrolling.
         element.addEventListener('touchend', (e) => {
             const touch = Array.from(e.changedTouches).find(t => t.identifier === trackedTouchId);
             if (!touch) return;
             trackedTouchId = null;
-            // Also compare the final position: fast flicks can outrun touchmove
-            // sampling, ending far from the start without `moved` ever flipping.
-            // `e.touches` is surface-wide, so any other finger still down (even one
-            // that started on another element) disqualifies the gesture as a tap.
-            if (moved || e.touches.length > 0 || exceedsThreshold(touch)) return;
+            // Reject flick-stops, second-finger gestures on the element, and
+            // touches that ended far from where they started (fast flicks can
+            // outrun touchmove sampling without `moved` ever flipping).
+            if (moved || stoppedFling || e.targetTouches.length > 0 || exceedsThreshold(touch)) {
+                // The browser's own tap classifier is more tolerant than ours; if it
+                // disagrees, its synthetic click would reach unguarded click
+                // handlers (real request flow, instant modal). Suppress it.
+                e.preventDefault();
+                return;
+            }
             onTap(e);
         }, { passive: false });
     }
@@ -1280,7 +1300,7 @@
 
             // Desktop: use click event
             imageContainer.addEventListener('click', (e) => {
-                // Skip if touch device (touchstart already handled it)
+                // Skip if touch device (the tap handler already handled it)
                 if (e.type === 'click' && 'ontouchstart' in window) {
                     return;
                 }
