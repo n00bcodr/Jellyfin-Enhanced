@@ -600,7 +600,7 @@
                 <div class="listItem">
                     <span class="material-icons listItemIcon listItemIcon-transparent tune" aria-hidden="true"></span>
                     <div class="listItemBody">
-                        <div class="listItemBodyText">Advanced Settings (Jellyfin Enhanced)</div>
+                        <div class="listItemBodyText">Jellyfin Enhanced - User Settings</div>
                     </div>
                 </div>
             `;
