@@ -833,7 +833,7 @@
             <style>
                 /* Adaptive settings view: section nav on the left, one pane at a
                    time on the right; below 760px the nav is the first screen and
-                   panes slide in with a back button. */
+                   the pane covers it instantly with a back button. */
                 #jellyfin-enhanced-panel .je-panel-body { display: grid; grid-template-columns: 230px minmax(0, 1fr); flex: 1; min-height: 0; background: ${panelBgColor}; }
                 #jellyfin-enhanced-panel .je-panel-nav { display: flex; flex-direction: column; gap: 10px; padding: 14px 12px; border-right: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.18); overflow-y: auto; }
                 #jellyfin-enhanced-panel .je-panel-nav-items { display: flex; flex-direction: column; gap: 3px; }
@@ -852,7 +852,10 @@
                     #jellyfin-enhanced-panel { top: 0 !important; left: 0 !important; transform: none !important; width: 100vw !important; max-width: 100vw !important; height: 100dvh !important; max-height: 100dvh !important; border-radius: 0 !important; border: none !important; box-sizing: border-box !important; }
                     #jellyfin-enhanced-panel .je-panel-body { display: block; position: relative; overflow: hidden; }
                     #jellyfin-enhanced-panel .je-panel-nav { position: absolute; inset: 0; border-right: none; z-index: 1; }
-                    #jellyfin-enhanced-panel .je-panel-main { position: absolute; inset: 0; z-index: 2; background: rgb(24, 24, 24); transform: translateX(102%); transition: transform 200ms ease; }
+                    /* The closed pane is parked off-screen by the transform alone —
+                       deliberately untransitioned so opening a section swaps the
+                       layer instantly instead of sliding it in. */
+                    #jellyfin-enhanced-panel .je-panel-main { position: absolute; inset: 0; z-index: 2; background: rgb(24, 24, 24); transform: translateX(102%); }
                     #jellyfin-enhanced-panel .je-panel-body.je-pane-open .je-panel-main { transform: translateX(0); }
                     #jellyfin-enhanced-panel .je-panel-body.je-pane-open .je-pane-back { display: inline-flex; }
                 }
