@@ -1081,7 +1081,9 @@
             trackedTouchId = null;
             // Also compare the final position: fast flicks can outrun touchmove
             // sampling, ending far from the start without `moved` ever flipping.
-            if (moved || exceedsThreshold(touch)) return;
+            // `e.touches` is surface-wide, so any other finger still down (even one
+            // that started on another element) disqualifies the gesture as a tap.
+            if (moved || e.touches.length > 0 || exceedsThreshold(touch)) return;
             onTap(e);
         }, { passive: false });
     }
