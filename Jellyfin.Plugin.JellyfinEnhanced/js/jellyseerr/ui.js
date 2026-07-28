@@ -1020,6 +1020,52 @@
     }
 
     /**
+     * Registers a scroll-friendly touch "tap" handler on an element.
+     *
+     * A non-passive `touchstart` handler that calls `preventDefault()` cancels the
+     * native scroll gesture, so any swipe starting on the element goes dead — on
+     * phones this froze the horizontal Seerr results row, whose surface is almost
+     * entirely posters/buttons. Instead, listen passively and only treat the touch
+     * as a tap on `touchend` when the finger has not moved beyond a small
+     * threshold; swipes fall through to the browser's native scrolling.
+     *
+     * @param {HTMLElement} element - Element to attach the tap handler to.
+     * @param {Function} onTap - Called with the `touchend` event for genuine taps.
+     *                           May call `event.preventDefault()` to suppress the
+     *                           synthetic click that follows a tap.
+     */
+    function addTouchTapListener(element, onTap) {
+        // Movement beyond this many pixels means the touch is a scroll/swipe, not a tap.
+        const TAP_MOVE_THRESHOLD_PX = 10;
+        let startX = 0;
+        let startY = 0;
+        let moved = false;
+
+        element.addEventListener('touchstart', (e) => {
+            const touch = e.touches[0];
+            moved = false;
+            startX = touch.clientX;
+            startY = touch.clientY;
+        }, { passive: true });
+
+        element.addEventListener('touchmove', (e) => {
+            if (moved) return;
+            const touch = e.touches[0];
+            if (Math.abs(touch.clientX - startX) > TAP_MOVE_THRESHOLD_PX ||
+                Math.abs(touch.clientY - startY) > TAP_MOVE_THRESHOLD_PX) {
+                moved = true;
+            }
+        }, { passive: true });
+
+        // Non-passive so onTap may preventDefault() the synthetic click;
+        // preventDefault on touchend cannot block scrolling.
+        element.addEventListener('touchend', (e) => {
+            if (moved) return;
+            onTap(e);
+        }, { passive: false });
+    }
+
+    /**
      * Creates an individual Seerr result card.
      * @param {Object} item - Search result item from Seerr API.
      * @param {boolean} isJellyseerrActive - If the server is reachable.
@@ -1189,11 +1235,13 @@
                 removeOverview();
             });
 
-            // Mobile/Touch: touchstart to show overview, second tap (click) on overview opens modal
+            // Mobile/Touch: tap to show overview, second tap (click) on overview opens modal
             imageContainer.style.cursor = 'pointer';
 
-            // Use touchstart for mobile to create overview (prevents touchend from immediately opening modal)
-            imageContainer.addEventListener('touchstart', (e) => {
+            // Tap (not swipe) creates the overview; preventDefault() on the tap's
+            // touchend suppresses the synthetic click so the fresh overview isn't
+            // immediately activated. Swipes keep scrolling the results row natively.
+            addTouchTapListener(imageContainer, (e) => {
                 if (e.target.closest('.jellyseerr-overview') || e.target.closest('.jellyseerr-request-button')) {
                     return;
                 }
@@ -1205,7 +1253,7 @@
                         document.addEventListener('click', handleOutsideClick);
                     }, 0);
                 }
-            }, { passive: false });
+            });
 
             // Desktop: use click event
             imageContainer.addEventListener('click', (e) => {
@@ -1814,7 +1862,9 @@
             ui.toggleHoverPopoverLock(false);
             ui.hideHoverPopover();
         });
-        button.addEventListener('touchstart', (e) => {
+        // Tap (not swipe) toggles the popover; swipes starting on the request
+        // button keep scrolling the results row natively.
+        addTouchTapListener(button, (e) => {
             e.preventDefault();
             const popover = fillHoverPopover(item);
             if (popover) {
@@ -1832,7 +1882,7 @@
                     popover.classList.remove('show');
                 }
             }
-        }, { passive: false });
+        });
     }
 
     /**
