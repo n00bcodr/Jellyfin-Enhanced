@@ -1034,12 +1034,18 @@
      *                           May call `event.preventDefault()` to suppress the
      *                           synthetic click that follows a tap.
      */
-    // Timestamp of the most recent scroll anywhere in the document (capture phase
-    // sees the results row's own scroll events too). Lets tap detection tell a
+    // Most recent scroll seen anywhere in the document (capture phase sees the
+    // results row's own scroll events too). Lets tap detection tell a
     // tap-that-stops-a-momentum-fling — for which browsers suppress the synthetic
-    // click, so native cards do nothing — apart from a deliberate tap.
+    // click, so native cards do nothing — apart from a deliberate tap. The target
+    // is kept so only scrolls of a container that actually holds the tapped
+    // element count; a sibling row still coasting must not reject taps here.
     let lastScrollTs = 0;
-    document.addEventListener('scroll', () => { lastScrollTs = Date.now(); }, { capture: true, passive: true });
+    let lastScrollTarget = null;
+    document.addEventListener('scroll', (e) => {
+        lastScrollTs = Date.now();
+        lastScrollTarget = e.target;
+    }, { capture: true, passive: true });
 
     function addTouchTapListener(element, onTap) {
         // Movement beyond this many pixels means the touch is a scroll/swipe, not a tap.
@@ -1067,10 +1073,14 @@
                 trackedTouchId = null;
                 return;
             }
-            const touch = e.changedTouches[0];
+            // changedTouches can carry simultaneous contacts from other elements
+            // in one hardware event — track the one that actually began here.
+            const touch = Array.from(e.changedTouches).find(t => element.contains(t.target)) ||
+                e.changedTouches[0];
             trackedTouchId = touch.identifier;
             moved = false;
-            stoppedFling = Date.now() - lastScrollTs < SCROLL_QUIET_WINDOW_MS;
+            stoppedFling = (Date.now() - lastScrollTs < SCROLL_QUIET_WINDOW_MS) &&
+                !!(lastScrollTarget && lastScrollTarget.contains && lastScrollTarget.contains(element));
             startX = touch.clientX;
             startY = touch.clientY;
         }, { passive: true });
