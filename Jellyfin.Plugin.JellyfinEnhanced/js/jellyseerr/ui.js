@@ -1037,30 +1037,51 @@
     function addTouchTapListener(element, onTap) {
         // Movement beyond this many pixels means the touch is a scroll/swipe, not a tap.
         const TAP_MOVE_THRESHOLD_PX = 10;
+        let trackedTouchId = null;
         let startX = 0;
         let startY = 0;
         let moved = false;
 
+        const exceedsThreshold = (touch) =>
+            Math.abs(touch.clientX - startX) > TAP_MOVE_THRESHOLD_PX ||
+            Math.abs(touch.clientY - startY) > TAP_MOVE_THRESHOLD_PX;
+
         element.addEventListener('touchstart', (e) => {
-            const touch = e.touches[0];
+            // A second concurrent finger is never a tap — cancel the gesture and
+            // wait for a fresh single-finger touch.
+            if (trackedTouchId !== null || e.touches.length > 1) {
+                trackedTouchId = null;
+                return;
+            }
+            const touch = e.changedTouches[0];
+            trackedTouchId = touch.identifier;
             moved = false;
             startX = touch.clientX;
             startY = touch.clientY;
         }, { passive: true });
 
         element.addEventListener('touchmove', (e) => {
-            if (moved) return;
-            const touch = e.touches[0];
-            if (Math.abs(touch.clientX - startX) > TAP_MOVE_THRESHOLD_PX ||
-                Math.abs(touch.clientY - startY) > TAP_MOVE_THRESHOLD_PX) {
+            if (moved || trackedTouchId === null) return;
+            const touch = Array.from(e.touches).find(t => t.identifier === trackedTouchId);
+            if (touch && exceedsThreshold(touch)) {
                 moved = true;
             }
+        }, { passive: true });
+
+        // System gestures (e.g. iOS edge swipes) cancel the touch without a touchend.
+        element.addEventListener('touchcancel', () => {
+            trackedTouchId = null;
         }, { passive: true });
 
         // Non-passive so onTap may preventDefault() the synthetic click;
         // preventDefault on touchend cannot block scrolling.
         element.addEventListener('touchend', (e) => {
-            if (moved) return;
+            const touch = Array.from(e.changedTouches).find(t => t.identifier === trackedTouchId);
+            if (!touch) return;
+            trackedTouchId = null;
+            // Also compare the final position: fast flicks can outrun touchmove
+            // sampling, ending far from the start without `moved` ever flipping.
+            if (moved || exceedsThreshold(touch)) return;
             onTap(e);
         }, { passive: false });
     }

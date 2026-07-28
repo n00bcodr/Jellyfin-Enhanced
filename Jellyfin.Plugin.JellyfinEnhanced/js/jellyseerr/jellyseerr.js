@@ -476,7 +476,12 @@
                 hideHoverPopover();
             }
         }, { passive: true });
-        document.addEventListener('scroll', () => hideHoverPopover(), true);
+        // Scrolling moves the button away from the fixed-position popover, so a
+        // tap-locked popover must unlock too or it would float at stale coordinates.
+        document.addEventListener('scroll', () => {
+            toggleHoverPopoverLock(false);
+            hideHoverPopover();
+        }, true);
 
         // Remove touch overlay when touching outside cards
         document.body.addEventListener('touchstart', (e) => {
