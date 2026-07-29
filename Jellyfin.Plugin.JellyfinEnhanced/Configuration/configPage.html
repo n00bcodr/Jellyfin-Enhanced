@@ -986,6 +986,14 @@
                             <div class="je-setting-description" data-desc-for="downloadsPageShowIssues">
                                 <div class="fieldDescription je-field-desc-xl">Shows open/resolved Seerr issues beneath Requests.</div>
                             </div>
+                            <div class="checkboxContainer"><label><input id="downloadsShowHistory" is="emby-checkbox" type="checkbox"/><span>Show Download History Section</span></label></div>
+                            <div class="je-setting-description" data-desc-for="downloadsShowHistory">
+                                <div class="fieldDescription je-field-desc-xl">Shows a bounded history of recently imported (or failed-to-import) Sonarr/Radarr downloads beneath Requests, so items that vanish from the active queue after finishing are still visible.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="downloadsHistoryAdminOnly" is="emby-checkbox" type="checkbox"/><span>Restrict Download History to Admins</span></label></div>
+                            <div class="je-setting-description" data-desc-for="downloadsHistoryAdminOnly">
+                                <div class="fieldDescription je-field-desc-xl">When enabled, only Jellyfin administrators see the Download History section. Regular users won't see it at all.</div>
+                            </div>
                             <div class="checkboxContainer"><label><input id="downloadsUseNativeTab" is="emby-checkbox" type="checkbox"/><span>Add Requests as a native Home tab</span></label></div>
                             <div class="je-setting-description" data-desc-for="downloadsUseNativeTab">
                                 <div class="fieldDescription je-field-desc-xl">Adds Requests as its own tab on the Home page, no external plugin needed.<br/><strong>Recommended on Jellyfin 12's experimental layout</strong> (the default).</div>
@@ -4591,6 +4599,8 @@
                 document.querySelector('#showDownloadsInRequests').checked = config.ShowDownloadsInRequests !== false;
                 document.querySelector('#downloadsFilterByUserRequests').checked = config.DownloadsFilterByUserRequests !== false;
                 document.querySelector('#downloadsPageShowIssues').checked = config.DownloadsPageShowIssues === true;
+                document.querySelector('#downloadsShowHistory').checked = config.DownloadsShowHistory !== false;
+                document.querySelector('#downloadsHistoryAdminOnly').checked = config.DownloadsHistoryAdminOnly === true;
                 document.querySelector('#downloadsUsePluginPages').checked = config.DownloadsUsePluginPages !== false;
                 document.querySelector('#downloadsUseNativeTab').checked = config.DownloadsUseNativeTab === true;
                 document.querySelector('#downloadsUseCustomTabs').checked = config.DownloadsUseCustomTabs === true;
@@ -4980,6 +4990,8 @@
             config.ShowDownloadsInRequests = document.querySelector('#showDownloadsInRequests').checked;
             config.DownloadsFilterByUserRequests = document.querySelector('#downloadsFilterByUserRequests').checked;
             config.DownloadsPageShowIssues = document.querySelector('#downloadsPageShowIssues').checked;
+            config.DownloadsShowHistory = document.querySelector('#downloadsShowHistory').checked;
+            config.DownloadsHistoryAdminOnly = document.querySelector('#downloadsHistoryAdminOnly').checked;
             config.DownloadsUsePluginPages = document.querySelector('#downloadsUsePluginPages').checked;
             config.DownloadsPagePollingEnabled = document.querySelector('#downloadsPagePollingEnabled').checked;
             const pollInterval = parseInt(document.querySelector('#downloadsPollIntervalSeconds').value, 10);
@@ -6134,8 +6146,9 @@
             { parent: 'jellyseerrShowSearchResults', label: 'Show Seerr Results in Search', children: ['showCollectionsInSearch'] },
             { parent: 'jellyseerrShowReportButton', label: 'Show Report Issue button', children: ['jellyseerrShowIssueIndicator'] },
             { parent: 'jellyseerrShowDetailPageLink', label: 'Show Seerr link on item detail pages', children: ['jellyseerrShowDetailPageLinkAsText'] },
-            { parent: 'downloadsPageEnabled', label: 'Enable Requests Page', children: ['showDownloadsInRequests', 'downloadsPageShowIssues', 'downloadsUsePluginPages', 'downloadsUseNativeTab', 'downloadsUseCustomTabs', 'downloadsPagePollingEnabled'] },
+            { parent: 'downloadsPageEnabled', label: 'Enable Requests Page', children: ['showDownloadsInRequests', 'downloadsPageShowIssues', 'downloadsShowHistory', 'downloadsUsePluginPages', 'downloadsUseNativeTab', 'downloadsUseCustomTabs', 'downloadsPagePollingEnabled'] },
             { parent: 'showDownloadsInRequests', label: 'Show Downloads in Requests Page', children: ['downloadsFilterByUserRequests'] },
+            { parent: 'downloadsShowHistory', label: 'Show Download History Section', children: ['downloadsHistoryAdminOnly'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },

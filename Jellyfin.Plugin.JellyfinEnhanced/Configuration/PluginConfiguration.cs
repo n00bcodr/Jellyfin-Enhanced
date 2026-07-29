@@ -250,6 +250,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             DownloadsPageShowIssues = false;
             ShowDownloadsInRequests = true;
             DownloadsFilterByUserRequests = true;
+            DownloadsShowHistory = true;
+            DownloadsHistoryAdminOnly = false;
 
             // Calendar Page Settings (Sonarr/Radarr Releases)
             CalendarPageEnabled = false;
@@ -601,6 +603,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool DownloadsPageShowIssues { get; set; }
         public bool ShowDownloadsInRequests { get; set; }
         public bool DownloadsFilterByUserRequests { get; set; }
+        public bool DownloadsShowHistory { get; set; }
+        public bool DownloadsHistoryAdminOnly { get; set; }
 
         // Calendar Page Settings (Sonarr/Radarr Releases)
         public bool CalendarPageEnabled { get; set; }

@@ -22,6 +22,10 @@
     issuesTotalPages: 1,
     issuesError: false,
     issuesFilter: "open",
+    history: [],
+    historyVisible: true,
+    historyPage: 1,
+    historyTotalPages: 1,
     isLoading: false,
     pollTimer: null,
     pageVisible: false,
@@ -859,13 +863,40 @@
   }
 
   /**
+   * Fetch bounded ARR download history (recently imported/failed items) from backend
+   */
+  async function fetchHistory() {
+    if (!JE.pluginConfig?.DownloadsShowHistory) {
+      state.history = [];
+      state.historyVisible = false;
+      return null;
+    }
+
+    try {
+      const skip = (state.historyPage - 1) * 20;
+      const url = ApiClient.getUrl("/JellyfinEnhanced/arr/history", { take: 20, skip: skip });
+      const response = await fetch(url, { headers: getAuthHeaders() });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      state.history = data.items || [];
+      state.historyVisible = data.visible !== false;
+      state.historyTotalPages = data.totalPages || 1;
+      return data;
+    } catch (error) {
+      console.error(`${logPrefix} Failed to fetch history:`, error);
+      state.history = [];
+      return null;
+    }
+  }
+
+  /**
    * Load all data
    */
   async function loadAllData() {
     state.isLoading = true;
     renderPage();
 
-    await Promise.all([fetchDownloads(), fetchRequests(), fetchIssues()]);
+    await Promise.all([fetchDownloads(), fetchRequests(), fetchIssues(), fetchHistory()]);
 
     state.isLoading = false;
     renderPage();
@@ -1236,7 +1267,7 @@
             ${item.subtitle ? `<div class="je-download-subtitle" title="${item.subtitle}">${item.subtitle}</div>` : ""}
             <div class="je-download-meta">
                 <span class="je-download-badge je-arr-badge" title="${sourceLabel}"><img src="${sourceIcon}" alt="${sourceLabel}" loading="lazy"></span>
-              <span class="je-download-badge" style="background: ${statusColor}">${item.status}</span>
+              <span class="je-download-badge" style="background: ${statusColor}">${escapeHtml(translateStatus(item.status))}</span>
             </div>
           </div>
         </div>
@@ -1436,6 +1467,57 @@
   }
 
   /**
+   * Render a history card (a recently imported or failed-to-import ARR event)
+   */
+  function renderHistoryCard(item) {
+    const sourceIcon = item.source === "Sonarr" ? SONARR_ICON_URL : RADARR_ICON_URL;
+    const sourceLabel = escapeHtml(item.instanceName || item.source);
+    const isPartial = item.eventType === "partial";
+    const isImported = item.eventType === "imported";
+    const statusLabel = isPartial
+      ? (JE.t?.("downloads_history_partial") || "Partially Imported")
+      : isImported
+        ? (JE.t?.("downloads_history_imported") || "Imported")
+        : (JE.t?.("downloads_history_failed") || "Import Failed");
+    const statusClass = isPartial ? "je-chip-partial" : (isImported ? "je-chip-available" : "je-chip-declined");
+
+    const episodeSummary = item.episodeCount
+      ? (JE.t?.("downloads_history_partial_summary") || "{imported}/{total} episodes imported")
+          .replace("{imported}", item.importedCount ?? 0)
+          .replace("{total}", item.episodeCount)
+      : null;
+
+    const posterHtml = item.posterUrl
+      ? `<img class="je-request-poster" src="${escapeHtml(item.posterUrl)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+      : `<div class="je-request-poster placeholder"></div>`;
+
+    return `
+      <div class="je-request-card">
+        ${posterHtml}
+        <div class="je-request-info">
+          <div class="je-request-header">
+            <div>
+              <div class="je-request-title-row">
+                <div class="je-request-title">${escapeHtml(item.title || JE.t?.("requests_unknown") || "Unknown")}</div>
+                ${item.subtitle ? `<span class="je-request-year">${escapeHtml(item.subtitle)}</span>` : ""}
+              </div>
+              <span class="je-requests-status-chip ${statusClass}">${escapeHtml(statusLabel)}</span>
+              ${episodeSummary ? `<span class="je-download-subtitle">${escapeHtml(episodeSummary)}</span>` : ""}
+            </div>
+          </div>
+          <div class="je-request-meta">
+            <div class="je-request-meta-left">
+              <span class="je-download-badge je-arr-badge" title="${sourceLabel}"><img src="${sourceIcon}" alt="${sourceLabel}" loading="lazy"></span>
+              <span>${escapeHtml(sourceLabel)}</span>
+              ${item.date ? `<span>&#8226;</span><span>${escapeHtml(formatRelativeDate(item.date))}</span>` : ""}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
    * Group downloads by season pack (same show + season + same progress indicates season pack)
    * Returns array of items where season packs are collapsed into single entries
    */
@@ -1539,7 +1621,7 @@
             <div class="je-download-subtitle">${JE.t?.("requests_season") || "Season"} ${item.seasonNumber} (${group.episodeCount} ${JE.t?.("requests_episodes") || "episodes"})</div>
             <div class="je-download-meta">
               <span class="je-download-badge je-arr-badge" title="Sonarr"><img src="${SONARR_ICON_URL}" alt="Sonarr" loading="lazy"></span>
-              <span class="je-download-badge" style="background: ${statusColor}">${item.status}</span>
+              <span class="je-download-badge" style="background: ${statusColor}">${escapeHtml(translateStatus(item.status))}</span>
               <span class="je-download-badge" style="background: rgba(128,128,128,0.4)">${group.episodeRange}</span>
             </div>
           </div>
@@ -1805,6 +1887,44 @@
               <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.prevIssuesPage()" ${state.issuesPage <= 1 ? "disabled" : ""}><span class="material-icons">chevron_left</span></button>
               <span>${state.issuesPage} / ${state.issuesTotalPages}</span>
               <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.nextIssuesPage()" ${state.issuesPage >= state.issuesTotalPages ? "disabled" : ""}><span class="material-icons">chevron_right</span></button>
+            </div>
+          `;
+        }
+      }
+
+      html += `</div>`;
+    }
+
+    // History Section - only shows if enabled and visible to the current user
+    if (JE.pluginConfig?.ShowDownloadsInRequests !== false
+      && JE.pluginConfig?.DownloadsShowHistory !== false
+      && state.historyVisible !== false) {
+      html += `<div class="je-downloads-section je-history-section">`;
+      const labelHistory = (JE.t && JE.t('requests_history')) || 'History';
+      html += `<h2>${labelHistory}</h2>`;
+
+      if (state.isLoading && state.history.length === 0) {
+        html += `<div class="je-loading">...</div>`;
+      } else if (state.history.length === 0) {
+        const labelNoHistory = (JE.t && JE.t('requests_no_history_found')) || 'No history found';
+        html += `
+          <div class="je-empty-state">
+            <div>${labelNoHistory}</div>
+          </div>
+        `;
+      } else {
+        html += `<div class="je-downloads-grid">`;
+        state.history.forEach((item) => {
+          html += renderHistoryCard(item);
+        });
+        html += `</div>`;
+
+        if (state.historyTotalPages > 1) {
+          html += `
+            <div class="je-pagination">
+              <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.prevHistoryPage()" ${state.historyPage <= 1 ? "disabled" : ""}><span class="material-icons">chevron_left</span></button>
+              <span>${state.historyPage} / ${state.historyTotalPages}</span>
+              <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.nextHistoryPage()" ${state.historyPage >= state.historyTotalPages ? "disabled" : ""}><span class="material-icons">chevron_right</span></button>
             </div>
           `;
         }
@@ -2221,6 +2341,20 @@
     }
   }
 
+  function nextHistoryPage() {
+    if (state.historyPage < state.historyTotalPages) {
+      state.historyPage++;
+      fetchHistory().then(() => renderPage());
+    }
+  }
+
+  function prevHistoryPage() {
+    if (state.historyPage > 1) {
+      state.historyPage--;
+      fetchHistory().then(() => renderPage());
+    }
+  }
+
   /**
    * Inject navigation item into sidebar
    */
@@ -2482,6 +2616,8 @@
     prevPage,
     nextIssuesPage,
     prevIssuesPage,
+    nextHistoryPage,
+    prevHistoryPage,
     renderPage,
     renderForCustomTab,
     injectStyles,
