@@ -56,6 +56,8 @@
     "panel_version": "Verzió {version}",
     "panel_shortcuts_tab": "Gyorsbillentyűk",
     "panel_settings_tab": "Beállítások",
+    "panel_search_placeholder": "Beállítások keresése…",
+    "panel_about_title": "Névjegy",
     "panel_shortcuts_global": "Globális",
     "panel_shortcuts_player": "Játékos",
     "panel_shortcuts_listening": "Várakozás…",

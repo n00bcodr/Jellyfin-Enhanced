@@ -56,6 +56,8 @@
     "panel_version": "Versione {version}",
     "panel_shortcuts_tab": "Scorciatoie",
     "panel_settings_tab": "Impostazioni",
+    "panel_search_placeholder": "Cerca impostazioni…",
+    "panel_about_title": "Informazioni",
     "panel_shortcuts_global": "Globali",
     "panel_shortcuts_player": "Lettore",
     "panel_shortcuts_listening": "In ascolto…",

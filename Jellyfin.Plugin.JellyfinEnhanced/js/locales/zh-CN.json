@@ -56,6 +56,8 @@
     "panel_version": "版本 {version}",
     "panel_shortcuts_tab": "快捷键",
     "panel_settings_tab": "设定",
+    "panel_search_placeholder": "搜索设置…",
+    "panel_about_title": "关于",
     "panel_shortcuts_global": "全域",
     "panel_shortcuts_player": "播放器",
     "panel_shortcuts_listening": "放弃..…",

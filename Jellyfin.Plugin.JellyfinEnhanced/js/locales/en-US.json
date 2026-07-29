@@ -56,6 +56,8 @@
     "panel_version": "Version {version}",
     "panel_shortcuts_tab": "Shortcuts",
     "panel_settings_tab": "Settings",
+    "panel_search_placeholder": "Search settings…",
+    "panel_about_title": "About",
     "panel_shortcuts_global": "Global",
     "panel_shortcuts_player": "Player",
     "panel_shortcuts_listening": "Waiting…",
