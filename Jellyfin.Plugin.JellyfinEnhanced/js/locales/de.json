@@ -56,6 +56,8 @@
     "panel_version": "Version {version}",
     "panel_shortcuts_tab": "Tastenkürzel",
     "panel_settings_tab": "Einstellungen",
+    "panel_search_placeholder": "Einstellungen durchsuchen…",
+    "panel_about_title": "Über",
     "panel_shortcuts_global": "Global",
     "panel_shortcuts_player": "Player",
     "panel_shortcuts_listening": "Lauscht…",

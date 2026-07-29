@@ -56,6 +56,8 @@
     "panel_version": "Version {version}",
     "panel_shortcuts_tab": "Shortcuts",
     "panel_settings_tab": "Settings",
+    "panel_search_placeholder": "Search th' settings…",
+    "panel_about_title": "About th' Ship",
     "panel_shortcuts_global": "All Decks",
     "panel_shortcuts_player": "At th' Helm",
     "panel_shortcuts_listening": "Listenin' fer orders…",

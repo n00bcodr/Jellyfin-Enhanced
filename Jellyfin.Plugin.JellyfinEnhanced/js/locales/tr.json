@@ -56,6 +56,8 @@
     "panel_version": "Sürüm {version}",
     "panel_shortcuts_tab": "Kısayollar",
     "panel_settings_tab": "Ayarlar",
+    "panel_search_placeholder": "Ayarlarda ara…",
+    "panel_about_title": "Hakkında",
     "panel_shortcuts_global": "Genel",
     "panel_shortcuts_player": "Oynatıcı",
     "panel_shortcuts_listening": "Bekleniyor…",

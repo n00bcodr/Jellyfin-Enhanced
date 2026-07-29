@@ -56,6 +56,8 @@
     "panel_version": "الإصدار {version}",
     "panel_shortcuts_tab": "الاختصارات",
     "panel_settings_tab": "الإعدادات",
+    "panel_search_placeholder": "بحث في الإعدادات…",
+    "panel_about_title": "حول",
     "panel_shortcuts_global": "عالمي",
     "panel_shortcuts_player": "المشغل",
     "panel_shortcuts_listening": "في الانتظار…",

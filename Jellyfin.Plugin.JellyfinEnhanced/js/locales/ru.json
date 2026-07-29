@@ -56,6 +56,8 @@
     "panel_version": "Версия {version}",
     "panel_shortcuts_tab": "Горячие клавиши",
     "panel_settings_tab": "Настройки",
+    "panel_search_placeholder": "Поиск настроек…",
+    "panel_about_title": "О программе",
     "panel_shortcuts_global": "Глобальные",
     "panel_shortcuts_player": "Плеер",
     "panel_shortcuts_listening": "Ожидание…",

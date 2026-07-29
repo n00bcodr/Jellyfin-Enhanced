@@ -56,6 +56,8 @@
     "panel_version": "Версия {version}",
     "panel_shortcuts_tab": "Клавишни комбинации",
     "panel_settings_tab": "Настройки",
+    "panel_search_placeholder": "Търсене в настройките…",
+    "panel_about_title": "Относно",
     "panel_shortcuts_global": "Глобални",
     "panel_shortcuts_player": "Плейър",
     "panel_shortcuts_listening": "Изчакване…",

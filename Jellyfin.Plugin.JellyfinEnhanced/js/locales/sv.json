@@ -56,6 +56,8 @@
     "panel_version": "Version {version}",
     "panel_shortcuts_tab": "Genvägar",
     "panel_settings_tab": "Inställningar",
+    "panel_search_placeholder": "Sök inställningar…",
+    "panel_about_title": "Om",
     "panel_shortcuts_global": "Globala",
     "panel_shortcuts_player": "Spelare",
     "panel_shortcuts_listening": "Lyssnar…",

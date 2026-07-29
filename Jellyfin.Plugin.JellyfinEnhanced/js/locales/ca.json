@@ -56,6 +56,8 @@
     "panel_version": "Versió {version}",
     "panel_shortcuts_tab": "Dreceres",
     "panel_settings_tab": "Configuració",
+    "panel_search_placeholder": "Cerca configuració…",
+    "panel_about_title": "Quant a",
     "panel_shortcuts_global": "Globals",
     "panel_shortcuts_player": "Reproductor",
     "panel_shortcuts_listening": "Esperant…",

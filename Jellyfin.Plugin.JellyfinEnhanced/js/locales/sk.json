@@ -56,6 +56,8 @@
     "panel_version": "Verzia {version}",
     "panel_shortcuts_tab": "Skratky",
     "panel_settings_tab": "Nastavenia",
+    "panel_search_placeholder": "Hľadať nastavenia…",
+    "panel_about_title": "O aplikácii",
     "panel_shortcuts_global": "Globálne",
     "panel_shortcuts_player": "Prehrávač",
     "panel_shortcuts_listening": "Čakám…",

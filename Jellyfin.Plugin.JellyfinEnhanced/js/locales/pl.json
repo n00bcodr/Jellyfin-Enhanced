@@ -56,6 +56,8 @@
     "panel_version": "Wersja {version}",
     "panel_shortcuts_tab": "Skróty klawiszowe",
     "panel_settings_tab": "Ustawienia",
+    "panel_search_placeholder": "Szukaj ustawień…",
+    "panel_about_title": "O programie",
     "panel_shortcuts_global": "Globalne",
     "panel_shortcuts_player": "Odtwarzacz",
     "panel_shortcuts_listening": "Oczekiwanie…",
