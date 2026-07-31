@@ -79,13 +79,7 @@
         function fetchReviews(tmdbId, mediaType) {
             const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
             const url = `${ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${apiMediaType}/${tmdbId}/reviews`)}?language=en-US&page=1`;
-            return fetch(url, {
-                headers: {
-                    "Authorization": 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
-                    "X-Emby-Token": ApiClient.accessToken()
-                }
-            })
-                .then(response => response.ok ? response.json() : Promise.reject(`API Error: ${response.status}`))
+            return JE.core.api.fetch(url)
                 .then(data => data.results || [])
                 .catch(error => {
                     console.error(`${logPrefix} Failed to fetch reviews.`, error);
@@ -98,11 +92,7 @@
          */
         function fetchUserReviews(tmdbId, mediaType) {
             // mediaType is already in API format ('movie' or 'tv') — no conversion needed
-            const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/${mediaType}/${tmdbId}`);
-            return fetch(url, {
-                headers: { "Authorization": 'MediaBrowser Token="' + ApiClient.accessToken() + '"', "X-Emby-Token": ApiClient.accessToken() }
-            })
-                .then(r => r.ok ? r.json() : Promise.reject(`API Error: ${r.status}`))
+            return JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`)
                 .then(data => data.reviews || [])
                 .catch(err => {
                     console.error(`${logPrefix} Failed to fetch user reviews.`, err);
@@ -114,34 +104,28 @@
          * Saves (creates or updates) the current user's review for a TMDB item.
          */
         async function saveUserReview(tmdbId, mediaType, content, rating) {
-            const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/${mediaType}/${tmdbId}`);
             const body = { content, rating: rating || null };
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    "Authorization": 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
-                    "X-Emby-Token": ApiClient.accessToken(),
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(body)
-            });
-            if (!response.ok) {
-                const err = await response.json().catch(() => ({}));
-                throw new Error(err.message || `HTTP ${response.status}`);
+            try {
+                // skipRetry: saving a review is not idempotent — never auto-repeat it.
+                return await JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`, {
+                    method: 'POST',
+                    body,
+                    skipRetry: true
+                });
+            } catch (e) {
+                // Preserve the server-provided message when present, matching the
+                // hand-rolled fetch's `err.message || \`HTTP ${status}\`` shape.
+                throw new Error(e?.responseJSON?.message || e.message);
             }
-            return response.json();
         }
 
         /**
          * Deletes the current user's review for a TMDB item.
          */
         async function deleteUserReview(tmdbId, mediaType) {
-            const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/${mediaType}/${tmdbId}`);
-            const response = await fetch(url, {
-                method: 'DELETE',
-                headers: { "Authorization": 'MediaBrowser Token="' + ApiClient.accessToken() + '"', "X-Emby-Token": ApiClient.accessToken() }
-            });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            // skipRetry keeps the original single-attempt semantics for this mutation.
+            // Core throws Error('HTTP <status>') on failure — same shape as before.
+            await JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`, { method: 'DELETE', skipRetry: true });
         }
 
         /**
@@ -155,15 +139,15 @@
          */
         async function adminDeleteUserReview(targetUserId, tmdbId, mediaType) {
             const userIdN = (targetUserId || '').replace(/-/g, '');
-            const url = ApiClient.getUrl(`/JellyfinEnhanced/reviews/admin/${userIdN}/${mediaType}/${tmdbId}`);
-            const response = await fetch(url, {
-                method: 'DELETE',
-                headers: { "Authorization": 'MediaBrowser Token="' + ApiClient.accessToken() + '"', "X-Emby-Token": ApiClient.accessToken() }
-            });
-            if (response.status === 404) {
-                throw new Error('No matching review to delete (it may have already been removed).');
+            try {
+                // skipRetry keeps the original single-attempt semantics for this mutation.
+                await JE.core.api.plugin(`/reviews/admin/${userIdN}/${mediaType}/${tmdbId}`, { method: 'DELETE', skipRetry: true });
+            } catch (e) {
+                if (e && e.status === 404) {
+                    throw new Error('No matching review to delete (it may have already been removed).');
+                }
+                throw e;
             }
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
         }
 
         const escapeHtml = JE.escapeHtml;
@@ -635,11 +619,10 @@
             const currentUserId = (currentUser?.Id) || ApiClient.getCurrentUserId() || '';
             const viewerIsAdmin = currentUser?.Policy?.IsAdministrator === true;
             const ownReview = userReviews.find(r => r.userId.replace(/-/g, '') === currentUserId.replace(/-/g, ''));
-            const hasReviews = (reviews && reviews.length > 0) || userReviews.length > 0;
-
             let reviewsSection;
 
-            if (hasReviews || true /* always show so users can add their own */) {
+            // Always build the section, even with zero reviews, so users can add their own.
+            {
                 reviewsSection = document.createElement('details');
                 reviewsSection.className = 'detailSection tmdb-reviews-section';
                 if (JE.currentSettings?.reviewsExpandedByDefault) {

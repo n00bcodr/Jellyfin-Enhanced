@@ -20,7 +20,7 @@ Help make Jellyfin Enhanced accessible to more users by contributing translation
 
 - https://hosted.weblate.org/projects/jellyfinenhanced/
 
-See the [Contributing Translations](/Jellyfin-Enhanced/faq-support/contributing-translations/) section for details.
+See the [Contributing Translations](https://n00bcodr.github.io/Jellyfin-Enhanced/faq-support/contributing-translations/) section for details.
 
 
 ## 🚀 Getting Started
@@ -28,17 +28,25 @@ See the [Contributing Translations](/Jellyfin-Enhanced/faq-support/contributing-
 
 ### Project Structure
 
-Before contributing, familiarize yourself with the project structure. See the [Project Structure](README.md#-project-structure) section in the README for a detailed breakdown of the codebase and what each file does.
+Before contributing, familiarize yourself with the project structure. See the [Project Structure](https://n00bcodr.github.io/Jellyfin-Enhanced/advanced/project-structure/) documentation page for a detailed breakdown of the codebase and what each file does.
 
 Key directories:
-- `Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/` - Core functionality
+- `Jellyfin.Plugin.JellyfinEnhanced/js/core/` - Shared layer (API client, navigation, lifecycle, DOM observers, UI primitives, tag renderer base)
+- `Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/` - Core functionality (settings panel, player, bookmarks, hidden content, Spoiler Guard)
 - `Jellyfin.Plugin.JellyfinEnhanced/js/elsewhere/` - Elsewhere and reviews functionality
 - `Jellyfin.Plugin.JellyfinEnhanced/js/extras/` - Other Scripts
-- `Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/` - Seerr integration
+- `Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/` - Seerr integration (UI, More Info modal, discovery, recommendations)
 - `Jellyfin.Plugin.JellyfinEnhanced/js/arr/` - *arr integration including calendar and requests
-- `Jellyfin.Plugin.JellyfinEnhanced/js/tags/` - Tag scripts (genre, language, people, quality, rating)
+- `Jellyfin.Plugin.JellyfinEnhanced/js/tags/` - Tag scripts (genre, language, people, quality, rating, user review)
 - `Jellyfin.Plugin.JellyfinEnhanced/js/others/` - Miscellaneous scripts (letterboxd, splashscreen)
 - `Jellyfin.Plugin.JellyfinEnhanced/js/locales/` - Translation files
+
+Adding a client module:
+
+1. Create the file in the directory for its feature, **following the naming already used in that directory**. The recently split page-style directories use concern suffixes (`-styles`, `-data`, `-render`, `-actions`, `-init`, `-custom-tab`); others use bare names or a different prefix.
+2. Register it in the `allComponentScripts` array in `js/plugin.js`, **after** every module whose exports it reads at load time — scripts execute in array order, and nothing validates it.
+3. Avoid hyphens in new directory names. Embedded-resource names are derived from the file path and a hyphen in a *directory* segment is rewritten to an underscore, which makes the module unreachable at runtime.
+4. No `.csproj` change is needed — `js\**` is embedded by a glob — but the plugin must be rebuilt and redeployed for a new file to be served.
 
 ## 📝 Code Contribution Guidelines
 

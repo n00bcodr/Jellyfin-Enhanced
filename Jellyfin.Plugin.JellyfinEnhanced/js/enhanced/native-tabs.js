@@ -245,6 +245,8 @@
     };
 
     JE.helpers.onBodyMutation('native-tabs', scheduleInject);
-    window.addEventListener('hashchange', scheduleInject);
+    // Re-inject on every navigation (hashchange, popstate AND pushState navs
+    // the old raw hashchange listener missed).
+    JE.core.navigation.onNavigate(scheduleInject);
 
 })(window.JellyfinEnhanced);

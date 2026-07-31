@@ -2,18 +2,39 @@
 
 The plugin architecture uses a single entry point (`plugin.js`) that dynamically loads all other feature components.
 
+`plugin.js` holds an ordered array (`allComponentScripts`) and injects those modules with `script.async = false`, so they download in parallel but **execute in array order**. That ordering is load-bearing: a module placed before one whose exports it reads at load time will bind `undefined`. Add new modules to that array *after* their producers.
+
+Three client scripts are **not** in that array and are loaded by their own dedicated loaders: `others/splashscreen.js` and `extras/login-image.js` (both injected early, before the component stage, so they can affect the login screen) and `enhanced/translations.js` (loaded at the start of `initialize()`, ahead of the component stage).
+
+The client is delivered by `Services/ScriptInjectionStartupFilter.cs`, which injects `plugin.js` into the web client; all `js/**` files are embedded resources (`JellyfinEnhanced.csproj`) served by `GetScript` in `Controllers/JellyfinEnhancedController.cs`.
+
 ### File Structure
 
-All client-side scripts are now located in the `Jellyfin.Plugin.JellyfinEnhanced/js/` directory. Server-side Spoiler Guard components live under `Services/SpoilerGuard/`.
+All client-side scripts live in `Jellyfin.Plugin.JellyfinEnhanced/js/`, grouped by feature. Server-side directories are summarised below. The Spoiler Guard services, event handlers, models and identity helpers are listed in full because they implement the server half of Spoiler Guard, whose client companion lives in `js/enhanced/spoilerguard/`; the remaining services are elided. Note the client never references these classes by name — it interacts with them through endpoints, cookies and image responses.
 
 ```text
 Jellyfin.Plugin.JellyfinEnhanced/
+├── JellyfinEnhanced.cs               # Plugin entry point, GetViews()
+├── PluginServiceRegistrator.cs       # DI registration
+├── Configuration/                    # PluginConfiguration.cs, UserConfiguration*.cs,
+│                                     # configPage.html + configPage.css — the admin
+│                                     # settings page
+├── Controllers/                      # JellyfinEnhancedController.cs — every
+│                                     # /JellyfinEnhanced/* endpoint the client calls
+├── PluginPages/                      # HTML wrappers for the sidebar/plugin pages
+├── Helpers/  Extensions/  ScheduledTasks/
 ├── EventHandlers/
+│   ├── ContinueWatchingPlaybackEvents.cs
 │   ├── SpoilerAutoEnableEvents.cs
 │   └── UserTopologyEvents.cs
 ├── Model/
-│   └── TagCacheEntry.cs
+│   ├── TagCacheEntry.cs
+│   ├── Arr/                          # ArrInstance.cs, ArrItem.cs, ArrType.cs
+│   └── Jellyseerr/                   # JellyseerrPermission.cs, JellyseerrUser.cs
 ├── Services/
+│   ├── …                             # 17 root-level services (Radarr, Sonarr,
+│   │                                 # TagCache*, CdnAsset, WatchlistMonitor,
+│   │                                 # ScriptInjectionStartupFilter, …)
 │   ├── Identity/
 │   │   └── RequestIdentityService.cs
 │   └── SpoilerGuard/
@@ -25,163 +46,220 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │       ├── SpoilerSeerrPendingPromoter.cs
 │       └── SpoilerUserResolver.cs
 └── js/
-    ├── locales/
-    │   ├── da.json
-    │   ├── de.json
-    │   ├── en.json
-    │   ├── es.json
-    │   ├── fr.json
-    │   ├── hu.json
-    │   ├── it.json
-    │   ├── pr.json
-    │   ├── pt.json
-    │   ├── ru.json
-    │   ├── sv.json
-    │   └── tr.json
+    ├── plugin.js
+    ├── locales/                      # 26 translation files (en.json, de.json, …)
+    ├── core/
+    │   ├── api-client.js
+    │   ├── dom-observer.js
+    │   ├── lifecycle.js
+    │   ├── navigation.js
+    │   ├── tag-renderer-base.js
+    │   └── ui-kit.js
     ├── enhanced/
-    │   ├── bookmarks.js
-    │   ├── bookmarks-library.js
     │   ├── config.js
     │   ├── events.js
-    │   ├── features.js
+    │   ├── features-random-button.js
     │   ├── helpers.js
     │   ├── icons.js
-    │   ├── osd-rating.js
-    │   ├── playback.js
-    │   ├── spoiler-blur.js
-    │   ├── subtitles.js
+    │   ├── native-tabs.js
     │   ├── themer.js
-    │   └── ui.js
-    ├── extras/
-    │   ├── colored-activity-icons.js
-    │   ├── colored-ratings.js
-    │   ├── login-image.js
-    │   ├── plugin-icons.js
-    │   └── theme-selector.js
+    │   ├── translations.js
+    │   ├── ui-styles.js
+    │   ├── bookmarks/
+    │   │   ├── bookmarks.js
+    │   │   ├── bookmarks-library-init.js
+    │   │   ├── bookmarks-library-items.js
+    │   │   ├── bookmarks-library-modals.js
+    │   │   ├── bookmarks-library-page.js
+    │   │   ├── bookmarks-library-render.js
+    │   │   ├── bookmarks-library-replacements.js
+    │   │   └── bookmarks-library-styles.js
+    │   ├── hiddencontent/            # 16 modules: data, filter, save, panel, dialogs,
+    │   │   └── …                     # buttons, styles, init, custom-tab + the page
+    │   │                             # (nav, state, render, cards, admin, init, styles)
+    │   ├── homeremoval/
+    │   │   ├── features-remove-home.js
+    │   │   └── features-remove-multiselect.js
+    │   ├── itemdetails/
+    │   │   ├── features-details-media-info.js
+    │   │   ├── features-details-page.js
+    │   │   └── features-release-dates.js
+    │   ├── player/
+    │   │   ├── osd-rating.js
+    │   │   ├── pausescreen.js
+    │   │   ├── playback.js
+    │   │   └── subtitles.js
+    │   ├── settingspanel/
+    │   │   ├── ui-entry-points.js
+    │   │   ├── ui-panel.js
+    │   │   ├── ui-panel-hidden-content.js
+    │   │   ├── ui-panel-language.js
+    │   │   ├── ui-panel-settings.js
+    │   │   ├── ui-panel-shortcut-editor.js
+    │   │   ├── ui-panel-template.js
+    │   │   └── ui-release-notes.js
+    │   └── spoilerguard/             # 12 modules: state, ids, identity, snooze,
+    │       └── …                     # styles, dialog, detail-button, seerr-toggle,
+    │                                 # settings-tab, image-refresh, watched-refresh, index
     ├── jellyseerr/
     │   ├── api.js
-    │   ├── discovery-filter-utils.js
-    │   ├── genre-discovery.js
+    │   ├── hss-discovery-handler.js
     │   ├── issue-reporter.js
     │   ├── item-details.js
     │   ├── jellyseerr.js
     │   ├── modal.js
-    │   ├── more-info-modal.js
-    │   ├── network-discovery.js
-    │   ├── person-discovery.js
     │   ├── request-manager.js
     │   ├── seamless-scroll.js
-    │   ├── tag-discovery.js
-    │   └── ui.js
+    │   ├── seerr-detail-link.js
+    │   ├── seerr-status.js
+    │   ├── discovery/
+    │   │   ├── discovery-base.js
+    │   │   ├── discovery-filter-utils.js
+    │   │   ├── collection-discovery.js
+    │   │   ├── genre-discovery.js
+    │   │   ├── network-discovery.js
+    │   │   ├── person-discovery.js
+    │   │   └── tag-discovery.js
+    │   ├── moreinfo/                 # 8 modules: styles, data, seasons, badges,
+    │   │   └── …                     # render, actions, actions-tv, init
+    │   ├── recommendations/          # 8 modules: styles, catalog, data, render,
+    │   │   └── …                     # page, category, init, custom-tab
+    │   └── ui/                       # 10 modules: icons, styles, popover, badges,
+    │       └── …                     # cards, buttons, quota, results,
+    │                                 # request-modals, season-modal
     ├── arr/
     │   ├── arr-links.js
     │   ├── arr-tag-links.js
-    │   ├── calendar-page.js
-    │   ├── calendar-custom-tab.js
-    │   ├── requests-page.js
-    │   └── requests-custom-tab.js
-    ├── elsewhere/
-    │   ├── elsewhere.js
-    │   └── reviews.js
-    ├── enhanced/
-    │   ├── bookmarks.js
-    │   ├── bookmarks-library.js
-    │   ├── config.js
-    │   ├── events.js
-    │   ├── features.js
-    │   ├── helpers.js
-    │   ├── icons.js
-    │   ├── osd-rating.js
-    │   ├── pausescreen.js
-    │   ├── playback.js
-    │   ├── spoiler-blur.js
-    │   ├── subtitles.js
-    │   ├── themer.js
-    │   └── ui.js
-    ├── extras/
-    │   ├── colored-activity-icons.js
-    │   ├── colored-ratings.js
-    │   ├── login-image.js
-    │   ├── plugin-icons.js
-    │   └── theme-selector.js
-    ├── others/
-    │   ├── letterboxd-links.js
-    │   └── splashscreen.js
+    │   ├── calendar/                 # 7 modules: styles, data, render-events,
+    │   │   └── …                     # render-views, actions, init, custom-tab
+    │   └── requests/                 # 8 modules: styles, data, render-helpers,
+    │       └── …                     # render-cards, render, actions, init, custom-tab
     ├── tags/
     │   ├── genretags.js
     │   ├── languagetags.js
     │   ├── peopletags.js
     │   ├── qualitytags.js
-    │   └── ratingtags.js
-    └── plugin.js
+    │   ├── ratingtags.js
+    │   ├── userreviewtags.js
+    │   └── tag-pipeline.js
+    ├── elsewhere/
+    │   ├── elsewhere.js
+    │   └── reviews.js
+    ├── extras/
+    │   ├── active-streams.js
+    │   ├── colored-activity-icons.js
+    │   ├── colored-ratings.js
+    │   ├── login-image.js
+    │   ├── plugin-icons.js
+    │   └── theme-selector.js
+    └── others/
+        ├── letterboxd-links.js
+        └── splashscreen.js
 ```
 
+### How modules are organised
+
+Each module is an IIFE. Features larger than a single file get their own directory.
+
+The page-style directories that were split most recently (`arr/calendar/`, `arr/requests/`, and largely `jellyseerr/moreinfo/` and `jellyseerr/recommendations/`) use a concern-based suffix pattern:
+
+| Suffix | Responsibility |
+|---|---|
+| `-styles` | CSS injection only |
+| `-data` | State object and data access (fetching, caching) |
+| `-render` | HTML/DOM construction (may split further, e.g. `-render-cards`) |
+| `-actions` | User interactions — filters, pagination, buttons |
+| `-init` | Bootstrap, navigation wiring and the public surface |
+| `-custom-tab` | Mounts the feature inside a Custom Tabs / native tab panel |
+
+Other directories use different concern names and prefixes — `spoilerguard/` uses bare names (`state.js`, `snooze.js`, `styles.js`), `settingspanel/` and `jellyseerr/ui/` use a `ui-` prefix, `jellyseerr/discovery/` puts the concern first (`discovery-base.js`) or last (`genre-discovery.js`), and `itemdetails/`/`homeremoval/` keep the `features-` prefix from the file they were split out of. **Follow the local convention of the directory you are touching** rather than applying the table above universally.
+
+Modules in the same directory share state through a namespace object. In most directories every module that touches shared state runs the same idempotent guard, so whichever of them loads first seeds the shape (`-custom-tab` and standalone `-styles` modules consume the public surface instead and never reference the namespace):
+
+```javascript
+// run by every module that shares the directory's state
+const P = (JE.internals.requestsPage = JE.internals.requestsPage || { /* state */ });
+```
+
+`jellyseerr/ui/` and `jellyseerr/moreinfo/` instead nominate a single owner — the first module that *uses* the namespace seeds the literal (`ui-icons.js` and `more-info-modal-data.js` respectively) and the rest read it directly (`const internal = JE.internals.jellyseerrUi;`), so a duplicated default can never silently diverge.
+
+Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-resource names are derived from the file path, and a hyphen in a *directory* segment is rewritten to an underscore while file-name hyphens are preserved — a hyphenated directory therefore makes its modules unreachable at runtime.
 
 ### Component Breakdown
 
-* **`plugin.js`**: The main entry point. It loads the plugin configuration and translations, then dynamically injects all other component scripts.
+* **`plugin.js`**: The main entry point. It loads the plugin configuration and translations, then dynamically injects the `allComponentScripts` modules in dependency order (the three dedicated-loader scripts noted above are injected separately).
 
-* **`/enhanced/`**: Contains the core components of the "Jellyfin Enhanced" feature set.
-    * **`bookmarks.js`**: Manages video bookmarks/timestamps during playback. Handles bookmark creation (via `B` key), displays visual markers on the video timeline, and provides quick navigation to saved timestamps.
-    * **`bookmarks-library.js`**: Provides a comprehensive bookmark management interface accessible via Custom Tabs. Allows users to view all bookmarks across movies and TV shows, cleanup orphaned bookmarks, detect duplicates, and adjust time offsets for synced bookmarks.
-    * **`config.js`**: Manages all settings, both from the plugin backend and the user's local storage. It initializes and holds shared variables and configurations that other components access.
-    * **`events.js`**: The active hub of the plugin. It listens for user input (keyboard/mouse), browser events (tab switching), and DOM changes to trigger the appropriate functions from other components.
-    * **`features.js`**: Contains the logic for non-playback enhancements like the random item button, file size display, audio language display, and "Remove from Continue Watching / Next Up".
-    * **`helpers.js`**: Provides utility functions and helper methods used across the enhanced components for common tasks like DOM manipulation and data processing.
-    * **`icons.js`**: Manages icon selection and rendering logic, allowing users to choose between emoji and Lucide icons throughout the interface.
-    * **`osd-rating.js`**: Displays TMDB and Rotten Tomatoes ratings in the video player OSD controls next to the time display.
-    * **`pausescreen.js`**: Displays a custom, informative overlay when a video is paused.
-    * **`playback.js`**: Centralizes all functions that directly control the video player, such as changing speed, seeking, cycling through tracks, and auto-skip logic.
-    * **`spoiler-blur.js`**: Client-side companion for Spoiler Guard. Renders the per-show / per-movie / per-collection toggle button, keeps an in-memory cache of the user's opt-in list and override prefs, and performs the soft image refresh after toggles and watched-state changes. The actual blur / strip happens server-side.
-    * **`subtitles.js`**: Isolates all logic related to subtitle styling, including presets and the function that applies styles to the video player.
-    * **`themer.js`**: Handles theme detection and applies appropriate styling to the Enhanced Panel based on the active Jellyfin theme.
-    * **`ui.js`**: Responsible for creating, injecting, and managing all visual elements like the main settings panel, toast notifications, and various buttons.
+* **`/core/`**: Shared primitives used across every feature. Introduced to remove logic that was previously duplicated per module.
+    * **`api-client.js`**: The single HTTP layer — `JE.core.api.{fetch,jf,plugin}` with auth headers, retry/backoff, response caching, request deduplication, concurrency limiting and `AbortController` support.
+    * **`dom-observer.js`**: Multiplexed `MutationObserver` management — one shared body observer with named subscribers, plus dedicated observers and `waitForElement`.
+    * **`lifecycle.js`**: Per-feature registration of observers, timers and listeners so they can be torn down together on navigation.
+    * **`navigation.js`**: One deduped SPA navigation dispatcher (`onNavigate`, `onViewPage`), replacing the ad-hoc `hashchange`/`viewshow` listeners that previously double-fired on hash navigation and missed `pushState` navigation.
+    * **`tag-renderer-base.js`**: The shared poster-tag engine — overlay creation, positioning, tagged-card deduplication, caching and reinitialisation. The four poster-overlay renderers (genre, language, quality, rating) supply a spec; `peopletags.js` and `userreviewtags.js` do not use it.
+    * **`ui-kit.js`**: `escapeHtml`, `toast`, deduped CSS injection, and scroll-friendly tap detection (`addTouchTapListener`).
 
-* **`/elsewhere/`**: Contains scripts for discovering media on other streaming services and reviews.
-    * **`elsewhere.js`**: Powers the "Jellyfin Elsewhere" feature for finding media on other streaming services.
-    * **`reviews.js`**: Adds a section for TMDB user reviews on item detail pages.
+* **`/enhanced/`**: Core "Jellyfin Enhanced" functionality.
+    * **`config.js`**: Manages all settings, both from the plugin backend and the user's local storage.
+    * **`events.js`**: Listens for user input, browser events and DOM changes to trigger the appropriate functions from other components.
+    * **`features-random-button.js`**: The random item button.
+    * **`helpers.js`**: Utility functions shared across the enhanced components.
+    * **`icons.js`**: Icon selection and rendering (emoji, Lucide or Material UI).
+    * **`native-tabs.js`**: Shared registry for JE-created home tabs, used when a feature is shown as a native tab rather than via the Custom Tabs plugin.
+    * **`themer.js`**: Theme detection and Enhanced Panel styling.
+    * **`translations.js`**: Loads and caches translations. Loaded by its own loader at the start of `initialize()`, ahead of the component stage, so `JE.t` is resolved before any component runs.
+    * **`ui-styles.js`**: Global stylesheet for the injected UI, including the settings panel's responsive rules.
+    * **`/bookmarks/`**: `bookmarks.js` handles playback bookmarks (creation via `B`, timeline markers, navigation); the `bookmarks-library-*` modules provide the management interface — listing, orphan cleanup, duplicate detection and time-offset adjustment.
+    * **`/hiddencontent/`**: Per-user hidden content — the data/filter/save layer, the settings panel section, and the standalone management page.
+    * **`/homeremoval/`**: "Remove from Continue Watching / Next Up", including multi-select.
+    * **`/itemdetails/`**: Detail-page enhancements — media info, file size, audio languages and release dates.
+    * **`/player/`**: Everything that touches the video player — `playback.js` (speed, seeking, track cycling, auto-skip), `subtitles.js` (styling and presets), `pausescreen.js` (custom pause overlay), `osd-rating.js` (TMDB/Rotten Tomatoes in the OSD).
+    * **`/settingspanel/`**: The user settings panel — entry points, the HTML template, the section navigation shell, and per-section wiring (settings, language, hidden content, shortcut editor, release notes).
+    * **`/spoilerguard/`**: Client-side companion for Spoiler Guard — the per-show/movie/collection toggle, in-memory opt-in and override state, the settings pane, and the soft image refresh after toggles and watched-state changes. The actual blur/strip happens server-side. `index.js` publishes the public `JE.spoilerBlur` surface once every implementation module has loaded.
 
-* **`/extras/`**: Contains optional personal scripts that extend functionality with additional features.
-    * **`colored-activity-icons.js`**: Replaces default activity icons with Material Design icons and applies custom colors for better visual distinction.
-    * **`colored-ratings.js`**: Applies color-coded backgrounds to media ratings on item detail pages based on rating type and value.
-    * **`login-image.js`**: Displays user profile images instead of text on manual login page
-    * **`plugin-icons.js`**: Replaces default plugin icons with custom Material Design icons on the dashboard for improved aesthetics and also adds the ability to add custom plugin config page links
-    * **`theme-selector.js`**: Provides options to quickly choose form Jellyfish color Pallete and an option to load random theme everyday.
+* **`/jellyseerr/`**: Seerr integration.
+    * **`api.js`**: Communication with the Seerr proxy endpoints on the Jellyfin server.
+    * **`hss-discovery-handler.js`**: Intercepts clicks on Home Screen Sections discover cards and opens the Seerr More Info modal instead of navigating to the external Seerr site.
+    * **`issue-reporter.js`**: Report problems with media items directly from Jellyfin.
+    * **`item-details.js`**: Similar and Recommended rows on item detail pages, plus the "Request More" button for series with unrequested seasons.
+    * **`jellyseerr.js`**: The Seerr search-results integration — intercepts Jellyfin's search page, renders Seerr results and handles their pagination/infinite scroll. Gated on `JellyseerrShowSearchResults`; the other Seerr components initialise independently of it.
+    * **`modal.js`**: Advanced request modals.
+    * **`request-manager.js`**: Thin alias onto `JE.core.api.manager`, kept as a stable public surface.
+    * **`seamless-scroll.js`**: Infinite scroll with prefetch, deduplication and backoff, reused by the discovery modules.
+    * **`seerr-detail-link.js`** / **`seerr-status.js`**: Detail-page link into Seerr, and the shared media/display status constants.
+    * **`/discovery/`**: `discovery-base.js` owns the whole discovery lifecycle — three pagination strategies, abort handling, config gating, card rendering, filtering and cleanup. Each of `genre`, `network`, `person`, `tag` and `collection` supplies a small spec describing how to resolve its feeds. `discovery-filter-utils.js` provides shared TV/Movies/All filtering and card creation.
+    * **`/moreinfo/`**: The Seerr More Info modal — cast, crew, extended metadata, seasons and request actions.
+    * **`/recommendations/`**: The Recommendations page — Trending/Popular/Upcoming rows plus Studios and Networks tiles, with a "View All" category page. Available as a sidebar page or a tab.
+    * **`/ui/`**: All visual elements of the integration — result cards, request buttons, status badges, quota display, the download-progress popover and the season/request modals.
 
-* **`/jellyseerr/`**: This directory contains all components related to the Seerr integration.
-    * **`api.js`**: Handles all direct communication with the Seerr proxy endpoints on the Jellyfin server.
-    * **`discovery-filter-utils.js`**: Provides shared utility functions for all discovery modules, including content type filtering (TV/Movies/All), pagination management, card creation with deduplication, and infinite scroll handling. Manages filter state persistence via localStorage.
-    * **`genre-discovery.js`**: Provides genre-based media discovery with TV/Movies/All content type filtering, allowing users to browse and request content filtered by specific genres from Seerr with separate pagination tracking per content type.
-    * **`issue-reporter.js`**: Provides the issue reporting interface for Seerr, allowing users to report problems with media items directly from Jellyfin.
-    * **`item-details.js`**: Manages Seerr-specific details displayed on item detail pages, including request status, availability information, similar and recommended content with library/rejected item exclusion options.
-    * **`jellyseerr.js`**: The main controller for the integration, orchestrating the other components and managing state.
-    * **`modal.js`**: A dedicated component for creating and managing the advanced request modals.
-    * **`more-info-modal.js`**: Displays detailed information about media items from Seerr, including cast, crew, and extended metadata.
-    * **`network-discovery.js`**: Enables network-based discovery with TV/Movies/All filtering, allowing users to browse content from specific TV networks or streaming services available in Seerr with separate pagination per content type.
-    * **`person-discovery.js`**: Facilitates person-based discovery with TV/Movies/All filtering, letting users explore media featuring specific actors, directors, or crew members from Seerr with independent pagination tracking.
-    * **`request-manager.js`**: Provides centralized request management with concurrency control (max 6 concurrent requests), automatic retry logic (3 attempts with exponential backoff), response caching (5-minute TTL), request deduplication, and AbortController support for cancellation.
-    * **`seamless-scroll.js`**: Implements enhanced infinite scroll with prefetch (~2 viewport heights), deduplication, exponential backoff retry logic, and scroll event fallback. Provides reusable utilities for all discovery modules.
-    * **`tag-discovery.js`**: Implements tag-based content discovery with TV/Movies/All filtering, enabling users to find and request media based on custom tags and categories in Seerr with separate page tracking per content type.
-    * **`ui.js`**: Manages all visual elements of the integration, like result cards, request buttons, and status icons.
+* **`/arr/`**: Sonarr and Radarr integration.
+    * **`arr-links.js`**: Links to Sonarr, Radarr and Bazarr on item detail pages, for administrators only.
+    * **`arr-tag-links.js`**: Synced *arr tags as clickable links on item detail pages, with show/hide filtering.
+    * **`/calendar/`**: The calendar page — upcoming items from Radarr and Sonarr, available via the sidebar or a tab.
+    * **`/requests/`**: The requests page — requests, download queue, issues and import history from the *arrs and Seerr, available via the sidebar or a tab.
 
-* **`/arr/`**: Contains components for Sonarr and Radarr integration.
-    * **`arr-links.js`**: Adds convenient links to Sonarr, Radarr, and Bazarr on item detail pages only for administrators.
-    * **`arr-tag-links.js`**: Displays synced *arr tags as clickable links on item detail pages, with advanced filtering options to show only specific tags or hide unwanted ones.
-    * **`calendar-page.js`**: Adds a calendar button in the sidebar which opens a view that shows the calendar of upcoming items from Radarr and Sonarr
-    * **`calendar-custom-tab.js`**: Creates `<div class="jellyfinenhanced calendar"></div>` for CustomTabs plugin
-    * **`requests-page.js`**: Adds a Requests button in the sidebar which opens a view that shows requests and download status from the arrs and Seerr
-    * **`requests-custom-tab.js`**: Creates `<div class="jellyfinenhanced requests"></div>` for CustomTabs plugin
+* **`/tags/`**: Poster tag renderers. Four of them (genre, language, quality, rating) are built on `core/tag-renderer-base.js`; `peopletags.js` and `userreviewtags.js` render independently.
+    * **`genretags.js`**: Genre information as tags on posters.
+    * **`languagetags.js`**: Audio language as flag icons on posters.
+    * **`peopletags.js`**: Age and birthplace for cast members, with country flags and deceased indicators.
+    * **`qualitytags.js`**: Quality information (4K, HDR, Atmos) as tags on posters.
+    * **`ratingtags.js`**: TMDB and Rotten Tomatoes ratings as badges on posters.
+    * **`userreviewtags.js`**: The average user-review rating across all users, composed into the ratings overlay rather than rendered as its own poster tag.
+    * **`tag-pipeline.js`**: Shared server-backed tag cache feeding the renderers in bulk.
 
-* **`/tags/`**: Contains components for displaying various tag information directly on media posters.
-    * **`genretags.js`**: Manages the display of media genre information as tags directly on the posters.
-    * **`languagetags.js`**: Manages the display of audio language information as flag icons directly on the posters.
-    * **`peopletags.js`**: Displays age and birthplace information for cast members with country flags, deceased indicators, and caching. Works with both regular cast and guest cast sections.
-    * **`qualitytags.js`**: Manages the display of media quality information (like 4K, HDR, and Atmos) as tags directly on the posters.
-    * **`ratingtags.js`**: Manages the display of TMDB and Rotten Tomatoes ratings as badges directly on the posters.
+* **`/elsewhere/`**: Discovering media on other streaming services, and reviews.
+    * **`elsewhere.js`**: Powers the "Jellyfin Elsewhere" feature.
+    * **`reviews.js`**: TMDB reviews and the plugin's own per-user reviews on item detail pages (the reviews `userreviewtags.js` averages).
 
-* **`/others/`**: Contains miscellaneous utility scripts.
-    * **`letterboxd-links.js`**: Adds Letterboxd external links to movie item detail pages.
-    * **`splashscreen.js`**: Manages the custom splash screen that appears when the application is loading.
+* **`/extras/`**: Optional scripts that extend functionality.
+    * **`active-streams.js`**: Shows currently active streams.
+    * **`colored-activity-icons.js`**: Material Design activity icons with custom colours.
+    * **`colored-ratings.js`**: Colour-coded rating backgrounds on item detail pages.
+    * **`login-image.js`**: User profile images instead of text on the manual login page.
+    * **`plugin-icons.js`**: Custom plugin icons on the dashboard, plus custom config-page links.
+    * **`theme-selector.js`**: Jellyfish colour palette selection, with an optional daily random theme.
+
+* **`/others/`**: Miscellaneous utility scripts.
+    * **`letterboxd-links.js`**: Letterboxd external links on movie and person (actor) detail pages.
+    * **`splashscreen.js`**: The custom splash screen shown while the application loads.
 
 * **`/Services/SpoilerGuard/`**: Server-side C# services that implement Spoiler Guard.
     * **`ImageBlurService.cs`**: SkiaSharp Gaussian blur, stock-card rendering, and the pre-encoded fail-closed fallback JPEG, with result caching.

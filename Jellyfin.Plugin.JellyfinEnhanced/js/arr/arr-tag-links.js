@@ -207,11 +207,14 @@
             attributeFilter: ['class']
         });
 
-        // Also check immediately on hash change (navigation)
-        window.addEventListener('hashchange', () => {
+        // Also check immediately on navigation — the shared deduplicated
+        // pipeline covers hashchange, popstate and pushState transitions the
+        // old raw hashchange listener missed. Lifecycle-tracked for teardown.
+        const lifecycle = JE.core.lifecycle.register('arr-tag-links');
+        lifecycle.track(JE.core.navigation.onNavigate(() => {
             if (debounceTimer) clearTimeout(debounceTimer);
             debounceTimer = setTimeout(checkAndAddLinks, 200);
-        });
+        }));
 
         // Run once immediately in case were already on an item detail page
         setTimeout(checkAndAddLinks, 500);

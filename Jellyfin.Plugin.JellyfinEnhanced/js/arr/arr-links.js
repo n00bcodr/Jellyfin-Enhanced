@@ -394,14 +394,9 @@
                 }
 
                 try {
-                    const resp = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/arr/series-slugs?tvdbId=${encodeURIComponent(tvdbId)}`), {
-                        headers: { 'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"', 'X-MediaBrowser-Token': ApiClient.accessToken() }
-                    });
-                    if (!resp.ok) {
-                        surfaceGlobalFailure('Sonarr', `HTTP ${resp.status}`);
-                        return [];
-                    }
-                    const data = await resp.json();
+                    // Core throws Error('HTTP <status>') on non-OK responses, which the
+                    // catch below surfaces exactly like the old !resp.ok branch did.
+                    const data = await JE.core.api.plugin(`/arr/series-slugs?tvdbId=${encodeURIComponent(tvdbId)}`);
                     // Reset the once-per-session toast guards on successful fetch so a transient
                     // failure that has since cleared up isn't permanently silenced for real
                     // future failures.
@@ -442,14 +437,9 @@
                 }
 
                 try {
-                    const resp = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/arr/movie-instances?tmdbId=${encodeURIComponent(tmdbId)}`), {
-                        headers: { 'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"', 'X-MediaBrowser-Token': ApiClient.accessToken() }
-                    });
-                    if (!resp.ok) {
-                        surfaceGlobalFailure('Radarr', `HTTP ${resp.status}`);
-                        return [];
-                    }
-                    const data = await resp.json();
+                    // Core throws Error('HTTP <status>') on non-OK responses — handled
+                    // by the catch below, same as the old !resp.ok branch.
+                    const data = await JE.core.api.plugin(`/arr/movie-instances?tmdbId=${encodeURIComponent(tmdbId)}`);
                     _toastedGlobalFailure.radarr = false;  // reset on success; see Sonarr version above
                     surfaceInstanceErrors('Radarr', data.errors);
                     const matches = Array.isArray(data.matches) ? data.matches : [];

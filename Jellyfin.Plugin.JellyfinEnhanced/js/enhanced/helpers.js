@@ -1,29 +1,25 @@
 /**
  * @file Centralized helper utilities for Jellyfin Enhanced
- * Provides standardized functionality for hooking into page views and managing MutationObservers
+ *
+ * The navigation, DOM-observer and CSS/escaping primitives that used to live
+ * here moved to js/core/ (navigation.js, dom-observer.js, ui-kit.js).
+ * JE.helpers keeps thin aliases so unmigrated callers work unchanged; new
+ * code should use JE.core.* directly.
  */
 (function(JE) {
     'use strict';
-
-    // Store the original onViewShow function
-    let originalOnViewShow = null;
 
     // Tracks whether the MUI-toolbar button-sizing CSS fix has been injected (see
     // getHeaderRightContainer below) so it's only added once.
     let muiHeaderButtonCSSInjected = false;
 
-    // Array to store registered handlers
-    const handlers = [];
+    // Shared cache for item payloads to deduplicate cross-module ApiClient.getItem calls
+    const itemCache = new Map();
+    const ITEM_CACHE_TTL_MS = 30000; // 30s -- long enough for batch prefetch to warm cache before tag systems scan
 
-    // Active observers registry for lifecycle management (non-body targets only)
-    const activeObservers = new Map();
-
-    // --- Protected avatar image resolution ---
-    // Seerr avatar URLs are proxied through /JellyfinEnhanced/proxy/avatar, which requires the
-    // same auth headers as any other plugin endpoint — a plain <img src> can't send those, so
-    // avatars are fetched as an authenticated blob and swapped in. Shared across every module
-    // that renders a requester's avatar (Requests page, Seerr more-info modal) so the same
-    // avatar isn't downloaded twice and both share one cache.
+    // Protected Seerr avatars require authenticated blob fetches because a
+    // plain <img> cannot attach Jellyfin auth headers. Keep one shared cache
+    // for the Requests page and Seerr More Info modal.
     const avatarObjectUrlCache = new Map();
     const avatarFetchPromises = new Map();
 
@@ -37,59 +33,29 @@
 
     function isSafeAvatarUrl(url) {
         if (!url || typeof url !== 'string') return false;
-
-        // Relative paths are resolved by the browser against current origin and are allowed.
-        if (url.startsWith('/')) return true;
-
-        if (url.startsWith('blob:')) return true;
+        if (url.startsWith('/') || url.startsWith('blob:')) return true;
 
         try {
             const parsed = new URL(url, window.location.origin);
-            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-                return true;
-            }
-
-            // Only allow image data URLs.
-            if (parsed.protocol === 'data:') {
-                return /^data:image\//i.test(url);
-            }
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return true;
+            if (parsed.protocol === 'data:') return /^data:image\//i.test(url);
         } catch {
             return false;
         }
-
         return false;
     }
 
-    /**
-     * Resolve a protected avatar URL (our /JellyfinEnhanced/proxy/avatar path) to a blob object
-     * URL. Deduplicates concurrent fetches so multiple callers referencing the same avatar
-     * share a single network request, and caches the result.
-     * @param {string} avatarUrl - The avatar proxy URL to resolve
-     * @returns {Promise<string>} A blob: object URL, or "" on failure
-     */
     async function resolveProtectedAvatarUrl(avatarUrl) {
-        if (!avatarUrl) return '';
-
-        if (!isSafeAvatarUrl(avatarUrl)) {
-            return '';
-        }
-
+        if (!isSafeAvatarUrl(avatarUrl)) return '';
         if (!avatarUrl.startsWith('/JellyfinEnhanced/proxy/avatar')) return avatarUrl;
-
-        if (avatarObjectUrlCache.has(avatarUrl)) {
-            return avatarObjectUrlCache.get(avatarUrl);
-        }
-
-        if (avatarFetchPromises.has(avatarUrl)) {
-            return avatarFetchPromises.get(avatarUrl);
-        }
+        if (avatarObjectUrlCache.has(avatarUrl)) return avatarObjectUrlCache.get(avatarUrl);
+        if (avatarFetchPromises.has(avatarUrl)) return avatarFetchPromises.get(avatarUrl);
 
         const fetchPromise = (async () => {
             try {
                 const response = await fetch(ApiClient.getUrl(avatarUrl), { headers: getAvatarAuthHeaders() });
                 if (!response.ok) return '';
-                const blob = await response.blob();
-                const objectUrl = URL.createObjectURL(blob);
+                const objectUrl = URL.createObjectURL(await response.blob());
                 avatarObjectUrlCache.set(avatarUrl, objectUrl);
                 return objectUrl;
             } catch {
@@ -103,11 +69,6 @@
         return fetchPromise;
     }
 
-    /**
-     * Hydrates every `img.je-request-avatar[data-avatar-src]` inside container: resolves the
-     * protected proxy URL to a blob and swaps it in, hiding the image entirely on failure.
-     * @param {HTMLElement} container
-     */
     function hydrateAvatarImages(container) {
         const avatarImgs = container.querySelectorAll('img.je-request-avatar[data-avatar-src]');
         avatarImgs.forEach(async (img) => {
@@ -119,13 +80,7 @@
 
             const resolvedUrl = await resolveProtectedAvatarUrl(sourceUrl);
             if (!img.isConnected) return;
-
-            if (!resolvedUrl) {
-                img.style.display = 'none';
-                return;
-            }
-
-            if (!isSafeAvatarUrl(resolvedUrl)) {
+            if (!resolvedUrl || !isSafeAvatarUrl(resolvedUrl)) {
                 img.style.display = 'none';
                 return;
             }
@@ -135,127 +90,11 @@
         });
     }
 
-    /**
-     * Revoke all cached avatar blob URLs and clear the result cache.
-     * @param {boolean} [includeInFlight] - If true, also cancel pending fetch promises.
-     *   Pass true on page teardown; omit on re-render to let in-flight fetches complete.
-     */
     function clearAvatarObjectUrlCache(includeInFlight) {
         avatarObjectUrlCache.forEach((objectUrl) => URL.revokeObjectURL(objectUrl));
         avatarObjectUrlCache.clear();
-        // Only clear in-flight promises on page teardown, not on re-render.
-        // Clearing mid-flight would cause duplicate downloads for the same avatar.
-        if (includeInFlight) {
-            avatarFetchPromises.clear();
-        }
+        if (includeInFlight) avatarFetchPromises.clear();
     }
-
-    // --- Multiplexed Body Observer ---
-    // Single MutationObserver on document.body that dispatches to all registered subscribers.
-    // This replaces the previous pattern of N separate observers on document.body,
-    // reducing browser overhead from cloning MutationRecord lists N times and scheduling
-    // N separate microtask callbacks down to a single observer + single dispatch loop.
-    const bodySubscribers = new Map();
-    let bodyObserver = null;
-
-    function ensureBodyObserver() {
-        if (bodyObserver) return;
-        bodyObserver = new MutationObserver((mutations) => {
-            // Fast-path: skip dispatch entirely if no nodes were added or removed.
-            // This filters out attribute changes, text changes, hover effects, focus
-            // changes, etc. that fire frequently but never add new content.
-            let hasStructuralChange = false;
-            for (let i = 0; i < mutations.length; i++) {
-                if (mutations[i].addedNodes.length > 0 || mutations[i].removedNodes.length > 0) {
-                    hasStructuralChange = true;
-                    break;
-                }
-            }
-            if (!hasStructuralChange) return;
-
-            // NOTE: Callbacks may call unsubscribe()/disconnect(), deleting from this Map
-            // during iteration. ES spec guarantees Map iteration handles concurrent deletion.
-            for (const [id, sub] of bodySubscribers) {
-                try {
-                    sub.callback(mutations);
-                } catch (err) {
-                    console.error(`🪼 Jellyfin Enhanced: Error in body observer subscriber "${id}":`, err);
-                }
-            }
-        });
-        bodyObserver.observe(document.body, { childList: true, subtree: true });
-        console.log('🪼 Jellyfin Enhanced: Shared body observer started');
-    }
-
-    function stopBodyObserverIfEmpty() {
-        if (bodyObserver && bodySubscribers.size === 0) {
-            bodyObserver.disconnect();
-            bodyObserver = null;
-            console.log('🪼 Jellyfin Enhanced: Shared body observer stopped (no subscribers)');
-        }
-    }
-
-    /**
-     * Re-sort bodySubscribers Map by priority (highest first).
-     * Called when a subscriber with non-default priority is added.
-     */
-    function resortBodySubscribers() {
-        const sorted = [...bodySubscribers.entries()].sort((a, b) => b[1].priority - a[1].priority);
-        bodySubscribers.clear();
-        for (const [id, sub] of sorted) {
-            bodySubscribers.set(id, sub);
-        }
-    }
-
-    /**
-     * Register a callback with the shared body MutationObserver.
-     * All subscribers share a single observer on document.body with { childList: true, subtree: true }.
-     * @param {string} id - Unique identifier for this subscriber
-     * @param {Function} callback - Called with (mutations) on each body mutation batch
-     * @param {Object} [options] - Options
-     * @param {number} [options.priority=0] - Execution priority. Higher values run first.
-     *   Use priority > 0 for subscribers that should filter/hide content before others process it.
-     * @returns {{ unsubscribe: Function, disconnect: Function }} Handle to remove this subscriber.
-     *   Both unsubscribe() and disconnect() do the same thing -- provided so callers can use
-     *   either the subscription convention or the MutationObserver convention consistently.
-     */
-    function onBodyMutation(id, callback, options) {
-        const priority = (options && typeof options.priority === 'number') ? options.priority : 0;
-        if (bodySubscribers.has(id)) {
-            console.warn(`🪼 Jellyfin Enhanced: Replacing body observer subscriber: ${id}`);
-        }
-        bodySubscribers.set(id, { callback, priority });
-        if (priority !== 0) {
-            resortBodySubscribers();
-        }
-        ensureBodyObserver();
-        console.log(`🪼 Jellyfin Enhanced: Body subscriber registered: ${id} (priority: ${priority}, total: ${bodySubscribers.size})`);
-        const cleanup = () => {
-            if (!bodySubscribers.has(id)) return;
-            bodySubscribers.delete(id);
-            console.log(`🪼 Jellyfin Enhanced: Body subscriber removed: ${id} (remaining: ${bodySubscribers.size})`);
-            stopBodyObserverIfEmpty();
-        };
-        return { unsubscribe: cleanup, disconnect: cleanup };
-    }
-
-    /**
-     * Remove a subscriber from the shared body observer.
-     * @param {string} id - The subscriber ID
-     * @returns {boolean} True if found and removed
-     */
-    function removeBodySubscriber(id) {
-        const removed = bodySubscribers.delete(id);
-        if (removed) {
-            console.log(`🪼 Jellyfin Enhanced: Body subscriber removed: ${id} (remaining: ${bodySubscribers.size})`);
-            stopBodyObserverIfEmpty();
-        }
-        return removed;
-    }
-
-    // Shared cache for item payloads to deduplicate cross-module ApiClient.getItem calls
-    const itemCache = new Map();
-    const ITEM_CACHE_TTL_MS = 30000; // 30s -- long enough for batch prefetch to warm cache before tag systems scan
 
     /**
      * Deduplicated item fetch with short TTL cache.
@@ -301,325 +140,6 @@
 
 
     /**
-     * Patch history.pushState / history.replaceState to emit a 'je:navigate' event.
-     * Jellyfin's SPA router calls pushState for some transitions without changing
-     * location.hash, so hashchange/popstate are never fired for those navigations.
-     * This single patch lets all modules listen to one synthetic event instead of polling.
-     */
-    function patchNavigationEvents() {
-        if (history.__jePushed) return; // only patch once
-        history.__jePushed = true;
-
-        const _push = history.pushState.bind(history);
-        const _replace = history.replaceState.bind(history);
-
-        // Some host pages (e.g. third-party custom-tabs plugins reacting to DOM
-        // mutations) call pushState repeatedly for a URL that hasn't changed.
-        // Skip the synthetic event in that case so we don't re-trigger our own
-        // navigation-driven rescans, which would mutate the DOM and risk feeding
-        // back into whatever observer caused the redundant pushState in the first place.
-        history.pushState = function(...args) {
-            const before = window.location.href;
-            _push(...args);
-            if (window.location.href !== before) {
-                window.dispatchEvent(new Event('je:navigate'));
-            }
-        };
-        history.replaceState = function(...args) {
-            const before = window.location.href;
-            _replace(...args);
-            if (window.location.href !== before) {
-                window.dispatchEvent(new Event('je:navigate'));
-            }
-        };
-    }
-
-    /**
-     * Subscribe to all navigation events: pushState, replaceState, hashchange, popstate.
-     * @param {Function} callback - Called on every navigation.
-     * @returns {Function} Unsubscribe function.
-     */
-    function onNavigate(callback) {
-        window.addEventListener('je:navigate', callback);
-        window.addEventListener('hashchange', callback);
-        window.addEventListener('popstate', callback);
-        return () => {
-            window.removeEventListener('je:navigate', callback);
-            window.removeEventListener('hashchange', callback);
-            window.removeEventListener('popstate', callback);
-        };
-    }
-
-    /**
-     * Initialize the utils by hooking into Emby.Page.onViewShow
-     */
-    function initialize() {
-        if (!window.Emby?.Page) {
-            console.warn('🪼 Jellyfin Enhanced: Emby.Page not available, retrying in 100ms');
-            setTimeout(initialize, 100);
-            return;
-        }
-
-        // Patch navigation history methods so pushState fires je:navigate
-        patchNavigationEvents();
-
-        // Store original onViewShow if it exists
-        originalOnViewShow = window.Emby.Page.onViewShow;
-
-        // Override onViewShow to intercept page view changes
-        window.Emby.Page.onViewShow = function(view, element, hash) {
-            // Call original handler first
-            if (originalOnViewShow) {
-                try {
-                    originalOnViewShow.call(this, view, element, hash);
-                } catch (err) {
-                    console.warn('🪼 Jellyfin Enhanced: Error in original onViewShow:', err);
-                }
-            }
-
-            // Notify all registered handlers
-            notifyHandlers(view, element, hash);
-        };
-
-        console.log('🪼 Jellyfin Enhanced: Successfully hooked into Emby.Page.onViewShow');
-    }
-
-    /**
-     * Notify all registered handlers about a view change
-     * @param {string} view - The view name
-     * @param {HTMLElement} element - The view element
-     * @param {string} hash - The URL hash
-     */
-    function notifyHandlers(view, element, hash) {
-        handlers.forEach(handlerConfig => {
-            try {
-                const { callback, options } = handlerConfig;
-
-                // Check if this handler should be called for this page
-                if (options.pages && !options.pages.includes(view)) {
-                    return;
-                }
-
-                // Get item promise if needed
-                let itemPromise = null;
-                if (options.fetchItem) {
-                    itemPromise = getItemFromHash(hash);
-                }
-
-                // Call the handler
-                callback(view, element, hash, itemPromise);
-            } catch (err) {
-                console.error('🪼 Jellyfin Enhanced: Error in handler:', err);
-            }
-        });
-    }
-
-    /**
-     * Get item from URL hash (cached)
-     * @param {string} hash - The URL hash
-     * @returns {Promise<object|null>}
-     */
-    async function getItemFromHash(hash) {
-        try {
-            const params = new URLSearchParams(hash.split('?')[1]);
-            const itemId = params.get('id');
-
-            if (!itemId) return null;
-            return await getItemCached(itemId);
-        } catch (err) {
-            console.error('🪼 Jellyfin Enhanced: Error fetching item:', err);
-            return null;
-        }
-    }
-
-    /**
-     * Register a callback to be called when page view changes
-     * @param {Function} callback - Function to call when page view changes
-     * @param {Object} options - Options for the handler
-     * @param {string[]} options.pages - Array of page names to trigger on (optional)
-     * @param {boolean} options.fetchItem - Whether to fetch item from hash (default: false)
-     * @param {boolean} options.immediate - Whether to call immediately if on matching page (default: false)
-     * @returns {Function} Unregister function
-     */
-    function onViewPage(callback, options = {}) {
-        const handlerConfig = {
-            callback,
-            options: {
-                pages: options.pages || null,
-                fetchItem: options.fetchItem || false,
-                immediate: options.immediate || false
-            }
-        };
-
-        handlers.push(handlerConfig);
-        console.log(`🪼 Jellyfin Enhanced: Registered onViewPage handler (total: ${handlers.length})`);
-
-        // Call immediately if requested and we're on a matching page
-        if (options.immediate) {
-            try {
-                const currentView = getCurrentView();
-                const currentHash = window.location.hash;
-
-                if (!options.pages || options.pages.includes(currentView)) {
-                    const element = document.querySelector('.libraryPage:not(.hide)');
-                    let itemPromise = null;
-                    if (options.fetchItem) {
-                        itemPromise = getItemFromHash(currentHash);
-                    }
-                    callback(currentView, element, currentHash, itemPromise);
-                }
-            } catch (err) {
-                console.error('🪼 Jellyfin Enhanced: Error in immediate handler call:', err);
-            }
-        }
-
-        // Return unregister function
-        return () => {
-            const index = handlers.indexOf(handlerConfig);
-            if (index !== -1) {
-                handlers.splice(index, 1);
-                console.log(`🪼 Jellyfin Enhanced: Unregistered onViewPage handler (remaining: ${handlers.length})`);
-            }
-        };
-    }
-
-    /**
-     * Get current view name
-     * @returns {string|null}
-     */
-    function getCurrentView() {
-        const visiblePage = document.querySelector('.libraryPage:not(.hide)');
-        if (!visiblePage) return null;
-
-        // Try to get view from data attributes or id
-        return visiblePage.dataset.type ||
-               visiblePage.id ||
-               visiblePage.getAttribute('data-role') ||
-               null;
-    }
-
-    /**
-     * Create a managed MutationObserver that can be properly cleaned up.
-     * If target is document.body with { childList: true, subtree: true }, the callback
-     * is automatically routed to the shared multiplexed body observer instead of
-     * creating a separate MutationObserver instance.
-     * @param {string} id - Unique identifier for this observer
-     * @param {Function} callback - The mutation callback
-     * @param {HTMLElement} target - The element to observe
-     * @param {MutationObserverInit} config - The observer configuration
-     * @returns {MutationObserver|{ disconnect: Function }} Observer handle
-     */
-    function createObserver(id, callback, target, config) {
-        // Route body observers to the shared multiplexed observer
-        const isBodyTarget = target === document.body || target === document.documentElement || target === document;
-        const isSubtreeWatch = config && config.childList && config.subtree;
-
-        if (isBodyTarget && isSubtreeWatch && !config.attributes && !config.attributeFilter && !config.characterData) {
-            // Use shared body observer
-            const handle = onBodyMutation(id, callback);
-            // Return a duck-typed object compatible with both MutationObserver and subscription conventions
-            const cleanup = () => handle.disconnect();
-            const proxy = {
-                disconnect: cleanup,
-                unsubscribe: cleanup,
-                observe() { /* no-op, already observing via shared observer */ },
-                takeRecords() { return []; }
-            };
-            activeObservers.set(id, proxy);
-            return proxy;
-        }
-
-        // For non-body targets or complex configs (attributes, characterData),
-        // create a dedicated observer as before
-        if (activeObservers.has(id)) {
-            const existing = activeObservers.get(id);
-            existing.disconnect();
-            console.warn(`🪼 Jellyfin Enhanced: Replacing existing observer: ${id}`);
-        }
-
-        const observer = new MutationObserver(callback);
-        observer.observe(target, config);
-
-        activeObservers.set(id, observer);
-        console.log(`🪼 Jellyfin Enhanced: Created dedicated observer: ${id} (total: ${activeObservers.size})`);
-
-        return observer;
-    }
-
-    /**
-     * Disconnect and remove a managed observer (or body subscriber)
-     * @param {string} id - The observer ID
-     * @returns {boolean} True if observer was found and disconnected
-     */
-    function disconnectObserver(id) {
-        // Check body subscribers first
-        if (bodySubscribers.has(id)) {
-            removeBodySubscriber(id);
-            activeObservers.delete(id);
-            return true;
-        }
-        if (activeObservers.has(id)) {
-            const observer = activeObservers.get(id);
-            observer.disconnect();
-            activeObservers.delete(id);
-            console.log(`🪼 Jellyfin Enhanced: Disconnected observer: ${id} (remaining: ${activeObservers.size})`);
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Disconnect all managed observers and body subscribers
-     */
-    function disconnectAllObservers() {
-        activeObservers.forEach((observer, id) => {
-            observer.disconnect();
-        });
-        activeObservers.clear();
-        bodySubscribers.clear();
-        if (bodyObserver) {
-            bodyObserver.disconnect();
-            bodyObserver = null;
-        }
-        console.log('🪼 Jellyfin Enhanced: All observers and body subscribers disconnected');
-    }
-
-    /**
-     * Wait for an element to appear in the DOM
-     * @param {string} selector - CSS selector
-     * @param {number} timeout - Maximum wait time in ms (default: 10000)
-     * @returns {Promise<HTMLElement|null>}
-     */
-    function waitForElement(selector, timeout = 10000) {
-        return new Promise((resolve) => {
-            const existing = document.querySelector(selector);
-            if (existing) {
-                resolve(existing);
-                return;
-            }
-
-            const observerId = `wait-${selector}-${Date.now()}`;
-            let timeoutId = null;
-
-            const handle = onBodyMutation(observerId, () => {
-                const element = document.querySelector(selector);
-                if (element) {
-                    if (timeoutId) clearTimeout(timeoutId);
-                    handle.unsubscribe();
-                    resolve(element);
-                }
-            });
-
-            // Set timeout
-            timeoutId = setTimeout(() => {
-                handle.unsubscribe();
-                console.warn(`🪼 Jellyfin Enhanced: Timeout waiting for element: ${selector}`);
-                resolve(null);
-            }, timeout);
-        });
-    }
-
-    /**
      * Debounce a function call
      * @param {Function} func - The function to debounce
      * @param {number} wait - Wait time in ms
@@ -635,32 +155,6 @@
             clearTimeout(timeout);
             timeout = setTimeout(later, wait);
         };
-    }
-
-    // --- Generic request concurrency limiter ---
-    // Shared by any module that fires one fetch per card (rating chips, provider
-    // icons, etc.) so a page full of results doesn't open one connection per card.
-    const CONCURRENCY_LIMIT = 6;
-    let activeRequestCount = 0;
-    const concurrencyQueue = [];
-
-    /**
-     * Run fn once fewer than CONCURRENCY_LIMIT calls are in flight; queues callers beyond that.
-     * @param {Function} fn - Async function to run.
-     * @returns {Promise<any>}
-     */
-    async function withConcurrencyLimit(fn) {
-        if (activeRequestCount >= CONCURRENCY_LIMIT) {
-            await new Promise((resolve) => concurrencyQueue.push(resolve));
-        }
-        activeRequestCount++;
-        try {
-            return await fn();
-        } finally {
-            activeRequestCount--;
-            const next = concurrencyQueue.shift();
-            if (next) next();
-        }
     }
 
     /**
@@ -862,58 +356,12 @@
     }
 
     /**
-     * Add custom CSS to the page
+     * Add custom CSS to the page (alias of JE.core.ui.injectCss).
      * @param {string} id - Unique ID for the style element
      * @param {string} css - The CSS content
      */
     function addCSS(id, css) {
-        // Remove existing style with same ID
-        const existing = document.getElementById(id);
-        if (existing) {
-            existing.remove();
-        }
-
-        const style = document.createElement('style');
-        style.id = id;
-        style.textContent = css;
-        document.head.appendChild(style);
-
-        console.log(`🪼 Jellyfin Enhanced: Added CSS: ${id}`);
-    }
-
-    /**
-     * Remove CSS by ID
-     * @param {string} id - The style element ID
-     * @returns {boolean} True if removed
-     */
-    function removeCSS(id) {
-        const existing = document.getElementById(id);
-        if (existing) {
-            existing.remove();
-            console.log(`🪼 Jellyfin Enhanced: Removed CSS: ${id}`);
-            return true;
-        }
-        return false;
-    }
-
-    // Initialize on load
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initialize);
-    } else {
-        initialize();
-    }
-
-    // Cleanup on page unload
-    window.addEventListener('beforeunload', () => {
-        disconnectAllObservers();
-    });
-
-    // HTML-escape user-controlled strings before passing to JE.toast (which uses innerHTML)
-    // or other innerHTML sinks. Call from any module instead of redefining per-IIFE.
-    function escHtml(s) {
-        return String(s == null ? '' : s)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        JE.core.ui.injectCss(id, css);
     }
 
     /**
@@ -951,37 +399,38 @@
         return a;
     }
 
-    // Expose helpers
+    // Expose helpers. Entries marked (core) are thin aliases over JE.core.*
+    // kept for the frozen JE.helpers contract — new code should call core
+    // directly.
     JE.helpers = {
-        onViewPage,
-        onNavigate,
+        onViewPage: (callback, options) => JE.core.navigation.onViewPage(callback, options), // (core)
+        onNavigate: (callback) => JE.core.navigation.onNavigate(callback), // (core)
         getItemCached,
-        getCurrentView,
-        createObserver,
-        onBodyMutation,
-        removeBodySubscriber,
-        disconnectObserver,
-        disconnectAllObservers,
+        getCurrentView: () => JE.core.navigation.getCurrentView(), // (core)
+        createObserver: (id, callback, target, config) => JE.core.dom.createObserver(id, callback, target, config), // (core)
+        onBodyMutation: (id, callback, options) => JE.core.dom.onBodyMutation(id, callback, options), // (core)
+        removeBodySubscriber: (id) => JE.core.dom.removeBodySubscriber(id), // (core)
+        disconnectObserver: (id) => JE.core.dom.disconnectObserver(id), // (core)
+        disconnectAllObservers: () => JE.core.dom.disconnectAllObservers(), // (core)
         getHeaderRightContainer,
         getSidebarContainer,
-        waitForElement,
+        waitForElement: (selector, timeout) => JE.core.dom.waitForElement(selector, timeout), // (core)
         waitForCondition,
         debounce,
         throttle,
-        withConcurrencyLimit,
         retry,
         isElementVisible,
-        addCSS,
-        removeCSS,
-        escHtml,
+        addCSS, // (core)
+        removeCSS: (id) => JE.core.ui.removeCss(id), // (core)
+        escHtml: (s) => JE.core.ui.escapeHtml(s), // (core)
         createExternalLink,
         isSafeAvatarUrl,
         resolveProtectedAvatarUrl,
         hydrateAvatarImages,
         clearAvatarObjectUrlCache,
-        getHandlerCount: () => handlers.length,
-        getObserverCount: () => activeObservers.size,
-        getBodySubscriberCount: () => bodySubscribers.size
+        getHandlerCount: () => JE.core.navigation.getViewHandlerCount(), // (core)
+        getObserverCount: () => JE.core.dom.getObserverCount(), // (core)
+        getBodySubscriberCount: () => JE.core.dom.getBodySubscriberCount() // (core)
     };
 
     console.log('🪼 Jellyfin Enhanced: Helpers initialized successfully');

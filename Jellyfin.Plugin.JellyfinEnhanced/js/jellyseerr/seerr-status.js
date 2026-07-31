@@ -130,7 +130,7 @@
 
     /**
      * Returns button rendering config for a given display state.
-     * iconKey maps to the 'icons' object in ui.js; '' means no button icon.
+     * iconKey maps to the icons object in ui/ui-icons.js; '' means no button icon.
      *
      * @param {string} displayStatus — one of seerrStatus.DISPLAY.*
      * @returns {{ labelKey: string, cssClass: string, disabled: boolean, showSpinner: boolean, iconKey: string }}

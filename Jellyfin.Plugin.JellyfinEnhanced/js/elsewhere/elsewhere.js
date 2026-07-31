@@ -503,19 +503,7 @@
         // Fetch streaming data
         function fetchStreamingData(tmdbId, mediaType, callback) {
             const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${mediaType}/${tmdbId}/watch/providers`);
-            fetch(url, {
-                headers: {
-                    "Authorization": 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
-                    "X-Emby-Token": ApiClient.accessToken()
-                }
-            })
-                .then(response => {
-                    if (response.ok) {
-                        return response.json();
-                    } else {
-                        throw new Error(`API Error: ${response.status}`);
-                    }
-                })
+            JE.core.api.fetch(url)
                 .then(data => callback(null, data))
                 .catch(error => {
                     let errorMessage;
@@ -542,8 +530,9 @@
                     } else if (errorMessageText.includes('429')) {
                         errorMessage = 'Too many requests. Please wait a moment and try again.';
 
-                    // Check 6: TMDB server-side issues (e.g., 500, 502, 503, 504)
-                    } else if (errorMessageText.startsWith('API Error: 5')) {
+                    // Check 6: TMDB server-side issues (e.g., 500, 502, 503, 504) —
+                    // JE.core.api throws Error('HTTP <status>') for non-OK responses
+                    } else if (errorMessageText.startsWith('HTTP 5')) {
                         errorMessage = 'The TMDB service is temporarily unavailable. Please try again later.';
 
                     // Fallback: All other errors

@@ -44,4 +44,4 @@
 
     initDiscoveryHandler();
 
-})(window.JellyfinEnhanced || {});
+})(window.JellyfinEnhanced);

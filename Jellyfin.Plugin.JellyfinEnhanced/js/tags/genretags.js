@@ -1,20 +1,14 @@
 // /js/tags/genretags.js
+// Genre icon overlays — a spec over the core tag-renderer factory
+// (js/core/tag-renderer-base.js), which owns the cache/ignore/tagged/CSS/
+// reinitialize plumbing. This module supplies only the genre-specific parts:
+// the genre→icon map, genre extraction fallbacks and the icon-chip markup.
 (function(JE) {
     'use strict';
 
     const logPrefix = '🪼 Jellyfin Enhanced: Genre Tags:';
     const containerClass = 'genre-overlay-container';
     const tagClass = 'genre-tag';
-    const TAGGED_ATTR = 'jeGenreTagged';
-    const CACHE_KEY = 'JellyfinEnhanced-genreTagsCache';
-    const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-genreTagsCacheTimestamp';
-    const ENABLE_LOCAL_STORAGE_FALLBACK =
-        JE.pluginConfig?.TagCacheServerMode === false ||
-        JE.pluginConfig?.EnableTagsLocalStorageFallback === true;
-
-    let genreCache = ENABLE_LOCAL_STORAGE_FALLBACK
-        ? (JSON.parse(localStorage.getItem(CACHE_KEY)) || {})
-        : {};
 
     const genreIconMap = {
         // Default
@@ -90,109 +84,16 @@
     };
 
     /**
-     * Persist the genre cache to localStorage.
-     * @returns {void}
-     */
-    function saveCache() {
-        if (!ENABLE_LOCAL_STORAGE_FALLBACK) return;
-        try {
-            localStorage.setItem(CACHE_KEY, JSON.stringify(genreCache));
-        } catch (e) {
-            console.warn(`${logPrefix} Failed to save cache`, e);
-        }
-    }
-
-    /**
-     * Remove legacy cache keys and honor server-triggered cache clears.
-     * @returns {void}
-     */
-    function cleanupOldCaches() {
-        if (!ENABLE_LOCAL_STORAGE_FALLBACK) return;
-        // Remove old version-based cache keys and legacy cache keys
-        for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && (key.startsWith('genreTagsCache-') || key === 'genreTagsCache' || key === 'genreTagsCacheTimestamp') && key !== CACHE_KEY && key !== CACHE_TIMESTAMP_KEY) {
-                console.log(`${logPrefix} Removing old cache: ${key}`);
-                localStorage.removeItem(key);
-            }
-        }
-
-        // Check if server has triggered a cache clear
-        const serverClearTimestamp = JE.pluginConfig?.ClearLocalStorageTimestamp || 0;
-        const localCacheTimestamp = parseInt(localStorage.getItem(CACHE_TIMESTAMP_KEY) || '0', 10);
-
-        if (serverClearTimestamp > localCacheTimestamp) {
-            console.log(`${logPrefix} Server triggered cache clear (${new Date(serverClearTimestamp).toISOString()})`);
-            localStorage.removeItem(CACHE_KEY);
-            localStorage.setItem(CACHE_TIMESTAMP_KEY, serverClearTimestamp.toString());
-            genreCache = {};
-            // Clear hot cache too
-            if (JE._hotCache?.genre) JE._hotCache.genre.clear();
-        }
-    }
-
-    // CSS selectors for elements that should NOT have genre tags applied.
-    const IGNORE_SELECTORS = [
-        '.je-hidden',
-        '#itemDetailPage .infoWrapper',
-        '#itemDetailPage #castCollapsible',
-        '#indexPage .verticalSection.MyMedia',
-        '.formDialog',
-        '#itemDetailPage .chapterCardImageContainer',
-        '#pluginsPage, #pluginCatalogPage, #devicesPage, #mediaLibraryPage'
-    ];
-
-    // Add search page to ignore list if configured
-    if (JE.pluginConfig?.DisableTagsOnSearchPage === true) {
-        IGNORE_SELECTORS.push('#searchPage');
-    }
-
-    /**
-     * Check whether an element matches any selector that should be excluded from tagging.
-     * @param {HTMLElement} el - Element to test.
-     * @returns {boolean} True if the element should be skipped.
-     */
-    function shouldIgnoreElement(el) {
-        if (document.querySelector('.videoPlayerContainer')) return true;
-        return IGNORE_SELECTORS.some(function(sel) {
-            return el.closest(sel) !== null;
-        });
-    }
-
-    /**
-     * Check whether a card already has a genre overlay applied.
-     * @param {HTMLElement} el - Element inside the card.
-     * @returns {boolean} True if the card is already tagged.
-     */
-    function isCardAlreadyTagged(el) {
-        const card = el.closest('.card');
-        if (!card) return false;
-        const hasAttr = card.dataset?.[TAGGED_ATTR] === '1';
-        const hasOverlay = !!card.querySelector(`.${containerClass}`);
-        return hasAttr && hasOverlay;
-    }
-
-    /**
-     * Mark a card element as tagged to prevent duplicate overlays.
-     * @param {HTMLElement} el - Element inside the card.
-     * @returns {void}
-     */
-    function markCardTagged(el) {
-        const card = el.closest('.card');
-        if (card) card.dataset[TAGGED_ATTR] = '1';
-    }
-
-    /**
      * Create and insert genre icon tags into a card container.
+     * @param {Object} ctx - Factory context (tagged/overlay helpers).
      * @param {HTMLElement} container - The card scalable or image container element.
      * @param {string[]} genres - Array of genre names to display.
      * @returns {void}
      */
-    function insertGenreTags(container, genres) {
+    function insertGenreTags(ctx, container, genres) {
         if (!container) return;
 
-        const existing = container.querySelector(`.${containerClass}`);
-        if (existing) existing.remove();
+        ctx.removeExistingOverlay(container);
 
         // Ensure container is positioned (avoids forced reflow from getComputedStyle)
         container.style.position = 'relative';
@@ -221,124 +122,187 @@
             genreContainer.appendChild(tag);
         });
 
-        container.appendChild(genreContainer);
-        markCardTagged(container);
+        ctx.commitOverlay(container, genreContainer);
     }
 
-    /**
-     * Inject or replace the genre tags stylesheet based on current position settings.
-     * @returns {void}
-     */
-    function injectCss() {
-        const styleId = 'genre-tags-styles';
-        // Remove existing style to allow updates
-        const existingStyle = document.getElementById(styleId);
-        if (existingStyle) existingStyle.remove();
-
-        const style = document.createElement('style');
-        style.id = styleId;
-        const pos = (window.JellyfinEnhanced?.currentSettings?.genreTagsPosition || window.JellyfinEnhanced?.pluginConfig?.GenreTagsPosition || 'top-right');
-        const isTop = pos.includes('top');
-        const isLeft = pos.includes('left');
-        const topVal = isTop ? '6px' : 'auto';
-        const bottomVal = isTop ? 'auto' : '6px';
-        const leftVal = isLeft ? '6px' : 'auto';
-        const rightVal = isLeft ? 'auto' : '6px';
-        const needsTopRightOffset = isTop && !isLeft; // top-right
-        style.textContent = `
-            .${containerClass} {
-                position: absolute;
-                top: ${topVal};
-                right: ${rightVal};
-                bottom: ${bottomVal};
-                left: ${leftVal};
-                display: flex;
-                flex-direction: column;
-                gap: 3px;
-                align-items: ${isLeft ? 'flex-start' : 'flex-end'};
-                z-index: 101;
-                pointer-events: none;
-                max-height: 90%;
-                overflow: visible;
-            }
-            ${needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(20px, 3vw, 30px); }` : ''}
-            .${tagClass} {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                height: clamp(22px, 4.5vw, 30px);
-                width: clamp(22px, 4.5vw, 30px);
-                border-radius: 50%;
-                box-shadow: 0 1px 4px rgba(0,0,0,0.4);
-                overflow: visible;
-                background-color: rgba(10, 10, 10, 0.8);
-                color: #E0E0E0;
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                flex-shrink: 0;
-                contain: style;
-                position: relative;
-            }
-            .${tagClass} .material-symbols-outlined {
-                font-size: clamp(1em, 2.8vw, 1.4em);
-                line-height: 1;
-            }
-            .${tagClass} .genre-text {
-                /* Absolutely positioned label = no layout reflow when shown/hidden.
-                   Appears beside the icon on hover via opacity (GPU-composited).
-                   Direction depends on tag position: icons on right → label floats left,
-                   icons on left → label floats right (so it stays inside the card). */
-                position: absolute;
-                ${isLeft ? 'left: calc(100% + 4px)' : 'right: calc(100% + 4px)'};
-                top: 50%;
-                transform: translateY(-50%);
-                white-space: nowrap;
-                font-size: clamp(9px, 1.7vw, 11px);
-                font-weight: 500;
-                text-transform: capitalize;
-                background: rgba(10, 10, 10, 0.85);
-                color: #E0E0E0;
-                padding: 2px 6px;
-                border-radius: 4px;
-                opacity: 0;
-                pointer-events: none;
-                transition: opacity 0.12s ease;
-            }
-            .card:hover .${tagClass} .genre-text {
-                opacity: 1;
-            }
-            .layout-mobile .${containerClass} { gap: 2px; }
-            .layout-mobile .${tagClass} {
-                height: clamp(20px, 4vw, 26px);
-                min-width: clamp(20px, 4vw, 26px);
-            }
-            .layout-mobile .${tagClass} .material-symbols-outlined {
-                font-size: clamp(0.95em, 2.4vw, 1.25em);
-            }
-            @media (max-width: 768px) {
-                .${containerClass} { gap: 2px; }
-                .${tagClass} {
-                    height: clamp(21px, 4vw, 26px);
-                    min-width: clamp(21px, 4vw, 26px);
+    /** @type {Object} Factory spec — everything genre-specific lives here. */
+    const spec = {
+        logPrefix,
+        settingKey: 'genreTagsEnabled',
+        containerClass,
+        taggedAttr: 'jeGenreTagged',
+        styleId: 'genre-tags-styles',
+        cache: {
+            key: 'JellyfinEnhanced-genreTagsCache',
+            legacyPrefix: 'genreTagsCache',
+            hotBucket: 'genre',
+        },
+        // Genre uses container-level selectors (not .cardImageContainer-scoped)
+        // and adds a video-player check — kept as a module-specific override.
+        ignoreSelectors: [
+            '.je-hidden',
+            '#itemDetailPage .infoWrapper',
+            '#itemDetailPage #castCollapsible',
+            '#indexPage .verticalSection.MyMedia',
+            '.formDialog',
+            '#itemDetailPage .chapterCardImageContainer',
+            '#pluginsPage, #pluginCatalogPage, #devicesPage, #mediaLibraryPage'
+        ],
+        searchPageIgnoreSelector: '#searchPage',
+        shouldIgnore(el, defaultMatcher) {
+            if (document.querySelector('.videoPlayerContainer')) return true;
+            return defaultMatcher(el);
+        },
+        buildCss() {
+            const pos = JE.core.tagRenderer.resolvePosition('genreTagsPosition', 'GenreTagsPosition', 'top-right');
+            return `
+                .${containerClass} {
+                    position: absolute;
+                    top: ${pos.topVal};
+                    right: ${pos.rightVal};
+                    bottom: ${pos.bottomVal};
+                    left: ${pos.leftVal};
+                    display: flex;
+                    flex-direction: column;
+                    gap: 3px;
+                    align-items: ${pos.isLeft ? 'flex-start' : 'flex-end'};
+                    z-index: 101;
+                    pointer-events: none;
+                    max-height: 90%;
+                    overflow: visible;
                 }
-            }
-            @media (max-width: 480px) {
-                .${containerClass} { gap: 2px; max-height: 85%; }
+                ${pos.needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(20px, 3vw, 30px); }` : ''}
                 .${tagClass} {
-                    height: clamp(20px, 3.6vw, 24px);
-                    min-width: clamp(20px, 3.6vw, 24px);
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    height: clamp(22px, 4.5vw, 30px);
+                    width: clamp(22px, 4.5vw, 30px);
+                    border-radius: 50%;
+                    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+                    overflow: visible;
+                    background-color: rgba(10, 10, 10, 0.8);
+                    color: #E0E0E0;
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    flex-shrink: 0;
+                    contain: style;
+                    position: relative;
                 }
                 .${tagClass} .material-symbols-outlined {
-                    font-size: clamp(0.85em, 2.2vw, 1.1em);
+                    font-size: clamp(1em, 2.8vw, 1.4em);
+                    line-height: 1;
                 }
-            }
-        `;
-        document.head.appendChild(style);
-    }
+                .${tagClass} .genre-text {
+                    /* Absolutely positioned label = no layout reflow when shown/hidden.
+                       Appears beside the icon on hover via opacity (GPU-composited).
+                       Direction depends on tag position: icons on right → label floats left,
+                       icons on left → label floats right (so it stays inside the card). */
+                    position: absolute;
+                    ${pos.isLeft ? 'left: calc(100% + 4px)' : 'right: calc(100% + 4px)'};
+                    top: 50%;
+                    transform: translateY(-50%);
+                    white-space: nowrap;
+                    font-size: clamp(9px, 1.7vw, 11px);
+                    font-weight: 500;
+                    text-transform: capitalize;
+                    background: rgba(10, 10, 10, 0.85);
+                    color: #E0E0E0;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    opacity: 0;
+                    pointer-events: none;
+                    transition: opacity 0.12s ease;
+                }
+                .card:hover .${tagClass} .genre-text {
+                    opacity: 1;
+                }
+                .layout-mobile .${containerClass} { gap: 2px; }
+                .layout-mobile .${tagClass} {
+                    height: clamp(20px, 4vw, 26px);
+                    min-width: clamp(20px, 4vw, 26px);
+                }
+                .layout-mobile .${tagClass} .material-symbols-outlined {
+                    font-size: clamp(0.95em, 2.4vw, 1.25em);
+                }
+                @media (max-width: 768px) {
+                    .${containerClass} { gap: 2px; }
+                    .${tagClass} {
+                        height: clamp(21px, 4vw, 26px);
+                        min-width: clamp(21px, 4vw, 26px);
+                    }
+                }
+                @media (max-width: 480px) {
+                    .${containerClass} { gap: 2px; max-height: 85%; }
+                    .${tagClass} {
+                        height: clamp(20px, 3.6vw, 24px);
+                        min-width: clamp(20px, 3.6vw, 24px);
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+                    }
+                    .${tagClass} .material-symbols-outlined {
+                        font-size: clamp(0.85em, 2.2vw, 1.1em);
+                    }
+                }
+            `;
+        },
+        pipeline: {
+            needsFirstEpisode: true,
+            needsParentSeries: true,
+            render(ctx, el, item, extras) {
+                if (ctx.isTagged(el)) return;
+                if (ctx.shouldIgnore(el)) return;
+
+                var genres = null;
+
+                // For Season, prefer genres from the parent Series
+                if (item.Type === 'Season' && extras.parentSeries && extras.parentSeries.Genres && extras.parentSeries.Genres.length > 0) {
+                    genres = extras.parentSeries.Genres;
+                }
+                // For Series without genres, fall back to first episode
+                else if (item.Type === 'Series' && (!item.Genres || item.Genres.length === 0) && extras.firstEpisode && extras.firstEpisode.Genres && extras.firstEpisode.Genres.length > 0) {
+                    genres = extras.firstEpisode.Genres;
+                }
+                // Default: use item's own genres
+                else {
+                    genres = item.Genres;
+                }
+
+                if (!genres || genres.length === 0) return;
+
+                var sliced = genres.slice(0, 3);
+
+                // Update localStorage genre cache
+                var itemId = item.Id;
+                if (itemId) {
+                    ctx.setPersistent(itemId, { genres: sliced, timestamp: Date.now() });
+                }
+
+                insertGenreTags(ctx, el, sliced);
+            },
+            renderFromCache(ctx, el, itemId) {
+                if (ctx.isTagged(el)) return true;
+                var hot = ctx.hot?.get(itemId);
+                var cached = hot || ctx.getPersistent(itemId);
+                if (cached) {
+                    var genres = Array.isArray(cached) ? cached : cached.genres;
+                    if (genres && genres.length > 0) {
+                        insertGenreTags(ctx, el, genres.slice(0, 3));
+                        return true;
+                    }
+                }
+                return false;
+            },
+            renderFromServerCache(ctx, el, entry) {
+                if (ctx.isTagged(el)) return;
+                if (ctx.shouldIgnore(el)) return;
+                var genres = entry.Genres;
+                if (genres && genres.length > 0) {
+                    insertGenreTags(ctx, el, genres.slice(0, 3));
+                }
+            },
+        },
+    };
 
     JE.initializeGenreTags = function() {
-        cleanupOldCaches();
-
         // Ensure Material Symbols font is loaded
         if (!document.getElementById('mat-sym')) {
             const link = document.createElement('link');
@@ -350,79 +314,7 @@
             document.head.appendChild(link);
         }
 
-        // Register with unified cache manager for periodic persistence
-        if (ENABLE_LOCAL_STORAGE_FALLBACK && JE._cacheManager) {
-            JE._cacheManager.register(saveCache);
-        }
-        if (ENABLE_LOCAL_STORAGE_FALLBACK) {
-            window.addEventListener('beforeunload', saveCache);
-        }
-
-        if (JE.tagPipeline) {
-            JE.tagPipeline.registerRenderer('genre', {
-                render: function(el, item, extras) {
-                    if (isCardAlreadyTagged(el)) return;
-                    if (shouldIgnoreElement(el)) return;
-
-                    var genres = null;
-
-                    // For Season, prefer genres from the parent Series
-                    if (item.Type === 'Season' && extras.parentSeries && extras.parentSeries.Genres && extras.parentSeries.Genres.length > 0) {
-                        genres = extras.parentSeries.Genres;
-                    }
-                    // For Series without genres, fall back to first episode
-                    else if (item.Type === 'Series' && (!item.Genres || item.Genres.length === 0) && extras.firstEpisode && extras.firstEpisode.Genres && extras.firstEpisode.Genres.length > 0) {
-                        genres = extras.firstEpisode.Genres;
-                    }
-                    // Default: use item's own genres
-                    else {
-                        genres = item.Genres;
-                    }
-
-                    if (!genres || genres.length === 0) return;
-
-                    var sliced = genres.slice(0, 3);
-
-                    // Update localStorage genre cache
-                    var itemId = item.Id;
-                    if (itemId) {
-                        genreCache[itemId] = { genres: sliced, timestamp: Date.now() };
-                        if (JE._cacheManager) JE._cacheManager.markDirty();
-                    }
-
-                    insertGenreTags(el, sliced);
-                },
-                renderFromCache: function(el, itemId) {
-                    if (isCardAlreadyTagged(el)) return true;
-                    var Hot = JE._hotCache;
-                    var hot = Hot && Hot.genre ? Hot.genre.get(itemId) : undefined;
-                    var cached = hot || genreCache[itemId];
-                    if (cached) {
-                        var genres = Array.isArray(cached) ? cached : cached.genres;
-                        if (genres && genres.length > 0) {
-                            insertGenreTags(el, genres.slice(0, 3));
-                            return true;
-                        }
-                    }
-                    return false;
-                },
-                renderFromServerCache: function(el, entry) {
-                    if (isCardAlreadyTagged(el)) return;
-                    if (shouldIgnoreElement(el)) return;
-                    var genres = entry.Genres;
-                    if (genres && genres.length > 0) {
-                        insertGenreTags(el, genres.slice(0, 3));
-                    }
-                },
-                isEnabled: function() {
-                    return !!JE.currentSettings?.genreTagsEnabled;
-                },
-                needsFirstEpisode: true,
-                needsParentSeries: true,
-                injectCss: injectCss,
-            });
-        }
-
+        JE.core.tagRenderer.register('genre', spec);
         console.log(`${logPrefix} Initialized successfully.`);
     };
 
@@ -431,23 +323,7 @@
      * Cleans up existing tags and triggers a pipeline rescan.
      */
     JE.reinitializeGenreTags = function() {
-        console.log(`${logPrefix} Re-initializing...`);
-
-        // Always remove existing tags and clear tagged state
-        document.querySelectorAll('.genre-overlay-container').forEach(function(el) { el.remove(); });
-        document.querySelectorAll('[data-je-genre-tagged]').forEach(function(el) { delete el.dataset.jeGenreTagged; });
-
-        // Re-inject CSS in case position settings changed
-        injectCss();
-
-        if (!JE.currentSettings.genreTagsEnabled) {
-            console.log(`${logPrefix} Feature is disabled after reinit.`);
-            return;
-        }
-
-        // Ask the pipeline to rescan the DOM
-        JE.tagPipeline?.clearProcessed();
-        JE.tagPipeline?.scheduleScan();
+        JE.core.tagRenderer.reinitialize('genre', spec);
     };
 
 })(window.JellyfinEnhanced);

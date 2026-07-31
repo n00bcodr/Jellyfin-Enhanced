@@ -1,5 +1,10 @@
 // /js/tags/peopletags.js
 // Jellyfin Enhanced People Tags - Show cast member information (birthplace, age, deceased status)
+//
+// NOTE: unlike the poster tag modules, this one is NOT a tag-pipeline
+// renderer — it targets person cards on the item detail page with its own
+// managed observer and per-person backend endpoint, so the tag-renderer
+// factory does not apply here.
 (function(JE) {
     'use strict';
 
@@ -75,72 +80,63 @@
         let peopleTagsComplete = false; // Set true after all cast members tagged for current item
         let isProcessing = false;
 
-        // Inject styles for deceased indicators, overlay positioning, and material-symbols-rounded font
-        function injectDeceasedStyles() {
-            if (document.getElementById('je-people-tags-styles')) return;
+        // Styles for deceased indicators, overlay positioning, and material-symbols-rounded font
+        JE.core.ui.injectCss('je-people-tags-styles', `
+            @font-face {
+                font-family: 'Material Symbols Rounded';
+                font-style: normal;
+                font-weight: 100 700;
+                font-display: block;
+                src: url(${JE.cdn.url('gfont', 's/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2')}) format('woff2');
+            }
 
-            const style = document.createElement('style');
-            style.id = 'je-people-tags-styles';
-            style.textContent = `
-                @font-face {
-                    font-family: 'Material Symbols Rounded';
-                    font-style: normal;
-                    font-weight: 100 700;
-                    font-display: block;
-                    src: url(${JE.cdn.url('gfont', 's/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2')}) format('woff2');
-                }
+            .material-symbols-rounded {
+                font-family: 'Material Symbols Rounded';
+                font-weight: normal;
+                font-style: normal;
+                font-size: 24px;
+                line-height: 1;
+                letter-spacing: normal;
+                text-transform: none;
+                display: inline-block;
+                white-space: nowrap;
+                word-wrap: normal;
+                direction: ltr;
+                -webkit-font-feature-settings: 'liga';
+                -moz-font-feature-settings: 'liga';
+                font-feature-settings: 'liga';
+                -webkit-font-smoothing: antialiased;
+            }
 
-                .material-symbols-rounded {
-                    font-family: 'Material Symbols Rounded';
-                    font-weight: normal;
-                    font-style: normal;
-                    font-size: 24px;
-                    line-height: 1;
-                    letter-spacing: normal;
-                    text-transform: none;
-                    display: inline-block;
-                    white-space: nowrap;
-                    word-wrap: normal;
-                    direction: ltr;
-                    -webkit-font-feature-settings: 'liga';
-                    -moz-font-feature-settings: 'liga';
-                    font-feature-settings: 'liga';
-                    -webkit-font-smoothing: antialiased;
-                }
+            /* Ensure cardScalable has position: relative for absolute positioned overlays */
+            #castCollapsible .personCard .cardScalable {
+                position: relative;
+            }
 
-                /* Ensure cardScalable has position: relative for absolute positioned overlays */
-                #castCollapsible .personCard .cardScalable {
-                    position: relative;
-                }
+            /* Deceased poster styling */
+            .je-deceased-poster .cardImageContainer {
+                filter: grayscale(100%) opacity(0.7);
+            }
 
-                /* Deceased poster styling */
-                .je-deceased-poster .cardImageContainer {
-                    filter: grayscale(100%) opacity(0.7);
-                }
+            .je-deceased-poster .cardScalable::after {
+                content: "✝";
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                z-index: 3;
+                color: white;
+                font-weight: bold;
+                font-size: 2em;
+                text-shadow: 0 0 4px black;
+                pointer-events: none;
+            }
 
-                .je-deceased-poster .cardScalable::after {
-                    content: "✝";
-                    position: absolute;
-                    top: 8px;
-                    right: 8px;
-                    z-index: 3;
-                    color: white;
-                    font-weight: bold;
-                    font-size: 2em;
-                    text-shadow: 0 0 4px black;
-                    pointer-events: none;
-                }
-
-                /* People tag banner styling */
-                .je-people-tag-banner {
-                    max-width: 100%;
-                    box-sizing: border-box;
-                }
-            `;
-            document.head.appendChild(style);
-        }
-
-        injectDeceasedStyles();
+            /* People tag banner styling */
+            .je-people-tag-banner {
+                max-width: 100%;
+                box-sizing: border-box;
+            }
+        `);
 
         console.log(`${logPrefix} Initialized`);
 
@@ -224,6 +220,44 @@
         }
 
         /**
+         * Create one age chip (deceased / current / at-release share markup).
+         * @param {string} variant - Suffix for the chip class (deceased|current|release)
+         * @param {string} background - Chip background color
+         * @param {string} iconName - Material Symbols icon name
+         * @param {number} age - Age value to display
+         * @returns {HTMLElement}
+         */
+        function createAgeChip(variant, background, iconName, age) {
+            const ageChip = document.createElement('div');
+            ageChip.className = `je-people-age-chip je-people-age-${variant}`;
+            ageChip.style.cssText = `
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                background: ${background};
+                padding: 3px 8px;
+                border-radius: 3px;
+                font-size: 11px;
+                font-weight: 500;
+                color: white;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            `;
+
+            const icon = document.createElement('span');
+            icon.className = 'material-symbols-rounded je-people-age-icon';
+            icon.textContent = iconName;
+            icon.style.cssText = 'font-size: 13px;';
+            ageChip.appendChild(icon);
+
+            const text = document.createElement('span');
+            text.className = 'je-people-age-text';
+            text.textContent = `${age}y`;
+            ageChip.appendChild(text);
+
+            return ageChip;
+        }
+
+        /**
          * Create people tag chips in top-left corner and birthplace banner at bottom
          * @param {object} personData
          * @returns {object} Object with ageContainer and placeContainer elements
@@ -246,92 +280,14 @@
 
             // Current age or age at death chip
             if (personData.isDeceased && personData.ageAtDeath !== null && personData.ageAtDeath !== undefined) {
-                const ageChip = document.createElement('div');
-                ageChip.className = 'je-people-age-chip je-people-age-deceased';
-                ageChip.style.cssText = `
-                    display: flex;
-                    align-items: center;
-                    gap: 4px;
-                    background: rgba(180, 50, 50, 0.85);
-                    padding: 3px 8px;
-                    border-radius: 3px;
-                    font-size: 11px;
-                    font-weight: 500;
-                    color: white;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-                `;
-
-                const icon = document.createElement('span');
-                icon.className = 'material-symbols-rounded je-people-age-icon';
-                icon.textContent = 'event_busy';
-                icon.style.cssText = 'font-size: 13px;';
-                ageChip.appendChild(icon);
-
-                const text = document.createElement('span');
-                text.className = 'je-people-age-text';
-                text.textContent = `${personData.ageAtDeath}y`;
-                ageChip.appendChild(text);
-
-                ageContainer.appendChild(ageChip);
+                ageContainer.appendChild(createAgeChip('deceased', 'rgba(180, 50, 50, 0.85)', 'event_busy', personData.ageAtDeath));
             } else if (personData.currentAge !== null && personData.currentAge !== undefined) {
-                const ageChip = document.createElement('div');
-                ageChip.className = 'je-people-age-chip je-people-age-current';
-                ageChip.style.cssText = `
-                    display: flex;
-                    align-items: center;
-                    gap: 4px;
-                    background: rgba(100, 170, 100, 0.85);
-                    padding: 3px 8px;
-                    border-radius: 3px;
-                    font-size: 11px;
-                    font-weight: 500;
-                    color: white;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-                `;
-
-                const icon = document.createElement('span');
-                icon.className = 'material-symbols-rounded je-people-age-icon';
-                icon.textContent = 'cake';
-                icon.style.cssText = 'font-size: 13px;';
-                ageChip.appendChild(icon);
-
-                const text = document.createElement('span');
-                text.className = 'je-people-age-text';
-                text.textContent = `${personData.currentAge}y`;
-                ageChip.appendChild(text);
-
-                ageContainer.appendChild(ageChip);
+                ageContainer.appendChild(createAgeChip('current', 'rgba(100, 170, 100, 0.85)', 'cake', personData.currentAge));
             }
 
             // Age at item release chip
             if (personData.ageAtItemRelease !== null && personData.ageAtItemRelease !== undefined) {
-                const releaseChip = document.createElement('div');
-                releaseChip.className = 'je-people-age-chip je-people-age-release';
-                releaseChip.style.cssText = `
-                    display: flex;
-                    align-items: center;
-                    gap: 4px;
-                    background: rgba(70, 130, 180, 0.85);
-                    padding: 3px 8px;
-                    border-radius: 3px;
-                    font-size: 11px;
-                    font-weight: 500;
-                    color: white;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-                `;
-
-                const icon = document.createElement('span');
-                icon.className = 'material-symbols-rounded je-people-age-icon';
-                icon.textContent = 'movie';
-                icon.style.cssText = 'font-size: 13px;';
-                releaseChip.appendChild(icon);
-
-                const text = document.createElement('span');
-                text.className = 'je-people-age-text';
-                text.textContent = `${personData.ageAtItemRelease}y`;
-                releaseChip.appendChild(text);
-
-                ageContainer.appendChild(releaseChip);
+                ageContainer.appendChild(createAgeChip('release', 'rgba(70, 130, 180, 0.85)', 'movie', personData.ageAtItemRelease));
             }
 
             // Birthplace banner (bottom of card)
