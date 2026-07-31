@@ -88,6 +88,7 @@
 .mediaInfoOfficialRating[rating='BE-TOUS'],                /* 🇧🇪 Belgium — Tous publics (Kijkwijzer, French) */
 .mediaInfoOfficialRating[rating='BE-KT'],                  /* 🇧🇪 Belgium — Kinderen Toegelaten (legacy, pre-2020) */
 .mediaInfoOfficialRating[rating='BR-L'],                   /* 🇧🇷 Brazil — Livre */
+.mediaInfoOfficialRating[rating='L'],                      /* 🇧🇷 Brazil — Livre (bare label) */
 .mediaInfoOfficialRating[rating='CA-G'],                   /* 🇨🇦 Canada — General (all provinces + Quebec) */
 .mediaInfoOfficialRating[rating='CA-E'],                   /* 🇨🇦 Canada — Exempt */
 .mediaInfoOfficialRating[rating='C8'],                     /* 🇨🇦 Canada — C8 (legacy bare label) */
@@ -169,6 +170,7 @@
 .mediaInfoOfficialRating[rating='AT-8'],                   /* 🇦🇹 Austria — ab 8 Jahren */
 .mediaInfoOfficialRating[rating='AT-8+'],                  /* 🇦🇹 Austria — 8+ */
 .mediaInfoOfficialRating[rating='AT-12+'],                 /* 🇦🇹 Austria — 12+ */
+.mediaInfoOfficialRating[rating='12+'],                    /* 🌍 Generic 12+ (bare label) */
 .mediaInfoOfficialRating[rating='BE-6'],                   /* 🇧🇪 Belgium — 6 (Kijkwijzer) */
 .mediaInfoOfficialRating[rating='BE-9'],                   /* 🇧🇪 Belgium — 9 (Kijkwijzer) */
 .mediaInfoOfficialRating[rating='BR-6'],                   /* 🇧🇷 Brazil — 6 anos (introduced 2025) */
@@ -251,6 +253,7 @@
 .mediaInfoOfficialRating[rating='M'],                      /* 🇦🇺 Australia / 🇺🇸 US (Legacy) */
 .mediaInfoOfficialRating[rating='AT-10'],                  /* 🇦🇹 Austria */
 .mediaInfoOfficialRating[rating='BR-14'],                  /* 🇧� Brazil */
+.mediaInfoOfficialRating[rating='14'],                     /* 🌍 Generic 14 (bare label) */
 .mediaInfoOfficialRating[rating='BE-14'],                  /* 🇧� Belgium — 14 (Kijkwijzer) */
 .mediaInfoOfficialRating[rating='14+'],                    /* 🇨🇦 Canada */
 .mediaInfoOfficialRating[rating='CA-14+'],                 /* 🇨🇦 Canada */
@@ -273,6 +276,7 @@
 .mediaInfoOfficialRating[rating='IN-UA-13'],               /* 🇮🇳 India — UA 13+ */
 .mediaInfoOfficialRating[rating='IN-U/A 13+'],             /* 🇮🇳 India — U/A 13+ (CBFC format) */
 .mediaInfoOfficialRating[rating='IN-UA 13+'],              /* 🇮🇳 India — UA 13+ (alternate spacing) */
+.mediaInfoOfficialRating[rating='U/A 13+'],                /* 🇮🇳 India — U/A 13+ (bare CBFC format) */
 .mediaInfoOfficialRating[rating='ID-13+'],                 /* 🇮🇩 Indonesia */
 .mediaInfoOfficialRating[rating='IE-15A'],                 /* 🇮🇪 Ireland */
 .mediaInfoOfficialRating[rating='IE-15'],                  /* 🇮🇪 Ireland */
@@ -349,6 +353,7 @@
 .mediaInfoOfficialRating[rating='PT-M/16'],                /* 🇵🇹 Portugal */
 .mediaInfoOfficialRating[rating='RU-16+'],                 /* 🇷🇺 Russia */
 .mediaInfoOfficialRating[rating='SG-NC16'],                /* 🇸🇬 Singapore */
+.mediaInfoOfficialRating[rating='NC16'],                   /* 🇸🇬 Singapore — NC16 (bare label) */
 .mediaInfoOfficialRating[rating='ZA-13'],                  /* 🇿🇦 South Africa */
 .mediaInfoOfficialRating[rating='ES-16'],                  /* 🇪🇸 Spain */
 .mediaInfoOfficialRating[rating='SE-15'],                  /* 🇸🇪 Sweden */
