@@ -339,6 +339,7 @@
 
     let isProcessing = false;
     let observer = null;
+    let lifecycle = null;
     let debounceTimer = null;
 
     function updateActivityIcons() {
@@ -433,6 +434,10 @@
             observer.unsubscribe();
             observer = null;
         }
+        if (lifecycle) {
+            lifecycle.teardown();
+            lifecycle = null;
+        }
     }
 
     function initialize() {
@@ -441,14 +446,19 @@
         updateActivityIcons();
         startMonitoring();
 
-        // Re-process icons when navigating to activity page or configuration page
-        window.addEventListener('hashchange', (event) => {
+        // Re-process icons when navigating to activity page or configuration
+        // page. Uses the shared deduplicated navigation pipeline (covers
+        // hashchange, popstate and pushState navs) and is tracked through a
+        // lifecycle handle so stopMonitoring() removes it.
+        const JE = window.JellyfinEnhanced;
+        lifecycle = JE.core.lifecycle.register('colored-activity-icons');
+        lifecycle.track(JE.core.navigation.onNavigate(() => {
             const hash = window.location.hash;
             if (hash.includes('#/dashboard/activity') || hash.includes('#/configurationpage')) {
                 // Use a longer timeout to ensure page is rendered
                 setTimeout(updateActivityIcons, 300);
             }
-        });
+        }));
     }
 
     if (window.JellyfinEnhanced) {

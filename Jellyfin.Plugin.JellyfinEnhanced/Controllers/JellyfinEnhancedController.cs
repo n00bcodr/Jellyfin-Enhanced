@@ -3903,7 +3903,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // Lets an admin see what other users have hidden, surfaced as a read-only user filter on
         // the Hidden Content page/tab. Both endpoints are admin-gated server-side via IsAdminUser()
         // and never mutate another user's data — the client `isAdmin` flag is a UX convenience only,
-        // never the security boundary. See js/enhanced/hidden-content-page.js for the consuming UI.
+        // never the security boundary. See js/enhanced/hiddencontent/hidden-content-page-*.js for the consuming UI.
 
         /// <summary>
         /// Admin-only: lists users who have hidden at least one item, together with their
@@ -5286,7 +5286,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         // Widens an existing HC scope to also cover a new targetScope (continuewatching|nextup)
         // hide without ever narrowing the user's earlier intent. Mirrors the client-side
-        // mergeCwScope in hidden-content.js: global/homesections stay; same scope stays; the
+        // mergeCwScope in js/enhanced/hiddencontent/hidden-content-data.js: global/homesections stay; same scope stays; the
         // other home surface (or any unknown value) composes up to homesections.
         private static string MergeHomeScope(string existing, string targetScope)
         {

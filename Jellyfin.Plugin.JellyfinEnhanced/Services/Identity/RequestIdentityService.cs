@@ -70,7 +70,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     public sealed class RequestIdentityService
     {
         // Per-browser identity cookie the web client sets on load (see
-        // js/enhanced/spoiler-blur.js). Browsers attach it to every
+        // js/enhanced/spoilerguard/). Browsers attach it to every
         // same-origin request INCLUDING anonymous <img>/CSS-background image
         // fetches, which carry no other user identity on Jellyfin 12 (the
         // image endpoint ignores legacy token params, and <img> tags can't

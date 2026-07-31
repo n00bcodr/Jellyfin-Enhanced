@@ -1901,7 +1901,7 @@ body.je-hide-descriptions .je-timing-test-row {
 }
 
 /* Full-screen preview of the shortcuts panel autoclose timing — card styled
-   to match the real panel in js/enhanced/ui.js: solid rgb(24,24,24) bg,
+   to match the real panel in js/enhanced/settingspanel/: solid rgb(24,24,24) bg,
    subtle white border, 16px radius, centered on screen, backdrop blur. */
 .je-preview-panel-overlay {
     position: fixed;
@@ -1953,7 +1953,7 @@ body.je-hide-descriptions .je-timing-test-row {
     justify-content: flex-end;
 }
 
-/* Bottom-right toast preview — mirrors the real JE.toast() in js/enhanced/ui.js:
+/* Bottom-right toast preview — mirrors the real JE.toast() in js/core/ui-kit.js:
    same position, dark gradient bg, accent border, backdrop blur, and
    slide-in-from-right transition (not a keyframe animation). */
 .je-preview-toast {

@@ -20,64 +20,15 @@
     const OVERRIDE_RULES_TTL = 5 * 60 * 1000; // 5 minutes
 
     /**
-     * Internal fetch helper using request manager when available.
-     * Falls back to ApiClient.ajax for compatibility.
+     * Internal fetch helper — delegates to the shared core API client, which
+     * owns the auth headers, retry/backoff, in-flight dedup, response cache
+     * and concurrency limiting (formerly duplicated here).
      * @param {string} url - The fully-qualified URL to fetch.
      * @param {object} [options] - Optional settings (signal, skipCache, skipRetry, cacheKey).
      * @returns {Promise<any>} - The parsed JSON response.
      */
     async function managedFetch(url, options = {}) {
-        const { signal, skipCache = false, skipRetry = false, cacheKey } = options;
-
-        // Use request manager if available
-        if (JE.requestManager) {
-            // Check cache first
-            if (!skipCache && cacheKey) {
-                const cached = JE.requestManager.getCached(cacheKey);
-                if (cached) return cached;
-            }
-
-            const fetchFn = async () => {
-                const response = await JE.requestManager.fetchWithRetry(
-                    url,
-                    {
-                        method: 'GET',
-                        headers: {
-                            'X-Jellyfin-User-Id': ApiClient.getCurrentUserId(),
-                            // Jellyfin 12 authenticates from the Authorization header; the
-                            // legacy X-Emby-Token is kept for 10.11 back-compat.
-                            'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
-                            'X-Emby-Token': ApiClient.accessToken(),
-                            'Accept': 'application/json'
-                        },
-                        signal
-                    },
-                    skipRetry ? { ...JE.requestManager.CONFIG.retry, maxAttempts: 1 } : undefined
-                );
-                const data = await response.json();
-
-                // Cache the response
-                if (cacheKey) {
-                    JE.requestManager.setCache(cacheKey, data);
-                }
-                return data;
-            };
-
-            // Use concurrency limit and deduplication
-            return JE.requestManager.withConcurrencyLimit(() =>
-                cacheKey
-                    ? JE.requestManager.deduplicatedFetch(cacheKey, fetchFn)
-                    : fetchFn()
-            );
-        }
-
-        // Fallback to ApiClient.ajax (no request manager)
-        return ApiClient.ajax({
-            type: 'GET',
-            url: url,
-            headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
-            dataType: 'json'
-        });
+        return JE.core.api.fetch(url, options);
     }
 
     /**
@@ -111,40 +62,8 @@
      * @returns {Promise<any>} - The server's response.
      */
     async function post(path, body) {
-        const url = ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr${path}`);
-
-        if (JE.requestManager) {
-            const fetchFn = async () => {
-                const response = await JE.requestManager.fetchWithRetry(
-                    url,
-                    {
-                        method: 'POST',
-                        headers: {
-                            'X-Jellyfin-User-Id': ApiClient.getCurrentUserId(),
-                            // Jellyfin 12 authenticates from the Authorization header; the
-                            // legacy X-Emby-Token is kept for 10.11 back-compat.
-                            'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
-                            'X-Emby-Token': ApiClient.accessToken(),
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        },
-                        body: JSON.stringify(body)
-                    },
-                    { ...JE.requestManager.CONFIG.retry, maxAttempts: 1 }
-                );
-                const text = await response.text();
-                return text ? JSON.parse(text) : {};
-            };
-            return JE.requestManager.withConcurrencyLimit(fetchFn);
-        }
-
-        return ApiClient.ajax({
-            type: 'POST',
-            url: url,
-            data: JSON.stringify(body),
-            contentType: 'application/json',
-            headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() }
-        });
+        // skipRetry: POSTs are not idempotent — never auto-retry them.
+        return JE.core.api.plugin(`/jellyseerr${path}`, { method: 'POST', body, skipRetry: true });
     }
 
     /**

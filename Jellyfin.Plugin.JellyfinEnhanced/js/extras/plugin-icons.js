@@ -26,6 +26,7 @@
 
     let isProcessing = false;
     let observer = null;
+    let lifecycle = null;
     let customPluginsCache = null;
     let lastProcessedPluginsCount = 0;
 
@@ -328,24 +329,32 @@
         if (debounceTimer) {
             clearTimeout(debounceTimer);
         }
+        if (lifecycle) {
+            lifecycle.teardown();
+            lifecycle = null;
+        }
     }
 
-    // Handle page navigation
-    function setupHashChangeListener() {
-        window.addEventListener('hashchange', () => {
+    // Handle page navigation via the shared deduplicated pipeline (covers
+    // hashchange, popstate and pushState navs). Tracked through a lifecycle
+    // handle so stopMonitoring() can remove it.
+    function setupNavigationListener() {
+        const JE = window.JellyfinEnhanced;
+        lifecycle = JE.core.lifecycle.register('plugin-icons');
+        lifecycle.track(JE.core.navigation.onNavigate(() => {
             const hash = window.location.hash;
             // Process plugin icons when navigating to dashboard, settings, or configuration pages
             if (hash.includes('#/dashboard') || hash.includes('#/settings') || hash.includes('#/configurationpage')) {
                 clearTimeout(debounceTimer);
                 debounceTimer = setTimeout(processPluginIcons, 300);
             }
-        });
+        }));
     }
 
     async function initialize() {
         // Inject CSS for Material Icons
         injectCSS();
-        setupHashChangeListener();
+        setupNavigationListener();
 
         // Wait for ApiClient to be available
         let retries = 0;

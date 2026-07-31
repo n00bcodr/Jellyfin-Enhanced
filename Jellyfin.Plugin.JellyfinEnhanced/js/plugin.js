@@ -4,6 +4,9 @@
 
     // Create the global namespace immediately with placeholders
     window.JellyfinEnhanced = {
+        // Shared core layer, populated by js/core/*.js (navigation, lifecycle,
+        // dom, api, ui). Created here so core modules can attach to it.
+        core: {},
         pluginConfig: {},
         userConfig: { settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } },
         translations: {},
@@ -80,6 +83,8 @@
         },
         /**
          * Escapes HTML special characters to prevent XSS when interpolating into HTML strings.
+         * Bootstrap copy only — replaced by the canonical JE.core.ui.escapeHtml
+         * as soon as js/core/ui-kit.js loads.
          * @param {string} str - The value to escape.
          * @returns {string} The escaped string safe for HTML interpolation.
          */
@@ -288,11 +293,10 @@
         const promises = scripts.map(scriptName => {
             return new Promise((resolve) => { // Always resolve so one failure doesn't stop others
                 const script = document.createElement('script');
-                // Dynamically-inserted scripts default to async=true and execute in
-                // network-arrival order. The module list is dependency-ordered (e.g.
-                // seerr-status.js before more-info-modal.js, which dereferences
-                // JE.seerrStatus at its top level), so force in-order execution;
-                // downloads still happen in parallel.
+                // Dynamically-inserted scripts are async by default (execute in
+                // arrival order). async=false keeps parallel download but forces
+                // execution in array order, so js/core/* is guaranteed to run
+                // before every module that depends on it.
                 script.async = false;
                 script.src = ApiClient.getUrl(`${basePath}/${scriptName}?v=${getScriptVersion()}`);
                 script.onload = () => {
@@ -586,26 +590,105 @@
             // Stage 3: Load ALL component scripts
             const basePath = '/JellyfinEnhanced/js';
             const allComponentScripts = [
+                // core — MUST load first: owns navigation detection, the
+                // lifecycle registry, the shared body observer, the fetch
+                // layer and base UI primitives that everything else builds on.
+                'core/navigation.js',
+                'core/lifecycle.js',
+                'core/dom-observer.js',
+                'core/ui-kit.js',
+                'core/api-client.js',
+                'core/tag-renderer-base.js',
+
                 // enhanced
                 'enhanced/config.js',
                 'enhanced/helpers.js',
                 'enhanced/native-tabs.js',
-                'enhanced/tag-pipeline.js',
+                'tags/tag-pipeline.js',
                 'enhanced/icons.js',
-                'enhanced/features.js',
+                // Spoiler Guard modules. Dependency order is maintained by hand —
+                // nothing validates this array, and a module placed before one
+                // whose exports it reads at load time binds `undefined` silently.
+                // index.js publishes the public JE.spoilerBlur facade only after
+                // every implementation piece.
+                'enhanced/spoilerguard/ids.js',
+                'enhanced/spoilerguard/state.js',
+                'enhanced/spoilerguard/image-refresh.js',
+                'enhanced/spoilerguard/snooze.js',
+                'enhanced/spoilerguard/dialog.js',
+                'enhanced/spoilerguard/identity.js',
+                'enhanced/spoilerguard/styles.js',
+                'enhanced/spoilerguard/settings-tab.js',
+                'enhanced/spoilerguard/seerr-toggle.js',
+                'enhanced/spoilerguard/detail-button.js',
+                'enhanced/spoilerguard/watched-refresh.js',
+                'enhanced/spoilerguard/index.js',
+                // features modules — order matters: -details-media-info.js and
+                // -release-dates.js publish the chip renderers that
+                // -details-page.js consumes via JE.internals.features, and
+                // -remove-home.js publishes the action-sheet/remove helpers
+                // that -remove-multiselect.js consumes.
+                'enhanced/features-random-button.js',
+                'enhanced/itemdetails/features-details-media-info.js',
+                'enhanced/itemdetails/features-release-dates.js',
+                'enhanced/itemdetails/features-details-page.js',
+                'enhanced/homeremoval/features-remove-home.js',
+                'enhanced/homeremoval/features-remove-multiselect.js',
                 'enhanced/events.js',
-                'enhanced/playback.js',
-                'enhanced/hidden-content.js',
-                'enhanced/hidden-content-page.js',
-                'enhanced/hidden-content-custom-tab.js',
-                'enhanced/spoiler-blur.js',
-                'enhanced/subtitles.js',
+                'enhanced/player/playback.js',
+                // hidden-content modules — order matters: -data.js owns the
+                // store + lookup sets that the later files consume via
+                // JE.internals.hiddenContent; -init.js exposes the frozen
+                // JE.initializeHiddenContent / JE.hiddenContent surface last.
+                'enhanced/hiddencontent/hidden-content-data.js',
+                'enhanced/hiddencontent/hidden-content-save.js',
+                'enhanced/hiddencontent/hidden-content-styles.js',
+                'enhanced/hiddencontent/hidden-content-dialogs.js',
+                'enhanced/hiddencontent/hidden-content-panel.js',
+                'enhanced/hiddencontent/hidden-content-filter.js',
+                'enhanced/hiddencontent/hidden-content-buttons.js',
+                'enhanced/hiddencontent/hidden-content-init.js',
+                // hidden-content-page modules — order matters: -state.js owns
+                // the shared page state read by the later files via
+                // JE.internals.hiddenContentPage; -init.js exposes the frozen
+                // JE.hiddenContentPage / JE.initializeHiddenContentPage last.
+                'enhanced/hiddencontent/hidden-content-page-state.js',
+                'enhanced/hiddencontent/hidden-content-page-styles.js',
+                'enhanced/hiddencontent/hidden-content-page-admin.js',
+                'enhanced/hiddencontent/hidden-content-page-cards.js',
+                'enhanced/hiddencontent/hidden-content-page-render.js',
+                'enhanced/hiddencontent/hidden-content-page-nav.js',
+                'enhanced/hiddencontent/hidden-content-page-init.js',
+                'enhanced/hiddencontent/hidden-content-custom-tab.js',
+                'enhanced/player/subtitles.js',
                 'enhanced/themer.js',
-                'enhanced/ui.js',
-                'enhanced/bookmarks.js',
-                'enhanced/bookmarks-library.js',
-                'enhanced/osd-rating.js',
-                'enhanced/pausescreen.js',
+                // ui modules — order matters: -release-notes.js publishes
+                // GITHUB_REPO + the release-notes panel that the template and
+                // settings wiring consume via JE.internals.enhancedUi;
+                // ui-panel.js hosts JE.showEnhancedPanel and orchestrates the
+                // buildPanelHtml/wire* pieces last.
+                'enhanced/ui-styles.js',
+                'enhanced/settingspanel/ui-entry-points.js',
+                'enhanced/settingspanel/ui-release-notes.js',
+                'enhanced/settingspanel/ui-panel-template.js',
+                'enhanced/settingspanel/ui-panel-shortcut-editor.js',
+                'enhanced/settingspanel/ui-panel-settings.js',
+                'enhanced/settingspanel/ui-panel-hidden-content.js',
+                'enhanced/settingspanel/ui-panel-language.js',
+                'enhanced/settingspanel/ui-panel.js',
+                'enhanced/bookmarks/bookmarks.js',
+                // bookmarks-library modules — order matters: styles/page/render
+                // publish JE.internals.bookmarksLibrary pieces that the later
+                // files consume; -init.js boots last.
+                'enhanced/bookmarks/bookmarks-library-styles.js',
+                'enhanced/bookmarks/bookmarks-library-page.js',
+                'enhanced/bookmarks/bookmarks-library-render.js',
+                'enhanced/bookmarks/bookmarks-library-items.js',
+                'enhanced/bookmarks/bookmarks-library-modals.js',
+                'enhanced/bookmarks/bookmarks-library-replacements.js',
+                'enhanced/bookmarks/bookmarks-library-init.js',
+                'enhanced/player/osd-rating.js',
+                'enhanced/player/pausescreen.js',
 
                 // elsewhere
                 'elsewhere/elsewhere.js',
@@ -616,22 +699,45 @@
                 'jellyseerr/request-manager.js',
                 'jellyseerr/api.js',
                 'jellyseerr/jellyseerr.js',
-                'jellyseerr/ui.js',
+                'jellyseerr/ui/ui-icons.js',
+                'jellyseerr/ui/ui-styles.js',
+                'jellyseerr/ui/ui-popover.js',
+                'jellyseerr/ui/ui-badges.js',
+                'jellyseerr/ui/ui-cards.js',
+                'jellyseerr/ui/ui-buttons.js',
+                'jellyseerr/ui/ui-quota.js',
+                'jellyseerr/ui/ui-results.js',
+                'jellyseerr/ui/ui-request-modals.js',
+                'jellyseerr/ui/ui-season-modal.js',
                 'jellyseerr/modal.js',
-                'jellyseerr/more-info-modal.js',
+                'jellyseerr/moreinfo/more-info-modal-styles.js',
+                'jellyseerr/moreinfo/more-info-modal-data.js',
+                'jellyseerr/moreinfo/more-info-modal-seasons.js',
+                'jellyseerr/moreinfo/more-info-modal-badges.js',
+                'jellyseerr/moreinfo/more-info-modal-render.js',
+                'jellyseerr/moreinfo/more-info-modal-actions-tv.js',
+                'jellyseerr/moreinfo/more-info-modal-actions.js',
+                'jellyseerr/moreinfo/more-info-modal-init.js',
                 'jellyseerr/seerr-detail-link.js',
                 'jellyseerr/hss-discovery-handler.js',
                 'jellyseerr/item-details.js',
                 'jellyseerr/issue-reporter.js',
                 'jellyseerr/seamless-scroll.js',
-                'jellyseerr/discovery-filter-utils.js',
-                'jellyseerr/network-discovery.js',
-                'jellyseerr/person-discovery.js',
-                'jellyseerr/genre-discovery.js',
-                'jellyseerr/tag-discovery.js',
-                'jellyseerr/collection-discovery.js',
-                'jellyseerr/recommendations.js',
-                'jellyseerr/recommendations-custom-tab.js',
+                'jellyseerr/discovery/discovery-filter-utils.js',
+                'jellyseerr/discovery/discovery-base.js',
+                'jellyseerr/discovery/network-discovery.js',
+                'jellyseerr/discovery/person-discovery.js',
+                'jellyseerr/discovery/genre-discovery.js',
+                'jellyseerr/discovery/tag-discovery.js',
+                'jellyseerr/discovery/collection-discovery.js',
+                'jellyseerr/recommendations/recommendations-styles.js',
+                'jellyseerr/recommendations/recommendations-catalog.js',
+                'jellyseerr/recommendations/recommendations-data.js',
+                'jellyseerr/recommendations/recommendations-render.js',
+                'jellyseerr/recommendations/recommendations-page.js',
+                'jellyseerr/recommendations/recommendations-category.js',
+                'jellyseerr/recommendations/recommendations-init.js',
+                'jellyseerr/recommendations/recommendations-custom-tab.js',
 
                 // tags
                 'tags/genretags.js',
@@ -644,10 +750,21 @@
                 // arr
                 'arr/arr-links.js',
                 'arr/arr-tag-links.js',
-                'arr/requests-page.js',
-                'arr/calendar-page.js',
-                'arr/requests-custom-tab.js',
-                'arr/calendar-custom-tab.js',
+                'arr/requests/requests-page-styles.js',
+                'arr/requests/requests-page-data.js',
+                'arr/requests/requests-page-render-helpers.js',
+                'arr/requests/requests-page-render-cards.js',
+                'arr/requests/requests-page-render.js',
+                'arr/requests/requests-page-actions.js',
+                'arr/requests/requests-page-init.js',
+                'arr/calendar/calendar-page-styles.js',
+                'arr/calendar/calendar-page-data.js',
+                'arr/calendar/calendar-page-render-events.js',
+                'arr/calendar/calendar-page-render-views.js',
+                'arr/calendar/calendar-page-actions.js',
+                'arr/calendar/calendar-page-init.js',
+                'arr/requests/requests-custom-tab.js',
+                'arr/calendar/calendar-custom-tab.js',
 
                 // extras
                 'extras/colored-activity-icons.js',
@@ -754,6 +871,11 @@
             }
 
             console.log('🪼 Jellyfin Enhanced: All components initialized successfully.');
+
+            // Programmatic boot-complete marker: every component script has executed
+            // and every enabled initializeX() has run. Automation (E2E) waits on this
+            // instead of racing individual JE.* properties that appear mid-boot.
+            JE.initialized = true;
 
             // Final Stage: Hide splash screen
             if (typeof JE.hideSplashScreen === 'function') {

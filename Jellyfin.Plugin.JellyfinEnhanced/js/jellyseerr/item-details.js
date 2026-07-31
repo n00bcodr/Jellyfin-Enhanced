@@ -5,7 +5,7 @@
 (function(JE) {
     'use strict';
 
-    const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr Recommendations:';
+    const logPrefix = '🪼 Jellyfin Enhanced: Seerr Item Details:';
     const requestMoreLogPrefix = '🪼 Jellyfin Enhanced: Series Request More:';
 
     // Track processed items to avoid duplicate renders
@@ -499,7 +499,7 @@
      * Waits for `JE.jellyseerrMoreInfo.checkForUnrequestedSeasons` to become
      * available. The Jellyseerr modules are loaded in parallel by plugin.js
      * via dynamically-inserted <script> tags, so on a cold page load
-     * item-details.js may execute before more-info-modal.js has finished
+     * item-details.js may execute before moreinfo/more-info-modal-init.js has finished
      * parsing and attached its API. The checker is required for deciding
      * whether to render the Request More button.
      * @param {AbortSignal} [signal]
@@ -517,7 +517,7 @@
 
     /**
      * Builds the Request More button DOM. Reuses the .jellyseerr-request-button
-     * styling already injected by ui.js so visuals match the rest of Seerr UI.
+     * styling injected by ui/ui-styles.js so visuals match the rest of Seerr UI.
      * Uses textContent / DOM construction (no innerHTML) for safety.
      * @param {object} tvDetails - TV show details from Seerr
      * @returns {HTMLButtonElement}
@@ -572,7 +572,7 @@
     /**
      * Renders a "Request More" button next to the Seasons section heading on
      * a Series detail page when the show has unrequested seasons in Seerr.
-     * Reuses checkForUnrequestedSeasons from more-info-modal.js so the
+     * Reuses checkForUnrequestedSeasons from moreinfo/more-info-modal-init.js so the
      * detection logic stays in one place.
      * @param {string} itemId - Jellyfin item ID
      */
@@ -604,7 +604,7 @@
 
             // Wait for the checker to become available — the Jellyseerr
             // modules load in parallel via dynamically-inserted <script>
-            // tags, so more-info-modal.js may still be parsing when we get
+            // tags, so moreinfo/more-info-modal-init.js may still be parsing when we get
             // here on a cold load. Polling up to 3s avoids a one-shot race
             // where the button would otherwise never appear until the user
             // navigates away and back.
@@ -727,19 +727,20 @@
         console.debug(`${logPrefix} Initializing Recommendations and Similar sections`);
         injectRequestMoreStyles();
 
-        // Listen for hash changes (navigation)
-        window.addEventListener('hashchange', () => {
-            cleanup();
-            handleItemDetailsPage();
-        });
+        // Lifecycle: run cleanup() on EVERY navigation — hashchange, popstate
+        // AND the pushState transitions the old raw hashchange listener
+        // missed. Teardown wiring is registered first so cleanup always runs
+        // before handleItemDetailsPage on a navigation.
+        const lifecycle = JE.core.lifecycle.register('jellyseerr-item-details');
+        lifecycle.onTeardown(cleanup);
+        lifecycle.teardownOn('navigate');
+        JE.core.navigation.onNavigate(() => handleItemDetailsPage());
 
         // Check current page on load
         handleItemDetailsPage();
 
-        // Also listen for viewshow events (Jellyfin's custom event)
-        document.addEventListener('viewshow', () => {
-            handleItemDetailsPage();
-        });
+        // Also react to view shows (Jellyfin's custom viewshow event)
+        JE.core.navigation.onViewPage(() => handleItemDetailsPage());
     }
 
     // Initialize when DOM is ready
