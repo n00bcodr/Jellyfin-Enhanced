@@ -1,5 +1,5 @@
 {
-    "toast_search": "{{icon:search}} Buscar",
+    "toast_search": "{{icon:search}} Cercar",
     "toast_home": "{{icon:home}} Inici",
     "toast_dashboard": "{{icon:dashboard}} Panell",
     "toast_random_item_loaded": "{{icon:random}} Element aleatori cargat",
