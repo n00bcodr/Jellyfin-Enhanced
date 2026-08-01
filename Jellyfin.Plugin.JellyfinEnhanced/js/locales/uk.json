@@ -618,5 +618,13 @@
     "recommendations_upcoming_movies": "Скоро вийдуть",
     "recommendations_popular_movies": "Популярні фільми",
     "recommendations_networks": "Медіамережі",
-    "recommendations_trending": "В Тренді"
+    "recommendations_trending": "В Тренді",
+    "downloads_history_partial_summary": "{imported}/{total} episodes imported",
+    "downloads_history_imported": "Imported",
+    "downloads_history_failed": "Import Failed",
+    "requests_history": "History",
+    "requests_no_history_found": "No history found",
+    "downloads_history_partial": "Partially Imported",
+    "panel_search_placeholder": "Search settings…",
+    "panel_about_title": "About"
 }

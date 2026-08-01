@@ -624,5 +624,7 @@
     "downloads_history_failed": "Import Failed",
     "requests_history": "History",
     "requests_no_history_found": "No history found",
-    "downloads_history_partial": "Partially Imported"
+    "downloads_history_partial": "Partially Imported",
+    "panel_search_placeholder": "Search settings…",
+    "panel_about_title": "About"
 }
