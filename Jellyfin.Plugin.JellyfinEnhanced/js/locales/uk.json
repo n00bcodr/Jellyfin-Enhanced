@@ -609,14 +609,14 @@
     "jellyseerr_report_issue_submitting": "Надсилання…",
     "jellyseerr_season_status_processing": "Обробка",
     "jellyseerr_toast_collection_requested": "Запит подано",
-    "recommendations_upcoming_tv": "Upcoming TV Shows",
+    "recommendations_upcoming_tv": "Скоро вийдуть",
     "recommendations_studios": "Studios",
-    "recommendations_popular_tv": "Popular TV Shows",
-    "recommendations_loading": "Loading recommendations…",
-    "recommendations_title": "Seerr Recommendations",
-    "recommendations_empty": "No recommendations available right now.",
-    "recommendations_upcoming_movies": "Upcoming Movies",
+    "recommendations_popular_tv": "Популярні серіали",
+    "recommendations_loading": "Завантаження рекомендацій…",
+    "recommendations_title": "Рекомендації Seerr",
+    "recommendations_empty": "Зараз рекомендації відсутні.",
+    "recommendations_upcoming_movies": "Скоро вийдуть",
     "recommendations_popular_movies": "Popular Movies",
-    "recommendations_networks": "Networks",
-    "recommendations_trending": "Trending"
+    "recommendations_networks": "Медіамережі",
+    "recommendations_trending": "В Тренді"
 }
