@@ -407,6 +407,24 @@
      * @param {string} selector
      * @returns {string}
      */
+    /** In-flight menu open, so repeated presses cannot stack sheets. @type {Promise|null} */
+    let pendingMenuOpen = null;
+
+    /**
+     * Clicks an element the way the video OSD expects. On Firefox/Edge the OSD installs a
+     * document capture-phase guard that cancels any click whose target does not contain its
+     * `clickedElement`, which a bare programmatic .click() after a keypress fails. Sending
+     * pointerdown first makes the element the clickedElement. JE.skipIntroOutro above already
+     * uses this pattern for the same reason.
+     * @param {HTMLElement} el
+     */
+    function activate(el) {
+        if (typeof PointerEvent === 'function') {
+            el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        }
+        el.click();
+    }
+
     function osdButtonTitle(selector) {
         const btn = document.querySelector(selector);
         return ((btn && (btn.getAttribute('title') || btn.title)) || '').trim();
@@ -417,7 +435,12 @@
      * @returns {boolean} True when the element is actually rendered (not a dismissed sheet).
      */
     function isRendered(el) {
-        return !!el && /** @type {HTMLElement} */ (el).offsetParent !== null;
+        if (!el) return false;
+        const h = /** @type {HTMLElement} */ (el);
+        // Not offsetParent: actionSheet sets position:fixed on the sheet, so offsetParent is
+        // null unless .dialogContainer happens to carry `contain: strict`. Depending on that
+        // CSS would silently disable both the reuse fast path and closing if it ever changed.
+        return !!(h.offsetWidth || h.offsetHeight || h.getClientRects().length);
     }
 
     /**
@@ -441,10 +464,22 @@
      * `e.target === dialogContainer` and `e.target == clickedElement` hold.
      * @returns {boolean} True when a close was attempted.
      */
-    function closeOpenActionSheet() {
-        const sheet = Array.from(document.querySelectorAll('.actionSheet')).find(isRendered);
-        const container = sheet && sheet.closest('.dialogContainer');
+    function closeActionSheet(target) {
+        let container = target || null;
+        if (!container) {
+            const sheet = Array.from(document.querySelectorAll('.actionSheet')).find(isRendered);
+            container = sheet && sheet.closest('.dialogContainer');
+        }
         if (!container) return false;
+        // pointerdown FIRST. On Firefox/Edge the video OSD installs a document capture-phase
+        // click guard that cancels any click whose target does not contain its `clickedElement`
+        // (video/index.js onClickCapture). That variable is refreshed by keydown and by
+        // pointerdown — not by mousedown — so a bare mousedown+click is still swallowed and the
+        // sheet never closes. Dispatching pointerdown on the container makes it the
+        // clickedElement, after which dialogHelper's own mousedown+click guards both pass.
+        if (typeof PointerEvent === 'function') {
+            container.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: window }));
+        }
         ['mousedown', 'click'].forEach(type => {
             container.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
         });
@@ -457,17 +492,26 @@
      * @param {string} buttonSelector
      * @returns {Promise<Element|null>} The new sheet's container, or null if none appeared.
      */
-    function openOsdMenu(buttonSelector) {
+    function openOsdMenu(buttonSelector, expectedTitle) {
         const before = new Set(document.querySelectorAll('.dialogContainer'));
         const btn = /** @type {HTMLElement|null} */ (document.querySelector(buttonSelector));
         if (!btn) return Promise.resolve(null);
-        btn.click();
-        // Only a container that did not exist before the click, and that has rendered its
-        // rows, counts — a stale sheet would otherwise satisfy the selector immediately.
+        activate(btn);
+        // Accept only a container that did not exist before the click — a dismissed sheet would
+        // otherwise satisfy the selector immediately. Match on .actionSheetContent rather than a
+        // row: actionSheet sets innerHTML before dialogHelper appends the container, so content
+        // is never half-rendered, and a genuinely EMPTY menu (a video with no audio streams)
+        // must resolve immediately instead of stalling until the timeout. Also require the title
+        // to be the menu we asked for, so a sheet opened concurrently elsewhere is not adopted.
         return JE.core.dom.waitForElement('.dialogContainer', {
             timeout: 3000,
             quiet: true,
-            predicate: (el) => !before.has(el) && !!el.querySelector('.actionSheetMenuItem')
+            predicate: (el) => {
+                if (before.has(el) || !el.querySelector('.actionSheetContent')) return false;
+                if (!expectedTitle) return true;
+                const t = el.querySelector('.actionSheetTitle');
+                return !!t && (t.textContent || '').trim() === expectedTitle;
+            }
         });
     }
 
@@ -485,7 +529,7 @@
 
         if (options.length === 0) {
             JE.toast(JE.t(emptyToastKey));
-            closeOpenActionSheet();
+            closeActionSheet(container);
             return;
         }
 
@@ -496,7 +540,7 @@
 
         const next = options[(currentIndex + 1) % options.length];
         if (!next) return;
-        /** @type {HTMLElement} */ (next).click();
+        activate(/** @type {HTMLElement} */ (next));
         const labelEl = next.querySelector('.listItemBodyText');
         JE.toast(JE.t('toast_' + toastVar, { [toastVar]: ((labelEl && labelEl.textContent) || '').trim() }));
     }
@@ -508,25 +552,36 @@
      * @param {string} toastVar - 'subtitle' | 'audio'
      */
     function cycleTrackMenu(buttonSelector, emptyToastKey, toastVar) {
-        const alreadyOpen = findOpenSheetByTitle(osdButtonTitle(buttonSelector));
+        const title = osdButtonTitle(buttonSelector);
+        const alreadyOpen = findOpenSheetByTitle(title);
         if (alreadyOpen) {
             cycleWithinSheet(alreadyOpen, emptyToastKey, toastVar);
             return;
         }
+        // One open at a time. Without this, a second press before the sheet exists snapshots a
+        // stale `before` set, clicks the button again and leaves an orphan sheet on screen.
+        if (pendingMenuOpen) return;
         // A different sheet may be open (audio while cycling subtitles, or a leftover).
         // Close it first so we never stack two sheets and then read rows from both.
-        closeOpenActionSheet();
-        openOsdMenu(buttonSelector).then(container => {
-            if (!container) {
-                // The menu never opened — distinct from "this item has no tracks", which for
-                // subtitles is not even reachable (Jellyfin always prepends an "Off" row).
-                console.warn(`🪼 Jellyfin Enhanced: ${buttonSelector} menu did not open in time.`);
-                JE.toast(JE.t(emptyToastKey));
-                closeOpenActionSheet();
-                return;
-            }
-            cycleWithinSheet(container, emptyToastKey, toastVar);
-        });
+        closeActionSheet();
+        pendingMenuOpen = openOsdMenu(buttonSelector, title)
+            .then(container => {
+                if (!container) {
+                    if (!document.querySelector(buttonSelector)) {
+                        console.warn(`🪼 Jellyfin Enhanced: ${buttonSelector} is not present; cannot cycle tracks.`);
+                    } else {
+                        console.warn(`🪼 Jellyfin Enhanced: ${buttonSelector} menu did not open in time.`);
+                    }
+                    // Only touch the UI if we are still on the player — the await window is up to
+                    // 3s, in which the user may have navigated away and opened an unrelated sheet.
+                    if (typeof JE.isVideoPage !== 'function' || JE.isVideoPage()) {
+                        JE.toast(JE.t(emptyToastKey));
+                    }
+                    return;
+                }
+                cycleWithinSheet(container, emptyToastKey, toastVar);
+            })
+            .finally(() => { pendingMenuOpen = null; });
     }
 
     /**
