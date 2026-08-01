@@ -370,94 +370,177 @@
         }
     };
 
+    // ── Native OSD track menus ───────────────────────────────────────────────
+    //
+    // Cycling subtitle/audio tracks drives Jellyfin's own action sheet. Doing that
+    // safely needs four things the previous implementation got wrong:
+    //
+    //  * Wait for the sheet, don't guess. It was read 200ms after clicking the OSD
+    //    button, with nothing verifying it had opened. The sheet is built inside a
+    //    dynamic import() of components/actionSheet, so the delay was a bet on how
+    //    fast that resolves. (In practice elements/emby-select statically imports
+    //    actionSheet, so the chunk is usually already loaded — which is why this
+    //    rarely misfires and is hard to reproduce — but a cold deep-link into
+    //    /video, or a slow device, can still lose the race.)
+    //
+    //  * Scope every query to one sheet. dialogHelper only hides a dismissed sheet
+    //    after a 100ms exit animation and removes it later still, so a document-wide
+    //    '.actionSheetContent .listItem' query can read a stale sheet, or two at once.
+    //
+    //  * Close sheets the way dialogHelper expects. document.body.click() is a no-op
+    //    here: the close listener is bound to .dialogContainer (a CHILD of body, so a
+    //    body-dispatched event never reaches it), it requires e.target to BE that
+    //    container, and it also requires a preceding mousedown — HTMLElement.click()
+    //    dispatches only a click.
+    //
+    //  * Never compare against English UI strings. Sheet titles are localized
+    //    ('Untertitel', 'Sous-titres', 字幕). The OSD button's own title attribute
+    //    resolves the *same* translation key, so it is a locale-proof reference. The
+    //    'Secondary Subtitles' row is localized too, which is why rows are now
+    //    identified by their numeric data-id (the stream index) instead of by text —
+    //    otherwise a localized UI can land the cycle on the secondary-subtitle row
+    //    and open that submenu instead of changing the track.
+
+    /**
+     * The localized title of an OSD button — the same translation key the matching
+     * action sheet renders as its title.
+     * @param {string} selector
+     * @returns {string}
+     */
+    function osdButtonTitle(selector) {
+        const btn = document.querySelector(selector);
+        return ((btn && (btn.getAttribute('title') || btn.title)) || '').trim();
+    }
+
+    /**
+     * @param {Element|null} el
+     * @returns {boolean} True when the element is actually rendered (not a dismissed sheet).
+     */
+    function isRendered(el) {
+        return !!el && /** @type {HTMLElement} */ (el).offsetParent !== null;
+    }
+
+    /**
+     * Finds a rendered action sheet whose title matches `title`.
+     * @param {string} title
+     * @returns {Element|null} The sheet's .dialogContainer, or null.
+     */
+    function findOpenSheetByTitle(title) {
+        if (!title) return null;
+        const sheet = Array.from(document.querySelectorAll('.actionSheet')).find(s =>
+            isRendered(s) &&
+            Array.from(s.querySelectorAll('.actionSheetTitle'))
+                .some(t => (t.textContent || '').trim() === title)
+        );
+        return sheet ? (sheet.closest('.dialogContainer') || sheet) : null;
+    }
+
+    /**
+     * Closes the open native action sheet by replaying the outside tap dialogHelper
+     * listens for: mousedown then click, dispatched ON the dialog container so both
+     * `e.target === dialogContainer` and `e.target == clickedElement` hold.
+     * @returns {boolean} True when a close was attempted.
+     */
+    function closeOpenActionSheet() {
+        const sheet = Array.from(document.querySelectorAll('.actionSheet')).find(isRendered);
+        const container = sheet && sheet.closest('.dialogContainer');
+        if (!container) return false;
+        ['mousedown', 'click'].forEach(type => {
+            container.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+        });
+        return true;
+    }
+
+    /**
+     * Clicks an OSD button and resolves with the dialog container of the sheet it opened —
+     * waiting for the sheet to exist rather than assuming a delay.
+     * @param {string} buttonSelector
+     * @returns {Promise<Element|null>} The new sheet's container, or null if none appeared.
+     */
+    function openOsdMenu(buttonSelector) {
+        const before = new Set(document.querySelectorAll('.dialogContainer'));
+        const btn = /** @type {HTMLElement|null} */ (document.querySelector(buttonSelector));
+        if (!btn) return Promise.resolve(null);
+        btn.click();
+        // Only a container that did not exist before the click, and that has rendered its
+        // rows, counts — a stale sheet would otherwise satisfy the selector immediately.
+        return JE.core.dom.waitForElement('.dialogContainer', {
+            timeout: 3000,
+            quiet: true,
+            predicate: (el) => !before.has(el) && !!el.querySelector('.actionSheetMenuItem')
+        });
+    }
+
+    /**
+     * Advances to the next track within one already-resolved sheet.
+     * @param {Element} container - The sheet's .dialogContainer; all queries are scoped to it.
+     * @param {string} emptyToastKey
+     * @param {string} toastVar - 'subtitle' | 'audio'
+     */
+    function cycleWithinSheet(container, emptyToastKey, toastVar) {
+        // Real track rows carry a numeric data-id (the stream index; -1 is "Off").
+        // Non-track rows such as "Secondary Subtitles" do not, so this needs no text match.
+        const options = Array.from(container.querySelectorAll('.actionSheetMenuItem'))
+            .filter(item => /^-?\d+$/.test(item.getAttribute('data-id') || ''));
+
+        if (options.length === 0) {
+            JE.toast(JE.t(emptyToastKey));
+            closeOpenActionSheet();
+            return;
+        }
+
+        const currentIndex = options.findIndex(option => {
+            const check = option.querySelector('.listItemIcon.check');
+            return check && getComputedStyle(check).visibility !== 'hidden';
+        });
+
+        const next = options[(currentIndex + 1) % options.length];
+        if (!next) return;
+        /** @type {HTMLElement} */ (next).click();
+        const labelEl = next.querySelector('.listItemBodyText');
+        JE.toast(JE.t('toast_' + toastVar, { [toastVar]: ((labelEl && labelEl.textContent) || '').trim() }));
+    }
+
+    /**
+     * Opens (or reuses) an OSD track menu and advances to the next track.
+     * @param {string} buttonSelector - The OSD button that opens the menu.
+     * @param {string} emptyToastKey - Toast key for "this menu has no tracks".
+     * @param {string} toastVar - 'subtitle' | 'audio'
+     */
+    function cycleTrackMenu(buttonSelector, emptyToastKey, toastVar) {
+        const alreadyOpen = findOpenSheetByTitle(osdButtonTitle(buttonSelector));
+        if (alreadyOpen) {
+            cycleWithinSheet(alreadyOpen, emptyToastKey, toastVar);
+            return;
+        }
+        // A different sheet may be open (audio while cycling subtitles, or a leftover).
+        // Close it first so we never stack two sheets and then read rows from both.
+        closeOpenActionSheet();
+        openOsdMenu(buttonSelector).then(container => {
+            if (!container) {
+                // The menu never opened — distinct from "this item has no tracks", which for
+                // subtitles is not even reachable (Jellyfin always prepends an "Off" row).
+                console.warn(`🪼 Jellyfin Enhanced: ${buttonSelector} menu did not open in time.`);
+                JE.toast(JE.t(emptyToastKey));
+                closeOpenActionSheet();
+                return;
+            }
+            cycleWithinSheet(container, emptyToastKey, toastVar);
+        });
+    }
+
     /**
      * Cycles through available subtitle tracks in the OSD menu.
      */
     JE.cycleSubtitleTrack = () => {
-        const performCycle = () => {
-            const allItems = document.querySelectorAll('.actionSheetContent .listItem');
-            if (allItems.length === 0) {
-                JE.toast(JE.t('toast_no_subtitles_found'));
-                document.body.click();
-                return;
-            }
-
-            const subtitleOptions = Array.from(allItems).filter(item => {
-                const textElement = item.querySelector('.listItemBodyText');
-                return textElement && textElement.textContent.trim() !== 'Secondary Subtitles';
-            });
-
-            if (subtitleOptions.length === 0) {
-                JE.toast(JE.t('toast_no_subtitles_found'));
-                document.body.click();
-                return;
-            }
-
-            let currentIndex = subtitleOptions.findIndex(option => {
-                const checkIcon = option.querySelector('.listItemIcon.check');
-                return checkIcon && getComputedStyle(checkIcon).visibility !== 'hidden';
-            });
-
-            const nextIndex = (currentIndex + 1) % subtitleOptions.length;
-            const nextOption = subtitleOptions[nextIndex];
-
-            if (nextOption) {
-                nextOption.click();
-                const subtitleName = nextOption.querySelector('.listItemBodyText').textContent.trim();
-                JE.toast(JE.t('toast_subtitle', { subtitle: subtitleName }));
-            }
-        };
-
-        const subtitleMenuTitle = Array.from(document.querySelectorAll('.actionSheetContent .actionSheetTitle')).find(el => el.textContent === 'Subtitles');
-        if (subtitleMenuTitle) {
-            performCycle();
-        } else {
-            if (document.querySelector('.actionSheetContent')) {
-                document.body.click();
-            }
-            document.querySelector('button.btnSubtitles')?.click();
-            setTimeout(performCycle, 200);
-        }
+        cycleTrackMenu('button.btnSubtitles', 'toast_no_subtitles_found', 'subtitle');
     };
 
     /**
      * Cycles through available audio tracks in the OSD menu.
      */
     JE.cycleAudioTrack = () => {
-        const performCycle = () => {
-            const audioOptions = Array.from(document.querySelectorAll('.actionSheetContent .listItem')).filter(item => item.querySelector('.listItemBodyText.actionSheetItemText'));
-
-            if (audioOptions.length === 0) {
-                JE.toast(JE.t('toast_no_audio_tracks_found'));
-                document.body.click();
-                return;
-            }
-
-            let currentIndex = audioOptions.findIndex(option => {
-                const checkIcon = option.querySelector('.actionsheetMenuItemIcon.listItemIcon.check');
-                return checkIcon && getComputedStyle(checkIcon).visibility !== 'hidden';
-            });
-
-            const nextIndex = (currentIndex + 1) % audioOptions.length;
-            const nextOption = audioOptions[nextIndex];
-
-            if (nextOption) {
-                nextOption.click();
-                const audioName = nextOption.querySelector('.listItemBodyText.actionSheetItemText').textContent.trim();
-                JE.toast(JE.t('toast_audio', { audio: audioName }));
-            }
-        };
-
-        const audioMenuTitle = Array.from(document.querySelectorAll('.actionSheetContent .actionSheetTitle')).find(el => el.textContent === 'Audio');
-        if (audioMenuTitle) {
-            performCycle();
-        } else {
-            if (document.querySelector('.actionSheetContent')) {
-                document.body.click();
-            }
-            document.querySelector('button.btnAudio')?.click();
-            setTimeout(performCycle, 200);
-        }
+        cycleTrackMenu('button.btnAudio', 'toast_no_audio_tracks_found', 'audio');
     };
 
     /**
