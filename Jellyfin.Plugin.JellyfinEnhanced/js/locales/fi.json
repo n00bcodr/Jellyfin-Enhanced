@@ -618,5 +618,11 @@
     "recommendations_upcoming_movies": "Upcoming Movies",
     "recommendations_popular_movies": "Popular Movies",
     "recommendations_networks": "Networks",
-    "recommendations_trending": "Trending"
+    "recommendations_trending": "Trending",
+    "downloads_history_partial_summary": "{imported}/{total} episodes imported",
+    "downloads_history_imported": "Imported",
+    "downloads_history_failed": "Import Failed",
+    "requests_history": "History",
+    "requests_no_history_found": "No history found",
+    "downloads_history_partial": "Partially Imported"
 }
