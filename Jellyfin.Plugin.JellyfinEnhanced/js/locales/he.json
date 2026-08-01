@@ -117,7 +117,7 @@
     "reviews_form_error_empty": "Please add a rating or write a review before saving.",
     "jellyseerr_report_issue_button": "Report issue",
     "panel_settings_long_press_2x_speed": "לחיצה ארוכה למהירות 2x (β)",
-    "toast_speed": "{{icon:speed}} מהירות: {speed}x",
+    "toast_speed": "ארכיון תגיות: Speed מהירות: {speed}x",
     "calendar_agenda": "Agenda",
     "panel_settings_random_button_enable": "Enable Random Button",
     "bookmark_count": "{count} bookmark(s)",
