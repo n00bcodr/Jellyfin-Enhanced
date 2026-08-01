@@ -608,5 +608,15 @@
     "panel_settings_spoiler_guard_override_series_overview": "TV show descriptions",
     "panel_settings_spoiler_guard_override_series_overview_desc": "Uncheck to see the original show synopsis instead of the placeholder.",
     "panel_shortcuts_disabled": "Disabled",
-    "jellyseerr_modal_requested_by": "Requested by"
+    "jellyseerr_modal_requested_by": "Requested by",
+    "recommendations_upcoming_tv": "Upcoming TV Shows",
+    "recommendations_studios": "Studios",
+    "recommendations_popular_tv": "Popular TV Shows",
+    "recommendations_loading": "Loading recommendations…",
+    "recommendations_title": "Seerr Recommendations",
+    "recommendations_empty": "No recommendations available right now.",
+    "recommendations_upcoming_movies": "Upcoming Movies",
+    "recommendations_popular_movies": "Popular Movies",
+    "recommendations_networks": "Networks",
+    "recommendations_trending": "Trending"
 }
