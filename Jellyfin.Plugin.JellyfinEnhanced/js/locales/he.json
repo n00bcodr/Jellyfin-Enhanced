@@ -260,6 +260,7 @@
     "panel_settings_spoiler_guard_override_reviews_desc": "בטלו סימון כדי לראות את חלונית ביקורות TMDB / המשתמשים בדפי סדרות.",
     "panel_settings_spoiler_guard_skip_confirm": "אל תבקש ממני אישור בעת כיבוי מגן הספוילרים",
     "panel_settings_spoiler_guard_skip_confirm_desc": "דילוג על דיאלוג אישור הכיבוי. חוסך לחיצה בעת כיבוי מגן הספוילרים עבור סדרה.",
+    "panel_settings_subtitles_format_warning": "הסגנונות האלה לא עובדים עם פורמט הכתוביות של הסרטון הנוכחי.",
     "panel_settings_disable_custom_styles": "Disable Custom Styles",
     "hidden_content_add_back_to_cw": "Add back to Continue Watching",
     "feature_auto_skip_outro": "{{icon:skip}} דלג אוטומטית על הסיום",

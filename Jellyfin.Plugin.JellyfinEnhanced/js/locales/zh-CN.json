@@ -82,6 +82,7 @@
     "panel_settings_subtitles_size": "大小",
     "panel_settings_subtitles_font": "字体",
     "panel_settings_subtitles_position": "位置",
+    "panel_settings_subtitles_format_warning": "当前视频使用的字幕格式不支持这些样式。",
     "panel_settings_disable_custom_styles": "停用自订样式",
     "panel_settings_disable_custom_styles_desc": "使用 Jellyfin 预设字幕样式",
     "panel_settings_random_button": "随机按钮设定",

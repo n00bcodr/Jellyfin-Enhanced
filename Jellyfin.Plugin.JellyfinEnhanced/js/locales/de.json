@@ -82,6 +82,7 @@
     "panel_settings_subtitles_size": "Größe",
     "panel_settings_subtitles_font": "Schrift",
     "panel_settings_subtitles_position": "Position",
+    "panel_settings_subtitles_format_warning": "Diese Stile funktionieren nicht mit dem Untertitelformat, das das aktuelle Video verwendet.",
     "panel_settings_disable_custom_styles": "Benutzerdefinierte Stile deaktivieren",
     "panel_settings_disable_custom_styles_desc": "Verwende Jellyfins Standard-Untertitelstile",
     "panel_settings_random_button": "Zufalls-Schaltflächen-Einstellungen",

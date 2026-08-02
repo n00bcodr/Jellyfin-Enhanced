@@ -82,6 +82,7 @@
     "panel_settings_subtitles_size": "الحجم",
     "panel_settings_subtitles_font": "الخط",
     "panel_settings_subtitles_position": "الموضع",
+    "panel_settings_subtitles_format_warning": "لا تعمل هذه الأنماط مع صيغة الترجمة التي يستخدمها الفيديو الحالي.",
     "panel_settings_disable_custom_styles": "تعطيل الأنماط المخصصة",
     "panel_settings_disable_custom_styles_desc": "استخدام أنماط الترجمة الافتراضية في Jellyfin",
     "panel_settings_random_button": "إعدادات الزر العشوائي",

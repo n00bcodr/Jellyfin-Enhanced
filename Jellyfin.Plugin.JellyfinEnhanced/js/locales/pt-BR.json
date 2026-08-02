@@ -82,6 +82,7 @@
     "panel_settings_subtitles_size": "Tamanho",
     "panel_settings_subtitles_font": "Fonte",
     "panel_settings_subtitles_position": "Posição",
+    "panel_settings_subtitles_format_warning": "Esses estilos não funcionam com o formato de legenda que o vídeo atual está usando.",
     "panel_settings_disable_custom_styles": "Desativar Estilos Personalizados",
     "panel_settings_disable_custom_styles_desc": "Usar os estilos de legenda padrão do Jellyfin",
     "panel_settings_random_button": "Configurações do Botão Aleatório",

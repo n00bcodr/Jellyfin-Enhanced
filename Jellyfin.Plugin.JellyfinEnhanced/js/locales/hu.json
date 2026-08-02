@@ -82,6 +82,7 @@
     "panel_settings_subtitles_size": "Méret",
     "panel_settings_subtitles_font": "Betűtípus",
     "panel_settings_subtitles_position": "Pozíció",
+    "panel_settings_subtitles_format_warning": "Ezek a stílusok nem működnek az aktuális videó feliratformátumával.",
     "panel_settings_disable_custom_styles": "Egyéni stílusok letiltása",
     "panel_settings_disable_custom_styles_desc": "Használja a Jellyfin alapértelmezett feliratformátumait",
     "panel_settings_random_button": "Véletlenszerű gombbeállítások",
