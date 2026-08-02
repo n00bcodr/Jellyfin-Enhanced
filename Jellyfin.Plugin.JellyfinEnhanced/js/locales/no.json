@@ -43,7 +43,7 @@
     "feature_tags_hide_on_hover": "{{icon:eye}} Skjul etiketter ved hovering",
     "feature_custom_pause_screen": "{{icon:pip}} Tilpasset pause-skjerm",
     "feature_disable_custom_subtitle_styles": "{{icon:noEntry}} Skru av tilpassede undertekst-stiler",
-    "feature_long_press_2x_speed": "{{icon:fastForward} Trykk og hold for 2x hastighet",
+    "feature_long_press_2x_speed": "{{icon:fastForward}} Trykk og hold for 2x hastighet",
     "panel_settings_long_press_desc": "Trykk og hold hopp-knappen for å hoppe 2x hastighet. (Fungerer best på mobil/touch-enheter)",
     "panel_settings_long_press_2x_speed": "Trykk og hold for 2x hastighet (β)",
     "toast_at_least_one_item_type": "{{icon:warning}} Du må velge minst én elementtype",
