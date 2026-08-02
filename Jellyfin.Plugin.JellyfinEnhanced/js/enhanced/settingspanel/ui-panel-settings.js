@@ -11,6 +11,20 @@
 
     const { showReleaseNotesNotification } = internal;
 
+    // Position-tab preview text ("AaBbCcDd") mirrors the real font family, and
+    // its size scaled relative to "Normal" so it stays legible in the small
+    // preview box instead of rendering at the real on-video vw-based size.
+    // Module-scoped (not inside wireSettingsListeners) since it's also called
+    // from wireMiscSettingsControls' preset-click handlers, a separate closure.
+    const updatePositionPreviewFont = (fontSizePreset, fontFamilyPreset) => {
+        const posPreviewEl = document.getElementById('subtitlePositionPreview');
+        if (!posPreviewEl || !fontSizePreset || !fontFamilyPreset) return;
+        const normalSize = JE.fontSizePresets[2].size;
+        const px = Math.max(8, Math.min(22, 13 * (fontSizePreset.size / normalSize)));
+        posPreviewEl.style.fontSize = `${px}px`;
+        posPreviewEl.style.fontFamily = fontFamilyPreset.family;
+    };
+
     /**
      * Wires the feature toggles, quality-tag category controls and subtitle
      * styling/position controls of the Settings tab.
@@ -18,18 +32,6 @@
      */
     internal.wireSettingsListeners = function(ctx) {
         const { createToast, resetAutoCloseTimer } = ctx;
-
-        // Position-tab preview text ("AaBbCcDd") mirrors the real font family, and
-        // its size scaled relative to "Normal" so it stays legible in the small
-        // preview box instead of rendering at the real on-video vw-based size.
-        const updatePositionPreviewFont = (fontSizePreset, fontFamilyPreset) => {
-            const posPreviewEl = document.getElementById('subtitlePositionPreview');
-            if (!posPreviewEl || !fontSizePreset || !fontFamilyPreset) return;
-            const normalSize = JE.fontSizePresets[2].size;
-            const px = Math.max(8, Math.min(22, 13 * (fontSizePreset.size / normalSize)));
-            posPreviewEl.style.fontSize = `${px}px`;
-            posPreviewEl.style.fontFamily = fontFamilyPreset.family;
-        };
 
         const addSettingToggleListener = (id, settingKey, featureKey, requiresRefresh = false) => {
             document.getElementById(id).addEventListener('change', (e) => {
@@ -344,7 +346,7 @@
             const styleContainer = document.getElementById('subtitle-style-presets-container');
             if (styleContainer) {
                 styleContainer.querySelectorAll('.preset-box').forEach(box => {
-                    box.style.border = '2px solid transparent';
+                    box.style.setProperty('border', '2px solid transparent', 'important');
                 });
             }
 
@@ -605,9 +607,9 @@
 
                     JE.saveUserSettings('settings.json', JE.currentSettings);
                     container.querySelectorAll('.preset-box').forEach(box => {
-                        box.style.border = '2px solid transparent';
+                        box.style.setProperty('border', '2px solid transparent', 'important');
                     });
-                    presetBox.style.border = `2px solid ${primaryAccentColor}`;
+                    presetBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
                     resetAutoCloseTimer();
                 }
             });
@@ -619,20 +621,20 @@
                 if (!JE.currentSettings.usingCustomColors) {
                     const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
                     if (activeBox) {
-                        activeBox.style.border = `2px solid ${primaryAccentColor}`;
+                        activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
                     }
                 }
             } else if (type === 'font-size') {
                 currentIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
                 const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
                 if (activeBox) {
-                    activeBox.style.border = `2px solid ${primaryAccentColor}`;
+                    activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
                 }
             } else if (type === 'font-family') {
                 currentIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
                 const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
                 if (activeBox) {
-                    activeBox.style.border = `2px solid ${primaryAccentColor}`;
+                    activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
                 }
             }
         };
