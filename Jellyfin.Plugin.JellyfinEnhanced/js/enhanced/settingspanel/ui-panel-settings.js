@@ -19,6 +19,18 @@
     internal.wireSettingsListeners = function(ctx) {
         const { createToast, resetAutoCloseTimer } = ctx;
 
+        // Position-tab preview text ("AaBbCcDd") mirrors the real font family, and
+        // its size scaled relative to "Normal" so it stays legible in the small
+        // preview box instead of rendering at the real on-video vw-based size.
+        const updatePositionPreviewFont = (fontSizePreset, fontFamilyPreset) => {
+            const posPreviewEl = document.getElementById('subtitlePositionPreview');
+            if (!posPreviewEl || !fontSizePreset || !fontFamilyPreset) return;
+            const normalSize = JE.fontSizePresets[2].size;
+            const px = Math.max(8, Math.min(22, 13 * (fontSizePreset.size / normalSize)));
+            posPreviewEl.style.fontSize = `${px}px`;
+            posPreviewEl.style.fontFamily = fontFamilyPreset.family;
+        };
+
         const addSettingToggleListener = (id, settingKey, featureKey, requiresRefresh = false) => {
             document.getElementById(id).addEventListener('change', (e) => {
                 JE.currentSettings[settingKey] = e.target.checked;
@@ -244,6 +256,76 @@
         addSettingToggleListener('disableCustomSubtitleStyles', 'disableCustomSubtitleStyles', 'feature_disable_custom_subtitle_styles', true);
         addSettingToggleListener('longPress2xEnabled', 'longPress2xEnabled', 'feature_long_press_2x_speed');
 
+        // --- Dynamic subtitle-styling warnings ---
+        // Both warnings only matter when JE's custom subtitle styling is actually
+        // in play (disableCustomSubtitleStyles off) -- otherwise nothing is being
+        // applied and flagging why it "wouldn't work" is just noise.
+        // Position only takes effect when Jellyfin's own subtitle appearance is set
+        // to "Custom" (native player settings write that choice to localStorage
+        // per-user) -- non-Custom mode renders native browser ::cue captions instead
+        // of the repositionable .videoSubtitles container. Color/font/size still
+        // apply either way (JE styles both .videoSubtitlesInner and ::cue), so only
+        // the position note needs to flag the missing setting.
+        (function wireSubtitleStylingWarnings() {
+            const positionNote = document.getElementById('je-subtitle-position-note');
+            const formatWarning = document.getElementById('je-subtitle-format-warning');
+            if (!positionNote && !formatWarning) return;
+
+            const disableStylesCheckbox = document.getElementById('disableCustomSubtitleStyles');
+            const stylesEnabled = () => !JE.currentSettings.disableCustomSubtitleStyles;
+
+            // Read once, when the panel opens -- this setting doesn't change while
+            // the panel is up, so there's no need to re-read localStorage on every
+            // DOM mutation.
+            if (positionNote) {
+                let appearance = null;
+                try {
+                    const userId = ApiClient.getCurrentUserId?.();
+                    const raw = userId && localStorage.getItem(`${userId}-localplayersubtitleappearance3`);
+                    appearance = raw ? JSON.parse(raw) : null;
+                } catch (e) { /* ignore, treat as not-custom */ }
+                const isCustom = appearance?.subtitleStyling === 'Custom';
+
+                const applyPositionNoteState = () => {
+                    positionNote.style.display = (stylesEnabled() && !isCustom) ? 'flex' : 'none';
+                };
+                applyPositionNoteState();
+                if (disableStylesCheckbox) disableStylesCheckbox.addEventListener('change', applyPositionNoteState);
+            }
+
+            // Bitmap/graphical subtitle formats (ASS/SSA, PGS, VobSub, DVB) never
+            // pass through the styled .videoSubtitlesInner text node -- they either
+            // render to their own canvas client-side, or get burned directly into
+            // the video pixels by a server-side transcode when the client can't
+            // render them (confirmed live: a PGS track here shows up as
+            // TranscodeReasons: ["SubtitleCodecNotSupported", ...] with no DOM
+            // element at all). Checked once against the live playback session
+            // rather than polled, since it's a network call, not a cheap read.
+            if (formatWarning) {
+                const NON_TEXT_CODECS = new Set(['ass', 'ssa', 'pgssub', 'pgs', 'dvdsub', 'dvbsub', 'vobsub']);
+                (async () => {
+                    let isUnsupportedFormat = false;
+                    try {
+                        const userId = ApiClient.getCurrentUserId?.();
+                        const sessions = userId ? await ApiClient.getSessions({ ControllableByUserId: userId }) : [];
+                        const session = sessions.find(s => s.NowPlayingItem);
+                        const streams = session?.NowPlayingItem?.MediaStreams || [];
+                        const activeIndex = session?.PlayState?.SubtitleStreamIndex;
+                        const activeStream = activeIndex != null
+                            ? streams.find(s => s.Type === 'Subtitle' && s.Index === activeIndex)
+                            : null;
+                        isUnsupportedFormat = !!activeStream && NON_TEXT_CODECS.has((activeStream.Codec || '').toLowerCase());
+                    } catch (e) { /* leave hidden on failure */ }
+
+                    const applyFormatWarningState = () => {
+                        formatWarning.style.display = (stylesEnabled() && isUnsupportedFormat) ? 'flex' : 'none';
+                    };
+                    applyFormatWarningState();
+                    if (disableStylesCheckbox) disableStylesCheckbox.addEventListener('change', applyFormatWarningState);
+                })();
+            }
+        })();
+
         // Inline custom subtitle color pickers
         const customTextColorPicker = document.getElementById('customSubtitleTextColorPicker');
         const customTextAlpha = document.getElementById('customSubtitleTextAlpha');
@@ -271,6 +353,11 @@
             if (preview) {
                 preview.style.color = textColor;
                 preview.style.backgroundColor = bgColor;
+            }
+            const posPreviewEl = document.getElementById('subtitlePositionPreview');
+            if (posPreviewEl) {
+                posPreviewEl.style.color = textColor;
+                posPreviewEl.style.backgroundColor = bgColor;
             }
 
             JE.saveUserSettings('settings.json', JE.currentSettings);
@@ -471,11 +558,17 @@
                             preview.style.color = selectedPreset.textColor;
                             preview.style.backgroundColor = selectedPreset.bgColor;
                         }
+                        const posPreviewEl = document.getElementById('subtitlePositionPreview');
+                        if (posPreviewEl) {
+                            posPreviewEl.style.color = selectedPreset.textColor;
+                            posPreviewEl.style.backgroundColor = selectedPreset.bgColor;
+                        }
 
                         const fontSizeIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
                         const fontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
                         const fontSize = JE.fontSizePresets[fontSizeIndex].size;
                         const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
+                        updatePositionPreviewFont(JE.fontSizePresets[fontSizeIndex], JE.fontFamilyPresets[fontFamilyIndex]);
                         JE.applySubtitleStyles(selectedPreset.textColor, selectedPreset.bgColor, fontSize, fontFamily, selectedPreset.textShadow);
                         JE.toast(JE.t('toast_subtitle_style', { style: selectedPreset.name }));
                     } else if (type === 'font-size') {
@@ -490,6 +583,7 @@
                             ? '0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000'
                             : 'none';
 
+                        updatePositionPreviewFont(selectedPreset, JE.fontFamilyPresets[fontFamilyIndex]);
                         JE.applySubtitleStyles(textColor, bgColor, selectedPreset.size, fontFamily, textShadow);
                         JE.toast(JE.t('toast_subtitle_size', { size: selectedPreset.name }));
                     } else if (type === 'font-family') {
@@ -504,6 +598,7 @@
                             ? '0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000'
                             : 'none';
 
+                        updatePositionPreviewFont(JE.fontSizePresets[fontSizeIndex], selectedPreset);
                         JE.applySubtitleStyles(textColor, bgColor, fontSize, selectedPreset.family, textShadow);
                         JE.toast(JE.t('toast_subtitle_font', { font: selectedPreset.name }));
                     }

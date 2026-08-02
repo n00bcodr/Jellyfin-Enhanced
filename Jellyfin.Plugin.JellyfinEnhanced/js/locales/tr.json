@@ -82,6 +82,7 @@
     "panel_settings_subtitles_size": "Boyut",
     "panel_settings_subtitles_font": "Yazı Tipi",
     "panel_settings_subtitles_position": "Konum",
+    "panel_settings_subtitles_format_warning": "Bu stiller, geçerli videonun kullandığı altyazı formatıyla çalışmaz.",
     "panel_settings_disable_custom_styles": "Özel Stili Devre Dışı Bırak",
     "panel_settings_disable_custom_styles_desc": "Jellyfin’in varsayılan altyazı stilini kullan",
     "panel_settings_random_button": "Rastgele Düğmesi Ayarları",

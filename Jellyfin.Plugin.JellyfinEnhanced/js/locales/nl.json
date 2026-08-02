@@ -82,6 +82,7 @@
     "panel_settings_subtitles_size": "Grootte",
     "panel_settings_subtitles_font": "Lettertype",
     "panel_settings_subtitles_position": "Positie",
+    "panel_settings_subtitles_format_warning": "Deze stijlen werken niet met het ondertitelformaat dat de huidige video gebruikt.",
     "panel_settings_disable_custom_styles": "Aangepaste stijlen uitschakelen",
     "panel_settings_disable_custom_styles_desc": "Gebruik Jellyfin’s standaard ondertitelstijlen",
     "panel_settings_random_button": "Instellingen voor willekeurige knop",

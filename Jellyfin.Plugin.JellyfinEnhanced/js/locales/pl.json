@@ -82,6 +82,7 @@
     "panel_settings_subtitles_size": "Rozmiar",
     "panel_settings_subtitles_font": "Czcionka",
     "panel_settings_subtitles_position": "Pozycja",
+    "panel_settings_subtitles_format_warning": "Te style nie działają z formatem napisów używanym przez bieżący film.",
     "panel_settings_disable_custom_styles": "Wyłącz niestandardowe style",
     "panel_settings_disable_custom_styles_desc": "Używaj domyślnych stylów napisów Jellyfin",
     "panel_settings_random_button": "Ustawienia losowego wyboru",

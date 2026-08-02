@@ -82,6 +82,7 @@
     "panel_settings_subtitles_size": "Størrelse",
     "panel_settings_subtitles_font": "Skrift",
     "panel_settings_subtitles_position": "Posisjon",
+    "panel_settings_subtitles_format_warning": "Disse stilene fungerer ikke med undertekstformatet den gjeldende videoen bruker.",
     "panel_settings_disable_custom_styles": "Skru av tilpassede stiler",
     "panel_settings_disable_custom_styles_desc": "Deaktiver tilpassede undertekst-stiler fra tilleggsmoduler og temaer (Bruk standard undertekst-stiler)",
     "panel_settings_random_button": "Random Button Settings",

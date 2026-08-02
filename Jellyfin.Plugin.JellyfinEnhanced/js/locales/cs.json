@@ -82,6 +82,7 @@
     "panel_settings_subtitles_size": "Velikost",
     "panel_settings_subtitles_font": "Písmo",
     "panel_settings_subtitles_position": "Pozice",
+    "panel_settings_subtitles_format_warning": "Tyto styly nefungují pro formát titulků, který aktuální video používá.",
     "panel_settings_disable_custom_styles": "Zakázat vlastní styly",
     "panel_settings_disable_custom_styles_desc": "Použít výchozí styly titulků Jellyfin",
     "panel_settings_random_button": "Nastavení tlačítka náhodného výběru",

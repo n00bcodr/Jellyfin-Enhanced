@@ -82,6 +82,7 @@
     "panel_settings_subtitles_size": "Taille",
     "panel_settings_subtitles_font": "Police",
     "panel_settings_subtitles_position": "Position",
+    "panel_settings_subtitles_format_warning": "Ces styles ne fonctionnent pas avec le format de sous-titres utilisé par la vidéo actuelle.",
     "panel_settings_disable_custom_styles": "Désactiver les styles personnalisés",
     "panel_settings_disable_custom_styles_desc": "Utiliser les styles de sous-titres par défaut de Jellyfin",
     "panel_settings_random_button": "Paramètres du bouton aléatoire",

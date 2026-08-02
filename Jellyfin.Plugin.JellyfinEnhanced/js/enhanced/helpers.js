@@ -290,6 +290,242 @@
         return container;
     }
 
+    // Tracks whether the header-tray collapse CSS has been set up (see
+    // getHeaderButtonTray below) so it's only added once.
+    let headerTrayCSSInjected = false;
+
+    /**
+     * Finds (or creates) the container that JE's native-tabs fallback links
+     * (Calendar/Requests/Recommendations/Hidden Content/Bookmarks) should be
+     * injected into, instead of appending directly to getHeaderRightContainer().
+     * Below a breakpoint they collapse behind a single "more" icon, styled as
+     * a real native action sheet, instead of cramming the header row full of
+     * icons on narrow viewports. Native Jellyfin buttons (search, cast, the
+     * avatar) are untouched. The random button and active-streams icon
+     * deliberately stay out of this tray (they use getHeaderRightContainer()
+     * directly) and remain their own always-visible header icons.
+     *
+     * DOM mirrors the real native action sheet: .je-header-tray-dialog (gets
+     * the native dialog/actionSheet classes) > .je-header-tray-content (gets
+     * actionSheetContent) > .je-header-buttons-tray (gets actionSheetScroller;
+     * this is what's returned, callers append into it exactly like they used
+     * to with getHeaderRightContainer()). All three collapse to display:contents
+     * on desktop so the tray behaves as a plain inline icon row with no wrapper
+     * overhead; only while actually collapsed do the native classes get added,
+     * so any active theme styles the dropdown automatically.
+     *
+     * Two things are deliberately still driven from JS as inline `!important`
+     * styles rather than left to CSS/native classes:
+     *  - Visibility (toggle/tray/wrapper display, dropdown position) -- has to
+     *    win regardless of what a theme or the native (partly lazy-loaded,
+     *    unverified) action-sheet CSS does for these same classes.
+     *  - Row/icon sizing -- rows keep their original .headerButton.paper-icon-
+     *    button-light classes underneath the native ones added here, so the
+     *    MUI-toolbar sizing fix above (and any theme targeting that same
+     *    selector, e.g. Jellyfish's 12_fixes.css) still forces a fixed 48x48
+     *    square, 24px icon, zero padding, and centered content unless overridden.
+     * @returns {HTMLElement|null} The tray to append buttons into, or null if the header isn't ready yet.
+     */
+    function getHeaderButtonTray() {
+        const headerRight = getHeaderRightContainer();
+        if (!headerRight) return null;
+
+        if (!headerTrayCSSInjected) {
+            addCSS('je-header-tray-css', `
+                .je-header-buttons-group { position: relative; display: flex; align-items: center; }
+                .je-header-tray-dialog { display: contents; }
+                .je-header-tray-dialog.dialog {
+                    display: block;
+                    position: fixed !important;
+                    z-index: 10000;
+                }
+                .je-header-tray-content { display: contents; }
+                .je-header-tray-content.actionSheetContent { display: flex; }
+                .je-header-buttons-tray { display: flex; align-items: center; }
+                .je-header-buttons-tray.actionSheetScroller {
+                    flex-direction: column;
+                    align-items: stretch;
+                    gap: 2px;
+                    min-width: 190px;
+                    max-width: calc(100vw - 24px);
+                    max-height: 70vh;
+                    overflow-y: auto;
+                }
+                /* native-tabs.js gives this group an inline row layout (order:-1)
+                   for its original always-horizontal headerRight context; force
+                   it to stack in the tray's column instead. */
+                .je-header-buttons-tray.actionSheetScroller #je-native-tabs-group {
+                    flex-direction: column !important;
+                    align-items: stretch !important;
+                }
+                /* Its separator sets display via inline style, which beats a
+                   plain CSS rule -- needs !important to actually hide it. */
+                .je-header-buttons-tray.actionSheetScroller #je-native-tabs-separator { display: none !important; }
+            `);
+            headerTrayCSSInjected = true;
+        }
+
+        let group = headerRight.querySelector(':scope > #je-header-buttons-group');
+        if (group) return group.querySelector('.je-header-buttons-tray');
+
+        group = document.createElement('div');
+        group.id = 'je-header-buttons-group';
+        group.className = 'je-header-buttons-group';
+
+        const dialogWrapper = document.createElement('div');
+        dialogWrapper.className = 'je-header-tray-dialog';
+
+        const content = document.createElement('div');
+        content.className = 'je-header-tray-content';
+
+        const tray = document.createElement('div');
+        tray.className = 'je-header-buttons-tray';
+
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.setAttribute('is', 'paper-icon-button-light');
+        toggle.className = 'headerButton headerButtonRight paper-icon-button-light je-header-more-toggle';
+        toggle.title = 'More';
+        toggle.innerHTML = '<i class="material-icons">more_vert</i>';
+
+        // The MUI toolbar's own drawer-toggle button only exists in the DOM at
+        // all below its internal breakpoint, so its presence is a more reliable
+        // "are we narrow" signal than guessing a pixel breakpoint of our own.
+        // The legacy layout's hamburger has no such guarantee (its visibility
+        // is a page-type/settings toggle, not a viewport breakpoint), so that
+        // case falls back to a plain width check.
+        const isCollapsed = () => {
+            if (document.querySelector('[aria-label="Open Menu"]')) return true;
+            if (document.querySelector('.MuiAppBar-root .MuiToolbar-root')) return false;
+            return window.matchMedia('(max-width: 760px)').matches;
+        };
+        let isOpen = false;
+
+        // Restyles a JE header button (icon-only) to look like a real
+        // actionSheetMenuItem row: native classes for theme-styled background/
+        // hover/spacing, a visible label from the button's own tooltip text,
+        // and inline overrides only for what the MUI-toolbar/theme fix still
+        // forces via .headerButton.paper-icon-button-light (see doc comment
+        // above) plus one native quirk: mobile action sheets scale listItemBody
+        // via transform for large-font mode, which we don't have the matching
+        // modifier class/layout for, so it's neutralized rather than left to
+        // balloon the label over adjacent rows.
+        const setRowCollapsedStyle = (row, collapsed) => {
+            if (collapsed) {
+                row.classList.add('listItem', 'listItem-button', 'actionSheetMenuItem', 'emby-button');
+                const icon = row.querySelector(':scope > .material-icons');
+                if (icon) {
+                    icon.classList.add('actionsheetMenuItemIcon', 'listItemIcon', 'listItemIcon-transparent');
+                    icon.style.setProperty('font-size', '1.3em', 'important');
+                }
+
+                let label = row.querySelector('.je-header-tray-label');
+                if (!label) {
+                    label = document.createElement('div');
+                    label.className = 'je-header-tray-label listItemBody actionsheetListItemBody';
+                    label.innerHTML = '<div class="listItemBodyText actionSheetItemText"></div>';
+                    row.appendChild(label);
+                    label.style.setProperty('transform', 'none', 'important');
+                }
+                // Only touch the text node when it actually changes -- this runs
+                // from a MutationObserver watching this same subtree, and
+                // .textContent = always creates a fresh text node (a childList
+                // mutation) even when the string is unchanged, which would
+                // re-trigger that observer forever otherwise.
+                const textEl = label.querySelector('.actionSheetItemText');
+                const desiredText = row.title || '';
+                if (textEl.textContent !== desiredText) textEl.textContent = desiredText;
+
+                row.style.setProperty('width', '100%', 'important');
+                row.style.setProperty('height', 'auto', 'important');
+                row.style.setProperty('box-sizing', 'border-box', 'important');
+                row.style.setProperty('padding', '.25em .25em .25em .5em', 'important');
+                row.style.setProperty('justify-content', 'flex-start', 'important');
+                row.style.setProperty('font-size', '.93em', 'important');
+            } else {
+                row.classList.remove('listItem', 'listItem-button', 'actionSheetMenuItem', 'emby-button');
+                const icon = row.querySelector(':scope > .material-icons');
+                if (icon) {
+                    icon.classList.remove('actionsheetMenuItemIcon', 'listItemIcon', 'listItemIcon-transparent');
+                    icon.style.removeProperty('font-size');
+                }
+                row.querySelector('.je-header-tray-label')?.remove();
+                ['width', 'height', 'box-sizing', 'padding', 'justify-content', 'font-size']
+                    .forEach((prop) => row.style.removeProperty(prop));
+            }
+        };
+
+        // Anchors the dropdown from the toggle's actual on-screen position,
+        // clamped to the viewport -- the group's position *within the header
+        // row* doesn't tell you where it lands on screen (it can sit well past
+        // the left edge), so a fixed CSS anchor reliably overflows one side.
+        const positionTray = () => {
+            const rect = toggle.getBoundingClientRect();
+            const trayWidth = Math.min(dialogWrapper.offsetWidth || 260, window.innerWidth - 24);
+            let left = rect.right - trayWidth;
+            left = Math.max(12, Math.min(left, window.innerWidth - trayWidth - 12));
+            dialogWrapper.style.setProperty('top', (rect.bottom + 8) + 'px', 'important');
+            dialogWrapper.style.setProperty('left', left + 'px', 'important');
+        };
+
+        // Classes the real native action-sheet wrapper carries, adopted
+        // wholesale so any active theme's own styling applies automatically.
+        const DIALOG_CLASSES = ['focuscontainer', 'dialog', 'actionsheet-not-fullscreen', 'actionSheet', 'centeredDialog'];
+
+        const applyState = () => {
+            const collapsed = isCollapsed();
+            toggle.style.setProperty('display', collapsed ? 'inline-flex' : 'none', 'important');
+            content.classList.toggle('actionSheetContent', collapsed);
+            tray.classList.toggle('actionSheetScroller', collapsed);
+            tray.classList.toggle('scrollY', collapsed);
+            if (collapsed) {
+                dialogWrapper.classList.add(...DIALOG_CLASSES);
+                dialogWrapper.classList.toggle('opened', isOpen);
+                dialogWrapper.style.setProperty('display', isOpen ? 'block' : 'none', 'important');
+                if (isOpen) positionTray();
+            } else {
+                isOpen = false;
+                dialogWrapper.classList.remove(...DIALOG_CLASSES, 'opened');
+                dialogWrapper.style.removeProperty('display');
+            }
+            tray.querySelectorAll('.headerButton.paper-icon-button-light').forEach((row) => setRowCollapsedStyle(row, collapsed));
+        };
+
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            isOpen = !isOpen;
+            applyState();
+        });
+        window.addEventListener('resize', debounce(applyState, 150));
+        document.addEventListener('click', (e) => {
+            if (isOpen && !group.contains(e.target)) {
+                isOpen = false;
+                applyState();
+            }
+        });
+        // New buttons (native-tabs registers more tabs later) need the same
+        // collapsed-row styling applied once they land, not just whatever was
+        // present at open time.
+        new MutationObserver(() => {
+            if (isCollapsed()) {
+                tray.querySelectorAll('.headerButton.paper-icon-button-light').forEach((row) => setRowCollapsedStyle(row, true));
+            }
+        }).observe(tray, { childList: true, subtree: true });
+
+        applyState();
+
+        content.appendChild(tray);
+        dialogWrapper.appendChild(content);
+        group.appendChild(dialogWrapper);
+        group.appendChild(toggle);
+        // Leftmost, ahead of the native SyncPlay/Cast/Search buttons -- matches
+        // where native-tabs.js's group used to place itself (order:-1) before
+        // this tray existed.
+        headerRight.prepend(group);
+
+        return tray;
+    }
+
     /**
      * Finds the container plugin sidebar nav links should be injected into.
      *
@@ -413,6 +649,7 @@
         disconnectObserver: (id) => JE.core.dom.disconnectObserver(id), // (core)
         disconnectAllObservers: () => JE.core.dom.disconnectAllObservers(), // (core)
         getHeaderRightContainer,
+        getHeaderButtonTray,
         getSidebarContainer,
         waitForElement: (selector, timeout) => JE.core.dom.waitForElement(selector, timeout), // (core)
         waitForCondition,

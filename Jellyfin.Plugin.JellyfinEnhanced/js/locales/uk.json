@@ -246,6 +246,7 @@
     "panel_settings_spoiler_guard": "Захист від спойлерів",
     "hidden_content_toggle_desc": "Приховати певні фільми та серіали з усіх поверхонь перегляду",
     "panel_settings_disable_custom_styles": "Вимкнути користувацькі стилі",
+    "panel_settings_subtitles_format_warning": "These styles do not work for the subtitle format the current video is using.",
     "hidden_content_add_back_to_cw": "Повернутись в «Продовження Перегляду»",
     "feature_auto_skip_outro": "{{icon:skip}} Автопропуск кінцівки",
     "calendar_episode": "Епізод",

@@ -82,6 +82,7 @@
     "panel_settings_subtitles_size": "Størrelse",
     "panel_settings_subtitles_font": "Skrifttype",
     "panel_settings_subtitles_position": "Position",
+    "panel_settings_subtitles_format_warning": "Disse stilarter virker ikke med det undertekstformat, den aktuelle video bruger.",
     "panel_settings_disable_custom_styles": "Deaktiver brugerdefinerede stilarter",
     "panel_settings_disable_custom_styles_desc": "Brug Jellyfins standard undertekststile",
     "panel_settings_random_button": "Tilfældig knap indstillinger",

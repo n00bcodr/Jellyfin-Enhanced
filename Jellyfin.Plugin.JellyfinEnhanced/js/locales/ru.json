@@ -82,6 +82,7 @@
     "panel_settings_subtitles_size": "Размер",
     "panel_settings_subtitles_font": "Шрифт",
     "panel_settings_subtitles_position": "Позиция",
+    "panel_settings_subtitles_format_warning": "Эти стили не работают с форматом субтитров, который использует текущее видео.",
     "panel_settings_disable_custom_styles": "Отключить пользовательские стили",
     "panel_settings_disable_custom_styles_desc": "Использовать стили субтитров по умолчанию Jellyfin",
     "panel_settings_random_button": "Настройки кнопки случайного выбора",
