@@ -27,7 +27,10 @@ jobs:
           fail-on-severity: moderate
           # Comment on the PR with the results
           comment-summary-in-pr: always
-          # Deny licenses that are not compatible with Jellyfin
-          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.0, LGPL-2.1, LGPL-3.0
+          # Allow only the licenses actually present across NuGet packages and GitHub
+          # Actions used by this repo (GPL-3.0-only comes from Jellyfin.Controller/Model,
+          # the rest are MIT/Apache-2.0). `deny-licenses` is deprecated upstream in favor
+          # of this allow-list model: https://github.com/actions/dependency-review-action/issues/997
+          allow-licenses: MIT, Apache-2.0, GPL-3.0-only
           # Allow the CI-only TruffleHog GitHub Action despite its AGPL license classification.
           allow-dependencies-licenses: pkg:githubactions/trufflesecurity/trufflehog
