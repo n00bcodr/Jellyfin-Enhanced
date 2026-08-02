@@ -82,7 +82,7 @@
     "panel_settings_subtitles_size": "Dimensione",
     "panel_settings_subtitles_font": "Font",
     "panel_settings_subtitles_position": "Posizione",
-    "panel_settings_subtitles_position_note": "Richiede lo stile di sottotitolo Jellyfin impostato su <b>Custom </b> nelle impostazioni dei sottotitoli",
+    "panel_settings_subtitles_position_note": "Richiede lo stile di sottotitolo Jellyfin impostato su <b>Custom</b> nelle impostazioni dei sottotitoli",
     "panel_settings_subtitles_format_warning": "Questi stili non funzionano con il formato dei sottotitoli usato dal video corrente.",
     "panel_settings_disable_custom_styles": "Disabilita stili personalizzati",
     "panel_settings_disable_custom_styles_desc": "Usa gli stili dei sottotitoli predefiniti di Jellyfin",

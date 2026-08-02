@@ -67,7 +67,7 @@
     "watch_progress_tooltip": "Загальний прогрес перегляду",
     "downloads_status_paused": "Призупинено",
     "bookmark_jump": "Перейти",
-    "panel_settings_subtitles_position_note": "<b>Custom(Користувацький)</b> стиль субтитрів потрібен бути вибраний у налаштуваннях субтитрів Jellyfin",
+    "panel_settings_subtitles_position_note": "<b>Custom</b> стиль субтитрів потрібен бути вибраний у налаштуваннях субтитрів Jellyfin",
     "spoiler_blur_disabled_toast": "Захист від спойлерів вимкнено.",
     "toast_bookmark_deleted": "{{icon:trash}} Закладку видалено",
     "jellyseerr_report_issue_submit": "Надіслати звіт",

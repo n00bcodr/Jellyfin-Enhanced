@@ -58,7 +58,7 @@
     "watch_progress_tooltip": "Katselun edistyminen",
     "downloads_status_paused": "Keskeytetty",
     "bookmark_jump": "Siirry",
-    "panel_settings_subtitles_position_note": "Vaaditaan Jellyfin tekstitystyyli  <b>muokattu</b> tekstitysasetuksissa",
+    "panel_settings_subtitles_position_note": "Vaaditaan Jellyfin tekstitystyyli <b>muokattu</b> tekstitysasetuksissa",
     "toast_bookmark_deleted": "{{icon:trash}} Kirjanmerkki poistettu",
     "jellyseerr_report_issue_submit": "Lähetä Ilmoitus",
     "jellyseerr_toast_no_season_info": "{{icon:warning}} Tuotantokauden tietojen lataus epäonnistui",
