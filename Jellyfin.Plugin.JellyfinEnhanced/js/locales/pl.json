@@ -26,7 +26,7 @@
     "status_disabled": "Wyłączono",
     "feature_auto_pause": "{{icon:pause}} Auto-pauza",
     "feature_auto_resume": "{{icon:play}} Auto-wznowienie",
-    "feature_auto_pip": "{{icon:pip}} Auto PiP",
+    "feature_auto_pip": "{{icon:pip}} Automatyczny PiP",
     "feature_auto_skip_intro": "{{icon:skip}} Auto-pomijanie czołówki",
     "feature_auto_skip_outro": "{{icon:skip}} Auto-pomijanie końcówki",
     "feature_random_button": "{{icon:random}} Przycisk losowego wyboru",

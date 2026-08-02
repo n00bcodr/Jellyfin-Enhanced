@@ -17,7 +17,7 @@
     "toast_skipped_intro": "{{icon:skip}} Intro overgeslagen",
     "toast_skipped_outro": "{{icon:skip}} Outro overgeslagen",
     "toast_no_skip_button": "{{icon:info}} Geen overslaan-knop beschikbaar",
-    "toast_frame_step": "{arrow} Frame {frame}  ·  {fps} fps",
+    "toast_frame_step": "{arrow} Beeld {frame}  ·  {fps} fps",
     "toast_frame_step_fps_fallback": "{{icon:info}} Frame-stap met reservewaarde {fps} fps (werkelijke snelheid onbekend)",
     "toast_jumped_back": "{{icon:rewind}} Teruggesprongen naar {time}",
     "toast_no_last_position": "{{icon:rewind}} Geen vorige positie opgeslagen",
