@@ -231,7 +231,7 @@
     "jellyseerr_quota_reset_in_minutes": "Ye can make another demand in about {minutes} min",
     "jellyseerr_quota_reset_in_hours": "Ye can make another demand in about {hours} hrs",
     "jellyseerr_quota_reset_in_days": "Ye can make another demand in about {days} days",
-    "jellyseerr_toast_collection_failed_count": "{count} failed",
+    "jellyseerr_toast_collection_failed_count": "{count} scuttled",
     "jellyseerr_seasons_available": "{count} seasons in th' hold",
     "jellyseerr_all_seasons": "All {count} seasons",
     "jellyseerr_seasons_accounted_for": "{count}/{total} accounted fer",

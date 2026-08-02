@@ -231,7 +231,7 @@
     "jellyseerr_quota_reset_in_minutes": "Ďalšiu požiadavku môžete podať za cca {minutes} min",
     "jellyseerr_quota_reset_in_hours": "Ďalšiu požiadavku môžete podať za cca {hours} hod",
     "jellyseerr_quota_reset_in_days": "Ďalšiu požiadavku môžete podať za cca {days} dní",
-    "jellyseerr_toast_collection_failed_count": "{count} failed",
+    "jellyseerr_toast_collection_failed_count": "{count} zlyhalo",
     "jellyseerr_seasons_available": "{count} dostupných sérií",
     "jellyseerr_all_seasons": "Všetky {count} série",
     "jellyseerr_seasons_accounted_for": "{count}/{total} zaznamenaných",

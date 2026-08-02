@@ -231,7 +231,7 @@
     "jellyseerr_quota_reset_in_minutes": "يمكنك تقديم طلب آخر خلال حوالي {minutes} دقيقة",
     "jellyseerr_quota_reset_in_hours": "يمكنك تقديم طلب آخر خلال حوالي {hours} ساعة",
     "jellyseerr_quota_reset_in_days": "يمكنك تقديم طلب آخر خلال حوالي {days} يوم",
-    "jellyseerr_toast_collection_failed_count": "{count} failed",
+    "jellyseerr_toast_collection_failed_count": "{count} فشل",
     "jellyseerr_seasons_available": "{count} مواسم متوفرة",
     "jellyseerr_all_seasons": "جميع المواسم الـ {count}",
     "jellyseerr_seasons_accounted_for": "تم حساب {count}/{total}",

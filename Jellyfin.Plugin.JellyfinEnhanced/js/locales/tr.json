@@ -230,7 +230,7 @@
     "jellyseerr_quota_reset_in_minutes": "Yaklaşık {minutes} dakika içinde yeni bir istek yapabilirsiniz",
     "jellyseerr_quota_reset_in_hours": "Yaklaşık {hours} saat içinde yeni bir istek yapabilirsiniz",
     "jellyseerr_quota_reset_in_days": "Yaklaşık {days} gün içinde yeni bir istek yapabilirsiniz",
-    "jellyseerr_toast_collection_failed_count": "{count} failed",
+    "jellyseerr_toast_collection_failed_count": "{count} başarısız",
     "jellyseerr_seasons_available": "{count} sezon mevcut",
     "jellyseerr_all_seasons": "Tüm {count} sezon",
     "jellyseerr_seasons_accounted_for": "{count}/{total} tamamlandı",

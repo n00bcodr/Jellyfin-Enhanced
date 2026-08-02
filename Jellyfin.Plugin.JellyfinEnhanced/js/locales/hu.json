@@ -231,7 +231,7 @@
     "jellyseerr_quota_reset_in_minutes": "Kb. {minutes} perc múlva tehet újabb kérést",
     "jellyseerr_quota_reset_in_hours": "Kb. {hours} óra múlva tehet újabb kérést",
     "jellyseerr_quota_reset_in_days": "Kb. {days} nap múlva tehet újabb kérést",
-    "jellyseerr_toast_collection_failed_count": "{count} failed",
+    "jellyseerr_toast_collection_failed_count": "{count} sikertelen",
     "jellyseerr_seasons_available": "{count} évad elérhető",
     "jellyseerr_all_seasons": "Mind a {count} évad",
     "jellyseerr_seasons_accounted_for": "{count}/{total} számolva",

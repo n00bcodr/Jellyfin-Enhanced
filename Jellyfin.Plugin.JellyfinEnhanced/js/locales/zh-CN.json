@@ -231,7 +231,7 @@
     "jellyseerr_quota_reset_in_minutes": "约 {minutes} 分钟后可再次发起请求",
     "jellyseerr_quota_reset_in_hours": "约 {hours} 小时后可再次发起请求",
     "jellyseerr_quota_reset_in_days": "约 {days} 天后可再次发起请求",
-    "jellyseerr_toast_collection_failed_count": "{count} failed",
+    "jellyseerr_toast_collection_failed_count": "{count} 个失败",
     "jellyseerr_seasons_available": "{count} 季可用",
     "jellyseerr_all_seasons": "全部 {count} 季",
     "jellyseerr_seasons_accounted_for": "{count}/{total} 已计入",

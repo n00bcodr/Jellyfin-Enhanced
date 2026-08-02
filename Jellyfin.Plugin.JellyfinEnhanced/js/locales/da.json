@@ -230,7 +230,7 @@
     "jellyseerr_quota_reset_in_minutes": "Du kan lave en ny anmodning om ca. {minutes} min",
     "jellyseerr_quota_reset_in_hours": "Du kan lave en ny anmodning om ca. {hours} t",
     "jellyseerr_quota_reset_in_days": "Du kan lave en ny anmodning om ca. {days} dage",
-    "jellyseerr_toast_collection_failed_count": "{count} failed",
+    "jellyseerr_toast_collection_failed_count": "{count} mislykkedes",
     "jellyseerr_seasons_available": "{count} sæsoner tilgængelige",
     "jellyseerr_all_seasons": "Alle {count} sæsoner",
     "jellyseerr_seasons_accounted_for": "{count}/{total} redegjort for",

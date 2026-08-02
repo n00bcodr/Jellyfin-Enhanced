@@ -231,7 +231,7 @@
     "jellyseerr_quota_reset_in_minutes": "Pots fer una altra sol·licitud en uns {minutes} min",
     "jellyseerr_quota_reset_in_hours": "Pots fer una altra sol·licitud en unes {hours} h",
     "jellyseerr_quota_reset_in_days": "Pots fer una altra sol·licitud en uns {days} dies",
-    "jellyseerr_toast_collection_failed_count": "{count} failed",
+    "jellyseerr_toast_collection_failed_count": "{count} fallits",
     "jellyseerr_seasons_available": "{count} temporades disponibles",
     "jellyseerr_all_seasons": "Totes les {count} temporades",
     "jellyseerr_seasons_accounted_for": "{count}/{total} comptabilitzades",

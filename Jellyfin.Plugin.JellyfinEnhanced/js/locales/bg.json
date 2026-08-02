@@ -231,7 +231,7 @@
     "jellyseerr_quota_reset_in_minutes": "Можете да направите нова заявка след около {minutes} мин",
     "jellyseerr_quota_reset_in_hours": "Можете да направите нова заявка след около {hours} ч",
     "jellyseerr_quota_reset_in_days": "Можете да направите нова заявка след около {days} дни",
-    "jellyseerr_toast_collection_failed_count": "{count} failed",
+    "jellyseerr_toast_collection_failed_count": "{count} неуспешни",
     "jellyseerr_seasons_available": "{count} налични сезона",
     "jellyseerr_all_seasons": "Всички {count} сезона",
     "jellyseerr_seasons_accounted_for": "{count}/{total} отчетени",

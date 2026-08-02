@@ -231,7 +231,7 @@
     "jellyseerr_quota_reset_in_minutes": "Puedes hacer otra solicitud en unos {minutes} min",
     "jellyseerr_quota_reset_in_hours": "Puedes hacer otra solicitud en unas {hours} h",
     "jellyseerr_quota_reset_in_days": "Puedes hacer otra solicitud en unos {days} días",
-    "jellyseerr_toast_collection_failed_count": "{count} failed",
+    "jellyseerr_toast_collection_failed_count": "{count} fallidos",
     "jellyseerr_seasons_available": "{count} temporadas disponibles",
     "jellyseerr_all_seasons": "Todas las {count} temporadas",
     "jellyseerr_seasons_accounted_for": "{count}/{total} contabilizadas",
