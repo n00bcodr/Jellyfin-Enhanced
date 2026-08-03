@@ -556,6 +556,16 @@
                             </div>
                         </div>
                     </fieldset>
+
+                    <fieldset>
+                        <legend class="sectionTitle">Awards</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer je-main-feature"><label><input id="showAwards" is="emby-checkbox" type="checkbox"/><span>Show Awards Banner</span></label></div>
+                            <div class="je-setting-description" data-desc-for="showAwards">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">Shows a wins/nominations banner on item-details pages, sourced from Wikidata by TMDB id. Data is as accurate as what is available in Wikidata.</div>
+                            </div>
+                        </div>
+                    </fieldset>
                 </div>
 
                 <div id="playback" class="jellyfin-tab-content">
@@ -4479,6 +4489,7 @@
                 document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
                 document.querySelector('#showReviews').checked = config.ShowReviews;
+                document.querySelector('#showAwards').checked = !!config.ShowAwards;
                 document.querySelector('#showUserReviews').checked = !!config.ShowUserReviews;
                 document.querySelector('#reviewsExpandedByDefault').checked = config.ReviewsExpandedByDefault;
                 document.querySelector('#showReleaseDate').checked = !!config.ShowReleaseDates;
@@ -4827,6 +4838,7 @@
             config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
             config.ShowReviews = document.querySelector('#showReviews').checked;
+            config.ShowAwards = document.querySelector('#showAwards').checked;
             config.ShowUserReviews = document.querySelector('#showUserReviews').checked;
             config.ReviewsExpandedByDefault = document.querySelector('#reviewsExpandedByDefault').checked;
             config.ShowReleaseDates = document.querySelector('#showReleaseDate').checked;

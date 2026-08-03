@@ -55,6 +55,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // theme sheets, flags, remote locales) from the plugin's own route, backed by
             // an on-disk cache that the RefreshCdnAssetsTask warms/refreshes every 24h.
             serviceCollection.AddSingleton<CdnAssetService>();
+            // Awards lookup: on-demand per-title fetch from Wikidata's public SPARQL
+            // endpoint (no API key), cached to disk indefinitely for hits / with a TTL
+            // for misses — see WikidataAwardsService for details.
+            serviceCollection.AddSingleton<WikidataAwardsService>();
             serviceCollection.AddTransient<RefreshCdnAssetsTask>();
             serviceCollection.AddTransient<ArrTagsSyncTask>();
             serviceCollection.AddTransient<BuildTagCacheTask>();

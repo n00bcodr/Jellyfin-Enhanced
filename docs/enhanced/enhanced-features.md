@@ -512,6 +512,28 @@ Display age and birthplace information for cast members.
 - Birthplace banner (bottom of cast cards)
 - Deceased styling (grayscale filter)
 
+### Awards
+
+Show award wins and nominations on item detail pages and person pages, sourced from [Wikidata](https://www.wikidata.org/) by TMDB id.
+
+**Features:**
+
+- Expandable banner below the Reviews section, showing total wins and nominations
+- Full per-category breakdown when expanded: award name, Won/Nominated, year, and who it went to (or which title it was for, on a person's page)
+- Recognized award-body icons (Oscars, Golden Globes, BAFTA, Emmys, SAG, Critics' Choice, National Board of Review, Saturn Award, Kids' Choice Awards, Toronto Film Critics, Cannes/Palme d'Or) shown next to each entry — anything not in that list still shows correctly, just without a logo
+- Works on movies, TV shows, and person (cast/crew) pages — a person's page shows their full career award history, not just one title's
+- No API key required — Wikidata's public data endpoint is free and keyless
+
+**Setup:**
+
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+2. Navigate to the **Display** tab
+3. Enable **"Show Awards Banner"**
+4. Click **Save**
+
+!!! note
+    Coverage depends entirely on what's recorded in Wikidata for that title or person — very well-covered for major releases and prestige awards, thinner for obscure titles or lesser-known award bodies. A title/person with no award data on Wikidata simply shows no banner.
+
 ---
 
 ## Personal Scripts

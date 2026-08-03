@@ -68,6 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ReviewsExpandedByDefault = false;
             HideReviewsFromHiddenUsers = true;
             HideReviewsFromDisabledUsers = true;
+            ShowAwards = false;
             ShowReleaseDates = false;
             ShowUserRatingOnPosters = false;
             ShowUserRatingDash = true;
@@ -394,6 +395,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ReviewsExpandedByDefault { get; set; }
         public bool HideReviewsFromHiddenUsers { get; set; } = true;
         public bool HideReviewsFromDisabledUsers { get; set; } = true;
+        public bool ShowAwards { get; set; }
         public bool ShowReleaseDates { get; set; }
         public bool ShowUserRatingOnPosters { get; set; } = false;
         /// <summary>

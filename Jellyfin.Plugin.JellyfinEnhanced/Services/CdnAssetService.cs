@@ -151,6 +151,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ["icon-metadata"] = new("https://cdn.jsdelivr.net/gh/Druidblack/jellyfin-icon-metadata", Types("text/css")),
             // Jellyfin-Elsewhere region/provider reference lists (fetched as text)
             ["elsewhere-res"] = new("https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources", Types("text/plain")),
+            // Award-body logos for the Awards feature (WikidataAwardsService), sourced from
+            // Wikimedia Commons via its Special:FilePath redirect.
+            ["award-logos"] = new("https://commons.wikimedia.org/wiki/Special:FilePath", Types("image/svg+xml", "image/png"),
+                FixedPaths: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["oscar"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Oscar%20gold%20silhouette.svg",
+                    ["golden-globe"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Golden_Globe_icon_(gold).svg",
+                    ["bafta"] = "https://commons.wikimedia.org/wiki/Special:FilePath/BAFTA%20award%20icon%20gold%20silhouette.svg",
+                    ["emmy"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Emmy%20gold%20silhouette.svg",
+                    ["sag"] = "https://commons.wikimedia.org/wiki/Special:FilePath/The%20Actor%20Statuette%20gold%20silhouette.svg",
+                    ["critics-choice"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Critics%20Choice%20Association%20horizontal%20logo.svg",
+                    ["national-board-of-review"] = "https://commons.wikimedia.org/wiki/Special:FilePath/The%20National%20Board%20of%20Review%20Logo.png",
+                    ["saturn"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Saturn_Award_Silhouette.svg",
+                    ["kids-choice"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Kids%27%20Choice%20Awards%202017%20Logo.png",
+                    ["toronto-critics"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Toronto%20Film%20Critics%20Association%20logo.svg",
+                    ["cannes"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Palme%20d%27Or%20gold%20silhouette.svg",
+                }),
         };
 
         private static HashSet<string> Types(params string[] t) => new(t, StringComparer.OrdinalIgnoreCase);
@@ -195,6 +212,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ("icon-metadata", "public-icon.css"),
             ("elsewhere-res", "regions.txt"),
             ("elsewhere-res", "providers.txt"),
+            ("award-logos", "oscar"),
+            ("award-logos", "golden-globe"),
+            ("award-logos", "bafta"),
+            ("award-logos", "emmy"),
+            ("award-logos", "sag"),
+            ("award-logos", "critics-choice"),
+            ("award-logos", "national-board-of-review"),
+            ("award-logos", "saturn"),
+            ("award-logos", "kids-choice"),
+            ("award-logos", "toronto-critics"),
+            ("award-logos", "cannes"),
         };
 
         /// <summary>True when <paramref name="source"/> is a registered upstream.</summary>
@@ -400,6 +428,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return buffer.ToArray();
         }
 
+        // Sources known to rate-limit a burst of same-host requests within a
+        // few seconds (observed directly: Wikimedia Commons 429s a fresh install's
+        // startup refresh of all "award-logos" entries, even though each request
+        // on its own succeeds fine seconds apart). Everything else (jsdelivr,
+        // Google Fonts, etc.) has never shown this and gets no artificial delay —
+        // this is deliberately narrow, not a blanket slowdown of every refresh.
+        private static readonly HashSet<string> BurstSensitiveSources = new(StringComparer.Ordinal) { "award-logos" };
+        // Wikimedia's actual per-IP rate-limit threshold isn't documented, so this
+        // is a deliberately conservative guess rather than a tuned value — cheap to
+        // be generous here since it only adds a few seconds to a background refresh
+        // that runs once at startup and once every 24h, not on the request path.
+        private static readonly TimeSpan BurstSensitiveDelay = TimeSpan.FromSeconds(2);
+
         /// <summary>Forces a fresh download of every <see cref="KnownAssets"/> entry.</summary>
         public async Task RefreshKnownAsync(IProgress<double>? progress, CancellationToken cancellationToken)
         {
@@ -407,10 +448,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var total = KnownAssets.Count;
             var done = 0;
             var ok = 0;
+            string? previousSource = null;
 
             foreach (var (source, path) in KnownAssets)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                if (source == previousSource && BurstSensitiveSources.Contains(source))
+                {
+                    await Task.Delay(BurstSensitiveDelay, cancellationToken).ConfigureAwait(false);
+                }
+                previousSource = source;
+
                 var asset = await GetAsync(source, path, forceRefresh: true, cancellationToken).ConfigureAwait(false);
                 if (asset != null)
                 {

@@ -626,6 +626,14 @@
     "active_streams_count": "{count} actieve stream|{count} actieve streams",
     "active_streams_none": "Geen actieve streams",
     "reviews_avg_rating_tooltip": "Gemiddelde beoordeling van {count} gebruiker(s)",
+    "awards_label": "Prijzen",
+    "awards_wins_count": "{count} keer gewonnen",
+    "awards_nominations_count": "{count} nominaties",
+    "awards_modal_title": "Prijzen en nominaties",
+    "awards_won": "Gewonnen",
+    "awards_nominated": "Genomineerd",
+    "awards_close": "Sluiten",
+    "awards_for_work": "voor {work}",
     "release_date_tooltip": "Release-/uitzenddatum (via TMDB)",
     "panel_settings_subtitles_position_note": "Vereist dat de Jellyfin-ondertitelstijl is ingesteld op <b>Aangepast</b> in de ondertitelinstellingen"
 }

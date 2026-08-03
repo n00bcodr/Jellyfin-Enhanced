@@ -57,6 +57,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.MaintenanceModeService _maintenanceModeService;
         private readonly Services.CdnAssetService _cdnAssetService;
         private readonly Services.SpoilerUserResolver _spoilerResolver;
+        private readonly Services.WikidataAwardsService _wikidataAwardsService;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
         // upstream Seerr on every request. Entries expire after 1 hour.
@@ -169,7 +170,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             MediaBrowser.Controller.Session.ISessionManager sessionManager,
             Services.MaintenanceModeService maintenanceModeService,
             Services.CdnAssetService cdnAssetService,
-            Services.SpoilerUserResolver spoilerResolver)
+            Services.SpoilerUserResolver spoilerResolver,
+            Services.WikidataAwardsService wikidataAwardsService)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -185,6 +187,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _maintenanceModeService = maintenanceModeService;
             _cdnAssetService = cdnAssetService;
             _spoilerResolver = spoilerResolver;
+            _wikidataAwardsService = wikidataAwardsService;
         }
 
         private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId, bool bypassCache = false, bool allowAutoImport = true)
@@ -2840,6 +2843,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ReviewsExpandedByDefault,
                 config.HideReviewsFromHiddenUsers,
                 config.HideReviewsFromDisabledUsers,
+                config.ShowAwards,
                 config.ShowReleaseDates,
                 config.ShowUserRatingOnPosters,
                 config.ShowUserRatingDash,
@@ -3041,6 +3045,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"Failed to proxy TMDB request. Error: {ex.Message}");
                 return StatusCode(500, "Failed to connect to TMDB.");
+            }
+        }
+
+        /// <summary>
+        /// Award wins/nominations for a title or a person, keyed by TMDB id.
+        /// "movie"/"tv" return awards the title itself (or a cast/crew member,
+        /// "for" that title) received; "person" returns that person's own
+        /// full award history across their career. Backed by
+        /// WikidataAwardsService's disk cache — Wikidata's public SPARQL endpoint
+        /// needs no API key, so this is gated only on the ShowAwards toggle, not
+        /// TMDB_API_KEY (that key is unrelated to this lookup).
+        /// </summary>
+        [HttpGet("awards/{mediaType}/{tmdbId}")]
+        [Authorize]
+        public async Task<IActionResult> GetAwards(string mediaType, string tmdbId, CancellationToken cancellationToken)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.ShowAwards)
+            {
+                return StatusCode(503, "Awards feature is not enabled.");
+            }
+
+            if (mediaType != "movie" && mediaType != "tv" && mediaType != "person")
+            {
+                return BadRequest("mediaType must be 'movie', 'tv', or 'person'.");
+            }
+
+            if (string.IsNullOrWhiteSpace(tmdbId) || !tmdbId.All(char.IsDigit))
+            {
+                return BadRequest("tmdbId must be a positive integer.");
+            }
+
+            try
+            {
+                var result = await _wikidataAwardsService.GetAwardsAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to fetch awards for {mediaType}:{tmdbId}. Error: {ex.Message}");
+                return StatusCode(500, "Failed to fetch awards.");
             }
         }
 

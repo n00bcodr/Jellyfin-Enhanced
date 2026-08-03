@@ -627,5 +627,13 @@
     "active_streams_count": "{count} Active Stream|{count} Active Streams",
     "active_streams_none": "No Active Streams",
     "reviews_avg_rating_tooltip": "Average rating from {count} user(s)",
+    "awards_label": "Awards",
+    "awards_wins_count": "{count} Wins",
+    "awards_nominations_count": "{count} Nominations",
+    "awards_modal_title": "Awards & Nominations",
+    "awards_won": "Won",
+    "awards_nominated": "Nominated",
+    "awards_close": "Close",
+    "awards_for_work": "for {work}",
     "release_date_tooltip": "Release/Air Date (via TMDB)"
 }

@@ -626,6 +626,14 @@
     "active_streams_count": "{count} aktivt stream|{count} aktive streams",
     "active_streams_none": "Ingen aktive streams",
     "reviews_avg_rating_tooltip": "Gennemsnitlig bedømmelse fra {count} bruger(r)",
+    "awards_label": "Priser",
+    "awards_wins_count": "{count} sejre",
+    "awards_nominations_count": "{count} nomineringer",
+    "awards_modal_title": "Priser og nomineringer",
+    "awards_won": "Vundet",
+    "awards_nominated": "Nomineret",
+    "awards_close": "Luk",
+    "awards_for_work": "for {work}",
     "release_date_tooltip": "Udgivelses-/udsendelsesdato (via TMDB)",
     "panel_settings_subtitles_position_note": "Kræver Jellyfin undertekststil indstillet til <b>Brugerdefinerede</b> i undertekster"
 }
