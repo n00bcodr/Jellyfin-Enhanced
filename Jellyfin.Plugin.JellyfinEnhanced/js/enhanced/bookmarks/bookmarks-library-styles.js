@@ -61,6 +61,11 @@
     }
 
     .je-bookmarks-empty {
+      grid-column: 1 / -1;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       text-align: center;
       padding: 60px 20px;
       color: #888;
