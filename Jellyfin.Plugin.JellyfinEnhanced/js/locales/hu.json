@@ -539,6 +539,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Töröld a kijelölést a történetcímkék megjelenítéséhez, például: \"Egy főszereplő halála\".",
     "panel_settings_spoiler_guard_override_reviews": "Vélemények",
     "panel_settings_spoiler_guard_override_reviews_desc": "Töröld a kijelölést a TMDB- / felhasználói vélemények paneljének megjelenítéséhez a sorozat részletező oldalain.",
+    "panel_settings_spoiler_guard_override_advanced": "Speciális, kategóriánkénti felfedés",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Törölje a jelölést, hogy ismét minden rejtve legyen — a következő epizód címét is beleértve — a rendszergazda által engedélyezett kategóriánkénti felfedés helyett.",
     "panel_settings_spoiler_guard_skip_confirm": "Ne kérjen megerősítést a spoiler-védelem kikapcsolásakor",
     "panel_settings_spoiler_guard_skip_confirm_desc": "Kihagyja a kikapcsolást megerősítő párbeszédablakot. Egy kattintást spórol, amikor kikapcsolod a spoiler-védelmet egy sorozatnál.",
     "hidden_content_hide_button": "Elrejtés",

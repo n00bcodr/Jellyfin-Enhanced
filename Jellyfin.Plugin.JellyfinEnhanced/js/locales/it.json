@@ -539,6 +539,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Deseleziona per vedere tag della storia come \"Morte di un personaggio principale\".",
     "panel_settings_spoiler_guard_override_reviews": "Recensioni",
     "panel_settings_spoiler_guard_override_reviews_desc": "Deseleziona per vedere il pannello delle recensioni TMDB / degli utenti nelle pagine dei dettagli delle serie.",
+    "panel_settings_spoiler_guard_override_advanced": "Rivelazioni avanzate per categoria",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Deseleziona per nascondere di nuovo tutto — incluso il titolo del prossimo episodio — invece delle rivelazioni per categoria attivate dall'amministratore.",
     "panel_settings_spoiler_guard_skip_confirm": "Non chiedermi conferma quando disattivo la protezione spoiler",
     "panel_settings_spoiler_guard_skip_confirm_desc": "Salta la finestra di conferma della disattivazione. Risparmia un clic quando disattivi la protezione spoiler per una serie.",
     "hidden_content_hide_button": "Nascondi",

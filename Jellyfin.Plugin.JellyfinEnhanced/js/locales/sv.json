@@ -539,6 +539,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Avmarkera för att se berättelsetaggar som \"En huvudpersons död\".",
     "panel_settings_spoiler_guard_override_reviews": "Recensioner",
     "panel_settings_spoiler_guard_override_reviews_desc": "Avmarkera för att se panelen med TMDB- / användarrecensioner på seriens detaljsidor.",
+    "panel_settings_spoiler_guard_override_advanced": "Avancerade visningar per kategori",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Avmarkera för att dölja allt igen — inklusive nästa avsnitts titel — i stället för de kategorivisningar din administratör aktiverat.",
     "panel_settings_spoiler_guard_skip_confirm": "Fråga inte om bekräftelse när spoilerskydd stängs av",
     "panel_settings_spoiler_guard_skip_confirm_desc": "Hoppar över bekräftelsedialogen vid avstängning. Sparar ett klick när du stänger av spoilerskydd för en serie.",
     "hidden_content_hide_button": "Dölj",

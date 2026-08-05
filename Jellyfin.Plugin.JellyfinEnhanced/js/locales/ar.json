@@ -539,6 +539,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "ألغِ التحديد لرؤية وسوم القصة مثل \"وفاة شخصية رئيسية\".",
     "panel_settings_spoiler_guard_override_reviews": "المراجعات",
     "panel_settings_spoiler_guard_override_reviews_desc": "ألغِ التحديد لرؤية لوحة مراجعات TMDB / المستخدمين في صفحات تفاصيل المسلسلات.",
+    "panel_settings_spoiler_guard_override_advanced": "الكشف المتقدم حسب الفئة",
+    "panel_settings_spoiler_guard_override_advanced_desc": "ألغِ التحديد لإخفاء كل شيء مجددًا — بما في ذلك عنوان الحلقة التالية — بدلًا من الكشف حسب الفئة الذي فعّله المسؤول.",
     "panel_settings_spoiler_guard_skip_confirm": "لا تطلب مني التأكيد عند إيقاف الحماية من الحرق",
     "panel_settings_spoiler_guard_skip_confirm_desc": "تجاوز مربع حوار تأكيد الإيقاف. يوفر نقرة عند إيقاف الحماية من الحرق لمسلسل.",
     "hidden_content_hide_button": "إخفاء",
