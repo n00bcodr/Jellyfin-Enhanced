@@ -597,6 +597,7 @@
                 'core/lifecycle.js',
                 'core/dom-observer.js',
                 'core/ui-kit.js',
+                'core/media-language.js',
                 'core/api-client.js',
                 'core/tag-renderer-base.js',
 

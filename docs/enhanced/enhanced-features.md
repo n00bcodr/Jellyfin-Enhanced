@@ -476,6 +476,17 @@ Display available audio languages as country flags on posters.
 - Show up to 3 unique languages
 - Positioned bottom-left by default
 - Also displays on item detail pages
+- Regional variants get their own flag when the audio track is explicitly
+  tagged with a region: `pt-BR` shows the Brazilian flag while `pt` / `pt-PT`
+  keep the Portuguese one, `es-419` / `es-MX` (Latin-American Spanish) show
+  the Mexican flag, `zh-Hant` maps to the Taiwanese flag, and so on. Media
+  tagged with just a base language (`pt`, `es`, `zh`) keeps its default flag —
+  a regional variant is never guessed
+
+!!! note "Tagging matters"
+    Region detection relies on the language tag stored in your media file
+    (`pt-BR`, `es-MX`, `pob`…). Tracks tagged with only a base language code
+    can't be told apart, so they show the language's default flag.
 
 ### Rating Tags
 
