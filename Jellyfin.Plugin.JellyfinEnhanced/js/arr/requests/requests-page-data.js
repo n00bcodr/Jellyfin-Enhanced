@@ -83,7 +83,7 @@
       return data;
     } catch (error) {
       console.error(`${logPrefix} Failed to fetch downloads:`, error);
-      state.downloads = [];
+      if (!JE.session || JE.session.isCurrent(epoch)) state.downloads = [];
       return null;
     }
   }
@@ -208,6 +208,9 @@
       ? `/JellyfinEnhanced/jellyseerr/tv/${tmdbId}`
       : `/JellyfinEnhanced/jellyseerr/movie/${tmdbId}`;
 
+    // Seerr media details carry per-user request state — don't let a
+    // response spanning a user switch repopulate the reset cache.
+    const epoch = captureEpoch();
     try {
       const data = await ApiClient.ajax({
         type: "GET",
@@ -215,10 +218,10 @@
         dataType: "json",
         headers: { "X-Jellyfin-User-Id": ApiClient.getCurrentUserId() },
       });
-      issueMediaCache.set(cacheKey, data || null);
+      if (epochCurrent(epoch)) issueMediaCache.set(cacheKey, data || null);
       return data || null;
     } catch (error) {
-      issueMediaCache.set(cacheKey, null);
+      if (epochCurrent(epoch)) issueMediaCache.set(cacheKey, null);
       return null;
     }
   }
@@ -316,7 +319,7 @@
       return data;
     } catch (error) {
       console.error(`${logPrefix} Failed to fetch history:`, error);
-      state.history = [];
+      if (epochCurrent(epoch)) state.history = [];
       return null;
     }
   }

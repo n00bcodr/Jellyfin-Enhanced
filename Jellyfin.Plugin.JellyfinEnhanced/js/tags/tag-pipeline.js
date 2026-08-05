@@ -610,6 +610,7 @@
 
                     const firstEpisode = (item.Type === 'Series' || item.Type === 'Season')
                         ? await getFirstEpisode(userId, item.Id) : null;
+                    if (generation !== batchGeneration) break; // switched during the awaits above
                     const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget };
 
                     for (const [, renderer] of renderers) {

@@ -952,18 +952,24 @@
                 const recoveryEpoch = JE.session ? JE.session.getEpoch() : 0;
                 const recoveryCurrent = () => !JE.session || JE.session.isCurrent(recoveryEpoch);
                 const recoveredConfig = await fetchUserScopedConfig(liveUserId);
-                if (recoveryCurrent()) JE.userConfig = recoveredConfig;
-                // The stage-2 prefetch may have resolved BEFORE the switch,
-                // leaving the previous user's object (and admin flag) behind.
-                JE.currentUser = null;
-                try {
-                    const liveUser = await ApiClient.getCurrentUser();
-                    if (recoveryCurrent() && liveUser?.Id === ApiClient.getCurrentUserId()) JE.currentUser = liveUser;
-                } catch (_) { /* non-fatal — consumers null-check */ }
-                // Same for the admin-only private config fetched in stage 1.
-                for (const key of privateConfigKeys) delete JE.pluginConfig[key];
-                privateConfigKeys = [];
-                await loadPrivateConfig(); // internally epoch-guarded
+                if (recoveryCurrent()) {
+                    JE.userConfig = recoveredConfig;
+                    // The stage-2 prefetch may have resolved BEFORE the
+                    // switch, leaving the previous user's object (and admin
+                    // flag) behind.
+                    JE.currentUser = null;
+                    try {
+                        const liveUser = await ApiClient.getCurrentUser();
+                        if (recoveryCurrent() && liveUser?.Id === ApiClient.getCurrentUserId()) JE.currentUser = liveUser;
+                    } catch (_) { /* non-fatal — consumers null-check */ }
+                    // Same for the admin-only private config fetched in stage 1.
+                    for (const key of privateConfigKeys) delete JE.pluginConfig[key];
+                    privateConfigKeys = [];
+                    await loadPrivateConfig(); // internally epoch-guarded
+                }
+                // If ANOTHER switch happened during this recovery, the
+                // je:user-changed re-bootstrap owns the repair — this stale
+                // recovery must not touch the globals further.
             }
 
             // Stage 4: Initialize core settings/shortcuts using potentially defined functions

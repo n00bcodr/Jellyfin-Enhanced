@@ -195,7 +195,7 @@
         pendingRetryHandle = null;
     }
 
-    function scheduleFlushRetry(attempt) {
+    function scheduleFlushRetry(attempt, generation) {
         if (attempt >= FLUSH_RETRY_DELAYS_MS.length) {
             console.error('🪼 Jellyfin Enhanced: hidden-content save retries exhausted; local change may be lost on reload');
             // User-visible toast — the bulk-save endpoint is genuinely down at this point.

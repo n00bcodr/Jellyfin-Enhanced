@@ -263,8 +263,9 @@
         });
       });
     } catch (error) {
-      // Silently handle error - highlighting is optional
-      state.userDataMap = new Map();
+      // Silently handle error - highlighting is optional. Stale failures
+      // (from before a user switch) must not clear the new user's map.
+      if (!JE.session || JE.session.isCurrent(epoch)) state.userDataMap = new Map();
     }
   }
 
@@ -315,9 +316,9 @@
         if (state.pageVisible) {
           renderPage();
         }
-      } else {
-        state.requestedLoading = false;
       }
+      // Stale run: leave the state alone entirely — the reset already
+      // cleared the latch, and the current user's own fetch owns it now.
     }
   }
 
