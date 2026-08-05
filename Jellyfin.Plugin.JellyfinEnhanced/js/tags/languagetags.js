@@ -10,30 +10,10 @@
     const containerClass = 'language-overlay-container';
     const flagClass = 'language-flag';
     const langDisplayNames = new Intl.DisplayNames(['en'], { type: 'language' });
-
-    // Language to country code mapping (shared with features.js)
-    const languageToCountryMap = {
-        English: 'gb', eng: 'gb', Japanese: 'jp', jpn: 'jp', Spanish: 'es', spa: 'es', French: 'fr', fre: 'fr', fra: 'fr',
-        German: 'de', ger: 'de', deu: 'de', Italian: 'it', ita: 'it', Korean: 'kr', kor: 'kr', Chinese: 'cn', chi: 'cn',
-        zho: 'cn', Russian: 'ru', rus: 'ru', Portuguese: 'pt', por: 'pt', Hindi: 'in', hin: 'in', Dutch: 'nl', dut: 'nl',
-        nld: 'nl', Arabic: 'sa', ara: 'sa', Bengali: 'in', ben: 'in', Czech: 'cz', ces: 'cz', Danish: 'dk',
-        dan: 'dk', Greek: 'gr', ell: 'gr', Finnish: 'fi', fin: 'fi', Hebrew: 'il', heb: 'il', Hungarian: 'hu',
-        hun: 'hu', Indonesian: 'id', ind: 'id', Norwegian: 'no', nor: 'no', Polish: 'pl', pol: 'pl', Persian: 'ir',
-        per: 'ir', fas: 'ir', Romanian: 'ro', ron: 'ro', rum: 'ro', Swedish: 'se', swe: 'se', Thai: 'th', tha: 'th',
-        Turkish: 'tr', tur: 'tr', Ukrainian: 'ua', ukr: 'ua', Vietnamese: 'vn', vie: 'vn', Malay: 'my', msa: 'my',
-        may: 'my', Swahili: 'ke', swa: 'ke', Tagalog: 'ph', tgl: 'ph', Filipino: 'ph', Tamil: 'in', tam: 'in',
-        Telugu: 'in', tel: 'in', Marathi: 'in', mar: 'in', Punjabi: 'in', pan: 'in', Urdu: 'pk', urd: 'pk',
-        Gujarati: 'in', guj: 'in', Kannada: 'in', kan: 'in', Malayalam: 'in', mal: 'in', Sinhala: 'lk', sin: 'lk',
-        Nepali: 'np', nep: 'np', Pashto: 'af', pus: 'af', Kurdish: 'iq', kur: 'iq', Slovak: 'sk', slk: 'sk',
-        Slovenian: 'si', slv: 'si', Serbian: 'rs', srp: 'rs', Croatian: 'hr', hrv: 'hr', Bulgarian: 'bg', bul: 'bg',
-        Macedonian: 'mk', mkd: 'mk', Albanian: 'al', sqi: 'al', Estonian: 'ee', est: 'ee', Latvian: 'lv', lav: 'lv',
-        Lithuanian: 'lt', lit: 'lt', Icelandic: 'is', isl: 'is', Georgian: 'ge', kat: 'ge', Armenian: 'am',
-        hye: 'am', Mongolian: 'mn', mon: 'mn', Kazakh: 'kz', kaz: 'kz', Uzbek: 'uz', uzb: 'uz', Azerbaijani: 'az',
-        aze: 'az', Belarusian: 'by', bel: 'by', Amharic: 'et', amh: 'et', Zulu: 'za', zul: 'za', Afrikaans: 'za',
-        afr: 'za', Hausa: 'ng', hau: 'ng', Yoruba: 'ng', yor: 'ng', Igbo: 'ng', ibo: 'ng', Brazilian: 'br', bra: 'br',
-        Catalan: 'es-ct', cat: 'es-ct', ca: 'es-ct', Galician: 'es-ga', glg: 'es-ga', gl: 'es-ga', Basque: 'es-pv',
-        baq: 'es-pv', eus: 'es-pv'
-    };
+    // Flag resolution lives in the shared core module (js/core/media-language.js)
+    // so this overlay and the details-page audio-language row can never disagree.
+    // It understands region subtags: pt-BR → Brazilian flag, es-419 → Mexican,
+    // zh-Hant → Taiwanese — while a bare pt/es/zh keeps its default flag.
 
     /**
      * Extracts audio languages from a Jellyfin item's media sources.
@@ -82,14 +62,17 @@
             let obj = null;
             if (!entry) continue;
             if (typeof entry === 'string') {
-                // Handle legacy cache that stored ["en", "fr", ...]
-                const code = entry.split('-')[0].toLowerCase();
+                // Handle legacy cache that stored ["en", "fr", ...]. Keep the
+                // full tag — a region subtag (pt-BR) is meaningful and must
+                // survive normalization so the region flag can render.
+                const code = entry.toLowerCase();
                 let name = null;
                 try { name = new Intl.DisplayNames(['en'], { type: 'language' }).of(code) || code.toUpperCase(); }
                 catch { name = code.toUpperCase(); }
                 obj = { name, code };
             } else if (typeof entry === 'object') {
-                const code = (entry.code || entry.Code || '').toString().split('-')[0];
+                // Same here: never strip the region from the code.
+                const code = (entry.code || entry.Code || '').toString();
                 const name = entry.name || entry.Name || null;
                 if (code) {
                     let resolvedName = name;
@@ -134,11 +117,13 @@
         const seenCountries = new Set();
         const uniqueFlags = [];
 
-        // Deduplicate by country code while preserving language info for tooltips
+        // Deduplicate by flag while preserving language info for tooltips.
+        // Regional variants resolve to distinct flags (pt vs pt-BR), so a
+        // movie carrying both tracks correctly shows both.
         normalized.forEach(lang => {
-            const codeKey = (lang.code || '').toString().split('-')[0];
+            const codeKey = (lang.code || '').toString();
             const nameKey = (lang.name || '').toString();
-            const countryCode = languageToCountryMap[nameKey] || languageToCountryMap[codeKey];
+            const countryCode = JE.core.mediaLanguage.resolveFlag(lang);
             if (countryCode && !seenCountries.has(countryCode)) {
                 seenCountries.add(countryCode);
                 uniqueFlags.push({ countryCode, name: nameKey || codeKey.toUpperCase(), allLanguages: [nameKey || codeKey.toUpperCase()] });
@@ -160,6 +145,9 @@
             img.loading = 'lazy';
             img.dataset.lang = flagInfo.countryCode.toLowerCase();
             img.dataset.langName = flagInfo.allLanguages.join(', ');
+            // A region subtag from the wild can name a country the flag set
+            // lacks; drop the broken image rather than showing it.
+            img.onerror = () => img.remove();
             wrap.appendChild(img);
         });
         ctx.commitOverlay(container, wrap);
@@ -173,8 +161,13 @@
         taggedAttr: 'jeLanguageTagged',
         styleId: 'language-tags-styles',
         cache: {
-            key: 'JellyfinEnhanced-languageTagsCache',
-            legacyPrefix: 'languageTagsCache',
+            // v2: entries now keep region subtags (pt-BR) instead of stripped
+            // base codes; the old key is cleaned up via legacyPrefix so stale
+            // stripped entries can't pin the wrong flag for the 30-day TTL.
+            // Both prior generations are listed — dropping the ancient
+            // un-namespaced stem would leave its keys orphaned forever.
+            key: 'JellyfinEnhanced-languageTagsCache-v2',
+            legacyPrefix: ['JellyfinEnhanced-languageTagsCache', 'languageTagsCache'],
             hotBucket: 'language',
         },
         buildCss() {
