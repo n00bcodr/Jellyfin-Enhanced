@@ -431,6 +431,168 @@
     const MAX_MISMATCH_RETRIES = 100; // ~30s at 300ms intervals
 
     /**
+     * Fetches the five per-user config files (settings, shortcuts, bookmark,
+     * elsewhere, hidden-content) and assembles a fresh userConfig object.
+     * Shared by first boot and by the user-switch re-bootstrap so both paths
+     * build the object identically.
+     * @param {string} userId - The user to load config for.
+     * @returns {Promise<object>} A freshly-built userConfig object.
+     */
+    async function fetchUserScopedConfig(userId) {
+        const fetchPromises = [
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/settings.json?_=${Date.now()}`), dataType: 'json' })
+                     .then(data => ({ name: 'settings', status: 'fulfilled', value: data }))
+                     .catch(e => ({ name: 'settings', status: 'rejected', reason: e })),
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/shortcuts.json?_=${Date.now()}`), dataType: 'json' })
+                     .then(data => ({ name: 'shortcuts', status: 'fulfilled', value: data }))
+                     .catch(e => ({ name: 'shortcuts', status: 'rejected', reason: e })),
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/bookmark.json?_=${Date.now()}`), dataType: 'json' })
+                     .then(data => ({ name: 'bookmark', status: 'fulfilled', value: data }))
+                     .catch(e => ({ name: 'bookmark', status: 'rejected', reason: e })),
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/elsewhere.json?_=${Date.now()}`), dataType: 'json' })
+                     .then(data => ({ name: 'elsewhere', status: 'fulfilled', value: data }))
+                     .catch(e => ({ name: 'elsewhere', status: 'rejected', reason: e })),
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`), dataType: 'json' })
+                     .then(data => ({ name: 'hiddenContent', status: 'fulfilled', value: data }))
+                     .catch(e => ({ name: 'hiddenContent', status: 'rejected', reason: e }))
+        ];
+        // Use allSettled to get results even if some fetches fail
+        const results = await Promise.allSettled(fetchPromises);
+
+        const userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
+        results.forEach(result => {
+            if (result.status === 'fulfilled' && result.value) {
+                const data = result.value;
+                if (data.status === 'fulfilled' && data.value && typeof data.value === 'object') {
+                    // *** CONVERT PASCALCASE TO CAMELCASE ***
+                    if (data.name === 'settings' || data.name === 'bookmark' || data.name === 'hiddenContent') {
+                        userConfig[data.name] = toCamelCase(data.value);
+                    } else {
+                        userConfig[data.name] = data.value;
+                    }
+                } else if (data.status === 'rejected') {
+                    if (data.name === 'shortcuts') userConfig.shortcuts = { Shortcuts: [] };
+                    else if (data.name === 'bookmark') userConfig.bookmark = { bookmarks: {} };
+                    else if (data.name === 'elsewhere') userConfig.elsewhere = {};
+                    else if (data.name === 'hiddenContent') userConfig.hiddenContent = { items: {}, settings: {} };
+                    else userConfig[data.name] = {};
+                } else {
+                    if (data.name === 'shortcuts') userConfig.shortcuts = { Shortcuts: [] };
+                    else if (data.name === 'bookmark') userConfig.bookmark = { bookmarks: {} };
+                    else if (data.name === 'elsewhere') userConfig.elsewhere = {};
+                    else if (data.name === 'hiddenContent') userConfig.hiddenContent = { items: {}, settings: {} };
+                    else userConfig[data.name] = {};
+                }
+            } else {
+                const name = result.value?.name || result.reason?.name || '';
+                if (name === 'shortcuts') userConfig.shortcuts = { Shortcuts: [] };
+                else if (name === 'bookmark') userConfig.bookmark = { bookmarks: {} };
+                else if (name === 'elsewhere') userConfig.elsewhere = {};
+                else if (name === 'hiddenContent') userConfig.hiddenContent = { items: {}, settings: {} };
+                else if (name) userConfig[name] = {};
+            }
+        });
+        return userConfig;
+    }
+
+    /**
+     * Seeds the admin's default display language into the per-user
+     * `${userId}-language` key — only when the user has no language set yet,
+     * so a user's own choice is never overwritten.
+     * @param {string} userId
+     */
+    function seedDisplayLanguage(userId) {
+        if (!userId) return;
+        const languageKey = `${userId}-language`;
+        // Only seed the admin's default language if the user has no language set yet.
+        // This prevents overwriting the user's own language choice on every page load.
+        if (localStorage.getItem(languageKey) === null) {
+            const desiredLanguage = (JE.currentSettings?.displayLanguage || '').trim();
+            if (desiredLanguage) {
+                const normalizeLangCode = (code) => {
+                    if (!code) return '';
+                    const parts = code.split('-');
+                    if (parts.length === 1) return parts[0].toLowerCase();
+                    if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
+                    return code;
+                };
+                localStorage.setItem(languageKey, normalizeLangCode(desiredLanguage));
+            }
+        }
+    }
+
+    /**
+     * Wires the plugin's own state into the identity-session machinery
+     * (js/core/session.js): clears the boot-time per-user globals on any
+     * identity transition, and re-loads them for the incoming user after a
+     * switch — the SPA never reloads index.html on logout/login, so without
+     * this every module keeps serving the previous user's data.
+     * Called once, right after the component scripts (including session.js)
+     * have loaded.
+     */
+    function registerSessionIntegration() {
+        if (!JE.session) {
+            console.error('🪼 Jellyfin Enhanced: session.js missing — user-switch handling disabled.');
+            return;
+        }
+
+        // Synchronous reset: wipe every boot-time global the moment the
+        // identity changes, so nothing can read user A's data under user B.
+        JE.session.onUserChange('plugin-globals', () => {
+            JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
+            JE.currentUser = null;
+            JE.currentSettings = {};
+            // Cleared (not merged over) so user A's extra shortcuts don't
+            // survive into user B's session — initializeShortcuts() merges.
+            JE.state.activeShortcuts = {};
+        });
+
+        // Async re-bootstrap: after a switch to a signed-in user, reload that
+        // user's config and re-derive settings/shortcuts/translations.
+        document.addEventListener('je:user-changed', (e) => {
+            const detail = /** @type {CustomEvent} */ (e).detail || {};
+            const { userId, epoch } = detail;
+            if (!userId) return; // logged out — stay reset until the next sign-in
+            // Defer one macrotask: the transition fires from inside the
+            // setAuthenticationInfo wrapper BEFORE the host installs the new
+            // token; the fetches below need that token in place.
+            setTimeout(async () => {
+                if (!JE.session.isCurrent(epoch)) return; // switched again already
+                try {
+                    const userConfig = await fetchUserScopedConfig(userId);
+                    if (!JE.session.isCurrent(epoch)) return; // stale result — drop it
+                    JE.userConfig = userConfig;
+
+                    // Refresh the cached full user object (admin checks etc.).
+                    try {
+                        const user = await ApiClient.getCurrentUser();
+                        if (JE.session.isCurrent(epoch)) JE.currentUser = user;
+                    } catch (_) { /* non-fatal — consumers null-check */ }
+                    if (!JE.session.isCurrent(epoch)) return;
+
+                    JE.currentSettings = JE.loadSettings();
+                    JE.initializeShortcuts();
+                    seedDisplayLanguage(userId);
+
+                    // Translations follow the per-user language choice.
+                    try {
+                        const translations = await loadTranslations();
+                        if (!JE.session.isCurrent(epoch)) return;
+                        if (translations) JE.translations = translations;
+                    } catch (_) { /* keep previous translations */ }
+
+                    // Announce that the new user's data is live so views
+                    // (bookmarks, hidden content, …) can re-render from it.
+                    document.dispatchEvent(new CustomEvent('je:user-data-loaded', { detail }));
+                    console.log('🪼 Jellyfin Enhanced: Reloaded user-scoped data after user switch.');
+                } catch (err) {
+                    console.error('🪼 Jellyfin Enhanced: Failed to reload user data after user switch:', err);
+                }
+            }, 0);
+        });
+    }
+
+    /**
      * Main initialization function.
      */
     async function initialize() {
@@ -527,60 +689,7 @@
             // Fire-and-forget alongside stage-2 network calls; result available as JE.currentUser
             ApiClient.getCurrentUser().then(u => { JE.currentUser = u; }).catch(() => {});
 
-            const fetchPromises = [
-                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/settings.json?_=${Date.now()}`), dataType: 'json' })
-                         .then(data => ({ name: 'settings', status: 'fulfilled', value: data }))
-                         .catch(e => ({ name: 'settings', status: 'rejected', reason: e })),
-                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/shortcuts.json?_=${Date.now()}`), dataType: 'json' })
-                         .then(data => ({ name: 'shortcuts', status: 'fulfilled', value: data }))
-                         .catch(e => ({ name: 'shortcuts', status: 'rejected', reason: e })),
-                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/bookmark.json?_=${Date.now()}`), dataType: 'json' })
-                         .then(data => ({ name: 'bookmark', status: 'fulfilled', value: data }))
-                         .catch(e => ({ name: 'bookmark', status: 'rejected', reason: e })),
-                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/elsewhere.json?_=${Date.now()}`), dataType: 'json' })
-                         .then(data => ({ name: 'elsewhere', status: 'fulfilled', value: data }))
-                         .catch(e => ({ name: 'elsewhere', status: 'rejected', reason: e })),
-                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`), dataType: 'json' })
-                         .then(data => ({ name: 'hiddenContent', status: 'fulfilled', value: data }))
-                         .catch(e => ({ name: 'hiddenContent', status: 'rejected', reason: e }))
-            ];
-            // Use allSettled to get results even if some fetches fail
-            const results = await Promise.allSettled(fetchPromises);
-
-            JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
-            results.forEach(result => {
-                if (result.status === 'fulfilled' && result.value) {
-                    const data = result.value;
-                    if (data.status === 'fulfilled' && data.value && typeof data.value === 'object') {
-                        // *** CONVERT PASCALCASE TO CAMELCASE ***
-                        if (data.name === 'settings' || data.name === 'bookmark' || data.name === 'hiddenContent') {
-                            JE.userConfig[data.name] = toCamelCase(data.value);
-                        } else {
-                            JE.userConfig[data.name] = data.value;
-                        }
-                    } else if (data.status === 'rejected') {
-                        if (data.name === 'shortcuts') JE.userConfig.shortcuts = { Shortcuts: [] };
-                        else if (data.name === 'bookmark') JE.userConfig.bookmark = { bookmarks: {} };
-                        else if (data.name === 'elsewhere') JE.userConfig.elsewhere = {};
-                        else if (data.name === 'hiddenContent') JE.userConfig.hiddenContent = { items: {}, settings: {} };
-                        else JE.userConfig[data.name] = {};
-                    } else {
-                        if (data.name === 'shortcuts') JE.userConfig.shortcuts = { Shortcuts: [] };
-                        else if (data.name === 'bookmark') JE.userConfig.bookmark = { bookmarks: {} };
-                        else if (data.name === 'elsewhere') JE.userConfig.elsewhere = {};
-                        else if (data.name === 'hiddenContent') JE.userConfig.hiddenContent = { items: {}, settings: {} };
-                        else JE.userConfig[data.name] = {};
-                    }
-                } else {
-                    const name = result.value?.name || result.reason?.name || '';
-                    if (name === 'shortcuts') JE.userConfig.shortcuts = { Shortcuts: [] };
-                    else if (name === 'bookmark') JE.userConfig.bookmark = { bookmarks: {} };
-                    else if (name === 'elsewhere') JE.userConfig.elsewhere = {};
-                    else if (name === 'hiddenContent') JE.userConfig.hiddenContent = { items: {}, settings: {} };
-                    else if (name) JE.userConfig[name] = {};
-                }
-            });
-
+            JE.userConfig = await fetchUserScopedConfig(userId);
 
             // Initialize splash screen
             if (typeof JE.initializeSplashScreen === 'function') {
@@ -594,6 +703,9 @@
                 // lifecycle registry, the shared body observer, the fetch
                 // layer and base UI primitives that everything else builds on.
                 'core/navigation.js',
+                // session.js must load before every module that registers a
+                // per-user reset handler (JE.session.onUserChange) at eval time.
+                'core/session.js',
                 'core/lifecycle.js',
                 'core/dom-observer.js',
                 'core/ui-kit.js',
@@ -782,6 +894,10 @@
             await loadScripts(allComponentScripts, basePath);
             console.log('🪼 Jellyfin Enhanced: All component scripts loaded.');
 
+            // Wire user-switch detection → global reset → re-bootstrap.
+            // Must happen after loadScripts so JE.session exists.
+            registerSessionIntegration();
+
             // Stage 4: Initialize core settings/shortcuts using potentially defined functions
             if (typeof JE.loadSettings === 'function' && typeof JE.initializeShortcuts === 'function') {
                 JE.currentSettings = JE.loadSettings(); // This happens AFTER config.js is loaded
@@ -792,24 +908,7 @@
                  return;
             }
 
-            if (userId) {
-                const languageKey = `${userId}-language`;
-                // Only seed the admin's default language if the user has no language set yet.
-                // This prevents overwriting the user's own language choice on every page load.
-                if (localStorage.getItem(languageKey) === null) {
-                    const desiredLanguage = (JE.currentSettings?.displayLanguage || '').trim();
-                    if (desiredLanguage) {
-                        const normalizeLangCode = (code) => {
-                            if (!code) return '';
-                            const parts = code.split('-');
-                            if (parts.length === 1) return parts[0].toLowerCase();
-                            if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
-                            return code;
-                        };
-                        localStorage.setItem(languageKey, normalizeLangCode(desiredLanguage));
-                    }
-                }
-            }
+            seedDisplayLanguage(userId);
 
             // Stage 5: Initialize theme system first
             if (typeof JE.themer?.init === 'function') {
