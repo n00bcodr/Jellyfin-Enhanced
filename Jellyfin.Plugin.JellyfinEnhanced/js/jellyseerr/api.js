@@ -904,6 +904,18 @@
         return baseUrl;
     };
 
+    // The Seerr identity (linked user, permissions, override rules) is
+    // per-Jellyfin-user; a sticky success cached for user A must not answer
+    // for user B after an SPA user switch.
+    JE.session?.onUserChange('jellyseerr-api', () => {
+        cachedUserStatus = null;
+        cachedUserStatusAt = 0;
+        cachedOverrideRules = null;
+        overrideRulesCachedAt = 0;
+        // Allow the status banner to surface again for the new user.
+        window.__JE_userStatusBannerShown = null;
+    });
+
     // Expose the API module on the global JE object
     JE.jellyseerrAPI = api;
 

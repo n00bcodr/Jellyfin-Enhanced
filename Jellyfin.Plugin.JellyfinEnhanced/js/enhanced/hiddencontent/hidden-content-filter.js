@@ -19,6 +19,13 @@
 
     const parentSeriesCache = new Map();
     const parentSeriesRequestMap = new Map();
+
+    // Item lookups were fetched as the previous user (library access and
+    // spoiler stripping differ per user) — drop them on a user switch.
+    window.JellyfinEnhanced.session?.onUserChange('hidden-content-filter', () => {
+        parentSeriesCache.clear();
+        parentSeriesRequestMap.clear();
+    });
     const sectionSurfaceCache = new WeakMap();
 
     /** Delay for first detail-page rescan (async episode loading). */

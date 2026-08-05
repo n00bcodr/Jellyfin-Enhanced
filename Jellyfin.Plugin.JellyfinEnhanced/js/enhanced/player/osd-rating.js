@@ -8,6 +8,12 @@
   // Hot cache (per session) so each item is fetched once
   const ratingCache = new Map();
   const pendingRatings = new Map();
+
+  // Ratings are the signed-in user's own — drop them on a user switch.
+  window.JellyfinEnhanced.session?.onUserChange('osd-rating', () => {
+    ratingCache.clear();
+    pendingRatings.clear();
+  });
   let scheduledUpdate = null;
   let osdObserver = null;
 

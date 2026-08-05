@@ -82,6 +82,16 @@
     _customTabContainer: null,
   };
 
+  // Watched state, favorites and requested-item highlighting are per-user —
+  // clear them on a user switch so the calendar re-derives everything for
+  // the new user on its next render.
+  JE.session?.onUserChange('calendar-page', () => {
+    state.userDataMap.clear();
+    state.requestedItems.clear();
+    state.requestedLoaded = false;
+    state.requestedLoading = false;
+  });
+
   // Status color mapping
   const STATUS_COLORS = {
     CinemaRelease: "#2196f3",

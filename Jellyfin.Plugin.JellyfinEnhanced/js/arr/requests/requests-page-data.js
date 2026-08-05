@@ -46,6 +46,25 @@
     _customTabContainer: null,
   };
 
+  // Requests/issues/history and the approve permission all belong to the
+  // signed-in Seerr-linked user — wipe them on a user switch so the page
+  // re-fetches as the new user instead of rendering the previous user's data.
+  JE.session?.onUserChange('requests-page', () => {
+    state.downloads = [];
+    state.requests = [];
+    state.requestsPage = 1;
+    state.requestsTotalPages = 1;
+    state.canApproveRequests = false;
+    state.issues = [];
+    state.issuesPage = 1;
+    state.issuesTotalPages = 1;
+    state.issuesError = false;
+    state.history = [];
+    state.historyPage = 1;
+    state.historyTotalPages = 1;
+    issueMediaCache.clear();
+  });
+
   const issueMediaCache = new Map();
 
   /**

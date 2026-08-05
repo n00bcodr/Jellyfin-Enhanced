@@ -734,13 +734,30 @@
             }
 
             // Single delegated listener for closing all arr dropdowns on outside click.
-            document.addEventListener('click', function(e) {
-                if (!e.target.closest('.arr-dropdown')) {
-                    document.querySelectorAll('.arr-dropdown.open').forEach(d => d.classList.remove('open'));
-                }
-            });
+            // Guarded so a user-switch re-initialization doesn't stack duplicates.
+            if (!JE._arrDropdownCloserInstalled) {
+                JE._arrDropdownCloserInstalled = true;
+                document.addEventListener('click', function(e) {
+                    if (!e.target.closest('.arr-dropdown')) {
+                        document.querySelectorAll('.arr-dropdown.open').forEach(d => d.classList.remove('open'));
+                    }
+                });
+            }
+
+            // Identity epoch this initialization belongs to. The admin check
+            // above was resolved for THIS user — after a user switch the
+            // observer must retire itself instead of injecting admin-only
+            // links (with stale slugCache data) for the next user.
+            const initEpoch = JE.session ? JE.session.getEpoch() : 0;
 
             observer = JE.helpers.createObserver('arr-links', () => {
+                if (JE.session && !JE.session.isCurrent(initEpoch)) {
+                    if (observer) {
+                        observer.disconnect();
+                        console.log(`${logPrefix} Observer disconnected — user changed`);
+                    }
+                    return;
+                }
                 if (!JE?.pluginConfig?.ArrLinksEnabled) {
                     if (observer) {
                         observer.disconnect();
@@ -774,4 +791,16 @@
             console.error(`${logPrefix} Failed to initialize`, err);
         }
     };
+
+    // Re-run the whole initialization for the incoming user after a switch:
+    // the admin gate, the observer and the slug caches all live in the init
+    // closure, so a fresh call rebuilds them for the new user (the previous
+    // observer retires itself via the epoch guard above). Runs off
+    // je:user-data-loaded so JE.currentUser/currentSettings are already the
+    // new user's when the admin check reads them.
+    document.addEventListener('je:user-data-loaded', () => {
+        if (!JE?.pluginConfig?.ArrLinksEnabled) return;
+        try { JE._arrLinksObserver?.disconnect(); } catch (_) { /* already gone */ }
+        JE.initializeArrLinksScript();
+    });
 })(window.JellyfinEnhanced);

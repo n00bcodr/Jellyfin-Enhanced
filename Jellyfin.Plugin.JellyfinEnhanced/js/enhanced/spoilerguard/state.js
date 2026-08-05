@@ -181,4 +181,20 @@
                 throw err;
             });
     };
+
+    // Spoiler Guard state (enabled series/movies/collections, prefs) is
+    // per-user and memoized for the whole SPA session via statePromise.
+    // Drop it on a user switch so the next whenLoaded() fetches the new
+    // user's state instead of serving the previous user's.
+    JE.session?.onUserChange('spoilerguard-state', () => {
+        statePromise = null;
+        loaded = false;
+        loadOk = false;
+        enabledSeries.clear();
+        enabledMovies.clear();
+        enabledCollections.clear();
+        enabledPendingTmdb.clear();
+        tmdbToJellyfin.clear();
+        userPrefs = {};
+    });
 })(window.JellyfinEnhanced);

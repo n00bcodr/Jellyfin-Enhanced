@@ -9,6 +9,12 @@
     // Cache for user permission to report
     let cachedUserCanReport = null;
 
+    // Reporting permission belongs to the signed-in Seerr-linked user;
+    // re-resolve it after a user switch.
+    JE.session?.onUserChange('issue-reporter', () => {
+        cachedUserCanReport = null;
+    });
+
     /**
      * Issue type definitions matching Jellyseerr's 4 core issue types
      * Jellyseerr uses: VIDEO (1), AUDIO (2), SUBTITLES (3), OTHER (4)

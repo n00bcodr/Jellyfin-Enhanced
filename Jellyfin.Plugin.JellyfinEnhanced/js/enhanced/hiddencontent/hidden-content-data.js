@@ -459,6 +459,20 @@
         rebuildSets();
     }
 
+    // Hidden-content data is per-user. Clear the local mirror the moment the
+    // identity changes (don't read JE.userConfig here — reset handlers run in
+    // registration order and the globals may not be wiped yet), then rebuild
+    // from the incoming user's config once the re-bootstrap has loaded it.
+    JE.session?.onUserChange('hidden-content-data', () => {
+        hiddenData = null;
+        hiddenIdSet.clear();
+        hiddenTmdbIdSet.clear();
+    });
+    document.addEventListener('je:user-data-loaded', () => {
+        resetFromUserConfig();
+        emitChange();
+    });
+
     Object.assign(internal, {
         hiddenIdSet,
         getHiddenData,

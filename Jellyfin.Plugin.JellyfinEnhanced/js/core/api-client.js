@@ -353,6 +353,14 @@
         }
     }
 
+    // Cache keys never include a user id, but proxied responses (Seerr, tag
+    // data) ARE per-user server-side — flush everything when the signed-in
+    // user changes so user B never reads user A's cached responses.
+    JE.session?.onUserChange('core-api', () => {
+        responseCache.clear();
+        inFlightRequests.clear();
+    });
+
     // Metrics API
 
     /**

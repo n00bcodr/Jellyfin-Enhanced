@@ -808,6 +808,21 @@
         scheduleScan,
     };
 
+    // The server tag cache is fetched per user (spoiler-stripped for that
+    // user), so it must not survive a user switch. Reset synchronously here;
+    // the full invalidate-and-reload (which also strips stale DOM overlays)
+    // runs once the new user's data is live — reloading at reset time would
+    // race the credential swap.
+    JE.session?.onUserChange('tag-pipeline', () => {
+        serverCache = null;
+        serverCacheVersion = 0;
+        serverCacheTimestamp = 0;
+        JE.tagPipeline.clearProcessed();
+    });
+    document.addEventListener('je:user-data-loaded', () => {
+        JE.tagPipeline.invalidateServerCache().catch(() => {});
+    });
+
     console.log(`${logPrefix} Module loaded`);
 
 })(window.JellyfinEnhanced);

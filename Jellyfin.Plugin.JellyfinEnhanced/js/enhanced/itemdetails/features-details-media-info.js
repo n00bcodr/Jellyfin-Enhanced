@@ -16,6 +16,14 @@
     const fileSizeCache = new Map(); // Map<itemId, { size: number|null, unavailable: boolean, ts: number }>
     const audioLanguageCache = new Map(); // Map<itemId, { languages: Array, unavailable: boolean, ts: number }>
 
+    // Watch progress is per-user (and item metadata is fetched with the
+    // signed-in user's access) — never carry it across a user switch.
+    JE.session?.onUserChange('details-media-info', () => {
+        watchProgressCache.clear();
+        fileSizeCache.clear();
+        audioLanguageCache.clear();
+    });
+
     /**
      * Converts bytes into a human-readable format (e.g., KB, MB, GB).
      * @param {number} bytes The size in bytes.

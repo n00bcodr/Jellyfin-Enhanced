@@ -61,6 +61,24 @@
           this.userId = credentials.userId;
           this.token = credentials.token;
 
+          // Credentials are captured once above; without this they would keep
+          // serving the PREVIOUS user's token after an SPA user switch. The
+          // re-read is deferred a tick because the reset fires before the host
+          // finishes writing the new credentials to localStorage.
+          JE.session?.onUserChange('pause-screen', () => {
+            for (const url of this.imgBlobCache.values()) URL.revokeObjectURL(url);
+            this.imgBlobCache.clear();
+            this.imgProbeCache.clear();
+            this.itemCache.clear();
+            this.userId = null;
+            this.token = null;
+            setTimeout(() => {
+              const fresh = this.getCredentials();
+              this.userId = fresh?.userId || null;
+              this.token = fresh?.token || null;
+            }, 0);
+          });
+
           this.injectStyles();
           this.createOverlay();
           this.setupKeyboardAccessibility();
