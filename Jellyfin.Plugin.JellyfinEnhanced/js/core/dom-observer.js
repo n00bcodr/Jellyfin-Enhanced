@@ -222,7 +222,9 @@
      *   element already in the DOM could satisfy the selector but is the wrong one — Jellyfin leaves
      *   dismissed action-sheet DOM in the document for the duration of its exit animation, so
      *   `.actionSheet` matches a stale sheet immediately.
-     * @property {ParentNode} [root] - Node to query within (default `document`).
+     * @property {ParentNode} [root] - Node to query within (default `document`). Re-checks are
+     *   triggered by mutations under `document.body`, so changes confined to a detached or
+     *   out-of-body root never retrigger the check and such a wait can only time out.
      * @property {boolean} [quiet] - Suppress the timeout warning.
      */
 
@@ -243,12 +245,25 @@
         const root = opts.root || document;
         const predicate = typeof opts.predicate === 'function' ? opts.predicate : null;
 
+        let warnedPredicateThrow = false;
+
         /** @returns {Element|null} */
         const find = () => {
             if (!predicate) return root.querySelector(selector);
             // With a predicate every candidate matters, not just the first.
             for (const el of Array.from(root.querySelectorAll(selector))) {
-                if (predicate(el)) return el;
+                // Treat a throwing predicate as a non-match. The observer path already
+                // swallows throws (onBodyMutation wraps callbacks in try/catch), so without
+                // this the initial call would reject while later checks silently hang.
+                // Warn once per wait — a busy page re-runs this on every mutation batch.
+                try {
+                    if (predicate(el)) return el;
+                } catch (err) {
+                    if (!warnedPredicateThrow) {
+                        warnedPredicateThrow = true;
+                        console.warn(`🪼 Jellyfin Enhanced: waitForElement predicate threw for ${selector}:`, err);
+                    }
+                }
             }
             return null;
         };

@@ -114,11 +114,17 @@
             case activeShortcuts.CycleSubtitleTracks:
                 e.preventDefault();
                 e.stopPropagation();
+                // Not on key auto-repeat: each cycle is now a real track switch (a stale
+                // check mark no longer collapses repeats onto the same track), and a held
+                // key would fire a ~30ms burst of stream changes — for burned-in subtitles
+                // or audio that means transcode restarts.
+                if (e.repeat) break;
                 JE.cycleSubtitleTrack();
                 break;
             case activeShortcuts.CycleAudioTracks:
                 e.preventDefault();
                 e.stopPropagation();
+                if (e.repeat) break;
                 JE.cycleAudioTrack();
                 break;
             case activeShortcuts.ResetPlaybackSpeed:
@@ -335,6 +341,12 @@
         if (JE.currentSettings.longPress2xEnabled) {
             const videoPageCheck = (handler) => (e) => {
                 if (JE.isVideoPage()) {
+                    // Long-press 2x is a physical gesture. Synthetic events (e.g. closeActionSheet
+                    // replaying dialogHelper's outside tap on a .dialogContainer) must neither arm
+                    // the press timer nor be cancelled by the click guard below — these are
+                    // capture-phase document listeners, so stopImmediatePropagation here would eat
+                    // the event before dialogHelper's own listener ever sees it.
+                    if (e.isTrusted === false) return;
                     // Don't interfere with clicks on OSD buttons / the pause screen overlay / Enhanced Panel
                     if (e.target && e.target.closest && e.target.closest('.osdControls, .pause-screen-active, .jellyfin-enhanced-panel')) return;
                     handler(e);

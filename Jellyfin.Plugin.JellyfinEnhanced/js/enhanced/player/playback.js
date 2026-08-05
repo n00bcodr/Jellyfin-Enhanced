@@ -401,14 +401,53 @@
     //    otherwise a localized UI can land the cycle on the secondary-subtitle row
     //    and open that submenu instead of changing the track.
 
-    /**
-     * The localized title of an OSD button — the same translation key the matching
-     * action sheet renders as its title.
-     * @param {string} selector
-     * @returns {string}
-     */
     /** In-flight menu open, so repeated presses cannot stack sheets. @type {Promise|null} */
     let pendingMenuOpen = null;
+
+    // dialogHelper keeps a dismissed sheet in the DOM — and visually rendered — for the length
+    // of its exit animation, so isRendered() alone cannot tell a live sheet from a dying one.
+    // Clicking a track row closes the sheet, so a quick second press could otherwise reuse the
+    // closing sheet: read its stale check marks, click a settled dialog to no effect, and toast
+    // a track that was never applied. dialogHelper announces the close by dispatching a
+    // non-bubbling 'closing' event on the dialog the moment closing starts; non-bubbling events
+    // still run the capture phase, so a document-level capture listener sees it.
+    // Timestamped rather than a plain set: if the exit animationend never fires (backgrounded
+    // tab, interrupted animation) the sheet stays rendered, and a permanent mark would exempt
+    // it from closeActionSheet's leftover cleanup forever. After the grace window — far longer
+    // than any exit animation — a still-rendered sheet is treated as a stuck leftover again.
+    const sheetClosingAt = new WeakMap();
+    const SHEET_CLOSING_GRACE_MS = 1000;
+    document.addEventListener('closing', (e) => {
+        const t = e.target;
+        if (t instanceof Element && t.classList.contains('actionSheet')) {
+            sheetClosingAt.set(t, performance.now());
+        }
+    }, true);
+
+    /** @param {Element} sheet */
+    function isClosing(sheet) {
+        const at = sheetClosingAt.get(sheet);
+        return at !== undefined && (performance.now() - at) < SHEET_CLOSING_GRACE_MS;
+    }
+
+    // Jellyfin applies a track selection only when the sheet's close animation finishes
+    // (actionSheet resolves on the dialog 'close' event, not on the row click), so for a
+    // beat after a cycle the player still reports the OLD track and a freshly opened sheet
+    // still check-marks it. Remembering what was just clicked lets the next press continue
+    // the cycle from there instead of re-selecting the same track. The window is short —
+    // a few times the exit animation, just long enough for the selection to land — because
+    // past that the check mark is authoritative again and an out-of-band change (a mouse
+    // click in the native menu, the SubtitleMenu shortcut) would make the memory stale.
+    const lastCycled = { subtitle: null, audio: null };
+
+    /** @param {'subtitle'|'audio'} kind @returns {string|null} data-id or null */
+    function recentlyCycledId(kind) {
+        const rec = lastCycled[kind];
+        return rec
+            && (performance.now() - rec.at) < 500
+            && rec.item === getCurrentVideoItemId() // stream indices repeat across items
+            ? rec.id : null;
+    }
 
     /**
      * Clicks an element the way the video OSD expects. On Firefox/Edge the OSD installs a
@@ -425,9 +464,18 @@
         el.click();
     }
 
+    /**
+     * The localized title of an OSD button — the same translation key the matching
+     * action sheet renders as its title. Deliberately title-only: an aria-label
+     * fallback sounds safer but is worse, because a label WORDED differently from
+     * the sheet title would make the match never succeed (3s timeout, false "not
+     * found" toast), while an empty string only degrades the guards gracefully.
+     * @param {string} selector
+     * @returns {string}
+     */
     function osdButtonTitle(selector) {
         const btn = document.querySelector(selector);
-        return ((btn && (btn.getAttribute('title') || btn.title)) || '').trim();
+        return ((btn && btn.getAttribute('title')) || '').trim();
     }
 
     /**
@@ -450,8 +498,11 @@
      */
     function findOpenSheetByTitle(title) {
         if (!title) return null;
+        // Permanent exclusion here, unlike closeActionSheet's timed one: a sheet that ever
+        // began closing has stale check marks and must never be REUSED, even if its exit
+        // animation stalls past the grace window — it just becomes cleanable again.
         const sheet = Array.from(document.querySelectorAll('.actionSheet')).find(s =>
-            isRendered(s) &&
+            isRendered(s) && !sheetClosingAt.has(s) &&
             Array.from(s.querySelectorAll('.actionSheetTitle'))
                 .some(t => (t.textContent || '').trim() === title)
         );
@@ -462,12 +513,15 @@
      * Closes the open native action sheet by replaying the outside tap dialogHelper
      * listens for: mousedown then click, dispatched ON the dialog container so both
      * `e.target === dialogContainer` and `e.target == clickedElement` hold.
+     * @param {Element} [target] - A specific .dialogContainer to close; defaults to the
+     *   first rendered sheet that is not already closing.
      * @returns {boolean} True when a close was attempted.
      */
     function closeActionSheet(target) {
         let container = target || null;
         if (!container) {
-            const sheet = Array.from(document.querySelectorAll('.actionSheet')).find(isRendered);
+            const sheet = Array.from(document.querySelectorAll('.actionSheet'))
+                .find(s => isRendered(s) && !isClosing(s));
             container = sheet && sheet.closest('.dialogContainer');
         }
         if (!container) return false;
@@ -527,20 +581,39 @@
         const options = Array.from(container.querySelectorAll('.actionSheetMenuItem'))
             .filter(item => /^-?\d+$/.test(item.getAttribute('data-id') || ''));
 
-        if (options.length === 0) {
+        // 'Off' (data-id -1) alone is not a cycle: a subtitle menu for an item with no
+        // subtitle streams still renders the Off row, and toggling Off→Off with a toast
+        // naming "Off" would masquerade as a track change.
+        if (!options.some(item => item.getAttribute('data-id') !== '-1')) {
             JE.toast(JE.t(emptyToastKey));
             closeActionSheet(container);
             return;
         }
 
-        const currentIndex = options.findIndex(option => {
-            const check = option.querySelector('.listItemIcon.check');
-            return check && getComputedStyle(check).visibility !== 'hidden';
-        });
+        // Prefer the row we cycled to moments ago over the check mark: the selection is
+        // applied on sheet close, so right after a cycle the check mark still sits on the
+        // previous track and trusting it would re-select the same track.
+        const recentId = recentlyCycledId(/** @type {'subtitle'|'audio'} */ (toastVar));
+        let currentIndex = recentId !== null
+            ? options.findIndex(option => option.getAttribute('data-id') === recentId)
+            : -1;
+        if (currentIndex === -1) {
+            currentIndex = options.findIndex(option => {
+                const check = option.querySelector('.listItemIcon.check');
+                return check && getComputedStyle(check).visibility !== 'hidden';
+            });
+        }
 
         const next = options[(currentIndex + 1) % options.length];
         if (!next) return;
         activate(/** @type {HTMLElement} */ (next));
+        // Recorded after activate(): if the click throws or is swallowed, an unset record
+        // (falling back to the check mark) is the safe direction, not a poisoned one.
+        lastCycled[toastVar] = {
+            id: next.getAttribute('data-id'),
+            at: performance.now(),
+            item: getCurrentVideoItemId()
+        };
         const labelEl = next.querySelector('.listItemBodyText');
         JE.toast(JE.t('toast_' + toastVar, { [toastVar]: ((labelEl && labelEl.textContent) || '').trim() }));
     }
@@ -580,6 +653,9 @@
                     return;
                 }
                 cycleWithinSheet(container, emptyToastKey, toastVar);
+            })
+            .catch(err => {
+                console.warn('🪼 Jellyfin Enhanced: track cycling failed:', err);
             })
             .finally(() => { pendingMenuOpen = null; });
     }
