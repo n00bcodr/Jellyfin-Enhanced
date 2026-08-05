@@ -210,12 +210,38 @@
 
         // ── localStorage cache ─────────────────────────────────────────
 
+        /**
+         * The persisted payload can contain per-user data (tag entries are
+         * spoiler-stripped for the user that fetched them), but the cache key
+         * NAME is frozen — renaming it to embed a user id would orphan every
+         * existing user's cache. Instead a sibling "<key>:identity-owner"
+         * sentinel records which server:user wrote the payload; on mismatch
+         * (or a legacy cache with no sentinel, which is untrusted) the payload
+         * is dropped before it can be served to the wrong user.
+         */
+        function enforceCacheOwnership() {
+            if (!spec.cache || !state.localStorageEnabled) return;
+            try {
+                const ownerKey = `${spec.cache.key}:identity-owner`;
+                const userId = JE.session?.getUserId()
+                    || (typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : null) || '';
+                const expected = `${JE.session?.getServerId() || ''}:${userId}`;
+                if (localStorage.getItem(ownerKey) !== expected) {
+                    localStorage.removeItem(spec.cache.key);
+                    localStorage.setItem(ownerKey, expected);
+                }
+            } catch (e) {
+                console.warn(`${logPrefix} cache ownership check failed`, e);
+            }
+        }
+
         function loadCacheSettings() {
             state.localStorageEnabled =
                 JE.pluginConfig?.TagCacheServerMode === false ||
                 JE.pluginConfig?.EnableTagsLocalStorageFallback === true;
             state.cacheTtl = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
             if (!spec.cache) return;
+            enforceCacheOwnership();
             state.cache = state.localStorageEnabled
                 ? (JSON.parse(localStorage.getItem(spec.cache.key) || '{}') || {})
                 : {};
@@ -339,6 +365,24 @@
                 return true;
             },
         };
+
+        // Wipe both the in-memory and the persisted cache on a user switch,
+        // and stamp the new owner so a later hard reload doesn't wipe the new
+        // user's freshly-built cache a second time.
+        JE.session?.onUserChange(`tag-cache-${name}`, (change) => {
+            state.cache = {};
+            if (state.hot) state.hot.clear();
+            if (!spec.cache) return;
+            try {
+                localStorage.removeItem(spec.cache.key);
+                localStorage.setItem(
+                    `${spec.cache.key}:identity-owner`,
+                    `${change.serverId || ''}:${change.userId || ''}`
+                );
+            } catch (e) {
+                console.warn(`${logPrefix} cache clear on user switch failed`, e);
+            }
+        });
 
         // ── Lifecycle ──────────────────────────────────────────────────
 

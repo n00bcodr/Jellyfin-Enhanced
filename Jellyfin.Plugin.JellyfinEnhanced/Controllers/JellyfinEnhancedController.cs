@@ -3361,6 +3361,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [HttpGet("user-settings/{userId}/settings.json")]
         [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public IActionResult GetUserSettingsSettings(string userId)
         {
             var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
@@ -3439,6 +3440,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [HttpGet("user-settings/{userId}/shortcuts.json")]
         [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public IActionResult GetUserSettingsShortcuts(string userId)
         {
             var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
@@ -3453,6 +3455,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [HttpGet("user-settings/{userId}/elsewhere.json")]
         [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public IActionResult GetUserSettingsElsewhere(string userId)
         {
             var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
@@ -3540,6 +3543,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [HttpGet("user-settings/{userId}/bookmark.json")]
         [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [Produces("application/json")]
         public IActionResult GetUserBookmark(string userId)
         {
@@ -3703,6 +3707,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [HttpGet("user-settings/{userId}/hidden-content.json")]
         [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [Produces("application/json")]
         public IActionResult GetUserHiddenContent(string userId)
         {
@@ -3819,6 +3824,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // administrator cannot inspect or repair remotely.
         [HttpGet("user-settings/{userId}/spoilerblur.json")]
         [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [Produces("application/json")]
         public IActionResult GetUserSpoilerBlur(string userId)
         {
@@ -5974,6 +5980,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [HttpGet("tag-cache/{userId}")]
         [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [Produces("application/json")]
         public IActionResult GetTagCache(Guid userId, [FromQuery] long? since = null)
         {

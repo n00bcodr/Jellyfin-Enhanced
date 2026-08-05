@@ -19,9 +19,21 @@
     showUnmonitored: "je.calendar.showUnmonitored",
   };
 
+  /**
+   * Per-user storage key for the show-unmonitored toggle. The unscoped legacy
+   * key leaked the preference across SPA user switches; it is removed on
+   * first read so it can't shadow the scoped value.
+   * @returns {string}
+   */
+  function showUnmonitoredKey() {
+    try { window.localStorage?.removeItem(STORAGE_KEYS.showUnmonitored); } catch (_) { /* best effort */ }
+    const userId = (typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : null) || 'anonymous';
+    return `${STORAGE_KEYS.showUnmonitored}:${userId}`;
+  }
+
   function getStoredShowUnmonitored() {
     try {
-      const stored = window.localStorage?.getItem(STORAGE_KEYS.showUnmonitored);
+      const stored = window.localStorage?.getItem(showUnmonitoredKey());
       if (stored === null) return null;
       return stored === "true";
     } catch (error) {
@@ -31,7 +43,7 @@
 
   function setStoredShowUnmonitored(value) {
     try {
-      window.localStorage?.setItem(STORAGE_KEYS.showUnmonitored, String(!!value));
+      window.localStorage?.setItem(showUnmonitoredKey(), String(!!value));
     } catch (error) {
     }
   }

@@ -15,8 +15,18 @@
     const UNDO_TOAST_DURATION = 8000;
     /** How long the "don't ask again" suppression lasts (15 minutes). */
     const SUPPRESS_DURATION_MS = 15 * 60 * 1000;
-    /** LocalStorage key for "don't ask again" suppression timestamp. */
-    const SUPPRESS_STORAGE_KEY = 'je_hide_confirm_suppressed_until';
+    /**
+     * LocalStorage key for the "don't ask again" suppression timestamp.
+     * Scoped per user — an unscoped key let user A's "don't ask again" carry
+     * over to user B after an SPA user switch. The legacy unscoped key is
+     * removed on first use.
+     * @returns {string}
+     */
+    function suppressStorageKey() {
+        try { localStorage.removeItem('je_hide_confirm_suppressed_until'); } catch (_) { /* best effort */ }
+        const userId = (typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : null) || 'anonymous';
+        return `je_hide_confirm_suppressed_until:${userId}`;
+    }
 
     // ============================================================
     // Undo toast
@@ -88,7 +98,7 @@
     function isConfirmationSuppressed() {
         const settings = getSettings();
         if (settings.showHideConfirmation === false) return true;
-        const until = localStorage.getItem(SUPPRESS_STORAGE_KEY);
+        const until = localStorage.getItem(suppressStorageKey());
         if (until && new Date(until) > new Date()) return true;
         return false;
     }
@@ -264,7 +274,7 @@
         hideBtn.addEventListener('click', () => {
             if (suppress15Check.checked) {
                 const until = new Date(Date.now() + SUPPRESS_DURATION_MS).toISOString();
-                localStorage.setItem(SUPPRESS_STORAGE_KEY, until);
+                localStorage.setItem(suppressStorageKey(), until);
             }
             closeDialog();
             onConfirm();
