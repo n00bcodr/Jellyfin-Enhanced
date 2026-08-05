@@ -2,8 +2,6 @@ name: "Translation Checks"
 
 on:
   pull_request:
-    paths:
-      - 'Jellyfin.Plugin.JellyfinEnhanced/js/locales/**.json'
 
 permissions:
   contents: read
