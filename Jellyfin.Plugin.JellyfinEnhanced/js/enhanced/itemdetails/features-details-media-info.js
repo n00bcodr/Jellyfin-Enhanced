@@ -220,6 +220,10 @@
                 return;
             }
 
+            // Watch progress is per-user: a response resolving after a user
+            // switch must not repopulate the cache that was just reset.
+            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+            const isCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
             try {
                 const itemResult = await ApiClient.ajax({
                     type: 'GET',
@@ -236,12 +240,12 @@
                 placeholder.innerHTML = getIconSpan(watchProgress.progress);
                 placeholder.appendChild(getWatchProgressValue(watchProgress));
 
-                watchProgressCache.set(itemId, watchProgress);
+                if (isCurrent()) watchProgressCache.set(itemId, watchProgress);
             } catch (error) {
                 console.error('🪼 Jellyfin Enhanced: Error fetching watch progress for ID %s:', itemId, error);
                 // Keep placeholder with 0 to prevent repeated calls
                 renderUnavailable();
-                watchProgressCache.set(itemId, { progress: 0, totalPlaybackTicks: 0, totalRuntimeTicks: 0, ts: now });
+                if (isCurrent()) watchProgressCache.set(itemId, { progress: 0, totalPlaybackTicks: 0, totalRuntimeTicks: 0, ts: now });
             }
         };
 

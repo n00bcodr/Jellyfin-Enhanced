@@ -20,10 +20,17 @@
      * Persists the hidden-content data to the server after a debounce.
      * Coalesces rapid writes (e.g. bulk-unhide) into a single save.
      */
+    // Bumped on every user switch: a save/retry timer scheduled under the
+    // previous user must not fire under the new one — it would serialize the
+    // reset (empty) store to the NEW user's file and erase their data.
+    let saveGeneration = 0;
+
     function debouncedSave() {
         if (saveTimeout) clearTimeout(saveTimeout);
+        const scheduledGeneration = saveGeneration;
         saveTimeout = setTimeout(async () => {
             saveTimeout = null;
+            if (scheduledGeneration !== saveGeneration) return; // user switched since scheduling
             try {
                 // Route through directSaveHiddenContent (not JE.saveUserSettings) so a successful save can
                 // reconcile against any in-flight retry and a failure can re-enter the retry ladder.
@@ -195,7 +202,9 @@
             pendingRetryHandle = null;
             return;
         }
+        const scheduledGeneration = saveGeneration;
         pendingRetryHandle = setTimeout(async () => {
+            if (scheduledGeneration !== saveGeneration) { pendingRetryHandle = null; return; } // user switched since scheduling
             pendingRetryHandle = RETRY_INFLIGHT; // mark in-flight so a concurrent debouncedSave failure doesn't spawn a parallel ladder
             // Guard for ApiClient teardown / signed-out state during the window.
             if (typeof ApiClient === 'undefined' || typeof ApiClient.getCurrentUserId !== 'function' || !ApiClient.getCurrentUserId()) {
@@ -238,6 +247,15 @@
     try {
         window.addEventListener('pagehide', cancelPendingRetry);
     } catch (_) { /* non-browser env, harmless */ }
+
+    // Invalidate every scheduled save/retry on a user switch (the generation
+    // guard in the timer bodies covers the in-flight sentinel this
+    // cancellation cannot reach).
+    window.JellyfinEnhanced.session?.onUserChange('hidden-content-save', () => {
+        saveGeneration++;
+        if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
+        cancelPendingRetry();
+    });
 
     Object.assign(internal, {
         debouncedSave,

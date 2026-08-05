@@ -1034,6 +1034,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         [HttpGet("jellyseerr/user-status")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [Authorize]
         public async Task<IActionResult> GetJellyseerrUserStatus()
         {
@@ -2718,6 +2719,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public ActionResult GetVersion() => Content(JellyfinEnhanced.Instance?.Version.ToString() ?? "unknown");
 
         [HttpGet("private-config")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [Authorize]
         public ActionResult GetPrivateConfig()
         {
@@ -4303,6 +4305,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         [HttpGet("spoiler-blur/series")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [Authorize]
         [Produces("application/json")]
         public IActionResult GetSpoilerBlurSeries()
@@ -8089,6 +8092,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         [HttpGet("arr/requests")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [Authorize]
         public async Task<IActionResult> GetRequests([FromQuery] int take = 20, [FromQuery] int skip = 0, [FromQuery] string? filter = null, [FromQuery] bool userOnly = false)
         {

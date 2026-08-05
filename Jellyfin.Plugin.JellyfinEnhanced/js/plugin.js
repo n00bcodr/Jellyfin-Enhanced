@@ -263,6 +263,12 @@
         return Promise.all([configPromise, versionPromise]);
     }
 
+    // Keys merged into JE.pluginConfig from /private-config. Tracked so the
+    // user-switch reset can strip them again: the endpoint is admin-gated, so
+    // an admin's private config (arr instance URLs etc.) must not survive
+    // into a non-admin's session.
+    let privateConfigKeys = [];
+
     /**
      * Fetches sensitive configuration from the authenticated endpoint.
      * @returns {Promise<void>}
@@ -275,6 +281,7 @@
                 dataType: 'json'
             });
             // Merge the sensitive keys into the main config object
+            privateConfigKeys = Object.keys(privateConfig && typeof privateConfig === 'object' ? privateConfig : {});
             Object.assign(JE.pluginConfig, privateConfig);
         } catch (error) {
             console.warn('🪼 Jellyfin Enhanced: Could not load private configuration. Some features may be limited.', error);
@@ -545,6 +552,10 @@
             // Cleared (not merged over) so user A's extra shortcuts don't
             // survive into user B's session — initializeShortcuts() merges.
             JE.state.activeShortcuts = {};
+            // Strip the admin-only private config; re-fetched (admins only)
+            // during the re-bootstrap below.
+            for (const key of privateConfigKeys) delete JE.pluginConfig[key];
+            privateConfigKeys = [];
         });
 
         // Async re-bootstrap: after a switch to a signed-in user, reload that
@@ -570,9 +581,28 @@
                     } catch (_) { /* non-fatal — consumers null-check */ }
                     if (!JE.session.isCurrent(epoch)) return;
 
+                    // Re-fetch the admin-only private config for the incoming
+                    // user (the reset stripped the previous user's copy; the
+                    // server rejects non-admins, leaving the keys absent).
+                    await loadPrivateConfig();
+                    if (!JE.session.isCurrent(epoch)) return;
+
                     JE.currentSettings = JE.loadSettings();
                     JE.initializeShortcuts();
                     seedDisplayLanguage(userId);
+
+                    // Per-user tag toggles can differ between users, and the
+                    // boot-time conditional initialization only ran for the
+                    // first user. The four base-renderer initializers are
+                    // idempotent by design (they re-register with fresh
+                    // settings), so re-run whichever the incoming user has
+                    // enabled; renderers whose toggle is now off stop via
+                    // their isEnabled gate and the pipeline invalidation
+                    // removes stale overlays.
+                    if (JE.currentSettings?.qualityTagsEnabled && typeof JE.initializeQualityTags === 'function') JE.initializeQualityTags();
+                    if (JE.currentSettings?.genreTagsEnabled && typeof JE.initializeGenreTags === 'function') JE.initializeGenreTags();
+                    if (JE.currentSettings?.ratingTagsEnabled && typeof JE.initializeRatingTags === 'function') JE.initializeRatingTags();
+                    if (JE.currentSettings?.languageTagsEnabled && typeof JE.initializeLanguageTags === 'function') JE.initializeLanguageTags();
 
                     // Translations follow the per-user language choice.
                     try {
@@ -683,11 +713,15 @@
             }
 
             // Stage 2: Fetch user-specific settings
-            const userId = ApiClient.getCurrentUserId();
+            let userId = ApiClient.getCurrentUserId();
 
             // Prefetch full user object once (needed for admin check in arr-links etc.)
-            // Fire-and-forget alongside stage-2 network calls; result available as JE.currentUser
-            ApiClient.getCurrentUser().then(u => { JE.currentUser = u; }).catch(() => {});
+            // Fire-and-forget alongside stage-2 network calls; result available as
+            // JE.currentUser. Guarded so a resolution landing after a mid-boot user
+            // switch can't overwrite the new user's object.
+            ApiClient.getCurrentUser().then(u => {
+                if (u?.Id === ApiClient.getCurrentUserId()) JE.currentUser = u;
+            }).catch(() => {});
 
             JE.userConfig = await fetchUserScopedConfig(userId);
 
@@ -897,6 +931,17 @@
             // Wire user-switch detection → global reset → re-bootstrap.
             // Must happen after loadScripts so JE.session exists.
             registerSessionIntegration();
+
+            // A user switch during the stage-2 fetches happens BEFORE the
+            // session module exists, so it was adopted silently with no reset
+            // — the config fetched above belongs to the previous user.
+            // Re-fetch for whoever is actually signed in now.
+            const liveUserId = ApiClient.getCurrentUserId();
+            if (liveUserId && liveUserId !== userId) {
+                console.warn('🪼 Jellyfin Enhanced: User changed during boot — reloading user-scoped data.');
+                userId = liveUserId;
+                JE.userConfig = await fetchUserScopedConfig(liveUserId);
+            }
 
             // Stage 4: Initialize core settings/shortcuts using potentially defined functions
             if (typeof JE.loadSettings === 'function' && typeof JE.initializeShortcuts === 'function') {

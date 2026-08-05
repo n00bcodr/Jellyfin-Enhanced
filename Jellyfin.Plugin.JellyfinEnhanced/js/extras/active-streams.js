@@ -1224,4 +1224,15 @@
         }
     };
 
+    // The panel shows other users' now-playing sessions (admin view) and its
+    // visibility gate was evaluated for the OLD user — tear everything down
+    // on a user switch and re-initialize once the new user's data (incl. the
+    // admin policy) is loaded, so a non-admin never inherits the admin panel.
+    JE.session?.onUserChange('active-streams', () => {
+        JE.activeStreams.destroy();
+    });
+    document.addEventListener('je:user-data-loaded', () => {
+        JE.activeStreams.initialize();
+    });
+
 })(window.JellyfinEnhanced);

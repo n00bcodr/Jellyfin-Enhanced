@@ -168,11 +168,15 @@
             const userId = ApiClient.getCurrentUserId();
             if (!userId) return;
 
+            // The response is spoiler-stripped for THIS user — drop it if the
+            // signed-in user changed while the request was in flight.
+            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
             const resp = await ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}`),
                 dataType: 'json'
             });
+            if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
 
             if (resp && resp.items && resp.count > 0) {
                 serverCache = new Map(Object.entries(resp.items));
@@ -208,11 +212,15 @@
             const userId = ApiClient.getCurrentUserId();
             if (!userId) return;
 
+            // Same identity guard as loadServerCache: incremental entries are
+            // spoiler-stripped for the user that requested them.
+            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
             const resp = await ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}?since=${serverCacheTimestamp}`),
                 dataType: 'json'
             });
+            if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
 
             if (resp && resp.items) {
                 const newEntries = Object.entries(resp.items);

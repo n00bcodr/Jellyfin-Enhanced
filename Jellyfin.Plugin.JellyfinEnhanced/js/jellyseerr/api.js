@@ -139,13 +139,19 @@
             }
         }
 
+        // A status resolved after a user switch belongs to the previous user
+        // — return it to the caller that asked, but never cache it.
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const isCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
         try {
             const status = await get('/user-status', { skipCache: true });
-            cachedUserStatus = status;
-            cachedUserStatusAt = Date.now();
-            // Surface the typed reason as a banner so users aren't left staring
-            // at silently-hidden discovery sections.
-            api.surfaceUserStatusBanner(status);
+            if (isCurrent()) {
+                cachedUserStatus = status;
+                cachedUserStatusAt = Date.now();
+                // Surface the typed reason as a banner so users aren't left staring
+                // at silently-hidden discovery sections.
+                api.surfaceUserStatusBanner(status);
+            }
             return status;
         } catch (error) {
             console.warn(`${logPrefix} Status check failed:`, error);
@@ -155,9 +161,11 @@
                 reason: error?.responseJSON?.code || 'unreachable',
                 message: error?.responseJSON?.message
             };
-            cachedUserStatus = fallback;
-            cachedUserStatusAt = Date.now();
-            api.surfaceUserStatusBanner(fallback);
+            if (isCurrent()) {
+                cachedUserStatus = fallback;
+                cachedUserStatusAt = Date.now();
+                api.surfaceUserStatusBanner(fallback);
+            }
             return fallback;
         }
     };
@@ -346,11 +354,16 @@
         if (cachedOverrideRules !== null && Date.now() - overrideRulesCachedAt < OVERRIDE_RULES_TTL) {
             return cachedOverrideRules;
         }
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         try {
             const rules = await get('/overrideRule');
-            cachedOverrideRules = Array.isArray(rules) ? rules : [];
-            overrideRulesCachedAt = Date.now();
-            return cachedOverrideRules;
+            const normalized = Array.isArray(rules) ? rules : [];
+            // Don't cache a result that resolved after a user switch.
+            if (!JE.session || JE.session.isCurrent(requestEpoch)) {
+                cachedOverrideRules = normalized;
+                overrideRulesCachedAt = Date.now();
+            }
+            return normalized;
         } catch (error) {
             console.error(`${logPrefix} Failed to fetch override rules:`, error);
             return cachedOverrideRules || [];

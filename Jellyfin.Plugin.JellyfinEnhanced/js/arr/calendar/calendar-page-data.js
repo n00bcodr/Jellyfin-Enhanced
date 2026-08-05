@@ -21,14 +21,25 @@
 
   /**
    * Per-user storage key for the show-unmonitored toggle. The unscoped legacy
-   * key leaked the preference across SPA user switches; it is removed on
-   * first read so it can't shadow the scoped value.
+   * key leaked the preference across SPA user switches; its value is adopted
+   * into the current user's scoped key once (preserving the pre-upgrade
+   * choice), then removed so it can't shadow the scoped value.
    * @returns {string}
    */
   function showUnmonitoredKey() {
-    try { window.localStorage?.removeItem(STORAGE_KEYS.showUnmonitored); } catch (_) { /* best effort */ }
-    const userId = (typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : null) || 'anonymous';
-    return `${STORAGE_KEYS.showUnmonitored}:${userId}`;
+    const scoped = JE.session
+      ? JE.session.userScopedKey(STORAGE_KEYS.showUnmonitored)
+      : `${STORAGE_KEYS.showUnmonitored}:anonymous`;
+    try {
+      const legacy = window.localStorage?.getItem(STORAGE_KEYS.showUnmonitored);
+      if (legacy !== null && legacy !== undefined) {
+        if (window.localStorage?.getItem(scoped) === null) {
+          window.localStorage?.setItem(scoped, legacy);
+        }
+        window.localStorage?.removeItem(STORAGE_KEYS.showUnmonitored);
+      }
+    } catch (_) { /* best effort */ }
+    return scoped;
   }
 
   function getStoredShowUnmonitored() {

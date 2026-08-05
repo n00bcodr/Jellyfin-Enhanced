@@ -227,11 +227,15 @@
             try {
                 const queryString = itemId ? `?itemId=${itemId}` : '';
                 const url = ApiClient.getUrl(`/JellyfinEnhanced/person/${personId}${queryString}`);
+                // A response resolving after a user switch must not be written
+                // under the NEW user's identity-owner sentinel.
+                const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
                 const data = await ApiClient.ajax({
                     type: 'GET',
                     url: url,
                     dataType: 'json'
                 });
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return data || null;
 
                 if (data) {
                     // Cache it

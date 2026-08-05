@@ -471,6 +471,9 @@
     document.addEventListener('je:user-data-loaded', () => {
         resetFromUserConfig();
         emitChange();
+        // Re-apply the incoming user's policy to whatever is on screen (the
+        // filter reset stripped the previous user's hide marks and verdicts).
+        refreshNativeCardVisibility();
     });
 
     Object.assign(internal, {

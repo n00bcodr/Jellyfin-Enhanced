@@ -59,6 +59,7 @@
     state.issuesPage = 1;
     state.issuesTotalPages = 1;
     state.issuesError = false;
+    state.issuesPermissionDenied = false; // sticky 403 gate belongs to the previous user
     state.history = [];
     state.historyPage = 1;
     state.historyTotalPages = 1;

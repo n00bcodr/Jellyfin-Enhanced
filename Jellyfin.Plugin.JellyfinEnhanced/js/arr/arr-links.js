@@ -10,6 +10,14 @@
             return;
         }
 
+        // Identity epoch this initialization belongs to. Captured BEFORE the
+        // async admin resolution below: if the user switches while those
+        // requests are in flight, this stale invocation must stop — otherwise
+        // it would write user A's admin flag through user B's identity and
+        // install an observer that no longer looks stale to the epoch guard.
+        const initEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const initIsCurrent = () => !JE.session || JE.session.isCurrent(initEpoch);
+
         // Check admin status on every script initialization
         let isAdmin = false;
 
@@ -33,6 +41,11 @@
                 console.error(`${logPrefix} Could not get current user after retries.`);
                 return;
             }
+
+            // The awaits above may have spanned a user switch — this `user`
+            // object belongs to the previous identity. Bail; the
+            // je:user-data-loaded listener re-runs initialization fresh.
+            if (!initIsCurrent()) return;
 
             isAdmin = user?.Policy?.IsAdministrator === true;
 
@@ -744,12 +757,10 @@
                 });
             }
 
-            // Identity epoch this initialization belongs to. The admin check
-            // above was resolved for THIS user — after a user switch the
-            // observer must retire itself instead of injecting admin-only
-            // links (with stale slugCache data) for the next user.
-            const initEpoch = JE.session ? JE.session.getEpoch() : 0;
-
+            // The admin check above was resolved for THIS user (initEpoch) —
+            // after a user switch the observer must retire itself instead of
+            // injecting admin-only links (with stale slugCache data) for the
+            // next user.
             observer = JE.helpers.createObserver('arr-links', () => {
                 if (JE.session && !JE.session.isCurrent(initEpoch)) {
                     if (observer) {

@@ -91,7 +91,14 @@
           if (!creds) return null;
           try {
             const parsed = JSON.parse(creds);
-            const server = parsed.Servers?.[0];
+            const servers = Array.isArray(parsed.Servers) ? parsed.Servers : [];
+            // Prefer the ACTIVE server's entry — with multiple stored servers
+            // Servers[0] may hold another server's user id/token.
+            let activeServerId = null;
+            try {
+              activeServerId = (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId) || null;
+            } catch { activeServerId = null; }
+            const server = (activeServerId && servers.find(s => s.Id === activeServerId)) || servers[0];
             return server ? { token: server.AccessToken, userId: server.UserId } : null;
           } catch {
             return null;

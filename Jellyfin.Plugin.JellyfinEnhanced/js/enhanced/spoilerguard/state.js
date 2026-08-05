@@ -27,8 +27,12 @@
 
     internal.loadState = function() {
         if (statePromise) return statePromise;
+        // A response resolving after a user switch must not populate the
+        // (already reset) state with the previous user's data.
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         statePromise = request('/spoiler-blur/series')
             .then(function(data) {
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 const value = data || {};
                 enabledSeries.clear();
                 enabledMovies.clear();
@@ -52,6 +56,7 @@
                 }
             })
             .catch(function(err) {
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 console.error(`${logPrefix} state load failed; downstream consumers will fail closed:`, err);
                 loaded = true;
                 loadOk = false;

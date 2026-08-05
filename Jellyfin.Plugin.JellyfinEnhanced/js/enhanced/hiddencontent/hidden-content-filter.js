@@ -21,10 +21,23 @@
     const parentSeriesRequestMap = new Map();
 
     // Item lookups were fetched as the previous user (library access and
-    // spoiler stripping differ per user) — drop them on a user switch.
+    // spoiler stripping differ per user) — drop them on a user switch, and
+    // un-hide + un-mark every card the previous user's policy touched so the
+    // new user's list is re-evaluated from scratch (the "checked" marker
+    // would otherwise keep the old verdict until a full re-render).
     window.JellyfinEnhanced.session?.onUserChange('hidden-content-filter', () => {
         parentSeriesCache.clear();
         parentSeriesRequestMap.clear();
+        try {
+            document.querySelectorAll('.je-hidden').forEach((el) => el.classList.remove('je-hidden'));
+            document.querySelectorAll(`[${PROCESSED_ATTR}]`).forEach((el) => {
+                el.removeAttribute(PROCESSED_ATTR);
+                el.removeAttribute(HIDDEN_PARENT_ATTR);
+                el.removeAttribute(HIDDEN_DIRECT_ATTR);
+            });
+        } catch (e) {
+            console.warn('🪼 Jellyfin Enhanced: hidden-content DOM reset on user switch failed', e);
+        }
     });
     const sectionSurfaceCache = new WeakMap();
 

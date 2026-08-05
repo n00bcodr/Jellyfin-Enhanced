@@ -17,15 +17,18 @@
     const SUPPRESS_DURATION_MS = 15 * 60 * 1000;
     /**
      * LocalStorage key for the "don't ask again" suppression timestamp.
-     * Scoped per user — an unscoped key let user A's "don't ask again" carry
-     * over to user B after an SPA user switch. The legacy unscoped key is
-     * removed on first use.
+     * Scoped per user (via the shared JE.session.userScopedKey format) — an
+     * unscoped key let user A's "don't ask again" carry over to user B after
+     * an SPA user switch. The legacy unscoped key is removed on first use;
+     * its value is deliberately NOT adopted (a 15-minute convenience window
+     * is not worth carrying across an ownership change).
      * @returns {string}
      */
     function suppressStorageKey() {
         try { localStorage.removeItem('je_hide_confirm_suppressed_until'); } catch (_) { /* best effort */ }
-        const userId = (typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : null) || 'anonymous';
-        return `je_hide_confirm_suppressed_until:${userId}`;
+        return JE.session
+            ? JE.session.userScopedKey('je_hide_confirm_suppressed_until')
+            : 'je_hide_confirm_suppressed_until:anonymous';
     }
 
     // ============================================================

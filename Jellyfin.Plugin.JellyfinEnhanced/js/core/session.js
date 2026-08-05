@@ -178,11 +178,16 @@
             if (original.__jeSessionWrapped) return true;
 
             const wrapped = function(/** @type {any} */ accessKey, /** @type {any} */ userId) {
+                // The wrapper lives on the shared prototype, so it also fires
+                // for secondary ApiClient instances (multi-server hosts keep
+                // one per server). Only the ACTIVE client's credentials define
+                // the plugin's identity — ignore the rest.
+                const isActiveClient = typeof ApiClient === 'undefined' || !ApiClient || this === ApiClient;
                 // Clear the old user's state before the host installs the new
                 // credentials; serverId is unchanged by this call.
                 try {
                     const nextUserId = userId || null;
-                    if (adopted && nextUserId !== currentUserId) {
+                    if (isActiveClient && adopted && nextUserId !== currentUserId) {
                         transition(nextUserId, currentServerId, 'authentication');
                     }
                 } catch (err) {
@@ -191,7 +196,9 @@
                 const result = original.apply(this, arguments);
                 // Post-check picks up anything the pre-check couldn't know
                 // (first adoption, serverId changes surfaced by the client).
-                try { checkNow('authentication'); } catch (_) { /* logged in transition */ }
+                if (isActiveClient) {
+                    try { checkNow('authentication'); } catch (_) { /* logged in transition */ }
+                }
                 return result;
             };
             wrapped.__jeSessionWrapped = true;
@@ -209,6 +216,13 @@
         }
     }
 
+    /**
+     * Install all identity detectors: adopt the currently signed-in user,
+     * hook setAuthenticationInfo, follow the shared navigation pipeline, and
+     * start the slow reconcile timer. Runs once at module load.
+     * Side effects: wraps a host ApiClient method and registers a persistent
+     * navigation callback and interval.
+     */
     function initialize() {
         // Adopt whoever is signed in right now (component scripts only load
         // after login, so this normally lands the first epoch immediately).
@@ -218,11 +232,6 @@
         // Every login/logout navigates, so this alone would eventually catch
         // all transitions even if the auth hook failed to install.
         JE.core.navigation.onNavigate(() => checkNow('navigate'));
-
-        // Credentials changed by ANOTHER tab of the same browser profile.
-        window.addEventListener('storage', (e) => {
-            if (e.key === 'jellyfin_credentials') checkNow('storage');
-        });
 
         // Slow reconcile: catches window.ApiClient being replaced wholesale
         // (multi-server switching creates a fresh client our wrapper isn't
@@ -247,6 +256,20 @@
          * @param {number} capturedEpoch
          */
         isCurrent: (capturedEpoch) => capturedEpoch === epoch,
+        /**
+         * Build a per-user localStorage key: `${base}:${userId}`. Shared by
+         * every module that scopes a preference per user so the format stays
+         * consistent. Falls back to 'anonymous' on the login screen so reads
+         * and writes stay well-formed.
+         * @param {string} base - The unscoped key name.
+         * @returns {string}
+         */
+        userScopedKey: (base) => {
+            const userId = currentUserId
+                || (typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : null)
+                || 'anonymous';
+            return `${base}:${userId}`;
+        },
         onUserChange,
         checkNow
     };
