@@ -14,6 +14,9 @@
 (function(JE) {
     'use strict';
 
+    // Monotonic id suffix: Date.now() collides when two waits start in the same millisecond.
+    let waitForElementSeq = 0;
+
     JE.core = JE.core || {};
 
     // Active observers registry for lifecycle management (non-body targets only)
@@ -212,25 +215,72 @@
     }
 
     /**
-     * Wait for an element to appear in the DOM
-     * @param {string} selector - CSS selector
-     * @param {number} timeout - Maximum wait time in ms (default: 10000)
-     * @returns {Promise<Element|null>}
+     * @typedef {Object} WaitForElementOptions
+     * @property {number} [timeout] - Maximum wait time in ms (default 10000).
+     * @property {(el: Element) => boolean} [predicate] - Extra acceptance test. The wait resolves only
+     *   for a match that also satisfies this, and keeps observing otherwise. Needed whenever an
+     *   element already in the DOM could satisfy the selector but is the wrong one — Jellyfin leaves
+     *   dismissed action-sheet DOM in the document for the duration of its exit animation, so
+     *   `.actionSheet` matches a stale sheet immediately.
+     * @property {ParentNode} [root] - Node to query within (default `document`). Re-checks are
+     *   triggered by mutations under `document.body`, so changes confined to a detached or
+     *   out-of-body root never retrigger the check and such a wait can only time out.
+     * @property {boolean} [quiet] - Suppress the timeout warning.
      */
-    function waitForElement(selector, timeout = 10000) {
+
+    /**
+     * Wait for an element to appear in the DOM.
+     *
+     * Built on the multiplexed body observer, which only dispatches for batches containing
+     * added/removed nodes — it cannot detect a `classList.remove('hide')` or a text change. Use
+     * `createObserver` with `{ attributes: true, attributeFilter: [...] }` for those.
+     *
+     * @param {string} selector - CSS selector.
+     * @param {number|WaitForElementOptions} [options] - Timeout in ms, or an options object.
+     * @returns {Promise<Element|null>} The matching element, or null on timeout.
+     */
+    function waitForElement(selector, options = {}) {
+        const opts = typeof options === 'number' ? { timeout: options } : (options || {});
+        const timeout = opts.timeout ?? 10000;
+        const root = opts.root || document;
+        const predicate = typeof opts.predicate === 'function' ? opts.predicate : null;
+
+        let warnedPredicateThrow = false;
+
+        /** @returns {Element|null} */
+        const find = () => {
+            if (!predicate) return root.querySelector(selector);
+            // With a predicate every candidate matters, not just the first.
+            for (const el of Array.from(root.querySelectorAll(selector))) {
+                // Treat a throwing predicate as a non-match. The observer path already
+                // swallows throws (onBodyMutation wraps callbacks in try/catch), so without
+                // this the initial call would reject while later checks silently hang.
+                // Warn once per wait — a busy page re-runs this on every mutation batch.
+                try {
+                    if (predicate(el)) return el;
+                } catch (err) {
+                    if (!warnedPredicateThrow) {
+                        warnedPredicateThrow = true;
+                        console.warn(`🪼 Jellyfin Enhanced: waitForElement predicate threw for ${selector}:`, err);
+                    }
+                }
+            }
+            return null;
+        };
+
         return new Promise((resolve) => {
-            const existing = document.querySelector(selector);
+            const existing = find();
             if (existing) {
                 resolve(existing);
                 return;
             }
 
-            const observerId = `wait-${selector}-${Date.now()}`;
+            const observerId = `wait-${selector}-${++waitForElementSeq}`;
             /** @type {*} */
             let timeoutId = null;
 
             const handle = onBodyMutation(observerId, () => {
-                const element = document.querySelector(selector);
+                const element = find();
                 if (element) {
                     if (timeoutId) clearTimeout(timeoutId);
                     handle.unsubscribe();
@@ -241,7 +291,9 @@
             // Set timeout
             timeoutId = setTimeout(() => {
                 handle.unsubscribe();
-                console.warn(`🪼 Jellyfin Enhanced: Timeout waiting for element: ${selector}`);
+                if (!opts.quiet) {
+                    console.warn(`🪼 Jellyfin Enhanced: Timeout waiting for element: ${selector}`);
+                }
                 resolve(null);
             }, timeout);
         });
