@@ -23,9 +23,14 @@
             replaceTitle: JE.pluginConfig.SpoilerReplaceTitle !== false,
             cast: JE.pluginConfig.SpoilerStripCast !== false,
             reviews: JE.pluginConfig.SpoilerStripReviews !== false,
-            // Unlike the strip categories above, this row is gated on the
-            // admin having explicitly ENABLED advanced mode — there is
-            // nothing to opt out of while the uniform strip is in force.
+            // Advanced per-category reveals. Gated on the admin having
+            // explicitly ENABLED advanced mode (not "not disabled" like the
+            // strip categories above) — there is nothing to opt out of while
+            // the uniform strip is in force. The row also runs the opposite
+            // direction of effect from its neighbours: the same checkbox
+            // mechanics (checked => null/inherit, unchecked => false) make
+            // this user's Spoiler Guard STRICTER when unchecked, restoring
+            // the uniform full strip instead of the admin's reveals.
             advanced: JE.pluginConfig.SpoilerAdvancedMode === true,
         };
         const checked = value => value === false ? '' : 'checked';
@@ -61,11 +66,6 @@
                     ${row('sbPrefHideTaglines', 'HideTaglines', 'panel_settings_spoiler_guard_override_taglines', 'panel_settings_spoiler_guard_override_taglines_desc', adminOn.taglines)}
                     ${row('sbPrefHideTags', 'HideTags', 'panel_settings_spoiler_guard_override_tags', 'panel_settings_spoiler_guard_override_tags_desc', adminOn.tags)}
                     ${row('sbPrefHideReviews', 'HideReviews', 'panel_settings_spoiler_guard_override_reviews', 'panel_settings_spoiler_guard_override_reviews_desc', adminOn.reviews)}
-                    <!-- Advanced per-category reveals. Same checkbox mechanics as
-                         the rows above (checked => null/inherit, unchecked => false)
-                         but the opposite direction of effect: unchecking makes this
-                         user's Spoiler Guard STRICTER by restoring the uniform full
-                         strip instead of the admin's per-category reveals. -->
                     ${row('sbPrefUseAdvancedCategories', 'UseAdvancedCategories', 'panel_settings_spoiler_guard_override_advanced', 'panel_settings_spoiler_guard_override_advanced_desc', adminOn.advanced)}
                     <div style="margin-top:12px;padding:12px;background:${ctx.presetBoxBackground};border-radius:6px;border-left:3px solid ${ctx.toggleAccentColor};">
                         <label style="display:flex;align-items:center;gap:12px;cursor:pointer;">
