@@ -3013,6 +3013,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.SpoilerReplaceTitle,
                 config.SpoilerStripCast,
                 config.SpoilerStripReviews,
+                // Advanced category reveals: clients only need the master flag
+                // (to gate the per-user opt-out row in the settings panel);
+                // the six per-category strip toggles are server-only strip
+                // policy and are deliberately not exposed.
+                config.SpoilerAdvancedMode,
             });
         }
 
