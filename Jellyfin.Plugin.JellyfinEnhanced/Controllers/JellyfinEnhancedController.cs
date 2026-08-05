@@ -4416,6 +4416,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         ReplaceEpisodeTitles = body.ReplaceEpisodeTitles,
                         HideCast = body.HideCast,
                         HideReviews = body.HideReviews,
+                        UseAdvancedCategories = body.UseAdvancedCategories,
                         SkipDisableConfirm = body.SkipDisableConfirm,
                     };
                     return 1;
