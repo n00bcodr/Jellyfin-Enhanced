@@ -94,8 +94,9 @@ function getAvailableLanguages() {
  * Extract placeholders from a translation string
  */
 function extractPlaceholders(text) {
-    const matches = text.match(/\{[a-zA-Z_][a-zA-Z0-9_]*\}/g);
-    return matches ? [...new Set(matches)].sort() : [];
+    const variables = text.match(/\{[a-zA-Z_][a-zA-Z0-9_]*\}/g) || [];
+    const icons = text.match(/\{\{icon:[a-zA-Z0-9_-]+\}\}/g) || [];
+    return [...new Set([...variables, ...icons])].sort();
 }
 
 /**

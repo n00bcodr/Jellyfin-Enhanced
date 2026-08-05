@@ -24,12 +24,14 @@
     const userId = apiClient.getCurrentUserId();
 
     try {
-      // Search using Jellyfin's provider ID filtering
-      const itemTypes = mediaType === 'tv' ? 'Series,Episode' : 'Movie';
+      // Search using Jellyfin's provider ID filtering. Movies/TV can be scoped
+      // to their known item types; other media (music videos, etc.) search
+      // across all types since the original Jellyfin type isn't preserved.
+      const itemTypes = mediaType === 'tv' ? 'Series,Episode' : mediaType === 'movie' ? 'Movie' : null;
 
       // Fetch all items of this type and filter by provider ID client-side
       // This is more reliable than relying on AnyProviderIdEquals
-      const url = `Users/${userId}/Items?Recursive=true&IncludeItemTypes=${itemTypes}&SortBy=DateCreated&SortOrder=Descending&Limit=500`;
+      const url = `Users/${userId}/Items?Recursive=true${itemTypes ? `&IncludeItemTypes=${itemTypes}` : ''}&SortBy=DateCreated&SortOrder=Descending&Limit=500`;
 
       // Routed through the core fetch layer (auth + JSON parse identical to the
       // former ApiClient.ajax call; failures still land in the catch below).
@@ -43,7 +45,7 @@
       console.log(`🪼 Jellyfin Enhanced: Bookmarks Library: API Response:`, response);
 
       const items = response?.Items || [];
-      console.log(`🪼 Jellyfin Enhanced: Bookmarks Library: Fetched ${items.length} total items of type ${itemTypes}`);
+      console.log(`🪼 Jellyfin Enhanced: Bookmarks Library: Fetched ${items.length} total items of type ${itemTypes || 'any'}`);
 
       if (!Array.isArray(items) || items.length === 0) {
         console.warn(`🪼 Jellyfin Enhanced: Bookmarks Library: No items found or items is not an array`);

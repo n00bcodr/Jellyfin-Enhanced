@@ -175,7 +175,7 @@
 
         if (document.getElementById(linkId)) return;
 
-        var headerRight = JE.helpers.getHeaderRightContainer?.();
+        var headerRight = JE.helpers.getHeaderButtonTray?.();
         if (!headerRight) return;
 
         var group = getOrCreateGroup(headerRight);

@@ -60,11 +60,14 @@
     const filtered = results.filter(({ group }) => {
       if (currentTab === 'tv') return group.type === 'tv';
       if (currentTab === 'movie') return group.type === 'movie';
+      if (currentTab === 'other') return group.type === 'other';
       return true;
     });
 
     if (filtered.length === 0) {
-      const emptyTitle = currentTab === 'tv' ? JE.t('bookmark_empty_tv') : JE.t('bookmark_empty_movie');
+      const emptyTitle = currentTab === 'tv' ? JE.t('bookmark_empty_tv')
+        : currentTab === 'movie' ? JE.t('bookmark_empty_movie')
+        : JE.t('bookmark_empty_other');
       const emptyHint = JE.t('bookmark_empty_hint');
       container.innerHTML = `
         <div class="je-bookmarks-empty">

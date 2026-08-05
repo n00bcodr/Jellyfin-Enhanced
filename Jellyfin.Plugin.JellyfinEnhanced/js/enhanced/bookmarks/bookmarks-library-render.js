@@ -122,7 +122,8 @@
     const groupedByItem = {};
     const typeCounts = {
       tv: { items: 0, bookmarks: 0 },
-      movie: { items: 0, bookmarks: 0 }
+      movie: { items: 0, bookmarks: 0 },
+      other: { items: 0, bookmarks: 0 }
     };
 
     for (const [id, bm] of bookmarkEntries) {
@@ -150,11 +151,11 @@
     });
 
     const totalBookmarks = bookmarkEntries.length;
+    const tabOrder = ['movie', 'tv', 'other'];
     let currentTab = container.dataset.currentTab || 'movie';
-    if (currentTab === 'tv' && typeCounts.tv.items === 0 && typeCounts.movie.items > 0) {
-      currentTab = 'movie';
-    } else if (currentTab === 'movie' && typeCounts.movie.items === 0 && typeCounts.tv.items > 0) {
-      currentTab = 'tv';
+    if (!typeCounts[currentTab] || typeCounts[currentTab].items === 0) {
+      const fallback = tabOrder.find(t => typeCounts[t].items > 0);
+      if (fallback) currentTab = fallback;
     }
     container.dataset.currentTab = currentTab;
 
@@ -167,6 +168,9 @@
           </button>
           <button class="je-tab ${currentTab === 'tv' ? 'active' : ''}" data-tab="tv">
             ${JE.t('bookmarks_library_tab_series')}
+          </button>
+          <button class="je-tab ${currentTab === 'other' ? 'active' : ''}" data-tab="other">
+            ${JE.t('bookmarks_library_tab_others')}
           </button>
         </div>
 
@@ -294,7 +298,7 @@
   function normalizeMediaType(mediaType) {
     const type = (mediaType || '').toLowerCase();
     if (type === 'series' || type === 'episode' || type === 'tvshow' || type === 'tv') return 'tv';
-    if (type === 'movie' || type === 'film' || type === 'musicvideo') return 'movie';
+    if (type === 'movie' || type === 'film') return 'movie';
     return 'other';
   }
 

@@ -244,12 +244,14 @@
         if (primaryVideoStream) {
             // Priority 1: DisplayTitle Scan for resolution keywords
             const displayTitle = primaryVideoStream.DisplayTitle || '';
-            const resolutionRegex = /\b(4k|2160p|1440p|1080p|720p|480p|360p|404p|384p|520p)\b/i;
+            const resolutionRegex = /\b(8k|4320p|4k|2160p|1440p|1080p|720p|480p|360p|404p|384p|520p)\b/i;
             const resolutionMatch = displayTitle.match(resolutionRegex);
 
             if (resolutionMatch) {
                 const found = resolutionMatch[1].toLowerCase();
-                if (found === '4k' || found === '2160p') {
+                if (found === '8k' || found === '4320p') {
+                    resolutionTag = '8K';
+                } else if (found === '4k' || found === '2160p') {
                     resolutionTag = '4K';
                 } else if (found === '1440p') {
                     resolutionTag = '1440p';
@@ -267,7 +269,14 @@
             } else {
                 // Priority 2: Dimension Fallback
                 const height = primaryVideoStream.Height || 0;
-                if (height >= 1000) {
+                const width = primaryVideoStream.Width || 0;
+                if (height >= 3000 || width >= 7000) {
+                    resolutionTag = '8K';
+                } else if (height >= 1550 || width >= 3500) {
+                    resolutionTag = '4K';
+                } else if (height >= 1250) {
+                    resolutionTag = '1440p';
+                } else if (height >= 1000) {
                     resolutionTag = '1080p';
                 } else if (height >= 700) {
                     resolutionTag = '720p';

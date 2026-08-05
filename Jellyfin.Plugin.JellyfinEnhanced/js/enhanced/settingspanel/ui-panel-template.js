@@ -61,6 +61,13 @@
             return html;
         };
 
+        // Position-tab preview text mirrors the real font family, and its size
+        // scaled relative to "Normal" so it stays legible in the small preview
+        // box instead of rendering at the real on-video vw-based size.
+        const posPreviewFontSizePreset = JE.fontSizePresets[JE.currentSettings.selectedFontSizePresetIndex ?? 2] || JE.fontSizePresets[2];
+        const posPreviewFontFamilyPreset = JE.fontFamilyPresets[JE.currentSettings.selectedFontFamilyPresetIndex ?? 0] || JE.fontFamilyPresets[0];
+        const posPreviewFontPx = Math.max(8, Math.min(22, 13 * (posPreviewFontSizePreset.size / JE.fontSizePresets[2].size)));
+
         const userShortcuts = (JE.userConfig.shortcuts.Shortcuts || []).reduce((acc, s) => {
             acc[s.Name] = s;
             return acc;
@@ -230,6 +237,10 @@
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_disable_custom_styles')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_disable_custom_styles_desc')}</div></div>
                                 </label>
                             </div>
+                            <div id="je-subtitle-format-warning" style="display:none; margin-bottom: 16px; padding: 10px 12px; background: rgba(102,179,255,0.1); border: 1px solid rgba(102,179,255,0.3); border-radius: 6px; font-size: 12px; color: rgba(255,255,255,0.8); align-items: flex-start; gap: 8px;">
+                                <span class="material-icons" style="font-size:16px; line-height:1.4;">info</span>
+                                <span>${JE.t('panel_settings_subtitles_format_warning')}</span>
+                            </div>
                             <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_style')}</div><div id="subtitle-style-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.subtitlePresets, 'style')}</div></div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${primaryAccentColor};">
                                 <div style="font-weight: 600; margin-bottom: 12px;">${JE.icon(JE.IconName.PAINT)}</div>
@@ -267,9 +278,12 @@
                                         <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:rgba(255,255,255,0.08);transform:translateY(-50%);"></div>
                                     </div>
                                     <!-- Subtitle preview text -->
-                                    <div id="subtitlePositionPreview" style="position:absolute; transform:translate(-50%,-50%); pointer-events:none; white-space:nowrap; font-size:clamp(8px,1.5vw,13px); font-weight:600; color:${JE.currentSettings.customSubtitleTextColor?.substring(0,7) || '#ffffff'}; background-color:${JE.currentSettings.customSubtitleBgColor || 'transparent'}; padding:2px 6px; border-radius:3px; text-shadow:0 0 4px #000; left:${JE.currentSettings.subtitleHorizontalPosition ?? 50}%; top:${JE.currentSettings.subtitleVerticalPosition ?? 85}%;">AaBbCcDd</div>
+                                    <div id="subtitlePositionPreview" style="position:absolute; transform:translate(-50%,-50%); pointer-events:none; white-space:nowrap; font-size:${posPreviewFontPx}px; font-family:${posPreviewFontFamilyPreset.family}; font-weight:600; color:${JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF'}; background-color:${JE.currentSettings.customSubtitleBgColor || 'transparent'}; padding:2px 6px; border-radius:3px; text-shadow:0 0 4px #000; left:${JE.currentSettings.subtitleHorizontalPosition ?? 50}%; top:${JE.currentSettings.subtitleVerticalPosition ?? 85}%;">AaBbCcDd</div>
                                 </div>
-                                <div style="margin-top:6px; font-size:11px; color:rgba(255,255,255,0.4); text-align:center;">${JE.t('panel_settings_subtitles_position_note') || 'Requires Jellyfin subtitle style set to <b>Custom</b> in Subtitle settings'}</div>
+                                <div id="je-subtitle-position-note" style="display:none; margin-top:6px; font-size:11px; color:#ffcf5c; text-align:center; align-items:center; justify-content:center; gap:4px;">
+                                    <span class="material-icons" style="font-size:13px;">warning</span>
+                                    <span>${JE.t('panel_settings_subtitles_position_note') || 'Requires Jellyfin subtitle style set to <b>Custom</b> in Subtitle settings'}</span>
+                                </div>
                             </div>
                         </div>
                     </section>

@@ -79,6 +79,8 @@
                 container.style.setProperty('bottom', 'auto', 'important');
                 container.style.setProperty('transform', 'translate(-50%, -50%)', 'important');
                 container.style.setProperty('text-align', 'center', 'important');
+                container.style.setProperty('width', '100%', 'important');
+                container.style.setProperty('max-width', 'none', 'important');
             }
         });
     }
@@ -198,7 +200,13 @@
         // Start the observer to catch any new subtitle elements
         startSubtitleObserver();
 
-        // Also apply styles to the legacy ::cue for Jellyfin versions <10.11
+        // Also apply styles to ::cue, the native browser rendering path Jellyfin
+        // uses when its own subtitle style isn't set to "Custom" (in that mode text
+        // cues never pass through .videoSubtitlesInner, so forceApplyInlineStyles
+        // above never touches them). Color/font/size/shadow carry over here; the
+        // .videoSubtitlesInner-only properties (border-radius, padding) and the
+        // position override do not, since ::cue's allowed property set excludes
+        // them and there's no repositionable container to move.
         const oldStyleElement = document.getElementById('htmlvideoplayer-cuestyle');
         if (oldStyleElement?.sheet) {
             let styleElement = document.getElementById('je-html-videoplayer-cuestyle');
@@ -221,7 +229,7 @@
                 }`;
                 styleElement.sheet.insertRule(cueRule, 0);
             } catch (e) {
-                console.error("🪼 Jellyfin Enhanced: Failed to apply legacy ::cue styles:", e);
+                console.error("🪼 Jellyfin Enhanced: Failed to apply ::cue styles:", e);
             }
         }
     };
