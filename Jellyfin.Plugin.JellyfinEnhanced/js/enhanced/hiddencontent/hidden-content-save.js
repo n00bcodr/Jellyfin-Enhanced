@@ -37,10 +37,10 @@
                 // JE.saveUserSettings swallows errors, which would leave a pending retry firing later and
                 // clobbering server state.
                 const sent = await directSaveHiddenContent();
-                reconcileAfterSave(sent);
+                reconcileAfterSave(sent, scheduledGeneration);
             } catch (e) {
                 console.warn('🪼 Jellyfin Enhanced: debouncedSave failed; scheduling background retry', e);
-                if (pendingRetryHandle == null) scheduleFlushRetry(0);
+                if (pendingRetryHandle == null) scheduleFlushRetry(0, scheduledGeneration);
             }
         }, SAVE_DEBOUNCE_MS);
     }
@@ -168,7 +168,12 @@
     // - Mismatch: state moved during the await; schedule another save.
     // The retry-timer body explicitly clears RETRY_INFLIGHT before calling this so a same-state mismatch
     // doesn't leave the sentinel stuck; cancelPendingRetry refuses to clear an in-flight retry from another path.
-    function reconcileAfterSave(snapshotSent) {
+    // `generation` is the saveGeneration captured BEFORE the POST that
+    // produced `snapshotSent` — a save spanning a user switch must not
+    // reschedule itself under the new user (it would serialize the reset
+    // store to the incoming user's file).
+    function reconcileAfterSave(snapshotSent, generation) {
+        if (generation !== saveGeneration) return;
         if (snapshotSent === JSON.stringify(getHiddenData())) {
             cancelPendingRetry();
         } else {
@@ -202,9 +207,9 @@
             pendingRetryHandle = null;
             return;
         }
-        const scheduledGeneration = saveGeneration;
+        if (generation !== saveGeneration) return; // save chain belongs to a previous user
         pendingRetryHandle = setTimeout(async () => {
-            if (scheduledGeneration !== saveGeneration) { pendingRetryHandle = null; return; } // user switched since scheduling
+            if (generation !== saveGeneration) { pendingRetryHandle = null; return; } // user switched since scheduling
             pendingRetryHandle = RETRY_INFLIGHT; // mark in-flight so a concurrent debouncedSave failure doesn't spawn a parallel ladder
             // Guard for ApiClient teardown / signed-out state during the window.
             if (typeof ApiClient === 'undefined' || typeof ApiClient.getCurrentUserId !== 'function' || !ApiClient.getCurrentUserId()) {
@@ -218,10 +223,10 @@
                 // reschedule via debouncedSave doesn't leave the sentinel stuck (cancelPendingRetry from
                 // other code paths intentionally refuses to clear RETRY_INFLIGHT).
                 if (pendingRetryHandle === RETRY_INFLIGHT) pendingRetryHandle = null;
-                reconcileAfterSave(sent);
+                reconcileAfterSave(sent, generation);
             } catch (err) {
                 console.warn(`🪼 Jellyfin Enhanced: hidden-content save retry ${attempt + 1} failed`, err);
-                scheduleFlushRetry(attempt + 1);
+                scheduleFlushRetry(attempt + 1, generation);
             }
         }, FLUSH_RETRY_DELAYS_MS[attempt]);
     }
@@ -232,12 +237,13 @@
         if (!saveTimeout) return;
         clearTimeout(saveTimeout);
         saveTimeout = null;
+        const generation = saveGeneration;
         try {
             const sent = await directSaveHiddenContent();
-            reconcileAfterSave(sent);
+            reconcileAfterSave(sent, generation);
         } catch (e) {
             console.warn('🪼 Jellyfin Enhanced: flushPendingSave failed; scheduling background retry', e);
-            if (pendingRetryHandle == null) scheduleFlushRetry(0);
+            if (pendingRetryHandle == null) scheduleFlushRetry(0, generation);
             throw e;
         }
     }

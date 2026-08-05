@@ -536,6 +536,10 @@
             // This way a slow first-episode lookup doesn't block everything else.
 
             const renderItem = (item, firstEpisode) => {
+                // Re-check per render: first-episode/parent-series awaits can
+                // span a navigation OR a user switch (clearProcessed bumps the
+                // generation) — stale data must not be rendered or persisted.
+                if (generation !== batchGeneration) return;
                 const itemId = item.Id.toString().replace(/-/g, '').toLowerCase();
                 const batchEntries = elMap.get(itemId);
                 if (!batchEntries || batchEntries.length === 0) return;
@@ -597,6 +601,7 @@
             console.warn(`${logPrefix} Batch fetch failed, falling back to individual fetches:`, err);
             // Fallback: process items individually
             for (const { renderTarget, itemId } of batch) {
+                if (generation !== batchGeneration) break; // navigation or user switch
                 try {
                     const item = JE.helpers?.getItemCached
                         ? await JE.helpers.getItemCached(itemId, { userId })

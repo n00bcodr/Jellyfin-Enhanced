@@ -274,12 +274,17 @@
      * @returns {Promise<void>}
      */
     async function loadPrivateConfig() {
+        // A response resolving after a user switch was authorized as the
+        // PREVIOUS user — merging it would leak admin config into the next
+        // session and clobber the strip list the reset relies on.
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         try {
             const privateConfig = await ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl('/JellyfinEnhanced/private-config'),
                 dataType: 'json'
             });
+            if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
             // Merge the sensitive keys into the main config object
             privateConfigKeys = Object.keys(privateConfig && typeof privateConfig === 'object' ? privateConfig : {});
             Object.assign(JE.pluginConfig, privateConfig);
@@ -932,15 +937,33 @@
             // Must happen after loadScripts so JE.session exists.
             registerSessionIntegration();
 
-            // A user switch during the stage-2 fetches happens BEFORE the
+            // A user switch during the stage-1/2 fetches happens BEFORE the
             // session module exists, so it was adopted silently with no reset
-            // — the config fetched above belongs to the previous user.
-            // Re-fetch for whoever is actually signed in now.
+            // — EVERYTHING fetched above belongs to the previous user.
+            // Re-fetch it all for whoever is actually signed in now (mirrors
+            // the je:user-changed re-bootstrap in registerSessionIntegration).
             const liveUserId = ApiClient.getCurrentUserId();
             if (liveUserId && liveUserId !== userId) {
                 console.warn('🪼 Jellyfin Enhanced: User changed during boot — reloading user-scoped data.');
                 userId = liveUserId;
-                JE.userConfig = await fetchUserScopedConfig(liveUserId);
+                // Session exists now — epoch-guard this recovery too, so yet
+                // another switch during these fetches can't restore this
+                // user's data over the next user's reset.
+                const recoveryEpoch = JE.session ? JE.session.getEpoch() : 0;
+                const recoveryCurrent = () => !JE.session || JE.session.isCurrent(recoveryEpoch);
+                const recoveredConfig = await fetchUserScopedConfig(liveUserId);
+                if (recoveryCurrent()) JE.userConfig = recoveredConfig;
+                // The stage-2 prefetch may have resolved BEFORE the switch,
+                // leaving the previous user's object (and admin flag) behind.
+                JE.currentUser = null;
+                try {
+                    const liveUser = await ApiClient.getCurrentUser();
+                    if (recoveryCurrent() && liveUser?.Id === ApiClient.getCurrentUserId()) JE.currentUser = liveUser;
+                } catch (_) { /* non-fatal — consumers null-check */ }
+                // Same for the admin-only private config fetched in stage 1.
+                for (const key of privateConfigKeys) delete JE.pluginConfig[key];
+                privateConfigKeys = [];
+                await loadPrivateConfig(); // internally epoch-guarded
             }
 
             // Stage 4: Initialize core settings/shortcuts using potentially defined functions

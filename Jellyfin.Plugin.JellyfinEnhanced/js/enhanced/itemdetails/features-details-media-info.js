@@ -237,15 +237,19 @@
                     totalRuntimeTicks: itemResult?.totalRuntimeTicks ?? 0,
                     ts: now
                 };
+                // A stale response must neither render (the DOM now belongs
+                // to the new user's session) nor be cached.
+                if (!isCurrent()) return;
                 placeholder.innerHTML = getIconSpan(watchProgress.progress);
                 placeholder.appendChild(getWatchProgressValue(watchProgress));
 
-                if (isCurrent()) watchProgressCache.set(itemId, watchProgress);
+                watchProgressCache.set(itemId, watchProgress);
             } catch (error) {
                 console.error('🪼 Jellyfin Enhanced: Error fetching watch progress for ID %s:', itemId, error);
+                if (!isCurrent()) return;
                 // Keep placeholder with 0 to prevent repeated calls
                 renderUnavailable();
-                if (isCurrent()) watchProgressCache.set(itemId, { progress: 0, totalPlaybackTicks: 0, totalRuntimeTicks: 0, ts: now });
+                watchProgressCache.set(itemId, { progress: 0, totalPlaybackTicks: 0, totalRuntimeTicks: 0, ts: now });
             }
         };
 

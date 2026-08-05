@@ -17,9 +17,7 @@
 //      credentials change, even when no navigation happens.
 //   2. The shared je:navigate pipeline (login/logout always navigates), which
 //      also covers hosts where the wrapper could not be installed.
-//   3. A 'storage' listener on 'jellyfin_credentials' for sign-ins that
-//      happen in another tab of the same browser profile.
-//   4. A slow reconcile interval that re-installs the wrapper if the host
+//   3. A slow reconcile interval that re-installs the wrapper if the host
 //      ever replaces window.ApiClient wholesale (multi-server switching).
 //
 // Transitions are numbered with a monotonically increasing "epoch". Async

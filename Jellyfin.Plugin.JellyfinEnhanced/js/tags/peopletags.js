@@ -235,7 +235,9 @@
                     url: url,
                     dataType: 'json'
                 });
-                if (JE.session && !JE.session.isCurrent(requestEpoch)) return data || null;
+                // Return null (not the data): the caller would render it
+                // onto a card in the NEW user's session.
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return null;
 
                 if (data) {
                     // Cache it

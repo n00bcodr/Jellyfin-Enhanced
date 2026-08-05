@@ -220,6 +220,9 @@
    * Uses POST endpoint to only check specific calendar events, not entire library
    */
   async function fetchUserData() {
+    // Favorites/watched state is per-user — drop a response that resolves
+    // after a user switch instead of refilling the freshly reset map.
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
     if (!state.settings.highlightFavorites && !state.settings.highlightWatchedSeries) {
       state.userDataMap = new Map();
       return;
@@ -249,6 +252,7 @@
         method: "POST",
         body: { events: eventsToCheck },
       });
+      if (JE.session && !JE.session.isCurrent(epoch)) return;
 
       // Build Map for O(1) lookup by event ID
       state.userDataMap = new Map();
@@ -273,6 +277,9 @@
     }
 
     state.requestedLoading = true;
+    // Same per-user guard: the finally below must not install the previous
+    // user's requested-set (or mark it loaded) after a switch.
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
     const requested = new Set();
     const pageSize = 200;
     let page = 1;
@@ -301,11 +308,15 @@
     } catch (error) {
       console.warn(`${logPrefix} Failed to fetch user requests:`, error);
     } finally {
-      state.requestedItems = requested;
-      state.requestedLoaded = true;
-      state.requestedLoading = false;
-      if (state.pageVisible) {
-        renderPage();
+      if (!JE.session || JE.session.isCurrent(epoch)) {
+        state.requestedItems = requested;
+        state.requestedLoaded = true;
+        state.requestedLoading = false;
+        if (state.pageVisible) {
+          renderPage();
+        }
+      } else {
+        state.requestedLoading = false;
       }
     }
   }

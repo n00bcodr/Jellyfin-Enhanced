@@ -757,6 +757,11 @@
                 });
             }
 
+            // A stale invocation must never register the shared 'arr-links'
+            // observer: it would later self-disconnect and take the CURRENT
+            // user's subscription down with it (shared subscriber name).
+            if (!initIsCurrent()) return;
+
             // The admin check above was resolved for THIS user (initEpoch) —
             // after a user switch the observer must retire itself instead of
             // injecting admin-only links (with stale slugCache data) for the

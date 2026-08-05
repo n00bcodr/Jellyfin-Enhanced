@@ -220,7 +220,12 @@
 
         const promise = fetchFn()
             .finally(() => {
-                inFlightRequests.delete(key);
+                // Only remove OUR entry: after a user-switch flush a new
+                // request may already occupy this key — deleting it would let
+                // a third caller start a duplicate fetch.
+                if (inFlightRequests.get(key) === promise) {
+                    inFlightRequests.delete(key);
+                }
             });
 
         inFlightRequests.set(key, promise);

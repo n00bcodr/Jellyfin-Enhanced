@@ -98,7 +98,11 @@
             try {
               activeServerId = (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId) || null;
             } catch { activeServerId = null; }
-            const server = (activeServerId && servers.find(s => s.Id === activeServerId)) || servers[0];
+            // Fail closed: when the active server is known but has no stored
+            // entry, do NOT fall back to another server's token/user id.
+            const server = activeServerId
+              ? servers.find(s => s.Id === activeServerId)
+              : servers[0];
             return server ? { token: server.AccessToken, userId: server.UserId } : null;
           } catch {
             return null;

@@ -72,8 +72,10 @@
    * Fetch download queue from backend
    */
   async function fetchDownloads() {
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
     try {
       const data = await JE.core.api.plugin("/arr/queue");
+      if (JE.session && !JE.session.isCurrent(epoch)) return null;
       state.downloads = data.items || [];
       // Surface per-instance queue errors so a 401 / timeout / SSRF-reject on one
       // instance doesn't silently produce a "looks empty" downloads page.
@@ -123,9 +125,19 @@
   }
 
   /**
+   * Epoch captured before a fetch: a response resolving after a user switch
+   * must not write the previous user's data (or a stale 403 latch) into the
+   * freshly reset state.
+   * @returns {number}
+   */
+  const captureEpoch = () => (JE.session ? JE.session.getEpoch() : 0);
+  const epochCurrent = (e) => !JE.session || JE.session.isCurrent(e);
+
+  /**
    * Fetch requests from backend
    */
   async function fetchRequests() {
+    const epoch = captureEpoch();
     try {
       const skip = (state.requestsPage - 1) * 20;
       const filter = state.requestsFilter !== "all" ? state.requestsFilter : "";
@@ -137,6 +149,7 @@
       });
 
       const data = await JE.core.api.plugin(`/arr/requests?${query.toString()}`);
+      if (!epochCurrent(epoch)) return null;
 
       state.requests = data.requests || [];
       state.requestsTotalPages = data.totalPages || 1;
@@ -145,7 +158,7 @@
       return data;
     } catch (error) {
       console.error(`${logPrefix} Failed to fetch requests:`, error);
-      state.requests = [];
+      if (epochCurrent(epoch)) state.requests = [];
       return null;
     }
   }
@@ -214,6 +227,7 @@
    * Fetch issues from Jellyseerr
    */
   async function fetchIssues() {
+    const epoch = captureEpoch();
     if (!JE.pluginConfig?.JellyseerrEnabled || !JE.pluginConfig?.DownloadsPageShowIssues) {
       state.issues = [];
       state.issuesTotalPages = 1;
@@ -252,12 +266,14 @@
         );
       }
 
+      if (!epochCurrent(epoch)) return null;
       state.issues = issues;
       state.issuesTotalPages = data?.pageInfo?.pages || data?.totalPages || 1;
       state.issuesError = false;
       return data;
     } catch (error) {
       console.error(`${logPrefix} Failed to fetch issues:`, error);
+      if (!epochCurrent(epoch)) return null; // stale failure (incl. 403) belongs to the previous user
       state.issues = [];
       state.issuesTotalPages = 1;
       state.issuesError = true;
@@ -282,6 +298,7 @@
       return null;
     }
 
+    const epoch = captureEpoch();
     try {
       const skip = (state.historyPage - 1) * 20;
 
@@ -291,6 +308,7 @@
       });
 
       const data = await JE.core.api.plugin(`/arr/history?${query.toString()}`);
+      if (!epochCurrent(epoch)) return null;
 
       state.history = data.items || [];
       state.historyVisible = data.visible !== false;
