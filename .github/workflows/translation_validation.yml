@@ -41,7 +41,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
           # Count number of changed files
-          count=$(echo "$changed_files" | grep -c .)
+          count=$(echo "$changed_files" | grep -c . || true)
           echo "count=$count" >> $GITHUB_OUTPUT
 
           echo "Changed files:"
