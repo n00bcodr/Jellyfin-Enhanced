@@ -163,22 +163,6 @@ Comprehensive hotkeys for navigation, playback control, and more.
  - `P` - Open Episode Preview
  - `O` - Skip Intro/Outro
 
-!!! tip "No menus involved"
-    The cycling shortcuts act without opening any panels:
-
-    - **Cycle Audio/Subtitle Tracks** switch the track through Jellyfin's own
-      remote-control API (the same channel a phone remote uses), so no menu
-      flashes on screen. Subtitles cycle through *Off*, and a toast names the
-      new track. If the session can't be resolved, the shortcut falls back to
-      driving the native menu.
-    - **Cycle Aspect Ratio** writes the same setting the native player reads
-      and restyles the video directly — the native settings menu stays in sync.
-    - **Show Playback Info** toggles an Enhanced-rendered overlay (resolution,
-      play method, transcoding, bitrate, active tracks, dropped frames)
-      instead of opening the settings → stats panel.
-    - **Skip Intro/Outro** jumps past the current segment using the server's
-      media-segment data when available; the visible skip button is only used
-      as a fallback.
 
 **Customization:**
 
