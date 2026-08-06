@@ -637,5 +637,21 @@
     "hidden_content_unknown_show": "未知劇集",
     "hidden_content_experimental_label": "實驗性",
     "active_streams_count": "{count} 個活躍串流",
-    "active_streams_none": "無活躍串流"
+    "active_streams_none": "無活躍串流",
+    "track_off": "關閉",
+    "aspect_ratio_auto": "自動",
+    "aspect_ratio_cover": "覆蓋",
+    "aspect_ratio_fill": "拉伸",
+    "playback_info_title": "播放資訊",
+    "pi_resolution": "解像度",
+    "pi_speed": "速度",
+    "pi_dropped_frames": "丟幀",
+    "pi_buffer": "已緩衝",
+    "pi_play_method": "播放方式",
+    "pi_transcoding": "轉碼",
+    "pi_bitrate": "位元率",
+    "pi_transcode_reason": "原因",
+    "pi_container": "封裝格式",
+    "pi_audio": "音訊",
+    "pi_subtitle": "字幕"
 }

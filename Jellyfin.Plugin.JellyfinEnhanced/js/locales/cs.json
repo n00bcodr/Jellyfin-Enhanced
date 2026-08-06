@@ -637,5 +637,21 @@
     "hidden_content_unknown_show": "Neznámý seriál",
     "hidden_content_experimental_label": "Experimentální",
     "active_streams_count": "{count} aktivní stream|{count} aktivní streamy",
-    "active_streams_none": "Žádné aktivní streamy"
+    "active_streams_none": "Žádné aktivní streamy",
+    "track_off": "Vypnuto",
+    "aspect_ratio_auto": "Auto",
+    "aspect_ratio_cover": "Oříznout",
+    "aspect_ratio_fill": "Vyplnit",
+    "playback_info_title": "Informace o přehrávání",
+    "pi_resolution": "Rozlišení",
+    "pi_speed": "Rychlost",
+    "pi_dropped_frames": "Ztracené snímky",
+    "pi_buffer": "Ve vyrovnávací paměti",
+    "pi_play_method": "Metoda přehrávání",
+    "pi_transcoding": "Překódování",
+    "pi_bitrate": "Datový tok",
+    "pi_transcode_reason": "Důvod",
+    "pi_container": "Kontejner",
+    "pi_audio": "Zvuk",
+    "pi_subtitle": "Titulky"
 }

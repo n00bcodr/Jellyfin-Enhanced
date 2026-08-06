@@ -637,5 +637,21 @@
     "hidden_content_unknown_show": "Unknown Tale",
     "hidden_content_experimental_label": "Experimental, arrr",
     "active_streams_count": "{count} stream ativo|{count} streams ativos",
-    "active_streams_none": "Nenhum stream ativo"
+    "active_streams_none": "Nenhum stream ativo",
+    "track_off": "Becalmed",
+    "aspect_ratio_auto": "Auto",
+    "aspect_ratio_cover": "Cover",
+    "aspect_ratio_fill": "Fill",
+    "playback_info_title": "Voyage Report",
+    "pi_resolution": "Spyglass Reach",
+    "pi_speed": "Speed",
+    "pi_dropped_frames": "Frames Lost at Sea",
+    "pi_buffer": "In the Hold",
+    "pi_play_method": "Sailin’ Method",
+    "pi_transcoding": "Transcodin’",
+    "pi_bitrate": "Bitrate",
+    "pi_transcode_reason": "Reason",
+    "pi_container": "Cargo Crate",
+    "pi_audio": "Shanty Track",
+    "pi_subtitle": "Text Scrolls"
 }

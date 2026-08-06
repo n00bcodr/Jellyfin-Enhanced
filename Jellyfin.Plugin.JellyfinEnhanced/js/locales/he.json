@@ -637,5 +637,21 @@
     "jellyseerr_btn_view_status": "הצג סטטוס",
     "jellyseerr_report_issue_submitting": "שולח…",
     "jellyseerr_season_status_processing": "בעיבוד",
-    "jellyseerr_toast_collection_requested": "התבקש"
+    "jellyseerr_toast_collection_requested": "התבקש",
+    "track_off": "כבוי",
+    "aspect_ratio_auto": "אוטומטי",
+    "aspect_ratio_cover": "כיסוי",
+    "aspect_ratio_fill": "מילוי",
+    "playback_info_title": "פרטי ניגון",
+    "pi_resolution": "רזולוציה",
+    "pi_speed": "מהירות",
+    "pi_dropped_frames": "פריימים שאבדו",
+    "pi_buffer": "במאגר",
+    "pi_play_method": "שיטת ניגון",
+    "pi_transcoding": "קידוד מחדש",
+    "pi_bitrate": "קצב סיביות",
+    "pi_transcode_reason": "סיבה",
+    "pi_container": "מיכל",
+    "pi_audio": "שמע",
+    "pi_subtitle": "כתוביות"
 }

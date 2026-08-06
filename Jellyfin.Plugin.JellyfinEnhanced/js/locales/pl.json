@@ -637,5 +637,21 @@
     "hidden_content_unknown_show": "Nieznany serial",
     "hidden_content_experimental_label": "Eksperymentalne",
     "active_streams_count": "{count} aktywny strumień|{count} aktywne strumienie",
-    "active_streams_none": "Brak aktywnych strumieni"
+    "active_streams_none": "Brak aktywnych strumieni",
+    "track_off": "Wyłączone",
+    "aspect_ratio_auto": "Auto",
+    "aspect_ratio_cover": "Przytnij",
+    "aspect_ratio_fill": "Wypełnij",
+    "playback_info_title": "Informacje o odtwarzaniu",
+    "pi_resolution": "Rozdzielczość",
+    "pi_speed": "Prędkość",
+    "pi_dropped_frames": "Zgubione klatki",
+    "pi_buffer": "W buforze",
+    "pi_play_method": "Metoda odtwarzania",
+    "pi_transcoding": "Transkodowanie",
+    "pi_bitrate": "Przepływność",
+    "pi_transcode_reason": "Powód",
+    "pi_container": "Kontener",
+    "pi_audio": "Dźwięk",
+    "pi_subtitle": "Napisy"
 }

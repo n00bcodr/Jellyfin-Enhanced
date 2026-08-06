@@ -637,5 +637,21 @@
     "hidden_content_unknown_show": "Ismeretlen sorozat",
     "hidden_content_experimental_label": "Kísérleti",
     "active_streams_count": "{count} aktív stream",
-    "active_streams_none": "Nincs aktív stream"
+    "active_streams_none": "Nincs aktív stream",
+    "track_off": "Kikapcsolva",
+    "aspect_ratio_auto": "Automatikus",
+    "aspect_ratio_cover": "Kitöltés vágással",
+    "aspect_ratio_fill": "Nyújtás",
+    "playback_info_title": "Lejátszási információk",
+    "pi_resolution": "Felbontás",
+    "pi_speed": "Sebesség",
+    "pi_dropped_frames": "Eldobott képkockák",
+    "pi_buffer": "Pufferelve",
+    "pi_play_method": "Lejátszási mód",
+    "pi_transcoding": "Átkódolás",
+    "pi_bitrate": "Bitráta",
+    "pi_transcode_reason": "Ok",
+    "pi_container": "Konténer",
+    "pi_audio": "Hang",
+    "pi_subtitle": "Feliratok"
 }

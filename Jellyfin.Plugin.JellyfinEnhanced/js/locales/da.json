@@ -637,5 +637,21 @@
     "awards_close": "Luk",
     "awards_for_work": "for {work}",
     "release_date_tooltip": "Udgivelses-/udsendelsesdato (via TMDB)",
-    "panel_settings_subtitles_position_note": "Kræver Jellyfin undertekststil indstillet til <b>Brugerdefinerede</b> i undertekster"
+    "panel_settings_subtitles_position_note": "Kræver Jellyfin undertekststil indstillet til <b>Brugerdefinerede</b> i undertekster",
+    "track_off": "Fra",
+    "aspect_ratio_auto": "Auto",
+    "aspect_ratio_cover": "Dæk",
+    "aspect_ratio_fill": "Fyld",
+    "playback_info_title": "Afspilningsinfo",
+    "pi_resolution": "Opløsning",
+    "pi_speed": "Hastighed",
+    "pi_dropped_frames": "Tabte billeder",
+    "pi_buffer": "Bufret",
+    "pi_play_method": "Afspilningsmetode",
+    "pi_transcoding": "Omkodning",
+    "pi_bitrate": "Bitrate",
+    "pi_transcode_reason": "Årsag",
+    "pi_container": "Beholder",
+    "pi_audio": "Lyd",
+    "pi_subtitle": "Undertekster"
 }

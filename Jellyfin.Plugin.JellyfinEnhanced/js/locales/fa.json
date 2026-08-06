@@ -637,5 +637,21 @@
     "jellyseerr_btn_view_status": "View Status",
     "jellyseerr_report_issue_submitting": "Submitting…",
     "jellyseerr_season_status_processing": "Processing",
-    "jellyseerr_toast_collection_requested": "Requested"
+    "jellyseerr_toast_collection_requested": "Requested",
+    "track_off": "خاموش",
+    "aspect_ratio_auto": "خودکار",
+    "aspect_ratio_cover": "پوشش",
+    "aspect_ratio_fill": "پر کردن",
+    "playback_info_title": "اطلاعات پخش",
+    "pi_resolution": "وضوح",
+    "pi_speed": "سرعت",
+    "pi_dropped_frames": "فریم‌های ازدست‌رفته",
+    "pi_buffer": "بافر شده",
+    "pi_play_method": "روش پخش",
+    "pi_transcoding": "تبدیل کدگذاری",
+    "pi_bitrate": "نرخ بیت",
+    "pi_transcode_reason": "دلیل",
+    "pi_container": "قالب",
+    "pi_audio": "صدا",
+    "pi_subtitle": "زیرنویس‌ها"
 }
