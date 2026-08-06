@@ -637,5 +637,21 @@
     "hidden_content_unknown_show": "Ukjent serie",
     "hidden_content_experimental_label": "Eksperimentell",
     "active_streams_count": "{count} aktiv strøm|{count} aktive strømmer",
-    "active_streams_none": "Ingen aktive strømmer"
+    "active_streams_none": "Ingen aktive strømmer",
+    "track_off": "Av",
+    "aspect_ratio_auto": "Auto",
+    "aspect_ratio_cover": "Dekk",
+    "aspect_ratio_fill": "Fyll",
+    "playback_info_title": "Avspillingsinfo",
+    "pi_resolution": "Oppløsning",
+    "pi_speed": "Hastighet",
+    "pi_dropped_frames": "Tapte bilder",
+    "pi_buffer": "Bufret",
+    "pi_play_method": "Avspillingsmetode",
+    "pi_transcoding": "Omkoding",
+    "pi_bitrate": "Bitrate",
+    "pi_transcode_reason": "Årsak",
+    "pi_container": "Beholder",
+    "pi_audio": "Lyd",
+    "pi_subtitle": "Undertekster"
 }

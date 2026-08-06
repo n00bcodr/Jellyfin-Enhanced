@@ -637,5 +637,21 @@
     "requests_no_history_found": "Не знайдено історії",
     "downloads_history_partial": "Імпортовано частково",
     "panel_search_placeholder": "Налаштування пошуку…",
-    "panel_about_title": "Про"
+    "panel_about_title": "Про",
+    "track_off": "Вимкнено",
+    "aspect_ratio_auto": "Авто",
+    "aspect_ratio_cover": "Заповнення",
+    "aspect_ratio_fill": "Розтягнути",
+    "playback_info_title": "Інформація про відтворення",
+    "pi_resolution": "Роздільна здатність",
+    "pi_speed": "Швидкість",
+    "pi_dropped_frames": "Пропущені кадри",
+    "pi_buffer": "Буферизовано",
+    "pi_play_method": "Метод відтворення",
+    "pi_transcoding": "Транскодування",
+    "pi_bitrate": "Бітрейт",
+    "pi_transcode_reason": "Причина",
+    "pi_container": "Контейнер",
+    "pi_audio": "Аудіо",
+    "pi_subtitle": "Субтитри"
 }

@@ -637,5 +637,21 @@
     "requests_no_history_found": "Historiaa ei löytynyt",
     "downloads_history_partial": "Osittain tuotu",
     "panel_search_placeholder": "Hae asetuksia…",
-    "panel_about_title": "Tietoja"
+    "panel_about_title": "Tietoja",
+    "track_off": "Pois",
+    "aspect_ratio_auto": "Automaattinen",
+    "aspect_ratio_cover": "Peitä",
+    "aspect_ratio_fill": "Täytä",
+    "playback_info_title": "Toistotiedot",
+    "pi_resolution": "Resoluutio",
+    "pi_speed": "Nopeus",
+    "pi_dropped_frames": "Pudonneet ruudut",
+    "pi_buffer": "Puskuroitu",
+    "pi_play_method": "Toistotapa",
+    "pi_transcoding": "Transkoodaus",
+    "pi_bitrate": "Bittinopeus",
+    "pi_transcode_reason": "Syy",
+    "pi_container": "Säiliö",
+    "pi_audio": "Ääni",
+    "pi_subtitle": "Tekstitykset"
 }

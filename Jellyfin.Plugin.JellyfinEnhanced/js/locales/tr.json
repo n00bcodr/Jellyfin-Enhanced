@@ -637,5 +637,21 @@
     "awards_close": "Kapat",
     "awards_for_work": "{work} için",
     "release_date_tooltip": "Yayın/Çıkış Tarihi (TMDB üzerinden)",
-    "panel_settings_subtitles_position_note": "Jellyfin alt başlık stili <b>Custom</b> alt başlık ayarlarında"
+    "panel_settings_subtitles_position_note": "Jellyfin alt başlık stili <b>Custom</b> alt başlık ayarlarında",
+    "track_off": "Kapalı",
+    "aspect_ratio_auto": "Otomatik",
+    "aspect_ratio_cover": "Kapla",
+    "aspect_ratio_fill": "Doldur",
+    "playback_info_title": "Oynatma Bilgisi",
+    "pi_resolution": "Çözünürlük",
+    "pi_speed": "Hız",
+    "pi_dropped_frames": "Düşen kareler",
+    "pi_buffer": "Ara belleğe alındı",
+    "pi_play_method": "Oynatma yöntemi",
+    "pi_transcoding": "Dönüştürme",
+    "pi_bitrate": "Bit hızı",
+    "pi_transcode_reason": "Neden",
+    "pi_container": "Kapsayıcı",
+    "pi_audio": "Ses",
+    "pi_subtitle": "Altyazılar"
 }

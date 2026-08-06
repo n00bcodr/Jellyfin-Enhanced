@@ -637,5 +637,21 @@
     "hidden_content_unknown_show": "Serie desconocida",
     "hidden_content_experimental_label": "Experimental",
     "active_streams_count": "{count} transmisión activa|{count} transmisiones activas",
-    "active_streams_none": "Sin transmisiones activas"
+    "active_streams_none": "Sin transmisiones activas",
+    "track_off": "Desactivado",
+    "aspect_ratio_auto": "Auto",
+    "aspect_ratio_cover": "Cubrir",
+    "aspect_ratio_fill": "Rellenar",
+    "playback_info_title": "Información de reproducción",
+    "pi_resolution": "Resolución",
+    "pi_speed": "Velocidad",
+    "pi_dropped_frames": "Fotogramas perdidos",
+    "pi_buffer": "En búfer",
+    "pi_play_method": "Método de reproducción",
+    "pi_transcoding": "Transcodificación",
+    "pi_bitrate": "Tasa de bits",
+    "pi_transcode_reason": "Motivo",
+    "pi_container": "Contenedor",
+    "pi_audio": "Audio",
+    "pi_subtitle": "Subtítulos"
 }

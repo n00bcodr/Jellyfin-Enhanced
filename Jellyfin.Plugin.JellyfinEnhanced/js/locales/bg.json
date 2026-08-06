@@ -637,5 +637,21 @@
     "hidden_content_unknown_show": "Неизвестен сериал",
     "hidden_content_experimental_label": "Експериментално",
     "active_streams_count": "{count} активен поток|{count} активни потока",
-    "active_streams_none": "Няма активни потоци"
+    "active_streams_none": "Няма активни потоци",
+    "track_off": "Изкл.",
+    "aspect_ratio_auto": "Автоматично",
+    "aspect_ratio_cover": "Покриване",
+    "aspect_ratio_fill": "Запълване",
+    "playback_info_title": "Информация за възпроизвеждането",
+    "pi_resolution": "Резолюция",
+    "pi_speed": "Скорост",
+    "pi_dropped_frames": "Изпуснати кадри",
+    "pi_buffer": "Буферирано",
+    "pi_play_method": "Метод на възпроизвеждане",
+    "pi_transcoding": "Транскодиране",
+    "pi_bitrate": "Битрейт",
+    "pi_transcode_reason": "Причина",
+    "pi_container": "Контейнер",
+    "pi_audio": "Аудио",
+    "pi_subtitle": "Субтитри"
 }

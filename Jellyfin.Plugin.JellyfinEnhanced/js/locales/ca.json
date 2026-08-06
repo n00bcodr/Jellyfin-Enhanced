@@ -637,5 +637,21 @@
     "hidden_content_unknown_show": "Sèrie desconeguda",
     "hidden_content_experimental_label": "Experimental",
     "active_streams_count": "{count} flux actiu|{count} fluxos actius",
-    "active_streams_none": "Cap flux actiu"
+    "active_streams_none": "Cap flux actiu",
+    "track_off": "Desactivat",
+    "aspect_ratio_auto": "Auto",
+    "aspect_ratio_cover": "Cobrir",
+    "aspect_ratio_fill": "Omplir",
+    "playback_info_title": "Informació de reproducció",
+    "pi_resolution": "Resolució",
+    "pi_speed": "Velocitat",
+    "pi_dropped_frames": "Fotogrames perduts",
+    "pi_buffer": "En memòria intermèdia",
+    "pi_play_method": "Mètode de reproducció",
+    "pi_transcoding": "Transcodificació",
+    "pi_bitrate": "Taxa de bits",
+    "pi_transcode_reason": "Motiu",
+    "pi_container": "Contenidor",
+    "pi_audio": "Àudio",
+    "pi_subtitle": "Subtítols"
 }

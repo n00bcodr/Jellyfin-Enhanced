@@ -637,5 +637,21 @@
     "hidden_content_unknown_show": "未知剧集",
     "hidden_content_experimental_label": "实验性",
     "active_streams_count": "{count} 个活跃流",
-    "active_streams_none": "无活跃流"
+    "active_streams_none": "无活跃流",
+    "track_off": "关闭",
+    "aspect_ratio_auto": "自动",
+    "aspect_ratio_cover": "覆盖",
+    "aspect_ratio_fill": "拉伸",
+    "playback_info_title": "播放信息",
+    "pi_resolution": "分辨率",
+    "pi_speed": "速度",
+    "pi_dropped_frames": "丢帧",
+    "pi_buffer": "已缓冲",
+    "pi_play_method": "播放方式",
+    "pi_transcoding": "转码",
+    "pi_bitrate": "码率",
+    "pi_transcode_reason": "原因",
+    "pi_container": "封装格式",
+    "pi_audio": "音频",
+    "pi_subtitle": "字幕"
 }
