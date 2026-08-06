@@ -37,4 +37,21 @@
     };
 
     internal.primeIdentityCookie();
+
+    // The cookie identifies the browser to the server for anonymous <img>
+    // requests, so it must follow user switches: rewrite it for the incoming
+    // user (the change payload carries the new id — ApiClient may not expose
+    // it yet at reset time) and delete it on logout so the server never
+    // resolves the previous user's spoiler policy.
+    JE.session?.onUserChange('spoilerguard-identity', (change) => {
+        try {
+            if (change.userId) {
+                document.cookie = `je-spoiler-uid=${encodeURIComponent(change.userId)}; path=/; SameSite=Lax`;
+            } else {
+                document.cookie = 'je-spoiler-uid=; path=/; SameSite=Lax; Max-Age=0';
+            }
+        } catch (e) {
+            console.warn(`${logPrefix} identity cookie update on user switch failed:`, e);
+        }
+    });
 })(window.JellyfinEnhanced);

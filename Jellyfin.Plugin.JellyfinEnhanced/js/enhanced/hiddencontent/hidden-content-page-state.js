@@ -43,6 +43,22 @@
     adminLoadToken: 0,           // increments per fetch so stale responses are ignored
   };
 
+  // The admin gate and the cross-user view are resolved for the signed-in
+  // user; after a user switch the new user must re-resolve (a non-admin must
+  // never inherit an admin's cached gate, and vice versa).
+  window.JellyfinEnhanced.session?.onUserChange('hidden-content-page', () => {
+    state.adminIsAdmin = null;
+    state.adminUsers = null;
+    state.adminUsersLoading = false;
+    state.selectedAdminUserId = null;
+    state.adminEditMode = false;
+    state.adminUserName = '';
+    state.adminItems = null;
+    state.adminItemsUserId = null;
+    state.adminLoadError = false;
+    state.adminLoadToken++; // in-flight admin fetches see a stale token and drop their result
+  });
+
   function scopeBadgeText(scope) {
     const s = (scope || '').toLowerCase();
     if (s === 'continuewatching') return JE.t('hidden_content_scope_cw_label');

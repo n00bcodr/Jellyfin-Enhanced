@@ -19,9 +19,32 @@
     showUnmonitored: "je.calendar.showUnmonitored",
   };
 
+  /**
+   * Per-user storage key for the show-unmonitored toggle. The unscoped legacy
+   * key leaked the preference across SPA user switches; its value is adopted
+   * into the current user's scoped key once (preserving the pre-upgrade
+   * choice), then removed so it can't shadow the scoped value.
+   * @returns {string}
+   */
+  function showUnmonitoredKey() {
+    const scoped = JE.session
+      ? JE.session.userScopedKey(STORAGE_KEYS.showUnmonitored)
+      : `${STORAGE_KEYS.showUnmonitored}:anonymous`;
+    try {
+      const legacy = window.localStorage?.getItem(STORAGE_KEYS.showUnmonitored);
+      if (legacy !== null && legacy !== undefined) {
+        if (window.localStorage?.getItem(scoped) === null) {
+          window.localStorage?.setItem(scoped, legacy);
+        }
+        window.localStorage?.removeItem(STORAGE_KEYS.showUnmonitored);
+      }
+    } catch (_) { /* best effort */ }
+    return scoped;
+  }
+
   function getStoredShowUnmonitored() {
     try {
-      const stored = window.localStorage?.getItem(STORAGE_KEYS.showUnmonitored);
+      const stored = window.localStorage?.getItem(showUnmonitoredKey());
       if (stored === null) return null;
       return stored === "true";
     } catch (error) {
@@ -31,7 +54,7 @@
 
   function setStoredShowUnmonitored(value) {
     try {
-      window.localStorage?.setItem(STORAGE_KEYS.showUnmonitored, String(!!value));
+      window.localStorage?.setItem(showUnmonitoredKey(), String(!!value));
     } catch (error) {
     }
   }
@@ -81,6 +104,16 @@
     locationUnsubscribe: null,
     _customTabContainer: null,
   };
+
+  // Watched state, favorites and requested-item highlighting are per-user —
+  // clear them on a user switch so the calendar re-derives everything for
+  // the new user on its next render.
+  JE.session?.onUserChange('calendar-page', () => {
+    state.userDataMap.clear();
+    state.requestedItems.clear();
+    state.requestedLoaded = false;
+    state.requestedLoading = false;
+  });
 
   // Status color mapping
   const STATUS_COLORS = {
@@ -187,6 +220,9 @@
    * Uses POST endpoint to only check specific calendar events, not entire library
    */
   async function fetchUserData() {
+    // Favorites/watched state is per-user — drop a response that resolves
+    // after a user switch instead of refilling the freshly reset map.
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
     if (!state.settings.highlightFavorites && !state.settings.highlightWatchedSeries) {
       state.userDataMap = new Map();
       return;
@@ -216,6 +252,7 @@
         method: "POST",
         body: { events: eventsToCheck },
       });
+      if (JE.session && !JE.session.isCurrent(epoch)) return;
 
       // Build Map for O(1) lookup by event ID
       state.userDataMap = new Map();
@@ -226,8 +263,9 @@
         });
       });
     } catch (error) {
-      // Silently handle error - highlighting is optional
-      state.userDataMap = new Map();
+      // Silently handle error - highlighting is optional. Stale failures
+      // (from before a user switch) must not clear the new user's map.
+      if (!JE.session || JE.session.isCurrent(epoch)) state.userDataMap = new Map();
     }
   }
 
@@ -240,6 +278,9 @@
     }
 
     state.requestedLoading = true;
+    // Same per-user guard: the finally below must not install the previous
+    // user's requested-set (or mark it loaded) after a switch.
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
     const requested = new Set();
     const pageSize = 200;
     let page = 1;
@@ -268,12 +309,16 @@
     } catch (error) {
       console.warn(`${logPrefix} Failed to fetch user requests:`, error);
     } finally {
-      state.requestedItems = requested;
-      state.requestedLoaded = true;
-      state.requestedLoading = false;
-      if (state.pageVisible) {
-        renderPage();
+      if (!JE.session || JE.session.isCurrent(epoch)) {
+        state.requestedItems = requested;
+        state.requestedLoaded = true;
+        state.requestedLoading = false;
+        if (state.pageVisible) {
+          renderPage();
+        }
       }
+      // Stale run: leave the state alone entirely — the reset already
+      // cleared the latch, and the current user's own fetch owns it now.
     }
   }
 

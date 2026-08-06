@@ -954,6 +954,12 @@
             }
         }
 
+        // Cached Seerr results carry per-user availability/request state.
+        // Navigation normally runs cleanup() before a logout can complete,
+        // but run it on the identity transition too so no path leaks user A's
+        // results into user B's session.
+        JE.session?.onUserChange(`discovery-${key}`, cleanup);
+
         /** Handles page navigation — renders when the URL matches the module. */
         function handlePageNavigation() {
             const id = spec.getIdFromUrl();

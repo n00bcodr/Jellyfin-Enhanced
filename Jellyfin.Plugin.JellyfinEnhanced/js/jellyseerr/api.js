@@ -139,13 +139,19 @@
             }
         }
 
+        // A status resolved after a user switch belongs to the previous user
+        // — return it to the caller that asked, but never cache it.
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const isCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
         try {
             const status = await get('/user-status', { skipCache: true });
-            cachedUserStatus = status;
-            cachedUserStatusAt = Date.now();
-            // Surface the typed reason as a banner so users aren't left staring
-            // at silently-hidden discovery sections.
-            api.surfaceUserStatusBanner(status);
+            if (isCurrent()) {
+                cachedUserStatus = status;
+                cachedUserStatusAt = Date.now();
+                // Surface the typed reason as a banner so users aren't left staring
+                // at silently-hidden discovery sections.
+                api.surfaceUserStatusBanner(status);
+            }
             return status;
         } catch (error) {
             console.warn(`${logPrefix} Status check failed:`, error);
@@ -155,9 +161,11 @@
                 reason: error?.responseJSON?.code || 'unreachable',
                 message: error?.responseJSON?.message
             };
-            cachedUserStatus = fallback;
-            cachedUserStatusAt = Date.now();
-            api.surfaceUserStatusBanner(fallback);
+            if (isCurrent()) {
+                cachedUserStatus = fallback;
+                cachedUserStatusAt = Date.now();
+                api.surfaceUserStatusBanner(fallback);
+            }
             return fallback;
         }
     };
@@ -346,11 +354,16 @@
         if (cachedOverrideRules !== null && Date.now() - overrideRulesCachedAt < OVERRIDE_RULES_TTL) {
             return cachedOverrideRules;
         }
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         try {
             const rules = await get('/overrideRule');
-            cachedOverrideRules = Array.isArray(rules) ? rules : [];
-            overrideRulesCachedAt = Date.now();
-            return cachedOverrideRules;
+            const normalized = Array.isArray(rules) ? rules : [];
+            // Don't cache a result that resolved after a user switch.
+            if (!JE.session || JE.session.isCurrent(requestEpoch)) {
+                cachedOverrideRules = normalized;
+                overrideRulesCachedAt = Date.now();
+            }
+            return normalized;
         } catch (error) {
             console.error(`${logPrefix} Failed to fetch override rules:`, error);
             return cachedOverrideRules || [];
@@ -903,6 +916,18 @@
 
         return baseUrl;
     };
+
+    // The Seerr identity (linked user, permissions, override rules) is
+    // per-Jellyfin-user; a sticky success cached for user A must not answer
+    // for user B after an SPA user switch.
+    JE.session?.onUserChange('jellyseerr-api', () => {
+        cachedUserStatus = null;
+        cachedUserStatusAt = 0;
+        cachedOverrideRules = null;
+        overrideRulesCachedAt = 0;
+        // Allow the status banner to surface again for the new user.
+        window.__JE_userStatusBannerShown = null;
+    });
 
     // Expose the API module on the global JE object
     JE.jellyseerrAPI = api;

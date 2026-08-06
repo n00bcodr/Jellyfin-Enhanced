@@ -168,11 +168,15 @@
             const userId = ApiClient.getCurrentUserId();
             if (!userId) return;
 
+            // The response is spoiler-stripped for THIS user — drop it if the
+            // signed-in user changed while the request was in flight.
+            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
             const resp = await ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}`),
                 dataType: 'json'
             });
+            if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
 
             if (resp && resp.items && resp.count > 0) {
                 serverCache = new Map(Object.entries(resp.items));
@@ -208,11 +212,15 @@
             const userId = ApiClient.getCurrentUserId();
             if (!userId) return;
 
+            // Same identity guard as loadServerCache: incremental entries are
+            // spoiler-stripped for the user that requested them.
+            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
             const resp = await ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}?since=${serverCacheTimestamp}`),
                 dataType: 'json'
             });
+            if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
 
             if (resp && resp.items) {
                 const newEntries = Object.entries(resp.items);
@@ -528,6 +536,10 @@
             // This way a slow first-episode lookup doesn't block everything else.
 
             const renderItem = (item, firstEpisode) => {
+                // Re-check per render: first-episode/parent-series awaits can
+                // span a navigation OR a user switch (clearProcessed bumps the
+                // generation) — stale data must not be rendered or persisted.
+                if (generation !== batchGeneration) return;
                 const itemId = item.Id.toString().replace(/-/g, '').toLowerCase();
                 const batchEntries = elMap.get(itemId);
                 if (!batchEntries || batchEntries.length === 0) return;
@@ -589,6 +601,7 @@
             console.warn(`${logPrefix} Batch fetch failed, falling back to individual fetches:`, err);
             // Fallback: process items individually
             for (const { renderTarget, itemId } of batch) {
+                if (generation !== batchGeneration) break; // navigation or user switch
                 try {
                     const item = JE.helpers?.getItemCached
                         ? await JE.helpers.getItemCached(itemId, { userId })
@@ -597,6 +610,7 @@
 
                     const firstEpisode = (item.Type === 'Series' || item.Type === 'Season')
                         ? await getFirstEpisode(userId, item.Id) : null;
+                    if (generation !== batchGeneration) break; // switched during the awaits above
                     const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget };
 
                     for (const [, renderer] of renderers) {
@@ -807,6 +821,21 @@
         },
         scheduleScan,
     };
+
+    // The server tag cache is fetched per user (spoiler-stripped for that
+    // user), so it must not survive a user switch. Reset synchronously here;
+    // the full invalidate-and-reload (which also strips stale DOM overlays)
+    // runs once the new user's data is live — reloading at reset time would
+    // race the credential swap.
+    JE.session?.onUserChange('tag-pipeline', () => {
+        serverCache = null;
+        serverCacheVersion = 0;
+        serverCacheTimestamp = 0;
+        JE.tagPipeline.clearProcessed();
+    });
+    document.addEventListener('je:user-data-loaded', () => {
+        JE.tagPipeline.invalidateServerCache().catch(() => {});
+    });
 
     console.log(`${logPrefix} Module loaded`);
 

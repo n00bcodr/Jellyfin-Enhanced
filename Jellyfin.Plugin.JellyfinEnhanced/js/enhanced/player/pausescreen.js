@@ -61,6 +61,24 @@
           this.userId = credentials.userId;
           this.token = credentials.token;
 
+          // Credentials are captured once above; without this they would keep
+          // serving the PREVIOUS user's token after an SPA user switch. The
+          // re-read is deferred a tick because the reset fires before the host
+          // finishes writing the new credentials to localStorage.
+          JE.session?.onUserChange('pause-screen', () => {
+            for (const url of this.imgBlobCache.values()) URL.revokeObjectURL(url);
+            this.imgBlobCache.clear();
+            this.imgProbeCache.clear();
+            this.itemCache.clear();
+            this.userId = null;
+            this.token = null;
+            setTimeout(() => {
+              const fresh = this.getCredentials();
+              this.userId = fresh?.userId || null;
+              this.token = fresh?.token || null;
+            }, 0);
+          });
+
           this.injectStyles();
           this.createOverlay();
           this.setupKeyboardAccessibility();
@@ -73,7 +91,18 @@
           if (!creds) return null;
           try {
             const parsed = JSON.parse(creds);
-            const server = parsed.Servers?.[0];
+            const servers = Array.isArray(parsed.Servers) ? parsed.Servers : [];
+            // Prefer the ACTIVE server's entry — with multiple stored servers
+            // Servers[0] may hold another server's user id/token.
+            let activeServerId = null;
+            try {
+              activeServerId = (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId) || null;
+            } catch { activeServerId = null; }
+            // Fail closed: when the active server is known but has no stored
+            // entry, do NOT fall back to another server's token/user id.
+            const server = activeServerId
+              ? servers.find(s => s.Id === activeServerId)
+              : servers[0];
             return server ? { token: server.AccessToken, userId: server.UserId } : null;
           } catch {
             return null;

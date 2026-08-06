@@ -16,6 +16,14 @@
     const fileSizeCache = new Map(); // Map<itemId, { size: number|null, unavailable: boolean, ts: number }>
     const audioLanguageCache = new Map(); // Map<itemId, { languages: Array, unavailable: boolean, ts: number }>
 
+    // Watch progress is per-user (and item metadata is fetched with the
+    // signed-in user's access) — never carry it across a user switch.
+    JE.session?.onUserChange('details-media-info', () => {
+        watchProgressCache.clear();
+        fileSizeCache.clear();
+        audioLanguageCache.clear();
+    });
+
     /**
      * Converts bytes into a human-readable format (e.g., KB, MB, GB).
      * @param {number} bytes The size in bytes.
@@ -212,6 +220,10 @@
                 return;
             }
 
+            // Watch progress is per-user: a response resolving after a user
+            // switch must not repopulate the cache that was just reset.
+            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+            const isCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
             try {
                 const itemResult = await ApiClient.ajax({
                     type: 'GET',
@@ -225,12 +237,16 @@
                     totalRuntimeTicks: itemResult?.totalRuntimeTicks ?? 0,
                     ts: now
                 };
+                // A stale response must neither render (the DOM now belongs
+                // to the new user's session) nor be cached.
+                if (!isCurrent()) return;
                 placeholder.innerHTML = getIconSpan(watchProgress.progress);
                 placeholder.appendChild(getWatchProgressValue(watchProgress));
 
                 watchProgressCache.set(itemId, watchProgress);
             } catch (error) {
                 console.error('🪼 Jellyfin Enhanced: Error fetching watch progress for ID %s:', itemId, error);
+                if (!isCurrent()) return;
                 // Keep placeholder with 0 to prevent repeated calls
                 renderUnavailable();
                 watchProgressCache.set(itemId, { progress: 0, totalPlaybackTicks: 0, totalRuntimeTicks: 0, ts: now });

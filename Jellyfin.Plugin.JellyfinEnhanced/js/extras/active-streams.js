@@ -793,9 +793,16 @@
         }
     };
 
+    // Bumped by destroy(): in-flight session fetches and header-inject retry
+    // timers from a torn-down (previous user's) instance must not touch the
+    // DOM a re-initialized instance now owns.
+    let _generation = 0;
+
     // ── Counter updater ──────────────────────────────────────────────────────
     const updateCounter = async () => {
+        const startGeneration = _generation;
         const sessions = await fetchSessions();
+        if (startGeneration !== _generation) return; // torn down / user switched mid-fetch
         _lastUpdated = new Date();
         const btn = document.getElementById('je-active-streams');
         if (!btn) return;
@@ -1133,13 +1140,14 @@
     };
 
     // ── Header button ────────────────────────────────────────────────────────
-    const tryInjectHeader = (attempts = 0) => {
+    const tryInjectHeader = (attempts = 0, generation = _generation) => {
+        if (generation !== _generation) return; // torn down while retrying
         if (document.getElementById('je-active-streams')) return;
         if (attempts > 20) return;
 
         const headerRight = JE.helpers.getHeaderRightContainer();
         if (!headerRight) {
-            setTimeout(() => tryInjectHeader(attempts + 1), 500);
+            setTimeout(() => tryInjectHeader(attempts + 1, generation), 500);
             return;
         }
 
@@ -1211,6 +1219,7 @@
 
         destroy() {
             console.log(`${LOG} Active Streams: destroying.`);
+            _generation++; // invalidate in-flight fetches and header-inject retries
             stopPolling();
             stopObserver();
             if (_lifecycle) { _lifecycle.teardown(); _lifecycle = null; }
@@ -1223,5 +1232,16 @@
             _broadcastFormOpen = false;
         }
     };
+
+    // The panel shows other users' now-playing sessions (admin view) and its
+    // visibility gate was evaluated for the OLD user — tear everything down
+    // on a user switch and re-initialize once the new user's data (incl. the
+    // admin policy) is loaded, so a non-admin never inherits the admin panel.
+    JE.session?.onUserChange('active-streams', () => {
+        JE.activeStreams.destroy();
+    });
+    document.addEventListener('je:user-data-loaded', () => {
+        JE.activeStreams.initialize();
+    });
 
 })(window.JellyfinEnhanced);

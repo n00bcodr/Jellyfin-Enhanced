@@ -220,7 +220,12 @@
 
         const promise = fetchFn()
             .finally(() => {
-                inFlightRequests.delete(key);
+                // Only remove OUR entry: after a user-switch flush a new
+                // request may already occupy this key — deleting it would let
+                // a third caller start a duplicate fetch.
+                if (inFlightRequests.get(key) === promise) {
+                    inFlightRequests.delete(key);
+                }
             });
 
         inFlightRequests.set(key, promise);
@@ -352,6 +357,14 @@
             }
         }
     }
+
+    // Cache keys never include a user id, but proxied responses (Seerr, tag
+    // data) ARE per-user server-side — flush everything when the signed-in
+    // user changes so user B never reads user A's cached responses.
+    JE.session?.onUserChange('core-api', () => {
+        responseCache.clear();
+        inFlightRequests.clear();
+    });
 
     // Metrics API
 
@@ -577,6 +590,12 @@
                 init.signal = signal;
             }
 
+            // Identity epoch at request start: a response that finishes after
+            // a user switch must not repopulate the (already flushed) cache —
+            // cache keys carry no user id, so a late write would hand user
+            // A's response to user B.
+            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+
             try {
                 const response = await fetchWithRetry(
                     url,
@@ -587,7 +606,7 @@
                 const text = await response.text();
                 const data = text ? JSON.parse(text) : {};
 
-                if (isGet && cacheKey) {
+                if (isGet && cacheKey && (!JE.session || JE.session.isCurrent(requestEpoch))) {
                     setCache(cacheKey, data);
                 }
                 return data;

@@ -442,11 +442,16 @@
 
         // Load saved settings
         function loadSettings() {
-            const settings = JE.userConfig.elsewhere;
+            const settings = JE.userConfig.elsewhere || {};
             userRegion = settings.Region || DEFAULT_REGION;
             userRegions = settings.Regions || [];
             userServices = settings.Services || [];
         }
+
+        // This closure survives an SPA logout/login, so re-read the incoming
+        // user's saved regions/services once their config has been reloaded —
+        // otherwise user B keeps browsing with user A's Elsewhere preferences.
+        document.addEventListener('je:user-data-loaded', loadSettings);
 
         function createServiceBadge(service, tmdbId, mediaType) {
             const badge = document.createElement('div');
