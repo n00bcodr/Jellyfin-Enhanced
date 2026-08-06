@@ -66,7 +66,9 @@ The userscript has been discontinued as the plugin functionality has grown signi
 
 ### Auto-skip intros not working?
 
-Auto-skip requires the [Intro Skipper plugin](https://github.com/intro-skipper/intro-skipper) to be installed and configured.
+Auto-skip seeks using the media segments Jellyfin stores for an item, so a segment
+provider — usually the [Intro Skipper plugin](https://github.com/intro-skipper/intro-skipper) —
+has to detect them first. Jellyfin Enhanced does not detect intros itself.
 
 **Requirements:**
 
@@ -82,13 +84,20 @@ Auto-skip requires the [Intro Skipper plugin](https://github.com/intro-skipper/i
 
 **Check Detection:**
 
-- [x] Play a video with known intro
+- [x] Play a video with a known intro
 
-- [x] Look for "Skip Intro" button
+- [x] Check the item's segments with an API key from **Dashboard → API Keys**:
+  `http://<your-server>/MediaSegments/<item-id>?api_key=<your-key>` — an entry with
+  `"Type": "Intro"` means detection worked (the endpoint needs a key; a plain
+  browser request returns 401)
 
-- [x] If button appears, detection works
+- [x] If the list is empty, run intro detection again
 
-- [x] If no button, run intro detection again
+!!! tip
+
+    You do **not** need Jellyfin's own "Skip Intro" button for this. Auto-skip no
+    longer clicks that button, so it works with the segment action set to **None**
+    in Playback settings, and on non-English clients where the button is translated.
 
 
 ### Seerr integration not connecting?
