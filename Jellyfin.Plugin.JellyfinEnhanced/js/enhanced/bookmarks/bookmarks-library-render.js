@@ -21,6 +21,22 @@
   let lastRenderTs = 0;
   let lastMountedContainer = null;
 
+  // The mounted-container guard suppresses re-renders while the same DOM
+  // node stays populated — which is exactly what happens across an SPA user
+  // switch (the Custom Tabs panel survives logout/login), leaving user A's
+  // rendered bookmarks visible to user B (upstream discussion about stale
+  // bookmarks after switching accounts). Drop the guard on the transition,
+  // then force a fresh render once the new user's bookmarks are loaded.
+  window.JellyfinEnhanced.session?.onUserChange('bookmarks-library-render', () => {
+    lastMountedContainer = null;
+    lastRenderTs = 0;
+  });
+  document.addEventListener('je:user-data-loaded', () => {
+    lastMountedContainer = null;
+    lastRenderTs = 0;
+    renderIfSectionExists();
+  });
+
   /**
    * Render when section exists or bookmarks updated
    */

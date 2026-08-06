@@ -69,10 +69,42 @@
             'Papua New Guinea': 'PG', 'Fiji': 'FJ', 'Samoa': 'WS', 'Tonga': 'TO'
         };
 
+        // People metadata is fetched with the signed-in user's library access.
+        // The cache key names are frozen, so ownership is tracked via a
+        // sibling sentinel (same pattern as core/tag-renderer-base.js): a
+        // payload written by a different server:user — or a legacy payload
+        // with no sentinel — is dropped instead of being served cross-user.
+        const OWNER_KEY = `${CACHE_KEY}IdentityOwner`;
+        try {
+            const owner = `${JE.session?.getServerId() || ''}:${JE.session?.getUserId() || ApiClient.getCurrentUserId() || ''}`;
+            if (localStorage.getItem(OWNER_KEY) !== owner) {
+                localStorage.removeItem(CACHE_KEY);
+                localStorage.removeItem(CACHE_TIMESTAMP_KEY);
+                localStorage.setItem(OWNER_KEY, owner);
+            }
+        } catch (e) {
+            console.warn(`${logPrefix} cache ownership check failed`, e);
+        }
+
         let peopleCache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
         let peopleCacheTimestamp = JSON.parse(localStorage.getItem(CACHE_TIMESTAMP_KEY) || '{}');
         const Hot = (JE._hotCache = JE._hotCache || { ttl: CACHE_TTL });
         Hot.peopleTags = Hot.peopleTags || new Map();
+
+        // Full wipe on user switch; the new owner is stamped immediately so
+        // the next boot doesn't wipe the new user's cache a second time.
+        JE.session?.onUserChange('people-tags', (change) => {
+            peopleCache = {};
+            peopleCacheTimestamp = {};
+            Hot.peopleTags.clear();
+            try {
+                localStorage.removeItem(CACHE_KEY);
+                localStorage.removeItem(CACHE_TIMESTAMP_KEY);
+                localStorage.setItem(OWNER_KEY, `${change.serverId || ''}:${change.userId || ''}`);
+            } catch (e) {
+                console.warn(`${logPrefix} cache clear on user switch failed`, e);
+            }
+        });
 
         let processedCastMembers = new WeakSet();
         let processedPersonIds = new Set();
@@ -195,11 +227,17 @@
             try {
                 const queryString = itemId ? `?itemId=${itemId}` : '';
                 const url = ApiClient.getUrl(`/JellyfinEnhanced/person/${personId}${queryString}`);
+                // A response resolving after a user switch must not be written
+                // under the NEW user's identity-owner sentinel.
+                const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
                 const data = await ApiClient.ajax({
                     type: 'GET',
                     url: url,
                     dataType: 'json'
                 });
+                // Return null (not the data): the caller would render it
+                // onto a card in the NEW user's session.
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return null;
 
                 if (data) {
                     // Cache it

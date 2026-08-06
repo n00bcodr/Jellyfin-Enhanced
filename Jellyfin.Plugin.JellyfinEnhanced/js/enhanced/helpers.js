@@ -96,6 +96,15 @@
         if (includeInFlight) avatarFetchPromises.clear();
     }
 
+    // Item lookups are keyed `${userId}:${itemId}` so they can't collide
+    // across users, but flush anyway on a switch (frees memory and drops
+    // entries fetched with a token that is about to be revoked). Avatars are
+    // the Seerr-linked user's own.
+    JE.session?.onUserChange('helpers', () => {
+        itemCache.clear();
+        clearAvatarObjectUrlCache(true);
+    });
+
     /**
      * Deduplicated item fetch with short TTL cache.
      * Prevents multiple modules from requesting the same item concurrently on detail page navigation.
