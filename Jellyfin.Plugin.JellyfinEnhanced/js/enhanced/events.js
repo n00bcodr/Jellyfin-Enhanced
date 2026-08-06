@@ -83,18 +83,9 @@
             case activeShortcuts.ShowPlaybackInfo:
                 e.preventDefault();
                 e.stopPropagation();
-                // Check if stats dialog is already open
-                const statsDialog = document.querySelector('.actionSheetContent button[data-id="stats"]');
-                if (statsDialog) {
-                    // Stats menu is open, close it
-                    const dialogBackdropContainer = document.getElementById('dialogBackdropContainer');
-                    const dialogContainer = document.getElementById('dialogContainer');
-                    if (dialogBackdropContainer) dialogBackdropContainer.remove();
-                    if (dialogContainer) dialogContainer.remove();
-                } else {
-                    // Stats menu is not open, open it
-                    JE.openSettings(() => document.querySelector('.actionSheetContent button[data-id="stats"]')?.click());
-                }
+                // Toggles the plugin-rendered playback-info overlay — no
+                // settings menu / stats panel is ever opened.
+                JE.togglePlaybackInfo();
                 break;
             case activeShortcuts.SubtitleMenu:
                 e.preventDefault();

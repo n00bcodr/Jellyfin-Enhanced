@@ -348,26 +348,148 @@
         JE.toast(tWithFallback('toast_jumped_back', '{{icon:rewind}} Jumped back to {time}', { time: `${mins}:${secs}` }));
     };
 
+    // ── Segment-data skip (primary), skip-button click (fallback) ───────────
+    //
+    // The server's native Media Segments API (GET /MediaSegments/{itemId},
+    // available on both 10.11 and 12) gives the exact intro/outro boundaries,
+    // so the shortcut can seek straight past the segment the position is inside
+    // — no button, no DOM. The visible skip-button click remains the fallback
+    // for items without segment data and for third-party skip-button plugins.
+
+    /** Ticks per second in Jellyfin's timeline (1 tick = 100 ns). */
+    const TICKS_PER_SECOND = 10000000;
+
+    /** Per-item media segment cache: itemId → {segments:[], at:number}. */
+    const segmentCache = new Map();
+    const SEGMENT_CACHE_MS = 10 * 60 * 1000;
+
     /**
-     * Manually triggers the skip intro/outro button if it's visible.
+     * Derives the transcode clock offset (ticks) from the media source URL —
+     * non-HLS progressive transcodes without CopyTimestamps restart the element
+     * clock at the transcode's StartTimeTicks, so raw currentTime would desync
+     * every boundary comparison. HLS (.m3u8 / blob:) and Static/CopyTimestamps
+     * sources keep an absolute clock (offset 0).
+     * @param {string} src
+     * @returns {number}
+     */
+    function transcodeOffsetTicks(src) {
+        try {
+            const q = (src || '').indexOf('?');
+            if (q === -1) return 0;
+            if (src.substring(0, q).toLowerCase().endsWith('.m3u8')) return 0;
+            let startTimeTicks = 0;
+            for (const [name, value] of new URLSearchParams(src.substring(q + 1))) {
+                const lower = name.toLowerCase();
+                if ((lower === 'static' || lower === 'copytimestamps') && String(value).toLowerCase() === 'true') {
+                    return 0; // absolute element clock
+                }
+                if (lower === 'starttimeticks') {
+                    const n = parseInt(value, 10);
+                    if (Number.isFinite(n) && n > 0) startTimeTicks = n;
+                }
+            }
+            return startTimeTicks;
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: transcode offset parse failed', err);
+            return 0;
+        }
+    }
+
+    /**
+     * Fetches (and caches) the item's media segments.
+     * @param {string} itemId
+     * @returns {Promise<Array<object>>}
+     */
+    async function fetchMediaSegments(itemId) {
+        const cached = segmentCache.get(itemId);
+        if (cached && (performance.now() - cached.at) < SEGMENT_CACHE_MS) return cached.segments;
+        try {
+            const ac = window.ApiClient;
+            if (!ac) return [];
+            const res = await ac.ajax({
+                type: 'GET',
+                url: ac.getUrl(`/MediaSegments/${encodeURIComponent(itemId)}`),
+                dataType: 'json'
+            });
+            const segments = Array.isArray(res && res.Items) ? res.Items : [];
+            segmentCache.set(itemId, { segments, at: performance.now() });
+            return segments;
+        } catch (err) {
+            // Transient failure: no caching, the next press retries.
+            console.warn('🪼 Jellyfin Enhanced: media segments fetch failed', err);
+            return [];
+        }
+    }
+
+    /**
+     * Clicks the visible native/third-party skip button, if any.
+     * @returns {boolean} True when a button was clicked.
+     */
+    function clickSkipButton() {
+        const skipButton = document.querySelector('button.skip-button.emby-button:not(.skip-button-hidden):not(.hide)');
+        if (!skipButton) return false;
+        const buttonText = skipButton.textContent || '';
+        skipButton.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        skipButton.click();
+        if (buttonText.includes('Skip Intro')) {
+            JE.toast(JE.t('toast_skipped_intro'));
+        } else if (buttonText.includes('Skip Outro')) {
+            JE.toast(JE.t('toast_skipped_outro'));
+        } else {
+            JE.toast('⏭️ Skipped');
+        }
+        return true;
+    }
+
+    /**
+     * Skips the current intro/outro. Primary path is data-driven: when the
+     * position is inside a known media segment, seek past its exact end — no
+     * button, no DOM. Falls back to the visible skip button otherwise.
      */
     JE.skipIntroOutro = () => {
-        const skipButton = document.querySelector('button.skip-button.emby-button:not(.skip-button-hidden):not(.hide)');
-        if (skipButton) {
-            const buttonText = skipButton.textContent || '';
-            skipButton.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-            skipButton.click();
-
-            if (buttonText.includes('Skip Intro')) {
-                JE.toast(JE.t('toast_skipped_intro'));
-            } else if (buttonText.includes('Skip Outro')) {
-                JE.toast(JE.t('toast_skipped_outro'));
-            } else {
-                JE.toast('⏭️ Skipped');
-            }
-        } else {
-            JE.toast(JE.t('toast_no_skip_button'));
+        const video = getVideo();
+        const itemId = getCurrentVideoItemId()
+            || parseItemIdFromVideosSrc((video && (video.currentSrc || video.src)) || '');
+        if (!video || !itemId) {
+            if (!clickSkipButton()) JE.toast(JE.t('toast_no_skip_button'));
+            return;
         }
+        const pressVideo = video;
+        const pressSrc = video.currentSrc || video.src || '';
+        fetchMediaSegments(itemId).then(segments => {
+            // The fetch is async: bail to the button if the surface moved.
+            const v = getVideo();
+            if (v !== pressVideo || ((v && (v.currentSrc || v.src)) || '') !== pressSrc) {
+                if (!clickSkipButton()) JE.toast(JE.t('toast_no_skip_button'));
+                return;
+            }
+            const offset = transcodeOffsetTicks(pressSrc);
+            const nowTicks = pressVideo.currentTime * TICKS_PER_SECOND + offset;
+            const seg = segments.find(s => s
+                && typeof s.StartTicks === 'number' && typeof s.EndTicks === 'number'
+                && s.StartTicks <= nowTicks && s.EndTicks > nowTicks);
+            if (seg) {
+                const endSeconds = (seg.EndTicks - offset) / TICKS_PER_SECOND;
+                const duration = Number.isFinite(pressVideo.duration) && pressVideo.duration > 0
+                    ? pressVideo.duration : Infinity;
+                const target = Math.min(endSeconds, duration);
+                if (target > pressVideo.currentTime) {
+                    pressVideo.currentTime = target;
+                    if (seg.Type === 'Intro') {
+                        JE.toast(JE.t('toast_skipped_intro'));
+                    } else if (seg.Type === 'Outro') {
+                        JE.toast(JE.t('toast_skipped_outro'));
+                    } else {
+                        JE.toast('⏭️ Skipped');
+                    }
+                    return;
+                }
+            }
+            if (!clickSkipButton()) JE.toast(JE.t('toast_no_skip_button'));
+        }).catch(err => {
+            console.warn('🪼 Jellyfin Enhanced: segment skip failed', err);
+            if (!clickSkipButton()) JE.toast(JE.t('toast_no_skip_button'));
+        });
     };
 
     // ── Native OSD track menus ───────────────────────────────────────────────
@@ -660,45 +782,551 @@
             .finally(() => { pendingMenuOpen = null; });
     }
 
-    /**
-     * Cycles through available subtitle tracks in the OSD menu.
-     */
-    JE.cycleSubtitleTrack = () => {
-        cycleTrackMenu('button.btnSubtitles', 'toast_no_subtitles_found', 'subtitle');
-    };
+    // ── DOM-free track cycling (primary path) ────────────────────────────────
+    //
+    // Tracks are switched through the server's remote-control channel:
+    // POST /Sessions/{id}/Command with SetAudioStreamIndex / SetSubtitleStreamIndex.
+    // The web client routes both commands straight into its internal
+    // playbackManager (serverNotifications.js in both jellyfin-web 10.11 and 12,
+    // with Index -1 meaning "subtitles off"), so no action sheet ever opens.
+    // The hardened OSD menu cycle above remains the fallback for an unmoved
+    // surface when the session cannot be resolved or the command fails.
+    //
+    // Staleness model (each guard exists because a concrete interleaving breaks
+    // without it — see the matching comments):
+    //  * Presses are serialized per kind, so a rapid second press observes the
+    //    first press's commanded index instead of re-computing the same "next"
+    //    from a lagging PlayState.
+    //  * A short-lived commanded-index memory (scoped to session+item+
+    //    MediaSourceId) bridges the window where PlayState still reports the
+    //    old track. It is retired the moment PlayState acknowledges the value,
+    //    voided by a MediaSource switch (stream indices renumber), and cleared
+    //    before EVERY menu fallback (the menu is authoritative and its
+    //    selection is not observed here).
+    //  * Item ownership is captured AT the keypress: parsed from the media
+    //    source URL (or the video-page URL), or — for id-less hls.js blob
+    //    sources — via a press-time session probe accepted only if the
+    //    element/source surface is unchanged when it resolves. A press whose
+    //    id-less surface later moves is swallowed outright: a lagging server
+    //    can keep reporting the old item after an episode change, so no probe
+    //    can PROVE the moved surface still plays the press item.
+    //  * Before the POST the current surface is re-checked against the press
+    //    item (a probe response itself can be stale), and a failed POST falls
+    //    back to the menu only with positively proven, unmoved ownership.
+
+    /** Milliseconds a commanded index may bridge PlayState lag. */
+    const TRACK_COMMAND_MEMORY_MS = 10000;
 
     /**
-     * Cycles through available audio tracks in the OSD menu.
+     * Per-kind commanded-index memory. Audio and subtitle records are
+     * independent so an intervening command of the other kind cannot evict one.
+     * @type {{subtitle: ?{sessionId:string,itemId:string,mediaSourceId:?string,index:number,at:number}, audio: ?{...}}}
      */
-    JE.cycleAudioTrack = () => {
-        cycleTrackMenu('button.btnAudio', 'toast_no_audio_tracks_found', 'audio');
-    };
+    const lastCommanded = { subtitle: null, audio: null };
+
+    /** @param {'subtitle'|'audio'} kind */
+    function forgetCommanded(kind) { lastCommanded[kind] = null; }
 
     /**
-     * Cycles through video aspect ratio modes (Auto, Cover, Fill).
+     * The remembered commanded index, when still authoritative.
+     * @param {'subtitle'|'audio'} kind
+     * @param {string} sessionId
+     * @param {string} itemId
+     * @param {?string} mediaSourceId
+     * @param {number|null|undefined} reported - PlayState's current index.
+     * @returns {?number}
      */
-    const performAspectCycle = () => {
-        const opts = [...document.querySelectorAll('.actionSheetContent button[data-id="auto"], .actionSheetContent button[data-id="cover"], .actionSheetContent button[data-id="fill"]')];
+    function rememberedIndex(kind, sessionId, itemId, mediaSourceId, reported) {
+        const rec = lastCommanded[kind];
+        if (!rec || rec.sessionId !== sessionId || rec.itemId !== itemId) return null;
+        // A media-source switch renumbers streams; the optimistic index is void.
+        if (rec.mediaSourceId !== (mediaSourceId || null)) {
+            forgetCommanded(kind);
+            return null;
+        }
+        // PlayState acknowledged the command — it is authoritative again, and a
+        // later EXTERNAL selection must win instead of being overridden.
+        if (typeof reported === 'number' && reported === rec.index) {
+            forgetCommanded(kind);
+            return null;
+        }
+        if ((performance.now() - rec.at) > TRACK_COMMAND_MEMORY_MS) return null;
+        return rec.index;
+    }
 
-        if (!opts.length) {
-            document.querySelector('.actionSheetContent button[data-id="aspectratio"]')?.click();
-            setTimeout(performAspectCycle, 120);
+    /**
+     * Normalizes a Jellyfin item id for comparison (dashless, lowercase).
+     * @param {string|null|undefined} value
+     * @returns {?string}
+     */
+    function normalizeItemId(value) {
+        const v = (value || '').replace(/-/g, '').toLowerCase();
+        return v || null;
+    }
+
+    /**
+     * Parses the playing item id from a /Videos/{id}/... media source URL.
+     * @param {string} src
+     * @returns {?string}
+     */
+    function parseItemIdFromVideosSrc(src) {
+        const m = (src || '').match(/\/[Vv]ideos\/([0-9a-fA-F-]{32,36})\b/);
+        return m ? m[1] : null;
+    }
+
+    /**
+     * Item identity visible right now: source-URL parse with the video-page URL
+     * as fallback. Null for id-less sources (hls.js blob) — an indeterminate
+     * value never *asserts* staleness.
+     * @returns {?string}
+     */
+    function currentItemHint() {
+        const video = getVideo();
+        const src = (video && (video.currentSrc || video.src)) || '';
+        return normalizeItemId(parseItemIdFromVideosSrc(src) || getCurrentVideoItemId());
+    }
+
+    /**
+     * Resolves the caller's OWN playing session — the remote-control target the
+     * DOM-free paths command. Fail-open: an ambiguous DeviceId match (multiple
+     * playing sessions) returns null rather than risking the wrong session.
+     * @returns {Promise<?object>} The session DTO, or null.
+     */
+    async function probeOwnSession() {
+        try {
+            const ac = window.ApiClient;
+            if (!ac) return null;
+            const userId = ac.getCurrentUserId();
+            const deviceId = typeof ac.deviceId === 'function' ? ac.deviceId() : '';
+            if (!userId || !deviceId) return null;
+            const sessions = await ac.ajax({
+                type: 'GET',
+                url: ac.getUrl(`/Sessions?ControllableByUserId=${encodeURIComponent(userId)}`),
+                dataType: 'json'
+            });
+            if (!Array.isArray(sessions)) return null;
+            const matches = sessions.filter(s => s && s.DeviceId === deviceId && s.NowPlayingItem && s.NowPlayingItem.Id);
+            return matches.length === 1 ? matches[0] : null;
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: own-session probe failed', err);
+            return null;
+        }
+    }
+
+    /**
+     * Per-kind press serialization: each press queues on a settled promise chain
+     * so a rapid second press observes the first press's outcome. No timers.
+     * @type {{subtitle: Promise, audio: Promise}}
+     */
+    const trackCycleChains = { subtitle: Promise.resolve(), audio: Promise.resolve() };
+
+    /**
+     * DOM-free cycle attempt. Returns true when the press was fully handled
+     * (including toasts and deliberate swallows); false → the caller runs the
+     * menu fallback.
+     * @param {'subtitle'|'audio'} kind
+     * @param {{item: Promise<?string>, idless: boolean, video: ?HTMLVideoElement, src: string}} press
+     * @returns {Promise<boolean>}
+     */
+    async function cycleTrackViaApi(kind, press) {
+        const ac = window.ApiClient;
+        if (!ac) return false;
+        const onVideoPage = () => (typeof JE.isVideoPage !== 'function' || JE.isVideoPage());
+        const surfaceUnchanged = () => {
+            const v = getVideo();
+            return v === press.video && ((v && (v.currentSrc || v.src)) || '') === press.src;
+        };
+        if (!onVideoPage()) return true;
+
+        const [pressItemId, session] = await Promise.all([press.item, probeOwnSession()]);
+        if (!onVideoPage()) return true; // navigated away — swallow
+        // Unproven ownership never commands. The menu fallback is acceptable
+        // only while the press surface has not moved; unproven + moved may
+        // belong to the previous item — swallow.
+        if (!pressItemId) {
+            return press.idless && !surfaceUnchanged();
+        }
+        const sessionId = session && session.Id;
+        const itemId = session && session.NowPlayingItem && session.NowPlayingItem.Id;
+        if (!sessionId || !itemId) return false;
+        // The press belongs to the item playing at the keypress; a disagreeing
+        // session (next episode landed while queued/probing) swallows.
+        const sessionItem = normalizeItemId(itemId);
+        if (sessionItem && pressItemId !== sessionItem) return true;
+        // Id-less press whose surface moved: no probe can prove it — swallow.
+        if (press.idless && !surfaceUnchanged()) return true;
+
+        const type = kind === 'subtitle' ? 'Subtitle' : 'Audio';
+        const streams = ((session.NowPlayingItem && session.NowPlayingItem.MediaStreams) || [])
+            .filter(s => s && s.Type === type && typeof s.Index === 'number');
+        if (streams.length === 0) {
+            JE.toast(JE.t(kind === 'subtitle' ? 'toast_no_subtitles_found' : 'toast_no_audio_tracks_found'));
+            return true;
+        }
+        // Subtitles cycle through Off (-1); audio has no Off state.
+        const candidates = kind === 'subtitle'
+            ? [-1].concat(streams.map(s => s.Index))
+            : streams.map(s => s.Index);
+        if (candidates.length < 2) {
+            // A single audio track: nothing to switch. Named toast, no command.
+            JE.toast(JE.t('toast_audio', { audio: trackDisplayName(streams[0]) }));
+            return true;
+        }
+
+        const playState = session.PlayState || {};
+        const reported = kind === 'subtitle' ? playState.SubtitleStreamIndex : playState.AudioStreamIndex;
+        const mediaSourceId = playState.MediaSourceId || null;
+        const current = rememberedIndex(kind, sessionId, itemId, mediaSourceId, reported);
+        const effective = current !== null ? current : (typeof reported === 'number' ? reported : -1);
+        const position = candidates.indexOf(effective);
+        const next = candidates[(position + 1) % candidates.length];
+        const commandName = kind === 'subtitle' ? 'SetSubtitleStreamIndex' : 'SetAudioStreamIndex';
+
+        // Pre-POST recheck: the probe response itself can be stale (produced for
+        // the press item while the next episode landed in flight). A derivable
+        // current item disagreeing with the press item swallows.
+        const itemNow = currentItemHint();
+        if (itemNow && itemNow !== pressItemId) return true;
+        try {
+            await ac.ajax({
+                type: 'POST',
+                url: ac.getUrl(`/Sessions/${encodeURIComponent(sessionId)}/Command`),
+                contentType: 'application/json',
+                data: JSON.stringify({ Name: commandName, Arguments: { Index: String(next) } })
+            });
+        } catch (err) {
+            // The menu fallback after a FAILED command requires positively
+            // proven, unmoved ownership — a rejected command cannot explain a
+            // surface change, and a moved item must not get the menu.
+            if (!onVideoPage()) return true;
+            let proven = currentItemHint();
+            if (!proven) {
+                const fresh = await probeOwnSession();
+                proven = normalizeItemId(fresh && fresh.NowPlayingItem && fresh.NowPlayingItem.Id);
+            }
+            if (proven !== pressItemId) return true;
+            console.warn(`🪼 Jellyfin Enhanced: ${commandName} failed, falling back to the menu cycle`, err);
+            return false;
+        }
+        // POST-side check deliberately ignores the surface: a successful switch
+        // itself restarts the stream. The memory is session+item keyed, so a
+        // write after a genuine item change self-invalidates on the next press.
+        if (!onVideoPage()) return true;
+        lastCommanded[kind] = { sessionId, itemId, mediaSourceId, index: next, at: performance.now() };
+        const nextStream = next === -1 ? null : streams.find(s => s.Index === next);
+        JE.toast(JE.t(kind === 'subtitle' ? 'toast_subtitle' : 'toast_audio',
+            { [kind]: trackDisplayName(nextStream) }));
+        return true;
+    }
+
+    /**
+     * Human-readable track name for toasts.
+     * @param {?object} stream
+     * @returns {string}
+     */
+    function trackDisplayName(stream) {
+        if (!stream) return tWithFallback('track_off', 'Off');
+        const name = (stream.DisplayTitle || stream.Title || stream.Language || stream.Codec || '').trim();
+        return name || ('#' + stream.Index);
+    }
+
+    /**
+     * Queues one track-cycle press: API first, hardened OSD menu as fallback.
+     * @param {'subtitle'|'audio'} kind
+     */
+    function cycleTrack(kind) {
+        if (!window.ApiClient) {
+            // No API client — menu path directly; the memory never outlives a fallback.
+            forgetCommanded(kind);
+            runMenuFallback(kind);
             return;
         }
+        // Press-time ownership, captured BEFORE queueing. Id-bearing sources
+        // resolve synchronously; id-less sources fire a press-time probe that
+        // only counts if the surface is still the keypress surface on resolve.
+        const hint = currentItemHint();
+        const pressVideo = hint ? null : getVideo();
+        const press = {
+            idless: !hint,
+            video: pressVideo,
+            src: (pressVideo && (pressVideo.currentSrc || pressVideo.src)) || '',
+            item: null
+        };
+        press.item = hint
+            ? Promise.resolve(hint)
+            : probeOwnSession()
+                .then(s => {
+                    const id = normalizeItemId(s && s.NowPlayingItem && s.NowPlayingItem.Id);
+                    const v = getVideo();
+                    const same = v === press.video && ((v && (v.currentSrc || v.src)) || '') === press.src;
+                    return same ? id : null;
+                })
+                .catch(() => null);
+        trackCycleChains[kind] = trackCycleChains[kind].then(async () => {
+            let handled = false;
+            try {
+                handled = await cycleTrackViaApi(kind, press);
+            } catch (err) {
+                console.warn('🪼 Jellyfin Enhanced: API track cycle failed', err);
+            }
+            if (handled) return;
+            if (typeof JE.isVideoPage === 'function' && !JE.isVideoPage()) return;
+            // Every menu fallback invalidates the optimistic memory: the menu is
+            // authoritative and its selection is not observed here.
+            forgetCommanded(kind);
+            runMenuFallback(kind);
+        });
+    }
 
-        // If options are found, cycle them.
-        const current = opts.findIndex(b => b.querySelector('.check')?.style.visibility !== 'hidden');
-        const next = opts[(current + 1) % opts.length];
-        if (next) {
-            next.click();
-            JE.toast(JE.t('toast_aspect_ratio', { ratio: next.textContent.trim() }));
+    /** @param {'subtitle'|'audio'} kind */
+    function runMenuFallback(kind) {
+        if (kind === 'subtitle') {
+            cycleTrackMenu('button.btnSubtitles', 'toast_no_subtitles_found', 'subtitle');
+        } else {
+            cycleTrackMenu('button.btnAudio', 'toast_no_audio_tracks_found', 'audio');
         }
+    }
+
+    /**
+     * Cycles through available subtitle tracks (server command; OSD menu fallback).
+     */
+    JE.cycleSubtitleTrack = () => cycleTrack('subtitle');
+
+    /**
+     * Cycles through available audio tracks (server command; OSD menu fallback).
+     */
+    JE.cycleAudioTrack = () => cycleTrack('audio');
+
+    // ── DOM-free aspect ratio cycling ────────────────────────────────────────
+    //
+    // Mirrors jellyfin-web's htmlVideoPlayer.setAspectRatio (identical in 10.11
+    // and 12): the mode lives in the native appSettings localStorage key
+    // `aspectRatio` (unprefixed — AppSettings.set only prefixes user-scoped
+    // keys), and applying it is `object-fit` on the media element ('auto'
+    // removes the property; the PGS graphical-subtitle canvas maps 'auto' to
+    // 'contain'). Writing the same key keeps the native settings menu's check
+    // marks — and the next native apply — consistent. No panel ever opens.
+
+    /** The three native aspect modes, in native menu order. */
+    const ASPECT_MODES = ['auto', 'cover', 'fill'];
+
+    /**
+     * Localized label for an aspect mode (used in the toast).
+     * @param {string} mode
+     * @returns {string}
+     */
+    function aspectModeLabel(mode) {
+        if (mode === 'cover') return tWithFallback('aspect_ratio_cover', 'Cover');
+        if (mode === 'fill') return tWithFallback('aspect_ratio_fill', 'Fill');
+        return tWithFallback('aspect_ratio_auto', 'Auto');
+    }
+
+    /**
+     * Cycles video aspect ratio (Auto → Cover → Fill) without opening the OSD
+     * settings menu.
+     */
+    JE.cycleAspect = () => {
+        const video = getVideo();
+        if (!video) {
+            JE.toast(JE.t('toast_no_video_found'));
+            return;
+        }
+        let stored = null;
+        try {
+            stored = window.localStorage.getItem('aspectRatio');
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: aspect ratio setting read failed', err);
+        }
+        const current = ASPECT_MODES.indexOf(stored) !== -1 ? stored : 'auto';
+        const next = ASPECT_MODES[(ASPECT_MODES.indexOf(current) + 1) % ASPECT_MODES.length];
+        try {
+            window.localStorage.setItem('aspectRatio', next);
+        } catch (err) {
+            // Apply-only degradation: the mode still changes for this stream,
+            // the native menu just won't reflect it.
+            console.warn('🪼 Jellyfin Enhanced: aspect ratio setting write failed', err);
+        }
+        if (next === 'auto') {
+            video.style.removeProperty('object-fit');
+        } else {
+            video.style.objectFit = next;
+        }
+        // libpgs renders graphical subtitles into a sibling canvas whose fit the
+        // native player keeps in step with the video ('auto' → 'contain').
+        const parent = video.parentElement;
+        if (parent) {
+            parent.querySelectorAll(':scope > canvas').forEach(canvas => {
+                canvas.style.objectFit = next === 'auto' ? 'contain' : next;
+            });
+        }
+        JE.toast(JE.t('toast_aspect_ratio', { ratio: aspectModeLabel(next) }));
     };
 
-    // The main function called by the shortcut to start the process.
-    JE.cycleAspect = () => {
-        // This opens the main settings panel ONCE and then hands off to the inner logic.
-        JE.openSettings(performAspectCycle);
+    // ── Playback info overlay (DOM-free ShowPlaybackInfo) ────────────────────
+    //
+    // A plugin-rendered stats overlay toggled by the ShowPlaybackInfo shortcut,
+    // replacing the settings-menu → stats panel click chain. Data comes from the
+    // media element itself plus the own-session probe (PlayState /
+    // TranscodingInfo / MediaStreams). Every value lands via textContent — no
+    // HTML sink. One 1s refresh timer exists only while the overlay is open,
+    // and it self-destructs when the player goes away.
+
+    const PLAYBACK_INFO_REFRESH_MS = 1000;
+    let playbackInfoOverlay = null;
+    let playbackInfoTimer = null;
+
+    /** Tears the overlay and its refresh timer down. */
+    function destroyPlaybackInfo() {
+        if (playbackInfoTimer) { clearTimeout(playbackInfoTimer); playbackInfoTimer = null; }
+        if (playbackInfoOverlay) { playbackInfoOverlay.remove(); playbackInfoOverlay = null; }
+    }
+
+    /**
+     * Builds the label/value rows for the overlay.
+     * @param {HTMLVideoElement} video
+     * @param {?object} session
+     * @returns {Array<[string,string]>}
+     */
+    function playbackInfoRows(video, session) {
+        const rows = [];
+        if (video.videoWidth && video.videoHeight) {
+            rows.push([tWithFallback('pi_resolution', 'Resolution'), `${video.videoWidth}×${video.videoHeight}`]);
+        }
+        if (Math.abs(video.playbackRate - 1) > 0.001) {
+            rows.push([tWithFallback('pi_speed', 'Speed'), `${video.playbackRate}x`]);
+        }
+        if (typeof video.getVideoPlaybackQuality === 'function') {
+            const q = video.getVideoPlaybackQuality();
+            rows.push([tWithFallback('pi_dropped_frames', 'Dropped frames'), `${q.droppedVideoFrames} / ${q.totalVideoFrames}`]);
+        }
+        try {
+            const buffered = video.buffered;
+            if (buffered && buffered.length > 0) {
+                const ahead = buffered.end(buffered.length - 1) - video.currentTime;
+                if (Number.isFinite(ahead)) rows.push([tWithFallback('pi_buffer', 'Buffered'), `${Math.max(0, ahead).toFixed(1)} s`]);
+            }
+        } catch (err) { /* buffered ranges can throw during teardown */ }
+        if (session) {
+            const playState = session.PlayState || {};
+            const transcoding = session.TranscodingInfo || null;
+            if (playState.PlayMethod) {
+                let method = playState.PlayMethod;
+                if (transcoding && typeof transcoding.CompletionPercentage === 'number') {
+                    method += ` (${transcoding.CompletionPercentage.toFixed(0)}%)`;
+                }
+                rows.push([tWithFallback('pi_play_method', 'Play method'), method]);
+            }
+            if (transcoding) {
+                const codecs = [transcoding.Container, transcoding.VideoCodec, transcoding.AudioCodec]
+                    .filter(Boolean).join(' · ');
+                if (codecs) rows.push([tWithFallback('pi_transcoding', 'Transcoding'), codecs]);
+                if (typeof transcoding.Bitrate === 'number' && transcoding.Bitrate > 0) {
+                    rows.push([tWithFallback('pi_bitrate', 'Bitrate'), `${(transcoding.Bitrate / 1000000).toFixed(1)} Mbps`]);
+                }
+                const reasons = Array.isArray(transcoding.TranscodeReasons)
+                    ? transcoding.TranscodeReasons.join(', ') : (transcoding.TranscodeReasons || '');
+                if (reasons) rows.push([tWithFallback('pi_transcode_reason', 'Reason'), reasons]);
+            } else if (session.NowPlayingItem && session.NowPlayingItem.Container) {
+                rows.push([tWithFallback('pi_container', 'Container'), session.NowPlayingItem.Container]);
+            }
+            const streams = (session.NowPlayingItem && session.NowPlayingItem.MediaStreams) || [];
+            if (typeof playState.AudioStreamIndex === 'number') {
+                const audio = streams.find(s => s && s.Type === 'Audio' && s.Index === playState.AudioStreamIndex);
+                if (audio) rows.push([tWithFallback('pi_audio', 'Audio'), trackDisplayName(audio)]);
+            }
+            if (typeof playState.SubtitleStreamIndex === 'number' && playState.SubtitleStreamIndex >= 0) {
+                const sub = streams.find(s => s && s.Type === 'Subtitle' && s.Index === playState.SubtitleStreamIndex);
+                if (sub) rows.push([tWithFallback('pi_subtitle', 'Subtitles'), trackDisplayName(sub)]);
+            }
+        }
+        return rows;
+    }
+
+    /**
+     * Renders the overlay off-DOM and swaps content in one replaceChildren —
+     * no incremental mutation of the live overlay, all values via textContent.
+     * @param {HTMLVideoElement} video
+     * @param {?object} session
+     */
+    function renderPlaybackInfo(video, session) {
+        if (!playbackInfoOverlay) return;
+        const fragment = document.createDocumentFragment();
+        const title = document.createElement('div');
+        title.style.cssText = 'font-weight:600;margin-bottom:6px;';
+        title.textContent = tWithFallback('playback_info_title', 'Playback Info');
+        fragment.appendChild(title);
+        for (const [label, value] of playbackInfoRows(video, session)) {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;justify-content:space-between;gap:16px;';
+            const labelEl = document.createElement('span');
+            labelEl.style.opacity = '0.75';
+            labelEl.textContent = label;
+            const valueEl = document.createElement('span');
+            valueEl.textContent = value;
+            row.append(labelEl, valueEl);
+            fragment.appendChild(row);
+        }
+        playbackInfoOverlay.replaceChildren(fragment);
+    }
+
+    /**
+     * One refresh tick: sample the video + session coherently, render, reschedule.
+     * `overlay` identity-guards the loop so a toggle-off/on while a probe is in
+     * flight cannot fork a second timer chain.
+     * @param {HTMLElement} overlay
+     */
+    async function refreshPlaybackInfo(overlay) {
+        if (playbackInfoOverlay !== overlay) return;
+        if (typeof JE.isVideoPage === 'function' && !JE.isVideoPage()) { destroyPlaybackInfo(); return; }
+        const video = getVideo();
+        if (!video) { destroyPlaybackInfo(); return; }
+        const sampledSrc = video.currentSrc || video.src || '';
+        const sampledPageItem = getCurrentVideoItemId();
+        const session = await probeOwnSession();
+        if (playbackInfoOverlay !== overlay) return;
+        const current = getVideo();
+        if (!current) { destroyPlaybackInfo(); return; }
+        // The session sample and the video must describe the same playback: a
+        // next-episode swap (new element/source, a changed route id behind a
+        // stable blob source, or a derivable item disagreeing with the probed
+        // session) discards this mixed sample; the next tick renders fresh.
+        const currentSrc = current.currentSrc || current.src || '';
+        const derivable = normalizeItemId(parseItemIdFromVideosSrc(currentSrc) || getCurrentVideoItemId());
+        const sessionItem = normalizeItemId(session && session.NowPlayingItem && session.NowPlayingItem.Id);
+        const coherent = current === video
+            && currentSrc === sampledSrc
+            && getCurrentVideoItemId() === sampledPageItem
+            && !(derivable && sessionItem && derivable !== sessionItem);
+        if (coherent) renderPlaybackInfo(current, session);
+        playbackInfoTimer = setTimeout(() => {
+            playbackInfoTimer = null;
+            refreshPlaybackInfo(overlay);
+        }, PLAYBACK_INFO_REFRESH_MS);
+    }
+
+    /**
+     * Toggles the playback-info overlay (no native menus involved).
+     */
+    JE.togglePlaybackInfo = () => {
+        if (playbackInfoOverlay) { destroyPlaybackInfo(); return; }
+        const video = getVideo();
+        if (!video) {
+            JE.toast(JE.t('toast_no_video_found'));
+            return;
+        }
+        const overlay = document.createElement('div');
+        overlay.setAttribute('data-je-playback-info', 'true');
+        overlay.style.cssText = `
+            position: fixed; top: 12px; left: 12px; z-index: 999999;
+            background: rgba(0,0,0,0.72); color: #fff; padding: 10px 14px;
+            border-radius: 8px; font-size: 0.85em; font-family: system-ui;
+            pointer-events: none; min-width: 240px; max-width: 42vw;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        `;
+        playbackInfoOverlay = overlay;
+        renderPlaybackInfo(video, null); // immediate local stats; session data lands on the first refresh
+        document.body.appendChild(overlay);
+        refreshPlaybackInfo(overlay);
     };
 
     let skipButtonObserver = null;
