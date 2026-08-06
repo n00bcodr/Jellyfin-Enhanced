@@ -412,6 +412,9 @@
                 dataType: 'json'
             });
             const segments = Array.isArray(res && res.Items) ? res.Items : [];
+            // Bound the cache: one entry per item would otherwise accumulate
+            // across a long session (TTL is only checked on read).
+            if (segmentCache.size > 50) segmentCache.clear();
             segmentCache.set(itemId, { segments, at: performance.now() });
             return segments;
         } catch (err) {
@@ -737,7 +740,7 @@
             item: getCurrentVideoItemId()
         };
         const labelEl = next.querySelector('.listItemBodyText');
-        JE.toast(JE.t('toast_' + toastVar, { [toastVar]: ((labelEl && labelEl.textContent) || '').trim() }));
+        JE.toast(JE.t('toast_' + toastVar, { [toastVar]: JE.escapeHtml(((labelEl && labelEl.textContent) || '').trim()) }));
     }
 
     /**
@@ -969,7 +972,7 @@
             : streams.map(s => s.Index);
         if (candidates.length < 2) {
             // A single audio track: nothing to switch. Named toast, no command.
-            JE.toast(JE.t('toast_audio', { audio: trackDisplayName(streams[0]) }));
+            JE.toast(JE.t('toast_audio', { audio: JE.escapeHtml(trackDisplayName(streams[0])) }));
             return true;
         }
 
@@ -1015,7 +1018,7 @@
         lastCommanded[kind] = { sessionId, itemId, mediaSourceId, index: next, at: performance.now() };
         const nextStream = next === -1 ? null : streams.find(s => s.Index === next);
         JE.toast(JE.t(kind === 'subtitle' ? 'toast_subtitle' : 'toast_audio',
-            { [kind]: trackDisplayName(nextStream) }));
+            { [kind]: JE.escapeHtml(trackDisplayName(nextStream)) }));
         return true;
     }
 
@@ -1277,6 +1280,7 @@
      */
     async function refreshPlaybackInfo(overlay) {
         if (playbackInfoOverlay !== overlay) return;
+        try {
         if (typeof JE.isVideoPage === 'function' && !JE.isVideoPage()) { destroyPlaybackInfo(); return; }
         const video = getVideo();
         if (!video) { destroyPlaybackInfo(); return; }
@@ -1298,10 +1302,17 @@
             && getCurrentVideoItemId() === sampledPageItem
             && !(derivable && sessionItem && derivable !== sessionItem);
         if (coherent) renderPlaybackInfo(current, session);
-        playbackInfoTimer = setTimeout(() => {
-            playbackInfoTimer = null;
-            refreshPlaybackInfo(overlay);
-        }, PLAYBACK_INFO_REFRESH_MS);
+        } catch (err) {
+            // A failing tick must not kill the refresh chain — the overlay
+            // would freeze with stale data until manually toggled.
+            console.warn('🪼 Jellyfin Enhanced: playback info refresh failed', err);
+        }
+        if (playbackInfoOverlay === overlay) {
+            playbackInfoTimer = setTimeout(() => {
+                playbackInfoTimer = null;
+                refreshPlaybackInfo(overlay);
+            }, PLAYBACK_INFO_REFRESH_MS);
+        }
     }
 
     /**
