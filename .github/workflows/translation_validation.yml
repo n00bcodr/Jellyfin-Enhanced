@@ -2,8 +2,6 @@ name: "Translation Checks"
 
 on:
   pull_request:
-    paths:
-      - 'Jellyfin.Plugin.JellyfinEnhanced/js/locales/**.json'
 
 permissions:
   contents: read
@@ -43,7 +41,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
           # Count number of changed files
-          count=$(echo "$changed_files" | grep -c . || echo "0")
+          count=$(echo "$changed_files" | grep -c . || true)
           echo "count=$count" >> $GITHUB_OUTPUT
 
           echo "Changed files:"

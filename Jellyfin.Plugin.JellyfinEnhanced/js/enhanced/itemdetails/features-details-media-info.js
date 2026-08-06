@@ -340,19 +340,9 @@
         }
     }
 
-    /**
-     * A map of language names/codes to country codes for flag display.
-     */
-    const languageToCountryMap={English:"gb",eng:"gb",Japanese:"jp",jpn:"jp",Spanish:"es",spa:"es",French:"fr",fre:"fr",fra:"fr",German:"de",ger:"de",deu:"de",Italian:"it",ita:"it",Korean:"kr",kor:"kr",
-                                Chinese:"cn",chi:"cn",zho:"cn",Russian:"ru",rus:"ru",Portuguese:"pt",por:"pt",Hindi:"in",hin:"in",Dutch:"nl",dut:"nl",nld:"nl",Arabic:"sa",ara:"sa",Bengali:"in",ben:"in",
-                                Czech:"cz",ces:"cz",Danish:"dk",dan:"dk",Greek:"gr",ell:"gr",Finnish:"fi",fin:"fi",Hebrew:"il",heb:"il",Hungarian:"hu",hun:"hu",Indonesian:"id",ind:"id",Norwegian:"no",nor:"no",
-                                Polish:"pl",pol:"pl",Persian:"ir",per:"ir",fas:"ir",Romanian:"ro",ron:"ro",rum:"ro",Swedish:"se",swe:"se",Thai:"th",tha:"th",Turkish:"tr",tur:"tr",Ukrainian:"ua",ukr:"ua",
-                                Vietnamese:"vn",vie:"vn",Malay:"my",msa:"my",may:"my",Swahili:"ke",swa:"ke",Tagalog:"ph",tgl:"ph",Filipino:"ph",Tamil:"in",tam:"in",Telugu:"in",tel:"in",Marathi:"in",mar:"in",
-                                Punjabi:"in",pan:"in",Urdu:"pk",urd:"pk",Gujarati:"in",guj:"in",Kannada:"in",kan:"in",Malayalam:"in",mal:"in",Sinhala:"lk",sin:"lk",Nepali:"np",nep:"np",Pashto:"af",pus:"af",
-                                Kurdish:"iq",kur:"iq",Slovak:"sk",slk:"sk",Slovenian:"si",slv:"si",Serbian:"rs",srp:"rs",Croatian:"hr",hrv:"hr",Bulgarian:"bg",bul:"bg",Macedonian:"mk",mkd:"mk",Albanian:"al",
-                                sqi:"al",Estonian:"ee",est:"ee",Latvian:"lv",lav:"lv",Lithuanian:"lt",lit:"lt",Icelandic:"is",isl:"is",Georgian:"ge",kat:"ge",Armenian:"am",hye:"am",Mongolian:"mn",mon:"mn",
-                                Kazakh:"kz",kaz:"kz",Uzbek:"uz",uzb:"uz",Azerbaijani:"az",aze:"az",Belarusian:"by",bel:"by",Amharic:"et",amh:"et",Zulu:"za",zul:"za",Afrikaans:"za",afr:"za",Hausa:"ng",hau:"ng",
-                                Yoruba:"ng",yor:"ng",Igbo:"ng",ibo:"ng",Brazilian:"br",bra:"br",Catalan:"es-ct",cat:"es-ct",ca:"es-ct",Galician:"es-ga",glg:"es-ga",gl:"es-ga",Basque:"es-pv",eus:"es-pv",baq:"es-pv",eu:"es-pv"};
+    // Flag resolution is shared with the Language Tags overlay via
+    // js/core/media-language.js — one map, one region-aware resolver
+    // (pt-BR → Brazilian flag, es-419 → Mexican, bare pt/es stay default).
 
     /**
      * Fetches the first episode of a series or season for language detection.
@@ -497,7 +487,7 @@
                 langSpan.dataset.langName = lang.name;
                 langSpan.style.whiteSpace = 'nowrap';
 
-                const countryCode = languageToCountryMap[lang.name] || languageToCountryMap[lang.code];
+                const countryCode = JE.core.mediaLanguage.resolveFlag(lang);
                 if (countryCode) {
                     const flag = document.createElement('img');
                     flag.src = JE.cdn.flagSvg(countryCode);
@@ -505,6 +495,9 @@
                     flag.style.width = '18px';
                     flag.style.marginRight = '0.3em';
                     flag.style.borderRadius = '2px';
+                    // An unknown region subtag would 404 on the flag CDN;
+                    // drop the broken image rather than showing it.
+                    flag.onerror = () => flag.remove();
                     langSpan.appendChild(flag);
                 }
 

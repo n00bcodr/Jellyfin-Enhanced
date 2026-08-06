@@ -52,6 +52,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── api-client.js
     │   ├── dom-observer.js
     │   ├── lifecycle.js
+    │   ├── media-language.js
     │   ├── navigation.js
     │   ├── session.js
     │   ├── tag-renderer-base.js
@@ -194,6 +195,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`api-client.js`**: The single HTTP layer — `JE.core.api.{fetch,jf,plugin}` with auth headers, retry/backoff, response caching, request deduplication, concurrency limiting and `AbortController` support.
     * **`dom-observer.js`**: Multiplexed `MutationObserver` management — one shared body observer with named subscribers, plus dedicated observers and `waitForElement`.
     * **`lifecycle.js`**: Per-feature registration of observers, timers and listeners so they can be torn down together on navigation.
+    * **`media-language.js`**: Shared audio-language → flag resolution (`JE.core.mediaLanguage.resolveFlag`) used by the Language Tags overlay and the details-page audio-language row. Region-aware: an explicit region subtag (`pt-BR`, `es-419`, `zh-Hant`) resolves to that region's flag; bare base languages keep their default flag.
     * **`navigation.js`**: One deduped SPA navigation dispatcher (`onNavigate`, `onViewPage`), replacing the ad-hoc `hashchange`/`viewshow` listeners that previously double-fired on hash navigation and missed `pushState` navigation.
     * **`session.js`**: Identity-epoch tracker for SPA user switches. Logging out and back in as a different user never reloads the page, so this module detects the transition (an `ApiClient.setAuthenticationInfo` hook plus navigation/storage fallbacks), runs every registered per-feature reset handler (`JE.session.onUserChange`), and emits `je:user-changed`; `plugin.js` then re-fetches the incoming user's data and emits `je:user-data-loaded`. Async loaders capture `JE.session.getEpoch()` and drop stale results after a switch.
     * **`tag-renderer-base.js`**: The shared poster-tag engine — overlay creation, positioning, tagged-card deduplication, caching and reinitialisation. The four poster-overlay renderers (genre, language, quality, rating) supply a spec; `peopletags.js` and `userreviewtags.js` do not use it.

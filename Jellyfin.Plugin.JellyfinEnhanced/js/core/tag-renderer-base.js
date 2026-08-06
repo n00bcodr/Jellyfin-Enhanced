@@ -278,13 +278,18 @@
             if (!spec.cache || !state.localStorageEnabled) return;
             const CACHE_KEY = spec.cache.key;
             const TIMESTAMP_KEY = `${CACHE_KEY}Timestamp`;
-            const legacy = spec.cache.legacyPrefix;
+            // A renderer can accumulate several generations of dead keys
+            // (un-namespaced, then namespaced-v1, …), so accept one stem or a
+            // list of them — replacing the stem would orphan the older one.
+            const legacyStems = Array.isArray(spec.cache.legacyPrefix)
+                ? spec.cache.legacyPrefix
+                : [spec.cache.legacyPrefix];
 
             const stale = [];
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
                 if (key &&
-                    (key.startsWith(`${legacy}-`) || key === legacy || key === `${legacy}Timestamp`) &&
+                    legacyStems.some(legacy => key.startsWith(`${legacy}-`) || key === legacy || key === `${legacy}Timestamp`) &&
                     key !== CACHE_KEY && key !== TIMESTAMP_KEY) {
                     stale.push(key);
                 }
