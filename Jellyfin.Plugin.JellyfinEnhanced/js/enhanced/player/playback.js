@@ -1340,54 +1340,9 @@
         refreshPlaybackInfo(overlay);
     };
 
-    let skipButtonObserver = null;
-
-    /**
-     * Initializes a MutationObserver to watch for the skip button's appearance.
-     */
-    JE.initializeAutoSkipObserver = () => {
-        if (skipButtonObserver) {
-            return; // Observer is already running
-        }
-        skipButtonObserver = new MutationObserver((mutationsList) => {
-            for (const mutation of mutationsList) {
-                if (mutation.type === 'childList' || mutation.type === 'attributes') {
-                    const skipButton = document.querySelector('button.skip-button.emby-button:not(.skip-button-hidden):not(.hide)');
-                    if (skipButton && !JE.state.skipToastShown) {
-                        const buttonText = skipButton.textContent || '';
-                        if (JE.currentSettings.autoSkipIntro && buttonText.includes('Skip Intro')) {
-                            skipButton.click();
-                            JE.toast(JE.t('toast_auto_skipped_intro'));
-                            JE.state.skipToastShown = true;
-                        } else if (JE.currentSettings.autoSkipOutro && buttonText.includes('Skip Outro')) {
-                            skipButton.click();
-                            JE.toast(JE.t('toast_auto_skipped_outro'));
-                            JE.state.skipToastShown = true;
-                        }
-                    } else if (!skipButton) {
-                        JE.state.skipToastShown = false; // Reset when the button is gone
-                    }
-                }
-            }
-        });
-
-        skipButtonObserver.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class', 'style']
-        });
-    };
-
-    /**
-     * Disconnects the MutationObserver for the skip button.
-     */
-    JE.stopAutoSkip = () => {
-        if (skipButtonObserver) {
-            skipButtonObserver.disconnect();
-            skipButtonObserver = null;
-        }
-    };
+    // Auto-skip lives in player/auto-skip.js — it is data-driven off the native
+    // Media Segments API rather than the localized skip button, and consumes the
+    // two element/item helpers exported below.
 
     // --- Long Press Speed Control ---
     const LONG_PRESS_CONFIG = {
@@ -1533,5 +1488,13 @@
             return;
         }
     };
+
+    // Shared with the sibling player modules (auto-skip.js) so the video-element
+    // lookup and the video-page item-id parse live in exactly one place.
+    JE.internals = JE.internals || {};
+    JE.internals.player = Object.assign(JE.internals.player || {}, {
+        getVideo,
+        getCurrentVideoItemId
+    });
 
 })(window.JellyfinEnhanced);

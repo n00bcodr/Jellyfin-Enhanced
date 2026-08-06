@@ -42,7 +42,6 @@
             // { itemId, surface: 'continuewatching'|'nextup'|null, ts } captured on a menu trigger
             // so the action-sheet observer knows which Remove button (if any) to add.
             removeContext: null,
-            skipToastShown: false,
             pauseScreenClickTimer: null
          },
         // Unified cache manager for tag systems
@@ -788,6 +787,8 @@
                 'enhanced/homeremoval/features-remove-multiselect.js',
                 'enhanced/events.js',
                 'enhanced/player/playback.js',
+                // auto-skip.js consumes JE.internals.player (exported by playback.js)
+                'enhanced/player/auto-skip.js',
                 // hidden-content modules — order matters: -data.js owns the
                 // store + lookup sets that the later files consume via
                 // JE.internals.hiddenContent; -init.js exposes the frozen

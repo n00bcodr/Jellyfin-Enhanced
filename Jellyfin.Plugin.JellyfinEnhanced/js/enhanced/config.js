@@ -23,7 +23,6 @@
         activeShortcuts: {},
         // { itemId, surface: 'continuewatching'|'nextup'|null, ts } captured on a menu trigger.
         removeContext: null,
-        skipToastShown: false,
         pauseScreenClickTimer: null
     };
 

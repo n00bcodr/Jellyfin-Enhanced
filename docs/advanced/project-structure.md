@@ -87,6 +87,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   │   ├── features-details-page.js
     │   │   └── features-release-dates.js
     │   ├── player/
+    │   │   ├── auto-skip.js
     │   │   ├── osd-rating.js
     │   │   ├── pausescreen.js
     │   │   ├── playback.js
@@ -215,7 +216,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`/hiddencontent/`**: Per-user hidden content — the data/filter/save layer, the settings panel section, and the standalone management page.
     * **`/homeremoval/`**: "Remove from Continue Watching / Next Up", including multi-select.
     * **`/itemdetails/`**: Detail-page enhancements — media info, file size, audio languages and release dates.
-    * **`/player/`**: Everything that touches the video player — `playback.js` (speed, seeking, track cycling, auto-skip), `subtitles.js` (styling and presets), `pausescreen.js` (custom pause overlay), `osd-rating.js` (TMDB/Rotten Tomatoes in the OSD).
+    * **`/player/`**: Everything that touches the video player — `playback.js` (speed, seeking, track cycling), `auto-skip.js` (media-segment driven intro/outro skipping), `subtitles.js` (styling and presets), `pausescreen.js` (custom pause overlay), `osd-rating.js` (TMDB/Rotten Tomatoes in the OSD).
     * **`/settingspanel/`**: The user settings panel — entry points, the HTML template, the section navigation shell, and per-section wiring (settings, language, hidden content, shortcut editor, release notes).
     * **`/spoilerguard/`**: Client-side companion for Spoiler Guard — the per-show/movie/collection toggle, in-memory opt-in and override state, the settings pane, and the soft image refresh after toggles and watched-state changes. The actual blur/strip happens server-side. `index.js` publishes the public `JE.spoilerBlur` surface once every implementation module has loaded.
 

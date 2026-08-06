@@ -228,12 +228,35 @@ Intelligent playback features for better viewing experience.
 
 - **Auto-pause** - Pause when switching browser tabs
 - **Auto-resume** - Resume when returning to tab
-- **Auto-skip intros/outros** - Seamless binge-watching (requires Intro Skipper plugin)
+- **Auto-skip intros/outros** - Seamless binge-watching, driven by Jellyfin's own media segments (requires a segment provider such as Intro Skipper)
 - **Playback speed control** - Adjust speed with keyboard shortcuts
 - **Auto Picture-in-Picture** - Enter PiP mode when switching tabs
 
 **Configuration:**
 Enable/disable in Enhanced panel → Settings tab
+
+**How auto-skip works:**
+
+Auto-skip reads the media segments Jellyfin already stores for the item (the same
+data the native **Skip Intro** button uses) and seeks straight to the segment's
+end boundary.
+
+- It skips to the **exact** end of the intro/outro segment, honouring the offsets
+  the segment provider detected.
+- It works in **every language** — nothing depends on the skip button's English label.
+- It works even with Jellyfin's own media-segment action set to **None**, where no
+  skip button ever appears.
+- If you seek **back** into an intro you just skipped, it stays put instead of
+  yanking you forward again. Rewind to before the segment and play through it and
+  it skips again, matching Jellyfin's native behaviour.
+
+!!! note
+
+    Recap, Preview and Commercial segments are left to Jellyfin's own
+    per-segment-type actions (**Playback** settings), which can prompt or skip them
+    independently. The Enhanced toggles only cover intros and outros. Jellyfin
+    stores media segments **per item, not per version**, so an item with multiple
+    versions whose timings differ may see boundaries taken from the primary version.
 
 ### Customizable Subtitles
 
