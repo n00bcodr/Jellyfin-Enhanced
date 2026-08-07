@@ -60,6 +60,7 @@
 
                     if (element.getAttribute(CONFIG.attributeName) !== normalizedRating) {
                         element.setAttribute(CONFIG.attributeName, normalizedRating);
+                        element.textContent = normalizedRating;
                         processedElements.add(element);
                         processedCount++;
 
@@ -88,6 +89,23 @@
             'NOT-RATED': 'NR',
             'UNRATED': 'NR',
             'NO RATING': 'NR',
+            'DE-0': 'FSK-0',
+            'DE-6': 'FSK-6',
+            'DE-12': 'FSK-12',
+            'DE-16': 'FSK-16',
+            'DE-18': 'FSK-18',
+
+            'FSK0': 'FSK-0',
+            'FSK6': 'FSK-6',
+            'FSK12': 'FSK-12',
+            'FSK16': 'FSK-16',
+            'FSK18': 'FSK-18',
+
+            'FSK 0': 'FSK-0',
+            'FSK 6': 'FSK-6',
+            'FSK 12': 'FSK-12',
+            'FSK 16': 'FSK-16',
+            'FSK 18': 'FSK-18',
             'APPROVED': 'APPROVED',
             'PASSED': 'PASSED'
         };
