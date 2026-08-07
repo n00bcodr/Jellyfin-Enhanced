@@ -942,7 +942,7 @@
         }
       }
       // Boot
-      new JellyfinPauseScreen();
+      JE.pauseScreenInstance = new JellyfinPauseScreen();
         console.log('🪼 Jellyfin Enhanced: Custom Pause Screen initialized.');
     };
 
