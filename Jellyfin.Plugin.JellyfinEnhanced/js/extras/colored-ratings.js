@@ -61,8 +61,8 @@
                     if (element.getAttribute(CONFIG.attributeName) !== normalizedRating) {
                         element.setAttribute(CONFIG.attributeName, normalizedRating);
                         if (normalizedRating.startsWith('FSK-')) {
-                        element.textContent = normalizedRating;
-                    }
+                            element.textContent = normalizedRating;
+                        }
                         processedElements.add(element);
                         processedCount++;
 
