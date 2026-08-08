@@ -150,7 +150,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrShowDetailPageLink = true;
             JellyseerrShowDetailPageLinkAsText = false;
             ShowElsewhereOnJellyseerr = false;
-            JellyseerrUseMoreInfoModal = false;
+            JellyseerrUseMoreInfoModal = true;
             JellyseerrUrls = "";
             JellyseerrApiKey = "";
             JellyseerrUrlMappings = "";
@@ -462,7 +462,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrExcludeLibraryItems { get; set; } = true;
         public bool JellyseerrExcludeBlocklistedItems { get; set; } = false;
         public bool ShowElsewhereOnJellyseerr { get; set; }
-        public bool JellyseerrUseMoreInfoModal { get; set; } = false;
+        public bool JellyseerrUseMoreInfoModal { get; set; } = true;
         public string JellyseerrUrls { get; set; }
         public string JellyseerrApiKey { get; set; }
         public string JellyseerrUrlMappings { get; set; }

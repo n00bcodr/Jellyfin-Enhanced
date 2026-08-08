@@ -237,11 +237,20 @@
 
         const pauseScreenDelayInput = document.getElementById('pauseScreenDelayInput');
         if (pauseScreenDelayInput) {
+            // Without this, digit keydowns bubble to the document and Jellyfin's
+            // native player intercepts them as percent-seek shortcuts (0-9)
+            // instead of letting them reach the input.
+            pauseScreenDelayInput.addEventListener('keydown', (e) => e.stopPropagation());
             pauseScreenDelayInput.addEventListener('change', () => {
                 const val = Math.max(1, Math.min(60, parseInt(pauseScreenDelayInput.value, 10) || 5));
                 pauseScreenDelayInput.value = val;
                 JE.currentSettings.pauseScreenDelaySeconds = val;
                 JE.saveUserSettings();
+                // Push the new delay into the already-running pause-screen
+                // instance so it takes effect immediately, without a page reload.
+                if (JE.pauseScreenInstance) {
+                    JE.pauseScreenInstance.pauseScreenDelayMs = val * 1000;
+                }
             });
         }
         addSettingToggleListener('languageTagsToggle', 'languageTagsEnabled', 'feature_language_tags', true);
