@@ -349,7 +349,10 @@
                 <h3 style="margin-top: 0; margin-bottom: 16px; color: #fff; font-size: 18px; font-weight: bolder;">${JE.t('elsewhere_settings_title')}</h3>
 
                 <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #ccc;">${JE.t('elsewhere_settings_country')}</label>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                        <label style="font-weight: 600; color: #ccc;">${JE.t('elsewhere_settings_country')}</label>
+                        <button type="button" id="reset-region-btn" title="Reset to plugin default" style="display: flex; align-items: center; justify-content: center; background: transparent; border: none; color: #999; cursor: pointer; padding: 2px; border-radius: 4px;"></button>
+                    </div>
                     <select id="region-select" style="width: 100%; padding: 12px; border: 1px solid #444; border-radius: 6px; background: #2a2a2a; color: #fff; font-size: 14px;">
                         ${Object.entries(availableRegions).map(([code, name]) =>
                             `<option value="${code}" ${code === userRegion ? 'selected' : ''}>${name}</option>`
@@ -375,6 +378,15 @@
 
             modal.appendChild(content);
             document.body.appendChild(modal);
+
+            // Reset the region dropdown to the admin-configured default when the reset button is clicked
+            const resetRegionBtn = content.querySelector('#reset-region-btn');
+            resetRegionBtn.appendChild(createMaterialIcon('restart_alt', '16px'));
+            resetRegionBtn.onmouseenter = () => { resetRegionBtn.style.color = '#fff'; };
+            resetRegionBtn.onmouseleave = () => { resetRegionBtn.style.color = '#999'; };
+            resetRegionBtn.onclick = () => {
+                document.getElementById('region-select').value = DEFAULT_REGION;
+            };
 
             // Add autocomplete for regions
             const regionsContainer = content.querySelector('#regions-autocomplete');
@@ -551,7 +563,9 @@
 
         // Process streaming data for default region (auto-load)
         function processDefaultRegionData(data, tmdbId, mediaType) {
-            const regionData = data.results[DEFAULT_REGION];
+            // userRegion is the effective region: the per-user "Default Search Country"
+            // override if the user set one, otherwise the admin's DEFAULT_REGION (see loadSettings).
+            const regionData = data.results[userRegion];
 
             const container = document.createElement('div');
             container.style.cssText = `
@@ -611,7 +625,7 @@
             );
 
             if (hasFilteredServices) {
-                title.textContent = JE.t('elsewhere_panel_available_in', { region: availableRegions[DEFAULT_REGION] || DEFAULT_REGION });
+                title.textContent = JE.t('elsewhere_panel_available_in', { region: availableRegions[userRegion] || userRegion });
             } else if (ELSEWHERE_CUSTOM_BRANDING_TEXT) {
                 // Show custom branding when no services are available and custom text is configured
                 title.textContent = ELSEWHERE_CUSTOM_BRANDING_TEXT;
@@ -639,7 +653,7 @@
                 }
             } else {
                 // Fallback to default message if no custom text is set
-                title.textContent = JE.t('elsewhere_panel_not_available_in', { region: availableRegions[DEFAULT_REGION] || DEFAULT_REGION });
+                title.textContent = JE.t('elsewhere_panel_not_available_in', { region: availableRegions[userRegion] || userRegion });
             }
 
             title.style.cssText = `
