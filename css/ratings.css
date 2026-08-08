@@ -103,7 +103,6 @@
 .mediaInfoOfficialRating[rating='FI-T'],                   /* 🇫🇮 Finland — Tillåten (all ages, Swedish label) */
 .mediaInfoOfficialRating[rating='FR-TP'],                  /* 🇫🇷 France — Tous publics (correct current label) */
 .mediaInfoOfficialRating[rating='FR-U'],                   /* 🇫🇷 France — U (legacy/alternate label) */
-.mediaInfoOfficialRating[rating='DE-0'],                   /* 🇩🇪 Germany — FSK 0 (prefix variant) */
 .mediaInfoOfficialRating[rating='FSK-0'],                  /* 🇩🇪 Germany — FSK 0 */
 .mediaInfoOfficialRating[rating='GR-0'],                   /* 🇬🇷 Greece — Unrestricted */
 .mediaInfoOfficialRating[rating='GR-K'],                   /* 🇬🇷 Greece — Unrestricted (legacy label) */
@@ -183,7 +182,6 @@
 .mediaInfoOfficialRating[rating='DK-7'],                   /* 🇩🇰 Denmark — 7 */
 .mediaInfoOfficialRating[rating='FI-7'],                   /* 🇫🇮 Finland — 7 (current label) */
 .mediaInfoOfficialRating[rating='FI-K-7'],                 /* 🇫🇮 Finland — K-7 (legacy label) */
-.mediaInfoOfficialRating[rating='DE-6'],                   /* �� Germany — FSK 6 (prefix variant) */
 .mediaInfoOfficialRating[rating='FSK-6'],                  /* 🇩🇪 Germany — FSK 6 */
 .mediaInfoOfficialRating[rating='GR-13'],                  /* 🇬🇷 Greece — 13 */
 .mediaInfoOfficialRating[rating='GR-K-12'],                /* 🇬🇷 Greece — legacy label */
@@ -268,7 +266,6 @@
 .mediaInfoOfficialRating[rating='FI-K-12'],                /* 🇫🇮 Finland — K-12 (legacy label) */
 .mediaInfoOfficialRating[rating='FR-12'],                  /* 🇫🇷 France */
 .mediaInfoOfficialRating[rating='FR--12'],                 /* 🇫🇷 France */
-.mediaInfoOfficialRating[rating='DE-12'],                  /* 🇩🇪 Germany */
 .mediaInfoOfficialRating[rating='FSK-12'],                 /* 🇩🇪 Germany */
 .mediaInfoOfficialRating[rating='GR-13'],                  /* 🇬🇷 Greece — 13 */
 .mediaInfoOfficialRating[rating='GR-K-15'],                /* 🇬🇷 Greece — legacy 15 label */
@@ -332,7 +329,6 @@
 .mediaInfoOfficialRating[rating='FI-K-16'],                /* 🇫🇮 Finland — K-16 (legacy label) */
 .mediaInfoOfficialRating[rating='FR-16'],                  /* 🇫🇷 France */
 .mediaInfoOfficialRating[rating='FR--16'],                 /* 🇫🇷 France */
-.mediaInfoOfficialRating[rating='DE-16'],                  /* 🇩🇪 Germany */
 .mediaInfoOfficialRating[rating='FSK-16'],                 /* 🇩🇪 Germany */
 .mediaInfoOfficialRating[rating='GR-17'],                  /* 🇬🇷 Greece — 17 */
 .mediaInfoOfficialRating[rating='GR-K-17'],                /* 🇬🇷 Greece — legacy 17 label */
@@ -389,7 +385,6 @@
 .mediaInfoOfficialRating[rating='FI-K-18'],                /* 🇫🇮 Finland — K-18 (legacy label) */
 .mediaInfoOfficialRating[rating='FR-18'],                  /* 🇫🇷 France */
 .mediaInfoOfficialRating[rating='FR--18'],                 /* 🇫🇷 France */
-.mediaInfoOfficialRating[rating='DE-18'],                  /* 🇩🇪 Germany */
 .mediaInfoOfficialRating[rating='FSK-18'],                 /* 🇩🇪 Germany */
 .mediaInfoOfficialRating[rating='GR-18'],                  /* 🇬🇷 Greece — 18 */
 .mediaInfoOfficialRating[rating='HU-18'],                  /* 🇭🇺 Hungary */
@@ -448,7 +443,6 @@
     background-color: #880E4F !important; /* Very Dark Pink */
     border-color: #C2185B !important;
 }
-
 
 /* === BLACK: Refused Classification / Banned === */
 .mediaInfoOfficialRating[rating='AU-RC'],                  /* 🇦🇺 Australia — Refused Classification */
