@@ -444,6 +444,48 @@
     border-color: #C2185B !important;
 }
 
+/* === GERMANY: Official FSK color scheme === */
+
+/* FSK 0 — White */
+.mediaInfoOfficialRating[rating='FSK-0'] {
+    background-color: #FFFFFF !important;
+    border-color: #BDBDBD !important;
+    color: #000000 !important;
+    text-shadow: none !important;
+}
+
+/* FSK 6 — Yellow */
+.mediaInfoOfficialRating[rating='FSK-6'] {
+    background-color: #FFEB00 !important;
+    border-color: #D6C600 !important;
+    color: #000000 !important;
+    text-shadow: none !important;
+}
+
+/* FSK 12 — Green */
+.mediaInfoOfficialRating[rating='FSK-12'] {
+    background-color: #12B53F !important;
+    border-color: #07912E !important;
+    color: #000000 !important;
+    text-shadow: none !important;
+}
+
+/* FSK 16 — Blue */
+.mediaInfoOfficialRating[rating='FSK-16'] {
+    background-color: #1597D4 !important;
+    border-color: #0875AB !important;
+    color: #000000 !important;
+    text-shadow: none !important;
+}
+
+/* FSK 18 — Red */
+.mediaInfoOfficialRating[rating='FSK-18'] {
+    background-color: #ED0016 !important;
+    border-color: #B90011 !important;
+    color: #000000 !important;
+    text-shadow: none !important;
+}
+
 /* === BLACK: Refused Classification / Banned === */
 .mediaInfoOfficialRating[rating='AU-RC'],                  /* 🇦🇺 Australia — Refused Classification */
 .mediaInfoOfficialRating[rating='RC'] {                    /* 🇦🇺 Australia — RC (bare label) */
