@@ -102,6 +102,7 @@ A lightweight, **non-destructive** way to tidy the home screen. It adds a **Remo
 - Hidden state is stored **server-side, per-user**, so it applies across all your devices and survives reloads
 - **Undoable:** removed items appear in the **Hidden Content** management page with an "Add back" button, and simply resuming a hidden item unhides it automatically
 - Works on its own — it does not require the full Hidden Content feature to be enabled
+- Also applies to home screens rendered by the [Home Screen Sections](https://github.com/IAmParadox27/jellyfin-plugin-home-sections) plugin, including its combined *Continue Watching / Next Up* row
 
 ![Bulk removal confirmation listing each item and its row](../images/remove-confirm.png)
 

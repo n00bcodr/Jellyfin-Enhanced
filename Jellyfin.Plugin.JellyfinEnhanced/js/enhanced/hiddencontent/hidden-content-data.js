@@ -30,6 +30,22 @@
     // ============================================================
 
     /**
+     * Canonicalises a Jellyfin item ID for comparison.
+     *
+     * Item IDs reach this module in two shapes: the server writes GUIDs dashed
+     * ("N" vs "D" format) into hidden-content.json, while cards carry them
+     * undashed in `data-id`. Comparing the raw strings silently never matches,
+     * so every lookup key and every ID read off the DOM goes through here.
+     * @param {*} id Raw ID from the store, an API payload, or a DOM attribute.
+     * @returns {string} Lowercase, dash-free ID, or '' when there is nothing usable.
+     */
+    function normalizeId(id) {
+        if (!id) return '';
+        if (typeof id !== 'string' && typeof id !== 'number' && typeof id !== 'bigint') return '';
+        return String(id).replace(/-/g, '').toLowerCase();
+    }
+
+    /**
      * Returns the in-memory hidden-content data object, lazily initialised
      * from `JE.userConfig.hiddenContent`.
      * @returns {{ items: Object, settings: Object }}
@@ -82,7 +98,7 @@
             const item = items[key];
             const scope = item.hideScope || 'global';
             if (scope !== 'global') continue;
-            if (item.itemId) hiddenIdSet.add(item.itemId);
+            if (item.itemId) hiddenIdSet.add(normalizeId(item.itemId));
             if (item.tmdbId) hiddenTmdbIdSet.add(String(item.tmdbId));
         }
     }
@@ -238,7 +254,7 @@
         if (!jellyfinItemId) return false;
         const settings = getSettings();
         if (!settings.enabled) return false;
-        return hiddenIdSet.has(jellyfinItemId);
+        return hiddenIdSet.has(normalizeId(jellyfinItemId));
     }
 
     /**
@@ -313,8 +329,15 @@
             restoredJellyfinId = newItems[itemId].itemId || '';
             delete newItems[itemId];
         } else {
-            // Fallback: itemId might be a Jellyfin ID — find the matching storage key
-            const matchingKey = Object.keys(newItems).find(k => newItems[k].itemId === itemId);
+            // Fallback: itemId might be a Jellyfin ID — find the matching storage key.
+            // Compared canonically: the caller usually has an undashed ID off a card, while a
+            // server-written entry stores it dashed, and a raw comparison would silently no-op.
+            // Guarded against an empty/unusable argument, which would otherwise normalise to ''
+            // and match the first TMDB-only entry (those carry no itemId).
+            const wanted = normalizeId(itemId);
+            const matchingKey = wanted
+                ? Object.keys(newItems).find(k => normalizeId(newItems[k].itemId) === wanted)
+                : undefined;
             if (matchingKey) {
                 restoredJellyfinId = newItems[matchingKey].itemId || itemId || '';
                 delete newItems[matchingKey];
@@ -412,7 +435,7 @@
 
         return events.filter((event) => {
             if (event.tmdbId && hiddenTmdbIdSet.has(String(event.tmdbId))) return false;
-            if (event.itemId && hiddenIdSet.has(event.itemId)) return false;
+            if (event.itemId && hiddenIdSet.has(normalizeId(event.itemId))) return false;
             if (event.title && hiddenNames.has(event.title.toLowerCase())) return false;
             return true;
         });
@@ -429,7 +452,7 @@
         return items.filter((item) => {
             const tmdbId = item.tmdbId || item.id;
             if (tmdbId && hiddenTmdbIdSet.has(String(tmdbId))) return false;
-            if (item.jellyfinMediaId && hiddenIdSet.has(item.jellyfinMediaId)) return false;
+            if (item.jellyfinMediaId && hiddenIdSet.has(normalizeId(item.jellyfinMediaId))) return false;
             return true;
         });
     }
@@ -478,6 +501,7 @@
 
     Object.assign(internal, {
         hiddenIdSet,
+        normalizeId,
         getHiddenData,
         getSettings,
         rebuildSets,
