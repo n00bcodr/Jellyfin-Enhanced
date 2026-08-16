@@ -540,7 +540,7 @@
     "panel_settings_spoiler_guard_override_reviews": "Recenzje",
     "panel_settings_spoiler_guard_override_reviews_desc": "Odznacz, aby zobaczyć panel recenzji TMDB / użytkowników na stronach szczegółów seriali.",
     "panel_settings_spoiler_guard_override_advanced": "Zaawansowane odsłanianie według kategorii",
-    "panel_settings_spoiler_guard_override_advanced_desc": "Odznacz, aby ponownie ukryć wszystko — w tym tytuł następnego odcinka — zamiast odsłaniania według kategorii włączonego przez administratora.",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Odznacz, aby ponownie ukryć wszystko (w tym tytuł następnego odcinka) zamiast odsłaniania według kategorii włączonego przez administratora.",
     "panel_settings_spoiler_guard_skip_confirm": "Nie pytaj o potwierdzenie przy wyłączaniu ochrony przed spoilerami",
     "panel_settings_spoiler_guard_skip_confirm_desc": "Pomija okno potwierdzenia wyłączenia. Oszczędza jedno kliknięcie podczas wyłączania ochrony przed spoilerami dla serialu.",
     "hidden_content_hide_button": "Ukryj",

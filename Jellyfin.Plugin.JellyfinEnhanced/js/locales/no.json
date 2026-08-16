@@ -540,7 +540,7 @@
     "panel_settings_spoiler_guard_override_reviews": "Anmeldelser",
     "panel_settings_spoiler_guard_override_reviews_desc": "Fjern avmerkingen for å se panelet med TMDB- / brukeranmeldelser på seriens detaljsider.",
     "panel_settings_spoiler_guard_override_advanced": "Avanserte visninger per kategori",
-    "panel_settings_spoiler_guard_override_advanced_desc": "Fjern haken for å skjule alt igjen — inkludert tittelen på neste episode — i stedet for kategorivisningene administratoren har aktivert.",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Fjern haken for å skjule alt igjen (inkludert tittelen på neste episode) i stedet for kategorivisningene administratoren har aktivert.",
     "panel_settings_spoiler_guard_skip_confirm": "Ikke be meg om å bekrefte når spoilerbeskyttelse slås av",
     "panel_settings_spoiler_guard_skip_confirm_desc": "Hopp over bekreftelsesdialogen for deaktivering. Sparer et klikk når du slår av spoilerbeskyttelse for en serie.",
     "hidden_content_hide_button": "Skjul",

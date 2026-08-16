@@ -113,7 +113,7 @@
     "remove_continue_watching_error": "\"Не вдалося видалити: ID користувача або елемента не знайдено.",
     "panel_settings_spoiler_guard_override_reviews_desc": "Зніміть позначку, щоб бачити панель відгуків TMDB / користувачів на сторінках відомостей про серіали.",
     "panel_settings_spoiler_guard_override_advanced": "Розширене розкриття за категоріями",
-    "panel_settings_spoiler_guard_override_advanced_desc": "Зніміть позначку, щоб знову приховати все — включно з назвою наступної серії — замість розкриття за категоріями, увімкненого адміністратором.",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Зніміть позначку, щоб знову приховати все (включно з назвою наступної серії) замість розкриття за категоріями, увімкненого адміністратором.",
     "jellyseerr_card_badge_movie": "Фільм",
     "hidden_content_manage_search": "Пошук прихованих елементів…",
     "bookmark_migrated": "{{icon:success}} Перенесено {count} закладок до {name}",

@@ -540,7 +540,7 @@
     "panel_settings_spoiler_guard_override_reviews": "Críticas",
     "panel_settings_spoiler_guard_override_reviews_desc": "Desmarca para ver o painel de críticas do TMDB / utilizadores nas páginas de detalhes das séries.",
     "panel_settings_spoiler_guard_override_advanced": "Revelações avançadas por categoria",
-    "panel_settings_spoiler_guard_override_advanced_desc": "Desmarque para voltar a ocultar tudo — incluindo o título do próximo episódio — em vez das revelações por categoria ativadas pelo administrador.",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Desmarque para voltar a ocultar tudo (incluindo o título do próximo episódio) em vez das revelações por categoria ativadas pelo administrador.",
     "panel_settings_spoiler_guard_skip_confirm": "Não pedir confirmação ao desativar a proteção contra spoilers",
     "panel_settings_spoiler_guard_skip_confirm_desc": "Ignora a caixa de diálogo de confirmação de desativação. Poupa um clique ao desativar a proteção contra spoilers para uma série.",
     "hidden_content_hide_button": "Ocultar",

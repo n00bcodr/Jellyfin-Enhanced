@@ -118,7 +118,7 @@
     "remove_continue_watching_error": "Could not remove item: User or Item ID not found.",
     "panel_settings_spoiler_guard_override_reviews_desc": "Uncheck to see the TMDB / user reviews panel on series detail pages.",
     "panel_settings_spoiler_guard_override_advanced": "آشکارسازی پیشرفته بر اساس دسته‌بندی",
-    "panel_settings_spoiler_guard_override_advanced_desc": "تیک را بردارید تا همه‌چیز دوباره پنهان شود — از جمله عنوان قسمت بعدی — به‌جای آشکارسازی‌های دسته‌بندی‌شده‌ای که مدیر فعال کرده است.",
+    "panel_settings_spoiler_guard_override_advanced_desc": "تیک را بردارید تا همه‌چیز دوباره پنهان شود (از جمله عنوان قسمت بعدی) به‌جای آشکارسازی‌های دسته‌بندی‌شده‌ای که مدیر فعال کرده است.",
     "jellyseerr_card_badge_movie": "Movie",
     "hidden_content_manage_search": "Search hidden items…",
     "bookmark_migrated": "{{icon:success}} Migrated {count} bookmark(s) to {name}",

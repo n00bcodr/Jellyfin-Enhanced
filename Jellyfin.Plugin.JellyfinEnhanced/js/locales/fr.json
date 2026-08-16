@@ -540,7 +540,7 @@
     "panel_settings_spoiler_guard_override_reviews": "Avis",
     "panel_settings_spoiler_guard_override_reviews_desc": "Décochez pour voir le panneau des avis TMDB / utilisateurs sur les pages de détails des séries.",
     "panel_settings_spoiler_guard_override_advanced": "Révélations avancées par catégorie",
-    "panel_settings_spoiler_guard_override_advanced_desc": "Décochez pour tout masquer à nouveau — y compris le titre du prochain épisode — au lieu des révélations par catégorie activées par votre administrateur.",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Décochez pour tout masquer à nouveau (y compris le titre du prochain épisode) au lieu des révélations par catégorie activées par votre administrateur.",
     "panel_settings_spoiler_guard_skip_confirm": "Ne pas me demander de confirmer lorsque je désactive la protection anti-spoilers",
     "panel_settings_spoiler_guard_skip_confirm_desc": "Ignore la boîte de dialogue de confirmation de désactivation. Économise un clic lors de la désactivation de la protection anti-spoilers pour une série.",
     "hidden_content_hide_button": "Masquer",

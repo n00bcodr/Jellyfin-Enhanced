@@ -540,7 +540,7 @@
     "panel_settings_spoiler_guard_override_reviews": "Отзывы",
     "panel_settings_spoiler_guard_override_reviews_desc": "Снимите отметку, чтобы видеть панель отзывов TMDB / пользователей на страницах сведений о сериалах.",
     "panel_settings_spoiler_guard_override_advanced": "Расширенное раскрытие по категориям",
-    "panel_settings_spoiler_guard_override_advanced_desc": "Снимите отметку, чтобы снова скрыть всё — включая название следующей серии — вместо раскрытия по категориям, включённого администратором.",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Снимите отметку, чтобы снова скрыть всё (включая название следующей серии) вместо раскрытия по категориям, включённого администратором.",
     "panel_settings_spoiler_guard_skip_confirm": "Не спрашивать подтверждение при отключении защиты от спойлеров",
     "panel_settings_spoiler_guard_skip_confirm_desc": "Пропускает диалог подтверждения отключения. Экономит один клик при отключении защиты от спойлеров для сериала.",
     "hidden_content_hide_button": "Скрыть",
