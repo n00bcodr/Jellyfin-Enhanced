@@ -89,6 +89,64 @@
     }
 
     /**
+     * Reads the admin-configured priority language list (comma-separated
+     * language codes and/or names, e.g. "en, Japanese, fr") and returns it
+     * as a lowercase array. Empty when unset, preserving the unprioritized
+     * default behavior. Accepting names too matters because the flag shown
+     * for a language is a *country* code (e.g. Telugu resolves to India's
+     * "in" flag, shared with Hindi, Tamil, etc.) — an admin can't reliably
+     * guess the underlying language code, but they do know the language name.
+     * @returns {Array<string>}
+     */
+    function getPriorityTerms() {
+        const raw = JE.pluginConfig?.LanguageTagsPriority || '';
+        return raw.split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
+    }
+
+    /**
+     * Reorders deduplicated flags so that ones matching the admin's priority
+     * list come first (in priority order), with the rest following in their
+     * original detection order. Only the first `maxToShow` end up visible, so
+     * this is what actually decides which 3 flags a card shows. A flag can
+     * match the priority list by language code (en, pt-BR), its base code
+     * (pt), or its display name (English, Portuguese) — whichever the admin
+     * typed.
+     * When LanguageTagsPriorityStrict is on, non-matching flags are dropped
+     * entirely instead of just being pushed to the back — a card can then
+     * show fewer than 3 flags, or none, if it has no matching audio track.
+     * @param {Array<{code: string, allLanguages: Array<string>}>} flags
+     * @returns {Array}
+     */
+    function orderByPriority(flags) {
+        const priority = getPriorityTerms();
+        if (!priority.length) return flags;
+
+        const rank = (flag) => {
+            const code = (flag.code || '').toLowerCase();
+            const base = code.split('-')[0];
+            const names = (flag.allLanguages || []).map(n => n.toLowerCase());
+            const candidates = [code, base, ...names];
+            let best = -1;
+            for (const candidate of candidates) {
+                const idx = priority.indexOf(candidate);
+                if (idx !== -1 && (best === -1 || idx < best)) best = idx;
+            }
+            return best;
+        };
+
+        const strict = !!JE.pluginConfig?.LanguageTagsPriorityStrict;
+        return flags
+            .map((flag, i) => ({ flag, i, rank: rank(flag) }))
+            .filter(entry => !strict || entry.rank !== -1)
+            .sort((a, b) => {
+                const ra = a.rank === -1 ? priority.length : a.rank;
+                const rb = b.rank === -1 ? priority.length : b.rank;
+                return ra - rb || a.i - b.i;
+            })
+            .map(entry => entry.flag);
+    }
+
+    /**
      * Build and attach the flag overlay for a card.
      * @param {Object} ctx - Factory context (tagged/ignore/cache helpers).
      * @param {HTMLElement} container - The render target element.
@@ -126,7 +184,7 @@
             const countryCode = JE.core.mediaLanguage.resolveFlag(lang);
             if (countryCode && !seenCountries.has(countryCode)) {
                 seenCountries.add(countryCode);
-                uniqueFlags.push({ countryCode, name: nameKey || codeKey.toUpperCase(), allLanguages: [nameKey || codeKey.toUpperCase()] });
+                uniqueFlags.push({ countryCode, code: codeKey, name: nameKey || codeKey.toUpperCase(), allLanguages: [nameKey || codeKey.toUpperCase()] });
             } else if (countryCode && seenCountries.has(countryCode)) {
                 // Add language name to existing country's tooltip
                 const existingFlag = uniqueFlags.find(f => f.countryCode === countryCode);
@@ -136,7 +194,7 @@
             }
         });
 
-        uniqueFlags.slice(0, maxToShow).forEach(flagInfo => {
+        orderByPriority(uniqueFlags).slice(0, maxToShow).forEach(flagInfo => {
             const img = document.createElement('img');
             img.src = JE.cdn.flagSvg(flagInfo.countryCode);
             img.className = flagClass;

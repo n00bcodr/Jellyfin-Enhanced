@@ -284,6 +284,17 @@
                             <div class="je-setting-description" data-desc-for="languageTagsEnabled">
                                 <div class="fieldDescription">Display available audio languages as country flags on poster cards.</div>
                             </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="languageTagsPriority">Priority Languages</label>
+                                <input id="languageTagsPriority" is="emby-input" type="text" placeholder="e.g. English, Japanese, fr"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="languageTagsPriority">
+                                <div class="fieldDescription">Comma-separated language names or codes, e.g. <code>English, Japanese, fr</code>. A title with audio in one of these gets that flag guaranteed a spot among the ones shown, ahead of anything else it has. Leave blank to just show whichever languages are found first.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="languageTagsPriorityStrict" is="emby-checkbox" type="checkbox"/><span>Only Show Priority Languages</span></label></div>
+                            <div class="je-setting-description" data-desc-for="languageTagsPriorityStrict">
+                                <div class="fieldDescription">Only show flags for the languages listed above, everything else is hidden. A title with none of them will show no flags at all.</div>
+                            </div>
 
                             <div class="je-tag-row">
                                 <div class="checkboxContainer"><label><input id="ratingTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Rating Tags</span></label></div>
@@ -4654,6 +4665,8 @@
                 if (lSel) lSel.value = lPos;
                 if (rSel) rSel.value = rPos;
                 if (lChk) lChk.checked = langEnabled;
+                document.querySelector('#languageTagsPriority').value = config.LanguageTagsPriority || '';
+                document.querySelector('#languageTagsPriorityStrict').checked = config.LanguageTagsPriorityStrict === true;
                 if (rChk) rChk.checked = ratingEnabled;
                 const pChk = document.querySelector('#peopleTagsEnabled');
                 if (pChk) pChk.checked = peopleEnabled;
@@ -5031,6 +5044,8 @@
             config.QualityTagsPosition = document.querySelector('#qualityTagsPosition').value;
             config.GenreTagsPosition = document.querySelector('#genreTagsPosition').value;
             config.LanguageTagsPosition = document.querySelector('#languageTagsPosition').value;
+            config.LanguageTagsPriority = document.querySelector('#languageTagsPriority').value.trim();
+            config.LanguageTagsPriorityStrict = document.querySelector('#languageTagsPriorityStrict').checked;
             config.RatingTagsPosition = document.querySelector('#ratingTagsPosition').value;
             config.ShowRatingInPlayer = document.querySelector('#showRatingInPlayer').checked;
             config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
@@ -6365,7 +6380,7 @@
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
             { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag'], noHint: true },
             { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition'], noHint: true },
-            { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition'], noHint: true },
+            { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict'], noHint: true },
             { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition'], noHint: true },
             { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
             { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },

@@ -2877,6 +2877,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.QualityTagsPosition,
                 config.GenreTagsPosition,
                 config.LanguageTagsPosition,
+                config.LanguageTagsPriority,
+                config.LanguageTagsPriorityStrict,
                 config.RatingTagsPosition,
                 config.ShowRatingInPlayer,
 

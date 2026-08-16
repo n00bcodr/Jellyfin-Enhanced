@@ -98,6 +98,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             QualityTagsPosition = "top-left";
             GenreTagsPosition = "top-right";
             LanguageTagsPosition = "bottom-left";
+            LanguageTagsPriority = string.Empty;
+            LanguageTagsPriorityStrict = false;
             RatingTagsPosition = "bottom-right";
             ShowRatingInPlayer = true;
             DisableAllShortcuts = false;
@@ -458,6 +460,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string QualityTagsPosition { get; set; } = "top-left";
         public string GenreTagsPosition { get; set; } = "top-right";
         public string LanguageTagsPosition { get; set; } = "bottom-left";
+        /// <summary>
+        /// Comma-separated list of language codes (e.g. "en,ja,fr") that should be
+        /// prioritized among the flags shown on a poster card. Since only a handful
+        /// of flags fit (see maxToShow in languagetags.js), audio tracks matching a
+        /// code here are shown first, in the order listed; remaining slots are then
+        /// filled with the item's other languages in their original detection order.
+        /// Empty (default) preserves the pre-existing unprioritized behavior.
+        /// </summary>
+        public string LanguageTagsPriority { get; set; } = string.Empty;
+        /// <summary>
+        /// When true, only languages matching <see cref="LanguageTagsPriority"/> are
+        /// ever shown (a card can end up with fewer than the usual 3 flags, or
+        /// none, if it has no matching audio track). When false (default), the
+        /// priority list only affects ordering and remaining slots still fill
+        /// with the item's other languages. No effect when the priority list
+        /// is empty.
+        /// </summary>
+        public bool LanguageTagsPriorityStrict { get; set; }
         public string RatingTagsPosition { get; set; } = "bottom-right";
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool GenreTagsEnabled { get; set; }
