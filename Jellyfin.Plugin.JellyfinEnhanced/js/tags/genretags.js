@@ -132,6 +132,7 @@
         containerClass,
         taggedAttr: 'jeGenreTagged',
         styleId: 'genre-tags-styles',
+        position: { userKey: 'genreTagsPosition', pluginKey: 'GenreTagsPosition', fallback: 'top-right' },
         cache: {
             key: 'JellyfinEnhanced-genreTagsCache',
             legacyPrefix: 'genreTagsCache',

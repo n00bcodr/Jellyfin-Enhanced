@@ -169,6 +169,7 @@
         containerClass,
         taggedAttr: 'jeRatingTagged',
         styleId: 'jellyfin-enhanced-rating-tags-css',
+        position: { userKey: 'ratingTagsPosition', pluginKey: 'RatingTagsPosition', fallback: 'bottom-right' },
         cache: {
             key: 'JellyfinEnhanced-ratingTagsCache',
             legacyPrefix: 'ratingTagsCache',

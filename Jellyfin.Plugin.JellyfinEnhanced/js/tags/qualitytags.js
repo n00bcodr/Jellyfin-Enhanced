@@ -681,6 +681,7 @@
         containerClass,
         taggedAttr: 'jeQualityTagged',
         styleId: 'quality-tag-enhanced-style',
+        position: { userKey: 'qualityTagsPosition', pluginKey: 'QualityTagsPosition', fallback: 'top-left' },
         cache: {
             // Static cache key (not version-based) to persist across plugin updates
             key: 'JellyfinEnhanced-qualityTagsCache',

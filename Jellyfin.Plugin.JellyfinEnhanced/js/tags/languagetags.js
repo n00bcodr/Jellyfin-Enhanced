@@ -218,6 +218,7 @@
         containerClass,
         taggedAttr: 'jeLanguageTagged',
         styleId: 'language-tags-styles',
+        position: { userKey: 'languageTagsPosition', pluginKey: 'LanguageTagsPosition', fallback: 'bottom-left' },
         cache: {
             // v2: entries now keep region subtags (pt-BR) instead of stripped
             // base codes; the old key is cleaned up via legacyPrefix so stale

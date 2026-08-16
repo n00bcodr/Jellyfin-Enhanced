@@ -120,6 +120,59 @@
         return camel.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
     }
 
+    // Gap (px) between stacked tag containers that share a corner.
+    const CORNER_STACK_GAP = 4;
+
+    /**
+     * When two tag containers share a corner (data-je-corner, set in
+     * commitOverlay), nudge each one after the first just far enough to
+     * clear the one before it instead of overlapping. Measures actual
+     * rendered edges via getBoundingClientRect so it still works with the
+     * top-right corner's indicator-avoidance margin. No-op when a corner
+     * has only one occupant, which is the common case.
+     * @param {HTMLElement} host - The .je-tag-host element.
+     */
+    function applyCornerStacking(host) {
+        const groups = {};
+        for (const child of host.children) {
+            const corner = /** @type {HTMLElement} */ (child).dataset?.jeCorner;
+            if (!corner) continue;
+            (groups[corner] = groups[corner] || []).push(child);
+        }
+        for (const corner in groups) {
+            const items = groups[corner];
+            if (items.length <= 1) {
+                if (items[0]) items[0].style.transform = '';
+                continue;
+            }
+            const isTop = corner.indexOf('top') === 0;
+            // Clear first so the rects read below reflect each item's natural
+            // (untransformed) CSS position, not a stale offset from a prior pass.
+            for (const el of items) el.style.transform = '';
+
+            let boundary = null; // trailing edge of the previous item, in viewport coords
+            for (const el of items) {
+                const rect = el.getBoundingClientRect();
+                if (boundary === null) {
+                    boundary = isTop ? rect.bottom : rect.top;
+                    continue;
+                }
+                const naturalEdge = isTop ? rect.top : rect.bottom;
+                const delta = isTop
+                    ? (boundary + CORNER_STACK_GAP) - naturalEdge
+                    : naturalEdge - (boundary - CORNER_STACK_GAP);
+                if (delta > 0) {
+                    el.style.transform = `translateY(${isTop ? delta : -delta}px)`;
+                    boundary = isTop ? (naturalEdge + delta + rect.height) : (naturalEdge - delta - rect.height);
+                } else {
+                    // Already clear of the previous item without help (e.g. its
+                    // own margin already pushed it far enough) — leave it be.
+                    boundary = isTop ? rect.bottom : rect.top;
+                }
+            }
+        }
+    }
+
     /**
      * Build a tag instance (state + ctx + lifecycle) for one renderer.
      * @param {string} name - Pipeline renderer name (e.g. 'genre').
@@ -364,9 +417,17 @@
              * @returns {boolean} true if the overlay was attached
              */
             commitOverlay(el, overlay) {
-                if (overlay.children.length === 0) return false;
+                if (spec.position) {
+                    const p = resolvePosition(spec.position.userKey, spec.position.pluginKey, spec.position.fallback);
+                    overlay.dataset.jeCorner = p.pos;
+                }
+                if (overlay.children.length === 0) {
+                    applyCornerStacking(el);
+                    return false;
+                }
                 el.appendChild(overlay);
                 markTagged(el);
+                applyCornerStacking(el);
                 return true;
             },
         };
