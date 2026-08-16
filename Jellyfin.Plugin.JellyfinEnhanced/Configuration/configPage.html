@@ -2386,6 +2386,18 @@
                     </fieldset>
 
                     <fieldset>
+                        <legend class="sectionTitle">Tag Cache</legend>
+                        <div class="configSection">
+                            <div id="serverTagCacheControls" style="margin-top:10px;">
+                                <button id="rebuildTagCacheBtn" class="raised button-submit emby-button" is="emby-button" type="button" style="width: 100%;">
+                                    <span>Rebuild Server Tag Cache</span>
+                                </button>
+                                <div class="fieldDescription">Forces a full rebuild of every item's cached tag data (quality, genre, language, ratings). Use this after a plugin update changes how tags are computed (or when instructed). Scans the whole library, so it may take a few minutes on large libraries.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
                         <legend class="sectionTitle">Developer Settings</legend>
                         <div class="configSection">
                             <div class="checkboxContainer"><label><input id="devMode" is="emby-checkbox" type="checkbox"/><span>Dev Mode</span></label></div>
@@ -7220,9 +7232,14 @@
         function updateClientTagCacheControlsVisibility() {
             var serverModeCheckbox = document.getElementById('tagCacheServerMode');
             var controls = document.getElementById('clientTagCacheControls');
+            var serverControls = document.getElementById('serverTagCacheControls');
             var localStorageFallbackContainer = document.getElementById('tagsLocalStorageFallbackContainer');
             var localStorageFallbackCheckbox = document.getElementById('enableTagsLocalStorageFallback');
             if (!serverModeCheckbox || !controls) return;
+
+            if (serverControls) {
+                serverControls.style.display = serverModeCheckbox.checked ? '' : 'none';
+            }
 
             if (localStorageFallbackContainer) {
                 var hide = serverModeCheckbox.checked ? 'none' : '';
@@ -7693,6 +7710,35 @@
                 }
             }
         });
+        var rebuildTagCacheBtn = document.querySelector('#rebuildTagCacheBtn');
+        if (rebuildTagCacheBtn) {
+            rebuildTagCacheBtn.addEventListener('click', async () => {
+                if (!confirm("Rebuild the server tag cache?\n\nThis re-scans the whole library in the background and may take a few minutes. Tags keep serving from the existing cache until the rebuild finishes.")) {
+                    return;
+                }
+                rebuildTagCacheBtn.disabled = true;
+                try {
+                    const url = ApiClient.getUrl('/JellyfinEnhanced/tag-cache/rebuild');
+                    const res = await ApiClient.ajax({ type: 'POST', url: url, dataType: 'json' });
+                    Dashboard.alert({
+                        title: 'Rebuild Started',
+                        message: (res && res.message) || 'Rebuilding the tag cache in the background. Check the server logs for progress and completion.'
+                    });
+                } catch (e) {
+                    console.error('Failed to start tag cache rebuild:', e);
+                    var message = 'Failed to start the rebuild. Check server logs for details.';
+                    if (e && e.status === 409) {
+                        message = 'A tag cache rebuild is already in progress.';
+                    } else if (e && e.status === 400) {
+                        message = 'Enable Server-Side Tag Cache first.';
+                    }
+                    Dashboard.alert({ title: 'Error', message: message });
+                } finally {
+                    rebuildTagCacheBtn.disabled = false;
+                }
+            });
+        }
+
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
 
         async function triggerSeerrScanNow() {

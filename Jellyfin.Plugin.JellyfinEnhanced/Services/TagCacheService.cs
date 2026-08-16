@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using MediaBrowser.Common.Configuration;
@@ -171,6 +172,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _rebuildLock.Release();
             }
+        }
+
+        // 0 = idle, 1 = a manual full rebuild is running. Purely a UI-facing
+        // guard so a second click gets an immediate "already running" instead
+        // of silently queuing behind _rebuildLock; BuildFullCache itself is
+        // already safe to call concurrently with anything else in this class.
+        private int _manualRebuildInProgress;
+
+        /// <summary>
+        /// Admin-triggered full rebuild (config page "Rebuild Server Tag Cache"
+        /// button). Unlike <see cref="ReconcileCache"/>, this always recomputes
+        /// every item regardless of Jellyfin's saved-item timestamps, which is
+        /// the only way to pick up a tag-computation change (e.g. this plugin's
+        /// own logic changing) for items nobody has actually edited. Runs on a
+        /// background thread; returns immediately once started.
+        /// </summary>
+        public bool TryStartManualFullRebuild()
+        {
+            if (Interlocked.CompareExchange(ref _manualRebuildInProgress, 1, 0) != 0)
+            {
+                return false;
+            }
+
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    BuildFullCache(null, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"[TagCache] Manual full rebuild failed: {ex.Message}");
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref _manualRebuildInProgress, 0);
+                }
+            });
+
+            return true;
         }
 
         private void BuildFullCacheCore(IProgress<double>? progress, CancellationToken cancellationToken, DateTime reconciliationStartedUtc)
@@ -1334,6 +1375,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         entry.SeasonNumber = season.IndexNumber;
                     }
                 }
+                else if (kind == BaseItemKind.BoxSet)
+                {
+                    // A BoxSet has no media streams of its own; derive its language
+                    // tags from the union of its manually-linked movie members instead.
+                    entry.AudioLanguages = GetCollectionLanguages(item);
+                }
                 else
                 {
                     var (streams, sources, languages) = ExtractMediaData(item);
@@ -1496,6 +1543,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 IsVirtualItem = false,
                 Recursive = true
             });
+        }
+
+        /// <summary>
+        /// Union of audio languages across a BoxSet's linked movie members.
+        /// LinkedChildren is a manual join (not a parent pointer), so this is
+        /// resolved live rather than tracked incrementally per member; membership
+        /// edits already re-enqueue the BoxSet itself (see TagCacheMonitor), and a
+        /// member's own file changes are picked up by the next reconciliation.
+        /// </summary>
+        private string[] GetCollectionLanguages(BaseItem collection)
+        {
+            try
+            {
+                if (collection is not Folder folder) return Array.Empty<string>();
+
+                var languages = new HashSet<string>();
+                foreach (var member in folder.GetLinkedChildren())
+                {
+                    if (member.GetBaseItemKind() != BaseItemKind.Movie) continue;
+
+                    var (_, _, memberLanguages) = ExtractMediaData(member);
+                    foreach (var lang in memberLanguages) languages.Add(lang);
+                }
+
+                return languages.ToArray();
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[TagCache] Failed to get collection languages for {collection.Id}: {ex.Message}");
+                return Array.Empty<string>();
+            }
         }
 
         private BaseItem? GetParentSeries(BaseItem item)

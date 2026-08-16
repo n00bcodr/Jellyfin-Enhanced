@@ -5987,6 +5987,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             });
         }
 
+        /// <summary>
+        /// Admin-triggered full tag cache rebuild (config page button). Unlike the
+        /// "Refresh Tag Cache" scheduled task, which only rebuilds items Jellyfin
+        /// has re-saved since the last run, this always recomputes every item —
+        /// the only way to pick up a tag-computation change (e.g. a plugin update)
+        /// for items nobody has actually edited. Runs in the background; the
+        /// existing cache keeps serving requests until the new one is ready and
+        /// the on-disk file is atomically replaced.
+        /// </summary>
+        [HttpPost("tag-cache/rebuild")]
+        [Authorize]
+        public IActionResult RebuildTagCache()
+        {
+            if (!IsAdminUser()) return Forbid();
+
+            if (JellyfinEnhanced.Instance?.Configuration?.TagCacheServerMode != true)
+            {
+                return BadRequest(new { success = false, message = "Server-Side Tag Cache is disabled." });
+            }
+
+            if (!_tagCacheService.TryStartManualFullRebuild())
+            {
+                return Conflict(new { success = false, message = "A tag cache rebuild is already in progress." });
+            }
+
+            return Ok(new { success = true, message = "Tag cache rebuild started in the background." });
+        }
+
         [HttpGet("tag-cache/{userId}")]
         [Authorize]
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
