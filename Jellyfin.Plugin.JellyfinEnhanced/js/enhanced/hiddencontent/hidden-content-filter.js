@@ -13,7 +13,7 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.hiddenContent = JE.internals.hiddenContent || {};
 
-    const { hiddenIdSet, getSettings, shouldFilterSurface, getHiddenData, getHiddenCount } = internal;
+    const { hiddenIdSet, normalizeId, getSettings, shouldFilterSurface, getHiddenData, getHiddenCount } = internal;
     // Late-bound cross-module reference (defined in hidden-content-buttons.js).
     const addLibraryHideButtons = (...args) => internal.addLibraryHideButtons(...args);
 
@@ -100,11 +100,21 @@
     // ============================================================
 
     /**
-     * Detects the surface context of a card by checking parent section headers.
+     * Detects which home surface a card is displayed on.
+     *
+     * Delegates to the Remove feature's row detector, so a card is classified the same way
+     * when it is hidden and when it is filtered back out. The two used to disagree: this one
+     * matched only the English headings "Next Up" / "Continue Watching", so on a translated
+     * client it classified nothing and scope-hidden items came back on the next render.
+     * Note this is the strict, row-gated detector — a Continue Watching hide must not blank
+     * the same item where it also appears in, say, a Recently Added row.
      * @param {HTMLElement} card The card element to check.
      * @returns {'nextup'|'continuewatching'|null} The detected surface or null.
      */
     function getCardSurface(card) {
+        if (typeof JE.detectCardRowSurface === 'function') return JE.detectCardRowSurface(card);
+
+        // Fallback for the (unsupported) case of the Remove module not being loaded.
         const section = card.closest('.section, .verticalSection, .homeSection');
         if (!section) return null;
         if (sectionSurfaceCache.has(section)) return sectionSurfaceCache.get(section);
@@ -133,10 +143,11 @@
 
         const data = getHiddenData();
         const items = data.items || {};
+        const wanted = normalizeId(itemId);
 
         for (const key of Object.keys(items)) {
             const item = items[key];
-            if (item.itemId !== itemId) continue;
+            if (normalizeId(item.itemId) !== wanted) continue;
             const scope = item.hideScope || 'global';
             if (scope === 'global') return true;
             if (scope === surface) return true;
@@ -155,8 +166,10 @@
      * @returns {string|null} The item ID, or null if not found.
      */
     function getCardItemId(el) {
-        if (el.dataset && el.dataset.id) return el.dataset.id;
-        if (el.dataset && el.dataset.itemid) return el.dataset.itemid;
+        // Normalised so it can be compared against store keys directly — the store
+        // holds dashed GUIDs when the server wrote the entry, undashed when the client did.
+        if (el.dataset && el.dataset.id) return normalizeId(el.dataset.id);
+        if (el.dataset && el.dataset.itemid) return normalizeId(el.dataset.itemid);
         return null;
     }
 
@@ -300,15 +313,23 @@
      */
     function restoreNativeCardsForIds(idsToRestore) {
         if (!idsToRestore || idsToRestore.size === 0) return;
+        // Callers pass IDs straight from the store or from an unhide argument, so they may be
+        // dashed; the IDs they are matched against here are not. Canonicalise once, up front.
+        const wanted = new Set();
+        idsToRestore.forEach((id) => {
+            const norm = normalizeId(id);
+            if (norm) wanted.add(norm);
+        });
+        if (wanted.size === 0) return;
         document.querySelectorAll(CARD_SEL).forEach((card) => {
             card.removeAttribute(PROCESSED_ATTR);
             const cardId = getCardItemId(card);
-            const hiddenBySeriesId = card.getAttribute(HIDDEN_PARENT_ATTR);
-            if (hiddenBySeriesId && idsToRestore.has(hiddenBySeriesId) && card.classList.contains('je-hidden')) {
+            const hiddenBySeriesId = normalizeId(card.getAttribute(HIDDEN_PARENT_ATTR));
+            if (hiddenBySeriesId && wanted.has(hiddenBySeriesId) && card.classList.contains('je-hidden')) {
                 card.classList.remove('je-hidden');
                 card.removeAttribute(HIDDEN_PARENT_ATTR);
                 card.removeAttribute(HIDDEN_DIRECT_ATTR);
-            } else if ((cardId && idsToRestore.has(cardId)) || card.getAttribute(HIDDEN_DIRECT_ATTR) === '1') {
+            } else if ((cardId && wanted.has(cardId)) || card.getAttribute(HIDDEN_DIRECT_ATTR) === '1') {
                 card.classList.remove('je-hidden');
                 card.removeAttribute(HIDDEN_DIRECT_ATTR);
             }

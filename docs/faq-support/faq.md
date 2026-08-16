@@ -298,6 +298,7 @@ This is usually due to TMDB API access issues.
 - Adds a **Remove** option to an item's "⋯" menu (and to the long-press / multi-select menu on touch devices) for Continue Watching and Next Up items
 - Hides the item from that row only — your progress is **not** reset and the item is **not** marked played
 - The hidden state is stored server-side per-user, so it applies across all your devices
+- It is enforced server-side, so the row stays tidy on every client — including home screens built by the [Home Screen Sections](https://github.com/IAmParadox27/jellyfin-plugin-home-sections) plugin
 
 **Can it be undone?**
 

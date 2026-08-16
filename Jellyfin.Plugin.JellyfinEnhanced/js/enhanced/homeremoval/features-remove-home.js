@@ -113,38 +113,231 @@
     // ~150ms of a menu opening; this bounds how stale a context can be before we ignore it.
     const REMOVE_CONTEXT_TTL_MS = 5000;
 
+    // Section-level surface verdict, cached per section element so a full-page card scan does
+    // not re-query the same row's title/link once per card. Keyed weakly, so a re-rendered
+    // section is re-evaluated rather than keeping a stale entry alive. Replaced wholesale when the
+    // home-section configuration arrives, since verdicts reached without it may have been guesses.
+    let sectionSurfaceCache = new WeakMap();
+
+    // Home Screen Sections stamps its section id onto the row element as a class, which is a
+    // locale-independent identifier for the rows JE cares about. 'both' means the row renders
+    // resume items and next-up items together, so only the card itself can say which it is.
+    const HSS_ROW_CLASS_SURFACE = {
+        continuewatching: 'continuewatching',
+        nextup: 'nextup',
+        continuewatchingnextup: 'both',
+    };
+
+    // jellyfin-web builds the home screen by reading the user's own `homesection{N}` preferences and
+    // rendering one `sectionN` slot per entry, so that config states outright what each row is. Mirrors
+    // homesections.js: the same defaults, the same 'folders' alias, and the same TV-layout behaviour of
+    // prepending a library row (which shifts every index) when none is configured.
+    const HOME_SECTION_DEFAULTS = Object.freeze([
+        'smalllibrarytiles', 'resume', 'resumeaudio', 'resumebook',
+        'livetv', 'nextup', 'latestmedia', 'none',
+    ]);
+    const HOME_SECTION_SLOTS = 10;
+    // Video, audio and book resume rows are all "continue" rows and all carry playback positions.
+    const RESUME_SECTION_TYPES = new Set(['resume', 'resumeaudio', 'resumebook']);
+
+    /** CustomPrefs of the current user's `usersettings` display preferences, or null until fetched. */
+    let homeSectionPrefs = null;
+    /** User the snapshot belongs to, so a user switch cannot be answered from the previous user's config. */
+    let homeSectionPrefsUserId = null;
+    let homeSectionPrefsInFlight = false;
+    /** Per-container memo of the resolved slot list, rebuilt whenever the snapshot changes. */
+    let configuredSectionsCache = new WeakMap();
+
     /**
-     * Determines which home-screen surface a card belongs to, using locale-independent
-     * signals so detection survives translated section titles and custom themes:
-     *   • Next Up — the section title is a link to the Next Up list (`?type=nextup`).
-     *   • Continue Watching — resume cards carry a `data-positionticks` playback position.
-     * A localized section-title text check is kept as a last-resort fallback.
+     * Fetches the current user's home-section configuration once, in the background.
+     *
+     * Deliberately fire-and-forget: until it lands, classifyRow falls through to the markup signals,
+     * which are correct on their own — this only replaces inference with the actual configuration.
+     * A failed fetch is not retried; the fallbacks stay in charge.
+     */
+    function primeHomeSectionPrefs() {
+        let userId = null;
+        try { userId = window.ApiClient?.getCurrentUserId?.() || null; } catch (e) { return; }
+        if (!userId) return;
+        if (homeSectionPrefsUserId === userId && (homeSectionPrefs || homeSectionPrefsInFlight)) return;
+
+        homeSectionPrefsUserId = userId;
+        homeSectionPrefs = null;
+        homeSectionPrefsInFlight = true;
+        configuredSectionsCache = new WeakMap();
+
+        Promise.resolve()
+            .then(() => window.ApiClient.getDisplayPreferences('usersettings', userId, 'emby'))
+            .then((prefs) => {
+                if (homeSectionPrefsUserId !== userId) return;
+                homeSectionPrefs = prefs?.CustomPrefs || {};
+                // Verdicts cached from the fallback path were reached without this config — drop them
+                // so every row is re-read against it.
+                configuredSectionsCache = new WeakMap();
+                sectionSurfaceCache = new WeakMap();
+            })
+            .catch((e) => {
+                console.warn('🪼 Jellyfin Enhanced: home-section preferences unavailable, falling back to row markup', e);
+            })
+            .then(() => {
+                if (homeSectionPrefsUserId === userId) homeSectionPrefsInFlight = false;
+            });
+    }
+
+    /** The `N` of a `sectionN` class, or null when the element carries none. */
+    function sectionSlotIndex(section) {
+        for (const cls of section.classList) {
+            const match = /^section(\d+)$/.exec(cls);
+            if (match) return Number.parseInt(match[1], 10);
+        }
+        return null;
+    }
+
+    /** Resolves the container's slot list from the user's config, memoised per container element. */
+    function configuredSectionTypes(container) {
+        if (!homeSectionPrefs) return null;
+        const cached = configuredSectionsCache.get(container);
+        if (cached) return cached;
+
+        const types = [];
+        for (let i = 0; i < HOME_SECTION_SLOTS; i++) {
+            let type = homeSectionPrefs[`homesection${i}`] || HOME_SECTION_DEFAULTS[i] || '';
+            if (type === 'folders') type = HOME_SECTION_DEFAULTS[0];
+            types.push(String(type).toLowerCase());
+        }
+        // An 11th slot only exists on the TV layout, where a library row was prepended.
+        if (container.querySelector(':scope > .section10')
+            && !types.includes('smalllibrarytiles') && !types.includes('librarybuttons')) {
+            types.unshift('smalllibrarytiles');
+        }
+
+        const frozen = Object.freeze(types);
+        configuredSectionsCache.set(container, frozen);
+        return frozen;
+    }
+
+    /**
+     * Identifies a native home row from the user's home-section configuration.
+     * @param {Element} section The row element.
+     * @returns {'continuewatching'|'nextup'|'other'|null} 'other' means the config positively says this
+     *   slot is something else; null means the config cannot answer and the caller should fall back.
+     */
+    function nativeRowKindFromPreferences(section) {
+        const container = section.closest('.homeSectionsContainer');
+        if (!container) return null;
+        const index = sectionSlotIndex(section);
+        if (index === null) return null;
+
+        primeHomeSectionPrefs();
+        const types = configuredSectionTypes(container);
+        const type = types ? types[index] : null;
+        if (!type || type === 'none') return null;
+
+        if (RESUME_SECTION_TYPES.has(type)) return 'continuewatching';
+        if (type === 'nextup') return 'nextup';
+        return 'other';
+    }
+
+    /**
+     * Classifies a home row as Continue Watching, Next Up, both, or neither — using the row's
+     * own markup rather than its (translated) heading wherever possible.
+     * @param {Element} section A `.section` / `.verticalSection` / `.homeSection` element.
+     * @returns {'continuewatching'|'nextup'|'both'|null}
+     */
+    function classifyRow(section) {
+        for (const cls of section.classList) {
+            const hit = HSS_ROW_CLASS_SURFACE[cls.toLowerCase()];
+            if (hit) return hit;
+        }
+
+        // A Home Screen Sections row is fully described by the class checked above, and it is
+        // the ONLY thing that describes it: HSS stamps jellyfin-web's playback-monitor marker
+        // onto every row it renders, including Recently Added, so the native test below would
+        // read those as resume rows. Its rows are identifiable by the page index it tags them
+        // with, so stop here rather than fall through to a marker it overloads.
+        if (section.hasAttribute('data-page')) return null;
+
+        // What the user actually configured this slot to be. Exact when available, and authoritative
+        // in both directions: 'other' ends the search rather than letting a weaker signal override it.
+        const configured = nativeRowKindFromPreferences(section);
+        if (configured === 'continuewatching' || configured === 'nextup') return configured;
+        if (configured === 'other') return null;
+
+        // Native Next Up: its heading links to the Next Up list. Absent on the TV layout,
+        // which renders a bare <h2> — that case is caught by the data-monitor test below.
+        if (section.querySelector('a[href*="type=nextup"]')) return 'nextup';
+
+        // Resume and Next Up are the only home rows jellyfin-web asks to re-render on playback
+        // events, so a monitored row is one of the two. Both carry the same marker, so the
+        // caller's per-card playback position decides which.
+        const monitored = section.querySelector('.itemsContainer[data-monitor]');
+        if (monitored && /playback/i.test(monitored.getAttribute('data-monitor') || '')) return 'both';
+
+        // Last resort for themes/markup with none of the above: the (English) heading text.
+        const title = (section.querySelector('.sectionTitle, h2, .headerText, .sectionTitle-sectionTitle')?.textContent || '')
+            .toLowerCase().trim();
+        if (title.includes('next up')) return 'nextup';
+        if (title.includes('continue watching')) return 'continuewatching';
+        return null;
+    }
+
+    /**
+     * Determines the home surface a card is being *displayed on*, or null when it is not in a
+     * Continue Watching / Next Up row at all.
+     *
+     * Strict by design: a resume item also appears in rows like "Recently Added", and those
+     * cards carry a playback position too, so treating the position alone as proof of surface
+     * would let a Continue-Watching-scoped hide blank the item everywhere it shows up. The row
+     * decides the kind; the card's playback position only disambiguates a combined row (Home
+     * Screen Sections renders one "Continue Watching / Next Up" section holding both).
      * @param {Element} el A `.card` element, or any element inside/representing one.
      * @returns {'continuewatching'|'nextup'|null}
      */
-    JE.detectCardSurface = function(el) {
+    JE.detectCardRowSurface = function(el) {
         if (!el) return null;
         const card = (typeof el.closest === 'function' ? el.closest('.card') : null) || el;
         const section = typeof card.closest === 'function'
             ? card.closest('.section, .verticalSection, .homeSection')
             : null;
+        if (!section) return null;
 
-        // Next Up: the section title links to the Next Up list — present regardless of locale.
-        if (section && section.querySelector('a[href*="type=nextup"]')) return 'nextup';
+        // Only the row-level verdict is cached — the per-card test below always runs, so a
+        // resume card in a combined row is never served a stale "nextup".
+        let kind;
+        if (sectionSurfaceCache.has(section)) {
+            kind = sectionSurfaceCache.get(section);
+        } else {
+            kind = classifyRow(section);
+            sectionSurfaceCache.set(section, kind);
+        }
+        if (!kind) return null;
+        if (kind !== 'both') return kind;
 
-        // Continue Watching: only resume cards expose a playback position.
         const ticks = (card.getAttribute && card.getAttribute('data-positionticks'))
             || (el.getAttribute && el.getAttribute('data-positionticks'));
-        if (ticks) return 'continuewatching';
+        return ticks ? 'continuewatching' : 'nextup';
+    };
 
-        // Fallback for markup/themes without the link or ticks: localized section title text.
-        if (section) {
-            const title = (section.querySelector('.sectionTitle, h2, .headerText, .sectionTitle-sectionTitle')?.textContent || '')
-                .toLowerCase().trim();
-            if (title.includes('next up')) return 'nextup';
-            if (title.includes('continue watching')) return 'continuewatching';
-        }
-        return null;
+    /**
+     * Which surface a Remove action on this card should be scoped to.
+     *
+     * Deliberately more generous than {@link JE.detectCardRowSurface}: when the row cannot be
+     * identified (a custom theme, an unrecognised layout) a card that carries a playback
+     * position is still a Continue Watching item, and offering Remove there is useful — the
+     * worst case is writing a scope for a surface the user was not looking at, which hides
+     * nothing extra. Filtering cannot afford the same guess, which is why it is a separate call.
+     * @param {Element} el A `.card` element, or any element inside/representing one.
+     * @returns {'continuewatching'|'nextup'|null}
+     */
+    JE.detectCardSurface = function(el) {
+        if (!el) return null;
+        const row = JE.detectCardRowSurface(el);
+        if (row) return row;
+
+        const card = (typeof el.closest === 'function' ? el.closest('.card') : null) || el;
+        const ticks = (card.getAttribute && card.getAttribute('data-positionticks'))
+            || (el.getAttribute && el.getAttribute('data-positionticks'));
+        return ticks ? 'continuewatching' : null;
     };
 
     /**

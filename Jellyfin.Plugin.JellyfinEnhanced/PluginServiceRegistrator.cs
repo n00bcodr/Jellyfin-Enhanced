@@ -68,8 +68,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddTransient<ClearTranslationCacheTask>();
 
             // Hidden Content: server-side filter for every native Jellyfin endpoint that surfaces user-facing item lists
-            // (Resume, Items, Latest, NextUp, Upcoming, Suggestions, SearchHints). Same filter handles "Remove from
-            // Continue Watching" via HideScope=continuewatching in hidden-content.json.
+            // (Resume, Items, Latest, NextUp, Upcoming, Suggestions, SearchHints), plus the Home Screen Sections
+            // plugin's own section-content endpoint, which replaces those native lists on an HSS home screen. Same
+            // filter handles "Remove from Continue Watching" via HideScope=continuewatching in hidden-content.json.
             serviceCollection.AddSingleton<MaintenanceModeService>();
             serviceCollection.AddSingleton<HiddenContentResponseFilter>();
             serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, ContinueWatchingPlaybackConsumer>();
