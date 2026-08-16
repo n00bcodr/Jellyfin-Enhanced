@@ -1,0 +1,55 @@
+<div id="je-loading">Loading…</div>
+<div data-role="content">
+  <div class="content-primary je-activity-standalone-page">
+    <div class="jellyfinenhanced activity"></div>
+  </div>
+</div>
+<div id="je-error" style="display:none">
+  Jellyfin Enhanced not ready.
+</div>
+<script>
+(function () {
+  const MAX_WAIT = 5000;
+  const INTERVAL = 50;
+  let waited = 0;
+
+  const loadingEl = document.getElementById("je-loading");
+  const errorEl = document.getElementById("je-error");
+  const preferencesPages = Array.from(document.querySelectorAll("#userPluginPreferencesPage"));
+  const preferencesPage = preferencesPages.find(p => p.offsetWidth > 0 && p.offsetHeight > 0);
+
+  const allPages = Array.from(document.querySelectorAll(".je-activity-standalone-page"));
+  const ownPage = allPages.find(el => el.offsetWidth > 0 || el.offsetHeight > 0) || allPages[0];
+  document.querySelectorAll(".jellyfinenhanced.activity").forEach(el => {
+    if (ownPage && ownPage.contains(el)) return;
+    if (!preferencesPage || !preferencesPage.contains(el)) {
+      el.remove();
+    }
+  });
+
+  const timer = setInterval(() => {
+    const JE = window.JellyfinEnhanced;
+
+    if (JE && JE.activityPage) {
+      clearInterval(timer);
+      loadingEl.remove();
+
+      const container = ownPage?.querySelector(".jellyfinenhanced.activity");
+      if (container) {
+        JE.activityPage.injectStyles();
+        JE.activityPage.renderForCustomTab(container);
+      }
+
+      console.log("🪼 Jellyfin Enhanced: Activity Page Loaded.");
+      return;
+    }
+
+    waited += INTERVAL;
+    if (waited >= MAX_WAIT) {
+      clearInterval(timer);
+      loadingEl.style.display = "none";
+      errorEl.style.display = "block";
+    }
+  }, INTERVAL);
+})();
+</script>

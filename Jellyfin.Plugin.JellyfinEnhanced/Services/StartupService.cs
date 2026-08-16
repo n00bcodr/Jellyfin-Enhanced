@@ -20,13 +20,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly TagCacheService _tagCacheService;
         private readonly TagCacheMonitor _tagCacheMonitor;
         private readonly SeerrScanTriggerService _seerrScanTriggerService;
+        private readonly ActivityFavoriteMonitor _activityFavoriteMonitor;
 
         public string Name => "Jellyfin Enhanced Startup";
         public string Key => "JellyfinEnhancedStartup";
         public string Description => "Initializes Jellyfin Enhanced background services and performs necessary cleanups. The client script is injected at request time by the injection middleware.";
         public string Category => "Jellyfin Enhanced";
 
-        public StartupService(Logger logger, IApplicationPaths applicationPaths, AutoSeasonRequestMonitor autoSeasonRequestMonitor, AutoMovieRequestMonitor autoMovieRequestMonitor, WatchlistMonitor watchlistMonitor, TagCacheService tagCacheService, TagCacheMonitor tagCacheMonitor, SeerrScanTriggerService seerrScanTriggerService)
+        public StartupService(Logger logger, IApplicationPaths applicationPaths, AutoSeasonRequestMonitor autoSeasonRequestMonitor, AutoMovieRequestMonitor autoMovieRequestMonitor, WatchlistMonitor watchlistMonitor, TagCacheService tagCacheService, TagCacheMonitor tagCacheMonitor, SeerrScanTriggerService seerrScanTriggerService, ActivityFavoriteMonitor activityFavoriteMonitor)
         {
             _logger = logger;
             _applicationPaths = applicationPaths;
@@ -36,6 +37,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _tagCacheService = tagCacheService;
             _tagCacheMonitor = tagCacheMonitor;
             _seerrScanTriggerService = seerrScanTriggerService;
+            // Constructor-injected purely to force DI to construct it here: it
+            // self-subscribes to IUserDataManager.UserDataSaved in its own
+            // constructor (same pattern as SpoilerNextUnwatchedService), so
+            // nothing else needs to call a method on it -- it just needs to exist.
+            _activityFavoriteMonitor = activityFavoriteMonitor;
         }
 
         public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)

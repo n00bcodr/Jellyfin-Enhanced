@@ -928,6 +928,8 @@
                 'extras/plugin-icons.js',
                 'extras/theme-selector.js',
                 'extras/active-streams.js',
+                'extras/activity-page.js',
+                'extras/activity-custom-tab.js',
 
                 // others
                 'others/letterboxd-links.js',

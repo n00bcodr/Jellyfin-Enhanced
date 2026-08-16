@@ -238,6 +238,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             CustomPluginLinks = "";
             ActiveStreamsEnabled = false;
             ActiveStreamsAllUsers = false;
+            ActivityFeedEnabled = false;
+            ActivityFeedShowWatched = true;
+            ActivityFeedShowFavorited = true;
+            ActivityFeedShowReviewed = true;
+            ActivityFeedShowActiveStreams = true;
+            ActivityFeedUsePluginPages = false;
+            ActivityFeedUseCustomTabs = false;
+            ActivityFeedUseNativeTab = false;
+            ActivityFeedAutoCreateCustomTab = false;
+            ActivityFeedCustomTabJeOwned = false;
 
             // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
             DownloadsPageEnabled = false;
@@ -598,6 +608,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string CustomPluginLinks { get; set; }
         public bool ActiveStreamsEnabled { get; set; }
         public bool ActiveStreamsAllUsers { get; set; }
+
+        // Activity Feed Settings -- server-wide "recent activity" tab (recently
+        // watched, favorited, reviewed). Each entry is filtered per-viewer by
+        // library access before being shown, same as the tag cache.
+        public bool ActivityFeedEnabled { get; set; }
+        public bool ActivityFeedShowWatched { get; set; } = true;
+        public bool ActivityFeedShowFavorited { get; set; } = true;
+        public bool ActivityFeedShowReviewed { get; set; } = true;
+        /// <summary>
+        /// Shows the Active Streams section on the Activity Feed page. This is
+        /// separate from ActiveStreamsEnabled (the header widget toggle) so an
+        /// admin can run the section here without the persistent header icon,
+        /// or vice versa -- but the underlying live-session data still requires
+        /// ActiveStreamsEnabled to be on somewhere, since that's what gates the
+        /// active-streams/sessions endpoint itself.
+        /// </summary>
+        public bool ActivityFeedShowActiveStreams { get; set; } = true;
+        public bool ActivityFeedUsePluginPages { get; set; }
+        public bool ActivityFeedUseCustomTabs { get; set; }
+        /// <summary>
+        /// Shows Activity as a self-contained tab on the Home page, created and
+        /// managed entirely by Jellyfin Enhanced's own injected script (see
+        /// js/enhanced/native-tabs.js) -- no external Custom Tabs plugin required.
+        /// Recommended on Jellyfin 12's experimental layout (the default there),
+        /// where the legacy Custom-Tabs/Plugin-Pages integration points are hidden.
+        /// </summary>
+        public bool ActivityFeedUseNativeTab { get; set; }
+        public bool ActivityFeedAutoCreateCustomTab { get; set; }
+        public bool ActivityFeedCustomTabJeOwned { get; set; }
 
         // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
         public bool DownloadsPageEnabled { get; set; }

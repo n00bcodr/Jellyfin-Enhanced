@@ -76,6 +76,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, ContinueWatchingPlaybackConsumer>();
             serviceCollection.AddHostedService<ContinueWatchingLibraryHook>();
 
+            // Activity Feed: recently watched / favorited / reviewed, gated by
+            // ActivityFeedEnabled. ActivityFavoriteMonitor is a Singleton that
+            // self-subscribes to IUserDataManager.UserDataSaved in its own
+            // constructor (see StartupService, which forces its construction).
+            serviceCollection.AddSingleton<ActivityService>();
+            serviceCollection.AddSingleton<ActivityFavoriteMonitor>();
+            serviceCollection.AddScoped<IEventConsumer<PlaybackStopEventArgs>, ActivityPlaybackConsumer>();
+
             // Spoiler Guard: an MVC action filter on the Image controller blurs
             // guarded-episode image bytes, so every client gets them via the native image API.
             serviceCollection.AddSingleton<ImageBlurService>();

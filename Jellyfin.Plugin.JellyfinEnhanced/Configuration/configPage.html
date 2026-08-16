@@ -1293,6 +1293,90 @@
                             </div>
                         </div>
                     </fieldset>
+
+                    <fieldset>
+                        <legend class="sectionTitle">Activity Feed</legend>
+                        <div class="configSection">
+                            <div class="je-info-banner-inline-center" style="margin-bottom: 15px;">
+                                <div class="je-info-banner-row">
+                                    <i class="material-icons je-info-icon">history</i>
+                                    <div>
+                                        <strong>Activity Feed</strong> shows recently watched, favorited, and reviewed titles across the server. Each viewer only sees activity for items they themselves have library access to.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="checkboxContainer je-main-feature"><label><input id="activityFeedEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Activity Feed</span></label></div>
+                            <div class="je-setting-description" data-desc-for="activityFeedEnabled">
+                                <div class="fieldDescription je-field-desc-md">Turns the feature on. While it's off, no activity is recorded or shown.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="activityFeedShowWatched" is="emby-checkbox" type="checkbox"/><span>Show recently watched</span></label></div>
+                            <div class="checkboxContainer"><label><input id="activityFeedShowFavorited" is="emby-checkbox" type="checkbox"/><span>Show recently favorited</span></label></div>
+                            <div class="checkboxContainer"><label><input id="activityFeedShowReviewed" is="emby-checkbox" type="checkbox"/><span>Show recently reviewed</span></label></div>
+                            <div class="checkboxContainer"><label><input id="activityFeedShowActiveStreams" is="emby-checkbox" type="checkbox"/><span>Show Active Streams section</span></label></div>
+                            <div class="je-setting-description" data-desc-for="activityFeedShowActiveStreams">
+                                <div class="fieldDescription je-field-desc-xl">Adds a live "who's watching now" section to this page, independent of whether the Active Streams header widget (Extras tab) is shown. Still requires that feature's data collection to be enabled there.</div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="activityFeedUseNativeTab" is="emby-checkbox" type="checkbox"/><span>Add Activity as a native Home tab</span></label></div>
+                            <div class="je-setting-description" data-desc-for="activityFeedUseNativeTab">
+                                <div class="fieldDescription je-field-desc-xl">Adds Activity as its own tab on the Home page, no external plugin needed.<br/><strong>Recommended on Jellyfin 12's experimental layout</strong> (the default).</div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="activityFeedUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages</span></label></div>
+                            <div class="je-setting-description" data-desc-for="activityFeedUsePluginPages">
+                                <div class="fieldDescription je-field-desc-xl">
+                                    Adds an "Activity" link to the sidebar via <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-pages" target="_blank">Plugin Pages</a>.<br/>
+                                    <strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.
+                                    <span class="je-installed-badge" data-plugin="pluginpages"><i class="material-icons" aria-hidden="true">check_circle</i>Plugin Pages detected</span>
+                                </div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="activityFeedUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs</span></label></div>
+
+                            <div class="checkboxContainer je-customtabs-automanage" data-gated-by="activityFeedUseCustomTabs,activityFeedEnabled">
+                                <label><input id="activityFeedAutoCreateCustomTab" is="emby-checkbox" type="checkbox"/><span>Add the Custom Tabs entry for me</span></label>
+                            </div>
+                            <div class="je-setting-description je-customtabs-automanage" data-desc-for="activityFeedAutoCreateCustomTab" data-gated-by="activityFeedUseCustomTabs,activityFeedEnabled">
+                                <div class="fieldDescription je-field-desc-md">
+                                    Jellyfin Enhanced will create the matching Custom Tabs entry on save. Turning off "Use Custom Tabs" removes the entry; turning it back on re-creates it. Leave unchecked to manage the Custom Tabs entry yourself.
+                                </div>
+                            </div>
+
+                            <div class="je-setting-description" data-desc-for="activityFeedUseCustomTabs">
+                                <div class="je-info-banner-inline">
+                                    <div class="je-info-banner-row">
+                                        <i class="material-icons je-info-icon">info</i>
+                                        <div>
+                                            <h4 class="je-custom-tabs-h4">
+                                                Embed Activity in Custom Tabs:
+                                                <span class="je-installed-badge" data-plugin="customtabs"><i class="material-icons" aria-hidden="true">check_circle</i>Custom Tabs detected</span>
+                                            </h4>
+                                            <p class="fieldDescription je-custom-tabs-p">Display the Activity page in a Custom Tabs tab instead of the sidebar link.</p>
+                                            <p class="fieldDescription je-custom-tabs-p-mt je-needs-customtabs">You need the <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs" target="_blank">Custom Tabs</a> plugin.</p>
+                                            <ol class="fieldDescription je-custom-tabs-ol">
+                                                <li class="je-custom-tabs-li je-needs-customtabs">Install the <strong>Custom Tabs</strong> plugin and all its prerequisites.</li>
+                                                <li class="je-custom-tabs-li">Navigate to Dashboard &gt; Plugins &gt; Custom Tabs and add a new tab.</li>
+                                                <li class="je-custom-tabs-li">Add "Display Text" according to your preference (e.g., "Activity").</li>
+                                                <li class="je-custom-tabs-li">Copy the code below and paste it into the 'HTML Content' field.</li>
+                                            </ol>
+                                            <div class="je-copy-code-wrapper">
+                                                <button class="je-copy-html-btn raised raised-mini emby-button" data-copy-text='&lt;div class="jellyfinenhanced activity"&gt;&lt;/div&gt;' type="button">
+                                                    <i class="material-icons je-copy-icon">content_copy</i>
+                                                    <span class="copy-btn-text je-copy-btn-text">Copy</span>
+                                                </button>
+                                                <pre class="je-code-pre"><code>&lt;div class="jellyfinenhanced activity"&gt;&lt;/div&gt;</code></pre>
+                                            </div>
+                                            <div class="fieldDescription je-field-desc-mt">
+                                                Already have Custom Tabs installed?
+                                                <a class="sectionTitle je-custom-tabs-link" href="/web/#/configurationpage?name=Custom%20Tabs">Click here to configure it.</a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
                 </div>
 
                 <div id="seerr" class="jellyfin-tab-content">
@@ -3619,7 +3703,8 @@
             { masterKey: 'HiddenContentEnabled',  parentKey: 'HiddenContentUseCustomTabs', autoKey: 'HiddenContentAutoCreateCustomTab', ownedKey: 'HiddenContentCustomTabJeOwned', title: 'Hidden Content', html: '<div class="jellyfinenhanced hidden-content"></div>' },
             { masterKey: 'DownloadsPageEnabled',  parentKey: 'DownloadsUseCustomTabs',     autoKey: 'DownloadsAutoCreateCustomTab',     ownedKey: 'DownloadsCustomTabJeOwned',     title: 'Requests',       html: '<div class="jellyfinenhanced requests"></div>' },
             { masterKey: 'CalendarPageEnabled',   parentKey: 'CalendarUseCustomTabs',      autoKey: 'CalendarAutoCreateCustomTab',      ownedKey: 'CalendarCustomTabJeOwned',      title: 'Calendar',       html: '<div class="jellyfinenhanced calendar"></div>' },
-            { masterKey: 'RecommendationsPageEnabled', parentKey: 'RecommendationsUseCustomTabs', autoKey: 'RecommendationsAutoCreateCustomTab', ownedKey: 'RecommendationsCustomTabJeOwned', title: 'Recommendations', html: '<div class="jellyfinenhanced recommendations"></div>' }
+            { masterKey: 'RecommendationsPageEnabled', parentKey: 'RecommendationsUseCustomTabs', autoKey: 'RecommendationsAutoCreateCustomTab', ownedKey: 'RecommendationsCustomTabJeOwned', title: 'Recommendations', html: '<div class="jellyfinenhanced recommendations"></div>' },
+            { masterKey: 'ActivityFeedEnabled',   parentKey: 'ActivityFeedUseCustomTabs',   autoKey: 'ActivityFeedAutoCreateCustomTab',   ownedKey: 'ActivityFeedCustomTabJeOwned',  title: 'Activity',       html: '<div class="jellyfinenhanced activity"></div>' }
         ];
 
         function isCustomTabsConfigShapeOk(cfg) {
@@ -4696,6 +4781,17 @@
                     document.getElementById('activeStreamsAllUsersContainer').style.display = this.checked ? '' : 'none';
                 });
 
+                document.querySelector('#activityFeedEnabled').checked = config.ActivityFeedEnabled || false;
+                document.querySelector('#activityFeedShowWatched').checked = config.ActivityFeedShowWatched !== false;
+                document.querySelector('#activityFeedShowFavorited').checked = config.ActivityFeedShowFavorited !== false;
+                document.querySelector('#activityFeedShowReviewed').checked = config.ActivityFeedShowReviewed !== false;
+                document.querySelector('#activityFeedShowActiveStreams').checked = config.ActivityFeedShowActiveStreams !== false;
+                document.querySelector('#activityFeedUseNativeTab').checked = config.ActivityFeedUseNativeTab === true;
+                document.querySelector('#activityFeedUsePluginPages').checked = config.ActivityFeedUsePluginPages === true;
+                document.querySelector('#activityFeedUseCustomTabs').checked = config.ActivityFeedUseCustomTabs === true;
+                var __aAuto = document.querySelector('#activityFeedAutoCreateCustomTab');
+                if (__aAuto) __aAuto.checked = config.ActivityFeedAutoCreateCustomTab === true;
+
                 // Requests Page settings
                 document.querySelector('#downloadsPageEnabled').checked = config.DownloadsPageEnabled !== false;
                 document.querySelector('#showDownloadsInRequests').checked = config.ShowDownloadsInRequests !== false;
@@ -5098,6 +5194,16 @@
             config.PluginIconsEnabled = document.querySelector('#pluginIconsEnabled').checked;
             config.ActiveStreamsEnabled = document.querySelector('#activeStreamsEnabled').checked;
             config.ActiveStreamsAllUsers = document.querySelector('#activeStreamsAllUsers').checked;
+            config.ActivityFeedEnabled = document.querySelector('#activityFeedEnabled').checked;
+            config.ActivityFeedShowWatched = document.querySelector('#activityFeedShowWatched').checked;
+            config.ActivityFeedShowFavorited = document.querySelector('#activityFeedShowFavorited').checked;
+            config.ActivityFeedShowReviewed = document.querySelector('#activityFeedShowReviewed').checked;
+            config.ActivityFeedShowActiveStreams = document.querySelector('#activityFeedShowActiveStreams').checked;
+            config.ActivityFeedUseNativeTab = document.querySelector('#activityFeedUseNativeTab').checked;
+            config.ActivityFeedUsePluginPages = document.querySelector('#activityFeedUsePluginPages').checked;
+            config.ActivityFeedUseCustomTabs = document.querySelector('#activityFeedUseCustomTabs').checked;
+            var __aAutoSave = document.querySelector('#activityFeedAutoCreateCustomTab');
+            config.ActivityFeedAutoCreateCustomTab = !!(__aAutoSave && __aAutoSave.checked);
 
             // Requests Page settings
             config.DownloadsPageEnabled = document.querySelector('#downloadsPageEnabled').checked;
@@ -6075,11 +6181,13 @@
             { id: 'downloadsUsePluginPages',       checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'calendarUsePluginPages',        checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'recommendationsUsePluginPages', checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'activityFeedUsePluginPages',    checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'bookmarksUseCustomTabs',        checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'hiddenContentUseCustomTabs',    checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'downloadsUseCustomTabs',        checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'calendarUseCustomTabs',         checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
-            { id: 'recommendationsUseCustomTabs',  checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' }
+            { id: 'recommendationsUseCustomTabs',  checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
+            { id: 'activityFeedUseCustomTabs',     checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' }
         ];
 
         /**
@@ -6274,6 +6382,7 @@
             { parent: 'arrTagsShowAsLinks', label: 'Show synced tags as links', children: ['arrTagsLinksFilter', 'arrTagsLinksHideFilter'] },
             { parent: 'calendarPageEnabled', label: 'Enable Calendar Page', children: ['calendarUsePluginPages', 'calendarUseNativeTab', 'calendarUseCustomTabs', 'calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
             { parent: 'recommendationsPageEnabled', label: 'Enable Recommendations Page', children: ['recommendationsUseNativeTab', 'recommendationsUsePluginPages', 'recommendationsUseCustomTabs', 'recommendationsAutoCreateCustomTab'] },
+            { parent: 'activityFeedEnabled', label: 'Enable Activity Feed', children: ['activityFeedShowWatched', 'activityFeedShowFavorited', 'activityFeedShowReviewed', 'activityFeedShowActiveStreams', 'activityFeedUseNativeTab', 'activityFeedUsePluginPages', 'activityFeedUseCustomTabs', 'activityFeedAutoCreateCustomTab'] },
             { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
             { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
             { parent: 'preventWatchlistReAddition', label: 'Prevent re-adding removed items', children: ['watchlistMemoryRetentionDays'] },

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using MediaBrowser.Common.Configuration;
 using Newtonsoft.Json;
@@ -666,6 +667,116 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 if (!store.Reviews.Remove(key)) return false;
                 WriteStoreUnlocked(store);
                 return true;
+            }
+        }
+
+        // ─── Shared activity file (Activity Feed) ──────────────────────────────
+
+        private static readonly object _activityFileLock = new object();
+
+        // Bounds activity.json's growth on a busy, long-running server -- the
+        // Activity Feed only ever shows the newest handful anyway, so entries
+        // beyond this are pure dead weight.
+        private const int MaxActivityEntries = 500;
+
+        private string ActivityFilePath => Path.Combine(_configBaseDir, "activity.json");
+
+        private AllActivityStore ReadActivityStoreUnlocked()
+        {
+            var filePath = ActivityFilePath;
+            if (!File.Exists(filePath)) return new AllActivityStore();
+
+            try
+            {
+                var json = File.ReadAllText(filePath);
+                if (string.IsNullOrWhiteSpace(json)) return new AllActivityStore();
+                return JsonConvert.DeserializeObject<AllActivityStore>(json) ?? new AllActivityStore();
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to read shared activity.json: {ex.Message}");
+                return new AllActivityStore();
+            }
+        }
+
+        private void WriteActivityStoreUnlocked(AllActivityStore store)
+        {
+            try
+            {
+                // Prune oldest-first once over the cap, same trim point every
+                // write so the file can't creep up unbounded between prunes.
+                if (store.Entries.Count > MaxActivityEntries)
+                {
+                    var toDrop = store.Entries
+                        .OrderBy(kvp => kvp.Value.OccurredAt, StringComparer.Ordinal)
+                        .Take(store.Entries.Count - MaxActivityEntries)
+                        .Select(kvp => kvp.Key)
+                        .ToList();
+                    foreach (var key in toDrop) store.Entries.Remove(key);
+                }
+
+                var json = JsonConvert.SerializeObject(store, Formatting.Indented);
+                File.WriteAllText(ActivityFilePath, json);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save shared activity.json: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// Reads the server-wide activity store from the shared activity.json file.
+        public AllActivityStore GetAllActivity()
+        {
+            lock (_activityFileLock)
+            {
+                return ReadActivityStoreUnlocked();
+            }
+        }
+
+        /// <summary>
+        /// Records (or bumps the timestamp of) a watched/favorited activity
+        /// entry for a user+item. A repeat event just updates OccurredAt so
+        /// re-watching or re-favoriting resurfaces the item in the feed
+        /// instead of leaving a stale duplicate.
+        /// </summary>
+        public void RecordActivity(string userIdN, string itemIdN, string activityType, string nowIso, bool completed = false, double progress = 0)
+        {
+            lock (_activityFileLock)
+            {
+                var store = ReadActivityStoreUnlocked();
+                var key = $"{userIdN}:{itemIdN}:{activityType}";
+                // Completed and Progress never downgrade: a later partial
+                // re-watch of something already finished (or watched
+                // further) once shouldn't erase that.
+                store.Entries.TryGetValue(key, out var existing);
+                var wasCompleted = existing?.Completed == true;
+                var priorProgress = existing?.Progress ?? 0;
+                store.Entries[key] = new ActivityEntry
+                {
+                    UserId = userIdN,
+                    ItemId = itemIdN,
+                    ActivityType = activityType,
+                    OccurredAt = nowIso,
+                    Completed = completed || wasCompleted,
+                    Progress = Math.Max(priorProgress, progress)
+                };
+                WriteActivityStoreUnlocked(store);
+            }
+        }
+
+        /// <summary>
+        /// Removes an activity entry (e.g. on unfavorite, so the feed doesn't
+        /// keep showing something the user un-did). No-op if it isn't there.
+        /// </summary>
+        public void RemoveActivity(string userIdN, string itemIdN, string activityType)
+        {
+            lock (_activityFileLock)
+            {
+                var store = ReadActivityStoreUnlocked();
+                var key = $"{userIdN}:{itemIdN}:{activityType}";
+                if (!store.Entries.Remove(key)) return;
+                WriteActivityStoreUnlocked(store);
             }
         }
 

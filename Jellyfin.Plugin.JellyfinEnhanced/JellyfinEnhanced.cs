@@ -315,6 +315,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             bool hiddenContentExists = config.Value<JArray>("pages")!
                 .Any(x => x.Value<string>("Id") == $"{namespaceName}.HiddenContentPage");
 
+            bool activityFeedExists = config.Value<JArray>("pages")!
+                .Any(x => x.Value<string>("Id") == $"{namespaceName}.ActivityPage");
+
             // Only add calendar page if it's enabled and using plugin pages
             if (!calendarExists && pluginConfig.CalendarPageEnabled && pluginConfig.CalendarUsePluginPages)
             {
@@ -404,6 +407,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 if (hiddenContentPage != null)
                 {
                     config.Value<JArray>("pages")!.Remove(hiddenContentPage);
+                }
+            }
+
+            // Only add activity feed page if it's enabled and using plugin pages
+            if (!activityFeedExists && pluginConfig.ActivityFeedEnabled && pluginConfig.ActivityFeedUsePluginPages)
+            {
+                config.Value<JArray>("pages")!.Add(new JObject
+                {
+                    { "Id", $"{namespaceName}.ActivityPage" },
+                    { "Url", $"{(supportsSubUrls ? "" : rootUrl)}/JellyfinEnhanced/activityPage" },
+                    { "DisplayText", "Activity" },
+                    { "Icon", "history" },
+                    { "Version", pluginPageConfigVersion }
+                });
+            }
+            // Remove activity feed page if it exists but is now disabled or not using plugin pages
+            else if (activityFeedExists && (!pluginConfig.ActivityFeedEnabled || !pluginConfig.ActivityFeedUsePluginPages))
+            {
+                var activityPage = config.Value<JArray>("pages")!
+                    .FirstOrDefault(x => x.Value<string>("Id") == $"{namespaceName}.ActivityPage");
+                if (activityPage != null)
+                {
+                    config.Value<JArray>("pages")!.Remove(activityPage);
                 }
             }
 
@@ -499,6 +525,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 new PluginPageInfo {
                     Name = "recommendationsPage",
                     EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.RecommendationsPage.html"
+                },
+                new PluginPageInfo {
+                    Name = "activityPage",
+                    EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.ActivityPage.html"
                 }
             };
         }
