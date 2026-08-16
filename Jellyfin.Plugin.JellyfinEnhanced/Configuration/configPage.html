@@ -492,6 +492,33 @@
                                     </div>
                                 </div>
                             </details>
+
+                            <details class="je-details-section" data-gated-by="spoilerBlurEnabled">
+                                <summary>Advanced per-category reveals</summary>
+                                <div class="je-details-body">
+                                    <div class="checkboxContainer"><label><input id="spoilerAdvancedMode" is="emby-checkbox" type="checkbox"/><span>Enable advanced per-category reveals</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="spoilerAdvancedMode">
+                                        <div class="fieldDescription">Instead of one uniform strip for every unwatched episode, the user's <strong>next</strong> unwatched episode and the rest of its season get the reveal settings below. Later seasons, skipped earlier seasons and specials always keep the full strip. A reveal only relaxes a strip that is enabled above — categories whose strip is off show everywhere already. Each user can opt back into the uniform full strip from their settings panel.</div>
+                                    </div>
+
+                                    <div class="je-info-banner-inline-center" style="margin-bottom: 15px;" data-gated-by="spoilerAdvancedMode">
+                                        <div class="je-info-banner-row">
+                                            <i class="material-icons je-info-icon">visibility</i>
+                                            <div>Checked = still hidden for that category. Unchecked = revealed. The next-episode title starts revealed — that's the point of advanced mode: see <em>what</em> you're about to watch, and nothing more.</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="checkboxContainer"><label><input id="spoilerNextEpisodeStripTitle" is="emby-checkbox" type="checkbox"/><span>Next episode: keep title hidden</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="spoilerNextEpisodeStripOverview" is="emby-checkbox" type="checkbox"/><span>Next episode: keep description hidden</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="spoilerNextEpisodeStripRatings" is="emby-checkbox" type="checkbox"/><span>Next episode: keep ratings hidden</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="spoilerCurrentSeasonStripTitle" is="emby-checkbox" type="checkbox"/><span>Current season: keep titles hidden</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="spoilerCurrentSeasonStripOverview" is="emby-checkbox" type="checkbox"/><span>Current season: keep descriptions hidden</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="spoilerCurrentSeasonStripRatings" is="emby-checkbox" type="checkbox"/><span>Current season: keep ratings hidden</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="spoilerCurrentSeasonStripRatings">
+                                        <div class="fieldDescription">"Current season" is the season containing the next unwatched episode. Card rating overlays and search results stay fully protected regardless of these reveals; only the episode metadata itself (lists and detail pages) is revealed.</div>
+                                    </div>
+                                </div>
+                            </details>
                         </div>
                     </fieldset>
 
@@ -4761,6 +4788,17 @@
                     ['spoilerAutoEnableOnSeerrRequest','SpoilerAutoEnableOnSeerrRequest',false],
                     ['spoilerBlurStrictRefresh',    'SpoilerBlurStrictRefresh',    false],
                     ['spoilerKeepMoviePosters',     'SpoilerKeepMoviePosters',     true],
+                    // Advanced per-category reveals. The master switch is off
+                    // for existing installs; the category masks keep the
+                    // strictest posture except the next-episode title, which
+                    // is the reveal advanced mode exists for.
+                    ['spoilerAdvancedMode',              'SpoilerAdvancedMode',              false],
+                    ['spoilerNextEpisodeStripTitle',     'SpoilerNextEpisodeStripTitle',     false],
+                    ['spoilerNextEpisodeStripOverview',  'SpoilerNextEpisodeStripOverview',  true],
+                    ['spoilerNextEpisodeStripRatings',   'SpoilerNextEpisodeStripRatings',   true],
+                    ['spoilerCurrentSeasonStripTitle',   'SpoilerCurrentSeasonStripTitle',   true],
+                    ['spoilerCurrentSeasonStripOverview','SpoilerCurrentSeasonStripOverview',true],
+                    ['spoilerCurrentSeasonStripRatings', 'SpoilerCurrentSeasonStripRatings', true],
                 ].forEach(function (t) {
                     var el = document.querySelector('#' + t[0]);
                     if (!el) return;
@@ -5142,6 +5180,11 @@
                 'spoilerBlurArtwork', 'spoilerAutoEnableOnFirstPlay',
                 'spoilerAutoEnableOnSeerrRequest', 'spoilerBlurStrictRefresh',
                 'spoilerKeepMoviePosters',
+                'spoilerAdvancedMode',
+                'spoilerNextEpisodeStripTitle', 'spoilerNextEpisodeStripOverview',
+                'spoilerNextEpisodeStripRatings',
+                'spoilerCurrentSeasonStripTitle', 'spoilerCurrentSeasonStripOverview',
+                'spoilerCurrentSeasonStripRatings',
             ].forEach(function (id) {
                 var el = document.querySelector('#' + id);
                 if (!el) return;
@@ -6225,8 +6268,9 @@
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
             { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseNativeTab', 'bookmarksUseCustomTabs'] },
             { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseNativeTab', 'hiddenContentUseCustomTabs'] },
-            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Guard', children: ['spoilerBlurIntensity', 'spoilerBlurArtwork', 'spoilerStripSeriesOverview', 'spoilerStripOverview', 'spoilerOverviewPlaceholder', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripRatings', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerBlurStrictRefresh', 'spoilerKeepMoviePosters'] },
-            { parent: 'spoilerStripCast',     label: 'Hide cast on unwatched episodes', children: ['spoilerStripCastMode'] }
+            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Guard', children: ['spoilerBlurIntensity', 'spoilerBlurArtwork', 'spoilerStripSeriesOverview', 'spoilerStripOverview', 'spoilerOverviewPlaceholder', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripRatings', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerBlurStrictRefresh', 'spoilerKeepMoviePosters', 'spoilerAdvancedMode'] },
+            { parent: 'spoilerStripCast',     label: 'Hide cast on unwatched episodes', children: ['spoilerStripCastMode'] },
+            { parent: 'spoilerAdvancedMode',  label: 'Enable advanced per-category reveals', children: ['spoilerNextEpisodeStripTitle', 'spoilerNextEpisodeStripOverview', 'spoilerNextEpisodeStripRatings', 'spoilerCurrentSeasonStripTitle', 'spoilerCurrentSeasonStripOverview', 'spoilerCurrentSeasonStripRatings'] }
         ];
 
         /**

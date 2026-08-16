@@ -523,6 +523,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Vink uit om verhaaltags te zien, zoals \"Dood van een hoofdpersoon\".",
     "panel_settings_spoiler_guard_override_reviews": "Recensies",
     "panel_settings_spoiler_guard_override_reviews_desc": "Vink uit om het paneel met TMDB- / gebruikersrecensies te zien op detailpagina's van series.",
+    "panel_settings_spoiler_guard_override_advanced": "Geavanceerde onthullingen per categorie",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Vink uit om alles weer te verbergen (inclusief de titel van de volgende aflevering) in plaats van de door je beheerder ingeschakelde onthullingen per categorie.",
     "panel_settings_spoiler_guard_skip_confirm": "Vraag mij niet om bevestiging bij het uitschakelen van spoilerbescherming",
     "panel_settings_spoiler_guard_skip_confirm_desc": "Slaat het bevestigingsvenster voor uitschakelen over. Bespaart een klik wanneer je spoilerbescherming voor een serie uitschakelt.",
     "spoiler_blur_pending_button_on": "Spoiler Guard (in behandeling)",

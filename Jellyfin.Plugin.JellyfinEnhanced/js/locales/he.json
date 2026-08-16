@@ -258,6 +258,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "בטלו סימון כדי לראות תגיות עלילה כמו \"מות דמות ראשית\".",
     "panel_settings_spoiler_guard_override_reviews": "ביקורות",
     "panel_settings_spoiler_guard_override_reviews_desc": "בטלו סימון כדי לראות את חלונית ביקורות TMDB / המשתמשים בדפי סדרות.",
+    "panel_settings_spoiler_guard_override_advanced": "חשיפות מתקדמות לפי קטגוריה",
+    "panel_settings_spoiler_guard_override_advanced_desc": "בטלו את הסימון כדי להסתיר הכול שוב (כולל שם הפרק הבא) במקום החשיפות לפי קטגוריה שהמנהל הפעיל.",
     "panel_settings_spoiler_guard_skip_confirm": "אל תבקש ממני אישור בעת כיבוי מגן הספוילרים",
     "panel_settings_spoiler_guard_skip_confirm_desc": "דילוג על דיאלוג אישור הכיבוי. חוסך לחיצה בעת כיבוי מגן הספוילרים עבור סדרה.",
     "panel_settings_subtitles_format_warning": "הסגנונות האלה לא עובדים עם פורמט הכתוביות של הסרטון הנוכחי.",

@@ -539,6 +539,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Премахнете отметката, за да виждате сюжетни тагове като \"Смърт на главен герой\".",
     "panel_settings_spoiler_guard_override_reviews": "Рецензии",
     "panel_settings_spoiler_guard_override_reviews_desc": "Премахнете отметката, за да виждате панела с рецензии от TMDB / потребители на страниците с подробности за сериалите.",
+    "panel_settings_spoiler_guard_override_advanced": "Разширени разкрития по категории",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Премахнете отметката, за да скриете отново всичко (включително заглавието на следващия епизод) вместо разкритията по категории, активирани от администратора.",
     "panel_settings_spoiler_guard_skip_confirm": "Не ме питай за потвърждение при изключване на защитата от спойлери",
     "panel_settings_spoiler_guard_skip_confirm_desc": "Пропуска диалога за потвърждение на изключването. Спестява едно щракване при изключване на защитата от спойлери за сериал.",
     "hidden_content_hide_button": "Скрий",

@@ -539,6 +539,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Uncheck to spy story marks like \"Death of a main character\".",
     "panel_settings_spoiler_guard_override_reviews": "Crew's tales",
     "panel_settings_spoiler_guard_override_reviews_desc": "Uncheck to spy th' TMDB / crew tales panel on series detail pages.",
+    "panel_settings_spoiler_guard_override_advanced": "Advanced spyglass reveals",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Uncheck to stow it all away again (includin' the next episode's name) instead o' the category reveals yer cap'n allowed.",
     "panel_settings_spoiler_guard_skip_confirm": "Don't ask me to confirm when I furl th' Spoiler Guard",
     "panel_settings_spoiler_guard_skip_confirm_desc": "Skip th' furl-confirmation dialog. Saves ye a click when furlin' th' Spoiler Guard fer a series.",
     "hidden_content_hide_button": "Hide",

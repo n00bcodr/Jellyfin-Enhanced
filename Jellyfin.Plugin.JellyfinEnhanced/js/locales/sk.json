@@ -539,6 +539,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Zrušte zaškrtnutie, ak chcete vidieť dejové štítky, napríklad \"Smrť hlavnej postavy\".",
     "panel_settings_spoiler_guard_override_reviews": "Recenzie",
     "panel_settings_spoiler_guard_override_reviews_desc": "Zrušte zaškrtnutie, ak chcete na stránkach detailov seriálov vidieť panel recenzií z TMDB / od používateľov.",
+    "panel_settings_spoiler_guard_override_advanced": "Pokročilé odkrývanie podľa kategórií",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Zrušte začiarknutie, ak chcete všetko znova skryť (vrátane názvu ďalšej epizódy) namiesto odkrývania podľa kategórií, ktoré povolil správca.",
     "panel_settings_spoiler_guard_skip_confirm": "Nepýtať sa na potvrdenie pri vypínaní ochrany pred spoilermi",
     "panel_settings_spoiler_guard_skip_confirm_desc": "Preskočí dialóg potvrdenia vypnutia. Ušetrí kliknutie pri vypínaní ochrany pred spoilermi pre seriál.",
     "hidden_content_hide_button": "Skryť",

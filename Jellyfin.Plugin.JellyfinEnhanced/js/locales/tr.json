@@ -523,6 +523,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "\"Ana karakterin ölümü\" gibi hikaye etiketlerini görmek için işaretini kaldır.",
     "panel_settings_spoiler_guard_override_reviews": "İncelemeler",
     "panel_settings_spoiler_guard_override_reviews_desc": "Dizi ayrıntı sayfalarında TMDB / kullanıcı incelemeleri panelini görmek için işaretini kaldır.",
+    "panel_settings_spoiler_guard_override_advanced": "Kategori bazlı gelişmiş gösterim",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Yönetici tarafından etkinleştirilen kategori bazlı gösterimler yerine her şeyi (bir sonraki bölümün adı dahil) yeniden gizlemek için işareti kaldırın.",
     "panel_settings_spoiler_guard_skip_confirm": "Spoiler korumasını kapatırken benden onay isteme",
     "panel_settings_spoiler_guard_skip_confirm_desc": "Devre dışı bırakma onayı iletişim kutusunu atlar. Bir dizi için spoiler korumasını kapatırken bir tıklama kazandırır.",
     "spoiler_blur_pending_button_on": "Spoiler Koruması (beklemede)",

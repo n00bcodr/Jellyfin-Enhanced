@@ -134,6 +134,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool? ReplaceEpisodeTitles { get; set; }
         public bool? HideCast { get; set; }
         public bool? HideReviews { get; set; }
+        // Advanced per-category reveals (admin default: SpoilerAdvancedMode).
+        // Unlike the per-field opt-outs above, `false` here is the STRICTER
+        // choice: it opts this user out of the category reveals entirely,
+        // restoring the uniform full strip. null = inherit the admin mode;
+        // true is recorded but never enables the mode when the admin has it
+        // off (the admin switch still gates everything).
+        public bool? UseAdvancedCategories { get; set; }
         // Persist the in-dialog "Don't ask again for 15 minutes" snooze as a
         // permanent user choice instead of a session timer.
         public bool SkipDisableConfirm { get; set; }

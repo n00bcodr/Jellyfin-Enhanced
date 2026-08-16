@@ -539,6 +539,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "取消勾選即可查看劇情標籤，例如「主角死亡」。",
     "panel_settings_spoiler_guard_override_reviews": "評論",
     "panel_settings_spoiler_guard_override_reviews_desc": "取消勾選即可在劇集詳情頁查看 TMDB / 用戶評論面板。",
+    "panel_settings_spoiler_guard_override_advanced": "按類別的進階顯示",
+    "panel_settings_spoiler_guard_override_advanced_desc": "取消勾選可重新隱藏全部內容（包括下一集的標題），不使用管理員啟用的按類別顯示。",
     "panel_settings_spoiler_guard_skip_confirm": "關閉 Spoiler Guard 時不要要求我確認",
     "panel_settings_spoiler_guard_skip_confirm_desc": "略過停用確認對話框。為某部劇關閉 Spoiler Guard 時可節省一次點擊。",
     "hidden_content_hide_button": "隱藏",

@@ -86,6 +86,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<SpoilerIdentityTagFilter>();
             serviceCollection.AddSingleton<SpoilerUserResolver>();
             serviceCollection.AddSingleton<SpoilerBlurImageFilter>();
+            // Per-(user, series) next-unwatched boundary for the advanced
+            // category reveals; owns its own bounded cache and evicts on
+            // IUserDataManager.UserDataSaved (O(1) on the event thread).
+            serviceCollection.AddSingleton<SpoilerNextUnwatchedService>();
             // Spoiler Field Strip: removes spoiler-y metadata (Overview, ratings,
             // title, cast, etc.) from BaseItemDto responses for guarded unwatched episodes.
             serviceCollection.AddSingleton<SpoilerFieldStripFilter>();

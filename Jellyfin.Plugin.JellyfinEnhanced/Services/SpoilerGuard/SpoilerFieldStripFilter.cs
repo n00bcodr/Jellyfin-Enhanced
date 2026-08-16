@@ -108,21 +108,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 { ("Playlists",   "GetPlaylistItems"),       true },
             };
 
+        // Per-category reveal mask for the advanced Spoiler Guard mode. Each
+        // flag EXEMPTS one field from a strip the base toggles would apply;
+        // default (all false) is the uniform full strip. A reveal can only
+        // relax an active strip — it never strips anything itself.
+        internal readonly record struct CategoryReveal(bool Title, bool Overview, bool Ratings)
+        {
+            internal static readonly CategoryReveal None = default;
+        }
+
         private readonly SpoilerUserResolver _resolver;
         private readonly ILibraryManager _libraryManager;
         private readonly IUserManager _userManager;
         private readonly IUserDataManager _userDataManager;
+        private readonly SpoilerNextUnwatchedService _nextUnwatched;
 
         public SpoilerFieldStripFilter(
             SpoilerUserResolver resolver,
             ILibraryManager libraryManager,
             IUserManager userManager,
-            IUserDataManager userDataManager)
+            IUserDataManager userDataManager,
+            SpoilerNextUnwatchedService nextUnwatched)
         {
             _resolver = resolver;
             _libraryManager = libraryManager;
             _userManager = userManager;
             _userDataManager = userDataManager;
+            _nextUnwatched = nextUnwatched;
         }
 
         public Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
@@ -653,7 +665,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             MutateImageTagsForCacheBust(item, cfg, played, playbackPositionTicks: 0);
             if (played) return;
 
-            ApplyStripping(item, userState, cfg, userId);
+            ApplyStripping(item, userState, cfg, userId, ResolveCategoryReveal(item, userState, cfg, userId, seriesId.Value));
+        }
+
+        // Advanced-mode category reveal for an unwatched episode of a guarded
+        // series. Gate order: admin master (SpoilerAdvancedMode), then the
+        // user's per-user opt-out (UseAdvancedCategories == false restores the
+        // uniform full strip), then boundary categorization. Every failure
+        // path — no boundary, missing index numbers, specials — yields
+        // CategoryReveal.None, i.e. the full strip.
+        private CategoryReveal ResolveCategoryReveal(
+            BaseItemDto item,
+            UserSpoilerBlur userState,
+            PluginConfiguration cfg,
+            Guid userId,
+            Guid seriesId)
+        {
+            if (!cfg.SpoilerAdvancedMode) return CategoryReveal.None;
+            if (userState.Prefs?.UseAdvancedCategories == false) return CategoryReveal.None;
+            if (item.Type != Jellyfin.Data.Enums.BaseItemKind.Episode) return CategoryReveal.None;
+
+            var boundary = _nextUnwatched.GetBoundary(userId, seriesId);
+            var category = SpoilerNextUnwatchedService.Categorize(
+                boundary, item.Id, item.ParentIndexNumber, item.IndexNumber);
+            return category switch
+            {
+                SpoilerEpisodeCategory.NextEpisode => new CategoryReveal(
+                    Title: !cfg.SpoilerNextEpisodeStripTitle,
+                    Overview: !cfg.SpoilerNextEpisodeStripOverview,
+                    Ratings: !cfg.SpoilerNextEpisodeStripRatings),
+                SpoilerEpisodeCategory.CurrentSeason => new CategoryReveal(
+                    Title: !cfg.SpoilerCurrentSeasonStripTitle,
+                    Overview: !cfg.SpoilerCurrentSeasonStripOverview,
+                    Ratings: !cfg.SpoilerCurrentSeasonStripRatings),
+                _ => CategoryReveal.None,
+            };
         }
 
         // A movie ID is "in spoiler scope" when either (a) it's directly
@@ -971,9 +1017,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // for PlaybackPositionTicks when item.UserData is null
         // (enableUserData=false response shape). The userId arg is used
         // only by that fallback path.
-        private void ApplyStripping(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
+        private void ApplyStripping(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId, CategoryReveal reveal = default)
         {
-            var stripOverview = ShouldStripOverview(item, userState, cfg);
+            // Effective per-item toggles: the base admin+user decision, minus
+            // any advanced-mode category reveal for this specific episode.
+            // reveal is default(None) on every non-episode path and whenever
+            // advanced mode is off, so these reduce to the base toggles.
+            var stripOverview = ShouldStripOverview(item, userState, cfg) && !reveal.Overview;
+            var stripRatings = ShouldStrip(cfg.SpoilerStripRatings, userState.Prefs?.HideRatings) && !reveal.Ratings;
+            var replaceTitle = ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles) && !reveal.Title;
 
             // Overview (episode / item synopsis) — single biggest spoiler vector.
             // Series uses its own policy; every other guarded DTO keeps the
@@ -1081,7 +1133,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // single SpoilerStripRatings toggle. On by default (admins can
             // relax it). Setting to null is the right call — empty/zero would
             // render as "0/10" in some clients.
-            if (ShouldStrip(cfg.SpoilerStripRatings, userState.Prefs?.HideRatings))
+            if (stripRatings)
             {
                 item.CommunityRating = null;
                 item.CriticRating = null;
@@ -1151,7 +1203,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // trade-off is that some clients use Name in navigation tooltips,
             // breadcrumbs, and "now playing" overlays where the synthesized
             // title can look jarring.
-            if (ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles))
+            if (replaceTitle)
             {
                 if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Episode
                     && item.IndexNumber.HasValue
@@ -1184,7 +1236,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // deny-by-default: aggressively null every field that COULD
             // carry the episode title. Future BaseItemDto fields added by
             // Jellyfin must be assumed-leaky until proven otherwise.
-            if (ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles)
+            if (replaceTitle
                 || stripOverview)
             {
                 // Top-level title-bearing string fields.

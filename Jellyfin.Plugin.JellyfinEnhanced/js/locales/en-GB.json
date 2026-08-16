@@ -529,6 +529,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Uncheck to see story tags like \"Death of a main character\".",
     "panel_settings_spoiler_guard_override_reviews": "Reviews",
     "panel_settings_spoiler_guard_override_reviews_desc": "Uncheck to see the TMDB / user reviews panel on series detail pages.",
+    "panel_settings_spoiler_guard_override_advanced": "Advanced per-category reveals",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Uncheck to hide everything again (including the next episode's title) instead of the per-category reveals your admin enabled.",
     "panel_settings_spoiler_guard_skip_confirm": "Don't ask me to confirm when turning Spoiler Guard off",
     "panel_settings_spoiler_guard_skip_confirm_desc": "Skip the disable-confirmation dialog. Saves a click when toggling Spoiler Guard off for a series.",
     "hidden_content_hide_button": "Hide",

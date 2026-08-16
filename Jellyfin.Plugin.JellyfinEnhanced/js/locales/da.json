@@ -523,6 +523,8 @@
     "panel_settings_spoiler_guard_override_tags_desc": "Fjern markeringen for at se historietags som \"En hovedpersons død\".",
     "panel_settings_spoiler_guard_override_reviews": "Anmeldelser",
     "panel_settings_spoiler_guard_override_reviews_desc": "Fjern markeringen for at se panelet med TMDB- / brugeranmeldelser på seriens detaljesider.",
+    "panel_settings_spoiler_guard_override_advanced": "Avancerede visninger pr. kategori",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Fjern markeringen for at skjule alt igen (inklusive titlen på næste afsnit) i stedet for de kategorivisninger, din administrator har aktiveret.",
     "panel_settings_spoiler_guard_skip_confirm": "Spørg mig ikke om bekræftelse, når spoilerbeskyttelse slås fra",
     "panel_settings_spoiler_guard_skip_confirm_desc": "Spring bekræftelsesdialogen ved deaktivering over. Sparer et klik, når du slår spoilerbeskyttelse fra for en serie.",
     "spoiler_blur_pending_button_on": "Spoiler Guard (afventer)",

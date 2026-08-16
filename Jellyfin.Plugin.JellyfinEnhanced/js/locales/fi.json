@@ -583,6 +583,8 @@
     "spoiler_blur_pending_disabled_toast": "Juonipaljastussuoja poistettu käytöstä tälle nimikkeelle.",
     "panel_settings_spoiler_guard_override_ratings": "Arvostelut",
     "panel_settings_spoiler_guard_override_reviews_desc": "Poista valinta nähdäksesi TMDB:n / käyttäjien arvostelupaneelin sarjan tietosivuilla.",
+    "panel_settings_spoiler_guard_override_advanced": "Edistyneet luokkakohtaiset paljastukset",
+    "panel_settings_spoiler_guard_override_advanced_desc": "Poista valinta piilottaaksesi kaiken uudelleen (myös seuraavan jakson nimen) järjestelmänvalvojan käyttöön ottamien luokkakohtaisten paljastusten sijaan.",
     "spoiler_blur_disabled_collection_toast": "Juonipaljastussuoja pois päältä.",
     "panel_settings_spoiler_guard_override_cast_desc": "Poista valinta nähdäksesi koko näyttelijälistan (myös vierailevat tähdet) katsomattomissa jaksoissa.",
     "panel_settings_spoiler_guard_override_ratings_desc": "Poista valinta nähdäksesi yhteisön ja kriitikoiden arviot katsomattomissa jaksoissa.",

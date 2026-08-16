@@ -187,7 +187,23 @@ Every box starts checked (following your admin's policy). Uncheck one and that i
 
 A category only appears in the list when your admin has that strip enabled — there's nothing to opt out of for a category that's already off server-wide.
 
+If your admin has turned on **Advanced per-category reveals** (see below), one extra checkbox shows up here with the same name. That one runs the other way round: unchecking it hides *more*, not less — it puts your account back on the uniform full strip instead of the reveals your admin configured.
+
 The same section has a **"Don't ask me to confirm when turning Spoiler Guard off"** checkbox, which permanently skips the disable-confirmation dialog (unlike the dialog's own "Don't ask again for 15 minutes" snooze, this one never expires).
+
+---
+
+## Advanced per-category reveals (optional, admin-controlled)
+
+Normally every unwatched episode of a protected show is hidden identically. When your admin enables **Advanced per-category reveals**, unwatched episodes split into three groups and the first two can show a little more:
+
+- **Your next episode** — the first episode you haven't watched, in season/episode order (specials don't count). Out of the box this is the only thing that changes: its **real title becomes visible** while the synopsis, ratings, and artwork stay hidden. You get to see *what* you're about to watch, and nothing else.
+- **The rest of that season** — hidden exactly as before unless your admin relaxes titles, descriptions, or ratings for the category.
+- **Everything else** — later seasons, seasons you skipped, and specials keep the full protection. So do images, search results, and card rating overlays, in every category — the reveals only ever affect episode metadata in lists and on detail pages.
+
+The boundary moves as you watch: mark your next episode played and the following one takes over. Anything the plugin can't categorise with certainty stays fully hidden, so a reveal never appears by accident.
+
+Don't want it? Uncheck **Advanced per-category reveals** in your own Spoiler Guard settings and your account goes back to the uniform full strip.
 
 ---
 

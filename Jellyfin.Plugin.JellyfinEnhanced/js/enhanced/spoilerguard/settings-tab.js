@@ -23,8 +23,26 @@
             replaceTitle: JE.pluginConfig.SpoilerReplaceTitle !== false,
             cast: JE.pluginConfig.SpoilerStripCast !== false,
             reviews: JE.pluginConfig.SpoilerStripReviews !== false,
+            // Advanced per-category reveals. Gated on the admin having
+            // explicitly ENABLED advanced mode (not "not disabled" like the
+            // strip categories above) — there is nothing to opt out of while
+            // the uniform strip is in force. The row also runs the opposite
+            // direction of effect from its neighbours: the same checkbox
+            // mechanics (checked => null/inherit, unchecked => false) make
+            // this user's Spoiler Guard STRICTER when unchecked, restoring
+            // the uniform full strip instead of the admin's reveals.
+            advanced: JE.pluginConfig.SpoilerAdvancedMode === true,
         };
         const checked = value => value === false ? '' : 'checked';
+        /**
+         * Renders one per-user Spoiler Guard preference row.
+         * @param {string} id - DOM id; must start with `sbPref` so wireSettings picks it up.
+         * @param {string} pref - SpoilerBlurUserPrefs key written on change (null = inherit, false = opt out).
+         * @param {string} label - Translation key for the row title.
+         * @param {string} description - Translation key for the row subtitle.
+         * @param {boolean} gate - Render only when the admin has this category in play.
+         * @returns {string} Row markup, or an empty string when gated off.
+         */
         const row = (id, pref, label, description, gate) => gate ? `
             <div style="margin-bottom:8px;padding:12px;background:${ctx.presetBoxBackground};border-radius:6px;border-left:3px solid rgba(255,255,255,0.15);">
                 <label style="display:flex;align-items:center;gap:12px;cursor:pointer;">
@@ -48,6 +66,7 @@
                     ${row('sbPrefHideTaglines', 'HideTaglines', 'panel_settings_spoiler_guard_override_taglines', 'panel_settings_spoiler_guard_override_taglines_desc', adminOn.taglines)}
                     ${row('sbPrefHideTags', 'HideTags', 'panel_settings_spoiler_guard_override_tags', 'panel_settings_spoiler_guard_override_tags_desc', adminOn.tags)}
                     ${row('sbPrefHideReviews', 'HideReviews', 'panel_settings_spoiler_guard_override_reviews', 'panel_settings_spoiler_guard_override_reviews_desc', adminOn.reviews)}
+                    ${row('sbPrefUseAdvancedCategories', 'UseAdvancedCategories', 'panel_settings_spoiler_guard_override_advanced', 'panel_settings_spoiler_guard_override_advanced_desc', adminOn.advanced)}
                     <div style="margin-top:12px;padding:12px;background:${ctx.presetBoxBackground};border-radius:6px;border-left:3px solid ${ctx.toggleAccentColor};">
                         <label style="display:flex;align-items:center;gap:12px;cursor:pointer;">
                             <input type="checkbox" id="sbPrefSkipDisableConfirm" ${prefs.SkipDisableConfirm ? 'checked' : ''} data-pref="SkipDisableConfirm" style="width:16px;height:16px;accent-color:${ctx.toggleAccentColor};cursor:pointer;">
