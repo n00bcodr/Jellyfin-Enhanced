@@ -346,6 +346,7 @@
     "awards_nominated": "Nominert",
     "awards_close": "Lukk",
     "awards_for_work": "for {work}",
+    "mdblist_ratings_votes": "{count} stemmer",
     "release_date_tooltip": "Utgivelses-/sendedato (via TMDB)",
     "panel_settings_language": "Språkinnstillinger",
     "panel_settings_language_display": "Visningsspråk",

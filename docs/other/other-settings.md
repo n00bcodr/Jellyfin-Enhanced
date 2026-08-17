@@ -1,6 +1,6 @@
 # Other Settings
 
-Settings for custom branding, icon styles, extras, timeouts, and more — all found under the **Other Settings** tab in the plugin configuration page (**Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Other Settings**).
+Settings for custom branding, icon styles, extras, timeouts, and more - all found under the **Other Settings** tab in the plugin configuration page (**Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Other Settings**).
 
 ---
 
@@ -39,7 +39,7 @@ Choose the icon set used throughout the plugin UI.
 
 | Style | Description |
 |---|---|
-| **Emoji** | Unicode emoji characters — universal, no loading required |
+| **Emoji** | Unicode emoji characters - universal, no loading required |
 | **Lucide Icons** | Modern, clean icon set |
 | **Material UI Icons** | Google Material Design icons |
 
@@ -54,7 +54,7 @@ Adds a live stream counter icon to the Jellyfin header.
 | **Active Streams Widget** | Off | Enables the stream counter in the header |
 | **Show to all users** | Off | When on, non-admin users see a read-only view (no broadcast, no IP addresses) |
 
-See [Other Features — Active Streams Widget](other-features.md#active-streams-widget) for full details.
+See [Other Features - Active Streams Widget](other-features.md#active-streams-widget) for full details.
 
 ---
 
@@ -77,6 +77,33 @@ Adds a Letterboxd external link to movie detail pages.
 |---|---|
 | **Enable Letterboxd Links** | Shows a Letterboxd icon/link on movie pages |
 | **Show as Text** | Displays the link as text instead of an icon |
+
+---
+
+## MDBList Ratings
+
+Shows TMDB/Rotten Tomatoes/IMDb/etc. ratings on item-details pages and can fill Jellyfin's own rating fields. Based on [xroguel1ke](https://github.com/xroguel1ke/jellyfin_ratings)'s original script.
+
+| Setting | Default | Description |
+|---|---|---|
+| **Enable MDBList Ratings** | Off | Master switch for the feature |
+| **MDBList API Key** | *(empty)* | Free key from [mdblist.com/preferences](https://mdblist.com/preferences/#api). Server-side only. Use **Check Status** to verify it (works before saving) and see live quota/reset time |
+| **Show Ratings Row on Item Details** | On | Displays the ratings row on movie/series pages |
+| **Fetch Ratings from MDBList** | Off | Enables the **Fetch Ratings from MDBList** scheduled task (see below) - the only one of the two that calls MDBList's API |
+| **Fetch Task Reserve** | 400 | The fetch task stops once today's live remaining MDBList quota drops to this many requests |
+| **Sync Ratings from MDBList to Jellyfin** | Off | Enables the **Sync Ratings from MDBList to Jellyfin** scheduled task (see below), which writes into Jellyfin's own Community/Critic Rating from whatever the fetch task has already cached |
+| **Overwrite Existing Ratings** | Off | Off: only fill an empty rating, never revisit an item once set. On: every run re-sets every item's rating to MDBList's current cached value |
+| **Ratings Shown** | *(empty = all)* | Checkbox list (with logos) of which sources show and in what order - reorder with the up/down arrows: `tmdb`, `tomatoes` (RT Critic), `popcorn` (RT Audience), `imdb`, `trakt`, `metacritic`, `metacriticuser`, `letterboxd`, `rogerebert`, `myanimelist`, `anilist`, `master`. Each badge links out to that rating's own page when MDBList has enough information to build one |
+| **Show % Symbol** | Off | Appends `%` after each badge's number |
+
+**Scheduled tasks** (Dashboard → Scheduled Tasks, once their respective toggle above is enabled):
+
+| Task | Default trigger | Behavior |
+|---|---|---|
+| Fetch Ratings from MDBList | None (configure your own) | Calls MDBList's API; stops once live remaining quota hits the Fetch Task Reserve. Safe to schedule frequently - already-fresh titles are skipped |
+| Sync Ratings from MDBList to Jellyfin | None (configure your own) | No API calls - purely local, writes from the cache the fetch task already built. Safe to run as often as you like |
+
+See [Other Features - MDBList Ratings](other-features.md#mdblist-ratings) for how the caching/refresh, batching, and quota tracking actually work.
 
 ---
 

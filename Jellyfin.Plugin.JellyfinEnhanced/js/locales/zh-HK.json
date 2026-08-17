@@ -346,6 +346,7 @@
     "awards_nominated": "提名",
     "awards_close": "關閉",
     "awards_for_work": "憑《{work}》",
+    "mdblist_ratings_votes": "{count} 票",
     "release_date_tooltip": "發行/播出日期（來自 TMDB）",
     "panel_settings_language": "語言設定",
     "panel_settings_language_display": "顯示語言",

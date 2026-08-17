@@ -604,6 +604,96 @@
                             </div>
                         </div>
                     </fieldset>
+
+                    <fieldset>
+                        <legend class="sectionTitle"><img class="je-legend-icon-img" data-je-cdn="mdblist-static/favicon.ico" alt="">MDBList Ratings</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer je-main-feature"><label><input id="mdblistRatingsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable MDBList Ratings</span></label></div>
+                            <div class="je-setting-description" data-desc-for="mdblistRatingsEnabled">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">
+                                    <ul style="margin:4px 0 0 20px; padding:0;">
+                                        <li>Shows TMDB, Rotten Tomatoes, IMDb, Trakt and other ratings on item-details pages</li>
+                                        <li>Can fill in Jellyfin's own missing Community/Critic Rating fields</li>
+                                        <li>Requires a free API key from mdblist.com</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="mdblistApiKey">MDBList API Key</label>
+                                <div class="je-api-row">
+                                    <input id="mdblistApiKey" is="emby-input" type="text" autocomplete="off" class="je-api-input"/>
+                                    <span id="mdblistStatusIndicator" class="material-icons"></span>
+                                    <button is="emby-button" type="button" id="checkMdblistStatusBtn" class="emby-button raised button-submit">Check</button>
+                                </div>
+                                <div id="mdblistStatusLine" style="margin: 4px 0 8px; font-size: 0.9em; opacity: 0.85;">&nbsp;</div>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="mdblistApiKey">
+                                <div class="fieldDescription">Your API key from <a class="sectionTitle" href="https://mdblist.com/preferences/#api" target="_blank">mdblist.com</a>.</div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="mdblistRatingsShowOnItemDetails" is="emby-checkbox" type="checkbox"/><span>Show Ratings Row on Item Details</span></label></div>
+                            <div class="je-setting-description" data-desc-for="mdblistRatingsShowOnItemDetails">
+                                <div class="fieldDescription">Displays the MDBList ratings row on item-details pages.</div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="mdblistRatingsFetchEnabled" is="emby-checkbox" type="checkbox"/><span>Fetch Ratings from MDBList</span></label></div>
+                            <div class="je-setting-description" data-desc-for="mdblistRatingsFetchEnabled">
+                                <div class="fieldDescription">Enables the <strong>Fetch Ratings from MDBList</strong> scheduled task (Dashboard → Scheduled Tasks):
+                                    <ul style="margin:4px 0 0 20px; padding:0;">
+                                        <li>Looks up MDBList data for any movie/series whose cached ratings are missing or stale, and saves it. Doesn't touch Jellyfin's own rating fields</li>
+                                        <li>A found title stays cached for 7 days (3 days for a confirmed "no match") before being refetched. Already-fresh titles are skipped on a re-run, so it's safe to schedule this frequently, even daily</li>
+                                        <li>Stops once today's quota drops to the reserve below</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="mdblistFetchReserve">Fetch Task Reserve</label>
+                                <input id="mdblistFetchReserve" is="emby-input" type="number" min="1" max="100000" value="400"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="mdblistFetchReserve">
+                                <div class="fieldDescription">The fetch task stops once today's live remaining quota drops to this many, reserving that much for people browsing the library (an item-details page fetches live if nothing's cached yet).</div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="mdblistRatingsAutoSyncEnabled" is="emby-checkbox" type="checkbox"/><span>Sync Ratings from MDBList to Jellyfin</span></label></div>
+                            <div class="je-setting-description" data-desc-for="mdblistRatingsAutoSyncEnabled">
+                                <div class="fieldDescription">Enables the <strong>Sync Ratings from MDBList to Jellyfin</strong> scheduled task:
+                                    <ul style="margin:4px 0 0 20px; padding:0;">
+                                        <li>Sets Community (TMDB) / Critic (Rotten Tomatoes) Ratings from whatever's already cached (see Fetch above) into Jellyfin's own fields</li>
+                                        <li>Requires the <strong>Fetch Ratings from MDBList</strong> task to be enabled and run first</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="mdblistRatingsOverwriteExisting" is="emby-checkbox" type="checkbox"/><span>Overwrite Existing Jellyfin Ratings</span></label></div>
+                            <div class="je-setting-description" data-desc-for="mdblistRatingsOverwriteExisting">
+                                <div class="fieldDescription">
+                                    <ul style="margin:4px 0 0 20px; padding:0;">
+                                        <li><strong>Off</strong> (default): Only fills an empty rating, never revisits an item once both are set</li>
+                                        <li><strong>On</strong>: Every run re-sets every item's rating to MDBList's current cached value. This is also the only way ratings stay current over time</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <details id="mdblistSourcesAdminDetails" class="je-details-section">
+                                <summary>Configure ratings shown</summary>
+                                <div class="je-details-body">
+                                    <div class="fieldDescription je-field-desc-sm">Pick which ratings appear on the item-details row, and the order they're shown in. Use the <i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_upward</i> / <i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_downward</i> buttons to reorder. All checked by default.</div>
+                                    <div id="mdblistRatingsSourcesAdmin"></div>
+                                </div>
+                            </details>
+
+                            <div class="checkboxContainer"><label><input id="mdblistRatingsShowPercentSymbol" is="emby-checkbox" type="checkbox"/><span>Show % Symbol</span></label></div>
+                            <div class="je-setting-description" data-desc-for="mdblistRatingsShowPercentSymbol">
+                                <div class="fieldDescription">Appends "%" after each rating badge's number.</div>
+                            </div>
+
+                            <div class="fieldDescription" style="margin-top:8px; opacity:0.7; font-size:0.85em;">
+                                Based on <a class="sectionTitle" href="https://github.com/xroguel1ke/jellyfin_ratings" target="_blank">xroguel1ke</a>'s original script.
+                            </div>
+                        </div>
+                    </fieldset>
                 </div>
 
                 <div id="playback" class="jellyfin-tab-content">
@@ -4503,6 +4593,123 @@
             });
         })();
 
+        // MDBList rating sources: key (matches the API's source string), display
+        // label, and logo filename (served via the "mdblist-logos" CDN source,
+        // see CdnAssetService.cs).
+        var MDBLIST_SOURCES = [
+            { key: 'tmdb', label: 'TMDB', logo: 'tmdb.png' },
+            { key: 'tomatoes', label: 'RT Critic', logo: 'rottentomatoes.png' },
+            { key: 'popcorn', label: 'RT Audience', logo: 'rottentomatoes_audience.png' },
+            { key: 'imdb', label: 'IMDb', logo: 'imdb.png' },
+            { key: 'trakt', label: 'Trakt', logo: 'trakt.png' },
+            { key: 'metacritic', label: 'Metascore', logo: 'metacritic.png' },
+            { key: 'metacriticuser', label: 'Metacritic User', logo: 'metacritic_audience.png' },
+            { key: 'letterboxd', label: 'Letterboxd', logo: 'letterboxd.png' },
+            { key: 'rogerebert', label: 'Roger Ebert', logo: 'rogerebert.png' },
+            { key: 'myanimelist', label: 'MAL', logo: 'myanimelist.png' },
+            { key: 'anilist', label: 'AniList', logo: 'anilist.png' },
+            { key: 'master', label: 'Master', logo: 'master.png' },
+        ];
+
+        // Builds the checkbox+logo+reorder row list from the saved
+        // MdblistRatingsSources comma string; empty means every source is
+        // checked, in MDBLIST_SOURCES' built-in order. Rebuilt fresh on every
+        // load (unlike the quality-category rows, which reorder fixed static
+        // HTML) since the row set itself doesn't otherwise exist in the DOM.
+        function renderMdblistSourcesAdmin(config) {
+            var container = document.getElementById('mdblistRatingsSourcesAdmin');
+            if (!container) return;
+
+            var configured = (config.MdblistRatingsSources || '').split(',')
+                .map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
+            var knownKeys = MDBLIST_SOURCES.map(function (s) { return s.key; });
+            var order = configured.length
+                ? configured.filter(function (k) { return knownKeys.indexOf(k) !== -1; })
+                : knownKeys.slice();
+            // Any known source the admin's saved list doesn't mention (e.g. added
+            // to MDBLIST_SOURCES after they last saved) still shows, unchecked if
+            // the admin has an explicit (non-empty) list, checked otherwise.
+            knownKeys.forEach(function (k) { if (order.indexOf(k) === -1) order.push(k); });
+
+            container.innerHTML = '';
+            order.forEach(function (key) {
+                var meta = MDBLIST_SOURCES.filter(function (s) { return s.key === key; })[0];
+                if (!meta) return;
+                var checked = configured.length === 0 || configured.indexOf(key) !== -1;
+
+                var row = document.createElement('div');
+                row.className = 'je-quality-cat-admin-row';
+                row.dataset.sourceKey = key;
+
+                var checkboxContainer = document.createElement('div');
+                checkboxContainer.className = 'checkboxContainer';
+                var label = document.createElement('label');
+                var checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'je-mdblist-source-toggle';
+                checkbox.checked = checked;
+                var img = document.createElement('img');
+                img.src = jeCdnUrl('mdblist-logos/' + meta.logo);
+                img.alt = '';
+                img.style.cssText = 'height:16px;vertical-align:middle;margin:0 8px;';
+                var span = document.createElement('span');
+                span.textContent = meta.label;
+                label.appendChild(checkbox);
+                label.appendChild(img);
+                label.appendChild(span);
+                checkboxContainer.appendChild(label);
+                row.appendChild(checkboxContainer);
+
+                var upBtn = document.createElement('button');
+                upBtn.type = 'button';
+                upBtn.className = 'raised raised-mini je-cat-up';
+                upBtn.setAttribute('aria-label', 'Move up');
+                upBtn.innerHTML = '<i class="material-icons" aria-hidden="true">arrow_upward</i>';
+                var downBtn = document.createElement('button');
+                downBtn.type = 'button';
+                downBtn.className = 'raised raised-mini je-cat-down';
+                downBtn.setAttribute('aria-label', 'Move down');
+                downBtn.innerHTML = '<i class="material-icons" aria-hidden="true">arrow_downward</i>';
+                row.appendChild(upBtn);
+                row.appendChild(downBtn);
+
+                container.appendChild(row);
+            });
+            refreshQualityCatAdminArrows(container);
+        }
+
+        // Reads the current row order + checked state back into the
+        // comma-separated MdblistRatingsSources string at save time.
+        function computeMdblistRatingsSources() {
+            var container = document.getElementById('mdblistRatingsSourcesAdmin');
+            if (!container) return '';
+            var rows = Array.from(container.querySelectorAll('.je-quality-cat-admin-row'));
+            return rows.filter(function (row) {
+                var cb = row.querySelector('.je-mdblist-source-toggle');
+                return cb && cb.checked;
+            }).map(function (row) { return row.dataset.sourceKey; }).join(',');
+        }
+
+        // Wire up/down arrow clicks for the MDBList sources list (delegated,
+        // mirrors the quality-category handler above -- reuses the same
+        // refreshQualityCatAdminArrows for the disabled-at-the-ends styling).
+        (function () {
+            document.addEventListener('click', function (e) {
+                var btn = e.target.closest && e.target.closest('#mdblistRatingsSourcesAdmin .je-cat-up, #mdblistRatingsSourcesAdmin .je-cat-down');
+                if (!btn || btn.disabled) return;
+                e.preventDefault();
+                var row = btn.closest('.je-quality-cat-admin-row');
+                if (!row) return;
+                var parent = row.parentNode;
+                if (!parent) return;
+                var isUp = btn.classList.contains('je-cat-up');
+                var sibling = isUp ? row.previousElementSibling : row.nextElementSibling;
+                if (!sibling || !sibling.classList.contains('je-quality-cat-admin-row')) return;
+                if (isUp) { parent.insertBefore(row, sibling); } else { parent.insertBefore(sibling, row); }
+                refreshQualityCatAdminArrows(parent);
+            });
+        })();
+
         // Fallback used only if the CDN regions.txt fetch fails - mirrors js/elsewhere/elsewhere.js's fallback list.
         var JE_FALLBACK_REGIONS = {
             'US': 'United States', 'GB': 'United Kingdom', 'IN': 'India', 'CA': 'Canada',
@@ -4679,6 +4886,16 @@
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#showAwards').checked = !!config.ShowAwards;
+                document.querySelector('#mdblistRatingsEnabled').checked = !!config.MdblistRatingsEnabled;
+                document.querySelector('#mdblistApiKey').value = config.MdblistApiKey || '';
+                document.querySelector('#mdblistRatingsShowOnItemDetails').checked = config.MdblistRatingsShowOnItemDetails !== false;
+                document.querySelector('#mdblistRatingsFetchEnabled').checked = !!config.MdblistRatingsFetchEnabled;
+                document.querySelector('#mdblistFetchReserve').value = config.MdblistFetchReserve || 400;
+                document.querySelector('#mdblistRatingsAutoSyncEnabled').checked = !!config.MdblistRatingsAutoSyncEnabled;
+                document.querySelector('#mdblistRatingsOverwriteExisting').checked = !!config.MdblistRatingsOverwriteExisting;
+                if (typeof renderMdblistSourcesAdmin === 'function') renderMdblistSourcesAdmin(config);
+                document.querySelector('#mdblistRatingsShowPercentSymbol').checked = !!config.MdblistRatingsShowPercentSymbol;
+                if (config.MdblistApiKey && typeof checkMdblistStatus === 'function') checkMdblistStatus();
                 document.querySelector('#showUserReviews').checked = !!config.ShowUserReviews;
                 document.querySelector('#reviewsExpandedByDefault').checked = config.ReviewsExpandedByDefault;
                 document.querySelector('#showReleaseDate').checked = !!config.ShowReleaseDates;
@@ -5052,6 +5269,15 @@
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.ShowAwards = document.querySelector('#showAwards').checked;
+            config.MdblistRatingsEnabled = document.querySelector('#mdblistRatingsEnabled').checked;
+            config.MdblistApiKey = document.querySelector('#mdblistApiKey').value.trim();
+            config.MdblistRatingsShowOnItemDetails = document.querySelector('#mdblistRatingsShowOnItemDetails').checked;
+            config.MdblistRatingsFetchEnabled = document.querySelector('#mdblistRatingsFetchEnabled').checked;
+            config.MdblistFetchReserve = parseInt(document.querySelector('#mdblistFetchReserve').value, 10) || 400;
+            config.MdblistRatingsAutoSyncEnabled = document.querySelector('#mdblistRatingsAutoSyncEnabled').checked;
+            config.MdblistRatingsOverwriteExisting = document.querySelector('#mdblistRatingsOverwriteExisting').checked;
+            config.MdblistRatingsSources = (typeof computeMdblistRatingsSources === 'function') ? computeMdblistRatingsSources() : '';
+            config.MdblistRatingsShowPercentSymbol = document.querySelector('#mdblistRatingsShowPercentSymbol').checked;
             config.ShowUserReviews = document.querySelector('#showUserReviews').checked;
             config.ReviewsExpandedByDefault = document.querySelector('#reviewsExpandedByDefault').checked;
             config.ShowReleaseDates = document.querySelector('#showReleaseDate').checked;
@@ -6374,6 +6600,7 @@
 
         var PARENT_DEPS = [
             { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
+            { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'showUserRatingDash', 'showUserRatingOnPosters'] },
             { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows'] },
@@ -8842,6 +9069,75 @@
         document.querySelectorAll('.testTmdbBtn').forEach(btn => {
             btn.addEventListener('click', testTmdbConnection);
         });
+
+        // Formats a Date as "DD-MMM-YYYY, HH:MM AM/PM" for the MDBList quota
+        // reset display -- explicit instead of toLocaleString() so it doesn't
+        // vary by the browser's locale.
+        function formatResetDate(d) {
+            var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            var day = String(d.getDate()).padStart(2, '0');
+            var month = MONTHS[d.getMonth()];
+            var year = d.getFullYear();
+            var hours24 = d.getHours();
+            var ampm = hours24 >= 12 ? 'PM' : 'AM';
+            var hours12 = hours24 % 12 || 12;
+            var minutes = String(d.getMinutes()).padStart(2, '0');
+            return day + '-' + month + '-' + year + ', ' + hours12 + ':' + minutes + ' ' + ampm;
+        }
+
+        /**
+         * Fetches and displays live MDBList account/quota status. Tests
+         * whatever's currently typed in the API key field (even if unsaved),
+         * mirroring testTmdbConnection -- lets the admin verify a key before
+         * hitting Save. Falls back to the saved key if the field is empty.
+         */
+        async function checkMdblistStatus() {
+            const statusLine = document.getElementById('mdblistStatusLine');
+            const statusIndicator = document.getElementById('mdblistStatusIndicator');
+            const apiKey = (document.querySelector('#mdblistApiKey')?.value || '').trim();
+
+            if (statusIndicator) {
+                statusIndicator.textContent = 'sync';
+                statusIndicator.classList.add('status-check');
+                statusIndicator.style.color = 'var(--primary-accent-color, #00a4dc)';
+            }
+            if (statusLine) statusLine.textContent = 'Checking...';
+
+            try {
+                const url = ApiClient.getUrl('/JellyfinEnhanced/mdblist-ratings/account-status', apiKey ? { apiKey: apiKey } : {});
+                const status = await ApiClient.ajax({ type: 'GET', url: url, dataType: 'json' });
+
+                if (statusIndicator) {
+                    statusIndicator.textContent = 'check_circle';
+                    statusIndicator.style.color = '#52b54b';
+                }
+                if (statusLine) {
+                    var remaining = (status && status.RateLimitRemaining != null) ? status.RateLimitRemaining : '?';
+                    var limit = (status && status.RateLimit != null) ? status.RateLimit : '?';
+                    var plan = (status && status.Plan) ? status.Plan : 'Free';
+                    var resetSeconds = (status && status.RateLimitResetUnixSeconds) ? status.RateLimitResetUnixSeconds : 0;
+                    var resetDate = new Date(resetSeconds * 1000);
+                    var resetText = (isFinite(resetDate.getTime()) && resetSeconds > 0) ? formatResetDate(resetDate) : 'unknown';
+                    statusLine.textContent = remaining + ' / ' + limit + ' requests remaining today (' + plan + ' plan) · resets ' + resetText;
+                }
+            } catch (e) {
+                if (statusIndicator) {
+                    statusIndicator.textContent = 'error';
+                    statusIndicator.style.color = '#dc3545';
+                }
+                if (statusLine) {
+                    statusLine.textContent = (e && e.status === 503)
+                        ? 'Enter an API key to check status.'
+                        : (e && e.status === 502)
+                            ? 'Could not reach MDBList - key may be invalid.'
+                            : 'Could not check MDBList account status.';
+                }
+            } finally {
+                if (statusIndicator) statusIndicator.classList.remove('status-check');
+            }
+        }
+
+        document.getElementById('checkMdblistStatusBtn')?.addEventListener('click', checkMdblistStatus);
 
         // Copy button handler for HTML code snippets
         document.querySelectorAll('.je-copy-html-btn').forEach(function(btn) {

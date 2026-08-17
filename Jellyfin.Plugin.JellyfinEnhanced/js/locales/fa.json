@@ -579,6 +579,7 @@
     "recommendations_networks": "Networks",
     "jellyseerr_modal_toast_select_movie": "{{icon:warning}} Please select at least one movie",
     "awards_for_work": "for {work}",
+    "mdblist_ratings_votes": "{count} رأی",
     "panel_settings_ui_audio_languages": "Show Audio Languages",
     "bookmark_item_id": "Item ID",
     "panel_settings_ui_people_tags_desc": "Display age, birthplace, and deceased status for cast members.",

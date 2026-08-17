@@ -652,6 +652,7 @@
     "awards_nominated": "Genomineerd",
     "awards_close": "Sluiten",
     "awards_for_work": "voor {work}",
+    "mdblist_ratings_votes": "{count} stemmen",
     "release_date_tooltip": "Release-/uitzenddatum (via TMDB)",
     "panel_settings_subtitles_position_note": "Vereist dat de Jellyfin-ondertitelstijl is ingesteld op <b>Aangepast</b> in de ondertitelinstellingen",
     "track_off": "Uit",

@@ -346,6 +346,7 @@
     "awards_nominated": "Nominat",
     "awards_close": "Tanca",
     "awards_for_work": "per a {work}",
+    "mdblist_ratings_votes": "{count} vots",
     "release_date_tooltip": "Data de llançament/emissió (via TMDB)",
     "panel_settings_language": "Configuració d'idioma",
     "panel_settings_language_display": "Idioma de visualització",

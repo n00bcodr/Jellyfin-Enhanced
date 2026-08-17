@@ -346,6 +346,7 @@
     "awards_nominated": "Nominerad",
     "awards_close": "Stäng",
     "awards_for_work": "för {work}",
+    "mdblist_ratings_votes": "{count} röster",
     "release_date_tooltip": "Releasedatum/sändningsdatum (via TMDB)",
     "panel_settings_language": "Språkinställningar",
     "panel_settings_language_display": "Visningsspråk",

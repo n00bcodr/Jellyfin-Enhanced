@@ -346,6 +346,7 @@
     "awards_nominated": "Nominováno",
     "awards_close": "Zavřít",
     "awards_for_work": "za {work}",
+    "mdblist_ratings_votes": "{count} hlasů",
     "release_date_tooltip": "Datum vydání/vysílání (přes TMDB)",
     "panel_settings_language": "Nastavení jazyka",
     "panel_settings_language_display": "Jazyk zobrazení",

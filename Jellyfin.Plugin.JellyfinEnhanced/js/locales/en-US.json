@@ -653,6 +653,7 @@
     "awards_nominated": "Nominated",
     "awards_close": "Close",
     "awards_for_work": "for {work}",
+    "mdblist_ratings_votes": "{count} votes",
     "release_date_tooltip": "Release/Air Date (via TMDB)",
     "track_off": "Off",
     "aspect_ratio_auto": "Auto",

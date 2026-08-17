@@ -469,6 +469,7 @@
     "awards_nominated": "Номінація",
     "awards_close": "Закрити",
     "awards_for_work": "за {work}",
+    "mdblist_ratings_votes": "{count} голосів",
     "panel_settings_auto_resume_desc": "Відновити при поверненні на вкладку",
     "panel_settings_spoiler_guard_override_titles_desc": "Зніміть позначку, щоб бачити справжні назви серій замість \"Сезон X, серія Y\".",
     "jellyseerr_toast_filter_on": "{{icon:jellyfish}} Показано тільки результати з Seerr",

@@ -652,6 +652,7 @@
     "awards_nominated": "Nomineret",
     "awards_close": "Luk",
     "awards_for_work": "for {work}",
+    "mdblist_ratings_votes": "{count} stemmer",
     "release_date_tooltip": "Udgivelses-/udsendelsesdato (via TMDB)",
     "panel_settings_subtitles_position_note": "Kræver Jellyfin undertekststil indstillet til <b>Brugerdefinerede</b> i undertekster",
     "track_off": "Fra",

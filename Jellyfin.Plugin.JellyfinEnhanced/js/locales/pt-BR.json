@@ -346,6 +346,7 @@
     "awards_nominated": "Indicado",
     "awards_close": "Fechar",
     "awards_for_work": "por {work}",
+    "mdblist_ratings_votes": "{count} votos",
     "release_date_tooltip": "Data de lançamento/exibição (via TMDB)",
     "panel_settings_language": "Configurações de idioma",
     "panel_settings_language_display": "Idioma de exibição",

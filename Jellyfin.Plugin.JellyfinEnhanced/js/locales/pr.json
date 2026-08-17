@@ -346,6 +346,7 @@
     "awards_nominated": "Nominated",
     "awards_close": "Batten Down",
     "awards_for_work": "fer {work}",
+    "mdblist_ratings_votes": "{count} Crew Votes",
     "release_date_tooltip": "Sail Date, arr! (via TMDB)",
     "panel_settings_language": "Tongue Settings",
     "panel_settings_language_display": "Display Tongue",

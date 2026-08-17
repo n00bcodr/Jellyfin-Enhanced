@@ -346,6 +346,7 @@
     "awards_nominated": "Номинирана",
     "awards_close": "Затвори",
     "awards_for_work": "за {work}",
+    "mdblist_ratings_votes": "{count} гласа",
     "release_date_tooltip": "Дата на издаване/излъчване (чрез TMDB)",
     "panel_settings_language": "Езикови настройки",
     "panel_settings_language_display": "Език на интерфейса",

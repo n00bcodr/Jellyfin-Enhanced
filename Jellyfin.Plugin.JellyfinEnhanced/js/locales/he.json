@@ -476,6 +476,7 @@
     "awards_nominated": "מועמד",
     "awards_close": "סגור",
     "awards_for_work": "עבור {work}",
+    "mdblist_ratings_votes": "{count} קולות",
     "release_date_tooltip": "תאריך יציאה/שידור (דרך TMDB)",
     "panel_settings_auto_resume_desc": "המשך מהנקודה שבה הפסקת עם החזרה לכרטיסייה",
     "jellyseerr_toast_filter_on": "{{icon:jellyfish}} מציג תוצאות מ-Seerr בלבד",

@@ -168,6 +168,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     ["toronto-critics"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Toronto%20Film%20Critics%20Association%20logo.svg",
                     ["cannes"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Palme%20d%27Or%20gold%20silhouette.svg",
                 }),
+            // Rating-source logos (TMDB, Rotten Tomatoes, IMDb, etc.) for the MDBList
+            // Ratings feature. Vendored into this repo's own images/mdblist-logos/
+            // (sourced from xroguel1ke/jellyfin_ratings, the script this feature is
+            // based on) rather than proxied from their repo directly -- these are
+            // third-party brand marks neither repo owns; identifying a rating's
+            // source with its brand logo is the same nominative-use pattern as the
+            // selfhst/dashboard-icons service logos and the Wikimedia award-logos
+            // above. rottentomatoes_fresh.png/rottentomatoes_rotten.png are the one
+            // exception -- converted from jellyfin/jellyfin-web's own
+            // src/assets/img/fresh.svg and rotten.svg (GPL-2.0), the same glyphs
+            // Jellyfin's own web client uses for critic Fresh/Rotten status.
+            ["mdblist-logos"] = new("https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/images/mdblist-logos", Types("image/png")),
+            // MDBList's own favicon, for the config page's "MDBList Ratings" fieldset
+            // legend -- single fixed asset, so locked down the same way as "ibb" above.
+            ["mdblist-static"] = new("https://mdblist.com/static", Types("image/x-icon", "image/vnd.microsoft.icon"),
+                FixedPaths: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["favicon.ico"] = "https://mdblist.com/static/favicon.ico"
+                }),
         };
 
         private static HashSet<string> Types(params string[] t) => new(t, StringComparer.OrdinalIgnoreCase);
@@ -223,6 +242,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ("award-logos", "kids-choice"),
             ("award-logos", "toronto-critics"),
             ("award-logos", "cannes"),
+            ("mdblist-logos", "master.png"),
+            ("mdblist-logos", "imdb.png"),
+            ("mdblist-logos", "tmdb.png"),
+            ("mdblist-logos", "trakt.png"),
+            ("mdblist-logos", "letterboxd.png"),
+            ("mdblist-logos", "anilist.png"),
+            ("mdblist-logos", "myanimelist.png"),
+            ("mdblist-logos", "rogerebert.png"),
+            ("mdblist-logos", "rottentomatoes.png"),
+            ("mdblist-logos", "rottentomatoes_audience.png"),
+            ("mdblist-logos", "rottentomatoes_fresh.png"),
+            ("mdblist-logos", "rottentomatoes_rotten.png"),
+            ("mdblist-logos", "metacritic.png"),
+            ("mdblist-logos", "metacritic_audience.png"),
+            ("mdblist-static", "favicon.ico"),
         };
 
         /// <summary>True when <paramref name="source"/> is a registered upstream.</summary>

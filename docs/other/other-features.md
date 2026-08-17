@@ -9,6 +9,7 @@ Additional features including custom branding, extras, icons, and more.
 - [Extras](#extras)
 - [Timeout Settings](#timeout-settings)
 - [Letterboxd Integration](#letterboxd-integration)
+- [MDBList Ratings](#mdblist-ratings)
 - [Hidden Content](#hidden-content)
 - [Splash Screen](#splash-screen)
 - [Internationalization](#internationalization)
@@ -337,6 +338,61 @@ Add Letterboxd external links to movie item detail pages.
 - Automatic TMDB ID to Letterboxd mapping
 - Direct links to movie pages
 - Icon or text display option
+
+---
+
+## MDBList Ratings
+
+Shows TMDB, Rotten Tomatoes, IMDb, Trakt, Metacritic, Letterboxd and other ratings on item-details pages, sourced from [MDBList](https://mdblist.com). Can also fill in Jellyfin's own Community/Critic Rating fields when they're empty - useful since Jellyfin's built-in providers (TMDB, OMDb) don't always carry a Rotten Tomatoes score.
+
+Based on [xroguel1ke](https://github.com/xroguel1ke/jellyfin_ratings)'s original script.
+
+### Setup
+
+1. Get a free API key from [mdblist.com/preferences](https://mdblist.com/preferences/#api) (no payment required; free tier is 1000 requests/day)
+2. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+3. Navigate to the **Other Settings** tab
+4. Check **"Enable MDBList Ratings"**
+5. Paste your API key, click **"Check Status"** to verify it (works before saving)
+6. Click **Save**
+
+The API key is used server-side only - the plugin proxies every request, so the key never reaches a browser.
+
+### The ratings row
+
+With **"Show Ratings Row on Item Details"** on (the default), a row of rating badges appears on movie and series detail pages, right in the top metadata row next to the official rating/runtime - same placement as the original script. Each badge links out to that rating's own page (IMDb, Rotten Tomatoes, Trakt, etc.) when MDBList has enough information to build one; a few sources (like MDBList's own aggregate, "Master") have nowhere to link to and just render as plain text.
+
+Which sources show and in what order is configurable, with logos matching each source - see [Other Settings - MDBList Ratings](other-settings.md#mdblist-ratings). There's no color-coding (the original script's red/yellow/green bands were dropped as unnecessary complexity) - just an optional **"Show % Symbol"** to append `%` after each number.
+
+The Rotten Tomatoes Critic badge is the one exception: instead of a static logo, it switches between the red tomato and green splat depending on MDBList's own Fresh/Rotten status for that title - the same glyphs Jellyfin's own web client uses elsewhere.
+
+### Filling in Jellyfin's own ratings
+
+This is a separate, optional step from the display row above, and it's deliberately split into two independent scheduled tasks under Jellyfin's own **Dashboard → Scheduled Tasks** - one that talks to MDBList, one that doesn't:
+
+- **Fetch Ratings from MDBList** (enable via **"Fetch Ratings from MDBList"**) - the only one of the two that makes MDBList API calls. Looks up any movie/series whose cached MDBList data is missing or stale and saves it; doesn't touch Jellyfin's own rating fields at all. Stops for the day once the account's live remaining quota drops to the **Fetch Task Reserve**, so it doesn't crowd out people browsing the library. Because already-fresh titles are skipped on a re-run (see caching below), this is safe to schedule frequently - even daily - without wasting quota once the library's cache is warm.
+- **Sync Ratings from MDBList to Jellyfin** (enable via **"Sync Ratings from MDBList to Jellyfin"**) - reads whatever the Fetch task has already cached and writes Community (TMDB) / Critic (Rotten Tomatoes) Ratings into Jellyfin's own fields. Makes **no MDBList API calls of its own**, so there's no quota concern and no reason not to run it as often as you like - it's cheap, local computation only. A title the Fetch task hasn't gotten to yet is simply skipped, not treated as an error.
+
+Both tasks only ever **fill** an empty Community/Critic Rating by default - an item that already has a rating (from TMDB, OMDb, or a manual edit) is left alone. Turn on **"Overwrite Existing Ratings"** to instead have every item's rating always match MDBList's current cached value; this is also the only way ratings actually stay current over time, since with it off, an item is never revisited once its rating is set once.
+
+### Batching
+
+MDBList's API has two shapes: one call returns **every** rating source for **one** title (what the ratings row uses when you view an item, and what the Fetch task uses too), or one call returns every rating source for **many** titles of the same media type at once (`POST /{provider}/{type}/`). The Fetch task uses the batch shape - instead of one API call per item, it requests up to 150 ids at a time, getting every source, vote count, and per-source link back in that single call.
+
+150 was found empirically, not from MDBList's docs (this endpoint doesn't publish a per-call limit): live testing found 177 ids in one call matched cleanly, but 244 ids came back with exactly 200 matched and 44 "unmatched" - a suspiciously round number that turned out to be a silent response cap rather than 44 titles genuinely missing data (a smaller follow-up call for those same 44 matched all of them). 150 keeps a safety margin under that observed ~200-item ceiling.
+
+Because the Fetch task's batch call fetches every source in one shot, the ratings-row display cache is always fully warmed alongside the Jellyfin-field data - no separate warming step, and nothing is ever left incomplete for a later page view to backfill.
+
+### How refreshing works
+
+Two different caches are involved, refreshed independently:
+
+- **MDBList lookups** (the raw data fetched from MDBList's API, stored in `mdblist-ratings.json`) are cached per-title for **7 days** once found, or **3 days** if MDBList has no match, or **1 hour** if the request itself failed (network error, rate limit). A lookup happens when something asks for that title again - viewing its detail page (fetches live if nothing's cached yet), or the Fetch task considering it as stale.
+- **Jellyfin's own Community/Critic Rating fields** are written by the Sync task from whatever's currently cached. With Overwrite off, a field is written once and never revisited; with Overwrite on, it's re-set on every Sync task run to whatever the (possibly still-cached) MDBList lookup currently says - so it follows the 7-day MDBList cache, not the Sync task's own run frequency.
+
+### Account quota
+
+The plugin reads your account's actual remaining quota live from MDBList (`GET /user`) rather than guessing - this call doesn't itself count against the limit, so it's checked freely (e.g. every time the config page loads, or every few minutes internally). There's nothing to manually configure for the daily limit itself; it's always read from your real account, so it stays correct if you upgrade your MDBList plan.
 
 ---
 

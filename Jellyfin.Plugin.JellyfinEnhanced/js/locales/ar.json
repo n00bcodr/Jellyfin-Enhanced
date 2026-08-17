@@ -346,6 +346,7 @@
     "awards_nominated": "مرشح",
     "awards_close": "إغلاق",
     "awards_for_work": "من أجل {work}",
+    "mdblist_ratings_votes": "{count} صوت",
     "release_date_tooltip": "تاريخ الإصدار/العرض (عبر TMDB)",
     "panel_settings_language": "إعدادات اللغة",
     "panel_settings_language_display": "لغة العرض",
