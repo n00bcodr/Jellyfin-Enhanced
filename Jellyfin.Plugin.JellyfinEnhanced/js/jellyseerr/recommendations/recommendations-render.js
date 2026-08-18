@@ -42,7 +42,7 @@
       // and 404s against jellyfin-web's React router. Same "#" placeholder
       // pattern the Seerr UI already uses for its own JS-only-handled card links.
       headingLink.href = '#';
-      headingLink.className = 'more button-flat button-flat-mini sectionTitleTextButton emby-button padded-left padded-right';
+      headingLink.className = 'more button-flat button-flat-mini sectionTitleTextButton emby-button je-pad-left je-pad-right';
 
       const heading = document.createElement('h2');
       heading.className = 'sectionTitle sectionTitle-cards';
@@ -62,7 +62,7 @@
       section.appendChild(headingLink);
     } else {
       const heading = document.createElement('h2');
-      heading.className = 'sectionTitle sectionTitle-cards focuscontainer-x padded-left padded-right';
+      heading.className = 'sectionTitle sectionTitle-cards focuscontainer-x je-pad-left je-pad-right';
       heading.textContent = title;
       section.appendChild(heading);
     }
@@ -75,7 +75,7 @@
 
     const itemsContainer = document.createElement('div');
     itemsContainer.setAttribute('is', 'emby-itemscontainer');
-    itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider';
+    itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider je-pad-left je-pad-right';
 
     itemsContainer.appendChild(JE.discoveryFilter.createCardsFragment(results, { cardClass: 'overflowPortraitCard' }));
 
@@ -100,7 +100,7 @@
     section.className = 'verticalSection emby-scroller-container je-recommendations-section';
 
     const heading = document.createElement('h2');
-    heading.className = 'sectionTitle sectionTitle-cards focuscontainer-x padded-left padded-right';
+    heading.className = 'sectionTitle sectionTitle-cards focuscontainer-x je-pad-left je-pad-right';
     heading.textContent = title;
     section.appendChild(heading);
 
@@ -112,7 +112,7 @@
 
     const itemsContainer = document.createElement('div');
     itemsContainer.setAttribute('is', 'emby-itemscontainer');
-    itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider';
+    itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider je-pad-left je-pad-right';
 
     items.forEach(item => {
       const tile = document.createElement('div');
@@ -209,7 +209,7 @@
     section.className = 'verticalSection emby-scroller-container je-recommendations-section';
 
     const heading = document.createElement('h2');
-    heading.className = 'sectionTitle sectionTitle-cards focuscontainer-x padded-left padded-right';
+    heading.className = 'sectionTitle sectionTitle-cards focuscontainer-x je-pad-left je-pad-right';
     heading.textContent = title;
     section.appendChild(heading);
 
@@ -221,7 +221,7 @@
 
     const itemsContainer = document.createElement('div');
     itemsContainer.setAttribute('is', 'emby-itemscontainer');
-    itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider';
+    itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider je-pad-left je-pad-right';
 
     // Avoid picking the same backdrop for two tiles in this row.
     const usedBackdrops = new Set();
@@ -282,14 +282,13 @@
     container.textContent = '';
 
     const heading = document.createElement('h1');
-    heading.className = 'je-recommendations-title';
-    heading.style.cssText = 'padding: 0 1.5em; margin-bottom: 0.5em;';
+    heading.className = 'je-recommendations-title je-pad-left je-pad-right';
+    heading.style.cssText = 'margin-bottom: 0.5em;';
     heading.textContent = JE.t('recommendations_title');
     container.appendChild(heading);
 
     const loading = document.createElement('div');
-    loading.className = 'je-recommendations-loading';
-    loading.style.cssText = 'padding: 0 1.5em;';
+    loading.className = 'je-recommendations-loading je-pad-left je-pad-right';
     loading.textContent = JE.t('recommendations_loading');
     container.appendChild(loading);
 
@@ -316,8 +315,7 @@
     const nonEmptyRows = rows.filter(entry => entry.results.length > 0);
     if (nonEmptyRows.length === 0) {
       const empty = document.createElement('div');
-      empty.className = 'je-recommendations-empty';
-      empty.style.cssText = 'padding: 0 1.5em;';
+      empty.className = 'je-recommendations-empty je-pad-left je-pad-right';
       empty.textContent = JE.t('recommendations_empty');
       container.appendChild(empty);
       return;

@@ -8,6 +8,18 @@
     const style = document.createElement('style');
     style.id = 'je-recommendations-tile-styles';
     style.textContent = `
+      [dir="ltr"] .je-pad-left {
+        padding-left: max(3.3vw, env(safe-area-inset-left)) !important;
+      }
+      [dir="rtl"] .je-pad-left {
+        padding-right: max(3.3vw, env(safe-area-inset-right)) !important;
+      }
+      [dir="ltr"] .je-pad-right {
+        padding-right: max(3.3vw, env(safe-area-inset-right)) !important;
+      }
+      [dir="rtl"] .je-pad-right {
+        padding-left: max(3.3vw, env(safe-area-inset-left)) !important;
+      }
       .je-tile-image {
         background: #fff;
         display: flex;

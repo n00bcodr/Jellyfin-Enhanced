@@ -61,7 +61,7 @@
                 <div id="je-recommendations-category-sort"></div>
               </div>
             </div>
-            <div id="je-recommendations-category-container" is="emby-itemscontainer" class="itemsContainer padded-left padded-right vertical-wrap"></div>
+            <div id="je-recommendations-category-container" is="emby-itemscontainer" class="itemsContainer je-pad-left je-pad-right vertical-wrap"></div>
           </div>
         </div>
       `;
