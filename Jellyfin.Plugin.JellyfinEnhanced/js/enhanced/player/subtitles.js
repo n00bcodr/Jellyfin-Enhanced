@@ -47,10 +47,8 @@
 
     /**
      * Applies subtitle position to the .videoSubtitles container element.
-     * xPct and yPct are percentages (0-100) representing the center anchor point
-     * of the subtitle text within the video area.
-     * Using top+transform(translate -50%,-50%) means the anchor is always the
-     * center of the text, so font size changes don't shift the visual position.
+     * xPct is the horizontal center; yPct is the bottom edge, anchored via
+     * `bottom` so extra lines grow upward instead of shifting the bottom margin.
      * When disableCustomSubtitleStyles is true, removes JE position overrides entirely.
      */
     function applySubtitlePosition() {
@@ -69,18 +67,20 @@
                 container.style.removeProperty('transform');
                 container.style.removeProperty('width');
                 container.style.removeProperty('text-align');
+                container.style.removeProperty('gap');
             } else {
                 const xPct = JE.currentSettings.subtitleHorizontalPosition ?? 50;
                 const yPct = JE.currentSettings.subtitleVerticalPosition ?? 85;
-                // Position the container so its center sits at (xPct, yPct) of the video
                 container.style.setProperty('position', 'absolute', 'important');
                 container.style.setProperty('left', `${xPct}%`, 'important');
-                container.style.setProperty('top', `${yPct}%`, 'important');
-                container.style.setProperty('bottom', 'auto', 'important');
-                container.style.setProperty('transform', 'translate(-50%, -50%)', 'important');
+                container.style.setProperty('top', 'auto', 'important');
+                container.style.setProperty('bottom', `${100 - yPct}%`, 'important');
+                container.style.setProperty('transform', 'translateX(-50%)', 'important');
                 container.style.setProperty('text-align', 'center', 'important');
                 container.style.setProperty('width', '100%', 'important');
                 container.style.setProperty('max-width', 'none', 'important');
+                // Gap between simultaneous cue boxes so backgrounds don't touch/overlap.
+                container.style.setProperty('gap', '0.25em', 'important');
             }
         });
     }
@@ -111,6 +111,7 @@
             container.style.removeProperty('width');
             container.style.removeProperty('max-width');
             container.style.removeProperty('text-align');
+            container.style.removeProperty('gap');
         });
         // Remove legacy ::cue overrides
         const styleElement = document.getElementById('je-html-videoplayer-cuestyle');
