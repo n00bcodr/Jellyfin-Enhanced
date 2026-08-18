@@ -364,6 +364,27 @@
           return;
         }
 
+        // Handle title clicks
+        const titleLink = e.target.closest(".je-request-title-link");
+        if (titleLink) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          const mediaId = titleLink.getAttribute("data-media-id");
+          if (mediaId && window.Emby?.Page?.showItem) {
+            window.Emby.Page.showItem(mediaId);
+          }
+          return;
+        }
+
+        // External links - stop the click bubbling any further
+        const externalLink = e.target.closest(".je-request-external-link");
+        if (externalLink) {
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          return;
+        }
+
         const btn = e.target.closest(
           ".headerTabs button, .navMenuOption, .headerButton",
         );

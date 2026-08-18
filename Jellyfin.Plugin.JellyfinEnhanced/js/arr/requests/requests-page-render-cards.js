@@ -118,17 +118,28 @@
       releaseDateHtml = `<span class="je-release-date-chip">${icon}${typeof dateText === 'object' ? dateText.text || '' : escapeHtml(dateText)}</span>`;
     }
 
-    // Placeholder for "Open in Seerr"/"Open in Radarr or Sonarr" links -
-    // shown on every card, not just ones missing from the library, so users
-    // can always jump to Seerr/Radarr/Sonarr for a title. Filled in
-    // asynchronously by hydrateExternalLinks() once the card is in the DOM.
-    let externalLinksHtml = "";
-    if (item.tmdbId) {
-      externalLinksHtml = `<div class="je-request-external-links" data-tmdb-id="${escapeHtml(String(item.tmdbId))}" data-tvdb-id="${escapeHtml(String(item.tvdbId || ""))}" data-media-type="${escapeHtml(item.type || "")}"></div>`;
+    // Seerr renders immediately (no lookup needed); Radarr/Sonarr is filled
+    // in asynchronously by hydrateExternalLinks() once the card is mounted.
+    let seerrLinkHtml = "";
+    const seerrLinksEnabled = JE.pluginConfig?.JellyseerrEnabled !== false
+      && JE.pluginConfig?.JellyseerrShowDetailPageLink !== false;
+    const seerrBase = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl?.() || '';
+    if (item.tmdbId && seerrLinksEnabled && seerrBase) {
+      const mediaType = item.type === 'tv' ? 'tv' : 'movie';
+      const seerrLabel = JE.t?.('jellyseerr_card_view_on_jellyseerr') || 'View on Seerr';
+      seerrLinkHtml = `<a is="emby-linkbutton" class="je-request-external-link" href="${escapeHtml(`${seerrBase}/${mediaType}/${item.tmdbId}`)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(seerrLabel)}" aria-label="${escapeHtml(seerrLabel)}"><img src="${SEERR_ICON_URL}" alt="Seerr"></a>`;
     }
 
+    let externalLinksHtml = "";
+    if (item.tmdbId) {
+      externalLinksHtml = `<div class="je-request-external-links" data-tmdb-id="${escapeHtml(String(item.tmdbId))}" data-tvdb-id="${escapeHtml(String(item.tvdbId || ""))}" data-media-type="${escapeHtml(item.type || "")}">${seerrLinkHtml}</div>`;
+    }
+
+    const titleMediaIdAttr = item.jellyfinMediaId ? ` data-media-id="${escapeHtml(item.jellyfinMediaId)}"` : '';
+    const titleClass = item.jellyfinMediaId ? 'je-request-title je-request-title-link' : 'je-request-title';
+
     return `
-            <div class="je-request-card" ${item.jellyfinMediaId ? `data-media-id="${escapeHtml(item.jellyfinMediaId)}"` : ''}>
+            <div class="je-request-card">
                 <div class="je-request-poster-col">
                     ${posterHtml}
                     ${externalLinksHtml}
@@ -137,7 +148,7 @@
                     <div class="je-request-header">
                       <div>
                         <div class="je-request-title-row">
-                          <div class="je-request-title">${escapeHtml(item.title || "Unknown")}</div>
+                          <div class="${titleClass}"${titleMediaIdAttr}>${escapeHtml(item.title || "Unknown")}</div>
                           ${item.year ? `<span class="je-request-year">(${escapeHtml(item.year)})</span>` : ""}
                         </div>
                         <span class="je-requests-status-chip ${escapeHtml(status.className)}">${escapeHtml(status.label)}</span>${releaseDateHtml}
@@ -417,23 +428,22 @@
   }
 
   /**
-   * Fills in the "Open in Seerr"/"Open in Radarr or Sonarr" links for
-   * request cards, once they're in the DOM. The Seerr
-   * link is shown to everyone (matches seerr-detail-link.js's gating); the
-   * arr link is only attempted for admins with ArrLinksEnabled - matching
-   * the same gate arr-links.js uses on item-details pages. The backend
-   * endpoints also enforce admin-only regardless.
+   * Fills in the "Open in Radarr or Sonarr" link for request cards, once
+   * they're in the DOM. (The Seerr link needs no lookup and is already
+   * rendered synchronously by renderRequestCard - this only appends the arr
+   * link once its instance lookup resolves, it never overwrites the slot.)
+   * Only attempted for admins with ArrLinksEnabled - matching the same gate
+   * arr-links.js uses on item-details pages. The backend endpoints also
+   * enforce admin-only regardless.
    * @param {HTMLElement} container
    */
   async function hydrateExternalLinks(container) {
-    const slots = container.querySelectorAll('.je-request-external-links[data-tmdb-id]');
-    if (!slots.length) return;
-
     const isAdmin = JE.currentSettings?.isAdmin === true;
     const arrLinksEnabled = JE.pluginConfig?.ArrLinksEnabled === true;
-    const seerrLinksEnabled = JE.pluginConfig?.JellyseerrEnabled !== false
-      && JE.pluginConfig?.JellyseerrShowDetailPageLink !== false;
-    const seerrBase = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl?.() || '';
+    if (!isAdmin || !arrLinksEnabled) return;
+
+    const slots = container.querySelectorAll('.je-request-external-links[data-tmdb-id]');
+    if (!slots.length) return;
 
     slots.forEach(async (slot) => {
       const tmdbId = slot.getAttribute('data-tmdb-id');
@@ -441,38 +451,30 @@
       const mediaType = slot.getAttribute('data-media-type') === 'tv' ? 'tv' : 'movie';
       if (!tmdbId) return;
 
-      const buttons = [];
-
-      if (seerrLinksEnabled && seerrBase) {
-        const seerrLabel = JE.t?.('jellyseerr_card_view_on_jellyseerr') || 'View on Seerr';
-        buttons.push(`<a is="emby-linkbutton" class="je-request-external-link" href="${escapeHtml(`${seerrBase}/${mediaType}/${tmdbId}`)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(seerrLabel)}" aria-label="${escapeHtml(seerrLabel)}"><img src="${SEERR_ICON_URL}" alt="Seerr"></a>`);
-      }
-
-      if (isAdmin && arrLinksEnabled) {
-        try {
-          if (mediaType === 'movie') {
-            const data = await JE.core.api.plugin(`/arr/movie-instances?tmdbId=${encodeURIComponent(tmdbId)}`);
-            const match = (data?.matches || [])[0];
-            const url = match ? getMappedUrl(parseUrlMappings(match.urlMappings || ''), match.instanceUrl) : null;
-            if (url) {
-              buttons.push(`<a is="emby-linkbutton" class="je-request-external-link" href="${escapeHtml(`${url}/movie/${tmdbId}`)}" target="_blank" rel="noopener noreferrer" title="Open in Radarr" aria-label="Open in Radarr"><img src="${RADARR_ICON_URL}" alt="Radarr"></a>`);
-            }
-          } else if (tvdbId) {
-            const data = await JE.core.api.plugin(`/arr/series-slugs?tvdbId=${encodeURIComponent(tvdbId)}`);
-            const match = (data?.matches || [])[0];
-            const url = match ? getMappedUrl(parseUrlMappings(match.urlMappings || ''), match.instanceUrl) : null;
-            if (url && match.titleSlug) {
-              buttons.push(`<a is="emby-linkbutton" class="je-request-external-link" href="${escapeHtml(`${url}/series/${match.titleSlug}`)}" target="_blank" rel="noopener noreferrer" title="Open in Sonarr" aria-label="Open in Sonarr"><img src="${SONARR_ICON_URL}" alt="Sonarr"></a>`);
-            }
+      let button = null;
+      try {
+        if (mediaType === 'movie') {
+          const data = await JE.core.api.plugin(`/arr/movie-instances?tmdbId=${encodeURIComponent(tmdbId)}`);
+          const match = (data?.matches || [])[0];
+          const url = match ? getMappedUrl(parseUrlMappings(match.urlMappings || ''), match.instanceUrl) : null;
+          if (url) {
+            button = `<a is="emby-linkbutton" class="je-request-external-link" href="${escapeHtml(`${url}/movie/${tmdbId}`)}" target="_blank" rel="noopener noreferrer" title="Open in Radarr" aria-label="Open in Radarr"><img src="${RADARR_ICON_URL}" alt="Radarr"></a>`;
           }
-        } catch (e) {
-          // No link is an acceptable fallback - not yet added to arr, instance
-          // unreachable, etc. Silent, same as arr-links.js's own per-item misses.
+        } else if (tvdbId) {
+          const data = await JE.core.api.plugin(`/arr/series-slugs?tvdbId=${encodeURIComponent(tvdbId)}`);
+          const match = (data?.matches || [])[0];
+          const url = match ? getMappedUrl(parseUrlMappings(match.urlMappings || ''), match.instanceUrl) : null;
+          if (url && match.titleSlug) {
+            button = `<a is="emby-linkbutton" class="je-request-external-link" href="${escapeHtml(`${url}/series/${match.titleSlug}`)}" target="_blank" rel="noopener noreferrer" title="Open in Sonarr" aria-label="Open in Sonarr"><img src="${SONARR_ICON_URL}" alt="Sonarr"></a>`;
+          }
         }
+      } catch (e) {
+        // No link is an acceptable fallback - not yet added to arr, instance
+        // unreachable, etc. Silent, same as arr-links.js's own per-item misses.
       }
 
-      if (!slot.isConnected || !buttons.length) return;
-      slot.innerHTML = buttons.join('');
+      if (!slot.isConnected || !button) return;
+      slot.insertAdjacentHTML('beforeend', button);
     });
   }
 

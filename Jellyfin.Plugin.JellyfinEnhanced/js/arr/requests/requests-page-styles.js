@@ -158,14 +158,13 @@
         .je-request-card {
             display: flex;
             gap: 1em;
-            padding: 1em;
+            padding: 1em .75em;
             overflow: visible;
         }
         .je-request-poster-col {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 0.6em;
             flex-shrink: 0;
         }
         .je-request-info {
@@ -190,6 +189,12 @@
             overflow: hidden;
             text-overflow: ellipsis;
             display: block;
+        }
+        .je-request-title-link {
+            cursor: pointer;
+        }
+        .je-request-title-link:hover {
+            text-decoration: underline;
         }
         .je-request-status {
             flex-shrink: 0;
@@ -232,8 +237,6 @@
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 0.3em;
-          width: 80px;
         }
         .je-request-external-link {
           display: inline-flex;
@@ -241,6 +244,8 @@
           justify-content: center;
           opacity: 0.75;
           transition: opacity 0.15s;
+          margin: 1em 0em 0em 0em;
+          padding: 0.75em;
         }
         .je-request-external-link:hover { opacity: 1; }
         .je-request-external-link img {
