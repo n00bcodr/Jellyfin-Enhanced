@@ -8,6 +8,33 @@
     const escapeHtml = JE.escapeHtml;
 
     /**
+     * Formats a byte count into a human-readable string
+     * @param {number} bytes
+     * @returns {string}
+     */
+    function formatBytes(bytes) {
+        if (!bytes || bytes <= 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+    }
+
+    /**
+     * Builds the label text for a Root Folder <option>, appending the
+     * folder's available free space
+     * (`{path} ({space})`).
+     * @param {object} folder - A rootFolders entry from Seerr's service details response.
+     * @returns {string}
+     */
+    function formatFolderLabel(folder) {
+        if (typeof folder.freeSpace === 'number') {
+            return `${folder.path} (${formatBytes(folder.freeSpace)})`;
+        }
+        return folder.path;
+    }
+
+    /**
      * Creates and manages a generic modal for Jellyseerr requests.
      * @param {object} options - Configuration for the modal.
      * @param {string} options.title - The main title of the modal.
@@ -266,7 +293,7 @@
                     selectedServer.rootFolders.forEach(folder => {
                         const option = document.createElement('option');
                         option.value = folder.path;
-                        option.textContent = folder.path;
+                        option.textContent = formatFolderLabel(folder);
                         if (folder.path === selectedServer.activeDirectory) option.selected = true;
                         folderSelect.appendChild(option);
                     });
