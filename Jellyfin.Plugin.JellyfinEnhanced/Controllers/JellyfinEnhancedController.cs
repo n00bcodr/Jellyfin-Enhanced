@@ -717,18 +717,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         }
 
                         // GET /api/v1/service/sonarr|radarr, /api/v1/service/{type}/{id},
-                        // /api/v1/overrideRule — these expose admin-context Seerr data
-                        // (instance lists, quality profiles, root folders, override rules)
-                        // used by the "advanced request" modal. Require REQUEST_ADVANCED
-                        // to match Seerr's own permission model for this feature
-                        //.
+                        // /api/v1/overrideRule, Seerr does not gate this route
+                        // behind REQUEST_ADVANCED, so require just the ability to request.
                         if (method == HttpMethod.Get && (
                             apiPath.StartsWith("/api/v1/service/", StringComparison.OrdinalIgnoreCase)
                             || apiPath.StartsWith("/api/v1/overrideRule", StringComparison.OrdinalIgnoreCase)))
                         {
                             if (!JellyseerrPermissionHelper.HasAnyPermission(perms,
-                                JellyseerrPermission.REQUEST_ADVANCED | JellyseerrPermission.MANAGE_REQUESTS))
-                                return StatusCode(403, new { code = "no_advanced_permission", message = "You do not have permission to use advanced request options." });
+                                JellyseerrPermission.REQUEST | JellyseerrPermission.REQUEST_MOVIE | JellyseerrPermission.REQUEST_TV
+                                | JellyseerrPermission.REQUEST_ADVANCED | JellyseerrPermission.MANAGE_REQUESTS))
+                                return StatusCode(403, new { code = "no_request_permission", message = "You do not have permission to make requests in Seerr." });
                         }
                     }
                 }
