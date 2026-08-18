@@ -114,9 +114,11 @@
 }
 .je-activity-progress-fill { height: 100%; background: var(--je-activity-accent, #00a4dc); }
 .je-activity-thumb {
-  width: 56px; height: 84px; border-radius: 4px; object-fit: cover;
+  border-radius: 4px; object-fit: cover;
   flex-shrink: 0; background: rgba(255,255,255,0.08); cursor: pointer;
 }
+.je-activity-thumb.je-thumb-landscape { width: 120px; height: 68px; }
+.je-activity-thumb.je-thumb-portrait { width: 56px; height: 84px; }
 .je-activity-empty, .je-activity-error { opacity: 0.7; text-align: center; padding: 32px 16px; font-size: 15px; }
 @media (min-width: 900px) {
   .je-activity-row { padding: 16px 10px; }
@@ -129,7 +131,8 @@
   .je-activity-section-header { font-size: 17px; padding: 0 2px 8px; }
   .je-activity-row { padding: 10px 2px; gap: 10px; }
   .je-activity-avatar, .je-activity-icon { width: 40px; height: 40px; font-size: 20px; }
-  .je-activity-thumb { width: 46px; height: 69px; }
+  .je-activity-thumb.je-thumb-landscape { width: 92px; height: 52px; }
+  .je-activity-thumb.je-thumb-portrait { width: 46px; height: 69px; }
   .je-activity-line { font-size: 15px; white-space: normal; }
   .je-activity-content { font-size: 14px; }
 }
@@ -262,12 +265,13 @@
         return row;
     }
 
-    /** Poster thumbnail if the item has one, otherwise a type-colored icon badge. Both link to the item. */
+    /** Thumbnail if the item has one (Thumb preferred, Primary as fallback), otherwise a type-colored icon badge. Both link to the item. */
     function buildItemVisual(item, activityType) {
-        if (item.HasPrimaryImage) {
+        if (item.HasThumbImage || item.HasPrimaryImage) {
+            const imageType = item.HasThumbImage ? 'Thumb' : 'Primary';
             const thumb = document.createElement('img');
-            thumb.className = 'je-activity-thumb';
-            thumb.src = ApiClient.getImageUrl(item.Id, { type: 'Primary', height: 120, quality: 80 });
+            thumb.className = `je-activity-thumb ${imageType === 'Thumb' ? 'je-thumb-landscape' : 'je-thumb-portrait'}`;
+            thumb.src = ApiClient.getImageUrl(item.Id, { type: imageType, width: imageType === 'Thumb' ? 120 : 56, quality: 80 });
             thumb.alt = '';
             thumb.addEventListener('click', () => { navigateToItem(item.Id); });
             return thumb;
@@ -324,17 +328,24 @@
 
         row.appendChild(body);
 
-        // For episodes, prefer the series poster over the episode thumbnail
-        // (same convention as the Active Streams header widget).
-        const seriesTag = item.SeriesPrimaryImageTag;
-        const seriesId = item.SeriesId;
-        const primaryTag = item.ImageTags?.Primary;
-        const posterId = (seriesId && seriesTag) ? seriesId : item.Id;
-        const posterTag = (seriesId && seriesTag) ? seriesTag : primaryTag;
+        // Prefer a Thumb image (own, then inherited from season/series) since
+        // it matches the landscape row layout; fall back to the series
+        // poster over the episode's own Primary (same convention as the
+        // Active Streams header widget), then the item's own Primary.
+        let posterId, posterTag, posterType;
+        if (item.ImageTags?.Thumb) {
+            posterId = item.Id; posterTag = item.ImageTags.Thumb; posterType = 'Thumb';
+        } else if (item.ParentThumbImageTag && item.ParentThumbItemId) {
+            posterId = item.ParentThumbItemId; posterTag = item.ParentThumbImageTag; posterType = 'Thumb';
+        } else if (item.SeriesPrimaryImageTag && item.SeriesId) {
+            posterId = item.SeriesId; posterTag = item.SeriesPrimaryImageTag; posterType = 'Primary';
+        } else if (item.ImageTags?.Primary) {
+            posterId = item.Id; posterTag = item.ImageTags.Primary; posterType = 'Primary';
+        }
         if (posterTag && posterId) {
             const thumb = document.createElement('img');
-            thumb.className = 'je-activity-thumb';
-            thumb.src = ApiClient.getImageUrl(posterId, { type: 'Primary', tag: posterTag, height: 120, quality: 80 });
+            thumb.className = `je-activity-thumb ${posterType === 'Thumb' ? 'je-thumb-landscape' : 'je-thumb-portrait'}`;
+            thumb.src = ApiClient.getImageUrl(posterId, { type: posterType, tag: posterTag, width: posterType === 'Thumb' ? 120 : 56, quality: 80 });
             thumb.alt = '';
             thumb.addEventListener('click', () => { navigateToItem(item.Id); });
             row.appendChild(thumb);

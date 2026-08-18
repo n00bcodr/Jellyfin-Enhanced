@@ -6374,10 +6374,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ProductionYear = item.ProductionYear,
                 SeriesName = seriesName,
                 SeriesId = seriesId,
-                // No cache-busting tag needed -- /Items/{id}/Images/Primary always
+                // No cache-busting tag needed -- /Items/{id}/Images/{type} always
                 // serves whatever is current; a boolean is enough to know
                 // whether to render an <img> at all.
-                HasPrimaryImage = item.HasImage(ImageType.Primary, 0)
+                HasPrimaryImage = item.HasImage(ImageType.Primary, 0),
+                HasThumbImage = item.HasImage(ImageType.Thumb, 0)
             };
         }
 
