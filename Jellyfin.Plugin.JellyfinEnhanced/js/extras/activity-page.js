@@ -144,6 +144,14 @@
     const VERB_ICON = { Watched: 'play_circle', Favorited: 'favorite', Reviewed: 'rate_review' };
     const VERB_KEY = { Watched: 'activity_verb_watched', Favorited: 'activity_verb_favorited', Reviewed: 'activity_verb_reviewed' };
 
+    /** "Series Name - S1:E3 - Episode Title" for episodes, plain Name otherwise. */
+    function getItemDisplayName(item) {
+        if (item.SeriesName && item.SeasonNumber != null && item.EpisodeNumber != null) {
+            return `${item.SeriesName} - S${item.SeasonNumber}:E${item.EpisodeNumber} - ${item.Name}`;
+        }
+        return item.SeriesName || item.Name;
+    }
+
     // Compact abbreviations (5m, 2h, 3d, 1w, 4mo, 1y) rather than full unit
     // words -- cross-language-understandable at a glance (same convention as
     // most social feeds), so only the "{time} ago" / "just now" wrapper needs
@@ -186,7 +194,7 @@
         line.innerHTML = `<span class="je-activity-user"></span> ${verbText} <a href="#" class="je-activity-item-name"></a>`;
         line.querySelector('.je-activity-user').textContent = entry.UserName;
         const nameLink = line.querySelector('.je-activity-item-name');
-        nameLink.textContent = entry.Item.SeriesName || entry.Item.Name;
+        nameLink.textContent = getItemDisplayName(entry.Item);
         nameLink.addEventListener('click', (e) => { e.preventDefault(); navigateToItem(entry.Item.Id); });
         body.appendChild(line);
 
@@ -238,7 +246,7 @@
         line.innerHTML = `<span class="je-activity-user"></span> ${verbText} <a href="#" class="je-activity-item-name"></a>`;
         line.querySelector('.je-activity-user').textContent = entry.UserName;
         const nameLink = line.querySelector('.je-activity-item-name');
-        nameLink.textContent = entry.Item.SeriesName || entry.Item.Name;
+        nameLink.textContent = getItemDisplayName(entry.Item);
         nameLink.addEventListener('click', (e) => { e.preventDefault(); navigateToItem(entry.Item.Id); });
         body.appendChild(line);
 
@@ -265,13 +273,29 @@
         return row;
     }
 
-    /** Thumbnail if the item has one (Thumb preferred, Primary as fallback), otherwise a type-colored icon badge. Both link to the item. */
+    /**
+     * Thumbnail if the item (or its series) has one, otherwise a
+     * type-colored icon badge. Both link to the item. For episodes, prefers
+     * the series' own Thumb/Primary over the episode's - an episode's own
+     * Primary is often just an arbitrary auto-extracted video frame, not a
+     * designed image.
+     */
     function buildItemVisual(item, activityType) {
-        if (item.HasThumbImage || item.HasPrimaryImage) {
-            const imageType = item.HasThumbImage ? 'Thumb' : 'Primary';
+        let posterId, imageType;
+        if (item.HasThumbImage) {
+            posterId = item.Id; imageType = 'Thumb';
+        } else if (item.SeriesHasThumbImage) {
+            posterId = item.SeriesId; imageType = 'Thumb';
+        } else if (item.SeriesHasPrimaryImage) {
+            posterId = item.SeriesId; imageType = 'Primary';
+        } else if (item.HasPrimaryImage) {
+            posterId = item.Id; imageType = 'Primary';
+        }
+
+        if (posterId) {
             const thumb = document.createElement('img');
             thumb.className = `je-activity-thumb ${imageType === 'Thumb' ? 'je-thumb-landscape' : 'je-thumb-portrait'}`;
-            thumb.src = ApiClient.getImageUrl(item.Id, { type: imageType, width: imageType === 'Thumb' ? 120 : 56, quality: 80 });
+            thumb.src = ApiClient.getImageUrl(posterId, { type: imageType, width: imageType === 'Thumb' ? 120 : 56, quality: 80 });
             thumb.alt = '';
             thumb.addEventListener('click', () => { navigateToItem(item.Id); });
             return thumb;

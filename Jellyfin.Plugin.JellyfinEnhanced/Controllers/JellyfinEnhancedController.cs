@@ -6353,17 +6353,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// Builds the card-rendering summary for an activity feed item. Series
-        /// name/id come off the Episode entity directly (cheap, in-memory) --
-        /// no extra library lookup needed, same as TagCacheService's approach.
+        /// name/id/episode numbering come off the Episode entity directly
+        /// (cheap, in-memory) -- no extra library lookup needed, same as
+        /// TagCacheService's approach. The series' own images are looked up
+        /// separately (one extra GetItemById) since an episode's own Primary
+        /// is often just an arbitrary auto-extracted video frame, not a
+        /// designed image -- the frontend prefers the series' Thumb/Primary
+        /// over the episode's own.
         /// </summary>
         private object BuildActivityItemSummary(BaseItem item)
         {
             string? seriesName = null;
             string? seriesId = null;
+            int? seasonNumber = null;
+            int? episodeNumber = null;
+            bool seriesHasPrimaryImage = false;
+            bool seriesHasThumbImage = false;
+
             if (item is MediaBrowser.Controller.Entities.TV.Episode ep)
             {
                 seriesName = ep.SeriesName;
-                seriesId = ep.SeriesId != Guid.Empty ? ep.SeriesId.ToString("N") : null;
+                seasonNumber = ep.ParentIndexNumber;
+                episodeNumber = ep.IndexNumber;
+                if (ep.SeriesId != Guid.Empty)
+                {
+                    seriesId = ep.SeriesId.ToString("N");
+                    var series = _libraryManager.GetItemById(ep.SeriesId);
+                    if (series != null)
+                    {
+                        seriesHasPrimaryImage = series.HasImage(ImageType.Primary, 0);
+                        seriesHasThumbImage = series.HasImage(ImageType.Thumb, 0);
+                    }
+                }
             }
 
             return new
@@ -6374,11 +6395,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ProductionYear = item.ProductionYear,
                 SeriesName = seriesName,
                 SeriesId = seriesId,
+                SeasonNumber = seasonNumber,
+                EpisodeNumber = episodeNumber,
                 // No cache-busting tag needed -- /Items/{id}/Images/{type} always
                 // serves whatever is current; a boolean is enough to know
                 // whether to render an <img> at all.
                 HasPrimaryImage = item.HasImage(ImageType.Primary, 0),
-                HasThumbImage = item.HasImage(ImageType.Thumb, 0)
+                HasThumbImage = item.HasImage(ImageType.Thumb, 0),
+                SeriesHasPrimaryImage = seriesHasPrimaryImage,
+                SeriesHasThumbImage = seriesHasThumbImage
             };
         }
 
