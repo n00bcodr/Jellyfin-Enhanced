@@ -484,6 +484,8 @@
     "recommendations_upcoming_tv": "Yakında Gelecek Diziler",
     "recommendations_loading": "Öneriler yükleniyor…",
     "recommendations_empty": "Şu anda kullanılabilir öneri yok.",
+    "recommendations_movie_genres": "Film Türleri",
+    "recommendations_tv_genres": "Dizi Türleri",
     "recommendations_studios": "Stüdyolar",
     "recommendations_networks": "Kanallar",
     "hidden_content_settings_title": "Gizli içerik",

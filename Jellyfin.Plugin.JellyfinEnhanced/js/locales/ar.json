@@ -496,6 +496,8 @@
     "recommendations_upcoming_tv": "مسلسلات تلفزيونية قادمة",
     "recommendations_loading": "جارٍ تحميل التوصيات…",
     "recommendations_empty": "لا توجد توصيات متاحة حاليًا.",
+    "recommendations_movie_genres": "أنواع الأفلام",
+    "recommendations_tv_genres": "أنواع المسلسلات",
     "recommendations_studios": "الاستوديوهات",
     "recommendations_networks": "الشبكات",
     "hidden_content_settings_title": "المحتوى المخفي",

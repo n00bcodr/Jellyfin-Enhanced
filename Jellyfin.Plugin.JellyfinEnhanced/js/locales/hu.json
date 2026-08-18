@@ -496,6 +496,8 @@
     "recommendations_upcoming_tv": "Hamarosan érkező sorozatok",
     "recommendations_loading": "Ajánlások betöltése…",
     "recommendations_empty": "Jelenleg nincsenek elérhető ajánlások.",
+    "recommendations_movie_genres": "Film műfajok",
+    "recommendations_tv_genres": "Sorozat műfajok",
     "recommendations_studios": "Stúdiók",
     "recommendations_networks": "Csatornák",
     "hidden_content_settings_title": "Rejtett tartalom",

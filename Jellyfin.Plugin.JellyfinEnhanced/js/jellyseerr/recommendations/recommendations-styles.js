@@ -25,6 +25,38 @@
         font-weight: 600;
         text-align: center;
       }
+      .je-genre-tile-image {
+        overflow: hidden;
+        background: #222;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .je-genre-tile-backdrop {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        opacity: 0.35;
+        mix-blend-mode: luminosity;
+      }
+      .je-genre-tile-title {
+        position: relative;
+        z-index: 1;
+        color: #fff;
+        font-weight: 700;
+        text-align: center;
+        text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+        padding: 0.5em;
+        font-size: 2em;
+        letter-spacing: 1px;
+        min-width: 0;
+        max-width: 100%;
+        overflow-wrap: break-word;
+        box-sizing: border-box;
+        line-height: 1.15;
+      }
       #je-recommendations-category-page > [data-role="content"],
       #je-recommendations-category-page .content-primary.je-recommendations-category-page,
       .content-primary.je-recommendations-category-page {

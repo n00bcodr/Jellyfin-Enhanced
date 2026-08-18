@@ -638,6 +638,8 @@
     "jellyseerr_season_status_processing": "Обробка",
     "jellyseerr_toast_collection_requested": "Запит подано",
     "recommendations_upcoming_tv": "Скоро вийдуть",
+    "recommendations_movie_genres": "Жанри фільмів",
+    "recommendations_tv_genres": "Жанри серіалів",
     "recommendations_studios": "Студії",
     "recommendations_popular_tv": "Популярні серіали",
     "recommendations_loading": "Завантаження рекомендацій…",

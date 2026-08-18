@@ -71,6 +71,23 @@
     }));
   }
 
+  // Cache of the genre slider list per media type, so switching between the
+  // standalone page and custom tab doesn't re-fetch.
+  const genreSliderCache = new Map();
+
+  /**
+   * Fetches (and caches) the genre slider list - {id, name, backdrops[]} per
+   * genre - for a media type.
+   * @param {'movie'|'tv'} mediaType
+   * @returns {Promise<Array<{id: number, name: string, backdrops: string[]}>>}
+   */
+  function fetchGenreSlider(mediaType) {
+    if (genreSliderCache.has(mediaType)) return genreSliderCache.get(mediaType);
+    const promise = JE.jellyseerrAPI.fetchGenreSlider(mediaType).catch(() => []);
+    genreSliderCache.set(mediaType, promise);
+    return promise;
+  }
+
   P.logPrefix = logPrefix;
   P.sidebar = sidebar;
   P.pluginPagesExists = pluginPagesExists;
@@ -78,4 +95,5 @@
   P.fetchWithManagedRequest = fetchWithManagedRequest;
   P.fetchLogoPath = fetchLogoPath;
   P.fetchAllRows = fetchAllRows;
+  P.fetchGenreSlider = fetchGenreSlider;
 })();

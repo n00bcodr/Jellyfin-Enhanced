@@ -496,6 +496,8 @@
     "recommendations_upcoming_tv": "Kommende TV-serier",
     "recommendations_loading": "Laster anbefalinger…",
     "recommendations_empty": "Ingen anbefalinger tilgjengelig akkurat nå.",
+    "recommendations_movie_genres": "Filmsjangre",
+    "recommendations_tv_genres": "TV-sjangre",
     "recommendations_studios": "Studioer",
     "recommendations_networks": "Nettverk",
     "hidden_content_settings_title": "Skjult innhold",

@@ -496,6 +496,8 @@
     "recommendations_upcoming_tv": "Próximas series",
     "recommendations_loading": "Cargando recomendaciones…",
     "recommendations_empty": "No hay recomendaciones disponibles en este momento.",
+    "recommendations_movie_genres": "Géneros de películas",
+    "recommendations_tv_genres": "Géneros de series",
     "recommendations_studios": "Estudios",
     "recommendations_networks": "Cadenas",
     "hidden_content_settings_title": "Contenido oculto",

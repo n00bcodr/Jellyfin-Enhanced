@@ -110,6 +110,8 @@
     "hidden_content_item_hidden": "\"{name}\" hidden",
     "reviews_edit": "Edit",
     "hidden_content_entire_show": "Entire show",
+    "recommendations_movie_genres": "Movie Genres",
+    "recommendations_tv_genres": "TV Show Genres",
     "recommendations_studios": "Studios",
     "jellyseerr_btn_deleted": "Deleted",
     "panel_settings_ui_file_sizes_desc": "Display total file size on item detail pages.",

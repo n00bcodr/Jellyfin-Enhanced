@@ -496,6 +496,8 @@
     "recommendations_upcoming_tv": "Séries à venir",
     "recommendations_loading": "Chargement des recommandations…",
     "recommendations_empty": "Aucune recommandation disponible pour le moment.",
+    "recommendations_movie_genres": "Genres de films",
+    "recommendations_tv_genres": "Genres de séries",
     "recommendations_studios": "Studios",
     "recommendations_networks": "Chaînes",
     "hidden_content_settings_title": "Contenu masqué",

@@ -13,6 +13,8 @@
   const state = P.state;
   const fetchLogoPath = P.fetchLogoPath;
   const fetchAllRows = P.fetchAllRows;
+  const fetchGenreSlider = P.fetchGenreSlider;
+  const escapeHtml = JE.escapeHtml;
 
   // recommendations-category.js loads after this module — resolve at call time.
   const showCategoryPage = (categoryKey) => P.showCategoryPage(categoryKey);
@@ -161,6 +163,111 @@
     return section;
   }
 
+  // Tile color by genre name, shared across movie/TV since names overlap.
+  const GENRE_COLORS = {
+    'Action': '#b91c1ccc',
+    'Action & Adventure': '#b91c1ccc',
+    'Adventure': '#7c3aedcc',
+    'Animation': '#0891b2cc',
+    'Comedy': '#d97706cc',
+    'Crime': '#1d4ed8cc',
+    'Documentary': '#059669cc',
+    'Drama': '#db2777cc',
+    'Family': '#65a30dcc',
+    'Fantasy': '#9333eacc',
+    'History': '#78716ccc',
+    'Horror': '#27272acc',
+    'Kids': '#f59e0bcc',
+    'Music': '#e11d48cc',
+    'Mystery': '#4c1d95cc',
+    'News': '#334155cc',
+    'Reality': '#c026d3cc',
+    'Romance': '#ec4899cc',
+    'Sci-Fi & Fantasy': '#2563ebcc',
+    'Science Fiction': '#2563ebcc',
+    'Soap': '#db2777cc',
+    'Talk': '#0d9488cc',
+    'Thriller': '#7f1d1dcc',
+    'TV Movie': '#6b7280cc',
+    'War': '#57534ecc',
+    'War & Politics': '#57534ecc',
+    'Western': '#b45309cc',
+  };
+  const GENRE_COLOR_FALLBACK = '#4338ca';
+
+  /**
+   * Builds a horizontal row of genre tiles - a color-tinted TMDB backdrop
+   * with the genre name overlaid - linking into the category page for that
+   * genre.
+   * @param {string} title
+   * @param {Array<{id: number, name: string, backdrops: string[]}>} genres
+   * @param {'movie'|'tv'} mediaType
+   * @returns {HTMLElement}
+   */
+  function createGenreTileRow(title, genres, mediaType) {
+    const section = document.createElement('div');
+    section.className = 'verticalSection emby-scroller-container je-recommendations-section';
+
+    const heading = document.createElement('h2');
+    heading.className = 'sectionTitle sectionTitle-cards focuscontainer-x padded-left padded-right';
+    heading.textContent = title;
+    section.appendChild(heading);
+
+    const scrollerContainer = document.createElement('div');
+    scrollerContainer.setAttribute('is', 'emby-scroller');
+    scrollerContainer.className = 'padded-top-focusscale padded-bottom-focusscale emby-scroller';
+    scrollerContainer.dataset.horizontal = "true";
+    scrollerContainer.dataset.centerfocus = "card";
+
+    const itemsContainer = document.createElement('div');
+    itemsContainer.setAttribute('is', 'emby-itemscontainer');
+    itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider';
+
+    // Avoid picking the same backdrop for two tiles in this row.
+    const usedBackdrops = new Set();
+
+    genres.forEach(genre => {
+      const backdropList = genre.backdrops || [];
+      const backdrop = backdropList.find(b => !usedBackdrops.has(b)) || backdropList[0];
+      if (backdrop) usedBackdrops.add(backdrop);
+
+      const color = GENRE_COLORS[genre.name] || GENRE_COLOR_FALLBACK;
+
+      const tile = document.createElement('div');
+      tile.className = 'card overflowBackdropCard card-hoverable card-withuserdata je-recommendations-tile';
+      tile.innerHTML = `
+        <div class="cardBox cardBox-bottompadded">
+          <div class="cardScalable">
+            <div class="cardPadder cardPadder-overflowBackdrop"></div>
+            <div class="cardImageContainer cardContent je-genre-tile-image" style="background-color: ${color};">
+              ${backdrop ? `<img class="je-genre-tile-backdrop" src="https://image.tmdb.org/t/p/w500${backdrop}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+              <span class="je-genre-tile-title">${escapeHtml(genre.name)}</span>
+            </div>
+            <div class="cardOverlayContainer" data-action="link"></div>
+          </div>
+        </div>`;
+
+      // Mirrors createTileRow's click wiring: overlay disabled so Jellyfin's
+      // own emby-itemscontainer click delegation leaves it alone, the actual
+      // click handler lives on the image layer underneath instead.
+      const overlayContainer = tile.querySelector('.cardOverlayContainer');
+      overlayContainer.removeAttribute('data-action');
+      overlayContainer.style.pointerEvents = 'none';
+
+      const imageContainer = tile.querySelector('.je-genre-tile-image');
+      imageContainer.style.cursor = 'pointer';
+      imageContainer.addEventListener('click', () => {
+        showCategoryPage(`genre-${mediaType}-${genre.id}`);
+      });
+
+      itemsContainer.appendChild(tile);
+    });
+
+    scrollerContainer.appendChild(itemsContainer);
+    section.appendChild(scrollerContainer);
+    return section;
+  }
+
   /**
    * Renders the recommendations content (title + rows) into container.
    * @param {HTMLElement} container
@@ -188,7 +295,14 @@
 
     let rows;
     try {
-      rows = await fetchAllRows(abortController.signal);
+      const [rowsResult, movieGenres, tvGenres] = await Promise.all([
+        fetchAllRows(abortController.signal),
+        fetchGenreSlider('movie'),
+        fetchGenreSlider('tv'),
+      ]);
+      rows = rowsResult;
+      P.MOVIE_GENRES = movieGenres || [];
+      P.TV_GENRES = tvGenres || [];
     } catch (error) {
       if (error?.name === 'AbortError') return;
       console.error(`${logPrefix} Failed to load rows`, error);
@@ -213,6 +327,13 @@
       container.appendChild(createMediaRow(JE.t(row.titleKey), results, row.key));
     });
 
+    if (P.MOVIE_GENRES.length) {
+      container.appendChild(createGenreTileRow(JE.t('recommendations_movie_genres'), P.MOVIE_GENRES, 'movie'));
+    }
+    if (P.TV_GENRES.length) {
+      container.appendChild(createGenreTileRow(JE.t('recommendations_tv_genres'), P.TV_GENRES, 'tv'));
+    }
+
     container.appendChild(createTileRow(JE.t('recommendations_studios'), P.STUDIOS, 'studio'));
     container.appendChild(createTileRow(JE.t('recommendations_networks'), P.NETWORKS, 'network'));
   }
@@ -225,6 +346,7 @@
 
   P.createMediaRow = createMediaRow;
   P.createTileRow = createTileRow;
+  P.createGenreTileRow = createGenreTileRow;
   P.renderInto = renderInto;
   P.renderForCustomTab = renderForCustomTab;
 })();

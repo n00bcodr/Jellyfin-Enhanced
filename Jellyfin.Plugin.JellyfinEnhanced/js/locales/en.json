@@ -496,6 +496,8 @@
     "recommendations_upcoming_tv": "Upcoming TV Shows",
     "recommendations_loading": "Loading recommendations…",
     "recommendations_empty": "No recommendations available right now.",
+    "recommendations_movie_genres": "Movie Genres",
+    "recommendations_tv_genres": "TV Show Genres",
     "recommendations_studios": "Studios",
     "recommendations_networks": "Networks",
     "hidden_content_settings_title": "Hidden Content",

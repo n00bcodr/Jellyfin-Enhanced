@@ -496,6 +496,8 @@
     "recommendations_upcoming_tv": "Nadchodzące seriale",
     "recommendations_loading": "Ładowanie rekomendacji…",
     "recommendations_empty": "Obecnie brak dostępnych rekomendacji.",
+    "recommendations_movie_genres": "Gatunki filmów",
+    "recommendations_tv_genres": "Gatunki seriali",
     "recommendations_studios": "Studia",
     "recommendations_networks": "Sieci",
     "hidden_content_settings_title": "Ukryta zawartość",

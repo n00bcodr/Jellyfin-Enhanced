@@ -511,6 +511,8 @@
     "recommendations_upcoming_tv": "תוכניות טלוויזיה קרובות",
     "recommendations_loading": "טוען המלצות…",
     "recommendations_empty": "אין המלצות זמינות כרגע.",
+    "recommendations_movie_genres": "ז'אנרים של סרטים",
+    "recommendations_tv_genres": "ז'אנרים של סדרות",
     "recommendations_studios": "אולפנים",
     "recommendations_networks": "רשתות",
     "bookmark_time_format_hint": "הזינו זמן כשניות או כ-HH:MM:SS",

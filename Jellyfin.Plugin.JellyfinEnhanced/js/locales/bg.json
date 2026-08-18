@@ -496,6 +496,8 @@
     "recommendations_upcoming_tv": "Предстоящи сериали",
     "recommendations_loading": "Зареждане на препоръки…",
     "recommendations_empty": "В момента няма налични препоръки.",
+    "recommendations_movie_genres": "Жанрове филми",
+    "recommendations_tv_genres": "Жанрове сериали",
     "recommendations_studios": "Студия",
     "recommendations_networks": "Мрежи",
     "hidden_content_settings_title": "Скрито съдържание",

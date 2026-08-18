@@ -484,6 +484,8 @@
     "recommendations_upcoming_tv": "Kommende tv-serier",
     "recommendations_loading": "Indlæser anbefalinger…",
     "recommendations_empty": "Ingen anbefalinger tilgængelige lige nu.",
+    "recommendations_movie_genres": "Filmgenrer",
+    "recommendations_tv_genres": "Tv-genrer",
     "recommendations_studios": "Studier",
     "recommendations_networks": "Netværk",
     "hidden_content_settings_title": "Skjult indhold",

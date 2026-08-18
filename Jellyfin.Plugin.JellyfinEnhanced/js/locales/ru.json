@@ -496,6 +496,8 @@
     "recommendations_upcoming_tv": "Ожидаемые сериалы",
     "recommendations_loading": "Загрузка рекомендаций…",
     "recommendations_empty": "Сейчас рекомендации недоступны.",
+    "recommendations_movie_genres": "Жанры фильмов",
+    "recommendations_tv_genres": "Жанры сериалов",
     "recommendations_studios": "Студии",
     "recommendations_networks": "Телесети",
     "hidden_content_settings_title": "Скрытое содержимое",

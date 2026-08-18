@@ -638,6 +638,8 @@
     "panel_shortcuts_disabled": "Pois Käytöstä",
     "jellyseerr_modal_requested_by": "Pyytäjä",
     "recommendations_upcoming_tv": "Tulevat TV-sarjat",
+    "recommendations_movie_genres": "Elokuvagenret",
+    "recommendations_tv_genres": "TV-genret",
     "recommendations_studios": "Studiot",
     "recommendations_popular_tv": "Suositut TV-sarjat",
     "recommendations_loading": "Ladataan suosituksia…",

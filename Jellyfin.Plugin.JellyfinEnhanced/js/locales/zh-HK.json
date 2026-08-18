@@ -496,6 +496,8 @@
     "recommendations_upcoming_tv": "即將上映劇集",
     "recommendations_loading": "正在載入推薦…",
     "recommendations_empty": "目前沒有可用的推薦。",
+    "recommendations_movie_genres": "電影類型",
+    "recommendations_tv_genres": "劇集類型",
     "recommendations_studios": "製片公司",
     "recommendations_networks": "電視網",
     "hidden_content_settings_title": "隱藏內容",

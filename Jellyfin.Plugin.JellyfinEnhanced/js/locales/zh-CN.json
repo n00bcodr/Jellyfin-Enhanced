@@ -496,6 +496,8 @@
     "recommendations_upcoming_tv": "即将上映剧集",
     "recommendations_loading": "正在加载推荐…",
     "recommendations_empty": "目前没有可用的推荐。",
+    "recommendations_movie_genres": "电影类型",
+    "recommendations_tv_genres": "剧集类型",
     "recommendations_studios": "制片公司",
     "recommendations_networks": "电视网",
     "hidden_content_settings_title": "隐藏内容",

@@ -496,6 +496,8 @@
     "recommendations_upcoming_tv": "Kommande TV-serier",
     "recommendations_loading": "Läser in rekommendationer…",
     "recommendations_empty": "Inga rekommendationer tillgängliga just nu.",
+    "recommendations_movie_genres": "Filmgenrer",
+    "recommendations_tv_genres": "TV-genrer",
     "recommendations_studios": "Studior",
     "recommendations_networks": "Nätverk",
     "hidden_content_settings_title": "Dolt innehåll",

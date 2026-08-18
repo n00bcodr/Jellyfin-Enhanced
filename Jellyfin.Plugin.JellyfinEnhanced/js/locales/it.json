@@ -496,6 +496,8 @@
     "recommendations_upcoming_tv": "Serie TV in arrivo",
     "recommendations_loading": "Caricamento dei consigliati…",
     "recommendations_empty": "Nessun consiglio disponibile al momento.",
+    "recommendations_movie_genres": "Generi film",
+    "recommendations_tv_genres": "Generi serie TV",
     "recommendations_studios": "Studi",
     "recommendations_networks": "Reti",
     "hidden_content_settings_title": "Contenuti nascosti",

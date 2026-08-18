@@ -64,9 +64,14 @@
     { name: 'The CW', id: 71 },
   ];
 
+  // Populated by renderInto() before the genre tile rows are built, so
+  // resolveCategory can look up a genre's display name by id on click.
+  P.MOVIE_GENRES = [];
+  P.TV_GENRES = [];
+
   /**
-   * Resolves a category key (row key, or "studio-<id>" / "network-<id>") to
-   * its base fetch path and display title.
+   * Resolves a category key (row key, "studio-<id>", "network-<id>", or
+   * "genre-<movie|tv>-<id>") to its base fetch path and display title.
    * @param {string} categoryKey
    * @returns {{path: string, title: string}|null}
    */
@@ -89,6 +94,17 @@
       const network = NETWORKS.find(n => String(n.id) === networkMatch[1]);
       if (network) {
         return { path: `/JellyfinEnhanced/jellyseerr/discover/tv/network/${network.id}`, title: network.name };
+      }
+    }
+
+    const genreMatch = categoryKey.match(/^genre-(movie|tv)-(\d+)$/);
+    if (genreMatch) {
+      const [, kind, genreId] = genreMatch;
+      const list = kind === 'movie' ? P.MOVIE_GENRES : P.TV_GENRES;
+      const genre = list.find(g => String(g.id) === genreId);
+      if (genre) {
+        const type = kind === 'movie' ? 'movies' : 'tv';
+        return { path: `/JellyfinEnhanced/jellyseerr/discover/${type}/genre/${genre.id}`, title: genre.name };
       }
     }
 

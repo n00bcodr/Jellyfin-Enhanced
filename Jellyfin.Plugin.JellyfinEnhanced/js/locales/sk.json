@@ -496,6 +496,8 @@
     "recommendations_upcoming_tv": "Pripravované seriály",
     "recommendations_loading": "Načítavanie odporúčaní…",
     "recommendations_empty": "Momentálne nie sú k dispozícii žiadne odporúčania.",
+    "recommendations_movie_genres": "Žánre filmov",
+    "recommendations_tv_genres": "Žánre seriálov",
     "recommendations_studios": "Štúdiá",
     "recommendations_networks": "Siete",
     "hidden_content_settings_title": "Skrytý obsah",

@@ -496,6 +496,8 @@
     "recommendations_upcoming_tv": "Sèries de TV properes",
     "recommendations_loading": "Carregant recomanacions…",
     "recommendations_empty": "No hi ha recomanacions disponibles ara mateix.",
+    "recommendations_movie_genres": "Gèneres de pel·lícules",
+    "recommendations_tv_genres": "Gèneres de sèries",
     "recommendations_studios": "Estudis",
     "recommendations_networks": "Cadenes",
     "hidden_content_settings_title": "Contingut ocult",

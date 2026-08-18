@@ -484,6 +484,8 @@
     "recommendations_upcoming_tv": "Binnenkort tv-series",
     "recommendations_loading": "Aanbevelingen laden…",
     "recommendations_empty": "Er zijn momenteel geen aanbevelingen beschikbaar.",
+    "recommendations_movie_genres": "Filmgenres",
+    "recommendations_tv_genres": "Tv-genres",
     "recommendations_studios": "Studio's",
     "recommendations_networks": "Netwerken",
     "hidden_content_settings_title": "Verborgen inhoud",
