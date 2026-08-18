@@ -247,7 +247,12 @@
             const resolutionRegex = /\b(8k|4320p|4k|2160p|1440p|1080p|720p|480p|360p|404p|384p|520p)\b/i;
             const resolutionMatch = displayTitle.match(resolutionRegex);
 
-            if (resolutionMatch) {
+            const displayTitleHeight = primaryVideoStream.Height || 0;
+            const isFalsely4k = resolutionMatch &&
+                ['4k', '2160p'].includes(resolutionMatch[1].toLowerCase()) &&
+                displayTitleHeight > 0 && displayTitleHeight < 1250;
+
+            if (resolutionMatch && !isFalsely4k) {
                 const found = resolutionMatch[1].toLowerCase();
                 if (found === '8k' || found === '4320p') {
                     resolutionTag = '8K';
