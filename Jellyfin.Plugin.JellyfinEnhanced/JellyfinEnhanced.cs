@@ -318,6 +318,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             bool activityFeedExists = config.Value<JArray>("pages")!
                 .Any(x => x.Value<string>("Id") == $"{namespaceName}.ActivityPage");
 
+            bool recommendationsExists = config.Value<JArray>("pages")!
+                .Any(x => x.Value<string>("Id") == $"{namespaceName}.RecommendationsPage");
+
             // Only add calendar page if it's enabled and using plugin pages
             if (!calendarExists && pluginConfig.CalendarPageEnabled && pluginConfig.CalendarUsePluginPages)
             {
@@ -430,6 +433,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 if (activityPage != null)
                 {
                     config.Value<JArray>("pages")!.Remove(activityPage);
+                }
+            }
+
+            // Only add recommendations page if it's enabled and using plugin pages
+            if (!recommendationsExists && pluginConfig.RecommendationsPageEnabled && pluginConfig.RecommendationsUsePluginPages)
+            {
+                config.Value<JArray>("pages")!.Add(new JObject
+                {
+                    { "Id", $"{namespaceName}.RecommendationsPage" },
+                    { "Url", $"{(supportsSubUrls ? "" : rootUrl)}/JellyfinEnhanced/recommendationsPage" },
+                    { "DisplayText", "Recommendations" },
+                    { "Icon", "auto_awesome" },
+                    { "Version", pluginPageConfigVersion }
+                });
+            }
+            // Remove recommendations page if it exists but is now disabled or not using plugin pages
+            else if (recommendationsExists && (!pluginConfig.RecommendationsPageEnabled || !pluginConfig.RecommendationsUsePluginPages))
+            {
+                var recommendationsPage = config.Value<JArray>("pages")!
+                    .FirstOrDefault(x => x.Value<string>("Id") == $"{namespaceName}.RecommendationsPage");
+                if (recommendationsPage != null)
+                {
+                    config.Value<JArray>("pages")!.Remove(recommendationsPage);
                 }
             }
 
