@@ -198,6 +198,21 @@
             try {
                 await loadMoreFn();
                 retryCount = 0;
+
+                // The sentinel can still be within the prefetch threshold after
+                // this load (e.g. a heavily-filtered page that renders very few
+                // cards, leaving no scrollbar at all). With nothing to scroll,
+                // no 'scroll' event ever fires, and IntersectionObserver only
+                // fires on isIntersecting transitions - not while it stays
+                // continuously true - so the next page would otherwise never
+                // load. Check again and keep going instead of waiting forever.
+                if (hasMoreCheck() && !isLoadingCheck() && sentinel.isConnected) {
+                    const rect = sentinel.getBoundingClientRect();
+                    const distanceFromBottom = rect.top - window.innerHeight;
+                    if (distanceFromBottom < CONFIG.prefetchThresholdPx) {
+                        await wrappedLoad();
+                    }
+                }
             } catch (error) {
                 if (error.name === 'AbortError') return;
 
