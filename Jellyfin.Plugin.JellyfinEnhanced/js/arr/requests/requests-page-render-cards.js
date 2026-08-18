@@ -118,12 +118,12 @@
       releaseDateHtml = `<span class="je-release-date-chip">${icon}${typeof dateText === 'object' ? dateText.text || '' : escapeHtml(dateText)}</span>`;
     }
 
-    // Placeholder for "Open in Seerr"/"Open in Radarr or Sonarr" links, only
-    // relevant while the item isn't in the Jellyfin library yet (clicking the
-    // card itself does nothing useful until then). Filled in asynchronously
-    // by hydrateExternalLinks() once the card is in the DOM.
+    // Placeholder for "Open in Seerr"/"Open in Radarr or Sonarr" links -
+    // shown on every card, not just ones missing from the library, so users
+    // can always jump to Seerr/Radarr/Sonarr for a title. Filled in
+    // asynchronously by hydrateExternalLinks() once the card is in the DOM.
     let externalLinksHtml = "";
-    if (!item.jellyfinMediaId && item.tmdbId) {
+    if (item.tmdbId) {
       externalLinksHtml = `<div class="je-request-external-links" data-tmdb-id="${escapeHtml(String(item.tmdbId))}" data-tvdb-id="${escapeHtml(String(item.tvdbId || ""))}" data-media-type="${escapeHtml(item.type || "")}"></div>`;
     }
 
@@ -418,7 +418,7 @@
 
   /**
    * Fills in the "Open in Seerr"/"Open in Radarr or Sonarr" links for
-   * not-yet-in-library request cards, once they're in the DOM. The Seerr
+   * request cards, once they're in the DOM. The Seerr
    * link is shown to everyone (matches seerr-detail-link.js's gating); the
    * arr link is only attempted for admins with ArrLinksEnabled - matching
    * the same gate arr-links.js uses on item-details pages. The backend

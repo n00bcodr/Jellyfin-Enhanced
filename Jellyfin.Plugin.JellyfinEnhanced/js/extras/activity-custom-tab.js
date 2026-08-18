@@ -35,6 +35,14 @@
     }, 'history');
   }
 
+  var style = document.createElement('style');
+  style.textContent = [
+    '.backgroundContainer.withBackdrop:has(~ .mainAnimatedPages #indexPage .tabContent.is-active .jellyfinenhanced.activity) {',
+    '  background: rgba(0, 0, 0, 0.7) !important;',
+    '}'
+  ].join('\n');
+  document.head.appendChild(style);
+
   /** The last DOM node we mounted into. */
   var lastMountedContainer = null;
 

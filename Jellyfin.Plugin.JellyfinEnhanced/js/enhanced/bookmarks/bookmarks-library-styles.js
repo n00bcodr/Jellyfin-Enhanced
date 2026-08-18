@@ -892,4 +892,12 @@
   `;
   document.head.appendChild(style);
 
+  const backdropStyle = document.createElement('style');
+  backdropStyle.textContent = [
+    '.backgroundContainer.withBackdrop:has(~ .mainAnimatedPages #indexPage .tabContent.is-active .sections.bookmarks) {',
+    '  background: rgba(0, 0, 0, 0.7) !important;',
+    '}'
+  ].join('\n');
+  document.head.appendChild(backdropStyle);
+
 })(window.JellyfinEnhanced);
