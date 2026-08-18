@@ -20,6 +20,7 @@
   const renderSeasonPackCard = P.renderSeasonPackCard;
   const clearAvatarObjectUrlCache = P.clearAvatarObjectUrlCache;
   const hydrateAvatarImages = P.hydrateAvatarImages;
+  const hydrateExternalLinks = P.hydrateExternalLinks;
   const loadAllData = P.loadAllData;
   const handleRequestAction = P.handleRequestAction;
 
@@ -307,6 +308,7 @@
     clearAvatarObjectUrlCache();
     container.innerHTML = html; // existing pattern from upstream — html built from escapeHtml'd values
     hydrateAvatarImages(container);
+    hydrateExternalLinks(container);
 
     // Add event listener for refresh button
     const refreshBtn = container.querySelector('.je-refresh-btn');

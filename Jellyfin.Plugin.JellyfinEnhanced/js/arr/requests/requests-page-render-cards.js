@@ -23,6 +23,7 @@
 
   const SONARR_ICON_URL = window.JellyfinEnhanced.cdn.selfhst('svg/sonarr.svg');
   const RADARR_ICON_URL = window.JellyfinEnhanced.cdn.selfhst('svg/radarr-light-hybrid-light.svg');
+  const SEERR_ICON_URL = window.JellyfinEnhanced.cdn.selfhst('svg/seerr.svg');
 
   /**
    * Render a download card
@@ -117,9 +118,21 @@
       releaseDateHtml = `<span class="je-release-date-chip">${icon}${typeof dateText === 'object' ? dateText.text || '' : escapeHtml(dateText)}</span>`;
     }
 
+    // Placeholder for "Open in Seerr"/"Open in Radarr or Sonarr" links, only
+    // relevant while the item isn't in the Jellyfin library yet (clicking the
+    // card itself does nothing useful until then). Filled in asynchronously
+    // by hydrateExternalLinks() once the card is in the DOM.
+    let externalLinksHtml = "";
+    if (!item.jellyfinMediaId && item.tmdbId) {
+      externalLinksHtml = `<div class="je-request-external-links" data-tmdb-id="${escapeHtml(String(item.tmdbId))}" data-tvdb-id="${escapeHtml(String(item.tvdbId || ""))}" data-media-type="${escapeHtml(item.type || "")}"></div>`;
+    }
+
     return `
             <div class="je-request-card" ${item.jellyfinMediaId ? `data-media-id="${escapeHtml(item.jellyfinMediaId)}"` : ''}>
-                ${posterHtml}
+                <div class="je-request-poster-col">
+                    ${posterHtml}
+                    ${externalLinksHtml}
+                </div>
                 <div class="je-request-info">
                     <div class="je-request-header">
                       <div>
@@ -370,8 +383,102 @@
     `;
   }
 
+  // Mirrors arr-links.js's own URL-mapping logic (reverse-proxy address
+  // rewriting) - kept as a small local copy since arr-links.js defines these
+  // inside its own per-init closure rather than exposing them on JE.
+  function parseUrlMappings(mappingsString) {
+    const mappings = [];
+    if (!mappingsString) return mappings;
+    mappingsString.split('\n').forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      const parts = trimmed.split('|').map(p => p.trim());
+      if (parts.length === 2 && parts[0] && parts[1]) {
+        mappings.push({ jellyfinUrl: parts[0], arrUrl: parts[1] });
+      }
+    });
+    return mappings;
+  }
+
+  function getMappedUrl(urlMappings, defaultUrl) {
+    if (!defaultUrl) return null;
+    if (!urlMappings || urlMappings.length === 0) return defaultUrl;
+    const serverAddress = (typeof ApiClient !== 'undefined' && ApiClient.serverAddress)
+      ? ApiClient.serverAddress()
+      : window.location.origin;
+    const currentUrl = serverAddress.replace(/\/+$/, '').toLowerCase();
+    for (const mapping of urlMappings) {
+      const normalizedJellyfinUrl = mapping.jellyfinUrl.replace(/\/+$/, '').toLowerCase();
+      if (currentUrl === normalizedJellyfinUrl) {
+        return mapping.arrUrl.replace(/\/$/, '');
+      }
+    }
+    return defaultUrl.replace(/\/$/, '');
+  }
+
+  /**
+   * Fills in the "Open in Seerr"/"Open in Radarr or Sonarr" links for
+   * not-yet-in-library request cards, once they're in the DOM. The Seerr
+   * link is shown to everyone (matches seerr-detail-link.js's gating); the
+   * arr link is only attempted for admins with ArrLinksEnabled - matching
+   * the same gate arr-links.js uses on item-details pages. The backend
+   * endpoints also enforce admin-only regardless.
+   * @param {HTMLElement} container
+   */
+  async function hydrateExternalLinks(container) {
+    const slots = container.querySelectorAll('.je-request-external-links[data-tmdb-id]');
+    if (!slots.length) return;
+
+    const isAdmin = JE.currentSettings?.isAdmin === true;
+    const arrLinksEnabled = JE.pluginConfig?.ArrLinksEnabled === true;
+    const seerrLinksEnabled = JE.pluginConfig?.JellyseerrEnabled !== false
+      && JE.pluginConfig?.JellyseerrShowDetailPageLink !== false;
+    const seerrBase = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl?.() || '';
+
+    slots.forEach(async (slot) => {
+      const tmdbId = slot.getAttribute('data-tmdb-id');
+      const tvdbId = slot.getAttribute('data-tvdb-id');
+      const mediaType = slot.getAttribute('data-media-type') === 'tv' ? 'tv' : 'movie';
+      if (!tmdbId) return;
+
+      const buttons = [];
+
+      if (seerrLinksEnabled && seerrBase) {
+        const seerrLabel = JE.t?.('jellyseerr_card_view_on_jellyseerr') || 'View on Seerr';
+        buttons.push(`<a is="emby-linkbutton" class="je-request-external-link" href="${escapeHtml(`${seerrBase}/${mediaType}/${tmdbId}`)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(seerrLabel)}" aria-label="${escapeHtml(seerrLabel)}"><img src="${SEERR_ICON_URL}" alt="Seerr"></a>`);
+      }
+
+      if (isAdmin && arrLinksEnabled) {
+        try {
+          if (mediaType === 'movie') {
+            const data = await JE.core.api.plugin(`/arr/movie-instances?tmdbId=${encodeURIComponent(tmdbId)}`);
+            const match = (data?.matches || [])[0];
+            const url = match ? getMappedUrl(parseUrlMappings(match.urlMappings || ''), match.instanceUrl) : null;
+            if (url) {
+              buttons.push(`<a is="emby-linkbutton" class="je-request-external-link" href="${escapeHtml(`${url}/movie/${tmdbId}`)}" target="_blank" rel="noopener noreferrer" title="Open in Radarr" aria-label="Open in Radarr"><img src="${RADARR_ICON_URL}" alt="Radarr"></a>`);
+            }
+          } else if (tvdbId) {
+            const data = await JE.core.api.plugin(`/arr/series-slugs?tvdbId=${encodeURIComponent(tvdbId)}`);
+            const match = (data?.matches || [])[0];
+            const url = match ? getMappedUrl(parseUrlMappings(match.urlMappings || ''), match.instanceUrl) : null;
+            if (url && match.titleSlug) {
+              buttons.push(`<a is="emby-linkbutton" class="je-request-external-link" href="${escapeHtml(`${url}/series/${match.titleSlug}`)}" target="_blank" rel="noopener noreferrer" title="Open in Sonarr" aria-label="Open in Sonarr"><img src="${SONARR_ICON_URL}" alt="Sonarr"></a>`);
+            }
+          }
+        } catch (e) {
+          // No link is an acceptable fallback - not yet added to arr, instance
+          // unreachable, etc. Silent, same as arr-links.js's own per-item misses.
+        }
+      }
+
+      if (!slot.isConnected || !buttons.length) return;
+      slot.innerHTML = buttons.join('');
+    });
+  }
+
   P.renderDownloadCard = renderDownloadCard;
   P.renderRequestCard = renderRequestCard;
+  P.hydrateExternalLinks = hydrateExternalLinks;
   P.renderIssueCard = renderIssueCard;
   P.renderHistoryCard = renderHistoryCard;
   P.renderSeasonPackCard = renderSeasonPackCard;

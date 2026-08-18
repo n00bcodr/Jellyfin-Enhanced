@@ -161,6 +161,13 @@
             padding: 1em;
             overflow: visible;
         }
+        .je-request-poster-col {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.6em;
+            flex-shrink: 0;
+        }
         .je-request-info {
             overflow: hidden;
             min-width: 0;
@@ -221,6 +228,28 @@
         }
         .je-request-watch-btn:hover { opacity: 0.9; }
         .je-request-watch-btn .material-icons { font-size: 20px; }
+        .je-request-external-links {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.3em;
+          width: 80px;
+        }
+        .je-request-external-link {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          opacity: 0.75;
+          transition: opacity 0.15s;
+        }
+        .je-request-external-link:hover { opacity: 1; }
+        .je-request-external-link img {
+          width: 16px;
+          height: 16px;
+          object-fit: contain;
+          filter: drop-shadow(0 1px 2px rgba(0,0,0,0.35));
+        }
+        .je-request-external-links:empty { display: none; }
         .je-request-approve-btn, .je-request-decline-btn {
           border: none;
           padding: 0.45em;

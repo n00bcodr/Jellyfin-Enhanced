@@ -8659,6 +8659,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             year = year,
                             posterUrl = posterUrl,
                             tmdbId = tmdbId,
+                            // TV only — Sonarr identifies series by TVDB id, not TMDB id, so
+                            // this is what the Requests page needs to build an "Open in Sonarr"
+                            // link via /arr/series-slugs.
+                            tvdbId = media?["tvdbId"]?.Value<int?>(),
                             mediaStatus = mediaStatus,
                             // Raw Seerr request status (1=Pending, 2=Approved, 3=Declined,
                             // 4=Failed, 5=Completed). Exposed separately from mediaStatus
