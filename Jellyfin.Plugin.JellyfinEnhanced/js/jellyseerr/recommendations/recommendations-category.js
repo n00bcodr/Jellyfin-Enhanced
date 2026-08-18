@@ -14,6 +14,31 @@
   const fetchWithManagedRequest = P.fetchWithManagedRequest;
   const hidePage = P.hidePage;
 
+  const SORT_MODULE = 'recommendationsCategory';
+  const FILTER_MODULE = 'recommendationsTrending';
+
+  // Seerr only reads sortBy server-side for its plain /discover/movies and
+  // /discover/tv routes - genre, studio, network, upcoming and trending all
+  // ignore it. So sorting is done client-side on each fetched page instead,
+  // which works everywhere (including the mixed movie/TV Trending feed,
+  // since it just checks whichever date field an item actually has) at the
+  // cost of only sorting within each already-loaded page, not globally.
+  function sortResults(results, sortBy) {
+    if (!sortBy) return results;
+    const sorted = [...results];
+    if (sortBy === 'vote_average.desc') {
+      sorted.sort((a, b) => (b.voteAverage || 0) - (a.voteAverage || 0));
+    } else if (sortBy === 'release_date.desc' || sortBy === 'release_date.asc') {
+      const dir = sortBy.endsWith('.desc') ? -1 : 1;
+      sorted.sort((a, b) => {
+        const dateA = a.releaseDate || a.firstAirDate || '';
+        const dateB = b.releaseDate || b.firstAirDate || '';
+        return dir * dateA.localeCompare(dateB);
+      });
+    }
+    return sorted;
+  }
+
   function createCategoryPageContainer() {
     let page = document.getElementById("je-recommendations-category-page");
     if (!page) {
@@ -31,6 +56,10 @@
                 <span class="material-icons" aria-hidden="true">arrow_back</span>
               </button>
               <h1 id="je-recommendations-category-title"></h1>
+              <div id="je-recommendations-category-controls" style="margin-left:auto;display:flex;align-items:center;gap:0.75em;">
+                <div id="je-recommendations-category-filter"></div>
+                <div id="je-recommendations-category-sort"></div>
+              </div>
             </div>
             <div id="je-recommendations-category-container" is="emby-itemscontainer" class="itemsContainer padded-left padded-right vertical-wrap"></div>
           </div>
@@ -70,7 +99,7 @@
       while (!renderedAnyCards && emptyPagesSkipped < MAX_CONSECUTIVE_EMPTY_PAGES) {
         nextPage += 1;
         const response = await fetchWithManagedRequest(`${category.path}?page=${nextPage}`);
-        const results = response?.results || [];
+        let results = response?.results || [];
         console.debug(`${logPrefix} category page ${nextPage}/${response?.totalPages}: ${results.length} raw result(s)`);
 
         if (results.length === 0) {
@@ -78,6 +107,8 @@
           state.categoryState.hasMore = false;
           return;
         }
+
+        results = sortResults(results, JE.discoveryFilter.getSortMode(SORT_MODULE));
 
         // Filters out already-in-library/hidden items - a raw non-empty API
         // page can still render zero actual cards.
@@ -92,6 +123,20 @@
       }
     } finally {
       state.categoryState.isLoading = false;
+    }
+  }
+
+  async function loadInitialCategoryPage(category, container) {
+    container.textContent = '';
+    state.categoryState.page = 1;
+    state.categoryState.hasMore = true;
+    try {
+      const response = await fetchWithManagedRequest(`${category.path}?page=1`);
+      const results = sortResults(response?.results || [], JE.discoveryFilter.getSortMode(SORT_MODULE));
+      container.appendChild(JE.discoveryFilter.createCardsFragment(results, { cardClass: 'portraitCard' }));
+      state.categoryState.hasMore = 1 < (response?.totalPages || 1);
+    } catch (error) {
+      console.error(`${logPrefix} Failed to load category`, error);
     }
   }
 
@@ -112,6 +157,35 @@
 
     const page = createCategoryPageContainer();
     document.getElementById('je-recommendations-category-title').textContent = category.title;
+
+    const container = document.getElementById('je-recommendations-category-container');
+
+    // All | Movies | Series filter - only Trending mixes both media types.
+    const filterContainer = document.getElementById('je-recommendations-category-filter');
+    filterContainer.textContent = '';
+    if (categoryKey === 'trending') {
+      filterContainer.appendChild(JE.discoveryFilter.createFilterControl(FILTER_MODULE, (newMode) => {
+        JE.discoveryFilter.applyFilterVisibility(container, newMode);
+      }));
+      JE.discoveryFilter.applyFilterVisibility(container, JE.discoveryFilter.getFilterMode(FILTER_MODULE));
+    } else {
+      JE.discoveryFilter.applyFilterVisibility(container, JE.discoveryFilter.MODES.MIXED);
+    }
+
+    const sortContainer = document.getElementById('je-recommendations-category-sort');
+    sortContainer.textContent = '';
+    sortContainer.appendChild(JE.discoveryFilter.createSortControl(SORT_MODULE, () => {
+      JE.discoveryFilter.cleanupScrollObserver(state.categoryState);
+      loadInitialCategoryPage(category, container).then(() => {
+        JE.discoveryFilter.setupInfiniteScroll(
+          state.categoryState,
+          '#je-recommendations-category-page .content-primary',
+          () => loadMoreCategoryItems(category, container),
+          () => state.categoryState.hasMore,
+          () => state.categoryState.isLoading
+        );
+      });
+    }));
 
     // Deliberately does NOT touch the History API at all (no pushState,
     // no URL change) - jellyfin-web's React router intercepts every
@@ -134,17 +208,7 @@
     page.dispatchEvent(new CustomEvent("viewshow", { bubbles: true, detail: { type: "custom", isRestored: false, options: {} } }));
     page.dispatchEvent(new CustomEvent("pageshow", { bubbles: true, detail: {} }));
 
-    const container = document.getElementById('je-recommendations-category-container');
-    container.textContent = '';
-
-    try {
-      const response = await fetchWithManagedRequest(`${category.path}?page=1`);
-      const results = response?.results || [];
-      container.appendChild(JE.discoveryFilter.createCardsFragment(results, { cardClass: 'portraitCard' }));
-      state.categoryState.hasMore = 1 < (response?.totalPages || 1);
-    } catch (error) {
-      console.error(`${logPrefix} Failed to load category ${categoryKey}`, error);
-    }
+    await loadInitialCategoryPage(category, container);
 
     JE.discoveryFilter.setupInfiniteScroll(
       state.categoryState,
