@@ -288,7 +288,7 @@
      * @param {object} state - State object
      */
     function cleanupInfiniteScroll(state) {
-        console.debug(`${logPrefix} Cleaning up infinite scroll`);
+        // console.debug(`${logPrefix} Cleaning up infinite scroll`);
 
         if (state.activeScrollObserver) {
             state.activeScrollObserver.disconnect();

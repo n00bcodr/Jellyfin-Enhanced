@@ -104,11 +104,11 @@
             resortBodySubscribers();
         }
         ensureBodyObserver();
-        console.log(`🪼 Jellyfin Enhanced: Body subscriber registered: ${id} (priority: ${priority}, total: ${bodySubscribers.size})`);
+        // console.log(`🪼 Jellyfin Enhanced: Body subscriber registered: ${id} (priority: ${priority}, total: ${bodySubscribers.size})`);
         const cleanup = () => {
             if (!bodySubscribers.has(id)) return;
             bodySubscribers.delete(id);
-            console.log(`🪼 Jellyfin Enhanced: Body subscriber removed: ${id} (remaining: ${bodySubscribers.size})`);
+            // console.log(`🪼 Jellyfin Enhanced: Body subscriber removed: ${id} (remaining: ${bodySubscribers.size})`);
             stopBodyObserverIfEmpty();
         };
         return { unsubscribe: cleanup, disconnect: cleanup };
@@ -122,7 +122,7 @@
     function removeBodySubscriber(id) {
         const removed = bodySubscribers.delete(id);
         if (removed) {
-            console.log(`🪼 Jellyfin Enhanced: Body subscriber removed: ${id} (remaining: ${bodySubscribers.size})`);
+            // console.log(`🪼 Jellyfin Enhanced: Body subscriber removed: ${id} (remaining: ${bodySubscribers.size})`);
             stopBodyObserverIfEmpty();
         }
         return removed;
@@ -171,7 +171,7 @@
         observer.observe(target, config);
 
         activeObservers.set(id, observer);
-        console.log(`🪼 Jellyfin Enhanced: Created dedicated observer: ${id} (total: ${activeObservers.size})`);
+        // console.log(`🪼 Jellyfin Enhanced: Created dedicated observer: ${id} (total: ${activeObservers.size})`);
 
         return observer;
     }

@@ -49,7 +49,7 @@
         style.textContent = css;
         document.head.appendChild(style);
 
-        console.log(`🪼 Jellyfin Enhanced: Added CSS: ${id}`);
+        // console.log(`🪼 Jellyfin Enhanced: Added CSS: ${id}`);
     }
 
     /**
