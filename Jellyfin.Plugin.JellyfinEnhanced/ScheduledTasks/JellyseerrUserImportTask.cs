@@ -87,8 +87,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             if (importResult.Reached && importResult.Imported > 0)
             {
                 // Only flush caches when at least one user was actually
-                // imported — otherwise a 0-imported partial-failure run wipes
-                // every healthy cache entry..                 JellyfinEnhancedController.ClearUserCaches();
+                // imported, otherwise a 0-imported partial-failure run wipes
+                // every healthy cache entry.
+                JellyfinEnhancedController.ClearUserCaches();
             }
 
             if (importResult.Reached)
