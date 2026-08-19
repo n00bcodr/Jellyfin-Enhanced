@@ -7318,7 +7318,10 @@
                     return tabContent ? { id: id, tab: tabContent.id, selector: '#' + id, title: jeHumanizeSettingId(id), version: newSettings[id] } : null;
                 }).filter(Boolean);
 
-                renderWhatsNewBanner(perSetting.length ? groupWhatsNewByFieldset(perSetting) : [], pluginVersion);
+                var distinctVersions = new Set(perSetting.map(function(f) { return f.version; }));
+                var singleVersion = distinctVersions.size === 1 ? perSetting[0].version : null;
+
+                renderWhatsNewBanner(perSetting.length ? groupWhatsNewByFieldset(perSetting) : [], pluginVersion, singleVersion);
                 renderWhatsNewBadges(perSetting);
             }).catch(function(err) {
                 console.warn('[JE] whats-new check failed:', err);
@@ -7379,7 +7382,7 @@
             renderWhatsNewBadges([]);
         }
 
-        function renderWhatsNewBanner(unseen, pluginVersion) {
+        function renderWhatsNewBanner(unseen, pluginVersion, singleVersion) {
             var existing = document.getElementById('je-whats-new-banner');
             if (existing) existing.remove();
             if (!pluginVersion) return;
@@ -7407,20 +7410,23 @@
 
             var headingRow = document.createElement('div');
             headingRow.className = 'je-whats-new-heading-row';
-            // Version-neutral heading: pending settings can span more than
-            // one undismissed release, and each badge states its own
-            // first-seen version individually.
+            // Every pending setting comes from the same version (the common
+            // case, and always true for the first release with this feature)
+            // -> name it and deep-link that tag. Spanning several undismissed
+            // releases falls back to a version-neutral heading and the full
+            // release list, since each badge states its own version anyway.
             var heading = document.createElement('strong');
-            heading.textContent = unseen.length > 0
-                ? "What's new since you last checked:"
-                : ("No new settings in v" + pluginVersion + '.');
+            heading.textContent = unseen.length === 0
+                ? ("No new settings in v" + pluginVersion + '.')
+                : (singleVersion ? ("What's new in v" + singleVersion + ':') : "What's new since you last checked:");
             headingRow.appendChild(heading);
             if (pluginVersion) {
                 var releaseLink = document.createElement('a');
-                // Multiple releases may be covered, so link to the full list rather than one tag; a single pending version can deep-link.
-                releaseLink.href = unseen.length > 0
-                    ? 'https://github.com/n00bcodr/Jellyfin-Enhanced/releases'
-                    : 'https://github.com/n00bcodr/Jellyfin-Enhanced/releases/tag/' + encodeURIComponent(pluginVersion);
+                releaseLink.href = unseen.length === 0
+                    ? 'https://github.com/n00bcodr/Jellyfin-Enhanced/releases/tag/' + encodeURIComponent(pluginVersion)
+                    : (singleVersion
+                        ? 'https://github.com/n00bcodr/Jellyfin-Enhanced/releases/tag/' + encodeURIComponent(singleVersion)
+                        : 'https://github.com/n00bcodr/Jellyfin-Enhanced/releases');
                 releaseLink.target = '_blank';
                 releaseLink.rel = 'noopener noreferrer';
                 releaseLink.className = 'je-whats-new-release-link';
