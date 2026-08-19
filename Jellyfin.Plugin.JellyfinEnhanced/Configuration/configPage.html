@@ -2979,8 +2979,9 @@
                         chip.className = 'je-section-nav-chip';
                         chip.textContent = label;
                         chip.addEventListener('click', () => {
-                            // center, not start: avoids the sticky header overlapping the fieldset.
-                            fieldset.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            jeScrollFieldsetIntoView(fieldset);
+                            fieldset.classList.add('je-jump-flash-nav');
+                            setTimeout(() => fieldset.classList.remove('je-jump-flash-nav'), 3000);
                         });
                         nav.appendChild(chip);
                     });
@@ -2996,22 +2997,51 @@
                 });
             })();
 
-            /** Switches to tabId and, if selector is given, scrolls that element into view. */
-            function jeJumpToTab(tabId, selector) {
+            /** Scrolls a fieldset's top just below .je-sticky-header (sticky title/search/tab bar). */
+            function jeScrollFieldsetIntoView(fieldset) {
+                const headerEl = document.querySelector('.je-sticky-header');
+                const offset = (headerEl ? headerEl.offsetHeight : 0) + 12;
+                const targetY = window.scrollY + fieldset.getBoundingClientRect().top - offset;
+                window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
+            }
+
+            /** Flash the rounded card wrapping a control, not the bare control itself. */
+            function jeResolveFlashTarget(rawEl) {
+                return (rawEl && rawEl.tagName !== 'FIELDSET')
+                    ? (rawEl.closest('.checkboxContainer, .inputContainer, .selectContainer') || rawEl)
+                    : rawEl;
+            }
+
+            function jeFlashElement(el) {
+                el.classList.add('je-jump-flash');
+                setTimeout(() => el.classList.remove('je-jump-flash'), 3000);
+            }
+
+            /** Switches to tabId, scrolls to selector, and flashes it plus every element in extraSelectors. */
+            function jeJumpToTab(tabId, selector, extraSelectors) {
                 const tabBtn = document.querySelector('.jellyfin-tab-button[data-tab="' + tabId + '"]');
                 if (tabBtn) tabBtn.click();
                 if (!selector) return;
                 // Double rAF: lands after activateTab's own scroll-memory restore.
                 requestAnimationFrame(() => {
                     requestAnimationFrame(() => {
-                        const target = document.querySelector(selector);
+                        const rawTarget = document.querySelector(selector);
+                        const target = jeResolveFlashTarget(rawTarget);
                         if (target) {
-                            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            target.classList.add('je-jump-flash');
-                            setTimeout(() => target.classList.remove('je-jump-flash'), 1600);
+                            if (target.tagName === 'FIELDSET') {
+                                jeScrollFieldsetIntoView(target);
+                            } else {
+                                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                            jeFlashElement(target);
                         } else {
                             console.warn('[JE] jeJumpToTab: target not found:', selector);
                         }
+                        (extraSelectors || []).forEach((extraSelector) => {
+                            if (extraSelector === selector) return;
+                            const extraTarget = jeResolveFlashTarget(document.querySelector(extraSelector));
+                            if (extraTarget && extraTarget !== target) jeFlashElement(extraTarget);
+                        });
                     });
                 });
             }
@@ -7295,8 +7325,11 @@
             });
         }
 
+        var _jeAutoFieldsetIdCounter = 0;
+
         /** Collapses new settings to one banner entry per fieldset, so a whole new feature reads as one line, not a wall of chips. */
         function groupWhatsNewByFieldset(perSetting) {
+            var newIdSet = new Set(perSetting.map(function(f) { return f.id; }));
             var groups = {};
             var order = [];
             perSetting.forEach(function(f) {
@@ -7311,8 +7344,29 @@
                 }
                 var key = f.tab + ':' + title;
                 if (!groups[key]) {
-                    groups[key] = { tab: f.tab, selector: f.selector, title: title };
+                    // Flash the whole fieldset only when every control in it is new;
+                    // otherwise flash each new control individually.
+                    var selector = f.selector;
+                    var isWholeFieldset = false;
+                    if (fieldset) {
+                        var allIds = Array.from(fieldset.querySelectorAll('input[id], select[id], textarea[id], button[id]')).map(function(el) { return el.id; });
+                        var allNew = allIds.length > 0 && allIds.every(function(id) { return newIdSet.has(id); });
+                        if (allNew) {
+                            if (!fieldset.id) fieldset.id = 'je-fieldset-auto-' + (++_jeAutoFieldsetIdCounter);
+                            selector = '#' + fieldset.id;
+                            isWholeFieldset = true;
+                        }
+                    }
+                    groups[key] = {
+                        tab: f.tab,
+                        selector: selector,
+                        title: title,
+                        isWholeFieldset: isWholeFieldset,
+                        flashSelectors: [isWholeFieldset ? selector : f.selector]
+                    };
                     order.push(key);
+                } else if (!groups[key].isWholeFieldset) {
+                    groups[key].flashSelectors.push(f.selector);
                 }
             });
             return order.map(function(key) { return groups[key]; });
@@ -7389,7 +7443,7 @@
                     chip.className = 'je-whats-new-chip';
                     chip.textContent = f.title;
                     chip.addEventListener('click', function() {
-                        jeJumpToTab(f.tab, f.selector);
+                        jeJumpToTab(f.tab, f.selector, f.flashSelectors);
                     });
                     list.appendChild(chip);
                 });

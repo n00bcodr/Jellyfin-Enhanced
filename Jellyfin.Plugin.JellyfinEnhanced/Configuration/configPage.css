@@ -368,13 +368,47 @@
     opacity: 0.65;
     line-height: 1.3;
 }
-/* Brief highlight so a jeJumpToTab() deep-link target stands out among similar siblings. */
-.je-jump-flash {
-    animation: jeJumpFlash 1.6s ease-out;
+/* Brief highlight so a jump target stands out among similar siblings.
+   The glow lives on ::after, not the target's own box-shadow/background,
+   since Jellyfin's own button/fieldset styles use !important there and
+   !important is stripped from @keyframes. Amber = What's New target,
+   accent color = plain section quick-nav jump. */
+.je-jump-flash, .je-jump-flash-nav {
+    --je-flash-color: #ffc107;
+    animation: jeJumpFlashScale 3s ease-out;
+    position: relative;
+    overflow: visible !important;
 }
-@keyframes jeJumpFlash {
-    0%   { box-shadow: 0 0 0 3px var(--primary-accent-color, #00a4dc); }
-    100% { box-shadow: 0 0 0 3px transparent; }
+.je-jump-flash-nav {
+    --je-flash-color: var(--primary-accent-color, #00a4dc);
+}
+.je-jump-flash::after, .je-jump-flash-nav::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 5;
+    animation: jeJumpFlashGlow 3s ease-out;
+}
+@keyframes jeJumpFlashScale {
+    0%   { transform: scale(1.015); }
+    70%  { transform: scale(1); }
+    100% { transform: scale(1); }
+}
+@keyframes jeJumpFlashGlow {
+    0%   {
+        box-shadow: 0 0 0 2px var(--je-flash-color), 0 0 8px 1px var(--je-flash-color);
+        background-color: color-mix(in srgb, var(--je-flash-color) 10%, transparent);
+    }
+    50%  {
+        box-shadow: 0 0 0 2px var(--je-flash-color), 0 0 8px 1px var(--je-flash-color);
+        background-color: color-mix(in srgb, var(--je-flash-color) 10%, transparent);
+    }
+    100% {
+        box-shadow: 0 0 0 2px transparent, 0 0 8px 1px transparent;
+        background-color: transparent;
+    }
 }
 
 /* Empty-state hint shared by Service Status, Features, and Optional
