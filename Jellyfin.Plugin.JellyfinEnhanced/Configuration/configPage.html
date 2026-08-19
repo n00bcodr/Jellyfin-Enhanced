@@ -142,8 +142,8 @@
                                 <button type="button" id="resetAllUserSettingsBtn" class="je-quick-action" data-action="apply-all-users">
                                     <i class="material-icons je-quick-action-icon" aria-hidden="true">group</i>
                                     <div class="je-quick-action-text">
-                                        <span class="je-quick-action-title">Apply defaults to all users</span>
-                                        <span class="je-quick-action-detail">Overwrite every user's per-user settings with these defaults</span>
+                                        <span class="je-quick-action-title">Overwrite everyone's personal settings</span>
+                                        <span class="je-quick-action-detail">Copies the values on this page (Display, Playback, ...) into every user's Enhanced Panel, replacing anything they've customized for themselves</span>
                                     </div>
                                 </button>
                                 <button type="button" id="clearTagCachesQuickBtn" class="je-quick-action" data-action="clear-tag-caches">
@@ -159,6 +159,13 @@
                 </div>
 
                 <div id="display" class="jellyfin-tab-content">
+                    <div class="je-info-banner je-fieldset-wide je-tab-intro">
+                        <i class="material-icons je-info-icon">person</i>
+                        <div>
+                            Many of these are personal preferences, not just server-wide defaults. <br/>Each user can change these to their preference from the <strong>Enhanced Panel</strong> which can be accessed via sidebar link, their user menu, or pressing <kbd class="je-kbd">?</kbd> while browsing. <br/> What you set here is just the starting point; to force every user's personal copy to match it again, save your changes, then use <a href="#" class="sectionTitle je-jump-link" data-jump-tab="overview" data-jump-target="#resetAllUserSettingsBtn">Overwrite everyone's personal settings</a> in Quick Actions.
+                        </div>
+                    </div>
+
                     <fieldset>
                         <legend class="sectionTitle">UI Preferences</legend>
                         <div class="configSection">
@@ -385,7 +392,7 @@
                                 </select>
                             </div>
                             <div class="je-setting-description" data-desc-for="spoilerBlurMode" data-gated-by="spoilerBlurEnabled">
-                                <div class="fieldDescription">How protected cards look. <strong>Show stock cards</strong> (default) swaps each unwatched image for a safe parent-level placeholder — episodes show their series backdrop, seasons show the series poster, collection-opted movies show the collection art. <strong>Blur images</strong> instead applies a strong blur to the original so silhouettes and dominant colours still hint at "something is here". Pick stock cards for the strictest hide; pick blur if the placeholders feel too aggressive.</div>
+                                <div class="fieldDescription">How protected cards look. <strong>Show stock cards</strong> (default) swaps each unwatched image for a safe parent-level placeholder: episodes show their series backdrop, seasons show the series poster, collection-opted movies show the collection art. <strong>Blur images</strong> instead applies a strong blur to the original so silhouettes and dominant colours still hint at "something is here". Pick stock cards for the strictest hide; pick blur if the placeholders feel too aggressive.</div>
                             </div>
 
                             <div class="inputContainer" data-gated-by="spoilerBlurEnabled">
@@ -398,27 +405,27 @@
 
                             <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerBlurArtwork" is="emby-checkbox" type="checkbox"/><span>Also hide the wide backdrop / fanart</span></label></div>
                             <div class="je-setting-description" data-desc-for="spoilerBlurArtwork" data-gated-by="spoilerBlurEnabled">
-                                <div class="fieldDescription">By default the protection covers posters, episode thumbs, and screenshots — but leaves the wide cinematic backdrop / fanart on detail pages alone (it's usually atmosphere, not plot). Turn this on if you want backdrops hidden too for maximum protection.</div>
+                                <div class="fieldDescription">By default the protection covers posters, episode thumbs, and screenshots, but leaves the wide cinematic backdrop / fanart on detail pages alone (it's usually atmosphere, not plot). Turn this on if you want backdrops hidden too for maximum protection.</div>
                             </div>
 
                             <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerKeepMoviePosters" is="emby-checkbox" type="checkbox"/><span>Keep movie posters visible</span></label></div>
                             <div class="je-setting-description" data-desc-for="spoilerKeepMoviePosters" data-gated-by="spoilerBlurEnabled">
-                                <div class="fieldDescription">When on, a protected movie's poster still shows in full — the scene thumbnails inside the movie's detail page (chapters, screenshots) stay hidden. Useful if you find movie posters are usually marketing art that doesn't give plot away, while the chapter scene-thumbs inside the movie do. Doesn't affect TV shows.</div>
+                                <div class="fieldDescription">When on, a protected movie's poster still shows in full, but the scene thumbnails inside the movie's detail page (chapters, screenshots) stay hidden. Useful if you find movie posters are usually marketing art that doesn't give plot away, while the chapter scene-thumbs inside the movie do. Doesn't affect TV shows.</div>
                             </div>
 
                             <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerAutoEnableOnFirstPlay" is="emby-checkbox" type="checkbox"/><span>Auto-enable Spoiler Guard on first play of a new show</span></label></div>
                             <div class="je-setting-description" data-desc-for="spoilerAutoEnableOnFirstPlay" data-gated-by="spoilerBlurEnabled">
-                                <div class="fieldDescription">When on, Spoiler Guard turns itself on for a series the moment a user starts Season 1 Episode 1 of a show they've never watched. They don't have to remember to flip the toggle before pressing play. Rewatches and jumping in at later episodes are ignored — only a fresh first-play counts.</div>
+                                <div class="fieldDescription">When on, Spoiler Guard turns itself on for a series the moment a user starts Season 1 Episode 1 of a show they've never watched. They don't have to remember to flip the toggle before pressing play. Rewatches and jumping in at later episodes are ignored; only a fresh first-play counts.</div>
                             </div>
 
                             <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerAutoEnableOnSeerrRequest" is="emby-checkbox" type="checkbox"/><span>Auto-enable Spoiler Guard on Seerr request</span></label></div>
                             <div class="je-setting-description" data-desc-for="spoilerAutoEnableOnSeerrRequest" data-gated-by="spoilerBlurEnabled">
-                                <div class="fieldDescription">When on, requesting something through Seerr also pre-arms Spoiler Guard for that title — when the show or movie lands in the library, protection is already on for the user who requested it. Users can also pre-arm titles manually with the "Enable Spoiler Guard" button in the Seerr details popup (always available regardless of this toggle), handy when someone else requested the title first.</div>
+                                <div class="fieldDescription">When on, requesting something through Seerr also pre-arms Spoiler Guard for that title: when the show or movie lands in the library, protection is already on for the user who requested it. Users can also pre-arm titles manually with the "Enable Spoiler Guard" button in the Seerr details popup (always available regardless of this toggle), handy when someone else requested the title first.</div>
                             </div>
 
                             <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerBlurStrictRefresh" is="emby-checkbox" type="checkbox"/><span>Strict refresh mode (full page reload after toggle)</span></label></div>
                             <div class="je-setting-description" data-desc-for="spoilerBlurStrictRefresh" data-gated-by="spoilerBlurEnabled">
-                                <div class="fieldDescription">After a user flips Spoiler Guard on or off, card images update on the page instantly. By default, on-page text (description, episode titles, ratings) only refreshes when they navigate next. Turn this on to also reload the whole page after a toggle so the text updates straight away — at the cost of a brief page flash. Most users prefer it off for the smoother feel.</div>
+                                <div class="fieldDescription">After a user flips Spoiler Guard on or off, card images update on the page instantly. By default, on-page text (description, episode titles, ratings) only refreshes when they navigate next. Turn this on to also reload the whole page after a toggle so the text updates straight away, at the cost of a brief page flash. Most users prefer it off for the smoother feel.</div>
                             </div>
 
                             <details class="je-details-section" data-gated-by="spoilerBlurEnabled">
@@ -440,7 +447,7 @@
 
                                     <div class="checkboxContainer"><label><input id="spoilerStripOverview" is="emby-checkbox" type="checkbox"/><span>Hide episode descriptions</span></label></div>
                                     <div class="je-setting-description" data-desc-for="spoilerStripOverview">
-                                        <div class="fieldDescription">Swaps the per-episode plot summary for the placeholder text below. The single biggest source of leaks — strongly recommended on.</div>
+                                        <div class="fieldDescription">Swaps the per-episode plot summary for the placeholder text below. The single biggest source of leaks, strongly recommended on.</div>
                                     </div>
 
                                     <div class="inputContainer">
@@ -478,12 +485,12 @@
 
                                     <div class="checkboxContainer"><label><input id="spoilerReplaceTitle" is="emby-checkbox" type="checkbox"/><span>Replace episode titles</span></label></div>
                                     <div class="je-setting-description" data-desc-for="spoilerReplaceTitle">
-                                        <div class="fieldDescription">Swaps episode names like "The Death of X" for "Season 2, Episode 6". Some clients show the title in navigation tooltips and breadcrumbs where the swap can look a bit clinical — turn off if your users prefer to keep the original titles visible.</div>
+                                        <div class="fieldDescription">Swaps episode names like "The Death of X" for "Season 2, Episode 6". Some clients show the title in navigation tooltips and breadcrumbs where the swap can look a bit clinical; turn off if your users prefer to keep the original titles visible.</div>
                                     </div>
 
                                     <div class="checkboxContainer"><label><input id="spoilerStripCast" is="emby-checkbox" type="checkbox"/><span>Hide cast on unwatched episodes</span></label></div>
                                     <div class="je-setting-description" data-desc-for="spoilerStripCast">
-                                        <div class="fieldDescription">An unexpected guest star — or a regular suddenly missing from the cast list — can give away the whole episode. Hides the cast on unwatched episodes; pick what counts as "cast" below.</div>
+                                        <div class="fieldDescription">An unexpected guest star, or a regular suddenly missing from the cast list, can give away the whole episode. Hides the cast on unwatched episodes; pick what counts as "cast" below.</div>
                                     </div>
 
                                     <div class="selectContainer" data-gated-by="spoilerStripCast">
@@ -494,7 +501,7 @@
                                         </select>
                                     </div>
                     <div class="je-setting-description" data-desc-for="spoilerStripCastMode" data-gated-by="spoilerStripCast">
-                                        <div class="fieldDescription"><strong>Guest stars only</strong> keeps the regular cast visible — they're in every episode anyway, so they don't give anything away. <strong>Entire cast</strong> is the strict option for shows where the recurring cast appearing or not appearing in a given episode is itself the spoiler.</div>
+                                        <div class="fieldDescription"><strong>Guest stars only</strong> keeps the regular cast visible, since they're in every episode anyway and don't give anything away. <strong>Entire cast</strong> is the strict option for shows where the recurring cast appearing or not appearing in a given episode is itself the spoiler.</div>
                                     </div>
 
                                     <div class="checkboxContainer"><label><input id="spoilerStripReviews" is="emby-checkbox" type="checkbox"/><span>Hide reviews on Spoiler Guard series</span></label></div>
@@ -509,13 +516,13 @@
                                 <div class="je-details-body">
                                     <div class="checkboxContainer"><label><input id="spoilerAdvancedMode" is="emby-checkbox" type="checkbox"/><span>Enable advanced per-category reveals</span></label></div>
                                     <div class="je-setting-description" data-desc-for="spoilerAdvancedMode">
-                                        <div class="fieldDescription">Instead of one uniform strip for every unwatched episode, the user's <strong>next</strong> unwatched episode and the rest of its season get the reveal settings below. Later seasons, skipped earlier seasons and specials always keep the full strip. A reveal only relaxes a strip that is enabled above — categories whose strip is off show everywhere already. Each user can opt back into the uniform full strip from their settings panel.</div>
+                                        <div class="fieldDescription">Instead of one uniform strip for every unwatched episode, the user's <strong>next</strong> unwatched episode and the rest of its season get the reveal settings below. Later seasons, skipped earlier seasons and specials always keep the full strip. A reveal only relaxes a strip that is enabled above; categories whose strip is off show everywhere already. Each user can opt back into the uniform full strip from their settings panel.</div>
                                     </div>
 
                                     <div class="je-info-banner-inline-center" style="margin-bottom: 15px;" data-gated-by="spoilerAdvancedMode">
                                         <div class="je-info-banner-row">
                                             <i class="material-icons je-info-icon">visibility</i>
-                                            <div>Checked = still hidden for that category. Unchecked = revealed. The next-episode title starts revealed — that's the point of advanced mode: see <em>what</em> you're about to watch, and nothing more.</div>
+                                            <div>Checked = still hidden for that category. Unchecked = revealed. The next-episode title starts revealed; that's the point of advanced mode: see <em>what</em> you're about to watch, and nothing more.</div>
                                         </div>
                                     </div>
 
@@ -697,6 +704,13 @@
                 </div>
 
                 <div id="playback" class="jellyfin-tab-content">
+                    <div class="je-info-banner je-fieldset-wide je-tab-intro">
+                        <i class="material-icons je-info-icon">person</i>
+                        <div>
+                            Many of these are personal preferences, not just server-wide defaults. <br/>Each user can change these to their preference from the <strong>Enhanced Panel</strong> which can be accessed via sidebar link, their user menu, or pressing <kbd class="je-kbd">?</kbd> while browsing. <br/> What you set here is just the starting point; to force every user's personal copy to match it again, save your changes, then use <a href="#" class="sectionTitle je-jump-link" data-jump-tab="overview" data-jump-target="#resetAllUserSettingsBtn">Overwrite everyone's personal settings</a> in Quick Actions.
+                        </div>
+                    </div>
+
                     <fieldset>
                         <legend class="sectionTitle">Playback &amp; Tab Switch</legend>
                         <div class="configSection">
@@ -717,7 +731,7 @@
 
                             <div class="checkboxContainer"><label><input id="longPress2xEnabled" is="emby-checkbox" type="checkbox"/><span>Long press/hold for 2x speed <sup> β</sup></span></label></div>
                             <div class="je-setting-description" data-desc-for="longPress2xEnabled">
-                                <div class="fieldDescription">Long-press anywhere on the player to temporarily play at 2× speed; release to return to normal speed. Beta — touch devices only.</div>
+                                <div class="fieldDescription">Long-press anywhere on the player to temporarily play at 2× speed; release to return to normal speed. Beta, touch devices only.</div>
                             </div>
 
                             <div class="checkboxContainer"><label><input id="pauseScreenEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Custom Pause Screen</span></label></div>
@@ -822,7 +836,7 @@
                     <div class="je-info-banner je-fieldset-wide je-tab-intro">
                         <i class="material-icons je-info-icon">integration_instructions</i>
                         <div>
-                            These features add or replace pages in the Jellyfin web UI. Support integration with <a target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a> (sidebar) or <a target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> (home page).
+                            These features add or replace pages in the Jellyfin web UI. Support integration with <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a> (sidebar) or <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> (home page).
                         </div>
                     </div>
 
@@ -988,7 +1002,7 @@
                                         <div class="je-info-banner-row">
                                             <i class="material-icons je-info-icon">tune</i>
                                             <div>
-                                                <strong>Defaults for new users</strong> and the <em>Apply defaults to all users</em> button at the top of the page. Existing users keep their current settings unless you click that button.
+                                                <strong>Defaults for new users</strong> and the <em>Overwrite everyone's personal settings</em> button in Overview &gt; Quick Actions. Existing users keep their current settings unless you click that button.
                                             </div>
                                         </div>
                                     </div>
@@ -1622,7 +1636,7 @@
                             </div>
                             <div class="checkboxContainer"><label><input id="jellyseerrShowDetailPageLink" is="emby-checkbox" type="checkbox"/><span>Show Seerr link on item detail pages</span></label></div>
                             <div class="je-setting-description" data-desc-for="jellyseerrShowDetailPageLink">
-                                <div class="fieldDescription je-field-desc-xl">Adds a Seerr tag to the External Links row on movie/show detail pages (the same row TMDB/IMDb icons appear in, and *arr links when enabled — it shows there regardless of whether *arr links are configured). If "Open results in More Info modal" above is enabled, clicking it opens that modal (status, downloads, and who requested it); otherwise it links straight to the item on Seerr.</div>
+                                <div class="fieldDescription je-field-desc-xl">Adds a Seerr tag to the External Links row on movie/show detail pages (the same row TMDB/IMDb icons appear in, and *arr links when enabled; it shows there regardless of whether *arr links are configured). If "Open results in More Info modal" above is enabled, clicking it opens that modal (status, downloads, and who requested it); otherwise it links straight to the item on Seerr.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="jellyseerrShowDetailPageLinkAsText" is="emby-checkbox" type="checkbox"/><span>Show as text instead of icon</span></label></div>
                             <div class="je-setting-description" data-desc-for="jellyseerrShowDetailPageLinkAsText">
@@ -1887,9 +1901,9 @@
                                     How long to remember that an item was processed before allowing it to be re-added.<br/>After this period, manually removed items (if unwatched) will be automatically re-added to watchlist if they're still in Seerr requests or Seerr watchlist.<br/><br/>
                                     <strong>Examples:</strong>
                                     <ul class="je-retention-list">
-                                        <li><strong>30 days</strong> — Short memory, items can be re-added after 1 month</li>
-                                        <li><strong>365 days</strong> — Remember for 1 year (recommended)</li>
-                                        <li><strong>3650 days</strong> — Remember for 10 years (nearly permanent)</li>
+                                        <li><strong>30 days:</strong> Short memory, items can be re-added after 1 month</li>
+                                        <li><strong>365 days:</strong> Remember for 1 year (recommended)</li>
+                                        <li><strong>3650 days:</strong> Remember for 10 years (nearly permanent)</li>
                                     </ul>
                                     <strong>Note:</strong> This setting only applies when "Prevent re-adding removed items" is enabled.
                                 </div>
@@ -1971,7 +1985,7 @@
                     <div class="je-info-banner je-fieldset-wide je-tab-intro">
                         <i class="material-icons je-info-icon">download_for_offline</i>
                         <div>
-                            Connect Jellyfin Enhanced to your <strong>Sonarr</strong>, <strong>Radarr</strong>, and <strong>Bazarr</strong> instances.<br/>Each service gets its own box below — add as many Sonarr/Radarr instances as you want (one per quality profile / library), plus a single Bazarr endpoint. Each instance can be enabled, disabled, or removed independently.
+                            Connect Jellyfin Enhanced to your <strong>Sonarr</strong>, <strong>Radarr</strong>, and <strong>Bazarr</strong> instances.<br/>Each service gets its own box below; add as many Sonarr/Radarr instances as you want (one per quality profile / library), plus a single Bazarr endpoint. Each instance can be enabled, disabled, or removed independently.
                         </div>
                     </div>
 
@@ -2009,7 +2023,7 @@
                         <legend class="sectionTitle"><img class="je-legend-icon-img" data-je-cdn="selfhst/svg/bazarr.svg" alt="">Bazarr</legend>
                         <div class="configSection">
                             <div class="je-setting-description" data-desc-for="bazarrUrl">
-                                <div class="fieldDescription">Automated subtitle downloading and management for Sonarr and Radarr. Single instance, no API key — detail-page links only.</div>
+                                <div class="fieldDescription">Automated subtitle downloading and management for Sonarr and Radarr. Single instance, no API key, detail-page links only.</div>
                             </div>
 
                             <div class="inputContainer">
@@ -2017,7 +2031,7 @@
                                 <input id="bazarrUrl" is="emby-input" name="bazarrUrl" type="text" placeholder="e.g., http://192.168.100.100:6767"/>
                             </div>
                             <div class="je-setting-description" data-desc-for="bazarrUrl">
-                                <div class="fieldDescription">Note: this links to the main movies/series page — Bazarr does not support direct item-deep-links.<br/>If Bazarr sits behind an auth proxy (Authentik, Authelia, Cloudflare Access, etc.), put the INTERNAL address here (e.g. <code>http://bazarr:6767</code>) and use the URL Mappings below to redirect user-facing links to the public URL.</div>
+                                <div class="fieldDescription">Note: this links to the main movies/series page; Bazarr does not support direct item-deep-links.<br/>If Bazarr sits behind an auth proxy (Authentik, Authelia, Cloudflare Access, etc.), put the INTERNAL address here (e.g. <code>http://bazarr:6767</code>) and use the URL Mappings below to redirect user-facing links to the public URL.</div>
                             </div>
 
                             <div class="inputContainer">
@@ -2519,7 +2533,7 @@
                                 <textarea id="maintenanceModeNotificationMessage" is="emby-textarea" class="emby-textarea" rows="2"
                                     placeholder="Server maintenance is starting. Please finish up and try again later."
                                     style="width:100%;max-width:640px;box-sizing:border-box;resize:vertical;"></textarea>
-                                <div class="fieldDescription">Sent as a native Jellyfin popup to anyone currently watching — reaches all clients (web, mobile, TV apps).</div>
+                                <div class="fieldDescription">Sent as a native Jellyfin popup to anyone currently watching; reaches all clients (web, mobile, TV apps).</div>
                             </div>
 
                             <!-- Action selection -->
@@ -2663,6 +2677,10 @@
                 </div>
 
                 <div class="je-save-dock" role="toolbar" aria-label="Save settings">
+                    <span class="je-unsaved-badge" role="status" aria-live="polite">
+                        <i class="material-icons" aria-hidden="true">fiber_manual_record</i>
+                        Unsaved changes
+                    </span>
                     <button class="emby-button raised button-submit je-save-dock-btn" type="submit">
                         <i class="material-icons je-save-dock-icon" aria-hidden="true">save</i>
                         <span>Save Settings</span>
@@ -2761,6 +2779,17 @@
                 let startX = 0;
                 let startScroll = 0;
                 let dragged = false;
+
+                // Edge fade: signals there are more tabs to scroll to, since the strip's scrollbar is hidden.
+                function updateScrollFade() {
+                    const maxScroll = bar.scrollWidth - bar.clientWidth;
+                    bar.classList.toggle('je-scroll-fade-left', bar.scrollLeft > 1);
+                    bar.classList.toggle('je-scroll-fade-right', bar.scrollLeft < maxScroll - 1);
+                }
+                bar.addEventListener('scroll', updateScrollFade, { passive: true });
+                window.addEventListener('resize', updateScrollFade);
+                updateScrollFade();
+                setTimeout(updateScrollFade, 300); // re-verify after late-loading fonts/icons can change scrollWidth
 
                 bar.addEventListener('mousedown', (e) => {
                     if (e.button !== 0) return;
@@ -2921,6 +2950,74 @@
                         // Ignore if sessionStorage is not available
                     }
                 });
+            });
+
+            // In-tab section quick-nav: a pill row built from each tab's own <legend> text, for tabs with many fieldsets.
+            (function buildSectionNavs() {
+                const MIN_SECTIONS = 4;
+                tabContents.forEach(tabContent => {
+                    const fieldsets = Array.from(tabContent.querySelectorAll(':scope > fieldset'))
+                        .filter(fs => fs.querySelector(':scope > legend.sectionTitle'));
+                    if (fieldsets.length < MIN_SECTIONS) return;
+
+                    const nav = document.createElement('div');
+                    nav.className = 'je-section-nav';
+                    fieldsets.forEach((fieldset, i) => {
+                        const legend = fieldset.querySelector(':scope > legend.sectionTitle');
+                        const clone = legend.cloneNode(true);
+                        clone.querySelectorAll('i.material-icons, img').forEach(el => el.remove());
+                        const label = clone.textContent.trim();
+                        if (!label) return;
+                        if (!fieldset.id) fieldset.id = tabContent.id + '-section-' + i;
+
+                        const chip = document.createElement('button');
+                        chip.type = 'button';
+                        chip.className = 'je-section-nav-chip';
+                        chip.textContent = label;
+                        chip.addEventListener('click', () => {
+                            // center, not start: avoids the sticky header overlapping the fieldset.
+                            fieldset.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        });
+                        nav.appendChild(chip);
+                    });
+                    if (nav.children.length < 2) return;
+
+                    // Land after the tab's own intro banner when present, otherwise at the top.
+                    const intro = tabContent.querySelector(':scope > .je-info-banner');
+                    if (intro) {
+                        intro.insertAdjacentElement('afterend', nav);
+                    } else {
+                        tabContent.insertBefore(nav, tabContent.firstChild);
+                    }
+                });
+            })();
+
+            /** Switches to tabId and, if selector is given, scrolls that element into view. */
+            function jeJumpToTab(tabId, selector) {
+                const tabBtn = document.querySelector('.jellyfin-tab-button[data-tab="' + tabId + '"]');
+                if (tabBtn) tabBtn.click();
+                if (!selector) return;
+                // Double rAF: lands after activateTab's own scroll-memory restore.
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        const target = document.querySelector(selector);
+                        if (target) {
+                            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            target.classList.add('je-jump-flash');
+                            setTimeout(() => target.classList.remove('je-jump-flash'), 1600);
+                        } else {
+                            console.warn('[JE] jeJumpToTab: target not found:', selector);
+                        }
+                    });
+                });
+            }
+
+            // Cross-tab "jump to X" links inside banners, delegated so future ones need no extra wiring.
+            form.addEventListener('click', (e) => {
+                const link = e.target.closest('.je-jump-link');
+                if (!link) return;
+                e.preventDefault();
+                jeJumpToTab(link.dataset.jumpTab, link.dataset.jumpTarget);
             });
 
             // Map legacy tab IDs (pre-redesign) to the closest new tab, so users with
@@ -3327,6 +3424,44 @@
                 searchCount.style.display = 'block';
                 searchClear.style.display = 'block';
             }
+
+            // Unsaved-changes indicator: diffs a snapshot of every form control against the last saved snapshot.
+            const saveDock = document.querySelector('.je-save-dock');
+            let _jeSavedSnapshot = null;
+
+            function jeSnapshotFormState() {
+                const parts = [];
+                form.querySelectorAll('input, select, textarea').forEach((el, i) => {
+                    if (el.type === 'file') return; // can't be read back, and not part of the saved config shape
+                    const key = el.id || el.name || ('#' + i);
+                    parts.push(key + '=' + (el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value));
+                });
+                // shortcutOverrides is JS state, not bound to persistent <input> elements.
+                parts.push('shortcuts=' + JSON.stringify(shortcutOverrides));
+                return parts.join('');
+            }
+
+            /** Call once the form reflects a known-saved state. */
+            function jeMarkSaved() {
+                _jeSavedSnapshot = jeSnapshotFormState();
+                jeUpdateDirtyIndicator();
+            }
+
+            function jeUpdateDirtyIndicator() {
+                const dirty = _jeSavedSnapshot !== null && jeSnapshotFormState() !== _jeSavedSnapshot;
+                if (saveDock) saveDock.classList.toggle('je-dirty', dirty);
+            }
+
+            form.addEventListener('input', jeUpdateDirtyIndicator);
+            form.addEventListener('change', jeUpdateDirtyIndicator);
+            // Fallback poll for structural changes that don't fire input/change (adding/removing a row).
+            setInterval(jeUpdateDirtyIndicator, 1000);
+
+            window.addEventListener('beforeunload', (e) => {
+                if (!saveDock || !saveDock.classList.contains('je-dirty')) return;
+                e.preventDefault();
+                e.returnValue = '';
+            });
 
         const defaultShortcuts = [
             { Name: "OpenSearch", Key: "/", Label: "Open Search", Category: "Global" },
@@ -3847,7 +3982,7 @@
                 banner.style.display = 'none';
                 msgEl.textContent = '';
             } else {
-                msgEl.textContent = ' — ' + keys.map(function(k) { return _jeProbeWarnings[k]; }).join(' / ');
+                msgEl.textContent = ': ' + keys.map(function(k) { return _jeProbeWarnings[k]; }).join(' / ');
                 banner.style.display = '';
             }
         }
@@ -3923,7 +4058,7 @@
                     ok: !anyIntent, // only "skipped cleanly" when there was nothing to do
                     status: 'skipped',
                     detail: anyIntent
-                        ? 'Custom Tabs is not detected (or its config schema is unrecognized). Auto-create was requested but skipped — toggle a Custom Tabs setting to retry the probe.'
+                        ? 'Custom Tabs is not detected (or its config schema is unrecognized). Auto-create was requested but skipped; toggle a Custom Tabs setting to retry the probe.'
                         : 'Custom Tabs not detected; nothing to sync.',
                     ownedUpdates: []
                 });
@@ -3937,7 +4072,7 @@
                     return {
                         ok: false,
                         status: 'failed',
-                        detail: 'Custom Tabs configuration shape no longer matches what Jellyfin Enhanced knows how to write — auto-manage skipped to avoid corrupting it.',
+                        detail: 'Custom Tabs configuration shape no longer matches what Jellyfin Enhanced knows how to write; auto-manage skipped to avoid corrupting it.',
                         ownedUpdates: []
                     };
                 }
@@ -4262,7 +4397,7 @@
             removeBtn.addEventListener('click', function(e) {
                 e.preventDefault();
                 var instName = nameInput.value.trim() || defaultName;
-                Dashboard.confirm('Remove "' + instName + '" from the instance list? The change takes effect when you click Save. If you leave the page without saving, the instance is kept.\n\nTip: If you just want to stop using it temporarily, uncheck Enabled instead — that preserves the URL and API key.', 'Remove Instance', function(confirmed) {
+                Dashboard.confirm('Remove "' + instName + '" from the instance list? The change takes effect when you click Save. If you leave the page without saving, the instance is kept.\n\nTip: If you just want to stop using it temporarily, uncheck Enabled instead; that preserves the URL and API key.', 'Remove Instance', function(confirmed) {
                     if (confirmed) {
                         card.remove();
                         updateAllDependencies();
@@ -4307,7 +4442,7 @@
             var detail = document.createElement('div');
             detail.style.marginTop = '0.3em';
             detail.textContent = 'The saved JSON could not be parsed. Saving this page will NOT overwrite the stored value or the legacy ' +
-                label + ' URL/API key — so existing configuration is preserved. To recover: either fix the stored JSON directly in Jellyfin\'s plugin config, ' +
+                label + ' URL/API key, so existing configuration is preserved. To recover: either fix the stored JSON directly in Jellyfin\'s plugin config, ' +
                 'or click the button below to reset this list (destroys the unreadable value).';
             banner.appendChild(heading);
             banner.appendChild(detail);
@@ -4461,7 +4596,7 @@
                 var sonarrResult = collectInstancesFromDom('#sonarrInstancesList .arr-instance-card', 'Sonarr');
                 var sonarrInstances = sonarrResult.instances;
                 sonarrResult.incomplete.forEach(function(name) {
-                    incompleteWarnings.push('Sonarr instance "' + name + '" has a URL but no API key — it was not saved.');
+                    incompleteWarnings.push('Sonarr instance "' + name + '" has a URL but no API key, so it was not saved.');
                 });
                 config.SonarrInstances = JSON.stringify(sonarrInstances);
                 if (sonarrInstances.length > 0) {
@@ -4479,7 +4614,7 @@
                 var radarrResult = collectInstancesFromDom('#radarrInstancesList .arr-instance-card', 'Radarr');
                 var radarrInstances = radarrResult.instances;
                 radarrResult.incomplete.forEach(function(name) {
-                    incompleteWarnings.push('Radarr instance "' + name + '" has a URL but no API key — it was not saved.');
+                    incompleteWarnings.push('Radarr instance "' + name + '" has a URL but no API key, so it was not saved.');
                 });
                 config.RadarrInstances = JSON.stringify(radarrInstances);
                 if (radarrInstances.length > 0) {
@@ -5174,6 +5309,8 @@
                 updateRequestsRequirementsBanner();
 
                 Dashboard.hideLoadingMsg();
+                // Delay so late-finishing sub-populations (maintenance users, branding previews) settle first.
+                setTimeout(jeMarkSaved, 500);
             });
         }
 
@@ -5651,10 +5788,10 @@
                 return Object.assign({}, syncResult, {
                     ok: false,
                     status: 'partial',
-                    detail: (syncResult.detail ? syncResult.detail + ' — ' : '') +
+                    detail: (syncResult.detail ? syncResult.detail + ': ' : '') +
                             "Custom Tabs has the new entry, but Jellyfin Enhanced could not save its ownership record. " +
                             "JE will not be able to clean this entry up on a later toggle change. " +
-                            "To restore JE management: open the Custom Tabs plugin, delete the JE-managed entry there, then save this page again — JE will recreate it and record ownership properly."
+                            "To restore JE management: open the Custom Tabs plugin, delete the JE-managed entry there, then save this page again; JE will recreate it and record ownership properly."
                 });
             }
         }
@@ -5731,6 +5868,8 @@
                 }
 
                 Dashboard.processPluginConfigurationUpdateResult(result);
+                // The form now is the just-saved state, so re-snapshot immediately.
+                jeMarkSaved();
                 if (syncResult && syncResult.ok === false) {
                     try {
                         Dashboard.alert({
@@ -5758,12 +5897,13 @@
 
         // Saves current config and applies it to all users
         async function resetAllUserSettings() {
-            if (confirm("Are you sure?\n\nThis will save the current configuration and overwrite every per-user default for ALL users on this server.")) {
+            if (confirm("Are you sure?\n\nThis saves the current configuration, then copies these Display/Playback/etc. values into every user's Enhanced Panel settings, replacing anything they've customized for themselves. This cannot be undone per-user; each user would have to re-apply their own preferences afterward.")) {
                 Dashboard.showLoadingMsg();
                 try {
                     // First, save the current configuration
                     const config = await buildConfigFromForm();
                     await ApiClient.updatePluginConfiguration(pluginId, config);
+                    jeMarkSaved();
 
                     // Sync managed Custom Tabs entries — same flow as a normal save,
                     // so "Apply to all users" doesn't silently skip the side-effect.
@@ -6957,12 +7097,12 @@
                 if (dep.key === 'customTabs' && flag === true) {
                     if (customTabsCompatState === 'incompatible') {
                         state = 'warn';
-                        statusText = 'Installed — config shape not recognized (auto-create disabled)';
+                        statusText = 'Installed, config shape not recognized (auto-create disabled)';
                     } else if (customTabsCompatState === 'probe-failed') {
                         state = 'warn';
-                        statusText = "Installed — couldn't read config (auto-create disabled)";
+                        statusText = "Installed, couldn't read config (auto-create disabled)";
                     } else if (customTabsCompatState === null) {
-                        statusText = 'Installed — checking config…';
+                        statusText = 'Installed, checking config…';
                     }
                 }
                 var card = document.createElement('div');
@@ -7427,7 +7567,7 @@
             var seerrKey = readFieldValue('#JellyseerrApiKey');
             if (seerrEnabled && seerrEnabled.checked) {
                 if (seerrUrls && seerrKey) {
-                    var r = checklistRowState('seerr', 'Configured — not yet verified');
+                    var r = checklistRowState('seerr', 'Configured, not yet verified');
                     var urlCount = seerrUrls.split(/\r?\n/).filter(function(u) { return u.trim(); }).length;
                     pushCard({
                         id: 'seerr', name: 'Seerr', tab: 'seerr', icon: 'bolt',
@@ -7487,7 +7627,7 @@
                         });
                         return;
                     }
-                    var r = checklistRowState(cacheKey, 'Configured — not yet verified');
+                    var r = checklistRowState(cacheKey, 'Configured, not yet verified');
                     pushCard({
                         id: cacheKey, name: nameVal, tab: 'arr', icon: icon,
                         state: r.state === 'amber' ? 'warn' : r.state === 'pending' ? 'pending' : r.state,
@@ -7547,27 +7687,7 @@
                 body.appendChild(detail);
                 btn.appendChild(body);
                 btn.addEventListener('click', function() {
-                    var tabBtn = document.querySelector('.jellyfin-tab-button[data-tab="' + c.tab + '"]');
-                    if (tabBtn) tabBtn.click();
-                    // Optional deep-link: after the tab activates AND
-                    // activateTab's own per-tab scroll-memory rAF has run
-                    // (double rAF), scroll the specific field into view.
-                    // activateTab schedules a rAF to restore scroll position,
-                    // so scheduling our scroll in the frame AFTER that wins
-                    // the race deterministically. Cards that don't set
-                    // scrollTo land at the tab's scroll-memory position.
-                    if (c.scrollTo) {
-                        requestAnimationFrame(function() {
-                            requestAnimationFrame(function() {
-                                var target = document.querySelector(c.scrollTo);
-                                if (target) {
-                                    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                } else {
-                                    console.warn('[JE] service-status deep-link target not found:', c.scrollTo);
-                                }
-                            });
-                        });
-                    }
+                    jeJumpToTab(c.tab, c.scrollTo);
                 });
                 root.appendChild(btn);
             });
@@ -7970,7 +8090,7 @@
                         else btn.textContent = 'Validate Mappings';
                     }
                     try {
-                        Dashboard.alert({ title: 'Validation error', message: 'Mapping validation crashed unexpectedly — check the browser console for details.' });
+                        Dashboard.alert({ title: 'Validation error', message: 'Mapping validation crashed unexpectedly, check the browser console for details.' });
                     } catch (alertErr) {
                         console.warn('[JE] Dashboard.alert threw during validation-error notify:', alertErr);
                         try { window.alert('Validation error: ' + ((err && err.message) || err)); } catch (_) { /* last-resort notify — if alert() itself throws we've given up */ }
@@ -8006,7 +8126,7 @@
                     else b.textContent = 'Validate Mappings';
                 }
                 try {
-                    Dashboard.alert({ title: 'Validation error', message: 'Mapping validation crashed unexpectedly — check the browser console for details.' });
+                    Dashboard.alert({ title: 'Validation error', message: 'Mapping validation crashed unexpectedly, check the browser console for details.' });
                 } catch (alertErr) {
                     console.warn('[JE] Dashboard.alert threw during validation-error notify:', alertErr);
                     try { window.alert('Validation error: ' + ((err && err.message) || err)); } catch (_) { /* last-resort notify — if alert() itself throws we've given up */ }
@@ -8566,7 +8686,7 @@
                         summaryTitle.textContent = '✅ All ' + ok.length + ' linked user(s) have the required permissions.';
                         summaryEl.appendChild(summaryTitle);
                     } else {
-                        summaryTitle.textContent = 'Audit complete — review the users below.';
+                        summaryTitle.textContent = 'Audit complete, review the users below.';
                         summaryEl.appendChild(summaryTitle);
                         var chips = document.createElement('div');
                         chips.className = 'je-audit-summary-chips';
@@ -8808,7 +8928,7 @@
                     toast.className = 'je-preview-toast';
                     toast.setAttribute('role', 'status');
                     toast.setAttribute('aria-live', 'polite');
-                    toast.textContent = 'Example toast — disappears in ' + fmtSeconds(ms);
+                    toast.textContent = 'Example toast, disappears in ' + fmtSeconds(ms);
                     document.body.appendChild(toast);
                     // Mirror real JE.toast(): slide in from the right after a tick,
                     // stay for `ms`, then slide back out by removing the .je-shown class.

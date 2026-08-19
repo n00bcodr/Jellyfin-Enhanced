@@ -34,7 +34,6 @@
        Swap to dark shine on light themes so cards keep a faint lift. */
     --je-card-gradient:       linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%);
     --je-card-gradient-lift:  linear-gradient(145deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%);
-    --je-legend-gradient:     linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%);
     /* Dark overlays for intentionally-dark modals (preview panel, toasts) */
     --je-overlay-soft:   rgba(0, 0, 0, 0.12);
     --je-overlay:        rgba(0, 0, 0, 0.28);
@@ -43,6 +42,10 @@
     --je-accent-tint-10: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 10%, transparent);
     --je-accent-tint-20: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 20%, transparent);
     --je-accent-border:  color-mix(in srgb, var(--primary-accent-color, #00a4dc) 40%, transparent);
+    /* Brighter than the raw accent color so inline text links stay readable on dark cards. */
+    --je-link-color:     color-mix(in srgb, var(--primary-accent-color, #00a4dc) 65%, #fff);
+    /* Fieldset header background picks up the active Jellyfin theme's accent color instead of flat gray. */
+    --je-legend-gradient: linear-gradient(to left, color-mix(in srgb, var(--primary-accent-color, #00a4dc) 22%, transparent) 0%, rgba(255, 255, 255, 0.02) 100%);
 }
 
 #JellyfinEnhancedPage.je-light-theme {
@@ -60,7 +63,8 @@
     --je-text-dim:       rgba(0, 0, 0, 0.35);
     --je-card-gradient:       linear-gradient(145deg, rgba(0, 0, 0, 0.03) 0%, rgba(0, 0, 0, 0.01) 100%);
     --je-card-gradient-lift:  linear-gradient(145deg, rgba(0, 0, 0, 0.05) 0%, rgba(0, 0, 0, 0.015) 100%);
-    --je-legend-gradient:     linear-gradient(180deg, rgba(0, 0, 0, 0.02) 0%, rgba(0, 0, 0, 0.01) 100%);
+    --je-legend-gradient:     linear-gradient(to left, color-mix(in srgb, var(--primary-accent-color, #00a4dc) 18%, transparent) 0%, rgba(0, 0, 0, 0.01) 100%);
+    --je-link-color:          color-mix(in srgb, var(--primary-accent-color, #00a4dc) 75%, #000);
     --je-overlay-soft:   rgba(0, 0, 0, 0.06);
     --je-overlay:        rgba(0, 0, 0, 0.1);
     --je-overlay-hard:   rgba(0, 0, 0, 0.35);
@@ -85,7 +89,8 @@
         --je-text-dim:       rgba(0, 0, 0, 0.35);
         --je-card-gradient:       linear-gradient(145deg, rgba(0, 0, 0, 0.03) 0%, rgba(0, 0, 0, 0.01) 100%);
         --je-card-gradient-lift:  linear-gradient(145deg, rgba(0, 0, 0, 0.05) 0%, rgba(0, 0, 0, 0.015) 100%);
-        --je-legend-gradient:     linear-gradient(180deg, rgba(0, 0, 0, 0.02) 0%, rgba(0, 0, 0, 0.01) 100%);
+        --je-legend-gradient:     linear-gradient(to left, color-mix(in srgb, var(--primary-accent-color, #00a4dc) 18%, transparent) 0%, rgba(0, 0, 0, 0.01) 100%);
+        --je-link-color:          color-mix(in srgb, var(--primary-accent-color, #00a4dc) 75%, #000);
         --je-overlay-soft:   rgba(0, 0, 0, 0.06);
         --je-overlay:        rgba(0, 0, 0, 0.1);
         --je-overlay-hard:   rgba(0, 0, 0, 0.35);
@@ -292,6 +297,15 @@
     color: var(--primary-accent-color, #00a4dc);
 }
 #JellyfinEnhancedPage .sectionTitle .je-legend-icon { vertical-align: -4px; }
+#JellyfinEnhancedPage a.sectionTitle {
+    color: var(--je-link-color);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+#JellyfinEnhancedPage a.sectionTitle:hover {
+    color: #fff;
+}
 .je-legend-icon-img {
     width: 20px;
     height: 20px;
@@ -353,6 +367,14 @@
     font-size: 0.8em;
     opacity: 0.65;
     line-height: 1.3;
+}
+/* Brief highlight so a jeJumpToTab() deep-link target stands out among similar siblings. */
+.je-jump-flash {
+    animation: jeJumpFlash 1.6s ease-out;
+}
+@keyframes jeJumpFlash {
+    0%   { box-shadow: 0 0 0 3px var(--primary-accent-color, #00a4dc); }
+    100% { box-shadow: 0 0 0 3px transparent; }
 }
 
 /* Empty-state hint shared by Service Status, Features, and Optional
@@ -588,6 +610,19 @@
     user-select: none;
 }
 .je-tab-bar::-webkit-scrollbar { display: none; }
+/* Signals more tabs exist off-screen since the scrollbar is hidden; toggled via JS scroll-position classes. */
+.je-tab-bar.je-scroll-fade-left {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, black 28px);
+    mask-image: linear-gradient(to right, transparent 0, black 28px);
+}
+.je-tab-bar.je-scroll-fade-right {
+    -webkit-mask-image: linear-gradient(to left, transparent 0, black 28px);
+    mask-image: linear-gradient(to left, transparent 0, black 28px);
+}
+.je-tab-bar.je-scroll-fade-left.je-scroll-fade-right {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
+}
 .je-tab-bar.je-dragging {
     cursor: grabbing;
     scroll-behavior: auto;
@@ -646,6 +681,32 @@
     color: #fff !important;
     box-shadow: 0 4px 12px color-mix(in srgb, var(--primary-accent-color, #00a4dc) 30%, transparent);
 }
+
+/* In-tab section quick-nav (built in JS for tabs with 4+ fieldsets) */
+.je-section-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 20px;
+}
+.je-section-nav-chip {
+    background: var(--je-surface-2);
+    border: 1px solid var(--je-border);
+    border-radius: 20px;
+    padding: 5px 14px;
+    color: var(--je-text-subtle, #aaa);
+    cursor: pointer;
+    font-size: 0.8em;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+.je-section-nav-chip:hover {
+    background: var(--je-surface-3);
+    color: #fff;
+    border-color: var(--primary-accent-color, #00a4dc);
+}
+/* Search mode already surfaces matching sections directly. */
+#JellyfinEnhancedForm.je-search-mode .je-section-nav { display: none; }
 
 #JellyfinEnhancedPage .jellyfin-tab-content {
     display: none;
@@ -717,7 +778,8 @@
     grid-column: 1 / -1;
 }
 .jellyfin-tab-content.active > .je-info-banner,
-.jellyfin-tab-content.active > .je-dep-banner {
+.jellyfin-tab-content.active > .je-dep-banner,
+.jellyfin-tab-content.active > .je-section-nav {
     grid-column: 1 / -1;
 }
 
@@ -1130,6 +1192,34 @@
     font-size: 20px !important;
     line-height: 1;
 }
+/* Unsaved-changes badge, shown once .je-save-dock gains .je-dirty. */
+.je-unsaved-badge {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    padding-right: 10px;
+    margin-right: 2px;
+    border-right: 1px solid var(--je-border);
+    color: #ffc107;
+    font-size: 0.85em;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.je-unsaved-badge .material-icons {
+    font-size: 10px !important;
+    animation: jeUnsavedPulse 1.6s ease-in-out infinite;
+}
+.je-save-dock.je-dirty .je-unsaved-badge {
+    display: inline-flex;
+}
+/* Draw the eye to the button itself too, not just the badge text. */
+.je-save-dock.je-dirty .je-save-dock-btn {
+    box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.35);
+}
+@keyframes jeUnsavedPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
 
 /* ---------------------------------------------------------------------------
    Banners & Alerts
@@ -1402,7 +1492,8 @@
 /* ---------------------------------------------------------------------------
    Setting description visibility toggle
    --------------------------------------------------------------------------- */
-body.je-hide-descriptions .je-setting-description { display: none !important; }
+body.je-hide-descriptions .je-setting-description,
+body.je-hide-descriptions .je-optional-plugin-purpose { display: none !important; }
 body.je-hide-descriptions .je-overview-intro,
 body.je-hide-descriptions .je-tab-intro { display: none !important; }
 
@@ -1782,6 +1873,15 @@ body.je-has-kefintweaks  .je-installed-badge[data-plugin="kefintweaks"]  { displ
         padding: 12px;
     }
     .je-save-dock .je-save-dock-btn { width: 100%; justify-content: center; }
+    /* Mobile stacks the dock vertically, so swap the divider from right to bottom. */
+    .je-unsaved-badge {
+        justify-content: center;
+        width: 100%;
+        padding: 0 0 10px;
+        margin: 0 0 6px;
+        border-right: none;
+        border-bottom: 1px solid var(--je-border);
+    }
     .je-tab-bar { padding: 10px 0; }
     /* Prefix with #JellyfinEnhancedPage to match the base rule's specificity
        (1,1,0). Class-only selectors (0,1,0) here lose the cascade to the
@@ -1989,6 +2089,7 @@ body.je-hide-descriptions .je-timing-test-row {
 @media (prefers-reduced-motion: reduce) {
     .je-preview-panel-overlay { animation: none; }
     .je-preview-toast { transition: none; }
+    .je-unsaved-badge .material-icons { animation: none; }
 }
 
 div#seerrMappingsValidationResult,
