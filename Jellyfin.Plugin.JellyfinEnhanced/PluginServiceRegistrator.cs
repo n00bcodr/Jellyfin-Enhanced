@@ -43,6 +43,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 });
             serviceCollection.AddSingleton<Logger>();
             serviceCollection.AddSingleton<UserConfigurationManager>();
+            // Auto-detects newly added config-page settings by diffing the
+            // embedded configPage.html against a snapshot from the previous
+            // startup -- see StartupService.
+            serviceCollection.AddSingleton<WhatsNewService>();
             serviceCollection.AddSingleton<AutoSeasonRequestService>();
             serviceCollection.AddSingleton<AutoSeasonRequestMonitor>();
             serviceCollection.AddSingleton<AutoMovieRequestService>();

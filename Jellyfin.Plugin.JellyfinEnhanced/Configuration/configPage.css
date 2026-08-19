@@ -1253,6 +1253,82 @@
 }
 
 .je-info-icon, .je-bottom-info-icon, .je-info-icon-sm { color: var(--primary-accent-color, #00a4dc); font-size: 24px; flex-shrink: 0; margin-top: 2px; }
+
+/* What's New banner (Overview tab) and inline NEW badges, built in JS off the NEW_FEATURES registry. */
+.je-whats-new-banner { align-items: flex-start; position: relative; }
+.je-whats-new-banner > div { display: flex; flex-direction: column; gap: 10px; flex: 1; min-width: 0; padding-right: 24px; }
+.je-whats-new-close {
+    position: absolute;
+    top: 10px;
+    right: 14px;
+    background: transparent;
+    border: none;
+    color: var(--je-text-muted);
+    font-size: 13px;
+    line-height: 1;
+    padding: 4px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+.je-whats-new-close:hover {
+    color: #fff;
+    background: var(--je-surface-2);
+}
+.je-whats-new-heading-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+}
+.je-whats-new-release-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--je-link-color);
+    text-decoration: none;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+.je-whats-new-release-link:hover { text-decoration: underline; }
+.je-whats-new-release-link .material-icons { font-size: 15px !important; }
+.je-whats-new-list { display: flex; flex-direction: column; gap: 8px; }
+.je-whats-new-chip {
+    display: block;
+    text-align: left;
+    background: var(--je-surface-2);
+    border: 1px solid var(--je-border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: inherit;
+    font: inherit;
+    font-size: 0.9em;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.je-whats-new-chip:hover {
+    background: var(--je-surface-3);
+    border-color: var(--primary-accent-color, #00a4dc);
+}
+.je-new-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: 8px;
+    vertical-align: middle;
+    background: var(--primary-accent-color, #00a4dc);
+    color: #fff;
+    font-size: 0.75em;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    padding: 2px 7px;
+    border-radius: 4px;
+    line-height: 1.4;
+}
+.je-new-badge .material-icons {
+    font-size: 11px !important;
+}
 .je-note-icon, .je-mobile-icon, .je-dep-banner-icon { color: #ffc107; font-size: 24px; flex-shrink: 0; margin-top: 2px; }
 .je-danger-icon { color: #ff6b6b; font-size: 24px; flex-shrink: 0; margin-top: 2px; }
 .je-purple-icon { color: #9b59b6; font-size: 24px; flex-shrink: 0; margin-top: 2px; }

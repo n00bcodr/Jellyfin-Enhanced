@@ -59,6 +59,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.SpoilerUserResolver _spoilerResolver;
         private readonly Services.WikidataAwardsService _wikidataAwardsService;
         private readonly Services.MdblistService _mdblistService;
+        private readonly Services.WhatsNewService _whatsNewService;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
         // upstream Seerr on every request. Entries expire after 1 hour.
@@ -173,7 +174,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.CdnAssetService cdnAssetService,
             Services.SpoilerUserResolver spoilerResolver,
             Services.WikidataAwardsService wikidataAwardsService,
-            Services.MdblistService mdblistService)
+            Services.MdblistService mdblistService,
+            Services.WhatsNewService whatsNewService)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -191,6 +193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _spoilerResolver = spoilerResolver;
             _wikidataAwardsService = wikidataAwardsService;
             _mdblistService = mdblistService;
+            _whatsNewService = whatsNewService;
         }
 
         private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId, bool bypassCache = false, bool allowAutoImport = true)
@@ -6552,6 +6555,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 .ToList();
 
             return Ok(new { items = ordered });
+        }
+
+        [HttpGet("whats-new")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetWhatsNew()
+        {
+            if (!IsAdminUser()) return Forbid();
+
+            var state = _whatsNewService.GetState();
+            if (state == null)
+            {
+                return Ok(new { pluginVersion = (string?)null, newSettings = new Dictionary<string, string>() });
+            }
+
+            return Ok(new { pluginVersion = state.PluginVersion, newSettings = state.NewSettings });
+        }
+
+        [HttpPost("whats-new/dismiss")]
+        [Authorize]
+        public IActionResult DismissWhatsNew()
+        {
+            if (!IsAdminUser()) return Forbid();
+
+            _whatsNewService.Dismiss();
+            return Ok();
         }
 
         [HttpPost("tag-data/{userId}")]

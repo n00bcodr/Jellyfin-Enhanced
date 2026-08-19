@@ -3763,6 +3763,7 @@
         var hasInPlayerEpisodePreview = null;
         var hasFileTransformation = null;
         var hasKefinTweaks = null;
+        var _jeCurrentPluginVersion = null;
         var _jeDisabledPlugins = {}; // key -> true when installed but Status !== 'Active'
         // Tri-state compat probe result for Custom Tabs:
         //   null           — not yet probed (or Custom Tabs not installed)
@@ -3828,6 +3829,9 @@
                 hasIntroSkipper       = probe('introSkipper',       ['Intro Skipper', 'SkipIntro']);
                 hasInPlayerEpisodePreview = probe('inPlayerEpisodePreview', ['In Player Episode Preview', 'In-Player Episode Preview', 'InPlayerEpisodePreview']);
 
+                var self = plugins.find(function(p) { return (p.Name || '').toLowerCase() === 'jellyfin enhanced'; });
+                if (self && self.Version) _jeCurrentPluginVersion = self.Version;
+
                 // KefinTweaks installs as a web-mod (files in /config/KefinTweaks/
                 // injected via File Transformation into index.html), NOT as a
                 // .NET plugin — so it never appears in /Plugins. Detect it at
@@ -3867,6 +3871,7 @@
 
                 // Re-run dependencies now that plugin info is available
                 updateAllDependencies();
+                checkWhatsNew();
             }).catch(function(err) {
                 // Plugin list request failed (network, auth expiry, server offline, ...).
                 // Leave hasPluginPages/hasIntroSkipper at null so individual deps show
@@ -7054,6 +7059,192 @@
             // construction (#je-checklist + .je-checklist-* classes) was
             // removed along with its DOM host and CSS.
             renderServiceStatusDashboard();
+        }
+
+        // What's New: settings the server detected as newly added, powered
+        // by WhatsNewService.CheckForNewSettings on the backend.
+
+        /** camelCase/PascalCase id -> "Camel Case Id" for display. */
+        function jeHumanizeSettingId(id) {
+            var spaced = id.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+            return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+        }
+
+        function checkWhatsNew() {
+            ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/JellyfinEnhanced/whats-new'),
+                dataType: 'json'
+            }).then(function(data) {
+                var pluginVersion = data && data.pluginVersion;
+                if (!pluginVersion) return;
+
+                // Drop ids that no longer exist in this build (renamed/removed).
+                var newSettings = (data && data.newSettings) || {};
+                var perSetting = Object.keys(newSettings).map(function(id) {
+                    var el = document.getElementById(id);
+                    var tabContent = el ? el.closest('.jellyfin-tab-content') : null;
+                    return tabContent ? { id: id, tab: tabContent.id, selector: '#' + id, title: jeHumanizeSettingId(id), version: newSettings[id] } : null;
+                }).filter(Boolean);
+
+                renderWhatsNewBanner(perSetting.length ? groupWhatsNewByFieldset(perSetting) : [], pluginVersion);
+                renderWhatsNewBadges(perSetting);
+            }).catch(function(err) {
+                console.warn('[JE] whats-new check failed:', err);
+            });
+        }
+
+        /** Collapses new settings to one banner entry per fieldset, so a whole new feature reads as one line, not a wall of chips. */
+        function groupWhatsNewByFieldset(perSetting) {
+            var groups = {};
+            var order = [];
+            perSetting.forEach(function(f) {
+                var fieldset = document.querySelector(f.selector).closest('fieldset');
+                var legend = fieldset ? fieldset.querySelector(':scope > legend.sectionTitle') : null;
+                var title = f.title;
+                if (legend) {
+                    var clone = legend.cloneNode(true);
+                    clone.querySelectorAll('i.material-icons, img').forEach(function(el) { el.remove(); });
+                    var legendText = clone.textContent.trim();
+                    if (legendText) title = legendText;
+                }
+                var key = f.tab + ':' + title;
+                if (!groups[key]) {
+                    groups[key] = { tab: f.tab, selector: f.selector, title: title };
+                    order.push(key);
+                }
+            });
+            return order.map(function(key) { return groups[key]; });
+        }
+
+        function dismissWhatsNew() {
+            ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/whats-new/dismiss') })
+                .catch(function(err) { console.warn('[JE] whats-new dismiss failed:', err); });
+            renderWhatsNewBanner([]);
+            renderWhatsNewBadges([]);
+        }
+
+        function renderWhatsNewBanner(unseen, pluginVersion) {
+            var existing = document.getElementById('je-whats-new-banner');
+            if (existing) existing.remove();
+            if (!pluginVersion) return;
+
+            var banner = document.createElement('div');
+            banner.id = 'je-whats-new-banner';
+            banner.className = 'je-info-banner je-fieldset-wide je-whats-new-banner';
+
+            var closeBtn = document.createElement('button');
+            closeBtn.type = 'button';
+            closeBtn.className = 'je-whats-new-close';
+            closeBtn.title = 'Dismiss';
+            closeBtn.setAttribute('aria-label', 'Dismiss');
+            closeBtn.innerHTML = '&#x2715;';
+            closeBtn.addEventListener('click', dismissWhatsNew);
+            banner.appendChild(closeBtn);
+
+            var icon = document.createElement('i');
+            icon.className = 'material-icons je-info-icon';
+            icon.setAttribute('aria-hidden', 'true');
+            icon.textContent = 'auto_awesome';
+            banner.appendChild(icon);
+
+            var body = document.createElement('div');
+
+            var headingRow = document.createElement('div');
+            headingRow.className = 'je-whats-new-heading-row';
+            // Version-neutral heading: pending settings can span more than
+            // one undismissed release, and each badge states its own
+            // first-seen version individually.
+            var heading = document.createElement('strong');
+            heading.textContent = unseen.length > 0
+                ? "What's new since you last checked:"
+                : ("No new settings in v" + pluginVersion + '.');
+            headingRow.appendChild(heading);
+            if (pluginVersion) {
+                var releaseLink = document.createElement('a');
+                // Multiple releases may be covered, so link to the full list rather than one tag; a single pending version can deep-link.
+                releaseLink.href = unseen.length > 0
+                    ? 'https://github.com/n00bcodr/Jellyfin-Enhanced/releases'
+                    : 'https://github.com/n00bcodr/Jellyfin-Enhanced/releases/tag/' + encodeURIComponent(pluginVersion);
+                releaseLink.target = '_blank';
+                releaseLink.rel = 'noopener noreferrer';
+                releaseLink.className = 'je-whats-new-release-link';
+                var releaseLinkIcon = document.createElement('i');
+                releaseLinkIcon.className = 'material-icons';
+                releaseLinkIcon.setAttribute('aria-hidden', 'true');
+                releaseLinkIcon.textContent = 'open_in_new';
+                releaseLink.appendChild(releaseLinkIcon);
+                releaseLink.appendChild(document.createTextNode('Read the release notes for entire changelog'));
+                headingRow.appendChild(releaseLink);
+            }
+            body.appendChild(headingRow);
+
+            if (unseen.length > 0) {
+                var list = document.createElement('div');
+                list.className = 'je-whats-new-list';
+                unseen.forEach(function(f) {
+                    var chip = document.createElement('button');
+                    chip.type = 'button';
+                    chip.className = 'je-whats-new-chip';
+                    chip.textContent = f.title;
+                    chip.addEventListener('click', function() {
+                        jeJumpToTab(f.tab, f.selector);
+                    });
+                    list.appendChild(chip);
+                });
+                body.appendChild(list);
+            }
+
+            banner.appendChild(body);
+            var overview = document.getElementById('overview');
+            if (overview) overview.insertBefore(banner, overview.firstChild);
+        }
+
+        function jeAppendNewBadge(container, version) {
+            if (!container) return;
+            var badge = document.createElement('span');
+            badge.className = 'je-new-badge';
+            var badgeIcon = document.createElement('i');
+            badgeIcon.className = 'material-icons';
+            badgeIcon.setAttribute('aria-hidden', 'true');
+            badgeIcon.textContent = 'auto_awesome';
+            badge.appendChild(badgeIcon);
+            badge.appendChild(document.createTextNode(version ? ('New in v' + version) : 'New'));
+            container.appendChild(badge);
+        }
+
+        /** When a whole fieldset is new, badge just its legend instead of every control inside it. Each badge uses its own setting's first-detected version. */
+        function renderWhatsNewBadges(perSetting) {
+            document.querySelectorAll('.je-new-badge').forEach(function(b) { b.remove(); });
+            var newIdSet = new Set(perSetting.map(function(f) { return f.id; }));
+            var versionById = new Map(perSetting.map(function(f) { return [f.id, f.version]; }));
+
+            var byFieldset = new Map();
+            var noFieldset = [];
+            perSetting.forEach(function(f) {
+                var el = document.getElementById(f.id);
+                if (!el) return;
+                var fieldset = el.closest('fieldset');
+                if (!fieldset) { noFieldset.push(el); return; }
+                if (!byFieldset.has(fieldset)) byFieldset.set(fieldset, []);
+                byFieldset.get(fieldset).push(el);
+            });
+
+            noFieldset.forEach(function(el) {
+                jeAppendNewBadge(el.closest('label') || el.parentElement, versionById.get(el.id));
+            });
+
+            byFieldset.forEach(function(newEls, fieldset) {
+                var allIds = Array.from(fieldset.querySelectorAll('input[id], select[id], textarea[id], button[id]')).map(function(el) { return el.id; });
+                var allNew = allIds.length > 0 && allIds.every(function(id) { return newIdSet.has(id); });
+                if (allNew) {
+                    jeAppendNewBadge(fieldset.querySelector(':scope > legend.sectionTitle'), versionById.get(newEls[0].id));
+                } else {
+                    newEls.forEach(function(el) {
+                        jeAppendNewBadge(el.closest('label') || el.parentElement, versionById.get(el.id));
+                    });
+                }
+            });
         }
 
         /**

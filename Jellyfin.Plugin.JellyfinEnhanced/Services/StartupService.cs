@@ -21,13 +21,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly TagCacheMonitor _tagCacheMonitor;
         private readonly SeerrScanTriggerService _seerrScanTriggerService;
         private readonly ActivityFavoriteMonitor _activityFavoriteMonitor;
+        private readonly WhatsNewService _whatsNewService;
 
         public string Name => "Jellyfin Enhanced Startup";
         public string Key => "JellyfinEnhancedStartup";
         public string Description => "Initializes Jellyfin Enhanced background services and performs necessary cleanups. The client script is injected at request time by the injection middleware.";
         public string Category => "Jellyfin Enhanced";
 
-        public StartupService(Logger logger, IApplicationPaths applicationPaths, AutoSeasonRequestMonitor autoSeasonRequestMonitor, AutoMovieRequestMonitor autoMovieRequestMonitor, WatchlistMonitor watchlistMonitor, TagCacheService tagCacheService, TagCacheMonitor tagCacheMonitor, SeerrScanTriggerService seerrScanTriggerService, ActivityFavoriteMonitor activityFavoriteMonitor)
+        public StartupService(Logger logger, IApplicationPaths applicationPaths, AutoSeasonRequestMonitor autoSeasonRequestMonitor, AutoMovieRequestMonitor autoMovieRequestMonitor, WatchlistMonitor watchlistMonitor, TagCacheService tagCacheService, TagCacheMonitor tagCacheMonitor, SeerrScanTriggerService seerrScanTriggerService, ActivityFavoriteMonitor activityFavoriteMonitor, WhatsNewService whatsNewService)
         {
             _logger = logger;
             _applicationPaths = applicationPaths;
@@ -42,6 +43,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // constructor (same pattern as SpoilerNextUnwatchedService), so
             // nothing else needs to call a method on it -- it just needs to exist.
             _activityFavoriteMonitor = activityFavoriteMonitor;
+            _whatsNewService = whatsNewService;
         }
 
         public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
@@ -50,6 +52,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _logger.Info("Jellyfin Enhanced Startup Task run successfully.");
                 EnsureScriptInjected();
+
+                // Diffs the config page's settings against the previous startup's
+                // snapshot to auto-detect new ones for the What's New banner.
+                _whatsNewService.CheckForNewSettings();
 
                 // Initialize auto season request monitoring
                 _autoSeasonRequestMonitor.Initialize();
