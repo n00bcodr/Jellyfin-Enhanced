@@ -442,6 +442,36 @@ Admins see a delete button on all reviews, not just their own. A confirmation di
 
 ---
 
+### Activity Feed
+
+Shows recently watched, favorited, and reviewed titles across the server, so users can see what others are up to. Each viewer only ever sees activity for items they themselves have library access to - someone else's activity on a library you can't see never appears.
+
+**Features:**
+
+- Recently watched (full playback completions)
+- Recently favorited
+- Recently reviewed (see [User Reviews](#user-reviews) above)
+- Optional live "who's watching now" section, powered by the same data as the [Active Streams Widget](../other/other-features.md#active-streams-widget)
+- Per-viewer filtering: hidden or disabled review authors are excluded the same way they are in the Reviews section
+- Reachable as a sidebar page (Plugin Pages), a home-page tab (native or Custom Tabs), or both
+
+**Setup:**
+
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+2. Navigate to the **Extras** tab
+3. Enable **"Enable Activity Feed"**
+4. Choose what to show: **Show recently watched**, **Show recently favorited**, **Show recently reviewed**, **Show Active Streams section**
+5. Choose how it's reachable - pick one or more:
+   - **Add Activity as a native Home tab** - no external plugin needed
+   - **Use Plugin Pages** - adds a sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages))
+   - **Use Custom Tabs** - adds a home-page tab via [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) instead of the native one
+6. Click **Save**
+
+!!! note
+    Turning the feature off does not delete any recorded activity - it just stops recording and stops showing the feed. Turning it back on picks up from where it left off.
+
+---
+
 ### TMDB Reviews
 
 Display user reviews from TMDB on item pages.

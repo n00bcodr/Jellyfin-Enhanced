@@ -76,3 +76,18 @@ Disabling **Server-Side Tag Cache** (Dashboard → Plugins → Jellyfin Enhanced
     The cache build processes the library in small pages, so server memory use stays bounded even on libraries with tens of thousands of items. If you still prefer not to run a server-side cache, disable the setting — tags keep working via the per-page batch mode.
 
 Turning the setting back on from the dashboard restores the last saved snapshot and catches up on anything that changed while it was off, automatically in the background — no restart or manual task run needed. (Only if you edit the plugin's configuration file by hand instead of using the dashboard: restart the server so the change is picked up, then run the **Refresh Tag Cache** scheduled task to catch up.)
+
+## Activity Feed
+
+Configured under **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Extras** tab. See [Enhanced Features - Activity Feed](enhanced-features.md#activity-feed) for what it shows and how the reachability options differ.
+
+| Setting | Default | Description |
+|---|---|---|
+| **Enable Activity Feed** | Off | Master switch for the feature |
+| **Show recently watched** | On | Include playback completions in the feed |
+| **Show recently favorited** | On | Include favorites in the feed |
+| **Show recently reviewed** | On | Include new/updated [User Reviews](enhanced-features.md#user-reviews) in the feed |
+| **Show Active Streams section** | On | Adds a live "who's watching now" section, independent of the [Active Streams Widget](../other/other-settings.md#active-streams-widget)'s own header icon |
+| **Add Activity as a native Home tab** | Off | Adds a Home-page tab, no external plugin needed |
+| **Use Plugin Pages** | Off | Adds an "Activity" sidebar link via [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) |
+| **Use Custom Tabs** | Off | Adds a Home-page tab via [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) instead of the native one |

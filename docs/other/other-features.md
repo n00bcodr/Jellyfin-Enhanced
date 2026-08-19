@@ -13,6 +13,7 @@ Additional features including custom branding, extras, icons, and more.
 - [Hidden Content](#hidden-content)
 - [Splash Screen](#splash-screen)
 - [Internationalization](#internationalization)
+- [Maintenance Mode](#maintenance-mode)
 
 ---
 
@@ -523,6 +524,37 @@ See the [Contributing Translations](../faq-support/contributing-translations.md)
 - Available immediately after merge
 - No plugin update needed
 - Cached per plugin version
+
+---
+
+## Maintenance Mode
+
+Puts up a login-page banner and optionally locks non-admin users out while you work on the server, from **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Admin** tab.
+
+!!! danger "This changes account/network access, read before enabling"
+    Enabling applies the selected action to affected users **immediately on save** - this is not just a cosmetic banner unless you leave both action checkboxes unchecked. Administrators are never affected, and disabling the toggle restores every affected user automatically.
+
+### What it does
+
+1. Shows a message banner on the Jellyfin login page and home page for everyone (admins included).
+2. Optionally sends a native Jellyfin popup notification to anyone currently watching, reaching every client type (web, mobile, TV apps).
+3. Optionally applies one or both actions to the affected users:
+      - **Disable user accounts** - they cannot log in at all until maintenance ends
+      - **Disable remote connections** - blocks access from outside the local network; LAN access still works
+4. Scopes the action to **all non-admin users**, or to a specific hand-picked selection.
+
+### Setup
+
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+2. Navigate to the **Admin** tab
+3. Write the **Login Page Banner Message** (plain text, shown as a red banner)
+4. Optionally write an **Active Session Notification** (sent as a popup to anyone currently watching)
+5. Choose an **Action**: disable accounts, disable remote connections, both, or neither (banner-only)
+6. Choose **Affected Users**: all non-admin users, or select specific users from the list
+7. Check **"Enable Maintenance Mode"**
+8. Click **Save**
+
+Turning the toggle back off restores every affected user's account/remote access automatically - there's nothing to manually undo.
 
 ---
 

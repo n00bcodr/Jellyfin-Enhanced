@@ -156,6 +156,19 @@ Adding a client module:
    - Be prepared to make requested changes
    - If you want me to make any further changes, let me know
 
+## ✅ CI Checks
+
+Every PR runs a few automated checks (GitHub Actions, `.github/workflows/`). There are no automated tests to run locally - these are all static checks:
+
+| Check | What it does | Reproduce locally |
+|---|---|---|
+| **CodeQL Advanced** | Static analysis for both the C# backend and the JS frontend, looking for common security/correctness bug patterns | Not practical to run locally; check the PR's "Files changed" annotations if it flags something |
+| **Dependency Review** | Flags newly-introduced dependencies with known vulnerabilities or incompatible licenses | Only relevant if your PR changes `.csproj` package references |
+| **Security Scan** | Scans the diff for accidentally-committed secrets (API keys, tokens, credentials) with TruffleHog | `git diff` your changes yourself before pushing if you're unsure |
+| **Translation Checks** | For any locale file you touched under `js/locales/`, verifies it has valid JSON and the same key set as `en.json` (no missing/extra keys) | Diff your changed locale file's keys against `js/locales/en.json` by hand, or just keep the two in sync as you edit |
+
+Two more workflows exist but aren't part of the PR gate: **Check Unused Translation Keys** and **OpenSSF Scorecard** are both maintainer-triggered/scheduled, not run against your PR - a scorecard badge or unused-key report you might see elsewhere in the repo isn't something your PR needs to pass.
+
 ## 🧪 Testing
 
 Before submitting a PR, ensure you've tested:

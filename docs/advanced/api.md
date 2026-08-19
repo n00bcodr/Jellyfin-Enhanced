@@ -512,3 +512,177 @@ curl -X POST \
   -d '[{"TmdbId": "27205", "Name": "Inception", "Type": "Movie", "PosterPath": "/edv5CZvWj09upOsy2Y6IwDhK8bt.jpg"}]' \
   "<JELLYFIN_URL>/JellyfinEnhanced/admin/hidden-content/<USER_ID>/hide"
 ```
+
+## Full Endpoint Index
+
+The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content in full (auth, request/response shapes, edge cases). Everything else this plugin exposes is listed here as a map, method + path + a one-line purpose, so a client author knows what exists before reading `Controllers/JellyfinEnhancedController.cs` for the exact request/response shape. All paths are relative to `/JellyfinEnhanced/`. `[Authorize]` means any authenticated Jellyfin user or API key; admin-only endpoints are noted individually.
+
+!!! info "Not fully documented yet"
+    This index is deliberately terse. If you're building against one of these and need the exact request/response shape, the fastest source of truth is the corresponding controller method (grep the path string in `JellyfinEnhancedController.cs`) - contributions expanding any of these into full sections like the ones above are welcome.
+
+### Seerr Discovery & Requests
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `jellyseerr/status` | Seerr connection/reachability check |
+| GET | `jellyseerr/validate` | Validate configured Seerr URL(s) + API key |
+| POST | `jellyseerr/trigger-recently-added-scan` | Kick off a Seerr library scan |
+| GET | `jellyseerr/user-status` | Is the calling Jellyfin user linked to a Seerr account |
+| GET | `jellyseerr/permission-audit` | Admin: audit every Jellyfin user's Seerr permission bits |
+| GET | `jellyseerr/search` | Proxy a Seerr search query |
+| GET | `jellyseerr/sonarr` / `jellyseerr/radarr` | List Sonarr/Radarr instances known to Seerr |
+| GET | `jellyseerr/{type}/{serverId}` | Sonarr/Radarr server details by Seerr service id |
+| POST / GET | `jellyseerr/request` | Create / list Seerr requests |
+| GET | `jellyseerr/quota` | Calling user's Seerr request quota |
+| GET | `jellyseerr/tv/{tmdbId}`, `jellyseerr/movie/{tmdbId}` | TV/movie detail proxy |
+| GET | `.../season/{seasonNumber}` | Season detail proxy |
+| GET | `.../similar`, `.../recommendations` | Similar / recommended titles |
+| GET | `jellyseerr/movie/{tmdbId}/ratingscombined`, `jellyseerr/tv/{tmdbId}/ratings` | Combined critic/audience ratings |
+| GET | `jellyseerr/discover/movies`, `jellyseerr/discover/tv` | Discovery feed |
+| GET | `.../upcoming` | Upcoming releases |
+| GET | `.../trending` | Trending feed |
+| GET | `.../network/{networkId}`, `.../studio/{studioId}` | Discovery filtered by network/studio |
+| GET | `.../genre/{genreId}`, `.../keyword/{keywordId}` | Discovery filtered by genre/keyword |
+| GET | `jellyseerr/discover/genreslider/movie`, `.../tv` | Genre-slider rows for the discovery UI |
+| GET | `jellyseerr/person/{personId}` | Person detail proxy |
+| GET | `jellyseerr/person/{personId}/combined_credits` | Person's filmography |
+| GET | `jellyseerr/collection/{collectionId}` | Collection detail proxy |
+| GET | `jellyseerr/overrideRule` | Seerr auto-approval override rules |
+| GET | `jellyseerr/user` | Calling user's Seerr profile |
+| POST | `jellyseerr/request/tv/{tmdbId}/seasons` | Request specific seasons of a show |
+| GET | `jellyseerr/watchlist` | Calling user's Seerr watchlist |
+| POST | `jellyseerr/sync-watchlist` | Trigger a watchlist sync |
+| POST | `jellyseerr/import-users` | Admin: import Jellyfin users into Seerr |
+| GET | `jellyseerr/settings/partial-requests` | Whether Seerr allows partial season requests |
+| GET | `jellyseerr/issue`, `jellyseerr/issue/{id}` | List / get Seerr issues |
+| POST | `jellyseerr/issue` | File a Seerr issue |
+
+### TMDB Proxy & Metadata
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `studio/{studioId}` | Studio metadata (non-Seerr TMDB proxy) |
+| GET | `boxset/{boxsetId}` | Collection/boxset metadata |
+| GET | `person/{personId}` | Person metadata |
+| GET | `genre/{genreId}` | Genre metadata |
+| GET | `tmdb/search/person`, `tmdb/search/keyword` | TMDB search proxy |
+| GET | `tmdb/genres/movie`, `tmdb/genres/tv` | TMDB genre lists |
+| GET | `tmdb/validate` | Validate the configured TMDB API key |
+| GET | `tmdb/{**apiPath}` | Generic pass-through TMDB proxy (catch-all) |
+
+### Client Bootstrap & Config
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `script` | The injected client `<script>` bundle |
+| GET | `js/{**path}` | Individual JS module files |
+| GET | `Configuration/configPage.css` | Admin config page stylesheet |
+| GET | `version` | Plugin version |
+| GET | `private-config` | Admin-only: full plugin config |
+| GET | `public-config` | Curated, non-sensitive config subset the client script reads |
+| GET | `locales`, `locales/{lang}.json` | Available languages / one language's translation bundle |
+| GET | `cdn/{source}/{**path}` | Local mirror of third-party static assets (icons, fonts, logos) |
+
+### Per-User Settings Files
+
+Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every other per-user JSON store:
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET / POST | `user-settings/{userId}/settings.json` | Enhanced panel settings |
+| GET / POST | `user-settings/{userId}/shortcuts.json` | Keyboard shortcut overrides |
+| GET / POST | `user-settings/{userId}/elsewhere.json` | Elsewhere (streaming provider) preferences |
+| GET / POST | `user-settings/{userId}/hidden-content.json` | Hidden Content list |
+| GET / POST | `user-settings/{userId}/spoilerblur.json` | Spoiler Guard per-user state |
+
+### Spoiler Guard
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `spoiler-blur/health` | Diagnostic: blur filter health |
+| DELETE | `spoiler-blur/health/{targetUserId}` | Reset a user's blur-health state |
+| GET | `spoiler-blur/series` | Series currently under Spoiler Guard |
+| GET / POST | `spoiler-blur/user-prefs` | Per-user Spoiler Guard preferences |
+| POST / DELETE | `spoiler-blur/series/{seriesId}` | Enable/disable Spoiler Guard for a series |
+| POST / DELETE | `spoiler-blur/movies/{movieId}` | Enable/disable for a movie |
+| POST / DELETE | `spoiler-blur/collections/{collectionId}` | Enable/disable for a collection |
+| POST / DELETE | `spoiler-blur/pending/{mediaType}/{tmdbId}` | Pre-arm Spoiler Guard for a title not yet in the library |
+
+### Continue Watching / Next Up
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST / DELETE | `continue-watching/hide/{itemId}` | Hide/unhide an item from Continue Watching |
+| POST / DELETE | `next-up/hide/{itemId}` | Hide/unhide an item from Next Up |
+
+### Tags, Cache & Watch Data
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `tag-cache/rebuild` | Admin: force a full tag-cache rebuild |
+| GET | `tag-cache/{userId}` | This user's tag cache |
+| POST | `tag-data/{userId}` | Batch tag lookup by item ids |
+| GET | `file-size/{userId}/{itemId}` | File size for an item |
+| GET | `watch-progress/{userId}/{itemId}` | Watch progress for an item |
+| GET | `awards/{mediaType}/{tmdbId}` | Wikidata award wins/nominations |
+| GET | `mdblist-ratings/{mediaType}/{tmdbId}` | MDBList ratings for a title |
+| GET | `mdblist-ratings/account-status` | MDBList account quota/status |
+
+### Activity Feed & What's New
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `activity` | The Activity Feed (recently watched/favorited/reviewed) |
+| GET | `whats-new` | Admin: pending "What's New" settings for the config page |
+| POST | `whats-new/dismiss` | Admin: acknowledge the current "What's New" state |
+
+### Branding
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `UploadBrandingImage` | Admin: upload a custom logo/banner/favicon |
+| GET | `BrandingImage` | Serve a custom branding image |
+| POST | `DeleteBrandingImage` | Admin: remove a custom branding image |
+
+### *arr (Sonarr/Radarr/Bazarr)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `arr/validate/sonarr`, `arr/validate/radarr` | Validate an instance's URL/API key |
+| GET | `arr/identify-url` | Resolve which configured instance owns a given item |
+| GET | `arr/series-slug`, `arr/series-slugs` | Sonarr URL slug lookup, single/batch |
+| GET | `arr/movie-instances` | Which Radarr instance(s) a movie belongs to |
+| GET | `arr/queue` | Sonarr/Radarr download queue |
+| GET | `arr/history` | Sonarr/Radarr import history |
+| GET | `arr/requests` | Requests page data (Seerr + arr queue merged) |
+| POST | `arr/requests/{requestId}/approve`, `.../decline` | Admin: approve/decline a Seerr request |
+| GET | `arr/calendar` | Calendar page data |
+| POST | `arr/calendar/user-data` | Per-user calendar preferences (favorites/watched highlighting) |
+
+### Active Streams & Proxy
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `active-streams/sessions` | Currently active playback sessions |
+| POST | `active-streams/broadcast` | Admin: broadcast a message to active sessions |
+| GET | `proxy/avatar` | Cached avatar image proxy |
+| GET | `items/by-providers` | Look up Jellyfin items by external provider id |
+
+### Maintenance Mode
+
+All admin-only.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `MaintenanceMode/Status` | Current maintenance-mode state |
+| POST | `MaintenanceMode/Enable` | Enable maintenance mode |
+| POST | `MaintenanceMode/Disable` | Disable maintenance mode |
+| GET | `MaintenanceMode/Users` | Users affected by the current maintenance-mode config |
+| POST | `MaintenanceMode/Broadcast` | Send the maintenance notification immediately |
+
+### Misc
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `reset-all-users-settings` | Admin: overwrite every user's settings with the current defaults |
+| GET | `{viewName}` | Catch-all: serves a Plugin Pages HTML view by name |

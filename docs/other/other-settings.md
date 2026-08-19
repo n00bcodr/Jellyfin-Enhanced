@@ -134,4 +134,22 @@ Override the language used by the plugin for all users.
 | **Clear Local Storage** | Forces all connected clients to clear their localStorage on next page load. Use to reset client-side settings or fix corrupted state. |
 | **Clear Translation Cache** | Forces all clients to re-fetch the latest translations. Useful after a translation update. |
 
-The **Clear All Client Caches** button in the **Enhanced Settings** tab clears tag caches (quality, genre, language, rating, people) across all clients.
+The **Clear All Client Caches** button in the **Enhanced Settings** tab clears tag caches (quality, genre, language, rating, people) across all clients. See [Enhanced Settings - Server-Side Tag Cache](../enhanced/enhanced-settings.md#server-side-tag-cache) for how the underlying tag cache itself is built and kept up to date.
+
+---
+
+## Maintenance Mode
+
+Found under the **Admin** tab. See [Other Features - Maintenance Mode](other-features.md#maintenance-mode) for what each option actually does before enabling.
+
+| Setting | Default | Description |
+|---|---|---|
+| **Enable Maintenance Mode** | Off | Applies the selected action to affected users immediately on save. Disabling restores everyone automatically |
+| **Login Page Banner Message** | *(empty)* | Plain-text banner shown on the login and home pages |
+| **Active Session Notification** | *(empty)* | Popup sent to anyone currently watching, reaching all client types |
+| **Disable user accounts** | On | Affected users cannot log in until maintenance ends |
+| **Disable remote connections** | Off | Blocks affected users from outside the local network; LAN access still works |
+| **Affected Users** | All non-admin users | Or select specific users from the list |
+
+!!! note
+    Administrators are never affected by either action, regardless of the Affected Users selection.
