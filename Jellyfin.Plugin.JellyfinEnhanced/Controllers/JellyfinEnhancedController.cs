@@ -25,6 +25,8 @@ using Microsoft.AspNetCore.StaticFiles;
 using Newtonsoft.Json.Linq;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using MediaBrowser.Controller;
+using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Common.Net;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
@@ -60,6 +62,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.WikidataAwardsService _wikidataAwardsService;
         private readonly Services.MdblistService _mdblistService;
         private readonly Services.WhatsNewService _whatsNewService;
+        private readonly IServerConfigurationManager _serverConfigurationManager;
+        private readonly INetworkManager _networkManager;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
         // upstream Seerr on every request. Entries expire after 1 hour.
@@ -175,7 +179,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.SpoilerUserResolver spoilerResolver,
             Services.WikidataAwardsService wikidataAwardsService,
             Services.MdblistService mdblistService,
-            Services.WhatsNewService whatsNewService)
+            Services.WhatsNewService whatsNewService,
+            IServerConfigurationManager serverConfigurationManager,
+            INetworkManager networkManager)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -194,6 +200,75 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _wikidataAwardsService = wikidataAwardsService;
             _mdblistService = mdblistService;
             _whatsNewService = whatsNewService;
+            _serverConfigurationManager = serverConfigurationManager;
+            _networkManager = networkManager;
+        }
+
+        /// <summary>
+        /// Builds Jellyfin's own LAN URL from its detected internal bind interfaces
+        /// (the same source Jellyfin itself uses for Server Discovery / PlayTo /
+        /// LiveTV / SystemInfo) plus the configured internal port -- a genuinely
+        /// server-known value, not a guess from whatever origin the admin's browser
+        /// happens to be on right now.
+        /// </summary>
+        private string? GetJellyfinInternalUrl()
+        {
+            var address = _networkManager.GetInternalBindAddresses()
+                .Select(d => d.Address)
+                .FirstOrDefault(a => !System.Net.IPAddress.IsLoopback(a));
+            if (address == null)
+            {
+                return null;
+            }
+
+            var networkConfig = _serverConfigurationManager.GetNetworkConfiguration();
+            var scheme = networkConfig.EnableHttps ? "https" : "http";
+            var port = networkConfig.EnableHttps ? networkConfig.InternalHttpsPort : networkConfig.InternalHttpPort;
+            var host = address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6
+                ? $"[{address}]"
+                : address.ToString();
+            return $"{scheme}://{host}:{port}";
+        }
+
+        /// <summary>
+        /// Reads Jellyfin's own "Published server URIs" (Dashboard → Networking →
+        /// Advanced) for an "external" or "all" override -- the same mechanism
+        /// Jellyfin itself uses to tell clients what URL to use from outside the
+        /// LAN. When set, this is a far more reliable source for "Jellyfin's
+        /// public URL" than guessing from the admin's current browser origin.
+        /// </summary>
+        private string? GetJellyfinExternalUrl()
+        {
+            var overrides = _serverConfigurationManager.GetNetworkConfiguration().PublishedServerUriBySubnet;
+            if (overrides == null || overrides.Length == 0)
+            {
+                return null;
+            }
+
+            // "all" always wins in Jellyfin's own resolution (it clears every other
+            // override once reached), so prefer it here too if both are present.
+            string? externalMatch = null;
+            foreach (var entry in overrides)
+            {
+                var parts = entry.Split('=', 2);
+                if (parts.Length != 2)
+                {
+                    continue;
+                }
+
+                var key = parts[0].Trim();
+                var url = parts[1].Trim();
+                if (string.Equals(key, "all", StringComparison.OrdinalIgnoreCase))
+                {
+                    return url;
+                }
+                if (string.Equals(key, "external", StringComparison.OrdinalIgnoreCase))
+                {
+                    externalMatch = url;
+                }
+            }
+
+            return externalMatch;
         }
 
         private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId, bool bypassCache = false, bool allowAutoImport = true)
@@ -1259,6 +1334,85 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public Task<IActionResult> GetRadarrInstances()
         {
             return ProxyJellyseerrRequest("/api/v1/service/radarr", HttpMethod.Get);
+        }
+
+        // Admin-only: proxies Seerr's own Radarr/Sonarr instance CRUD settings
+        // (hostname, port, apiKey, useSsl, baseUrl, ...), NOT the read-only
+        // /service/{sonarr,radarr} discovery endpoints above. Seerr's
+        // /settings subrouter requires a Seerr Administrator key, and the
+        // response includes each instance's real API key, so this stays
+        // behind IsAdminUser() regardless of [Authorize] alone. Backs the
+        // "Import from Seerr" button on the *arr config tab.
+        [HttpGet("jellyseerr/settings/{type}")]
+        [Authorize]
+        public async Task<IActionResult> GetJellyseerrArrSettings(string type)
+        {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
+            if (type != "radarr" && type != "sonarr")
+            {
+                return BadRequest(new { error = "Invalid type. Must be 'radarr' or 'sonarr'." });
+            }
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            {
+                return StatusCode(503, new { error = "Seerr integration is not configured or enabled." });
+            }
+
+            var jellyseerrUrl = config.JellyseerrUrls
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .FirstOrDefault()?.Trim();
+            if (string.IsNullOrEmpty(jellyseerrUrl))
+            {
+                return StatusCode(503, new { error = "No valid Seerr URL configured." });
+            }
+
+            var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+            var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/settings/{type}";
+            using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+            using var response = await httpClient.SendAsync(request);
+            var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+
+            if (error != null)
+            {
+                _logger.Warning($"[Seerr Arr Settings Import] Failed to fetch {type} settings from Seerr: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} {error.Message}");
+                // Seerr's /settings subrouter 403s a non-admin key, which is
+                // by far the most common failure here, worth its own message
+                // rather than the generic "could not reach Seerr" one.
+                if (error.HttpStatus == 403)
+                {
+                    return StatusCode(403, new { error = "Seerr rejected this request. The configured Seerr API key needs Administrator permission to read Radarr/Sonarr settings." });
+                }
+                return StatusCode(error.HttpStatus > 0 ? error.HttpStatus : 502, error.ToResponseShape());
+            }
+
+            // Pass through Seerr's own array shape unmodified; the frontend
+            // reads the fields it needs (name, hostname, port, apiKey,
+            // useSsl, baseUrl, is4k) rather than us re-serializing here.
+            return Content(json ?? "[]", "application/json");
+        }
+
+        // Admin-only. Backs the "Import from Seerr" picker's URL-mapping pre-fill --
+        // both values come from Jellyfin's own server-side network detection rather
+        // than guessing from the admin's current browser origin: external from
+        // Dashboard -> Networking -> Advanced "Published server URIs" ("external"/
+        // "all" override), internal from Jellyfin's own detected LAN bind address.
+        // Either may be null if not configured/detectable; the frontend falls back
+        // to an editable guess in that case.
+        [HttpGet("jellyfin-urls")]
+        [Authorize]
+        public ActionResult GetJellyfinNetworkUrls()
+        {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
+            return new JsonResult(new { externalUrl = GetJellyfinExternalUrl(), internalUrl = GetJellyfinInternalUrl() });
         }
 
         [HttpGet("jellyseerr/{type}/{serverId}")]

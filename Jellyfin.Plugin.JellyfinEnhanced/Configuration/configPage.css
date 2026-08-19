@@ -1582,6 +1582,82 @@ body.je-hide-descriptions .je-tab-intro { display: none !important; }
     margin-top: 8px;
 }
 .je-arr-action-row > button { width: fit-content; margin: 0; }
+
+/* "Import from Seerr" inline checklist picker */
+.je-arr-seerr-import-picker {
+    margin-top: 10px;
+    padding: 12px 16px;
+    background: var(--je-surface-2);
+    border: 1px solid var(--je-border);
+    border-radius: 8px;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+.je-arr-seerr-import-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.8em;
+    padding: 12px 14px;
+    margin: 6px 0;
+    font-size: 0.9em;
+    background: var(--je-overlay);
+    border: 1px solid var(--je-border-subtle);
+    border-radius: 10px;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+.je-arr-seerr-import-row:hover { border-color: var(--je-border); }
+.je-arr-seerr-import-row > input[type="checkbox"] {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin-top: 0.15em;
+}
+.je-arr-seerr-import-row-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3em;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+.je-arr-seerr-import-row-title { font-weight: 600; word-break: break-word; }
+.je-arr-seerr-import-row-summary {
+    word-break: break-word;
+    color: var(--je-text-subtle);
+    font-size: 0.92em;
+}
+.je-arr-seerr-mapping-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 6px;
+    table-layout: fixed;
+    font-size: 0.9em;
+}
+.je-arr-seerr-mapping-table th,
+.je-arr-seerr-mapping-table td {
+    text-align: left;
+    padding: 4px 8px 4px 0;
+    vertical-align: middle;
+}
+.je-arr-seerr-mapping-table th {
+    color: var(--je-text-subtle);
+    font-weight: 600;
+    font-size: 0.85em;
+}
+.je-arr-seerr-mapping-table th:first-child,
+.je-arr-seerr-mapping-table td:first-child {
+    width: 4.5em;
+}
+.je-arr-seerr-mapping-row-label { color: var(--je-text-subtle); }
+.je-arr-seerr-mapping-table input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+}
+.je-arr-seerr-mapping-target { word-break: break-all; }
+.je-arr-seerr-mapping-note {
+    font-size: 0.82em;
+    color: var(--je-text-subtle);
+    margin-top: 4px;
+}
 .je-desc-toggle { display: inline-flex; align-items: center; gap: 8px; }
 /* On/Off pill — replaces the earlier Material-icons indicator that
    vanished on themes whose raised-button fill matches the accent.

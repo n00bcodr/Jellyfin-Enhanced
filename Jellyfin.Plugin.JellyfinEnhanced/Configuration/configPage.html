@@ -1540,7 +1540,7 @@
                                 <div class="je-details-body">
                                     <div class="inputContainer">
                                         <label class="inputLabel je-seerr-label" for="jellyseerrUrlMappings">Seerr URL Mappings</label>
-                                        <textarea class="emby-textarea emby-input je-textarea-medium" id="jellyseerrUrlMappings" name="jellyseerrUrlMappings" placeholder="https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com"></textarea>
+                                        <textarea class="emby-textarea emby-input je-textarea-large" id="jellyseerrUrlMappings" name="jellyseerrUrlMappings" placeholder="https://jellyfin.mydomain.com|https://jellyseerr.mydomain.com"></textarea>
                                     </div>
                                     <div class="je-setting-description" data-desc-for="jellyseerrUrlMappings">
                                         <div class="fieldDescription">
@@ -1999,7 +1999,9 @@
                             <div class="je-arr-action-row">
                                 <button id="addSonarrInstance" class="emby-button raised" type="button">+ Add Sonarr instance</button>
                                 <button is="emby-button" type="button" id="validateSonarrMappingsBtn" class="raised emby-button">Validate Mappings</button>
+                                <button id="importSonarrFromSeerr" class="emby-button raised" type="button">Import from Seerr</button>
                             </div>
+                            <div id="sonarrSeerrImportPicker" class="je-arr-seerr-import-picker" style="display:none;"></div>
                             <div id="sonarrMappingsValidationResult"></div>
                         </div>
                     </fieldset>
@@ -2014,7 +2016,9 @@
                             <div class="je-arr-action-row">
                                 <button id="addRadarrInstance" class="emby-button raised" type="button">+ Add Radarr instance</button>
                                 <button is="emby-button" type="button" id="validateRadarrMappingsBtn" class="raised emby-button">Validate Mappings</button>
+                                <button id="importRadarrFromSeerr" class="emby-button raised" type="button">Import from Seerr</button>
                             </div>
+                            <div id="radarrSeerrImportPicker" class="je-arr-seerr-import-picker" style="display:none;"></div>
                             <div id="radarrMappingsValidationResult"></div>
                         </div>
                     </fieldset>
@@ -3433,6 +3437,7 @@
                 const parts = [];
                 form.querySelectorAll('input, select, textarea').forEach((el, i) => {
                     if (el.type === 'file') return; // can't be read back, and not part of the saved config shape
+                    if (el.closest('.je-arr-seerr-import-picker')) return; // transient browsing state, not a form change until actually imported
                     const key = el.id || el.name || ('#' + i);
                     parts.push(key + '=' + (el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value));
                 });
@@ -4649,6 +4654,202 @@
             );
             updateAllDependencies();
         });
+
+        /** Reconstructs a Sonarr/Radarr instance's own URL from Seerr's settings shape. */
+        function buildArrUrlFromSeerrInstance(inst) {
+            var scheme = inst.useSsl ? 'https://' : 'http://';
+            var base = (inst.baseUrl || '').trim();
+            if (base && base.charAt(0) !== '/') base = '/' + base;
+            return scheme + inst.hostname + ':' + inst.port + base;
+        }
+
+        /**
+         * Wires the "Import from Seerr" button for one *arr type: fetches
+         * Seerr's own configured instances (admin-only endpoint, since the
+         * response includes each instance's real API key) and shows an
+         * inline checklist to import from, skipping ones already present by
+         * matching on the reconstructed URL.
+         */
+        function wireSeerrArrImport(type) {
+            var label = type === 'sonarr' ? 'Sonarr' : 'Radarr';
+            var importBtn = document.getElementById('import' + label + 'FromSeerr');
+            var picker = document.getElementById(type + 'SeerrImportPicker');
+            var list = document.getElementById(type + 'InstancesList');
+            if (!importBtn || !picker || !list) return;
+
+            importBtn.addEventListener('click', function() {
+                // Second click while open just closes it.
+                if (picker.style.display !== 'none') {
+                    picker.style.display = 'none';
+                    picker.innerHTML = '';
+                    return;
+                }
+
+                picker.innerHTML = '';
+                picker.style.display = 'block';
+                picker.appendChild(createEl('div', { className: 'fieldDescription', textContent: 'Fetching instances from Seerr...' }));
+
+                Promise.all([
+                    ApiClient.ajax({
+                        type: 'GET',
+                        url: ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/settings/' + type),
+                        dataType: 'json'
+                    }),
+                    ApiClient.ajax({
+                        type: 'GET',
+                        url: ApiClient.getUrl('/JellyfinEnhanced/jellyfin-urls'),
+                        dataType: 'json'
+                    }).catch(function() { return {}; }) // best-effort; falls back to an editable guess below
+                ]).then(function(results) {
+                    var instances = results[0];
+                    var jellyfinExternalUrl = results[1] && results[1].externalUrl;
+                    var jellyfinInternalUrl = results[1] && results[1].internalUrl;
+                    picker.innerHTML = '';
+                    if (!Array.isArray(instances) || instances.length === 0) {
+                        picker.appendChild(createEl('div', { className: 'fieldDescription', textContent: 'Seerr has no ' + label + ' instances configured.' }));
+                        return;
+                    }
+
+                    var existingUrls = Array.from(list.querySelectorAll('.arr-instance-url')).map(function(el) { return el.value.trim(); });
+                    var rows = [];
+
+                    instances.forEach(function(inst) {
+                        var url = buildArrUrlFromSeerrInstance(inst);
+                        var alreadyImported = existingUrls.indexOf(url) !== -1;
+
+                        var checkbox = createEl('input', { type: 'checkbox' });
+                        checkbox.checked = !alreadyImported;
+                        checkbox.disabled = alreadyImported;
+
+                        var title = (inst.name || label) + (inst.is4k ? ' (4K)' : '') + (alreadyImported ? ' (already imported)' : '');
+                        var details = url + (inst.activeProfileName ? ' · ' + inst.activeProfileName : '');
+
+                        var textChildren = [
+                            createEl('div', { className: 'je-arr-seerr-import-row-title', textContent: title }),
+                            createEl('div', { className: 'je-arr-seerr-import-row-summary', textContent: details })
+                        ];
+                        if (inst.externalUrl) {
+                            textChildren.push(createEl('div', { className: 'je-arr-seerr-import-row-summary', textContent: 'public: ' + inst.externalUrl }));
+                        }
+
+                        // Seerr's settings endpoint gives us both sides of the arr instance
+                        // (internal hostname/port/baseUrl AND externalUrl), so mirror that
+                        // with both sides of the Jellyfin URL Mapping too: internal Jellyfin
+                        // URL -> internal arr URL, external Jellyfin URL -> external arr URL.
+                        // Both prefer values read from Jellyfin's own server-side network
+                        // detection (LAN bind address / Published Server URIs) over guessing
+                        // from the admin's current browser origin; still editable either way.
+                        var jellyfinInternalInput = null;
+                        var jellyfinExternalInput = null;
+                        if (!alreadyImported) {
+                            function mappingCell(defaultValue, placeholder) {
+                                return createEl('input', { type: 'text', value: defaultValue, placeholder: placeholder });
+                            }
+
+                            jellyfinInternalInput = mappingCell(jellyfinInternalUrl || window.location.origin, 'Your Jellyfin internal/LAN URL');
+                            var internalRow = createEl('tr', {}, [
+                                createEl('td', { className: 'je-arr-seerr-mapping-row-label', textContent: 'Internal' }),
+                                createEl('td', {}, [jellyfinInternalInput]),
+                                createEl('td', { className: 'je-arr-seerr-mapping-target', textContent: url })
+                            ]);
+
+                            var tableRows = [internalRow];
+                            if (inst.externalUrl) {
+                                jellyfinExternalInput = mappingCell(jellyfinExternalUrl || window.location.origin, 'Your Jellyfin external/public URL');
+                                tableRows.push(createEl('tr', {}, [
+                                    createEl('td', { className: 'je-arr-seerr-mapping-row-label', textContent: 'External' }),
+                                    createEl('td', {}, [jellyfinExternalInput]),
+                                    createEl('td', { className: 'je-arr-seerr-mapping-target', textContent: inst.externalUrl })
+                                ]));
+                            }
+
+                            var instanceName = inst.name || label;
+                            var autoFilledSomething = (jellyfinInternalUrl ? 1 : 0) + (inst.externalUrl && jellyfinExternalUrl ? 1 : 0) > 0;
+                            var mappingNote = autoFilledSomething
+                                ? 'Auto-filled from Jellyfin\'s network config. Confirm before saving!'
+                                : 'Could not auto-detect. Please confirm both URLs before saving.';
+
+                            textChildren.push(createEl('table', { className: 'je-arr-seerr-mapping-table' }, [
+                                createEl('thead', {}, [createEl('tr', {}, [
+                                    createEl('th', {}),
+                                    createEl('th', { textContent: 'Jellyfin' }),
+                                    createEl('th', { textContent: instanceName })
+                                ])]),
+                                createEl('tbody', {}, tableRows)
+                            ]));
+                            textChildren.push(createEl('div', { className: 'je-arr-seerr-mapping-note', textContent: mappingNote }));
+                            textChildren.push(createEl('div', { className: 'je-arr-seerr-mapping-note', textContent: 'You can add more or edit these even after importing.' }));
+                        }
+
+                        var rowLabel = createEl('label', {
+                            className: 'je-arr-seerr-import-row',
+                            style: alreadyImported ? 'opacity:0.55;cursor:default;' : 'cursor:pointer;'
+                        }, [checkbox, createEl('div', { className: 'je-arr-seerr-import-row-text' }, textChildren)]);
+
+                        rows.push({ checkbox: checkbox, inst: inst, url: url, jellyfinInternalInput: jellyfinInternalInput, jellyfinExternalInput: jellyfinExternalInput });
+                        picker.appendChild(rowLabel);
+                    });
+
+                    var importSelectedBtn = createEl('button', { type: 'button', className: 'emby-button raised', textContent: 'Import Selected' });
+                    var cancelBtn = createEl('button', { type: 'button', className: 'emby-button raised', textContent: 'Cancel' });
+                    picker.appendChild(createEl('div', { style: 'display:flex;gap:0.75em;margin-top:0.75em;' }, [importSelectedBtn, cancelBtn]));
+
+                    cancelBtn.addEventListener('click', function() {
+                        picker.style.display = 'none';
+                        picker.innerHTML = '';
+                    });
+
+                    importSelectedBtn.addEventListener('click', function() {
+                        var imported = 0;
+                        rows.forEach(function(row) {
+                            if (row.checkbox.disabled || !row.checkbox.checked) return;
+                            // One line per side the admin confirmed/edited: internal
+                            // Jellyfin URL -> internal arr URL, external Jellyfin URL ->
+                            // external arr URL. Mirrors the two sides Seerr's own settings
+                            // endpoint gave us for the arr instance.
+                            var mappingLines = [];
+                            var jellyfinInternalUrl = row.jellyfinInternalInput ? row.jellyfinInternalInput.value.trim() : '';
+                            if (jellyfinInternalUrl) mappingLines.push(jellyfinInternalUrl + '|' + row.url);
+                            var jellyfinExternalUrl = row.jellyfinExternalInput ? row.jellyfinExternalInput.value.trim() : '';
+                            if (row.inst.externalUrl && jellyfinExternalUrl) mappingLines.push(jellyfinExternalUrl + '|' + row.inst.externalUrl);
+                            var urlMappings = mappingLines.join('\n');
+                            list.appendChild(createInstanceCard(type, {
+                                Name: row.inst.name || label,
+                                Url: row.url,
+                                ApiKey: row.inst.apiKey || '',
+                                UrlMappings: urlMappings
+                            }, false));
+                            imported++;
+                        });
+                        picker.style.display = 'none';
+                        picker.innerHTML = '';
+                        updateAllDependencies();
+                        if (imported > 0) {
+                            try {
+                                Dashboard.alert({ title: 'Imported', message: imported + ' instance(s) imported from Seerr. Review the URL/API key below, then click Save.' });
+                            } catch (e) { /* Dashboard.alert unavailable, non-fatal */ }
+                        }
+                    });
+                }).catch(function(err) {
+                    // Same responseText-parsing convention as connectionErrorMessage()
+                    // above -- ApiClient.ajax errors expose responseText, not responseJSON.
+                    var message = 'Could not fetch instances from Seerr.';
+                    try {
+                        var txt = err && (err.responseText || (err.response && err.response.text)) || '';
+                        if (typeof txt === 'string' && txt.trim().charAt(0) === '{') {
+                            var body = JSON.parse(txt);
+                            if (body && body.error) message = body.error;
+                        }
+                    } catch (parseErr) { /* not JSON, use default message */ }
+                    picker.innerHTML = '';
+                    picker.appendChild(createEl('div', { className: 'fieldDescription', style: 'color:#ff6b6b;', textContent: message }));
+                    console.warn('[JE] Seerr ' + type + ' settings import failed:', err);
+                });
+            });
+        }
+
+        wireSeerrArrImport('sonarr');
+        wireSeerrArrImport('radarr');
 
         // ==================== End Multi-Instance Arr Management ====================
 
