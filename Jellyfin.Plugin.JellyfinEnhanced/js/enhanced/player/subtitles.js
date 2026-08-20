@@ -46,6 +46,31 @@
     ];
 
     /**
+     * Splits a stored subtitle color into a swatch (for <input type="color">)
+     * and a 0-255 alpha slider value. Not every stored value is 8-digit hex —
+     * the "Clean White" preset stores the bare word `transparent` — and a
+     * blind substring slice on a word like that hands the alpha input a
+     * non-numeric fragment, which parseInt turns into NaN; browsers then
+     * silently render the slider at its midpoint instead of 0.
+     * @param {string} input Stored value: #RRGGBB, #RRGGBBAA, or `transparent`.
+     * @param {{fallbackSwatch: string, fallbackAlphaValue: number}} fallback
+     *   Used verbatim when input can't be decoded.
+     * @returns {{swatch: string, alphaValue: number}}
+     */
+    JE.decodeSubtitleColor = (input, fallback) => {
+        if (input === 'transparent') return { swatch: fallback.fallbackSwatch, alphaValue: 0 };
+        const isHex = typeof input === 'string' && input.charCodeAt(0) === 35 /* '#' */
+            && (input.length === 7 || input.length === 9);
+        if (!isHex) return { swatch: fallback.fallbackSwatch, alphaValue: fallback.fallbackAlphaValue };
+
+        const swatch = input.slice(0, 7);
+        // A 6-digit hex has no alpha byte at all, which is opaque CSS — default
+        // to 255 there rather than reusing the caller's "unusable input" fallback.
+        const alphaValue = input.length === 9 ? parseInt(input.slice(7, 9), 16) : 255;
+        return { swatch, alphaValue: Number.isNaN(alphaValue) ? fallback.fallbackAlphaValue : alphaValue };
+    };
+
+    /**
      * Applies subtitle position to the .videoSubtitles container element.
      * xPct is the horizontal center; yPct is the bottom edge, anchored via
      * `bottom` so extra lines grow upward instead of shifting the bottom margin.
@@ -70,7 +95,7 @@
                 container.style.removeProperty('gap');
             } else {
                 const xPct = JE.currentSettings.subtitleHorizontalPosition ?? 50;
-                const yPct = JE.currentSettings.subtitleVerticalPosition ?? 85;
+                const yPct = JE.currentSettings.subtitleVerticalPosition ?? 95;
                 container.style.setProperty('position', 'absolute', 'important');
                 container.style.setProperty('left', `${xPct}%`, 'important');
                 container.style.setProperty('top', 'auto', 'important');
@@ -101,6 +126,8 @@
             el.style.removeProperty('font-weight');
             el.style.removeProperty('font-style');
             el.style.removeProperty('font-variant');
+            el.style.removeProperty('margin-top');
+            el.style.removeProperty('margin-bottom');
         });
         document.querySelectorAll('.videoSubtitles').forEach(container => {
             container.style.removeProperty('position');
@@ -158,6 +185,13 @@
         element.style.setProperty('font-weight', 'normal', 'important');
         element.style.setProperty('font-style', 'normal', 'important');
         element.style.setProperty('font-variant', 'normal', 'important');
+
+        // Vanilla Jellyfin's own subtitle-position slider writes its offset as a
+        // margin directly on this same element, independent of anything JE sets.
+        // Left alone it stacks on top of our container-level positioning, so the
+        // subtitle lands somewhere other than what the JE position grid shows.
+        element.style.setProperty('margin-top', '0', 'important');
+        element.style.setProperty('margin-bottom', '0', 'important');
     }
 
     /**

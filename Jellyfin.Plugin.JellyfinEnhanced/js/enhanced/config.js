@@ -94,7 +94,7 @@
             customSubtitleTextColor: '#FFFFFFFF', customSubtitleBgColor: '#00000000',
             usingCustomColors: false,
             disableCustomSubtitleStyles: false,
-            subtitleVerticalPosition: 85, subtitleHorizontalPosition: 50,
+            subtitleVerticalPosition: 95, subtitleHorizontalPosition: 50,
             randomButtonEnabled: true,
             randomIncludeMovies: true, randomIncludeShows: true, randomUnwatchedOnly: false,
             showWatchProgress: false, showFileSizes: false, showAudioLanguages: true, removeContinueWatchingEnabled: false,

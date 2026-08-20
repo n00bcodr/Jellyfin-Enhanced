@@ -392,7 +392,8 @@
                 yPct = Math.max(2, Math.min(98, yPct));
                 if (posPreview) {
                     posPreview.style.left = `${xPct}%`;
-                    posPreview.style.top = `${yPct}%`;
+                    posPreview.style.top = 'auto';
+                    posPreview.style.bottom = `${100 - yPct}%`;
                 }
                 JE.currentSettings.subtitleHorizontalPosition = Math.round(xPct);
                 JE.currentSettings.subtitleVerticalPosition = Math.round(yPct);
@@ -455,8 +456,8 @@
         if (posResetBtn) {
             posResetBtn.addEventListener('click', () => {
                 JE.currentSettings.subtitleHorizontalPosition = 50;
-                JE.currentSettings.subtitleVerticalPosition = 85;
-                if (posPreview) { posPreview.style.left = '50%'; posPreview.style.top = '85%'; }
+                JE.currentSettings.subtitleVerticalPosition = 95;
+                if (posPreview) { posPreview.style.left = '50%'; posPreview.style.top = 'auto'; posPreview.style.bottom = '5%'; }
                 if (typeof JE.applySubtitlePosition === 'function') JE.applySubtitlePosition();
                 JE.saveUserSettings('settings.json', JE.currentSettings);
                 resetAutoCloseTimer();
@@ -558,12 +559,14 @@
                         const preview = document.getElementById('subtitleColorPreview');
 
                         if (textColorPicker && textAlphaSlider) {
-                            textColorPicker.value = selectedPreset.textColor.substring(0, 7);
-                            textAlphaSlider.value = parseInt(selectedPreset.textColor.substring(7, 9) || 'FF', 16);
+                            const decodedText = JE.decodeSubtitleColor(selectedPreset.textColor, { fallbackSwatch: '#FFFFFF', fallbackAlphaValue: 255 });
+                            textColorPicker.value = decodedText.swatch;
+                            textAlphaSlider.value = decodedText.alphaValue;
                         }
                         if (bgColorPicker && bgAlphaSlider) {
-                            bgColorPicker.value = selectedPreset.bgColor.substring(0, 7);
-                            bgAlphaSlider.value = parseInt(selectedPreset.bgColor.substring(7, 9) || '00', 16);
+                            const decodedBg = JE.decodeSubtitleColor(selectedPreset.bgColor, { fallbackSwatch: '#000000', fallbackAlphaValue: 0 });
+                            bgColorPicker.value = decodedBg.swatch;
+                            bgAlphaSlider.value = decodedBg.alphaValue;
                         }
                         if (preview) {
                             preview.style.color = selectedPreset.textColor;

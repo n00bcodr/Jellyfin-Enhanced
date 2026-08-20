@@ -67,6 +67,8 @@
         const posPreviewFontSizePreset = JE.fontSizePresets[JE.currentSettings.selectedFontSizePresetIndex ?? 2] || JE.fontSizePresets[2];
         const posPreviewFontFamilyPreset = JE.fontFamilyPresets[JE.currentSettings.selectedFontFamilyPresetIndex ?? 0] || JE.fontFamilyPresets[0];
         const posPreviewFontPx = Math.max(8, Math.min(22, 13 * (posPreviewFontSizePreset.size / JE.fontSizePresets[2].size)));
+        const decodedSubtitleText = JE.decodeSubtitleColor(JE.currentSettings.customSubtitleTextColor, { fallbackSwatch: '#FFFFFF', fallbackAlphaValue: 255 });
+        const decodedSubtitleBg = JE.decodeSubtitleColor(JE.currentSettings.customSubtitleBgColor, { fallbackSwatch: '#000000', fallbackAlphaValue: 0 });
 
         const userShortcuts = (JE.userConfig.shortcuts.Shortcuts || []).reduce((acc, s) => {
             acc[s.Name] = s;
@@ -249,15 +251,15 @@
                                         <div>
                                             <div style="font-size: 13px; margin-bottom: 6px; color: rgba(255,255,255,0.8);">Text</div>
                                             <div class="je-subtitle-color-control-row" style="display: flex; gap: 8px; align-items: center;">
-                                                <input type="color" id="customSubtitleTextColorPicker" value="${JE.currentSettings.customSubtitleTextColor?.substring(0, 7) || '#FFFFFF'}" style="width: 50px; height: 36px; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; cursor: pointer; background: transparent;">
-                                                <input type="range" id="customSubtitleTextAlpha" min="0" max="255" value="${parseInt(JE.currentSettings.customSubtitleTextColor?.substring(7, 9) || 'FF', 16)}" style="flex: 1; accent-color: ${primaryAccentColor};">
+                                                <input type="color" id="customSubtitleTextColorPicker" value="${decodedSubtitleText.swatch}" style="width: 50px; height: 36px; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; cursor: pointer; background: transparent;">
+                                                <input type="range" id="customSubtitleTextAlpha" min="0" max="255" value="${decodedSubtitleText.alphaValue}" style="flex: 1; accent-color: ${primaryAccentColor};">
                                             </div>
                                         </div>
                                         <div>
                                             <div style="font-size: 13px; margin-bottom: 6px; color: rgba(255,255,255,0.8);">Background</div>
                                             <div class="je-subtitle-color-control-row" style="display: flex; gap: 8px; align-items: center;">
-                                                <input type="color" id="customSubtitleBgColorPicker" value="${JE.currentSettings.customSubtitleBgColor?.substring(0, 7) || '#000000'}" style="width: 50px; height: 36px; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; cursor: pointer; background: transparent;">
-                                                <input type="range" id="customSubtitleBgAlpha" min="0" max="255" value="${parseInt(JE.currentSettings.customSubtitleBgColor?.substring(7, 9) || '00', 16)}" style="flex: 1; accent-color: ${primaryAccentColor};">
+                                                <input type="color" id="customSubtitleBgColorPicker" value="${decodedSubtitleBg.swatch}" style="width: 50px; height: 36px; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; cursor: pointer; background: transparent;">
+                                                <input type="range" id="customSubtitleBgAlpha" min="0" max="255" value="${decodedSubtitleBg.alphaValue}" style="flex: 1; accent-color: ${primaryAccentColor};">
                                             </div>
                                         </div>
                                     </div>
@@ -278,7 +280,7 @@
                                         <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:rgba(255,255,255,0.08);transform:translateY(-50%);"></div>
                                     </div>
                                     <!-- Subtitle preview text -->
-                                    <div id="subtitlePositionPreview" style="position:absolute; transform:translate(-50%,-50%); pointer-events:none; white-space:nowrap; font-size:${posPreviewFontPx}px; font-family:${posPreviewFontFamilyPreset.family}; font-weight:600; color:${JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF'}; background-color:${JE.currentSettings.customSubtitleBgColor || 'transparent'}; padding:2px 6px; border-radius:3px; text-shadow:0 0 4px #000; left:${JE.currentSettings.subtitleHorizontalPosition ?? 50}%; top:${JE.currentSettings.subtitleVerticalPosition ?? 85}%;">AaBbCcDd</div>
+                                    <div id="subtitlePositionPreview" style="position:absolute; transform:translateX(-50%); pointer-events:none; white-space:nowrap; font-size:${posPreviewFontPx}px; font-family:${posPreviewFontFamilyPreset.family}; font-weight:600; color:${JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF'}; background-color:${JE.currentSettings.customSubtitleBgColor || 'transparent'}; padding:2px 6px; border-radius:3px; text-shadow:0 0 4px #000; left:${JE.currentSettings.subtitleHorizontalPosition ?? 50}%; bottom:${100 - (JE.currentSettings.subtitleVerticalPosition ?? 95)}%; top:auto;">AaBbCcDd</div>
                                 </div>
                                 <div id="je-subtitle-position-note" style="display:none; margin-top:6px; font-size:11px; color:#ffcf5c; text-align:center; align-items:center; justify-content:center; gap:4px;">
                                     <span class="material-icons" style="font-size:13px;">warning</span>
