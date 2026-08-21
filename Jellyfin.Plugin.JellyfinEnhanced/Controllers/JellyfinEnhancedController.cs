@@ -3067,6 +3067,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrShowQuotaInfo,
                 config.ShowElsewhereOnJellyseerr,
                 config.JellyseerrUseMoreInfoModal,
+                config.JellyseerrAvailablePosterLinksToJellyfin,
                 config.AddRequestedMediaToWatchlist,
                 config.SyncJellyseerrWatchlist,
                 config.JellyseerrAutoImportUsers,

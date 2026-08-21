@@ -54,6 +54,20 @@
         const isAvailable = Boolean(jellyfinMediaId)
             && (cardEffectiveStatus === MediaStatus.AVAILABLE || cardEffectiveStatus === MediaStatus.PARTIALLY_AVAILABLE);
         const jellyfinHref = isAvailable ? `#!/details?id=${jellyfinMediaId}` : null;
+        // Admin opt-in: for an available item, the poster click goes straight to Jellyfin
+        // instead of opening the More Info modal / Seerr link — same as the title link already does.
+        const linksAvailableToJellyfin = isAvailable
+            && item.mediaType !== 'collection'
+            && !!(JE.pluginConfig && JE.pluginConfig.JellyseerrAvailablePosterLinksToJellyfin);
+        const goToJellyfinItem = () => {
+            try {
+                if (typeof Emby !== 'undefined' && Emby.Page?.showItem) {
+                    Emby.Page.showItem(jellyfinMediaId);
+                    return;
+                }
+            } catch (_) { /* fall through to hash */ }
+            window.location.hash = jellyfinHref;
+        };
         // True when the card should navigate directly to an external Seerr URL instead of
         // showing the hover overview — used to decide poster touch behaviour below.
         const navigatesExternally = !useMoreInfoModal && !jellyfinMediaId && !!jellyseerrUrl && item.mediaType !== 'collection';
@@ -144,7 +158,9 @@
                     e.preventDefault();
                     e.stopPropagation();
 
-                    if (item.mediaType === 'collection') {
+                    if (linksAvailableToJellyfin) {
+                        goToJellyfinItem();
+                    } else if (item.mediaType === 'collection') {
                         ui.showCollectionRequestModal(item.id, item.name || item.title, item);
                     } else if (useMoreInfoModal && JE.jellyseerrMoreInfo) {
                         const tmdbId = parseInt(item.id);
@@ -173,9 +189,10 @@
                 }
             };
 
-            // Desktop: hover to show/hide overview
+            // Desktop: hover to show/hide overview. Skipped when the poster just links
+            // straight to Jellyfin — there's no request/status info worth previewing.
             cardScalable.addEventListener('mouseenter', () => {
-                if (!overview) {
+                if (!overview && !linksAvailableToJellyfin) {
                     createOverview();
                 }
             });
@@ -191,6 +208,11 @@
             // immediately activated. Swipes keep scrolling the results row natively.
             addTouchTapListener(imageContainer, (e) => {
                 if (e.target.closest('.jellyseerr-overview') || e.target.closest('.jellyseerr-request-button')) {
+                    return;
+                }
+
+                if (linksAvailableToJellyfin) {
+                    goToJellyfinItem();
                     return;
                 }
 
@@ -214,6 +236,13 @@
                     return;
                 }
 
+                if (linksAvailableToJellyfin) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    goToJellyfinItem();
+                    return;
+                }
+
                 if (!overview) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -228,7 +257,9 @@
             imageContainer.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
-                    if (!overview) {
+                    if (linksAvailableToJellyfin) {
+                        goToJellyfinItem();
+                    } else if (!overview) {
                         createOverview();
                     } else {
                         removeOverview();
@@ -240,9 +271,17 @@
         // If movie belongs to a collection, show a collection badge that opens the modal
         internal.addCollectionMembershipBadge(card, item);
 
-        // Add click handler for the poster image - opens modal
+        // Add click handler for the poster image - opens modal (or, when the item is
+        // available and the admin opted in, navigates straight to Jellyfin instead).
         const posterImage = card.querySelector('.jellyseerr-poster-image');
-        if (posterImage && useMoreInfoModal && JE.jellyseerrMoreInfo) {
+        if (posterImage && linksAvailableToJellyfin) {
+            posterImage.style.cursor = 'pointer';
+            posterImage.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                goToJellyfinItem();
+            });
+        } else if (posterImage && useMoreInfoModal && JE.jellyseerrMoreInfo) {
             posterImage.style.cursor = 'pointer';
             posterImage.addEventListener('click', (e) => {
                 e.preventDefault();
