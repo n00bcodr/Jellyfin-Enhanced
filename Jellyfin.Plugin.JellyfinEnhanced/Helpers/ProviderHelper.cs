@@ -62,12 +62,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 Add("Tvdb", e.TvdbId?.ToString());
                 Add("Tmdb", e.TmdbId?.ToString());
                 Add("Imdb", e.ImdbId);
+                Add("Shoko Series", e.ShokoSeriesId?.ToString());
             }
 
             if (includeEpisode)
             {
                 Add("Tvdb", e.EpisodeTvdbId?.ToString());
                 Add("Imdb", e.EpisodeImdbId);
+                Add("Shoko Episode", e.ShokoEpisodeId?.ToString());
             }
 
             return providers;

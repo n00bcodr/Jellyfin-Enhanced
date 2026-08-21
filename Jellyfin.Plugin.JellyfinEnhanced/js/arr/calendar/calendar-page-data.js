@@ -121,6 +121,7 @@
     DigitalRelease: "#9c27b0",
     PhysicalRelease: "#ff5722",
     Episode: "#4caf50",
+    Anime: "#e91e63",
   };
 
   // Load calendar settings from plugin config
@@ -428,9 +429,11 @@
     const seriesProviders = {};
     if (event.episodeImdbId) episodeProviders.Imdb = event.episodeImdbId;
     if (event.episodeTvdbId) episodeProviders.Tvdb = String(event.episodeTvdbId);
+    if (event.shokoEpisodeId) episodeProviders["Shoko Episode"] = String(event.shokoEpisodeId);
     if (event.imdbId) seriesProviders.Imdb = event.imdbId;
     if (event.tvdbId) seriesProviders.Tvdb = String(event.tvdbId);
     if (event.tmdbId) seriesProviders.Tmdb = String(event.tmdbId);
+    if (event.shokoSeriesId) seriesProviders["Shoko Series"] = String(event.shokoSeriesId);
 
     const hasEpisodeProviders = Object.keys(episodeProviders).length > 0;
     const hasSeriesProviders = Object.keys(seriesProviders).length > 0;

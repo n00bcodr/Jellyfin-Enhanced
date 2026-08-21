@@ -188,6 +188,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SonarrInstances = "[]";
             RadarrInstances = "[]";
 
+            // Shoko Settings (single-instance, like Jellyseerr — Shoko is one server per household)
+            ShokoUrl = "";
+            ShokoApiKey = "";
+            ShokoUrlMappings = "";
+
             // Arr Tags Sync Settings
             ArrTagsSyncEnabled = false;
             SonarrApiKey = "";
@@ -595,6 +600,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string SonarrInstances { get; set; } = "[]";
         public string RadarrInstances { get; set; } = "[]";
 
+        // Shoko Settings — single-instance (URL + API key), like Jellyseerr, not the
+        // Sonarr/Radarr instance-list pattern: Shoko is one server per household.
+        public string ShokoUrl { get; set; }
+        public string ShokoApiKey { get; set; }
+        public string ShokoUrlMappings { get; set; }
+
         // Arr Tags Sync Settings
         public bool ArrTagsSyncEnabled { get; set; }
         public string SonarrApiKey { get; set; }
@@ -984,6 +995,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             _ = TryDeserializeInstances(RadarrInstances, out var r);
             return r == InstanceParseResult.Corrupt;
         }
+
+        /// <summary>
+        /// True when both <see cref="ShokoUrl"/> and <see cref="ShokoApiKey"/> are set. Unlike
+        /// Sonarr/Radarr, there is no JSON instance list to corrupt — Shoko is two flat fields.
+        /// </summary>
+        public bool IsShokoConfigured()
+            => !string.IsNullOrWhiteSpace(ShokoUrl) && !string.IsNullOrWhiteSpace(ShokoApiKey);
 
         private enum InstanceParseResult { ExplicitlyEmpty, Parsed, Corrupt }
 

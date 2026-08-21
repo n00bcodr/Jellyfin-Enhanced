@@ -21,6 +21,7 @@
   const renderEvent = P.renderEvent;
   const renderAgendaEvent = P.renderAgendaEvent;
   const renderCardItems = P.renderCardItems;
+  const compareEventsWithinDay = P.compareEventsWithinDay;
 
   function getDefaultSidebarCollapsed() {
     if (window.matchMedia) {
@@ -97,7 +98,7 @@
       const dateStr = `${year}-${month}-${dayStr}`;
 
       const dayEvents = groupedEvents[dateStr] || [];
-      dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
+      dayEvents.sort(compareEventsWithinDay);
 
       const dayDate = new Date(year, anchor.getMonth(), day);
       const todayClass = isTodayDate(dayDate) ? " je-calendar-today" : "";
@@ -140,7 +141,7 @@
       const dayNum = String(day.getDate()).padStart(2, '0');
       const dateKey = `${year}-${month}-${dayNum}`;
       const dayEvents = groupedEvents[dateKey] || [];
-      dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
+      dayEvents.sort(compareEventsWithinDay);
 
       const todayClass = isTodayDate(day) ? " je-calendar-today" : "";
       html += `
@@ -179,7 +180,7 @@
       const monthDay = dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
       const dayEvents = groupedEvents[dateKey] || [];
-      dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
+      dayEvents.sort(compareEventsWithinDay);
 
       html += `
         <div class="je-calendar-agenda-row">
@@ -203,7 +204,7 @@
     const current = new Date(state.currentDate);
     const dateKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
     const dayEvents = groupedEvents[dateKey] || [];
-    dayEvents.sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
+    dayEvents.sort(compareEventsWithinDay);
 
     if (dayEvents.length === 0) {
       return `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_no_releases")}</div>`;
@@ -235,21 +236,6 @@
     });
 
     let html = '<div class="je-calendar-day-hours">';
-    const allDayLabel = window.JellyfinEnhanced.t?.("calendar_all_day") || "All day";
-    if (groups.allDay.length) {
-      const allDayEvents = groups.allDay;
-      const allDayClass = state.settings.displayMode === 'cards'
-        ? 'je-calendar-hour-events je-calendar-day-cards'
-        : 'je-calendar-hour-events';
-      html += `
-        <div class="je-calendar-hour-row">
-          <div class="je-calendar-hour-label">${allDayLabel}</div>
-          <div class="${allDayClass}">
-            ${state.settings.displayMode === 'cards' ? renderCardItems(allDayEvents) : allDayEvents.map((event) => renderEvent(event)).join("")}
-          </div>
-        </div>
-      `;
-    }
 
     for (let hour = 0; hour < 24; hour += 1) {
       const hourEvents = groups.hours.get(hour);
@@ -262,6 +248,24 @@
           <div class="je-calendar-hour-label">${formatHourLabel(hour)}</div>
           <div class="${hourClass}">
             ${state.settings.displayMode === 'cards' ? renderCardItems(hourEvents) : hourEvents.map((event) => renderEvent(event)).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    // Rendered after the timed hour rows — date-only events (anime) sort after
+    // time-stamped events landing on the same day.
+    const allDayLabel = window.JellyfinEnhanced.t?.("calendar_all_day") || "All day";
+    if (groups.allDay.length) {
+      const allDayEvents = groups.allDay;
+      const allDayClass = state.settings.displayMode === 'cards'
+        ? 'je-calendar-hour-events je-calendar-day-cards'
+        : 'je-calendar-hour-events';
+      html += `
+        <div class="je-calendar-hour-row">
+          <div class="je-calendar-hour-label">${allDayLabel}</div>
+          <div class="${allDayClass}">
+            ${state.settings.displayMode === 'cards' ? renderCardItems(allDayEvents) : allDayEvents.map((event) => renderEvent(event)).join("")}
           </div>
         </div>
       `;
@@ -343,6 +347,10 @@
         <div class="je-calendar-legend-item ${getItemClass('Episode')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Episode'); event.stopPropagation();">
           <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.Episode}; font-size: 18px;">tv_guide</span>
           <span>${JE.t("calendar_episode")}</span>
+        </div>
+        <div class="je-calendar-legend-item ${getItemClass('Anime')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Anime'); event.stopPropagation();">
+          <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.Anime}; font-size: 18px;">animation</span>
+          <span>${JE.t("calendar_anime")}</span>
         </div>
         <div class="je-calendar-legend-item ${getItemClass('Available')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Available'); event.stopPropagation();">
           <span class="material-symbols-rounded" style="color: #4caf50; font-size: 18px;">check_circle</span>

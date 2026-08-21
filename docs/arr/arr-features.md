@@ -281,6 +281,27 @@ View upcoming releases from Sonarr and Radarr in a calendar interface.
 - Filter by Sonarr/Radarr
 - Search functionality
 
+### Anime Calendar Events (Shoko)
+
+When [Shoko is configured](arr-settings.md#shoko), upcoming anime episodes from your Shoko collection appear on the Calendar page alongside Sonarr/Radarr releases, with their own pink **Anime** legend entry to show/hide them independently.
+
+**Scope:**
+
+- Only anime already in your Shoko collection — Shoko's calendar isn't a discovery feed for anime you don't track
+- Restricted/H content is never fetched or shown
+- Only AniDB `Episode` and `Special` types are shown; `Credits`/`Trailer`/`Parody`/`Other` are dropped as calendar noise
+- No time-of-day — AniDB only has date-level granularity, so anime cards have no time pill and sort after same-day timed events
+- Subtitles use AniDB-style numbering (`Episode 12`, `Special 3`), not Sonarr's season/episode grid
+
+**Matching and click-through:**
+
+- Anime cards become clickable, taking you to the series page, once [Shokofin](https://github.com/ShokoAnime/Shokofin) has matched that anime into your Jellyfin library
+- Anime not yet in your Jellyfin library still renders as a card, but isn't clickable — same as any other unmatched calendar item
+
+**Dedup:**
+
+Shoko events are never deduped against Sonarr/Radarr events, even for the same anime — a title tracked in both shows up twice. See [ADR 0002](../adr/0002-no-shoko-sonarr-dedup.md) for why.
+
 ---
 
 ## Downloads Page
