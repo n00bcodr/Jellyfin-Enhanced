@@ -383,16 +383,31 @@
             return reviewCard;
         }
 
+        const STAR_POLYGON = '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>';
+
+        /**
+         * Builds a single star icon: an outline star with a filled star on
+         * top, clipped to `fillFraction` (0-1) of its width — 0 is empty,
+         * 1 is full, 0.5 is a half-star.
+         */
+        function starIconHtml(fillFraction) {
+            const pct = Math.round(Math.max(0, Math.min(1, fillFraction)) * 100);
+            return `<span class="je-star-icon" aria-hidden="true">
+                <svg class="je-star-icon-base" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${STAR_POLYGON}</svg>
+                <svg class="je-star-icon-fill" style="clip-path: inset(0 ${100 - pct}% 0 0);" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${STAR_POLYGON}</svg>
+            </span>`;
+        }
+
         /**
          * Builds the star display HTML for a 1–5 rating.
-         * @param {number} rating - Integer 1 to 5.
+         * @param {number} rating - 1 to 5, in 0.5 increments.
          */
         function renderUserStarRating(rating) {
             if (!rating) return '';
 
             const stars = Array.from({ length: 5 }, (_, index) => {
-                const filled = index < rating;
-                return `<span class="je-user-star${filled ? ' je-user-star-filled' : ''}" aria-hidden="true">★</span>`;
+                const fillFraction = Math.max(0, Math.min(1, rating - index));
+                return starIconHtml(fillFraction);
             }).join('');
 
             return `<span class="je-user-star-rating">${stars}</span>`;
@@ -499,7 +514,7 @@
             form.innerHTML = `
                 ${existingReview ? '' : `<h4 class="je-review-form-title">${JE.t('reviews_add')}</h4>`}
                 <div class="je-review-star-picker" role="radiogroup">
-                    ${[1,2,3,4,5].map(n => `<button class="je-star-btn${currentRating >= n ? ' je-star-selected' : ''}" data-value="${n}" type="button">★</button>`).join('')}
+                    ${[1,2,3,4,5].map(n => `<button class="je-star-btn" data-value="${n}" type="button" aria-label="${n} stars">${starIconHtml(0)}</button>`).join('')}
                     <button class="je-star-clear-btn" type="button"><span class="material-icons" aria-hidden="true">close</span></button>
                     <span class="je-star-label"></span>
                 </div>
@@ -521,21 +536,37 @@
             const cancelBtn = form.querySelector('.je-review-cancel-btn');
             const errorEl = form.querySelector('.je-review-form-error');
 
+            // Used for both the committed rating and the live hover preview.
+            function setFill(value) {
+                starBtns.forEach(btn => {
+                    const n = parseInt(btn.dataset.value, 10);
+                    const fillFraction = Math.max(0, Math.min(1, value - (n - 1)));
+                    const pct = Math.round(fillFraction * 100);
+                    const fillSvg = btn.querySelector('.je-star-icon-fill');
+                    if (fillSvg) fillSvg.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+                });
+            }
+
             function updateStars(value) {
                 currentRating = value;
-                starBtns.forEach(btn => {
-                    const v = parseInt(btn.dataset.value, 10);
-                    btn.classList.toggle('je-star-selected', v <= currentRating);
-                });
+                setFill(value);
                 starLabel.textContent = currentRating > 0 ? `${currentRating}/5` : '';
+            }
+
+            // Left half of a star button = n - 0.5, right half = n.
+            function valueForPointer(btn, clientX) {
+                const n = parseInt(btn.dataset.value, 10);
+                const rect = btn.getBoundingClientRect();
+                const isLeftHalf = (clientX - rect.left) < rect.width / 2;
+                return isLeftHalf ? n - 0.5 : n;
             }
 
             updateStars(currentRating);
 
             starBtns.forEach(btn => {
-                btn.addEventListener('click', () => updateStars(parseInt(btn.dataset.value, 10)));
-                btn.addEventListener('mouseenter', () => starBtns.forEach(b => b.classList.toggle('je-star-hover', parseInt(b.dataset.value, 10) <= parseInt(btn.dataset.value, 10))));
-                btn.addEventListener('mouseleave', () => starBtns.forEach(b => b.classList.remove('je-star-hover')));
+                btn.addEventListener('click', (e) => updateStars(valueForPointer(btn, e.clientX)));
+                btn.addEventListener('mousemove', (e) => setFill(valueForPointer(btn, e.clientX)));
+                btn.addEventListener('mouseleave', () => setFill(currentRating));
             });
 
             clearBtn.addEventListener('click', () => updateStars(0));
@@ -946,15 +977,17 @@
                 .tmdb-review-author-info { display: flex; flex-direction: column; gap: 0.3em; flex: 1; }
                 .tmdb-review-author { color: #fff; font-size: 1.1em; font-weight: 600; }
                 .tmdb-review-date { color: #aaa; font-size: 0.9em; }
-                .tmdb-review-rating { color: #ffd700; background: rgba(255, 215, 0, 0.1); padding: 0.2em 0.5em; border-radius: 4px; }
+                .tmdb-review-rating { display: inline-flex; align-items: center; color: #ffd700; background: rgba(255, 215, 0, 0.1); padding: 0.2em 0.5em; border-radius: 4px; gap: 0.2em;}
                 .je-user-review-rating {
                     white-space: nowrap;
                     background: rgba(94, 213, 95, 0.12);
                     color: #ffd700;
                 }
-                .je-user-star-rating { display: inline-flex; align-items: center; gap: 0.08em; }
-                .je-user-star { color: rgba(255, 255, 255, 0.28); font-size: 0.95em; }
-                .je-user-star-filled { color: #ffd700; }
+                .je-user-star-rating { display: inline-flex; align-items: center; gap: 0.02em; }
+                .je-star-icon { position: relative; display: inline-block; width: 1em; height: 1em; color: rgba(255, 255, 255, 0.28); }
+                .je-star-icon svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
+                .je-star-icon-fill { color: #ffd700; }
+                .je-user-star-rating .je-star-icon { width: 1.05em; height: 1.05em; vertical-align: middle; }
                 .tmdb-review-content-wrapper { flex-grow: 1; line-height: 1.7; overflow-y: auto; color: #ddd; font-size: 0.95em; }
                 .tmdb-review-text { word-wrap: break-word; }
                 .tmdb-review-text strong { color: #fff; font-weight: 600; }
@@ -1024,16 +1057,16 @@
                 .je-review-form-title { margin: 0; font-size: 1em; color: #fff; font-weight: 600; }
                 .je-review-star-picker { display: flex; align-items: center; gap: 0.3em; }
                 .je-star-btn {
+                    display: inline-flex;
+                    align-items: center;
                     background: none;
                     border: none;
                     cursor: pointer;
-                    font-size: 1.6em;
-                    color: rgba(255,255,255,0.2);
                     padding: 0;
                     line-height: 1;
-                    transition: color 0.1s, transform 0.1s;
+                    transition: transform 0.1s;
                 }
-                .je-star-btn:hover, .je-star-btn.je-star-hover, .je-star-btn.je-star-selected { color: #ffd700; }
+                .je-star-btn .je-star-icon { width: 1.6em; height: 1.6em; pointer-events: none; }
                 .je-star-btn:hover { transform: scale(1.2); }
                 .je-star-clear-btn {
                     background: rgba(255,255,255,0.08);

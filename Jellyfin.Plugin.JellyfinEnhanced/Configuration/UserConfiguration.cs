@@ -323,8 +323,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>"movie" or "tv"</summary>
         public string MediaType { get; set; } = string.Empty;
         public string Content { get; set; } = string.Empty;
-        /// <summary>Optional rating, 1–5 (whole numbers only).</summary>
-        public int? Rating { get; set; }
+        /// <summary>Optional rating, 1–5 in 0.5 increments.</summary>
+        public double? Rating { get; set; }
         public string CreatedAt { get; set; } = string.Empty;
         public string UpdatedAt { get; set; } = string.Empty;
     }

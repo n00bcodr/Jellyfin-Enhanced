@@ -274,7 +274,7 @@ User reviews and ratings, shared across all users on the server. Each review is 
 Every write endpoint below (self or admin) validates the same `ReviewPayload` body:
 
 - `content` (string, optional): trimmed server-side; rejected with `400` if longer than 2000 characters
-- `rating` (integer, optional): must be `1`-`5` inclusive, or omitted; `0`, `6`, or a non-integer value is rejected with `400`
+- `rating` (number, optional): must be `1`-`5` inclusive in `0.5` increments (e.g. `4.5`), or omitted; `0`, `6`, or a value not on a half-star boundary (e.g. `4.3`) is rejected with `400`
 - At least one of `content` or `rating` must be present, an empty payload (`{}`) is rejected with `400 {"success": false, "message": "A rating or review text is required."}`
 - This means a **ratings-only** review (`{"rating": 4}`, no text) and a **text-only** review (`{"content": "..."}`, no rating) are both valid
 
@@ -381,7 +381,7 @@ Any other shape (letters, missing digits, extra segments) is rejected with `400 
 
     - Jellyfin Server **Administrator** API key (`JELLYFIN_API_KEY`)
     - `JELLYFIN_USER_ID` here is the 32-character hex form with no dashes (the same format returned by the get-bookmarks endpoint, not the dashed form shown in the Jellyfin dashboard URL)
-    - Same [rating and content rules](#rating-and-content-rules) as the self-review endpoint above; `rating` still only allows `1`-`5` or omitted, an admin key does not bypass validation
+    - Same [rating and content rules](#rating-and-content-rules) as the self-review endpoint above; `rating` still only allows `1`-`5` in `0.5` increments or omitted, an admin key does not bypass validation
     - Response: `{"success": true}`. A non-admin key gets `403 Forbidden`, a malformed `userIdN` gets `400`
 
 ???+ dev "Delete a specific user's review (admin)"

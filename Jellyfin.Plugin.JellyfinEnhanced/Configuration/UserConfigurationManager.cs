@@ -617,7 +617,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// concurrent upserts from different users cannot cause lost updates.
         /// </summary>
         public void UpsertReview(string userIdN, string mediaType, string tmdbId,
-                                 string content, int? rating, string nowIso)
+                                 string content, double? rating, string nowIso)
         {
             lock (_reviewsFileLock)
             {

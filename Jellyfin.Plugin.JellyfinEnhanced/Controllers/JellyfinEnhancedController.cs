@@ -5801,8 +5801,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public sealed class ReviewPayload
         {
             public string Content { get; set; } = string.Empty;
-            public int? Rating { get; set; }
+            public double? Rating { get; set; }
         }
+
+        /// <summary>Rating must be 1–5 in 0.5 increments (2, 3.5, 5, etc.).</summary>
+        private static bool IsValidRating(double? rating) =>
+            !rating.HasValue || (rating.Value >= 1 && rating.Value <= 5 && Math.Abs(rating.Value * 2 - Math.Round(rating.Value * 2)) < 0.0001);
 
         private static readonly System.Text.RegularExpressions.Regex _tmdbIdRegex =
             new System.Text.RegularExpressions.Regex(@"^\d+$", System.Text.RegularExpressions.RegexOptions.Compiled);
@@ -5959,8 +5963,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (normalizedContent.Length > 2000)
                 return BadRequest(new { success = false, message = "Review content must not exceed 2000 characters." });
 
-            if (payload.Rating.HasValue && (payload.Rating.Value < 1 || payload.Rating.Value > 5))
-                return BadRequest(new { success = false, message = "Rating must be between 1 and 5." });
+            if (!IsValidRating(payload.Rating))
+                return BadRequest(new { success = false, message = "Rating must be between 1 and 5, in 0.5 increments." });
 
             var currentUserId = UserHelper.GetCurrentUserId(User);
             if (!currentUserId.HasValue || currentUserId.Value == Guid.Empty) return Forbid();
@@ -6009,8 +6013,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (normalizedContent.Length > 2000)
                 return BadRequest(new { success = false, message = "Review content must not exceed 2000 characters." });
 
-            if (payload.Rating.HasValue && (payload.Rating.Value < 1 || payload.Rating.Value > 5))
-                return BadRequest(new { success = false, message = "Rating must be between 1 and 5." });
+            if (!IsValidRating(payload.Rating))
+                return BadRequest(new { success = false, message = "Rating must be between 1 and 5, in 0.5 increments." });
 
             try
             {
@@ -6500,7 +6504,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             public string UserName { get; set; } = string.Empty;
             public long Timestamp { get; set; }
             public object Item { get; set; } = new { };
-            public int? Rating { get; set; }
+            public double? Rating { get; set; }
             public string? Content { get; set; }
             /// <summary>Watched-only: whether this was ever played to completion.</summary>
             public bool Completed { get; set; }

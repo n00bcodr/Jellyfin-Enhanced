@@ -107,7 +107,10 @@
   font-size: 15px; opacity: 0.85; margin-top: 6px; line-height: 1.4;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.je-activity-rating { font-size: 15px; color: #f2b01e; margin-top: 4px; letter-spacing: 1px; }
+.je-activity-rating { margin-top: 4px; display: inline-flex; align-items: center; gap: 0.5em; }
+.je-activity-rating-star { position: relative; display: inline-block; width: 15px; height: 15px; color: rgba(255,255,255,0.28); }
+.je-activity-rating-star svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
+.je-activity-rating-star-fill { color: #f2b01e; }
 .je-activity-progress {
   margin-top: 6px; height: 4px; border-radius: 2px;
   background: rgba(255,255,255,0.12); overflow: hidden; max-width: 320px;
@@ -143,6 +146,16 @@
     // ── Helpers ──────────────────────────────────────────────────────────────
     const VERB_ICON = { Watched: 'play_circle', Favorited: 'favorite', Reviewed: 'rate_review' };
     const VERB_KEY = { Watched: 'activity_verb_watched', Favorited: 'activity_verb_favorited', Reviewed: 'activity_verb_reviewed' };
+
+    // Matches reviews.js's own copy and JE.icons.LUCIDE.star in icons.js.
+    const STAR_POLYGON = '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>';
+    function starIconHtml(fillFraction) {
+        const pct = Math.round(Math.max(0, Math.min(1, fillFraction)) * 100);
+        return `<span class="je-activity-rating-star" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${STAR_POLYGON}</svg>
+            <svg class="je-activity-rating-star-fill" style="clip-path: inset(0 ${100 - pct}% 0 0);" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${STAR_POLYGON}</svg>
+        </span>`;
+    }
 
     /** "Series Name - S1:E3 - Episode Title" for episodes, plain Name otherwise. */
     function getItemDisplayName(item) {
@@ -207,7 +220,9 @@
             if (entry.Rating) {
                 const rating = document.createElement('div');
                 rating.className = 'je-activity-rating';
-                rating.textContent = '★'.repeat(entry.Rating) + '☆'.repeat(Math.max(0, 5 - entry.Rating));
+                rating.innerHTML = Array.from({ length: 5 }, (_, index) =>
+                    starIconHtml(Math.max(0, Math.min(1, entry.Rating - index)))
+                ).join('');
                 body.appendChild(rating);
             }
             if (entry.Content) {
