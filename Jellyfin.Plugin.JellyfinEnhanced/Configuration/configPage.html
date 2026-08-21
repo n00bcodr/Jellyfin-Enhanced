@@ -7336,6 +7336,16 @@
 
         var _jeAutoFieldsetIdCounter = 0;
 
+        /** Tab content id (e.g. "seerr") -> its visible nav label (e.g. "Seerr"), read straight off the tab button so it never drifts from what's on screen. */
+        function jeTabLabel(tabId) {
+            var btn = document.querySelector('.jellyfin-tab-button[data-tab="' + tabId + '"] h3');
+            if (!btn) return tabId;
+            var clone = btn.cloneNode(true);
+            clone.querySelectorAll('i.material-icons, img').forEach(function(el) { el.remove(); });
+            var text = clone.textContent.trim();
+            return text || tabId;
+        }
+
         /** Collapses new settings to one banner entry per fieldset, so a whole new feature reads as one line, not a wall of chips. */
         function groupWhatsNewByFieldset(perSetting) {
             var newIdSet = new Set(perSetting.map(function(f) { return f.id; }));
@@ -7368,6 +7378,7 @@
                     }
                     groups[key] = {
                         tab: f.tab,
+                        tabLabel: jeTabLabel(f.tab),
                         selector: selector,
                         title: title,
                         isWholeFieldset: isWholeFieldset,
@@ -7453,7 +7464,7 @@
                     var chip = document.createElement('button');
                     chip.type = 'button';
                     chip.className = 'je-whats-new-chip';
-                    chip.textContent = f.title;
+                    chip.textContent = f.tabLabel + ' > ' + f.title;
                     chip.addEventListener('click', function() {
                         jeJumpToTab(f.tab, f.selector, f.flashSelectors);
                     });
