@@ -193,7 +193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ShokoApiKey = "";
             ShokoUrlMappings = "";
             ShokoShowEpisodes = true;
-            ShokoShowSpecials = true;
+            ShokoShowSpecials = false;
             ShokoShowCredits = false;
             ShokoShowTrailers = false;
             ShokoShowParodies = false;

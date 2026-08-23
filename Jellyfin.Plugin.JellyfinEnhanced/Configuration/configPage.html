@@ -2091,7 +2091,7 @@
                             <div class="checkboxContainer"><label><input id="shokoShowParodies" is="emby-checkbox" type="checkbox"/><span>Parodies</span></label></div>
                             <div class="checkboxContainer"><label><input id="shokoShowOther" is="emby-checkbox" type="checkbox"/><span>Other</span></label></div>
                             <div class="je-setting-description" data-desc-for="shokoShowOther">
-                                <div class="fieldDescription">Which AniDB episode types appear as calendar events. Episodes and Specials are on by default; the rest are usually calendar noise.</div>
+                                <div class="fieldDescription">Which AniDB episode types appear as calendar events. Episodes are on by default; the rest are usually calendar noise.</div>
                             </div>
 
                             <details class="je-details-section">
@@ -5404,7 +5404,7 @@
                 document.querySelector('#shokoUrl').value = config.ShokoUrl;
                 document.querySelector('#shokoApiKey').value = config.ShokoApiKey;
                 document.querySelector('#shokoShowEpisodes').checked = config.ShokoShowEpisodes !== false;
-                document.querySelector('#shokoShowSpecials').checked = config.ShokoShowSpecials !== false;
+                document.querySelector('#shokoShowSpecials').checked = config.ShokoShowSpecials === true;
                 document.querySelector('#shokoShowCredits').checked = config.ShokoShowCredits === true;
                 document.querySelector('#shokoShowTrailers').checked = config.ShokoShowTrailers === true;
                 document.querySelector('#shokoShowParodies').checked = config.ShokoShowParodies === true;
