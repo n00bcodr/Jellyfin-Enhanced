@@ -19,6 +19,14 @@
             style.id = styleId;
             style.textContent = `
                 .je-awards-section {
+                    /* Some themes (e.g. ElegantFin) style .detailSection as a
+                       grid, which blows this <details> out to a huge width —
+                       force flex like reviews.js's .tmdb-reviews-section. */
+                    display: flex !important;
+                    flex-direction: column;
+                    width: 100%;
+                    min-width: 0;
+                    row-gap: 0px !important;
                     position: relative;
                     overflow: hidden;
                     margin: 1em 0;
@@ -60,6 +68,7 @@
                     gap: 8px;
                     z-index: 1;
                     white-space: nowrap;
+                    line-height: 1;
                 }
                 .je-awards-label .je-awards-star {
                     font-size: 20px;
@@ -68,9 +77,10 @@
                 .je-awards-wordmark {
                     font-family: Georgia, 'Times New Roman', serif;
                     letter-spacing: 0.12em;
-                    font-size: 16px;
+                    font-size: 18px;
                     font-weight: 600;
                     text-transform: uppercase;
+                    line-height: 1;
                 }
                 .je-awards-divider {
                     z-index: 1;
@@ -80,10 +90,11 @@
                 }
                 .je-awards-stats {
                     z-index: 1;
-                    font-size: 14px;
+                    font-size: 13px;
                     font-weight: 500;
                     color: rgba(255,255,255,0.92);
                     white-space: nowrap;
+                    line-height: 1;
                     overflow: hidden;
                     text-overflow: ellipsis;
                 }

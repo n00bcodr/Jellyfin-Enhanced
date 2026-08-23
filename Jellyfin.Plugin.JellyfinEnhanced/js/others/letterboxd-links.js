@@ -39,8 +39,8 @@
                 .letterboxd-link-icon::before {
                     content: "";
                     display: inline-block;
-                    width: 25px;
-                    height: 25px;
+                    width: var(--je-icon-size, 25px);
+                    height: var(--je-icon-size, 25px);
                     background-image: url(${LETTERBOXD_ICON_URL});
                     background-size: contain;
                     background-repeat: no-repeat;
@@ -168,6 +168,7 @@
                 button.className = 'button-link emby-button letterboxd-link';
             } else {
                 button.className = 'button-link emby-button letterboxd-link letterboxd-link-icon';
+                button.style.setProperty('--je-icon-size', `${JE.helpers.getExternalLinkIconSize()}px`);
             }
             return button;
         }

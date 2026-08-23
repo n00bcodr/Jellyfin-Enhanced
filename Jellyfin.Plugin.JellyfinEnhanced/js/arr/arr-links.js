@@ -648,6 +648,9 @@
                         img.src = iconUrl;
                         img.alt = text;
                         img.className = 'arr-link-img';
+                        const iconSize = JE.helpers.getExternalLinkIconSize();
+                        img.style.width = `${iconSize}px`;
+                        img.style.height = `${iconSize}px`;
                         button.appendChild(img);
                     }
                 }
@@ -686,6 +689,9 @@
                         img.src = iconUrl;
                         img.alt = label;
                         img.className = 'arr-link-img';
+                        const iconSize = JE.helpers.getExternalLinkIconSize();
+                        img.style.width = `${iconSize}px`;
+                        img.style.height = `${iconSize}px`;
                         toggle.appendChild(img);
                     }
                 }

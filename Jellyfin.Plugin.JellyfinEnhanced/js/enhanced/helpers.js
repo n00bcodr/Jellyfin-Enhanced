@@ -644,6 +644,36 @@
         return a;
     }
 
+    // Icon-only buttons we inject into .itemExternalLinks (Letterboxd, Seerr,
+    // Radarr/Sonarr/Bazarr) need to match the height of Jellyfin's native
+    // text-only IMDb/TMDB/Trakt buttons there — a fixed px/em guess only fits
+    // one theme, so measure the real native button instead. Reads rendered
+    // box height, not font-size/line-height: some themes give these buttons
+    // an explicit height while zeroing out font-size/color on the label
+    // itself (rendering it some other way), which would read as 0.
+    const ownExternalLinkClasses = ['letterboxd-link', 'seerr-link', 'arr-link', 'arr-tag-link'];
+
+    /**
+     * Px content height Jellyfin's native external-link buttons (IMDb/TMDB/Trakt)
+     * currently render at, so icon-only buttons in the same row can match it.
+     * @param {number} [fallback=18] - px to use if no native button is found yet.
+     * @returns {number}
+     */
+    function getExternalLinkIconSize(fallback = 18) {
+        const container = document.querySelector('#itemDetailPage:not(.hide) .itemExternalLinks');
+        if (!container) return fallback;
+        const native = [...container.querySelectorAll('a')].find(a =>
+            !ownExternalLinkClasses.some(cls => a.classList.contains(cls))
+        );
+        if (!native) return fallback;
+        const rect = native.getBoundingClientRect();
+        const cs = getComputedStyle(native);
+        const verticalChrome = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+            + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+        const contentHeight = rect.height - (Number.isFinite(verticalChrome) ? verticalChrome : 0);
+        return Number.isFinite(contentHeight) && contentHeight > 0 ? contentHeight : fallback;
+    }
+
     // Expose helpers. Entries marked (core) are thin aliases over JE.core.*
     // kept for the frozen JE.helpers contract — new code should call core
     // directly.
@@ -670,6 +700,7 @@
         removeCSS: (id) => JE.core.ui.removeCss(id), // (core)
         escHtml: (s) => JE.core.ui.escapeHtml(s), // (core)
         createExternalLink,
+        getExternalLinkIconSize,
         isSafeAvatarUrl,
         resolveProtectedAvatarUrl,
         hydrateAvatarImages,

@@ -944,7 +944,13 @@
                     font-feature-settings: 'liga';
                     -webkit-font-smoothing: antialiased;
                 }
-                .tmdb-reviews-section { margin: 2em 0 1em 0; display: flex !important; flex-direction: column;}
+                /* Some themes style .detailSection as a grid, and a flex/grid
+                   item's default min-width is auto — so this section's
+                   horizontally-scrolling card row can report its full
+                   unscrolled width as intrinsic size and blow out past the
+                   viewport. width:100%+min-width:0 here and on the swipe
+                   container below keep both pinned to the available width. */
+                .tmdb-reviews-section { margin: 2em 0 1em 0; display: flex !important; flex-direction: column; width: 100%; min-width: 0;}
                 .tmdb-reviews-section summary { cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; -webkit-tap-highlight-color: transparent;}
                 .tmdb-reviews-section summary .expand-icon { color: rgba(255, 255, 255,.8);transition: transform 0.2s ease-in-out;}
                 .tmdb-reviews-section[open] summary .expand-icon { transform: rotate(180deg);}
@@ -954,6 +960,8 @@
                     gap: 1.2em;
                     padding: 1em 0.5em;
                     scroll-snap-type: x mandatory;
+                    width: 100%;
+                    min-width: 0;
                 }
                 .tmdb-review-card {
                     flex: 0 0 85%;

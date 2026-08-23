@@ -61,6 +61,9 @@
                 img.src = SEERR_ICON_URL;
                 img.alt = 'Seerr';
                 img.className = 'seerr-link-img';
+                const iconSize = JE.helpers.getExternalLinkIconSize();
+                img.style.width = `${iconSize}px`;
+                img.style.height = `${iconSize}px`;
                 button.appendChild(img);
             }
 
