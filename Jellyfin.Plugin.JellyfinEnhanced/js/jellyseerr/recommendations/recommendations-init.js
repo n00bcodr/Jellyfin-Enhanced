@@ -119,8 +119,7 @@
     setupNavigationWatcher();
 
     document.addEventListener("viewshow", handleViewShow);
-    window.addEventListener("popstate", handleNavigation);
-    window.addEventListener("hashchange", handleNavigation);
+    JE.helpers.onNavigate(handleNavigation);
     handleNavigation();
   }
 
