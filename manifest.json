@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/docs/images/icon.png",
     "versions": [
       {
+        "changelog": "- fix(bookmarks): scope bookmark matching to the correct episode\n - fix(spoiler-guard): keep movie multi-version names when stripping fields\n - fix(jellyseerr): fix search race causing leaked scroll listeners\n - fix(item-details): fix awards/reviews overflow and external-link icon sizing on third-party themes\n - fix(recommendations): hide standalone page reliably when navigating home",
+        "targetAbi": "10.11.0.0",
+        "version": "12.4.1.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/12.4.1.0/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip",
+        "checksum": "E52D769F4FE90BE6AF998ED876BC1C1E",
+        "timestamp": "2026-08-23T18:57:55"
+      },
+      {
         "changelog": "- fix(subtitles): sync position preview with the bottom-anchored render\n - feat(reviews): support half-star ratings\n - feat(jellyseerr): option to link available items' posters straight to Jellyfin\n - feat(config-page): show which tab a What's New setting lives in",
         "targetAbi": "10.11.0.0",
         "version": "12.4.0.0",
