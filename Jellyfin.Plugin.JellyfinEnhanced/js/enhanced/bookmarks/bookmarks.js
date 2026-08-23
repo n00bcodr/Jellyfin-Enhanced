@@ -104,13 +104,14 @@
             });
             const seriesItem = seriesResult?.Items?.[0];
             if (seriesItem) {
-              // Merge: use series TMDB/TVDB but keep episode info
+              // TMDB has no per-episode ID, so fall back to the series' ID. TVDB does
+              // have a unique per-episode ID, so prefer the episode's own.
               sourceItem = {
                 ...item,
                 ProviderIds: {
                   ...(item.ProviderIds || {}),
                   Tmdb: seriesItem.ProviderIds?.Tmdb || item.ProviderIds?.Tmdb,
-                  Tvdb: seriesItem.ProviderIds?.Tvdb || item.ProviderIds?.Tvdb
+                  Tvdb: item.ProviderIds?.Tvdb || seriesItem.ProviderIds?.Tvdb
                 }
               };
             }
@@ -125,13 +126,19 @@
           : (item.Type === 'Series' || item.Type === 'Episode' || item.Type === 'Season') ? 'tv'
           : (item.Type || '').toString().toLowerCase();
 
+        // tmdbId is series-level for episodes, so track season/episode too for fallback matching.
+        const seasonNumber = item.Type === 'Episode' ? (item.ParentIndexNumber ?? null) : null;
+        const episodeNumber = item.Type === 'Episode' ? (item.IndexNumber ?? null) : null;
+
         const details = {
           itemId: item.Id,
           tmdbId,
           tvdbId,
           mediaType,
           name: item.Name || 'Unknown',
-          type: item.Type
+          type: item.Type,
+          seasonNumber,
+          episodeNumber
         };
 
         itemDetailsCache.data = details;
@@ -160,10 +167,13 @@
    * Find bookmarks for current item (by itemId or TMDB/TVDB fallback)
    * Returns both exact matches and provider ID matches separately
    */
-  function findBookmarksForItem(itemId, tmdbId, tvdbId) {
+  function findBookmarksForItem(itemId, tmdbId, tvdbId, seasonNumber = null, episodeNumber = null) {
     const allBookmarks = JE.userConfig?.bookmark?.bookmarks || {};
     const exactMatches = [];
     const providerMatches = [];
+    // tmdbId is series-level for episodes, so fallback matching must also require the
+    // same episode number or it pulls in bookmarks from unrelated episodes.
+    const isEpisode = episodeNumber !== null;
 
     for (const [bookmarkId, bookmark] of Object.entries(allBookmarks)) {
       // Skip invalid bookmarks
@@ -173,6 +183,14 @@
       if (bookmark.itemId === itemId) {
         exactMatches.push({ id: bookmarkId, ...bookmark, exactMatch: true });
         continue;
+      }
+
+      // Only bookmarks with episode metadata get the stricter check; legacy bookmarks
+      // (no episodeNumber) fall back to the old provider-only matching behavior.
+      if (isEpisode && bookmark.episodeNumber != null) {
+        const bookmarkIsSameEpisode = bookmark.episodeNumber === episodeNumber
+          && (bookmark.seasonNumber ?? null) === (seasonNumber ?? null);
+        if (!bookmarkIsSameEpisode) continue;
       }
 
       // Fallback: TMDB/TVDB match (different item ID)
@@ -223,7 +241,9 @@
       label: label || '',
       createdAt: now,
       updatedAt: now,
-      syncedFrom: ''
+      syncedFrom: '',
+      seasonNumber: details.seasonNumber ?? null,
+      episodeNumber: details.episodeNumber ?? null
     };
 
     // Initialize bookmark structure if needed
@@ -315,7 +335,9 @@
         label: oldBookmark.label || '',
         createdAt: oldBookmark.createdAt || now,
         updatedAt: now,
-        syncedFrom: oldBookmark.itemId // Track where it came from
+        syncedFrom: oldBookmark.itemId, // Track where it came from
+        seasonNumber: newItemDetails.seasonNumber ?? null,
+        episodeNumber: newItemDetails.episodeNumber ?? null
       };
 
       JE.userConfig.bookmark.bookmarks[newBookmarkId] = newBookmark;
@@ -332,6 +354,43 @@
       // Rollback
       synced.forEach(bm => delete JE.userConfig.bookmark.bookmarks[bm.id]);
       throw e;
+    }
+  }
+
+  /**
+   * One-time backfill for TV bookmarks saved before per-episode tracking existed:
+   * populates seasonNumber/episodeNumber and corrects tvdbId to the episode's own
+   * per-episode ID (previously stored as the series-level value).
+   */
+  async function backfillEpisodeMetadata() {
+    const allBookmarks = JE.userConfig?.bookmark?.bookmarks || {};
+    const candidates = Object.entries(allBookmarks).filter(
+      ([, bm]) => bm?.mediaType === 'tv' && bm.itemId && bm.episodeNumber == null
+    );
+    if (candidates.length === 0) return;
+
+    let changed = false;
+    for (const [, bm] of candidates) {
+      try {
+        const details = await fetchItemDetails(bm.itemId);
+        if (details?.episodeNumber != null) {
+          bm.seasonNumber = details.seasonNumber;
+          bm.episodeNumber = details.episodeNumber;
+          if (details.tvdbId) bm.tvdbId = details.tvdbId;
+          changed = true;
+        }
+      } catch (e) {
+        // Item may no longer exist; leave it for cleanupOrphanedBookmarks() to handle
+      }
+    }
+
+    if (changed) {
+      try {
+        await JE.saveUserSettings('bookmark.json', JE.userConfig.bookmark);
+        console.log(`${logPrefix} Backfilled episode metadata for ${candidates.length} bookmark(s)`);
+      } catch (e) {
+        console.warn(`${logPrefix} Failed to save backfilled episode metadata:`, e);
+      }
     }
   }
 
@@ -524,7 +583,9 @@
     const { bookmarks: bookmarksList } = findBookmarksForItem(
       details.itemId,
       details.tmdbId,
-      details.tvdbId
+      details.tvdbId,
+      details.seasonNumber,
+      details.episodeNumber
     );
 
     console.log(`${logPrefix} Found ${bookmarksList.length} bookmarks for this item`);
@@ -553,7 +614,9 @@
     const { bookmarks: existingBookmarks } = findBookmarksForItem(
       details.itemId,
       details.tmdbId,
-      details.tvdbId
+      details.tvdbId,
+      details.seasonNumber,
+      details.episodeNumber
     );
 
     const isEdit = mode === 'edit' && existingBookmark;
@@ -1009,7 +1072,8 @@
     updateMarkers: updateBookmarkMarkersForCurrentVideo,
     formatTimestamp,
     syncBookmarks,
-    cleanupOrphaned: cleanupOrphanedBookmarks
+    cleanupOrphaned: cleanupOrphanedBookmarks,
+    backfillEpisodeMetadata
   };
 
   /**
@@ -1059,6 +1123,9 @@
       initialized = true;
 
       console.log(`${logPrefix} Initializing enhanced bookmarks...`);
+
+      // Fire-and-forget: backfill existing bookmarks with episode metadata.
+      backfillEpisodeMetadata().catch(e => console.warn(`${logPrefix} Backfill failed:`, e));
 
       let updateTimeout = null;
       let lastVideoUrl = null;

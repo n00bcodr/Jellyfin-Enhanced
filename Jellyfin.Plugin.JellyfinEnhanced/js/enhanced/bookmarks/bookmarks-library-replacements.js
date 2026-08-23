@@ -17,7 +17,7 @@
   /**
    * Search Jellyfin for items matching a TMDB/TVDB ID
    */
-  async function searchForReplacementItem(tmdbId, tvdbId, mediaType) {
+  async function searchForReplacementItem(tmdbId, tvdbId, mediaType, seasonNumber = null, episodeNumber = null) {
     const apiClient = window.ApiClient || window.ConnectionManager?.currentApiClient();
     if (!apiClient) return null;
 
@@ -58,19 +58,28 @@
         const providerIds = item.ProviderIds || {};
         const userData = item.UserData || {};
 
+        let providerMatch = false;
         if (tmdbId) {
           // Check ProviderIds.Tmdb
-          if (providerIds.Tmdb === String(tmdbId)) return true;
+          if (providerIds.Tmdb === String(tmdbId)) providerMatch = true;
           // Check UserData.Key for TMDB ID
-          if (userData.Key === String(tmdbId)) return true;
+          if (userData.Key === String(tmdbId)) providerMatch = true;
         }
 
-        if (tvdbId) {
+        if (!providerMatch && tvdbId) {
           // Check ProviderIds.Tvdb
-          if (providerIds.Tvdb === String(tvdbId)) return true;
+          if (providerIds.Tvdb === String(tvdbId)) providerMatch = true;
         }
 
-        return false;
+        if (!providerMatch) return false;
+
+        // A provider match can be any episode of the show; also require the episode
+        // number when known, so we don't offer an unrelated episode as a "replacement".
+        if (item.Type === 'Episode' && episodeNumber != null) {
+          return item.ParentIndexNumber === seasonNumber && item.IndexNumber === episodeNumber;
+        }
+
+        return true;
       });
 
       console.log(`🪼 Jellyfin Enhanced: Bookmarks Library: Found ${matches.length} matches for ${tmdbId ? 'TMDB:'+tmdbId : 'TVDB:'+tvdbId}`, matches);
@@ -90,7 +99,9 @@
     const matches = await searchForReplacementItem(
       group.details.tmdbId,
       group.details.tvdbId,
-      group.details.mediaType
+      group.details.mediaType,
+      group.details.seasonNumber,
+      group.details.episodeNumber
     );
 
     if (!matches || matches.length === 0) {
@@ -223,7 +234,9 @@
           tmdbId: fullItem.ProviderIds?.Tmdb || oldGroup.details.tmdbId,
           tvdbId: fullItem.ProviderIds?.Tvdb || oldGroup.details.tvdbId,
           mediaType: oldGroup.details.mediaType,
-          name: fullItem.Name
+          name: fullItem.Name,
+          seasonNumber: fullItem.Type === 'Episode' ? (fullItem.ParentIndexNumber ?? null) : null,
+          episodeNumber: fullItem.Type === 'Episode' ? (fullItem.IndexNumber ?? null) : null
         };
 
         // Delete old bookmarks BEFORE syncing to prevent race condition with re-render

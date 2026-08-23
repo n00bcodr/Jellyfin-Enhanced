@@ -3848,6 +3848,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             public double Timestamp { get; set; }
             public string Label { get; set; } = string.Empty;
             public string SyncedFrom { get; set; } = string.Empty;
+            public int? SeasonNumber { get; set; }
+            public int? EpisodeNumber { get; set; }
         }
 
         [HttpPost("user-settings/{userId}/bookmark.json/add")]
@@ -3884,7 +3886,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Label = payload.Label ?? string.Empty,
                         CreatedAt = now,
                         UpdatedAt = now,
-                        SyncedFrom = payload.SyncedFrom ?? string.Empty
+                        SyncedFrom = payload.SyncedFrom ?? string.Empty,
+                        SeasonNumber = payload.SeasonNumber,
+                        EpisodeNumber = payload.EpisodeNumber
                     };
                     return 1;
                 });

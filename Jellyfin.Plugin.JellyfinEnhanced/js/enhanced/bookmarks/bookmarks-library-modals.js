@@ -145,8 +145,12 @@
     const duplicateGroups = [];
 
     for (const [id, bm] of Object.entries(bookmarks)) {
-      const tmdbKey = bm.tmdbId ? `tmdb:${bm.tmdbId}` : null;
-      const tvdbKey = bm.tvdbId ? `tvdb:${bm.tvdbId}` : null;
+      // Include episode number in the key so different episodes (sharing a series-level
+      // tmdb/tvdb id) aren't flagged as duplicates of each other. Bookmarks without
+      // episodeNumber fall back to the old provider-only key (legacy behavior).
+      const episodeSuffix = bm.episodeNumber != null ? `:s${bm.seasonNumber ?? 'x'}e${bm.episodeNumber}` : '';
+      const tmdbKey = bm.tmdbId ? `tmdb:${bm.tmdbId}${episodeSuffix}` : null;
+      const tvdbKey = bm.tvdbId ? `tvdb:${bm.tvdbId}${episodeSuffix}` : null;
 
       for (const key of [tmdbKey, tvdbKey].filter(Boolean)) {
         if (!byProvider[key]) {
@@ -314,7 +318,9 @@
             tmdbId: primaryBookmarks[0].tmdbId,
             tvdbId: primaryBookmarks[0].tvdbId,
             mediaType: primaryBookmarks[0].mediaType,
-            name: primaryBookmarks[0].name
+            name: primaryBookmarks[0].name,
+            seasonNumber: primaryBookmarks[0].seasonNumber ?? null,
+            episodeNumber: primaryBookmarks[0].episodeNumber ?? null
           };
 
           // Sync old bookmarks to primary

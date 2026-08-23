@@ -225,6 +225,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string CreatedAt { get; set; } = string.Empty;
         public string UpdatedAt { get; set; } = string.Empty;
         public string SyncedFrom { get; set; } = string.Empty;
+        public int? SeasonNumber { get; set; }
+        public int? EpisodeNumber { get; set; }
     }
 
     public class UserBookmark
