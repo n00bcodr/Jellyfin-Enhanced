@@ -115,17 +115,11 @@
     function setupInfiniteScroll(state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck, options = {}) {
         console.debug(`${logPrefix} Setting up infinite scroll for ${sectionSelector}`);
 
-        // Clean up previous observer
-        if (state.activeScrollObserver) {
-            state.activeScrollObserver.disconnect();
-            state.activeScrollObserver = null;
-        }
-
-        // Also clean up any legacy sentinel
-        if (state.scrollController) {
-            state.scrollController.destroy();
-            state.scrollController = null;
-        }
+        // Clean up everything from a previous call on this state object (observer,
+        // scroll listener, sentinel, retry row) before creating new ones, or the old
+        // scroll listener leaks — it stays on window forever, holding a closure over
+        // a stale query and a detached sentinel.
+        cleanupInfiniteScroll(state);
 
         const section = document.querySelector(sectionSelector);
         if (!section) return;

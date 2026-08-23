@@ -122,10 +122,13 @@
          */
         async function fetchAndRenderResults(query, options = {}) {
             const { skipCache = false } = options;
+            lastProcessedQuery = query;
             resetSearchPagination();
             searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
 
             const data = await search(query, 1, { skipCache });
+            if (lastProcessedQuery !== query) return; // superseded by a newer search while this was in flight
+
             let results = data.results || [];
             searchCurrentPage = data.page || 1;
             searchTotalPages = data.totalPages || 1;
