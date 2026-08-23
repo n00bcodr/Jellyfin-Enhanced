@@ -330,7 +330,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             Guid userId,
             ActionExecutingContext context)
         {
-            if (!RouteParentIsSpoilerEpisode(context, userState, userId)) return;
+            if (!RouteParentIsSpoilerEpisode(context, userState, userId, out _)) return;
             // Auxiliary "scrub title-bearing fields" path — only relevant when a
             // title/overview strip is actually going to run for this user. Mirror
             // the same admin-cap + user-opt-out semantics as ApplyStripping.
@@ -356,7 +356,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ActionExecutingContext context)
         {
             if (pbi.MediaSources == null) return;
-            if (!RouteParentIsSpoilerEpisode(context, userState, userId)) return;
+            if (!RouteParentIsSpoilerEpisode(context, userState, userId, out var isMovie)) return;
             // Same scrubbing gate as StripImageInfos — honor the user's opt-outs.
             if (!ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles)
                 && !ShouldStrip(cfg.SpoilerStripOverview, userState.Prefs?.HideEpisodeDescriptions)) return;
@@ -365,7 +365,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 if (ms == null) continue;
                 ms.Path = null;
-                ms.Name = null;
+                // Name carries the multi-version label (e.g. "Director's Cut"), not
+                // the episode title — only null it for episodes/seasons, where the
+                // version filename itself can leak the title. Movies keep it so the
+                // version selector still shows real names instead of "undefined".
+                if (!isMovie) ms.Name = null;
                 if (ms.MediaStreams != null)
                 {
                     foreach (var s in ms.MediaStreams)
@@ -412,8 +416,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private bool RouteParentIsSpoilerEpisode(
             ActionExecutingContext context,
             UserSpoilerBlur userState,
-            Guid userId)
+            Guid userId,
+            out bool isMovie)
         {
+            isMovie = false;
             try
             {
                 var routeValues = context.HttpContext.Request.RouteValues;
@@ -435,6 +441,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // movie's own UserData.Played. Mirrors StripItem.
                 if (parent is MediaBrowser.Controller.Entities.Movies.Movie movieParent)
                 {
+                    isMovie = true;
                     if (!_resolver.IsMovieInSpoilerScope(userState,movieParent.Id)) return false;
                     if (ResolvePlayedServerSide(userId, itemId)) return false;
                     return true;
@@ -1282,7 +1289,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         if (ms == null) continue;
                         ms.Path = null;
-                        ms.Name = null;
+                        // Name carries the multi-version label (e.g. "Director's Cut"), not
+                        // the episode title — only null it for episodes/seasons. Movies keep
+                        // it so the version selector still shows real names, not "undefined".
+                        if (item.Type != Jellyfin.Data.Enums.BaseItemKind.Movie) ms.Name = null;
                         // MediaSources nests its OWN MediaStreams array
                         // (separate from BaseItemDto.MediaStreams). Strip
                         // it too — same external-only scoping as above
