@@ -192,6 +192,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ShokoUrl = "";
             ShokoApiKey = "";
             ShokoUrlMappings = "";
+            ShokoShowEpisodes = true;
+            ShokoShowSpecials = true;
+            ShokoShowCredits = false;
+            ShokoShowTrailers = false;
+            ShokoShowParodies = false;
+            ShokoShowOther = false;
 
             // Arr Tags Sync Settings
             ArrTagsSyncEnabled = false;
@@ -605,6 +611,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string ShokoUrl { get; set; }
         public string ShokoApiKey { get; set; }
         public string ShokoUrlMappings { get; set; }
+
+        // Which AniDB episode types to include on the calendar — Credits/Trailer/Parody/Other
+        // default off since they're calendar noise for most users.
+        public bool ShokoShowEpisodes { get; set; }
+        public bool ShokoShowSpecials { get; set; }
+        public bool ShokoShowCredits { get; set; }
+        public bool ShokoShowTrailers { get; set; }
+        public bool ShokoShowParodies { get; set; }
+        public bool ShokoShowOther { get; set; }
 
         // Arr Tags Sync Settings
         public bool ArrTagsSyncEnabled { get; set; }

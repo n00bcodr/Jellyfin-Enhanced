@@ -9184,10 +9184,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             string? shokoConfigError = (shokoUrlSet != shokoKeySet)
                 ? "Shoko URL and API key must both be set"
                 : null;
+            var shokoIncludedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (config.ShokoShowEpisodes) shokoIncludedTypes.Add("Episode");
+            if (config.ShokoShowSpecials) shokoIncludedTypes.Add("Special");
+            if (config.ShokoShowCredits) shokoIncludedTypes.Add("Credits");
+            if (config.ShokoShowTrailers) shokoIncludedTypes.Add("Trailer");
+            if (config.ShokoShowParodies) shokoIncludedTypes.Add("Parody");
+            if (config.ShokoShowOther) shokoIncludedTypes.Add("Other");
+
             Task<(List<ArrItem> Items, string? Error)>? shokoTask = config.IsShokoConfigured()
                 ? FetchShokoCalendar(
                     new ArrInstance { Name = "Shoko", Url = config.ShokoUrl, ApiKey = config.ShokoApiKey, UrlMappings = config.ShokoUrlMappings ?? "" },
-                    startDate, endDate, ParseDate, ct)
+                    startDate, endDate, shokoIncludedTypes, ParseDate, ct)
                 : null;
 
             var sonarrCalResults = await Task.WhenAll(sonarrTasks);
@@ -9569,7 +9577,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private Task<(List<ArrItem> Items, string? Error)> FetchShokoCalendar(
             ArrInstance instance, DateTime startDate, DateTime endDate,
-            Func<object?, DateTime?> parseDate, CancellationToken ct)
+            HashSet<string> includedTypes, Func<object?, DateTime?> parseDate, CancellationToken ct)
         {
             var startParam = startDate.ToString("yyyy-MM-dd");
             var endParam = endDate.ToString("yyyy-MM-dd");
@@ -9582,9 +9590,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     if (data == null) return items;
                     foreach (var episode in data)
                     {
-                        // Only real content — Credits/Trailer/Parody/Other are calendar noise.
+                        // Which AniDB episode types to show is admin-configurable (Shoko settings).
                         var episodeType = (string?)episode.Type;
-                        if (episodeType != "Episode" && episodeType != "Special") continue;
+                        if (episodeType == null || !includedTypes.Contains(episodeType)) continue;
 
                         var airDate = parseDate((string?)episode.AirDate);
                         if (!airDate.HasValue) continue;

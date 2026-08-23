@@ -2057,7 +2057,7 @@
                     </fieldset>
 
                     <fieldset data-dep-setup>
-                        <legend class="sectionTitle"><img class="je-legend-icon-img" data-je-cdn="selfhst/svg/shoko.svg" alt="">Shoko</legend>
+                        <legend class="sectionTitle"><img class="je-legend-icon-img" data-je-cdn="dashboard-icons/svg/shoko.svg" alt="">Shoko</legend>
                         <div class="configSection">
                             <div class="je-setting-description" data-desc-for="shokoUrl">
                                 <div class="fieldDescription">Surfaces upcoming anime episodes from your Shoko Server collection on the Calendar page. Single instance, no admin-assigned name.</div>
@@ -2079,6 +2079,19 @@
                             </div>
                             <div class="je-setting-description" data-desc-for="shokoApiKey">
                                 <div class="fieldDescription">API key from Shoko's web UI (Settings &gt; API Keys &gt; Add API Key).</div>
+                            </div>
+
+                            <div class="je-setting-description">
+                                <div class="fieldDescription">Episode Types to Show on Calendar</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="shokoShowEpisodes" is="emby-checkbox" type="checkbox"/><span>Episodes</span></label></div>
+                            <div class="checkboxContainer"><label><input id="shokoShowSpecials" is="emby-checkbox" type="checkbox"/><span>Specials</span></label></div>
+                            <div class="checkboxContainer"><label><input id="shokoShowCredits" is="emby-checkbox" type="checkbox"/><span>Credits (OP/ED)</span></label></div>
+                            <div class="checkboxContainer"><label><input id="shokoShowTrailers" is="emby-checkbox" type="checkbox"/><span>Trailers</span></label></div>
+                            <div class="checkboxContainer"><label><input id="shokoShowParodies" is="emby-checkbox" type="checkbox"/><span>Parodies</span></label></div>
+                            <div class="checkboxContainer"><label><input id="shokoShowOther" is="emby-checkbox" type="checkbox"/><span>Other</span></label></div>
+                            <div class="je-setting-description" data-desc-for="shokoShowOther">
+                                <div class="fieldDescription">Which AniDB episode types appear as calendar events. Episodes and Specials are on by default; the rest are usually calendar noise.</div>
                             </div>
 
                             <details class="je-details-section">
@@ -5390,6 +5403,12 @@
                 document.querySelector('#shokoUrlMappings').value = config.ShokoUrlMappings || '';
                 document.querySelector('#shokoUrl').value = config.ShokoUrl;
                 document.querySelector('#shokoApiKey').value = config.ShokoApiKey;
+                document.querySelector('#shokoShowEpisodes').checked = config.ShokoShowEpisodes !== false;
+                document.querySelector('#shokoShowSpecials').checked = config.ShokoShowSpecials !== false;
+                document.querySelector('#shokoShowCredits').checked = config.ShokoShowCredits === true;
+                document.querySelector('#shokoShowTrailers').checked = config.ShokoShowTrailers === true;
+                document.querySelector('#shokoShowParodies').checked = config.ShokoShowParodies === true;
+                document.querySelector('#shokoShowOther').checked = config.ShokoShowOther === true;
                 document.querySelector('#showArrLinksAsText').checked = config.ShowArrLinksAsText;
                 document.querySelector('#arrLinksShowStatusSingle').checked = config.ArrLinksShowStatusSingle;
                 document.querySelector('#arrTagsSyncEnabled').checked = config.ArrTagsSyncEnabled;
@@ -5823,6 +5842,12 @@
             config.ShokoUrlMappings = document.querySelector('#shokoUrlMappings').value || '';
             config.ShokoUrl = document.querySelector('#shokoUrl').value;
             config.ShokoApiKey = (document.querySelector('#shokoApiKey').value || '').replace(/\s/g, '');
+            config.ShokoShowEpisodes = document.querySelector('#shokoShowEpisodes').checked;
+            config.ShokoShowSpecials = document.querySelector('#shokoShowSpecials').checked;
+            config.ShokoShowCredits = document.querySelector('#shokoShowCredits').checked;
+            config.ShokoShowTrailers = document.querySelector('#shokoShowTrailers').checked;
+            config.ShokoShowParodies = document.querySelector('#shokoShowParodies').checked;
+            config.ShokoShowOther = document.querySelector('#shokoShowOther').checked;
             config.ShowArrLinksAsText = document.querySelector('#showArrLinksAsText').checked;
             config.ArrLinksShowStatusSingle = document.querySelector('#arrLinksShowStatusSingle').checked;
             config.ArrTagsSyncEnabled = document.querySelector('#arrTagsSyncEnabled').checked;
