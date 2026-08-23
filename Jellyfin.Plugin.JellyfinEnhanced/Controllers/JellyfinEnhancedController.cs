@@ -9591,9 +9591,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                         int? shokoSeriesId = (int?)episode.IDs?.ShokoSeries;
                         int? shokoEpisodeId = (int?)episode.IDs?.ShokoEpisode;
+                        int? shokoFileId = (int?)episode.IDs?.ShokoFile;
                         var seriesTitle = (string?)episode.SeriesTitle ?? "Unknown Series";
                         var episodeTitle = (string?)episode.Title ?? "Unknown Episode";
-                        var episodeNumber = (int?)episode.EpisodeNumber ?? 0;
+                        var episodeNumber = (int?)episode.Number ?? 0;
 
                         items.Add(new ArrItem
                         {
@@ -9606,7 +9607,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             Subtitle = $"{episodeType} {episodeNumber} - {episodeTitle}",
                             ReleaseDate = airDate.Value.ToUniversalTime().ToString("o"),
                             ReleaseType = "Anime",
-                            HasFile = ((int?)episode.Size ?? 0) > 0,
+                            HasFile = shokoFileId.HasValue,
                             Monitored = true,
                             SeasonNumber = null,
                             EpisodeNumber = episodeNumber,

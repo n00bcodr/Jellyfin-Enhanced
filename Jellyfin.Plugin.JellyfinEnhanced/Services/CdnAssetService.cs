@@ -113,7 +113,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ["selfhst"] = new("https://cdn.jsdelivr.net/gh/selfhst/icons", Types("image/svg+xml", "image/png")),
             // Jellyfish theme: colour sheets + logos/favicon
             ["jellyfish"] = new("https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfish", Types("text/css", "image/png", "image/vnd.microsoft.icon", "image/x-icon")),
-            // homarr-labs dashboard-icons (generic script/plugin icons)
+            // homarr-labs dashboard-icons (generic script/plugin icons; also Shoko, absent from selfhst)
             ["dashboard-icons"] = new("https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons", Types("image/svg+xml", "image/png")),
             // ZestyTheme logo fallback
             ["zesty"] = new("https://cdn.jsdelivr.net/gh/stpnwf/ZestyTheme@latest", Types("image/png", "image/jpeg")),
@@ -205,6 +205,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ("selfhst", "svg/seerr.svg"),
             ("selfhst", "svg/letterboxd.svg"),
             ("selfhst", "png/youtube.png"),
+            ("dashboard-icons", "svg/shoko.svg"),
             ("jellyfish", "logos/favicon.ico"),
             ("jellyfish", "colors/aurora.css"),
             ("jellyfish", "colors/banana.css"),

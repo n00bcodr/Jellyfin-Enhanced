@@ -15,7 +15,7 @@
 
   const SONARR_ICON_URL = window.JellyfinEnhanced.cdn.selfhst('svg/sonarr.svg');
   const RADARR_ICON_URL = window.JellyfinEnhanced.cdn.selfhst('svg/radarr-light-hybrid-light.svg');
-  const SHOKO_ICON_URL = window.JellyfinEnhanced.cdn.selfhst('svg/shoko.svg');
+  const SHOKO_ICON_URL = window.JellyfinEnhanced.cdn.url('dashboard-icons', 'svg/shoko.svg');
 
   // Get start and end dates for current view
   function getRangeForView(anchorDate, viewMode) {
