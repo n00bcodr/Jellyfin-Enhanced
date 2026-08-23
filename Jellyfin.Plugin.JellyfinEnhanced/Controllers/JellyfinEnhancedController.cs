@@ -9184,6 +9184,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             string? shokoConfigError = (shokoUrlSet != shokoKeySet)
                 ? "Shoko URL and API key must both be set"
                 : null;
+            // Admin-configurable set of AniDB episode types shown on the calendar (Shoko settings).
             var shokoIncludedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (config.ShokoShowEpisodes) shokoIncludedTypes.Add("Episode");
             if (config.ShokoShowSpecials) shokoIncludedTypes.Add("Special");
@@ -9200,7 +9201,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var sonarrCalResults = await Task.WhenAll(sonarrTasks);
             var radarrCalResults = await Task.WhenAll(radarrTasks);
-            var shokoCalResult = shokoTask != null ? await shokoTask : (Items: new List<ArrItem>(), Error: (string?)null);
+            var shokoCalResult = shokoTask != null ? await shokoTask : (Items: new List<ArrItem>(), Error: null);
 
             var errors = new List<object>();
             if (config.IsSonarrInstancesCorrupt())
@@ -9597,9 +9598,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         var airDate = parseDate((string?)episode.AirDate);
                         if (!airDate.HasValue) continue;
 
-                        int? shokoSeriesId = (int?)episode.IDs?.ShokoSeries;
-                        int? shokoEpisodeId = (int?)episode.IDs?.ShokoEpisode;
-                        int? shokoFileId = (int?)episode.IDs?.ShokoFile;
+                        int? shokoSeriesId = episode.IDs?.ShokoSeries;
+                        int? shokoEpisodeId = episode.IDs?.ShokoEpisode;
+                        int? shokoFileId = episode.IDs?.ShokoFile;
                         var seriesTitle = (string?)episode.SeriesTitle ?? "Unknown Series";
                         var episodeTitle = (string?)episode.Title ?? "Unknown Episode";
                         var episodeNumber = (int?)episode.Number ?? 0;
