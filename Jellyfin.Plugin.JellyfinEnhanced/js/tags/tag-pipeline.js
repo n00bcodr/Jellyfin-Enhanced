@@ -11,7 +11,7 @@
 
     // ── Configuration ──────────────────────────────────────────────────
 
-    const MEDIA_TYPES = new Set(['Movie', 'Episode', 'Series', 'Season', 'BoxSet']);
+    const MEDIA_TYPES = new Set(['Movie', 'Episode', 'Series', 'Season', 'BoxSet', 'Video']);
     const FETCH_DEBOUNCE_MS = 150; // Debounce only the batch API call, not the scan
     const logPrefix = '🪼 Jellyfin Enhanced [TagPipeline]:';
     let serverCache = null; // Map<itemId, TagCacheEntry> loaded from server
