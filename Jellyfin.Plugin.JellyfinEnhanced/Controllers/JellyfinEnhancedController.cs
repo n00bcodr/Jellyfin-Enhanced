@@ -2908,6 +2908,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.RadarrUrlMappings,
                 config.BazarrUrlMappings,
 
+                // Shoko (single-instance, like Jellyseerr)
+                config.ShokoUrl,
+                config.ShokoUrlMappings,
+
                 // Multi-instance Sonarr/Radarr (no API keys exposed). Enabled flag is exposed so
                 // the config page can render a per-instance toggle and arr-links can filter
                 // disabled instances from the dropdown without a round-trip.
@@ -9240,7 +9244,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 .Distinct()
                 .ToList();
 
-            var itemMap = await _dbContextFactory.GetItemIdsByProvidersBatchAsync(providerKeys);
+            var itemMap = await _dbContextFactory.GetItemIdsByProvidersBatchAsync(providerKeys, _libraryManager);
 
             foreach (var evt in events)
             {
@@ -9334,7 +9338,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
                 else if (evt.Source == nameof(ArrType.Shoko))
                 {
-                    // Never cross-matched against sonarr|/radarr| keys — see docs/adr/0002.
+                    // Never cross-matched against sonarr|/radarr| keys.
                     dedupeKey = $"shoko|{evt.ShokoSeriesId}|{evt.ShokoEpisodeId}|{normalizedDate}";
                 }
                 else
@@ -10105,9 +10109,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [Authorize]
         [HttpGet("items/by-providers")]
-        public ActionResult<Guid?> GetItemIdByProviders([FromQuery] Dictionary<string, string>? providers)
+        public ActionResult<Guid?> GetItemIdByProviders(
+            [FromQuery] Dictionary<string, string>? providers,
+            [FromQuery] string? types = null)
         {
-            var itemIds = _itemRepository.GetItemIdsByProviders(providers);
+            List<BaseItemKind>? includeItemTypes = null;
+            if (!string.IsNullOrWhiteSpace(types))
+            {
+                includeItemTypes = types
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(t => Enum.TryParse<BaseItemKind>(t, true, out var kind) ? kind : (BaseItemKind?)null)
+                    .Where(k => k.HasValue)
+                    .Select(k => k!.Value)
+                    .ToList();
+            }
+
+            var itemIds = _itemRepository.GetItemIdsByProviders(providers, includeItemTypes);
 
             if (itemIds.Count == 0)
                 return BadRequest("No provider ids supplied or no items found");

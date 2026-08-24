@@ -440,11 +440,12 @@
     if (!hasEpisodeProviders && !hasSeriesProviders) return null;
 
     try {
-      const lookup = async (providers) => {
+      const lookup = async (providers, types) => {
         const params = new URLSearchParams();
         Object.entries(providers).forEach(([key, value]) => {
           params.append(`providers[${key}]`, value);
         });
+        if (types) params.append('types', types);
 
         try {
           const itemId = await JE.core.api.plugin(`/items/by-providers?${params.toString()}`);
@@ -457,13 +458,15 @@
         }
       };
 
+      // Constrain each lookup to the item kind it's meant to match, since a
+      // provider ID can resolve to more than one item.
       if (hasEpisodeProviders && !preferSeries) {
-        const episodeItemId = await lookup(episodeProviders);
+        const episodeItemId = await lookup(episodeProviders, 'Episode');
         if (episodeItemId) return episodeItemId;
       }
 
       if (hasSeriesProviders) {
-        return await lookup(seriesProviders);
+        return await lookup(seriesProviders, event.type === 'Movie' ? 'Movie' : 'Series');
       }
 
       return null;
