@@ -91,6 +91,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             BaseItemKind.Series,
             BaseItemKind.Season,
             BaseItemKind.BoxSet,
+            BaseItemKind.Video,
         };
 
         public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, Logger logger)
