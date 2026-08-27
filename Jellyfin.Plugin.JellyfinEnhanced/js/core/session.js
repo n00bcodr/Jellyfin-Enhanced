@@ -4,11 +4,11 @@
 // Single owner of the "who is signed in" question for the whole plugin.
 //
 // Jellyfin's web client is an SPA: logging out and logging back in as a
-// DIFFERENT user is just a route change — index.html is NOT reloaded, so
-// every module-level snapshot taken at boot (JE.userConfig, JE.currentUser,
-// JE.currentSettings, per-feature in-memory caches) silently keeps the
-// previous user's data until a hard refresh. This module detects identity
-// transitions and fans them out so every per-user cache can reset itself.
+// DIFFERENT user is just a route change, index.html is NOT reloaded, so
+// every module-level snapshot taken at boot (JE.userConfig, JE.currentSettings,
+// per-feature in-memory caches) silently keeps the previous user's data until
+// a hard refresh. This module detects identity transitions and fans them out
+// so every per-user cache can reset itself.
 //
 // Detection is belt-and-braces, because no single signal is reliable across
 // Jellyfin 10.11 and 12:

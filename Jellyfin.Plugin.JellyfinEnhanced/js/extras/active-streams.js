@@ -481,7 +481,7 @@
     // ── Visibility check ─────────────────────────────────────────────────────
     // Admins always see it. Non-admins only if ActiveStreamsAllUsers is enabled.
     const isVisible = () => {
-        const isAdmin = JE?.currentUser?.Policy?.IsAdministrator === true;
+        const isAdmin = JE?.helpers?.isAdmin() === true;
         if (isAdmin) return true;
         return JE?.pluginConfig?.ActiveStreamsAllUsers === true;
     };
@@ -1125,7 +1125,7 @@
         header.insertBefore(refreshBtn, closeBtn);
 
         // Inject broadcast button for admins only
-        if (JE?.currentUser?.Policy?.IsAdministrator === true) {
+        if (JE?.helpers?.isAdmin() === true) {
             injectBroadcastButton(panel);
         }
 
