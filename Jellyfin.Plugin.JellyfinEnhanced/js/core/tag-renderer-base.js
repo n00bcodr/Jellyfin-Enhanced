@@ -412,6 +412,12 @@
             },
             /**
              * Append the overlay if it has content and mark the card tagged.
+             * Does NOT run corner-stacking itself: up to 4 renderers can each
+             * commit an overlay onto the same host, and re-measuring
+             * (getBoundingClientRect) after every single one forces a layout
+             * per renderer per card. The pipeline calls
+             * JE.core.tagRenderer.applyCornerStacking(host) once after all
+             * renderers have committed for a given card instead.
              * @param {HTMLElement} el
              * @param {HTMLElement} overlay
              * @returns {boolean} true if the overlay was attached
@@ -421,13 +427,9 @@
                     const p = resolvePosition(spec.position.userKey, spec.position.pluginKey, spec.position.fallback);
                     overlay.dataset.jeCorner = p.pos;
                 }
-                if (overlay.children.length === 0) {
-                    applyCornerStacking(el);
-                    return false;
-                }
+                if (overlay.children.length === 0) return false;
                 el.appendChild(overlay);
                 markTagged(el);
-                applyCornerStacking(el);
                 return true;
             },
         };
@@ -571,6 +573,7 @@
         register,
         reinitialize,
         resolvePosition,
+        applyCornerStacking,
     };
 
     console.log('🪼 Jellyfin Enhanced: Tag renderer core initialized');

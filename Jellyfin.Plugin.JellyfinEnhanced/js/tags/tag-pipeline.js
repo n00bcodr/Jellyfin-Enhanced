@@ -270,6 +270,8 @@
 
     let scanScheduled = false;
     const CARDS_PER_CHUNK = 5; // ~2.5ms per card with cache render, 5 cards = ~12ms (under 16ms frame budget)
+    // Separate, much larger threshold for yielding during batch render (see processBatch).
+    const RENDER_YIELD_CHUNK = 40;
     let scanGeneration = 0; // Incremented on each new scan to cancel stale chunk chains
 
     /**
@@ -281,6 +283,16 @@
     const scheduleIdle = typeof requestIdleCallback === 'function'
         ? (fn) => requestIdleCallback(fn, { timeout: 500 })
         : (fn) => setTimeout(fn, 16);
+
+    /**
+     * Resolves on the next idle slot. Used to break up long synchronous
+     * render loops (e.g. a batch fetch response covering many search
+     * results) so they don't block the main thread in one tick.
+     * @returns {Promise<void>}
+     */
+    function idleYield() {
+        return new Promise((resolve) => scheduleIdle(resolve));
+    }
 
     function scheduleScan() {
         if (scanScheduled) return;
@@ -379,6 +391,7 @@
                             try { renderer.renderFromServerCache(renderTarget, serverEntry, itemId); } catch {}
                         }
                     }
+                    JE.core.tagRenderer.applyCornerStacking(renderTarget);
                     continue; // Fully rendered from server cache, skip queue
                 }
 
@@ -392,6 +405,7 @@
                         allCacheHits = false;
                     }
                 }
+                JE.core.tagRenderer.applyCornerStacking(renderTarget);
 
                 if (!allCacheHits) {
                     requestQueue.push({ el, renderTarget, itemId, itemType });
@@ -461,7 +475,13 @@
             // Chunk into batches of SERVER_BATCH_LIMIT to avoid 400 errors
             while (requestQueue.length > 0) {
                 if (myGeneration !== batchGeneration) break; // navigation happened
-                const batch = requestQueue.splice(0, SERVER_BATCH_LIMIT);
+                const batch = requestQueue.splice(0, SERVER_BATCH_LIMIT)
+                    // Drop cards removed from the DOM since they were queued (e.g. a
+                    // page like search re-renders its whole result set on every
+                    // keystroke, on the same generation). Skipping them here avoids
+                    // fetching and rendering tag data nobody will ever see.
+                    .filter((entry) => document.contains(entry.el));
+                if (batch.length === 0) continue;
                 await processBatch(batch, myGeneration);
             }
         } finally {
@@ -560,6 +580,9 @@
                 // Render to ALL cards with this ID (same item can appear in multiple rows)
                 for (const entry of batchEntries) {
                     const { renderTarget } = entry;
+                    // The card may have been removed from the DOM (e.g. search
+                    // re-rendered its results) since this entry was queued.
+                    if (!document.contains(renderTarget)) continue;
                     const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
                     for (const [name, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;
@@ -569,6 +592,10 @@
                             console.warn(`${logPrefix} Renderer "${name}" failed for item ${itemId}:`, err);
                         }
                     }
+                    // One coalesced layout pass per card instead of one per
+                    // renderer, avoiding repeated forced reflows when multiple
+                    // tag types share a corner.
+                    JE.core.tagRenderer.applyCornerStacking(renderTarget);
                 }
             };
 
@@ -578,8 +605,11 @@
                 if (r.isEnabled() && r.needsFirstEpisode) { anyNeedsFirstEp = true; break; }
             }
 
-            // Process all items: render immediately what we can, fetch first episodes in parallel
+            // Process all items: render immediately what we can, fetch first episodes in parallel.
+            // Yield every RENDER_YIELD_CHUNK items so a large batch (e.g. a
+            // broad search) can't block the main thread in one long synchronous stretch.
             const pendingFirstEps = [];
+            let renderedSinceYield = 0;
             for (const item of items) {
                 if (anyNeedsFirstEp && item.FirstEpisode?.NeedsStreamFetch) {
                     // Series/Season: fetch first episode in background, render when ready
@@ -591,6 +621,11 @@
                 } else {
                     // Movies, Episodes, etc: render immediately (no extra fetch needed)
                     renderItem(item, item.FirstEpisode || null);
+                    if (++renderedSinceYield >= RENDER_YIELD_CHUNK) {
+                        renderedSinceYield = 0;
+                        await idleYield();
+                        if (generation !== batchGeneration) return; // navigation or user switch while yielded
+                    }
                 }
             }
 
@@ -612,12 +647,14 @@
                     const firstEpisode = (item.Type === 'Series' || item.Type === 'Season')
                         ? await getFirstEpisode(userId, item.Id) : null;
                     if (generation !== batchGeneration) break; // switched during the awaits above
+                    if (!document.contains(renderTarget)) continue; // card removed while awaiting
                     const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget };
 
                     for (const [, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;
                         try { renderer.render(renderTarget, item, extras); } catch {}
                     }
+                    JE.core.tagRenderer.applyCornerStacking(renderTarget);
                 } catch {}
             }
         }
