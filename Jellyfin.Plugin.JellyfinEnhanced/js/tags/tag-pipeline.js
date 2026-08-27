@@ -42,6 +42,7 @@
         '#pluginCatalogPage .cardImageContainer',
         '#devicesPage .cardImageContainer',
         '#mediaLibraryPage .cardImageContainer',
+        '.listItemImage:not(.listItemImage-large)', // Small list rows (Playlists, Albums); listItemImage-large (e.g. episode lists) is big enough for overlays
     ];
 
     /**
