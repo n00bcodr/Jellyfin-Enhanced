@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -62,13 +63,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static readonly TimeSpan FlushDebounce = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan FlushMaxWait = TimeSpan.FromSeconds(30);
 
-        // Bump whenever a TagCacheEntry field the STRIP paths depend on is added,
-        // so a cache serialized by an older build is discarded and rebuilt. v2
-        // added SeriesId, which the Spoiler Guard tag-strip requires: a v1 cache
-        // has null SeriesId on every episode, so the strip skips them and unstripped
-        // ratings leak onto guarded cards via renderFromServerCache. Discarding
-        // starts empty (client falls back to the live/per-batch strip) until rebuild.
-        private const int CurrentCacheSchemaVersion = 2;
+        // Bump whenever persisted cache data or its semantics change in a way
+        // that makes entries created by an older build incorrect. v2 added
+        // SeriesId for Spoiler Guard stripping. v3 preserves authoritative
+        // Matroska LanguageBCP47/LanguageIETF audio languages instead of the
+        // region-less values exposed by Jellyfin/FFmpeg.
+        // A schema mismatch discards the stale cache so it can be rebuilt.
+        private const int CurrentCacheSchemaVersion = 3;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -1441,16 +1442,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         Name = source.Name
                     });
 
-                    if (source.MediaStreams == null) continue;
-                    foreach (var s in source.MediaStreams)
+                    foreach (var resolved in MediaStreamLanguageResolver.Resolve(source, item.Path))
                     {
+                        var s = resolved.Stream;
+                        var effectiveLanguage = resolved.Language;
+
                         if (s.Type != MediaStreamType.Video && s.Type != MediaStreamType.Audio)
                             continue;
 
                         streams.Add(new TagMediaStream
                         {
                             Type = s.Type.ToString(),
-                            Language = s.Language,
+                            Language = effectiveLanguage,
                             Codec = s.Codec,
                             CodecTag = s.CodecTag,
                             Profile = s.Profile,
@@ -1461,9 +1464,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             DisplayTitle = s.DisplayTitle
                         });
 
-                        if (s.Type == MediaStreamType.Audio && !string.IsNullOrEmpty(s.Language))
+                        if (s.Type == MediaStreamType.Audio && !string.IsNullOrEmpty(effectiveLanguage))
                         {
-                            var lang = s.Language.ToLowerInvariant();
+                            var lang = effectiveLanguage.ToLowerInvariant();
                             if (lang != "und" && lang != "root")
                             {
                                 languages.Add(lang);

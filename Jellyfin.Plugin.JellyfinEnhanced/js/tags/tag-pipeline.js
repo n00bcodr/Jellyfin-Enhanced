@@ -102,11 +102,35 @@
 
     /**
      * Get the first episode of a series/season (cached, shared across all renderers).
+     * @param {string} userId The user ID.
+     * @param {string} parentId The series or season ID.
+     * @param {string|null} [firstEpisodeId=null] Known first episode ID, when available.
+     * @returns {Promise<object|null>} The first episode item or null.
      */
-    async function getFirstEpisode(userId, parentId) {
+    async function getFirstEpisode(userId, parentId, firstEpisodeId = null) {
         if (firstEpisodeCache.has(parentId)) return firstEpisodeCache.get(parentId);
 
         const promise = (async () => {
+            // /tag-data already returns the first episode ID for Series/Season.
+            // Use it directly so the normal path stays entirely inside the
+            // region-aware Enhanced projection and avoids an extra /Items call.
+            if (firstEpisodeId) {
+                try {
+                    const enriched = await ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`),
+                        data: JSON.stringify([firstEpisodeId]),
+                        contentType: 'application/json',
+                        dataType: 'json'
+                    });
+
+                    const episode = enriched?.Items?.[0];
+                    if (episode) return episode;
+                } catch {
+                    // Fall through to the native Jellyfin lookup below.
+                }
+            }
+
             try {
                 const response = await ApiClient.ajax({
                     type: 'GET',
@@ -122,7 +146,25 @@
                     }),
                     dataType: 'json'
                 });
-                return response?.Items?.[0] || null;
+
+                const episode = response?.Items?.[0] || null;
+                if (!episode?.Id) return episode;
+
+                // Native Jellyfin may have reduced an explicit Matroska BCP-47
+                // language to its base ISO-639 code. Enrich it when possible.
+                try {
+                    const enriched = await ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`),
+                        data: JSON.stringify([episode.Id]),
+                        contentType: 'application/json',
+                        dataType: 'json'
+                    });
+
+                    return enriched?.Items?.[0] || episode;
+                } catch {
+                    return episode;
+                }
             } catch {
                 return null;
             }
@@ -614,7 +656,7 @@
                 if (anyNeedsFirstEp && item.FirstEpisode?.NeedsStreamFetch) {
                     // Series/Season: fetch first episode in background, render when ready
                     pendingFirstEps.push(
-                        getFirstEpisode(userId, item.Id)
+                        getFirstEpisode(userId, item.Id, item.FirstEpisode.Id)
                             .then(ep => renderItem(item, ep))
                             .catch(() => renderItem(item, null))
                     );
