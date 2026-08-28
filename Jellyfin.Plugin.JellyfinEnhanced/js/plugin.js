@@ -551,7 +551,6 @@
         // identity changes, so nothing can read user A's data under user B.
         JE.session.onUserChange('plugin-globals', () => {
             JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
-            JE.currentUser = null;
             JE.currentSettings = {};
             // Cleared (not merged over) so user A's extra shortcuts don't
             // survive into user B's session — initializeShortcuts() merges.
@@ -575,15 +574,8 @@
                 if (!JE.session.isCurrent(epoch)) return; // switched again already
                 try {
                     const userConfig = await fetchUserScopedConfig(userId);
-                    if (!JE.session.isCurrent(epoch)) return; // stale result — drop it
+                    if (!JE.session.isCurrent(epoch)) return; // stale result, drop it
                     JE.userConfig = userConfig;
-
-                    // Refresh the cached full user object (admin checks etc.).
-                    try {
-                        const user = await ApiClient.getCurrentUser();
-                        if (JE.session.isCurrent(epoch)) JE.currentUser = user;
-                    } catch (_) { /* non-fatal — consumers null-check */ }
-                    if (!JE.session.isCurrent(epoch)) return;
 
                     // Re-fetch the admin-only private config for the incoming
                     // user (the reset stripped the previous user's copy; the
@@ -718,14 +710,6 @@
 
             // Stage 2: Fetch user-specific settings
             let userId = ApiClient.getCurrentUserId();
-
-            // Prefetch full user object once (needed for admin check in arr-links etc.)
-            // Fire-and-forget alongside stage-2 network calls; result available as
-            // JE.currentUser. Guarded so a resolution landing after a mid-boot user
-            // switch can't overwrite the new user's object.
-            ApiClient.getCurrentUser().then(u => {
-                if (u?.Id === ApiClient.getCurrentUserId()) JE.currentUser = u;
-            }).catch(() => {});
 
             JE.userConfig = await fetchUserScopedConfig(userId);
 
@@ -961,14 +945,6 @@
                 const recoveredConfig = await fetchUserScopedConfig(liveUserId);
                 if (recoveryCurrent()) {
                     JE.userConfig = recoveredConfig;
-                    // The stage-2 prefetch may have resolved BEFORE the
-                    // switch, leaving the previous user's object (and admin
-                    // flag) behind.
-                    JE.currentUser = null;
-                    try {
-                        const liveUser = await ApiClient.getCurrentUser();
-                        if (recoveryCurrent() && liveUser?.Id === ApiClient.getCurrentUserId()) JE.currentUser = liveUser;
-                    } catch (_) { /* non-fatal — consumers null-check */ }
                     // Same for the admin-only private config fetched in stage 1.
                     for (const key of privateConfigKeys) delete JE.pluginConfig[key];
                     privateConfigKeys = [];

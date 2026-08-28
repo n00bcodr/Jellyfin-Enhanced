@@ -636,17 +636,11 @@
             }
 
             // `currentUser` is resolved fresh by the caller (processPage /
-            // refreshReviews) instead of read from the cached `JE.currentUser`
-            // set once at plugin init. This matters for:
-            //   1. Admin viewers on first render (race: JE.currentUser promise
-            //      may not have resolved yet, so admin would briefly see no
-            //      moderation buttons).
-            //   2. In-session login switches (Jellyfin's SPA router doesn't
-            //      re-init the plugin, so JE.currentUser stays stale as the
-            //      previous user — a non-admin who logged in after an admin
-            //      would see phantom admin controls, while the backend still
-            //      blocks the actual delete with 403).
-            // Using the live ApiClient session fixes both.
+            // refreshReviews) via a live ApiClient.getCurrentUser() call so an
+            // in-session login switch (Jellyfin's SPA router doesn't re-init
+            // the plugin) can't show phantom admin controls to a non-admin who
+            // logged in after an admin. The backend still blocks the actual
+            // delete with 403 regardless.
             const currentUserId = (currentUser?.Id) || ApiClient.getCurrentUserId() || '';
             const viewerIsAdmin = currentUser?.Policy?.IsAdministrator === true;
             const ownReview = userReviews.find(r => r.userId.replace(/-/g, '') === currentUserId.replace(/-/g, ''));
@@ -810,9 +804,11 @@
                         if (!window.JellyfinEnhanced) return;
                         const JE = window.JellyfinEnhanced;
                         JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
-                        JE.currentSettings.reviewsExpandedByDefault = reviewsSection.open;
-                        if (typeof JE.saveUserSettings === 'function') {
-                            JE.saveUserSettings('settings.json', JE.currentSettings);
+                        if (JE.currentSettings.reviewsExpandedByDefault !== reviewsSection.open) {
+                            JE.currentSettings.reviewsExpandedByDefault = reviewsSection.open;
+                            if (typeof JE.saveUserSettings === 'function') {
+                                JE.saveUserSettings('settings.json', JE.currentSettings);
+                            }
                         }
                     } catch (err) {
                         console.error(`${logPrefix} Failed to persist reviews expanded state`, err);
@@ -893,8 +889,7 @@
                 if (!tmdbKey) return;
 
                 // Fetch the current user fresh alongside the review data so
-                // admin status reflects the actual live session, not a
-                // potentially-stale JE.currentUser captured at plugin init.
+                // admin status reflects the actual live session.
                 const [tmdbReviews, userReviews, currentUser] = await Promise.all([
                     (tmdbReviewsEnabled && (mediaType === 'Movie' || mediaType === 'Series'))
                         ? fetchReviews(tmdbKey.split(':')[0], mediaType)
@@ -1186,9 +1181,7 @@
                     }
 
                     if (tmdbKey) {
-                        // See refreshReviews for why we resolve currentUser here
-                        // instead of reading JE.currentUser — same race/staleness
-                        // reasoning.
+                        // See refreshReviews for why currentUser is resolved fresh here.
                         const [tmdbReviews, userReviews, currentUser] = await Promise.all([
                             // TMDB reviews only available for top-level movie/tv, not seasons/episodes
                             (tmdbReviewsEnabled && (mediaType === 'Movie' || mediaType === 'Series'))

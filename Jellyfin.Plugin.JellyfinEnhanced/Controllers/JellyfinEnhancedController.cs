@@ -3799,6 +3799,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var userConfig = _userConfigurationManager.GetUserConfiguration<UserSettings>(authorizedUserId, "settings.json");
+
+            // IsAdmin reflects the CALLER's admin status (not the target user's, in the
+            // rare admin-viewing-another-user's-settings case allowed by
+            // AuthorizeUserConfigAccess). Computed fresh on every request from the
+            // authenticated principal, never persisted to the settings file. Single
+            // source of truth for every admin-gated JS module (js/enhanced/helpers.js).
+            var settingsNode = System.Text.Json.JsonSerializer.SerializeToNode(userConfig) as System.Text.Json.Nodes.JsonObject;
+            if (settingsNode != null)
+            {
+                settingsNode["IsAdmin"] = IsAdminUser();
+                return Ok(settingsNode);
+            }
+
             return Ok(userConfig);
         }
 
@@ -3848,11 +3861,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Diff against the existing config so the log shows what actually changed
                 var existing = _userConfigurationManager.GetUserConfiguration<UserSettings>(authorizedUserId, "settings.json");
                 var changes = new System.Collections.Generic.List<string>();
+                var isIdentical = false;
                 if (existing != null)
                 {
                     var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
                     var newJson      = System.Text.Json.JsonSerializer.Serialize(userConfiguration);
-                    if (existingJson != newJson)
+                    isIdentical = existingJson == newJson;
+                    if (!isIdentical)
                     {
                         var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson).RootElement;
                         var newDoc      = System.Text.Json.JsonDocument.Parse(newJson).RootElement;
@@ -3867,10 +3882,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
                 }
 
-                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfiguration);
+                if (!isIdentical)
+                {
+                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfiguration);
 
-                if (changes.Count > 0)
-                    _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
+                    if (changes.Count > 0)
+                        _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
+                }
 
                 return Ok(new { success = true, file = "settings.json" });
             }
@@ -6382,7 +6400,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [HttpGet("tag-cache/{userId}")]
         [Authorize]
-        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [Produces("application/json")]
         public IActionResult GetTagCache(Guid userId, [FromQuery] long? since = null)
         {
@@ -6597,13 +6614,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            return Ok(new
+            var payload = new
             {
                 version = cacheVersion,
                 timestamp = cacheTimestamp,
                 count = items.Count,
                 items
-            });
+            };
+
+            // ETag is a hash of the FINAL response body (post Spoiler Guard strip above),
+            // not of cacheVersion. Two users at the same version can legitimately receive
+            // different stripped bodies, and an ETag keyed on version alone would let one
+            // user's stripped body satisfy another user's conditional request.
+            var payloadBytes = JsonSerializer.SerializeToUtf8Bytes(payload);
+            var hash = SHA256.HashData(payloadBytes);
+            var etag = $"\"{Convert.ToHexString(hash)}\"";
+
+            // no-cache (not no-store): the client may keep a copy to revalidate against,
+            // but must always revalidate. Freshness is unchanged, this only avoids
+            // re-sending an unchanged multi-MB body.
+            Response.Headers["Cache-Control"] = "private, no-cache";
+            Response.Headers["ETag"] = etag;
+
+            if (Request.Headers.TryGetValue("If-None-Match", out var ifNoneMatch)
+                && ifNoneMatch.ToString().Contains(etag, StringComparison.Ordinal))
+            {
+                return StatusCode(304);
+            }
+
+            return Ok(payload);
         }
 
         // ─── Activity Feed (recently watched / favorited / reviewed) ─────────────

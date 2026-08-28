@@ -13,6 +13,20 @@
     // getHeaderRightContainer below) so it's only added once.
     let muiHeaderButtonCSSInjected = false;
 
+    // ── Admin check ──────────────────────────────────────────────────────────
+    // Single source of truth for "is the current user an administrator?".
+    // Sourced from JE.currentSettings.isAdmin, which the server computes fresh
+    // from the authenticated caller on every settings.json GET and never
+    // persists to the file (see GetUserSettingsSettings in
+    // JellyfinEnhancedController.cs). This is a UX gate only: every admin-only
+    // endpoint enforces access independently server-side.
+    /**
+     * @returns {boolean}
+     */
+    function isAdmin() {
+        return JE.currentSettings?.isAdmin === true;
+    }
+
     // Shared cache for item payloads to deduplicate cross-module ApiClient.getItem calls
     const itemCache = new Map();
     const ITEM_CACHE_TTL_MS = 30000; // 30s -- long enough for batch prefetch to warm cache before tag systems scan
@@ -730,7 +744,8 @@
         trackUsage,
         getHandlerCount: () => JE.core.navigation.getViewHandlerCount(), // (core)
         getObserverCount: () => JE.core.dom.getObserverCount(), // (core)
-        getBodySubscriberCount: () => JE.core.dom.getBodySubscriberCount() // (core)
+        getBodySubscriberCount: () => JE.core.dom.getBodySubscriberCount(), // (core)
+        isAdmin
     };
 
     console.log('🪼 Jellyfin Enhanced: Helpers initialized successfully');

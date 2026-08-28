@@ -28,11 +28,9 @@
 
     /**
      * Saves user settings to the server.
-     * For files other than settings.json, skips the POST if the data is identical
-     * to the last saved value (prevents redundant writes for bookmarks, shortcuts etc.).
-     * settings.json is always allowed through on the first save per session because
-     * loadSettings() merges server data with defaults, so the merged result legitimately
-     * differs from the raw stored value and must be written back.
+     * Skips the POST if the data is identical to the last value saved this session
+     * (prevents redundant writes). The first save per session for a given file is
+     * always allowed through since the cache starts empty.
      */
     // Per-file cache of the last JSON string successfully sent to the server.
     const _lastSavedJson = {};
@@ -58,11 +56,8 @@
             const serialized = JSON.stringify(dataToSave);
             const cacheKey = `${userId}:${fileName}`;
 
-            // For non-settings files, skip the POST if nothing has changed.
-            // settings.json is exempt: loadSettings() merges defaults so the first
-            // save per session will always differ from the raw server value — that
-            // write-back is intentional and must not be suppressed.
-            if (fileName !== 'settings.json' && _lastSavedJson[cacheKey] === serialized) {
+            // Skip the POST if nothing has changed since the last save this session.
+            if (_lastSavedJson[cacheKey] === serialized) {
                 return; // no-op — identical to last save
             }
 
@@ -111,8 +106,7 @@
             displayLanguage: '',
             calendarDisplayMode: 'list',
             calendarDefaultViewMode: 'agenda',
-            disableAllShortcuts: false, longPress2xEnabled: false, lastOpenedTab: 'shortcuts',
-            isAdmin: undefined
+            disableAllShortcuts: false, longPress2xEnabled: false, lastOpenedTab: 'shortcuts'
         };
 
         const mergedSettings = {};
@@ -149,11 +143,6 @@
         if (!userSettings.hasOwnProperty('removeContinueWatchingEnabled')
             && pluginDefaults.RemoveContinueWatchingEnabled === true) {
             mergedSettings.removeContinueWatchingEnabled = true;
-        }
-
-        // Ensure isAdmin is always present (even if undefined) so it can be set later
-        if (!mergedSettings.hasOwnProperty('isAdmin')) {
-            mergedSettings.isAdmin = userSettings.isAdmin !== undefined ? userSettings.isAdmin : undefined;
         }
 
         return mergedSettings;
