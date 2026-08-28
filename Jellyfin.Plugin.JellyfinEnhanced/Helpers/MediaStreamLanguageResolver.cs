@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 
@@ -33,14 +34,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     sourcePath,
                     out var matroskaAudioLanguages);
 
-            var internalAudioCount = 0;
-            foreach (var stream in source.MediaStreams)
-            {
-                if (stream.Type == MediaStreamType.Audio && !stream.IsExternal)
-                {
-                    internalAudioCount++;
-                }
-            }
+            var internalAudioCount = source.MediaStreams.Count(
+                stream => stream.Type == MediaStreamType.Audio
+                    && !stream.IsExternal);
 
             // Only align by ordinal when both views contain exactly the same
             // number of embedded audio tracks. This prevents a missing stream

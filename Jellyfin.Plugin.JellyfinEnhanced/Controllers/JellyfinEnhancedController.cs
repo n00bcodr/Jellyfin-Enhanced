@@ -6922,7 +6922,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                         // SpoilerReplaceTitle that leaks via the stream projection.
                                         // Null it; qualitytags.js recomputes overlay text from
                                         // Codec / Height / VideoRangeType / Profile, not Title.
-                                        DisplayTitle = (string?)null,
+                                        DisplayTitle = default(string?),
                                     };
                                 })
                                 .ToList();
@@ -7031,7 +7031,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                         Channels = s.Channels,
                                         ChannelLayout = s.ChannelLayout,
                                         VideoRangeType = s.VideoRangeType,
-                                        DisplayTitle = (string?)null,
+                                        DisplayTitle = default(string?),
                                     };
                                 })
                                 .ToList();

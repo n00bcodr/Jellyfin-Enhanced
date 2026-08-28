@@ -312,12 +312,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                         return false;
                     }
                 }
-                else if (element.Id == LanguageBcp47Id)
+                else if (element.Id == LanguageBcp47Id
+                    && !TryReadUtf8String(stream, element, out bcp47Language))
                 {
-                    if (!TryReadUtf8String(stream, element, out bcp47Language))
-                    {
-                        return false;
-                    }
+                    return false;
                 }
 
                 stream.Position = element.End.Value;
