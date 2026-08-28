@@ -18,6 +18,7 @@ using MediaBrowser.Controller.Configuration;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json;
 using MediaBrowser.Common.Net;
+using System.Net.Http;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Threading;
@@ -251,9 +252,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     {
                         await _analyticsReportingService.SendOptOutAsync(config!, CancellationToken.None).ConfigureAwait(false);
                     }
-                    catch (Exception ex)
+                    catch (OperationCanceledException)
+                    {
+                        // Shutdown path, silent.
+                    }
+                    catch (HttpRequestException ex)
                     {
                         _logger.Warning($"Jellyfin Enhanced: failed to flag analytics opt-out: {ex.Message}");
+                    }
+                    catch (System.Text.Json.JsonException ex)
+                    {
+                        _logger.Warning($"Jellyfin Enhanced: failed to flag analytics opt-out: payload serialization error ({ex.Message})");
                     }
                 });
             }
@@ -273,9 +282,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     {
                         await _analyticsReportingService.ForceSendAsync(CancellationToken.None).ConfigureAwait(false);
                     }
-                    catch (Exception ex)
+                    catch (OperationCanceledException)
+                    {
+                        // Shutdown path, silent.
+                    }
+                    catch (HttpRequestException ex)
                     {
                         _logger.Warning($"Jellyfin Enhanced: failed to send initial analytics report: {ex.Message}");
+                    }
+                    catch (System.Text.Json.JsonException ex)
+                    {
+                        _logger.Warning($"Jellyfin Enhanced: failed to send initial analytics report: payload serialization error ({ex.Message})");
                     }
                 });
             }
