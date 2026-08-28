@@ -67,7 +67,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 #endif
 
         private string PluginConfigDir =>
-            Path.Combine(_applicationPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced");
+            Path.Join(_applicationPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced");
 
         /// <summary>
         /// Registers this install with the backend if it hasn't been already
@@ -118,9 +118,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 // Shutdown path, silent.
             }
-            catch (Exception ex)
+            catch (HttpRequestException ex)
             {
                 _logger.Warning($"[Analytics] Registration failed: {ex.Message}");
+            }
+            catch (JsonException ex)
+            {
+                _logger.Warning($"[Analytics] Registration failed: unexpected response shape ({ex.Message})");
             }
         }
 
@@ -273,47 +277,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             foreach (var userId in userIds)
             {
-                try
-                {
-                    bookmarks += _userConfigurationManager
-                        .GetUserConfiguration<UserBookmark>(userId, "bookmark.json").Bookmarks.Count;
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"[Analytics] Failed to count bookmarks for user {userId}: {ex.Message}");
-                }
+                bookmarks += _userConfigurationManager
+                    .GetUserConfiguration<UserBookmark>(userId, "bookmark.json").Bookmarks.Count;
 
-                try
-                {
-                    hiddenContentItems += _userConfigurationManager
-                        .GetUserConfiguration<UserHiddenContent>(userId, "hidden-content.json").Items.Count;
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"[Analytics] Failed to count hidden-content items for user {userId}: {ex.Message}");
-                }
+                hiddenContentItems += _userConfigurationManager
+                    .GetUserConfiguration<UserHiddenContent>(userId, "hidden-content.json").Items.Count;
 
-                try
-                {
-                    var blur = _userConfigurationManager
-                        .GetUserConfiguration<UserSpoilerBlur>(userId, SpoilerBlurImageFilter.SpoilerBlurFileName);
-                    spoilerBlurItems += blur.Series.Count + blur.Movies.Count + blur.Collections.Count;
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"[Analytics] Failed to count spoiler-blur items for user {userId}: {ex.Message}");
-                }
+                var blur = _userConfigurationManager
+                    .GetUserConfiguration<UserSpoilerBlur>(userId, SpoilerBlurImageFilter.SpoilerBlurFileName);
+                spoilerBlurItems += blur.Series.Count + blur.Movies.Count + blur.Collections.Count;
             }
 
-            long reviews = 0;
-            try
-            {
-                reviews = _userConfigurationManager.GetAllReviews().Reviews.Count;
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"[Analytics] Failed to count reviews: {ex.Message}");
-            }
+            long reviews = _userConfigurationManager.GetAllReviews().Reviews.Count;
 
             return new List<UsageEventEntry>
             {
@@ -447,9 +422,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 // Shutdown path, silent.
             }
-            catch (Exception ex)
+            catch (HttpRequestException ex)
             {
                 _logger.Warning($"[Analytics] Report failed: {ex.Message}");
+            }
+            catch (JsonException ex)
+            {
+                _logger.Warning($"[Analytics] Report failed: payload serialization error ({ex.Message})");
             }
         }
 
@@ -498,9 +477,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 // Shutdown path, silent.
             }
-            catch (Exception ex)
+            catch (HttpRequestException ex)
             {
                 _logger.Warning($"[Analytics] Opt-out flag failed: {ex.Message}");
+            }
+            catch (JsonException ex)
+            {
+                _logger.Warning($"[Analytics] Opt-out flag failed: payload serialization error ({ex.Message})");
             }
         }
     }
