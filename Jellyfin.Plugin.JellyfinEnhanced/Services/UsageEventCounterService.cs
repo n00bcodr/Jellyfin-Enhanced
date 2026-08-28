@@ -47,7 +47,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         private string CacheFilePath =>
-            Path.Combine(_applicationPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced", "usage-counters.json");
+            Path.Join(_applicationPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced", "usage-counters.json");
 
         /// <summary>Only letters/digits/dot/underscore, so a stray client can't spam arbitrary feature_key rows.</summary>
         public static bool IsValidKey(string key) =>
@@ -92,9 +92,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 foreach (var kvp in data.Counters) _counters[kvp.Key] = kvp.Value;
                 _logger.Info($"[Analytics] Loaded {_counters.Count} usage counter(s) for period {_periodStart}");
             }
-            catch (Exception ex)
+            catch (IOException ex)
             {
                 _logger.Warning($"[Analytics] Failed to load usage counters from disk: {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.Warning($"[Analytics] Failed to load usage counters from disk: {ex.Message}");
+            }
+            catch (JsonException ex)
+            {
+                _logger.Warning($"[Analytics] Failed to load usage counters from disk: corrupt file ({ex.Message})");
             }
         }
 
@@ -124,7 +132,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                     File.Move(tempPath, CacheFilePath, overwrite: true);
                 }
-                catch (Exception ex)
+                catch (IOException ex)
+                {
+                    _dirty = true;
+                    _logger.Error($"[Analytics] Failed to save usage counters to disk: {ex.Message}");
+                }
+                catch (UnauthorizedAccessException ex)
                 {
                     _dirty = true;
                     _logger.Error($"[Analytics] Failed to save usage counters to disk: {ex.Message}");
