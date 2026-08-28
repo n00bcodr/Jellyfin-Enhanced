@@ -20,6 +20,8 @@ using Newtonsoft.Json;
 using MediaBrowser.Common.Net;
 using System.Reflection;
 using System.Runtime.Loader;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced
 {
@@ -27,13 +29,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
     {
         private readonly IApplicationPaths _applicationPaths;
         private readonly Logger _logger;
+        private readonly Services.AnalyticsReportingService _analyticsReportingService;
         private const string PluginName = "Jellyfin Enhanced";
 
-        public JellyfinEnhanced(IApplicationPaths applicationPaths, IServerConfigurationManager serverConfigurationManager, IXmlSerializer xmlSerializer, Logger logger) : base(applicationPaths, xmlSerializer)
+        public JellyfinEnhanced(
+            IApplicationPaths applicationPaths,
+            IServerConfigurationManager serverConfigurationManager,
+            IXmlSerializer xmlSerializer,
+            Logger logger,
+            Services.AnalyticsReportingService analyticsReportingService) : base(applicationPaths, xmlSerializer)
         {
             Instance = this;
             _applicationPaths = applicationPaths;
             _logger = logger;
+            _analyticsReportingService = analyticsReportingService;
             _logger.Info($"{PluginName} v{Version} initialized. Plugin logs will be written to: {_logger.CurrentLogFilePath}");
             // Set the User-Agent used by every Seerr/TMDB outbound HTTP call.
             // Cloudflare's Browser Integrity Check / Bot Fight Mode flags
@@ -209,6 +218,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Configuration, so an actual OFF<->ON transition is distinguishable
             // from an unrelated config save (this method fires on every save).
             var tagCacheWasEnabled = Configuration?.TagCacheServerMode == true;
+            var analyticsWasEnabled = Configuration?.AnalyticsEnabled == true;
 
             base.UpdateConfiguration(configuration);
             try
@@ -226,6 +236,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             if (tagCacheWasEnabled != (Configuration?.TagCacheServerMode == true))
             {
                 Services.TagCacheService.Instance?.QueueServerModeTransition();
+            }
+
+            // ON->OFF: flag this install as opted out on the backend so it
+            // drops out of every public view without deleting its history.
+            // Fire-and-forget: a network call must never block a config save,
+            // and failure here is not user-visible.
+            if (analyticsWasEnabled && Configuration?.AnalyticsEnabled != true)
+            {
+                var config = Configuration;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _analyticsReportingService.SendOptOutAsync(config!, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Warning($"Jellyfin Enhanced: failed to flag analytics opt-out: {ex.Message}");
+                    }
+                });
+            }
+
+            // OFF->ON: always force an immediate report rather than deferring to
+            // ReportIfDueAsync's interval/version check. On a first-ever opt-in
+            // that check would say "due" anyway, but on a disable-then-re-enable
+            // AnalyticsLastReportedAt/AnalyticsLastReportedPluginVersion still
+            // hold values from before the disable, so the check can say "not
+            // due" and skip sending, which would also leave opted_out=true on
+            // the backend forever, since only a real report_stats call clears it.
+            if (!analyticsWasEnabled && Configuration?.AnalyticsEnabled == true)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _analyticsReportingService.ForceSendAsync(CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Warning($"Jellyfin Enhanced: failed to send initial analytics report: {ex.Message}");
+                    }
+                });
             }
         }
         private void CleanupOldScript()

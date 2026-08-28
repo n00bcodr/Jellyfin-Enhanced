@@ -540,6 +540,7 @@
         if (result) {
             invalidateRequestCaches(tmdbId, mediaType);
             emitMediaRequested(tmdbId, mediaType, is4k);
+            JE.helpers.trackUsage('seerr.request_submitted');
             try {
                 await api.addToWatchlist(tmdbId, mediaType);
             } catch (error) {
@@ -583,6 +584,7 @@
         if (result) {
             invalidateRequestCaches(tmdbId, 'tv');
             emitMediaRequested(tmdbId, 'tv', is4k);
+            JE.helpers.trackUsage('seerr.request_submitted');
             try {
                 await api.addToWatchlist(tmdbId, 'tv');
             } catch (error) {

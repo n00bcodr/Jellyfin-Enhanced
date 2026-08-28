@@ -674,6 +674,28 @@
         return Number.isFinite(contentHeight) && contentHeight > 0 ? contentHeight : fallback;
     }
 
+    /**
+     * Bumps one opt-in usage-analytics counter (e.g. "rating.half_star_used").
+     * Fire-and-forget: no-ops client-side when analytics/usage-counts aren't
+     * both enabled (avoiding a pointless network call from the majority of
+     * installs, which have this off by default), and the server independently
+     * no-ops the same way, so this is always safe to call unconditionally
+     * from any feature module without checking config first.
+     * @param {string} key - feature_key, e.g. "bookmarks.created". Server-side
+     *   validated as ^[a-z0-9_.]{1,64}$ -- keep to that shape.
+     */
+    function trackUsage(key) {
+        try {
+            if (!JE.pluginConfig?.AnalyticsEnabled || !JE.pluginConfig?.AnalyticsShareUsageCounts) return;
+            ApiClient.ajax({
+                type: 'POST',
+                url: ApiClient.getUrl('/JellyfinEnhanced/usage/track'),
+                data: JSON.stringify({ key }),
+                contentType: 'application/json'
+            }).catch(() => { /* best-effort; never surface analytics failures */ });
+        } catch { /* best-effort */ }
+    }
+
     // Expose helpers. Entries marked (core) are thin aliases over JE.core.*
     // kept for the frozen JE.helpers contract — new code should call core
     // directly.
@@ -705,6 +727,7 @@
         resolveProtectedAvatarUrl,
         hydrateAvatarImages,
         clearAvatarObjectUrlCache,
+        trackUsage,
         getHandlerCount: () => JE.core.navigation.getViewHandlerCount(), // (core)
         getObserverCount: () => JE.core.dom.getObserverCount(), // (core)
         getBodySubscriberCount: () => JE.core.dom.getBodySubscriberCount() // (core)

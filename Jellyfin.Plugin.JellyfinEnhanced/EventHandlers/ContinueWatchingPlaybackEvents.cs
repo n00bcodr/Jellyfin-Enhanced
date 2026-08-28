@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Extensions;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Events;
 using MediaBrowser.Controller.Library;
@@ -33,11 +34,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
             new(StringComparer.OrdinalIgnoreCase) { "continuewatching", "homesections" };
 
         private readonly UserConfigurationManager _configManager;
+        private readonly UsageEventCounterService _usageEventCounterService;
         private readonly Logger _logger;
 
-        public ContinueWatchingPlaybackConsumer(UserConfigurationManager configManager, Logger logger)
+        public ContinueWatchingPlaybackConsumer(
+            UserConfigurationManager configManager,
+            UsageEventCounterService usageEventCounterService,
+            Logger logger)
         {
             _configManager = configManager;
+            _usageEventCounterService = usageEventCounterService;
             _logger = logger;
         }
 
@@ -118,6 +124,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
                 if (changed > 0)
                 {
                     _logger.Info($"CW: dropped/demoted {changed} hidden-content entr{(changed == 1 ? "y" : "ies")} for user {userId} on resume of item {item.Id}");
+                    // Attribute to RCW specifically (not HC) so this counter answers
+                    // "did Remove Continue Watching actually remove something for a real
+                    // user", not just "is the shared HC/RCW removal path being reached".
+                    if (rcwEnabled)
+                    {
+                        _usageEventCounterService.Increment("continue_watching.auto_removed");
+                    }
                 }
             }
             catch (Exception ex)
