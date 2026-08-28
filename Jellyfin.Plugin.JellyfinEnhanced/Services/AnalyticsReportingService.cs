@@ -335,10 +335,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public async Task ReportIfDueAsync(CancellationToken cancellationToken)
         {
-            var config = JellyfinEnhanced.Instance?.Configuration;
+            var instance = JellyfinEnhanced.Instance;
+            var config = instance?.Configuration;
             if (config == null || !config.AnalyticsEnabled) return;
 
-            var currentPluginVersion = JellyfinEnhanced.Instance?.Version?.ToString(3) ?? string.Empty;
+            var currentPluginVersion = instance?.Version?.ToString(3) ?? string.Empty;
             var versionChanged = !string.IsNullOrEmpty(config.AnalyticsLastReportedPluginVersion)
                 && config.AnalyticsLastReportedPluginVersion != currentPluginVersion;
 
