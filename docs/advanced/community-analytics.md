@@ -109,8 +109,8 @@ counts above do for other features.
 
 <script>
 (function() {
-  const SUPABASE_URL = "https://nxacdgtrnbqucbvlnhcz.supabase.co";
-  const SUPABASE_ANON_KEY = "sb_publishable_C69ZHubKpz8moyoh3I11Jg_g3MM5hsw";
+  const SUPABASE_URL = "https://cgsdfzfdoxunzoofzhgd.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_ShFKE3ognn7ZgncCGmCR-A_R1tPApiW";
 
   async function fetchView(name, query) {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${name}?${query || "select=*"}`, {

@@ -31,8 +31,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // The publishable/anon key is meant to ship in clients; RLS with no
         // policies blocks direct table access; report_stats() is SECURITY
         // DEFINER and is the only way this key can write anything.
-        private const string SupabaseUrl = "https://nxacdgtrnbqucbvlnhcz.supabase.co";
-        private const string SupabaseAnonKey = "sb_publishable_C69ZHubKpz8moyoh3I11Jg_g3MM5hsw";
+        private const string SupabaseUrl = "https://cgsdfzfdoxunzoofzhgd.supabase.co";
+        private const string SupabaseAnonKey = "sb_publishable_ShFKE3ognn7ZgncCGmCR-A_R1tPApiW";
 
         private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
 
