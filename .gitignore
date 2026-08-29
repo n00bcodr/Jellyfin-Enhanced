@@ -322,3 +322,4 @@ auth.json
 /.vscode
 /site
 /.kiro
+scripts/deploy*
