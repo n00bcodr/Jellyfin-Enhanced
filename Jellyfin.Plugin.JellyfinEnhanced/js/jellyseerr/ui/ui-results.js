@@ -235,7 +235,13 @@
         function positionSection() {
             const noResultsMessage = searchPage.querySelector('.noItemsMessage');
             if (noResultsMessage) {
-                noResultsMessage.textContent = JE.t('jellyseerr_no_results_jellyfin', { query });
+                // Only write on change — this element is inside the subtree the
+                // reposition MutationObserver below watches, so an unconditional
+                // write re-triggers it every time, looping forever.
+                const desiredText = JE.t('jellyseerr_no_results_jellyfin', { query });
+                if (noResultsMessage.textContent !== desiredText) {
+                    noResultsMessage.textContent = desiredText;
+                }
                 if (sectionToInject.previousElementSibling !== noResultsMessage) {
                     noResultsMessage.parentElement.insertBefore(sectionToInject, noResultsMessage.nextSibling);
                 }

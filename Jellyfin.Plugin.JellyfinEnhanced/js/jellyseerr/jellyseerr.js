@@ -126,7 +126,17 @@
             resetSearchPagination();
             searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
 
-            const data = await search(query, 1, { skipCache });
+            // Cancel any still-in-flight search/collection requests from the
+            // previous keystroke instead of letting them queue up.
+            const signal = JE.requestManager?.getAbortSignal('jellyseerr-search');
+
+            let data;
+            try {
+                data = await search(query, 1, { skipCache, signal });
+            } catch (error) {
+                if (error.name === 'AbortError') return; // superseded by a newer search
+                throw error;
+            }
             if (lastProcessedQuery !== query) return; // superseded by a newer search while this was in flight
 
             let results = data.results || [];
@@ -141,7 +151,7 @@
                 renderJellyseerrResults(results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
 
                 // Enrich with collections in the background, then re-render
-                prepareResultsWithCollections(results).then(enrichedResults => {
+                prepareResultsWithCollections(results, { signal }).then(enrichedResults => {
                     if (lastProcessedQuery !== query) return;
                     if (JE.hiddenContent) enrichedResults = JE.hiddenContent.filterJellyseerrResults(enrichedResults, 'search');
                     if (enrichedResults.length > results.length) {
@@ -222,14 +232,14 @@
          * @param {Array} rawResults Raw search results from Seerr.
          * @returns {Promise<Array>} Enriched results including collections and badges.
          */
-        async function prepareResultsWithCollections(rawResults) {
+        async function prepareResultsWithCollections(rawResults, options = {}) {
             let results = rawResults || [];
             if (JE.pluginConfig.ShowCollectionsInSearch === false) {
                 return results;
             }
 
             try {
-                results = await JE.jellyseerrAPI.addCollections(results);
+                results = await JE.jellyseerrAPI.addCollections(results, options);
             } catch (e) {
                 console.debug(`${logPrefix} Collection addition failed:`, e);
             }
@@ -290,8 +300,9 @@
                 resetSearchPagination();
                 searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
 
-                const data = await search(query, 1);
-                let results = await prepareResultsWithCollections(data.results || []);
+                const signal = JE.requestManager?.getAbortSignal('jellyseerr-search');
+                const data = await search(query, 1, { signal });
+                let results = await prepareResultsWithCollections(data.results || [], { signal });
                 if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
 
                 searchCurrentPage = data.page || 1;
@@ -310,7 +321,9 @@
                     setupSearchInfiniteScroll(query);
                 }
             } catch (error) {
-                console.warn(`${logPrefix} Failed to refresh Seerr data:`, error);
+                if (error.name !== 'AbortError') {
+                    console.warn(`${logPrefix} Failed to refresh Seerr data:`, error);
+                }
             }
         }
 

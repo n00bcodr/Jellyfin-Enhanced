@@ -227,8 +227,8 @@
     api.search = async function(query, page = 1, options = {}) {
         try {
             const lang = (navigator.language || 'en').split('-')[0];
-            const { skipCache = false } = options;
-            const data = await get(`/search?query=${encodeURIComponent(query)}&page=${page}&language=${lang}`, { skipCache });
+            const { skipCache = false, signal } = options;
+            const data = await get(`/search?query=${encodeURIComponent(query)}&page=${page}&language=${lang}`, { skipCache, signal });
 
             // Filter out people results before returning (immutable — don't mutate cached response)
             if (data.results) {
@@ -238,6 +238,8 @@
 
             return data;
         } catch (error) {
+            // Superseded search — let the caller drop it instead of rendering "no results".
+            if (error.name === 'AbortError') throw error;
             console.error('%s Search failed for query "%s":', logPrefix, query, error);
             return { results: [] };
         }
@@ -248,10 +250,11 @@
      * @param {number} tmdbId
      * @returns {Promise<{id:number,name:string,posterPath?:string,backdropPath?:string}|null>}
      */
-    api.fetchMovieCollection = async function(tmdbId) {
+    api.fetchMovieCollection = async function(tmdbId, options = {}) {
+        const { signal } = options;
         try {
             // Try Seerr movie detail first (includes collection field directly)
-            const jellyseerrRes = await get(`/movie/${tmdbId}`);
+            const jellyseerrRes = await get(`/movie/${tmdbId}`, { signal });
             if (jellyseerrRes?.collection) {
                 const c = jellyseerrRes.collection;
                 return {
@@ -264,7 +267,7 @@
 
             // Fallback to TMDB proxy
             if (JE.pluginConfig?.TmdbEnabled) {
-                const res = await tmdbGet(`/movie/${tmdbId}`);
+                const res = await tmdbGet(`/movie/${tmdbId}`, { signal });
                 const belongs = res?.belongs_to_collection || res?.belongsToCollection;
                 if (belongs && (belongs.id || belongs.tmdbId)) {
                     return {
@@ -277,6 +280,7 @@
             }
             return null;
         } catch (error) {
+            if (error.name === 'AbortError') throw error;
             console.debug(`${logPrefix} No collection found for movie ${tmdbId}:`, error);
             return null;
         }
@@ -287,16 +291,17 @@
      * @param {Array} results
      * @returns {Promise<Array>}
      */
-    api.addCollections = async function(results) {
+    api.addCollections = async function(results, options = {}) {
         if (!results || results.length === 0) return results;
+        const { signal } = options;
 
         return Promise.all(results.map(async (item) => {
             if (item.mediaType !== 'movie') return item;
             try {
-                const collection = await api.fetchMovieCollection(item.id);
+                const collection = await api.fetchMovieCollection(item.id, { signal });
                 if (collection) return { ...item, collection };
             } catch (e) {
-                // ignore per-movie errors
+                // ignore per-movie errors (including AbortError — superseded search)
             }
             return item;
         }));
