@@ -312,7 +312,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var instance = JellyfinEnhanced.Instance;
             var config = instance?.Configuration;
-            if (config == null || !config.AnalyticsEnabled) return;
+            if (instance == null || config == null || !config.AnalyticsEnabled) return;
 
             var currentPluginVersion = instance.Version?.ToString(3) ?? string.Empty;
             var versionChanged = !string.IsNullOrEmpty(config.AnalyticsLastReportedPluginVersion)
