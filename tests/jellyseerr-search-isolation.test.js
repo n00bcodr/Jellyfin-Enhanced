@@ -1,0 +1,12 @@
+const t=require('node:test'),a=require('node:assert/strict'),f=require('node:fs'),p=require('node:path');
+const root=p.resolve(__dirname,'..');
+const rd=x=>f.readFileSync(p.join(root,x),'utf8');
+const ui=rd('Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/ui/ui-results.js');
+const js=rd('Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/jellyseerr.js');
+const css=rd('Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/ui/ui-styles.js');
+t('body-owned native UI',()=>{a.match(ui,/document.body.appendChild\(host\)/);a.doesNotMatch(ui,/jellyseerr-search-control|jellyseerr-overlay-query/);a.doesNotMatch(ui,/searchPage\.(appendChild|insertBefore)/)});
+t('bounded results',()=>{a.match(ui,/isMobile \? 8 : 20/);a.match(ui,/results.slice\(0, resultLimit\)/)});
+t('synchronous stale-query guard',()=>{a.match(js,/const generation = \+\+searchGeneration/);a.match(js,/generation !== searchGeneration/);a.match(js,/if \(!normalized\)/)});
+t('pending debounce cancelled',()=>{a.match(js,/clearTimeout\(debounceTimeout\)/);a.match(js,/debounceTimeout = null/);a.match(js,/jellyseerr-manual-refresh/);a.match(js,/onNavigate/)});
+t('layout survives React and viewport changes',()=>{a.match(ui,/ResizeObserver/);a.match(ui,/visualViewport/);a.match(ui,/data-jellyseerr-space/);a.match(js,/ensureJellyseerrSearchSpace/)});
+t('fixed rail without spacer nodes',()=>{a.match(css,/#jellyseerr-search-host[^}]*position: fixed/s);a.doesNotMatch(ui,/appendChild\(spacer\)|insertBefore\(spacer/)});

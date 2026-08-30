@@ -42,7 +42,10 @@
             enableSpecialEpisodes = false;
         }
 
-        const tvDetails = await fetchTvShowDetails(tmdbId);
+        // Request dialogs must never use stale status data: cached season
+        // statuses can otherwise keep every checkbox disabled even after
+        // Seerr has made the seasons requestable again.
+        const tvDetails = await fetchTvShowDetails(tmdbId, { skipCache: true });
         if (!tvDetails?.seasons) {
             JE.toast(JE.t('jellyseerr_toast_no_season_info'), 4000);
             return;
@@ -290,18 +293,10 @@
         }
 
 
-        // Start polling for updates when the modal is shown
-        refreshModalInterval = setInterval(async () => {
-            const freshTvDetails = await fetchTvShowDetails(tmdbId);
-            if (freshTvDetails) {
-                applyAirDateBackfill(freshTvDetails);
-                updateSeasonList(seasonList, freshTvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k, jellyfinSeasonMap);
-                // Update Select All state after refresh
-                if (seasonList._updateSelectAllState) {
-                    seasonList._updateSelectAllState();
-                }
-            }
-        }, 10000); // Refresh every 10 seconds
+        // Do not periodically replace the modal DOM. Jellyfin Web owns the
+        // surrounding React tree; rebuilding this list on an interval can race
+        // React reconciliation and trigger removeChild NotFoundError loops.
+        // A fresh, cache-bypassed status was already loaded when the modal opened.
 
         if (showAdvanced) {
             try {

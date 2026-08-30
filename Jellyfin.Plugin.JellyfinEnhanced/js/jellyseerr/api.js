@@ -312,9 +312,9 @@
      * @param {number} tmdbId - The TMDB ID of the TV show.
      * @returns {Promise<object|null>}
      */
-    api.fetchTvShowDetails = async function(tmdbId) {
+    api.fetchTvShowDetails = async function(tmdbId, options = {}) {
         try {
-            return await get(`/tv/${tmdbId}`);
+            return await get(`/tv/${tmdbId}`, options);
         } catch (error) {
             console.error(`${logPrefix} Failed to fetch TV show details for TMDB ID ${tmdbId}:`, error);
             return null;

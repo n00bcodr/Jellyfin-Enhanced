@@ -12,8 +12,9 @@
 
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <AssemblyVersion>12.4.1.0</AssemblyVersion>
-        <FileVersion>12.4.1.0</FileVersion>
+        <AssemblyVersion>12.4.1.7</AssemblyVersion>
+        <FileVersion>12.4.1.7</FileVersion>
+
         <RootNamespace>Jellyfin.Plugin.JellyfinEnhanced</RootNamespace>
         <AssemblyName>Jellyfin.Plugin.JellyfinEnhanced</AssemblyName>
     </PropertyGroup>

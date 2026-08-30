@@ -21,210 +21,73 @@
         const escapeHtml = JE.escapeHtml;
         console.log(`${logPrefix} Initializing...`);
 
-        // ================================
-        // STATE MANAGEMENT VARIABLES
-        // ================================
         let lastProcessedQuery = null;
+        let searchGeneration = 0;
         let debounceTimeout = null;
         let isJellyseerrActive = false;
         let jellyseerrUserFound = false;
-        let isJellyseerrOnlyMode = false;
-        let hiddenSections = [];
-        let jellyseerrOriginalPosition = null;
 
-        // Infinite scroll pagination state
-        let searchCurrentPage = 0;
-        let searchTotalPages = 0;
-        let searchIsLoading = false;
-        let searchHasMore = false;
-        const searchScrollState = {};
-        let searchDeduplicator = null;
-
-
-        // Destructure modules for easy access
         const { checkUserStatus, search, requestMedia } = JE.jellyseerrAPI;
         const {
             addMainStyles, addSeasonModalStyles, updateJellyseerrIcon,
             renderJellyseerrResults, showMovieRequestModal, showSeasonSelectionModal,
-            showCollectionRequestModal, hideHoverPopover, toggleHoverPopoverLock, updateJellyseerrResults,
-            createJellyseerrCard
+            showCollectionRequestModal, hideHoverPopover, toggleHoverPopoverLock, updateJellyseerrResults
         } = JE.jellyseerrUI;
 
-        /**
-         * Toggles between showing all search results vs only Seerr results.
-         */
-        function toggleJellyseerrOnlyMode() {
-            isJellyseerrOnlyMode = !isJellyseerrOnlyMode;
-
-            const searchPage = document.querySelector('#searchPage');
-            if (!searchPage) return;
-
-            if (isJellyseerrOnlyMode) {
-                const allSections = searchPage.querySelectorAll('.verticalSection:not(.jellyseerr-section)');
-                hiddenSections = Array.from(allSections);
-                allSections.forEach(section => section.classList.add('section-hidden'));
-
-                const jellyseerrSection = searchPage.querySelector('.jellyseerr-section');
-                if (jellyseerrSection) {
-                    jellyseerrOriginalPosition = document.createElement('div');
-                    jellyseerrOriginalPosition.id = 'jellyseerr-placeholder';
-                    jellyseerrSection.parentNode.insertBefore(jellyseerrOriginalPosition, jellyseerrSection);
-                    const searchResults = searchPage.querySelector('.searchResults, [class*="searchResults"], .padded-top.padded-bottom-page');
-                    if (searchResults) {
-                        searchResults.insertBefore(jellyseerrSection, searchResults.firstChild);
-                    }
-                }
-                const noResultsMessage = searchPage.querySelector('.noItemsMessage');
-                if (noResultsMessage) noResultsMessage.classList.add('section-hidden');
-
-                JE.toast(JE.t('jellyseerr_toast_filter_on'), 3000);
-
-            } else {
-                hiddenSections.forEach(section => section.classList.remove('section-hidden'));
-                const jellyseerrSection = searchPage.querySelector('.jellyseerr-section');
-                if (jellyseerrSection && jellyseerrOriginalPosition?.parentNode) {
-                    jellyseerrOriginalPosition.parentNode.insertBefore(jellyseerrSection, jellyseerrOriginalPosition);
-                    jellyseerrOriginalPosition.remove();
-                    jellyseerrOriginalPosition = null;
-                }
-                const noResultsMessage = searchPage.querySelector('.noItemsMessage');
-                if (noResultsMessage) noResultsMessage.classList.remove('section-hidden');
-
-                hiddenSections = [];
-                JE.toast(JE.t('jellyseerr_toast_filter_off'), 3000);
-            }
-
-            const jellyseerrSection = searchPage.querySelector('.jellyseerr-section');
-            if (jellyseerrSection) {
-                const titleElement = jellyseerrSection.querySelector('.sectionTitle');
-                if (titleElement) {
-                    titleElement.textContent = isJellyseerrOnlyMode ? JE.t('jellyseerr_results_title') : JE.t('jellyseerr_discover_title');
-                }
-            }
-            updateJellyseerrIcon(isJellyseerrActive, jellyseerrUserFound, isJellyseerrOnlyMode, toggleJellyseerrOnlyMode);
+        function closeJellyseerrSearch() {
+            const host = document.getElementById('jellyseerr-search-host');
+            if (host) { host.classList.remove('is-open'); host.replaceChildren(); }
+            JE.jellyseerrUI.clearJellyseerrSearchSpace?.();
+            lastProcessedQuery = null;
         }
 
-        /**
-         * Resets search pagination state for a new query.
-         */
-        function resetSearchPagination() {
-            searchCurrentPage = 0;
-            searchTotalPages = 0;
-            searchIsLoading = false;
-            searchHasMore = false;
-            if (searchDeduplicator) searchDeduplicator.clear();
-            JE.seamlessScroll?.cleanupInfiniteScroll(searchScrollState);
-        }
-
-        /**
-         * Fetches and renders search results (page 1), then sets up infinite scroll.
-         * @param {string} query The search query.
-         */
         async function fetchAndRenderResults(query, options = {}) {
+            const normalized = String(query || '').trim();
+            const generation = options.generation ?? ++searchGeneration;
+            if (!normalized) {
+                closeJellyseerrSearch();
+                return;
+            }
             const { skipCache = false } = options;
-            lastProcessedQuery = query;
-            resetSearchPagination();
-            searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
-
             // Cancel any still-in-flight search/collection requests from the
             // previous keystroke instead of letting them queue up.
             const signal = JE.requestManager?.getAbortSignal('jellyseerr-search');
 
             let data;
             try {
-                data = await search(query, 1, { skipCache, signal });
+                if (options.generation == null) lastProcessedQuery = normalized;
+                data = await search(normalized, 1, { skipCache, signal });
             } catch (error) {
                 if (error.name === 'AbortError') return; // superseded by a newer search
                 throw error;
             }
-            if (lastProcessedQuery !== query) return; // superseded by a newer search while this was in flight
-
-            let results = data.results || [];
-            searchCurrentPage = data.page || 1;
-            searchTotalPages = data.totalPages || 1;
-            searchHasMore = searchCurrentPage < searchTotalPages;
-
+            if (generation !== searchGeneration || lastProcessedQuery !== normalized) return;
+            let results = await prepareResultsWithCollections(data.results || [], { signal });
+            if (generation !== searchGeneration) return;
             if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
-            if (searchDeduplicator) searchDeduplicator.filter(results);
-
-            if (results.length > 0) {
-                renderJellyseerrResults(results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
-
-                // Enrich with collections in the background, then re-render
-                prepareResultsWithCollections(results, { signal }).then(enrichedResults => {
-                    if (lastProcessedQuery !== query) return;
-                    if (JE.hiddenContent) enrichedResults = JE.hiddenContent.filterJellyseerrResults(enrichedResults, 'search');
-                    if (enrichedResults.length > results.length) {
-                        renderJellyseerrResults(enrichedResults, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
-                    }
-                }).catch(() => {});
-
-                // Set up infinite scroll if more pages exist
-                if (searchHasMore) {
-                    setupSearchInfiniteScroll(query);
-                }
-            }
+            if (generation !== searchGeneration) return;
+            renderJellyseerrResults(results, normalized, true, isJellyseerrActive, jellyseerrUserFound);
         }
 
-        /**
-         * Loads the next page of search results and appends cards to the container.
-         * @param {string} query The current search query.
-         */
-        async function loadMoreSearchResults(query) {
-            if (searchIsLoading || !searchHasMore || lastProcessedQuery !== query) return;
-
-            searchIsLoading = true;
-            const nextPage = searchCurrentPage + 1;
-
-            try {
-                const data = await search(query, nextPage);
-                if (lastProcessedQuery !== query) return; // query changed during fetch
-
-                let results = data.results || [];
-                searchCurrentPage = data.page || nextPage;
-                searchTotalPages = data.totalPages || searchTotalPages;
-                searchHasMore = searchCurrentPage < searchTotalPages;
-
-                if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
-                if (searchDeduplicator) results = searchDeduplicator.filter(results);
-
-                if (results.length > 0) {
-                    const itemsContainer = document.querySelector('.jellyseerr-section .itemsContainer');
-                    if (itemsContainer) {
-                        const fragment = document.createDocumentFragment();
-                        results.forEach(item => {
-                            const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
-                            fragment.appendChild(card);
-                        });
-                        itemsContainer.appendChild(fragment);
-                    }
+        function bindNativeSearchInput() {
+            const jellyfinInput = document.querySelector('#searchTextInput');
+            if (!jellyfinInput) return;
+            JE.jellyseerrUI.ensureJellyseerrSearchSpace?.();
+            if (jellyfinInput.dataset.jellyseerrBound === 'true') return;
+            jellyfinInput.dataset.jellyseerrBound = 'true';
+            jellyfinInput.addEventListener('input', () => {
+                const query = jellyfinInput.value;
+                const normalized = query.trim();
+                const generation = ++searchGeneration;
+                lastProcessedQuery = normalized || null;
+                clearTimeout(debounceTimeout);
+                if (!normalized) {
+                    closeJellyseerrSearch();
+                    return;
                 }
-            } catch (error) {
-                if (error.name !== 'AbortError') {
-                    console.warn(`${logPrefix} Failed to load more search results:`, error);
-                    // Roll back page on failure
-                    searchHasMore = true;
-                }
-                throw error; // Re-throw for seamlessScroll retry handling
-            } finally {
-                searchIsLoading = false;
-            }
-        }
-
-        /**
-         * Sets up the infinite scroll observer for search results.
-         * @param {string} query The current search query.
-         */
-        function setupSearchInfiniteScroll(query) {
-            if (!JE.seamlessScroll) return;
-
-            JE.seamlessScroll.setupInfiniteScroll(
-                searchScrollState,
-                '.jellyseerr-section',
-                () => loadMoreSearchResults(query),
-                () => searchHasMore,
-                () => searchIsLoading
-            );
+                debounceTimeout = setTimeout(() => fetchAndRenderResults(query, { generation }), 300);
+            });
+            if (jellyfinInput.value.trim()) fetchAndRenderResults(jellyfinInput.value);
         }
 
         /**
@@ -285,162 +148,24 @@
             return results;
         }
 
-        /**
-         * Fetches fresh data and updates the existing UI elements.
-         * @param {string} query The current search query.
-         */
-        // Manual refresh handler
-        async function manualRefreshJellyseerrData(query) {
-            const section = document.querySelector('.jellyseerr-section');
-            const itemsContainer = section?.querySelector('.itemsContainer');
-            if (!query || !itemsContainer) return;
-
-            console.log(`${logPrefix} Refreshing data for query: "${query}"`);
-            try {
-                resetSearchPagination();
-                searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
-
-                const signal = JE.requestManager?.getAbortSignal('jellyseerr-search');
-                const data = await search(query, 1, { signal });
-                let results = await prepareResultsWithCollections(data.results || [], { signal });
-                if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
-
-                searchCurrentPage = data.page || 1;
-                searchTotalPages = data.totalPages || 1;
-                searchHasMore = searchCurrentPage < searchTotalPages;
-                if (searchDeduplicator) searchDeduplicator.filter(results);
-
-                while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
-                results.forEach(item => {
-                    const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
-                    itemsContainer.appendChild(card);
-                });
-                updateJellyseerrResults(results, isJellyseerrActive, jellyseerrUserFound);
-
-                if (searchHasMore) {
-                    setupSearchInfiniteScroll(query);
-                }
-            } catch (error) {
-                if (error.name !== 'AbortError') {
-                    console.warn(`${logPrefix} Failed to refresh Seerr data:`, error);
-                }
-            }
-        }
-
-        /**
-         * Sets up DOM observation for search page changes.
-         */
         function initializePageObserver() {
-            const handleSearch = () => {
-                const searchInput = document.querySelector('#searchPage #searchTextInput');
-                const isSearchPage = searchInput !== null;
-                const currentQuery = isSearchPage ? searchInput.value : null;
-
-                if (isSearchPage && currentQuery?.trim()) {
-                    clearTimeout(debounceTimeout);
-                    debounceTimeout = setTimeout(() => {
-                        if (!isJellyseerrActive) {
-                            document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
-                            return;
-                        }
-                        const latestQuery = searchInput.value;
-                        if (latestQuery === lastProcessedQuery) return;
-
-                        if (isJellyseerrOnlyMode) {
-                            isJellyseerrOnlyMode = false;
-                            hiddenSections = [];
-                            jellyseerrOriginalPosition = null;
-                            updateJellyseerrIcon(isJellyseerrActive, jellyseerrUserFound, false, toggleJellyseerrOnlyMode);
-                        }
-                        lastProcessedQuery = latestQuery;
-                        resetSearchPagination();
-                        document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
-                        fetchAndRenderResults(latestQuery);
-                    }, 300);
-                } else {
-                    clearTimeout(debounceTimeout);
-                    lastProcessedQuery = null;
-                    isJellyseerrOnlyMode = false;
-                    resetSearchPagination();
-                    document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
-                }
-            };
-
-            /**
-             * Attempts to attach the search input listener if the search page is visible.
-             * Called by the MutationObserver, navigation events, and on initial setup.
-             * Idempotent — sets data-jellyseerr-listener on the input to prevent
-             * duplicate attachment, and adds a permanent 'input' event handler.
-             */
-            function tryAttachSearchListener() {
-                updateJellyseerrIcon(isJellyseerrActive, jellyseerrUserFound, isJellyseerrOnlyMode, toggleJellyseerrOnlyMode);
-
-                const searchInput = document.querySelector('#searchPage #searchTextInput');
-                if (searchInput && !searchInput.dataset.jellyseerrListener) {
-                    console.debug(`${logPrefix} Search input found, attaching listener.`);
-                    searchInput.addEventListener('input', handleSearch);
-                    searchInput.dataset.jellyseerrListener = 'true';
-
-                    // Add a click listener for the alphabet picker
-                    const alphaPicker = document.querySelector('.alphaPicker');
-                    if (alphaPicker) {
-                        alphaPicker.addEventListener('click', () => {
-                            // Use a short delay to ensure the input value has updated before we read it
-                            setTimeout(handleSearch, 100);
-                        });
-                    }
-
-                    // Also handle the case where the page loads with a query already in the box
-                    handleSearch();
-                }
-            }
-
-            /**
-             * Called on every SPA navigation. If we've navigated away from the search
-             * page entirely, tear down pagination/infinite-scroll state so stale
-             * scroll listeners don't keep hitting the search endpoint from other pages.
-             * Otherwise, (re)attach the search listener as usual.
-             */
-            function handleNavigate() {
-                const searchInput = document.querySelector('#searchPage #searchTextInput');
-                if (!searchInput) {
-                    clearTimeout(debounceTimeout);
-                    lastProcessedQuery = null;
-                    isJellyseerrOnlyMode = false;
-                    resetSearchPagination();
-                    document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
-                    return;
-                }
-                tryAttachSearchListener();
-            }
-
-            // Listen for manual refresh events from the UI
-            document.addEventListener('jellyseerr-manual-refresh', function(e) {
-                const searchInput = document.querySelector('#searchPage #searchTextInput');
-                const query = searchInput ? searchInput.value : null;
-                manualRefreshJellyseerrData(query);
+            const ensureNativeBinding = () => bindNativeSearchInput();
+            JE.helpers.onBodyMutation('jellyseerr-native-search', ensureNativeBinding);
+            ensureNativeBinding();
+            document.addEventListener('jellyseerr-manual-refresh', () => {
+                clearTimeout(debounceTimeout);
+                debounceTimeout = null;
+                const query = document.querySelector('#searchTextInput')?.value;
+                if (query) fetchAndRenderResults(query, { skipCache: true });
             });
-
-            JE.helpers.onBodyMutation('jellyseerr-search-listener', tryAttachSearchListener);
-
-            // Immediately check if the search page is already rendered (handles the
-            // case where the observer was set up after the search page loaded, e.g.
-            // when the user navigates directly to /search before plugin init completes).
-            tryAttachSearchListener();
-
-            // Listen for SPA navigation events as a backup — MutationObserver may
-            // miss the search page if no further DOM mutations occur after render.
-            // Uses the shared je:navigate event (from helpers.js) which already
-            // patches pushState/replaceState, plus popstate and hashchange.
             if (JE.helpers?.onNavigate) {
-                JE.helpers.onNavigate(() => setTimeout(handleNavigate, 200));
-            } else {
-                // Fallback if helpers.js hasn't loaded yet — may double-fire with
-                // onNavigate if helpers loads later, but tryAttachSearchListener is
-                // idempotent (guarded by dataset.jellyseerrListener) so this is safe.
-                const onNav = () => setTimeout(handleNavigate, 200);
-                window.addEventListener('popstate', onNav);
-                window.addEventListener('hashchange', onNav);
+                JE.helpers.onNavigate(() => {
+                    clearTimeout(debounceTimeout);
+                    debounceTimeout = null;
+                    searchGeneration++;
+                    closeJellyseerrSearch();
+                    setTimeout(ensureNativeBinding, 200);
+                });
             }
         }
 

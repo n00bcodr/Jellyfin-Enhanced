@@ -18,6 +18,17 @@
         const style = document.createElement('style');
         style.id = styleId;
         style.textContent = `
+            /* BODY-OWNED INLINE SEARCH RAIL (visually integrated, never mounted inside React DOM) */
+            #jellyseerr-search-host {
+                position: fixed; left: 0; right: 0; top: 10.5rem; z-index: 20;
+                display: none; max-height: calc(100vh - 10.5rem); overflow-y: auto;
+                padding: 0 3.3%; background: var(--background-color, #101010); color: #fff;
+            }
+            #jellyseerr-search-host.is-open { display: block; }
+            @media (max-width: 900px) {
+                #jellyseerr-search-host { top: 10rem; padding: 0 1rem; max-height: calc(100vh - 10rem); }
+            }
+
             /* LAYOUT & ICONS */
             .jellyseerr-section { margin-bottom: 1em; }
             .jellyseerr-section .itemsContainer { }

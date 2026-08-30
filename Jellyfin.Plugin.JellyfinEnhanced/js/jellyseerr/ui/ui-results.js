@@ -15,10 +15,6 @@
     const icons = internal.icons; // requires ui-icons.js to be loaded first
     const addTouchTapListener = JE.core.ui.addTouchTapListener;
 
-    // Only one search-results reposition watcher may be live at a time; a newer
-    // render must cancel the previous one (see renderJellyseerrResults).
-    let pendingRepositionObserver = null;
-    let pendingRepositionTimeout = null;
 
     // Keep card buttons in sync when a request is made from other surfaces (e.g., more info modal)
     function markCardRequested(tmdbId, mediaType, is4k = false) {
@@ -65,70 +61,73 @@
     // UI MANAGEMENT FUNCTIONS
     // ================================
 
-    /**
-     * Updates the Seerr icon in the search field based on current state.
-     * @param {boolean} isJellyseerrActive - If the server is reachable.
-     * @param {boolean} jellyseerrUserFound - If the current user is linked.
-     * @param {boolean} isJellyseerrOnlyMode - If the results are filtered.
-     * @param {function} onToggleFilter - The function to call to toggle the filter.
-     */
-    ui.updateJellyseerrIcon = function(isJellyseerrActive, jellyseerrUserFound, isJellyseerrOnlyMode, onToggleFilter) {
-        const anchor = document.querySelector('.searchFields .inputContainer') ||
-                       document.querySelector('#searchPage .searchFields') ||
-                       document.querySelector('#searchPage');
-        if (!anchor) return;
+    // The native Jellyfin search input is the only user-facing search control.
+    // Kept as a no-op for callers shared with older builds.
+    ui.updateJellyseerrIcon = function() {};
 
-        let icon = document.getElementById('jellyseerr-search-icon');
-        if (!icon) {
-            icon = document.createElement('img');
-            icon.id = 'jellyseerr-search-icon';
-            icon.className = 'jellyseerr-icon';
-            icon.src = JE.cdn.selfhst('svg/seerr.svg');
-            icon.alt = 'Seerr';
+    function getNativeSearchLayoutContainer() {
+        const input = document.querySelector('#searchTextInput');
+        return input?.closest('.inputContainer') || input?.parentElement || null;
+    }
 
-            let tapCount = 0;
-            let tapTimer = null;
-            const handleIconInteraction = () => {
-                if (!isJellyseerrActive || !jellyseerrUserFound || !onToggleFilter) return;
-                tapCount++;
-                if (tapCount === 1) {
-                    tapTimer = setTimeout(() => { tapCount = 0; }, 300);
-                } else if (tapCount === 2) {
-                    clearTimeout(tapTimer);
-                    tapCount = 0;
-                    onToggleFilter();
-                }
+    function clearNativeSearchSpace() {
+        document.querySelectorAll('[data-jellyseerr-space="true"]').forEach(container => {
+            container.style.marginBottom = container.dataset.jellyseerrPreviousMargin || '';
+            delete container.dataset.jellyseerrPreviousMargin;
+            delete container.dataset.jellyseerrSpace;
+        });
+        const host = document.getElementById('jellyseerr-search-host');
+        if (host) {
+            host.style.removeProperty('top');
+            host.style.removeProperty('max-height');
+        }
+    }
+
+    function reserveNativeSearchSpace(host) {
+        const container = getNativeSearchLayoutContainer();
+        if (!container) return;
+        document.querySelectorAll('[data-jellyseerr-space="true"]').forEach(previous => {
+            if (previous === container) return;
+            previous.style.marginBottom = previous.dataset.jellyseerrPreviousMargin || '';
+            delete previous.dataset.jellyseerrPreviousMargin;
+            delete previous.dataset.jellyseerrSpace;
+        });
+        if (container.dataset.jellyseerrSpace !== 'true') {
+            container.dataset.jellyseerrPreviousMargin = container.style.marginBottom || '';
+            container.dataset.jellyseerrSpace = 'true';
+        }
+        requestAnimationFrame(() => {
+            if (!host.classList.contains('is-open') || !container.isConnected) return;
+            const top = Math.ceil(container.getBoundingClientRect().bottom + 8);
+            host.style.top = `${top}px`;
+            host.style.maxHeight = `calc(100dvh - ${top}px - env(safe-area-inset-bottom))`;
+            container.style.marginBottom = `${Math.ceil(host.getBoundingClientRect().height) + 16}px`;
+        });
+    }
+
+    let hostResizeObserver = null;
+    let viewportListenersBound = false;
+    function observeSearchHost(host) {
+        if (hostResizeObserver || typeof ResizeObserver === 'undefined') return;
+        hostResizeObserver = new ResizeObserver(() => {
+            if (host.classList.contains('is-open')) reserveNativeSearchSpace(host);
+        });
+        hostResizeObserver.observe(host);
+        if (!viewportListenersBound) {
+            const reposition = () => {
+                if (host.classList.contains('is-open')) reserveNativeSearchSpace(host);
             };
-
-            icon.addEventListener('click', handleIconInteraction);
-            // Tap detection (rather than a bare touchend) so a scroll gesture that
-            // happens to start on the icon is not miscounted toward the double-tap
-            // filter toggle; preventDefault() suppresses the synthetic click that
-            // would otherwise double-count the tap via the click listener above.
-            addTouchTapListener(icon, (e) => { e.preventDefault(); handleIconInteraction(); });
-            icon.setAttribute('tabindex', '0');
-            icon.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    if (!isJellyseerrActive || !jellyseerrUserFound || !onToggleFilter) return;
-                    onToggleFilter();
-                }
-            });
-            anchor.appendChild(icon);
+            window.addEventListener('resize', reposition, { passive: true });
+            window.visualViewport?.addEventListener('resize', reposition, { passive: true });
+            window.visualViewport?.addEventListener('scroll', reposition, { passive: true });
+            viewportListenersBound = true;
         }
+    }
 
-        icon.classList.remove('is-active', 'is-disabled', 'is-no-user', 'is-filter-active');
-        if (isJellyseerrActive && jellyseerrUserFound) {
-            icon.title = JE.t(isJellyseerrOnlyMode ? 'jellyseerr_icon_active_filter_tooltip' : 'jellyseerr_icon_active_tooltip');
-            icon.classList.add('is-active');
-            if (isJellyseerrOnlyMode) icon.classList.add('is-filter-active');
-        } else if (isJellyseerrActive && !jellyseerrUserFound) {
-            icon.title = JE.t('jellyseerr_icon_no_user_tooltip');
-            icon.classList.add('is-no-user');
-        } else {
-            icon.title = JE.t('jellyseerr_icon_disabled_tooltip');
-            icon.classList.add('is-disabled');
-        }
+    ui.clearJellyseerrSearchSpace = clearNativeSearchSpace;
+    ui.ensureJellyseerrSearchSpace = function() {
+        const host = document.getElementById('jellyseerr-search-host');
+        if (host?.classList.contains('is-open')) reserveNativeSearchSpace(host);
     };
 
     /**
@@ -179,7 +178,7 @@
     }
 
     /**
-     * Renders Seerr search results into the search page with improved placement logic.
+     * Renders Seerr search results into the stable body-owned overlay host.
      * @param {Array} results - Array of search result items.
      * @param {string} query - The search query that generated these results.
      * @param {boolean} isJellyseerrOnlyMode - Whether the filter is active.
@@ -188,97 +187,20 @@
      */
     ui.renderJellyseerrResults = function(results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound) {
         console.log(`${logPrefix} Rendering results for query: "${query}"`);
-        const searchPage = document.querySelector('#searchPage');
-        if (!searchPage) {
-            console.warn(`${logPrefix} #searchPage not found. Cannot render results.`);
-            return;
+        let host = document.getElementById('jellyseerr-search-host');
+        if (!host) {
+            host = document.createElement('div');
+            host.id = 'jellyseerr-search-host';
+            document.body.appendChild(host);
         }
-
-        if (pendingRepositionObserver) {
-            pendingRepositionObserver.disconnect();
-            pendingRepositionObserver = null;
-        }
-        if (pendingRepositionTimeout) {
-            clearTimeout(pendingRepositionTimeout);
-            pendingRepositionTimeout = null;
-        }
-
-        searchPage.querySelectorAll('.jellyseerr-section').forEach(section => section.remove());
-
-        const sectionToInject = createJellyseerrSection(results, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
-
-        const primaryCardTypes = ['movie', 'series'];
-
-        /**
-         * Finds the last Movies/Shows section in the search results, identified
-         * by each card's data-type attribute rather than the (locale-dependent)
-         * section title text.
-         * @returns {HTMLElement|null}
-         */
-        function findLastPrimarySection() {
-            const allSections = Array.from(searchPage.querySelectorAll('.verticalSection:not(.jellyseerr-section)'));
-            for (let i = allSections.length - 1; i >= 0; i--) {
-                const cardType = allSections[i].querySelector('[data-type]')?.dataset.type?.toLowerCase();
-                if (cardType && primaryCardTypes.includes(cardType)) {
-                    return allSections[i];
-                }
-            }
-            return null;
-        }
-
-        /**
-         * Places the section after Movies/Shows if found, otherwise appends
-         * to the results container or search page.
-         * @returns {boolean} True if positioned after a primary section or
-         *   no-results message; false if using fallback placement.
-         */
-        function positionSection() {
-            const noResultsMessage = searchPage.querySelector('.noItemsMessage');
-            if (noResultsMessage) {
-                // Only write on change — this element is inside the subtree the
-                // reposition MutationObserver below watches, so an unconditional
-                // write re-triggers it every time, looping forever.
-                const desiredText = JE.t('jellyseerr_no_results_jellyfin', { query });
-                if (noResultsMessage.textContent !== desiredText) {
-                    noResultsMessage.textContent = desiredText;
-                }
-                if (sectionToInject.previousElementSibling !== noResultsMessage) {
-                    noResultsMessage.parentElement.insertBefore(sectionToInject, noResultsMessage.nextSibling);
-                }
-                return true;
-            }
-
-            const lastPrimary = findLastPrimarySection();
-            if (lastPrimary) {
-                if (sectionToInject.previousElementSibling !== lastPrimary) {
-                    lastPrimary.after(sectionToInject);
-                }
-                return true;
-            }
-
-            const resultsContainer = searchPage.querySelector('.searchResults, [class*="searchResults"], .padded-top.padded-bottom-page');
-            if (resultsContainer) {
-                if (sectionToInject.parentElement !== resultsContainer || resultsContainer.lastElementChild !== sectionToInject) {
-                    resultsContainer.appendChild(sectionToInject);
-                }
-            } else if (searchPage.lastElementChild !== sectionToInject) {
-                searchPage.appendChild(sectionToInject);
-            }
-            return false;
-        }
-
-        positionSection();
-
-        const observer = new MutationObserver(() => {
-            if (!sectionToInject.isConnected) {
-                observer.disconnect();
-                return;
-            }
-            positionSection();
-        });
-        observer.observe(searchPage, { childList: true, subtree: true });
-        pendingRepositionObserver = observer;
-        pendingRepositionTimeout = setTimeout(() => observer.disconnect(), 5000);
+        const isMobile = window.matchMedia('(max-width: 900px)').matches;
+        const resultLimit = isMobile ? 8 : 20;
+        const section = createJellyseerrSection(results.slice(0, resultLimit), isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
+        host.replaceChildren(section);
+        host.classList.toggle('is-open', results.length > 0);
+        observeSearchHost(host);
+        if (results.length > 0) reserveNativeSearchSpace(host);
+        else clearNativeSearchSpace();
     };
 
     /**
