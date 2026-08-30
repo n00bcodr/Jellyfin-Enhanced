@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
+using Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
@@ -22,13 +23,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly SeerrScanTriggerService _seerrScanTriggerService;
         private readonly ActivityFavoriteMonitor _activityFavoriteMonitor;
         private readonly WhatsNewService _whatsNewService;
+        private readonly ITaskManager _taskManager;
+        private readonly AnalyticsReportingService _analyticsReportingService;
 
         public string Name => "Jellyfin Enhanced Startup";
         public string Key => "JellyfinEnhancedStartup";
         public string Description => "Initializes Jellyfin Enhanced background services and performs necessary cleanups. The client script is injected at request time by the injection middleware.";
         public string Category => "Jellyfin Enhanced";
 
-        public StartupService(Logger logger, IApplicationPaths applicationPaths, AutoSeasonRequestMonitor autoSeasonRequestMonitor, AutoMovieRequestMonitor autoMovieRequestMonitor, WatchlistMonitor watchlistMonitor, TagCacheService tagCacheService, TagCacheMonitor tagCacheMonitor, SeerrScanTriggerService seerrScanTriggerService, ActivityFavoriteMonitor activityFavoriteMonitor, WhatsNewService whatsNewService)
+        public StartupService(Logger logger, IApplicationPaths applicationPaths, AutoSeasonRequestMonitor autoSeasonRequestMonitor, AutoMovieRequestMonitor autoMovieRequestMonitor, WatchlistMonitor watchlistMonitor, TagCacheService tagCacheService, TagCacheMonitor tagCacheMonitor, SeerrScanTriggerService seerrScanTriggerService, ActivityFavoriteMonitor activityFavoriteMonitor, WhatsNewService whatsNewService, ITaskManager taskManager, AnalyticsReportingService analyticsReportingService)
         {
             _logger = logger;
             _applicationPaths = applicationPaths;
@@ -44,6 +47,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // nothing else needs to call a method on it -- it just needs to exist.
             _activityFavoriteMonitor = activityFavoriteMonitor;
             _whatsNewService = whatsNewService;
+            _taskManager = taskManager;
+            _analyticsReportingService = analyticsReportingService;
         }
 
         public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
@@ -94,11 +99,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         _tagCacheService.LoadFromDisk();
                         _tagCacheMonitor.Initialize();
 
-                        // First install: if no cache exists, build it now so tags work immediately
+                        // No cache on disk: queue the dedicated BuildTagCacheTask
+                        // instead of building inline, so a slow build shows up
+                        // under its own "Refresh Tag Cache" task, not this one.
                         if (_tagCacheService.Count == 0)
                         {
-                            _logger.Info("[TagCache] No cache on disk, building initial cache...");
-                            _tagCacheService.BuildFullCache(null, CancellationToken.None);
+                            _logger.Info("[TagCache] No cache on disk; queuing the tag cache build.");
+                            _taskManager.QueueScheduledTask<BuildTagCacheTask>();
                         }
                     }
                     catch (System.Exception ex)
@@ -109,6 +116,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 _logger.Info("Jellyfin Enhanced Startup Task completed successfully.");
             }, cancellationToken);
+
+            // Fire-and-forget: sends now if a report is due, instead of waiting
+            // for AnalyticsReportTask's daily trigger. No-ops safely otherwise.
+            _ = _analyticsReportingService.ReportIfDueAsync(CancellationToken.None);
         }
 
         // Request-time script injection (Jellyfin 10.11 & 12).
