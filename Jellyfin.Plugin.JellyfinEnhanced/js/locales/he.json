@@ -267,6 +267,8 @@
     "hidden_content_add_back_to_cw": "הוסף בחזרה להמשך צפייה",
     "feature_auto_skip_outro": "{{icon:skip}} דלג אוטומטית על הסיום",
     "calendar_episode": "פרק",
+    "calendar_anime": "אנימה",
+    "calendar_open_in_shoko": "פתח ב-Shoko",
     "feature_tags_hide_on_hover": "{{icon:eye}} הסתר תגים במעבר עכבר",
     "jellyseerr_card_view_on_jellyseerr": "צפו ב-Seerr",
     "reviews_form_error_save": "שמירת הביקורת נכשלה. נא לנסות שוב.",

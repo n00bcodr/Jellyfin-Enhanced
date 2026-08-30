@@ -2914,6 +2914,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.RadarrUrlMappings,
                 config.BazarrUrlMappings,
 
+                // Shoko (single-instance, like Jellyseerr)
+                config.ShokoUrl,
+                config.ShokoUrlMappings,
+
                 // Multi-instance Sonarr/Radarr (no API keys exposed). Enabled flag is exposed so
                 // the config page can render a per-instance toggle and arr-links can filter
                 // disabled instances from the dropdown without a round-trip.
@@ -7911,7 +7915,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             T emptyResult,
             TimeSpan timeout,
             string contextLabel,
-            CancellationToken ct)
+            CancellationToken ct,
+            string authHeaderName = "X-Api-Key")
         {
             if (!await IsAllowedUrlAsync(instance.Url, ct).ConfigureAwait(false))
                 return (emptyResult, "URL rejected by SSRF guard");
@@ -7931,7 +7936,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 client.Timeout = timeout;
 
                 var request = new HttpRequestMessage(HttpMethod.Get, $"{url}{endpointPath}");
-                request.Headers.TryAddWithoutValidation("X-Api-Key", instance.ApiKey);
+                request.Headers.TryAddWithoutValidation(authHeaderName, instance.ApiKey);
                 var response = await client.SendAsync(request, ct);
 
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized
@@ -9355,8 +9360,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var sonarrTasks = sonarrInstances.Select(i => FetchSonarrCalendar(i, startIso, endIso, ParseDate, ct)).ToList();
             var radarrTasks = radarrInstances.Select(i => FetchRadarrCalendar(i, startIso, endIso, startDate, endDate, ParseDate, AddRelease, ct)).ToList();
 
+            // Shoko is single-instance (flat ShokoUrl/ShokoApiKey fields, no JSON instance list),
+            // so it fans out alongside sonarrTasks/radarrTasks as at most one extra task rather
+            // than a per-instance collection. Partial config (only one of URL/key set) surfaces
+            // an error without attempting a fetch; both empty means Shoko isn't in use at all —
+            // same as zero Sonarr/Radarr instances — and produces no error.
+            var shokoUrlSet = !string.IsNullOrWhiteSpace(config.ShokoUrl);
+            var shokoKeySet = !string.IsNullOrWhiteSpace(config.ShokoApiKey);
+            string? shokoConfigError = (shokoUrlSet != shokoKeySet)
+                ? "Shoko URL and API key must both be set"
+                : null;
+            // Admin-configurable set of AniDB episode types shown on the calendar (Shoko settings).
+            var shokoIncludedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (config.ShokoShowEpisodes) shokoIncludedTypes.Add("Episode");
+            if (config.ShokoShowSpecials) shokoIncludedTypes.Add("Special");
+            if (config.ShokoShowCredits) shokoIncludedTypes.Add("Credits");
+            if (config.ShokoShowTrailers) shokoIncludedTypes.Add("Trailer");
+            if (config.ShokoShowParodies) shokoIncludedTypes.Add("Parody");
+            if (config.ShokoShowOther) shokoIncludedTypes.Add("Other");
+
+            Task<(List<ArrItem> Items, string? Error)>? shokoTask = config.IsShokoConfigured()
+                ? FetchShokoCalendar(
+                    new ArrInstance { Name = "Shoko", Url = config.ShokoUrl, ApiKey = config.ShokoApiKey, UrlMappings = config.ShokoUrlMappings ?? "" },
+                    startDate, endDate, shokoIncludedTypes, ParseDate, ct)
+                : null;
+
             var sonarrCalResults = await Task.WhenAll(sonarrTasks);
             var radarrCalResults = await Task.WhenAll(radarrTasks);
+            var shokoCalResult = shokoTask != null ? await shokoTask : (Items: new List<ArrItem>(), Error: null);
 
             var errors = new List<object>();
             if (config.IsSonarrInstancesCorrupt())
@@ -9379,6 +9410,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (radarrCalResults[i].Error != null)
                     errors.Add(new { instanceName = radarrInstances[i].Name, source = "Radarr", reason = radarrCalResults[i].Error });
             }
+            if (shokoConfigError != null)
+                errors.Add(new { instanceName = "Shoko", source = "Shoko", reason = shokoConfigError });
+            events.AddRange(shokoCalResult.Items);
+            if (shokoCalResult.Error != null)
+                errors.Add(new { instanceName = "Shoko", source = "Shoko", reason = shokoCalResult.Error });
 
             // Resolve ItemIds against Jellyfin's library BEFORE dedup so the dedup tie-breaker can
             // prefer candidates that the current user can actually access (H4). Without this, dedup
@@ -9390,7 +9426,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 .Distinct()
                 .ToList();
 
-            var itemMap = await _dbContextFactory.GetItemIdsByProvidersBatchAsync(providerKeys);
+            var itemMap = await _dbContextFactory.GetItemIdsByProvidersBatchAsync(providerKeys, _libraryManager);
 
             foreach (var evt in events)
             {
@@ -9481,6 +9517,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     var seriesKey = evt.TvdbId?.ToString() ?? $"title:{evt.Title}";
                     dedupeKey = $"sonarr|{seriesKey}|S{evt.SeasonNumber}E{evt.EpisodeNumber}|{normalizedDate}";
+                }
+                else if (evt.Source == nameof(ArrType.Shoko))
+                {
+                    // Never cross-matched against sonarr|/radarr| keys.
+                    dedupeKey = $"shoko|{evt.ShokoSeriesId}|{evt.ShokoEpisodeId}|{normalizedDate}";
                 }
                 else
                 {
@@ -9718,6 +9759,64 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // out busy Radarr instances behind slow proxies.
                 timeout: TimeSpan.FromSeconds(15),
                 contextLabel: "Radarr calendar",
+                ct: ct);
+        }
+
+        private Task<(List<ArrItem> Items, string? Error)> FetchShokoCalendar(
+            ArrInstance instance, DateTime startDate, DateTime endDate,
+            HashSet<string> includedTypes, Func<object?, DateTime?> parseDate, CancellationToken ct)
+        {
+            var startParam = startDate.ToString("yyyy-MM-dd");
+            var endParam = endDate.ToString("yyyy-MM-dd");
+            return FetchAndMapAsync<List<ArrItem>>(
+                instance,
+                $"/api/v3/Dashboard/CalendarEpisodes?startDate={startParam}&endDate={endParam}&includeMissing=false&includeRestricted=false",
+                data =>
+                {
+                    var items = new List<ArrItem>();
+                    if (data == null) return items;
+                    foreach (var episode in data)
+                    {
+                        // Which AniDB episode types to show is admin-configurable (Shoko settings).
+                        var episodeType = (string?)episode.Type;
+                        if (episodeType == null || !includedTypes.Contains(episodeType)) continue;
+
+                        var airDate = parseDate((string?)episode.AirDate);
+                        if (!airDate.HasValue) continue;
+
+                        int? shokoSeriesId = episode.IDs?.ShokoSeries;
+                        int? shokoEpisodeId = episode.IDs?.ShokoEpisode;
+                        int? shokoFileId = episode.IDs?.ShokoFile;
+                        var seriesTitle = (string?)episode.SeriesTitle ?? "Unknown Series";
+                        var episodeTitle = (string?)episode.Title ?? "Unknown Episode";
+                        var episodeNumber = (int?)episode.Number ?? 0;
+
+                        items.Add(new ArrItem
+                        {
+                            Id = shokoEpisodeId?.ToString() ?? $"shoko-{shokoSeriesId}-{episodeType}-{episodeNumber}",
+                            Source = nameof(ArrType.Shoko),
+                            InstanceName = "Shoko",
+                            Type = "Series",
+                            Title = seriesTitle,
+                            EpisodeTitle = episodeTitle,
+                            Subtitle = $"{episodeType} {episodeNumber} - {episodeTitle}",
+                            ReleaseDate = airDate.Value.ToUniversalTime().ToString("o"),
+                            ReleaseType = "Anime",
+                            HasFile = shokoFileId.HasValue,
+                            Monitored = true,
+                            SeasonNumber = null,
+                            EpisodeNumber = episodeNumber,
+                            ShokoSeriesId = shokoSeriesId,
+                            ShokoEpisodeId = shokoEpisodeId,
+                            RootFolderPath = null
+                        });
+                    }
+                    return items;
+                },
+                emptyResult: new List<ArrItem>(),
+                timeout: TimeSpan.FromSeconds(15),
+                contextLabel: "Shoko calendar",
+                authHeaderName: "apikey",
                 ct: ct);
         }
 
@@ -10192,9 +10291,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [Authorize]
         [HttpGet("items/by-providers")]
-        public ActionResult<Guid?> GetItemIdByProviders([FromQuery] Dictionary<string, string>? providers)
+        public ActionResult<Guid?> GetItemIdByProviders(
+            [FromQuery] Dictionary<string, string>? providers,
+            [FromQuery] string? types = null)
         {
-            var itemIds = _itemRepository.GetItemIdsByProviders(providers);
+            List<BaseItemKind>? includeItemTypes = null;
+            if (!string.IsNullOrWhiteSpace(types))
+            {
+                includeItemTypes = types
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(t => Enum.TryParse<BaseItemKind>(t, true, out var kind) ? kind : (BaseItemKind?)null)
+                    .Where(k => k.HasValue)
+                    .Select(k => k!.Value)
+                    .ToList();
+            }
+
+            var itemIds = _itemRepository.GetItemIdsByProviders(providers, includeItemTypes);
 
             if (itemIds.Count == 0)
                 return BadRequest("No provider ids supplied or no items found");

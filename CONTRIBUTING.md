@@ -180,6 +180,17 @@ Before submitting a PR, ensure you've tested:
 - [ ] Doesn't break existing functionality
 - [ ] Mobile compatibility (if applicable)
 
+If your PR touches the Shoko calendar integration, also verify:
+
+- [ ] Shoko configured alone, and alongside Sonarr/Radarr instances — merged calendar renders anime, TV, and movie entries together without errors
+- [ ] An anime whose Jellyfin item was populated via Shokofin — card navigates to the correct series page
+- [ ] An anime with no Shokofin-matched Jellyfin item — card renders as an informational, non-clickable placeholder (no broken image, no dead link)
+- [ ] Restricted (H) anime is absent from the results
+- [ ] Episode type checkboxes in Shoko settings (Episodes, Specials, Credits, Trailers, Parodies, Other) correctly include/exclude matching calendar entries
+- [ ] Misconfigured Shoko (bad URL or API key) surfaces an error in the `errors` array without breaking Sonarr/Radarr results in the same response
+- [ ] The Anime sidebar toggle hides/shows Shoko-source cards independently of Sonarr/Radarr toggles
+- [ ] A title tracked in both Shoko and Sonarr shows as two separate calendar entries (confirms no accidental cross-source dedup)
+
 ## 📋 Feature Request Guidelines
 
 When proposing new features:

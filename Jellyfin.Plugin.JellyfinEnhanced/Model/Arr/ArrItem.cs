@@ -144,6 +144,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.Arr {
         public int? TmdbId { get; set; }
 
         /// <summary>
+        /// Shoko's own series ID (Shoko-sourced events only). Used both for the Shoko dedup
+        /// key and, together with <see cref="ShokoEpisodeId"/>, as the Shoko-native match key
+        /// against the "Shoko Series"/"Shoko Episode" provider IDs Shokofin writes on Jellyfin items.
+        /// </summary>
+        [JsonPropertyName("shokoSeriesId")]
+        public int? ShokoSeriesId { get; set; }
+
+        /// <summary>
+        /// Shoko's own episode ID (Shoko-sourced events only). See <see cref="ShokoSeriesId"/>.
+        /// </summary>
+        [JsonPropertyName("shokoEpisodeId")]
+        public int? ShokoEpisodeId { get; set; }
+
+        /// <summary>
         /// User-assigned instance name (e.g., "Anime", "4K Movies").
         /// Used to differentiate items from multiple Sonarr/Radarr instances.
         /// </summary>

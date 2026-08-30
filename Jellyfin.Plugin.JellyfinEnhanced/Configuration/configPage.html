@@ -1989,7 +1989,7 @@
                     <div class="je-info-banner je-fieldset-wide je-tab-intro">
                         <i class="material-icons je-info-icon">download_for_offline</i>
                         <div>
-                            Connect Jellyfin Enhanced to your <strong>Sonarr</strong>, <strong>Radarr</strong>, and <strong>Bazarr</strong> instances.<br/>Each service gets its own box below; add as many Sonarr/Radarr instances as you want (one per quality profile / library), plus a single Bazarr endpoint. Each instance can be enabled, disabled, or removed independently.
+                            Connect Jellyfin Enhanced to your <strong>Sonarr</strong>, <strong>Radarr</strong>, <strong>Bazarr</strong>, and <strong>Shoko</strong> instances.<br/>Each service gets its own box below; add as many Sonarr/Radarr instances as you want (one per quality profile / library), plus a single Bazarr endpoint and a single Shoko endpoint. Each instance can be enabled, disabled, or removed independently.
                         </div>
                     </div>
 
@@ -2053,6 +2053,61 @@
                                 <button is="emby-button" type="button" id="validateBazarrMappingsBtn" class="raised emby-button">Validate Mappings</button>
                             </div>
                             <div id="bazarrMappingsValidationResult"></div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset data-dep-setup>
+                        <legend class="sectionTitle"><img class="je-legend-icon-img" data-je-cdn="selfhst/svg/shoko-server.svg" alt="">Shoko</legend>
+                        <div class="configSection">
+                            <div class="je-setting-description" data-desc-for="shokoUrl">
+                                <div class="fieldDescription">Surfaces upcoming anime episodes from your Shoko Server collection on the Calendar page. Single instance, no admin-assigned name.</div>
+                            </div>
+
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="shokoUrl">Shoko URL</label>
+                                <input id="shokoUrl" is="emby-input" name="shokoUrl" type="text" placeholder="e.g., http://192.168.100.100:8111"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="shokoUrl">
+                                <div class="fieldDescription">If Shoko sits behind an auth proxy (Authentik, Authelia, Cloudflare Access, etc.), put the INTERNAL address here (e.g. <code>http://shoko:8111</code>) and use the URL Mappings below to redirect user-facing links to the public URL.</div>
+                            </div>
+
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="shokoApiKey">Shoko API Key</label>
+                                <div class="je-api-row">
+                                    <input id="shokoApiKey" is="emby-input" name="shokoApiKey" type="text" autocomplete="off" class="je-api-input"/>
+                                </div>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="shokoApiKey">
+                                <div class="fieldDescription">API key from Shoko's web UI (Settings &gt; API Keys &gt; Add API Key).</div>
+                            </div>
+
+                            <div class="je-setting-description">
+                                <div class="fieldDescription">Episode Types to Show on Calendar</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="shokoShowEpisodes" is="emby-checkbox" type="checkbox"/><span>Episodes</span></label></div>
+                            <div class="checkboxContainer"><label><input id="shokoShowSpecials" is="emby-checkbox" type="checkbox"/><span>Specials</span></label></div>
+                            <div class="checkboxContainer"><label><input id="shokoShowCredits" is="emby-checkbox" type="checkbox"/><span>Credits (OP/ED)</span></label></div>
+                            <div class="checkboxContainer"><label><input id="shokoShowTrailers" is="emby-checkbox" type="checkbox"/><span>Trailers</span></label></div>
+                            <div class="checkboxContainer"><label><input id="shokoShowParodies" is="emby-checkbox" type="checkbox"/><span>Parodies</span></label></div>
+                            <div class="checkboxContainer"><label><input id="shokoShowOther" is="emby-checkbox" type="checkbox"/><span>Other</span></label></div>
+                            <div class="je-setting-description" data-desc-for="shokoShowOther">
+                                <div class="fieldDescription">Which AniDB episode types appear as calendar events. Episodes are on by default; the rest are usually calendar noise.</div>
+                            </div>
+
+                            <details class="je-details-section">
+                                <summary>Advanced URL Mappings</summary>
+                                <div class="je-details-body">
+                                    <div class="inputContainer">
+                                        <label class="inputLabel" for="shokoUrlMappings">Shoko URL Mappings</label>
+                                        <textarea class="emby-textarea emby-input je-textarea-medium" id="shokoUrlMappings" name="shokoUrlMappings" placeholder="jellyfin_url|shoko_url"></textarea>
+                                    </div>
+                                    <div class="je-setting-description" data-desc-for="shokoUrlMappings">
+                                        <div class="fieldDescription">Map Jellyfin access URLs to Shoko URLs. Format: <code>jellyfin_url|shoko_url</code> (one per line).</div>
+                                    </div>
+                                    <button is="emby-button" type="button" id="validateShokoMappingsBtn" class="raised emby-button">Validate Mappings</button>
+                                    <div id="shokoMappingsValidationResult"></div>
+                                </div>
+                            </details>
                         </div>
                     </fieldset>
 
@@ -5389,6 +5444,15 @@
                 document.querySelector('#arrLinksEnabled').checked = config.ArrLinksEnabled;
                 document.querySelector('#bazarrUrlMappings').value = config.BazarrUrlMappings || '';
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
+                document.querySelector('#shokoUrlMappings').value = config.ShokoUrlMappings || '';
+                document.querySelector('#shokoUrl').value = config.ShokoUrl;
+                document.querySelector('#shokoApiKey').value = config.ShokoApiKey;
+                document.querySelector('#shokoShowEpisodes').checked = config.ShokoShowEpisodes !== false;
+                document.querySelector('#shokoShowSpecials').checked = config.ShokoShowSpecials === true;
+                document.querySelector('#shokoShowCredits').checked = config.ShokoShowCredits === true;
+                document.querySelector('#shokoShowTrailers').checked = config.ShokoShowTrailers === true;
+                document.querySelector('#shokoShowParodies').checked = config.ShokoShowParodies === true;
+                document.querySelector('#shokoShowOther').checked = config.ShokoShowOther === true;
                 document.querySelector('#showArrLinksAsText').checked = config.ShowArrLinksAsText;
                 document.querySelector('#arrLinksShowStatusSingle').checked = config.ArrLinksShowStatusSingle;
                 document.querySelector('#arrTagsSyncEnabled').checked = config.ArrTagsSyncEnabled;
@@ -5923,6 +5987,15 @@
             config.ArrLinksEnabled = document.querySelector('#arrLinksEnabled').checked;
             config.BazarrUrlMappings = document.querySelector('#bazarrUrlMappings').value || '';
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
+            config.ShokoUrlMappings = document.querySelector('#shokoUrlMappings').value || '';
+            config.ShokoUrl = document.querySelector('#shokoUrl').value;
+            config.ShokoApiKey = (document.querySelector('#shokoApiKey').value || '').replace(/\s/g, '');
+            config.ShokoShowEpisodes = document.querySelector('#shokoShowEpisodes').checked;
+            config.ShokoShowSpecials = document.querySelector('#shokoShowSpecials').checked;
+            config.ShokoShowCredits = document.querySelector('#shokoShowCredits').checked;
+            config.ShokoShowTrailers = document.querySelector('#shokoShowTrailers').checked;
+            config.ShokoShowParodies = document.querySelector('#shokoShowParodies').checked;
+            config.ShokoShowOther = document.querySelector('#shokoShowOther').checked;
             config.ShowArrLinksAsText = document.querySelector('#showArrLinksAsText').checked;
             config.ArrLinksShowStatusSingle = document.querySelector('#arrLinksShowStatusSingle').checked;
             config.ArrTagsSyncEnabled = document.querySelector('#arrTagsSyncEnabled').checked;
@@ -8281,6 +8354,17 @@
                 });
             }
 
+            // Shoko — no test endpoint; URL + API key presence is the best signal
+            var shokoUrl = readFieldValue('#shokoUrl');
+            var shokoApiKey = readFieldValue('#shokoApiKey');
+            if (shokoUrl || shokoApiKey) {
+                pushCard({
+                    id: 'shoko', name: 'Shoko', tab: 'arr', icon: 'live_tv',
+                    state: (shokoUrl && shokoApiKey) ? 'ok' : 'warn',
+                    detail: (shokoUrl && shokoApiKey) ? 'URL and API key configured' : (!shokoUrl ? 'URL missing' : 'API key missing')
+                });
+            }
+
             root.textContent = '';
             if (cards.length === 0) {
                 var empty = document.createElement('div');
@@ -8779,6 +8863,21 @@
                 _jeRunMappingValidation(
                     [{ id: 'bazarrUrlMappings', service: 'Bazarr' }],
                     'validateBazarrMappingsBtn', 'bazarrMappingsValidationResult'
+                );
+            });
+        }
+
+        var validateShokoMappingsBtn = document.getElementById('validateShokoMappingsBtn');
+        if (validateShokoMappingsBtn) {
+            validateShokoMappingsBtn.addEventListener('click', function() {
+                var mappings = document.getElementById('shokoUrlMappings');
+                if (!mappings || !mappings.value.trim()) {
+                    Dashboard.alert({ title: 'No Mappings', message: 'No Shoko URL mappings configured. Fill in the Shoko URL Mappings field above to validate.' });
+                    return;
+                }
+                _jeRunMappingValidation(
+                    [{ id: 'shokoUrlMappings', service: 'Shoko' }],
+                    'validateShokoMappingsBtn', 'shokoMappingsValidationResult'
                 );
             });
         }

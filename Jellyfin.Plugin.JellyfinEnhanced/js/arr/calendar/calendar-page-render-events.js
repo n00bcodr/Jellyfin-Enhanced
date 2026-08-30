@@ -15,6 +15,7 @@
 
   const SONARR_ICON_URL = window.JellyfinEnhanced.cdn.selfhst('svg/sonarr.svg');
   const RADARR_ICON_URL = window.JellyfinEnhanced.cdn.selfhst('svg/radarr-light-hybrid-light.svg');
+  const SHOKO_ICON_URL = window.JellyfinEnhanced.cdn.selfhst('svg/shoko-server.svg');
 
   // Get start and end dates for current view
   function getRangeForView(anchorDate, viewMode) {
@@ -98,6 +99,7 @@
       DigitalRelease: STATUS_COLORS.DigitalRelease,
       PhysicalRelease: STATUS_COLORS.PhysicalRelease,
       Episode: STATUS_COLORS.Episode,
+      Anime: STATUS_COLORS.Anime,
     };
 
     const themeVars = JE.themer?.getThemeVariables() || {};
@@ -112,6 +114,7 @@
     if (event.releaseType === "DigitalRelease") return JE.t("calendar_digital_release");
     if (event.releaseType === "PhysicalRelease") return JE.t("calendar_physical_release");
     if (event.releaseType === "Episode") return JE.t("calendar_episode");
+    if (event.releaseType === "Anime") return JE.t("calendar_anime");
     return "Release";
   }
 
@@ -242,11 +245,89 @@
     return encodeURI(url).replace(/'/g, "%27");
   }
 
+  // Reverse-proxy URL mapping (local copy of arr-links.js's helper).
+  function parseUrlMappings(mappingsString) {
+    const mappings = [];
+    if (!mappingsString) return mappings;
+    mappingsString.split('\n').forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      const parts = trimmed.split('|').map(p => p.trim());
+      if (parts.length === 2 && parts[0] && parts[1]) {
+        mappings.push({ jellyfinUrl: parts[0], arrUrl: parts[1] });
+      }
+    });
+    return mappings;
+  }
+
+  function getMappedUrl(urlMappings, defaultUrl) {
+    if (!defaultUrl) return null;
+    if (!urlMappings || urlMappings.length === 0) return defaultUrl.replace(/\/$/, '');
+    const serverAddress = (typeof ApiClient !== 'undefined' && ApiClient.serverAddress)
+      ? ApiClient.serverAddress()
+      : window.location.origin;
+    const currentUrl = serverAddress.replace(/\/+$/, '').toLowerCase();
+    for (const mapping of urlMappings) {
+      const normalizedJellyfinUrl = mapping.jellyfinUrl.replace(/\/+$/, '').toLowerCase();
+      if (currentUrl === normalizedJellyfinUrl) {
+        return mapping.arrUrl.replace(/\/$/, '');
+      }
+    }
+    return defaultUrl.replace(/\/$/, '');
+  }
+
+  // Deep link to a Shoko-sourced event's series page in Shoko's own web UI.
+  function getShokoWebUiUrl(event) {
+    if (event.source !== "Shoko" || !event.shokoSeriesId) return null;
+    const baseUrl = getMappedUrl(
+      parseUrlMappings(window.JellyfinEnhanced.pluginConfig?.ShokoUrlMappings || ''),
+      window.JellyfinEnhanced.pluginConfig?.ShokoUrl
+    );
+    if (!baseUrl) return null;
+    return `${baseUrl}/webui/collection/series/${event.shokoSeriesId}`;
+  }
+
+  // Type icon, wrapped in a link to Shoko when one is resolvable.
+  function renderTypeIconHtml(event, typeIcon, iconClass) {
+    const img = `<img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />`;
+    const shokoUrl = getShokoWebUiUrl(event);
+    if (!shokoUrl) return img;
+    const label = window.JellyfinEnhanced.t?.("calendar_open_in_shoko") || "Open in Shoko";
+    return `<a href="${escapeHtml(shokoUrl)}" target="_blank" rel="noopener noreferrer" class="je-calendar-shoko-link" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}" onclick="event.stopPropagation();">${img}</a>`;
+  }
+
+  // Shoko never sends image URLs to the client (no Shoko-authenticated URLs are exposed) — once
+  // matched to a Jellyfin item, its poster comes from Jellyfin's own image API instead.
+  function getShokoPosterUrl(event) {
+    if (event.source !== "Shoko" || typeof ApiClient === "undefined") return null;
+    const matchedItemId = event.itemId || event.itemEpisodeId;
+    if (!matchedItemId) return null;
+    return ApiClient.getImageUrl(matchedItemId, { type: "Primary", quality: 90 });
+  }
+
+  function getEventPosterUrl(event) {
+    return event.posterUrl || event.backdropUrl || getShokoPosterUrl(event);
+  }
+
+  // AniDB only has date-level granularity, so anime events never carry a time-of-day; sort them
+  // after time-stamped events landing on the same day instead of at the (misleadingly early)
+  // midnight position a plain date sort would give them.
+  function eventHasTime(event) {
+    return !!formatEventTime(event.releaseDate);
+  }
+
+  function compareEventsWithinDay(a, b) {
+    const aHasTime = eventHasTime(a);
+    const bHasTime = eventHasTime(b);
+    if (aHasTime !== bHasTime) return aHasTime ? -1 : 1;
+    return new Date(a.releaseDate) - new Date(b.releaseDate);
+  }
+
   function getEventBackgroundStyle(event, color) {
     if (state.settings.displayMode !== "backdrop") {
       return `background: ${color}20;`;
     }
-    const imageUrl = event.backdropUrl || event.posterUrl;
+    const imageUrl = event.backdropUrl || getShokoPosterUrl(event) || event.posterUrl;
     if (!imageUrl) {
       return `background: ${color}20;`;
     }
@@ -262,14 +343,14 @@
   function renderEvent(event) {
     const color = getEventColor(event);
     const releaseTypeLabel = formatReleaseLabel(event);
-    const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
+    const typeIcon = event.source === "Shoko" ? SHOKO_ICON_URL : (event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL);
     const sourceLabelRaw = buildInstanceLabel(event);
     const sourceLabel = escapeHtml(sourceLabelRaw);
-    const iconClass = event.source === "Sonarr" ? "je-calendar-sonarr-icon" : "je-calendar-radarr-icon";
+    const iconClass = event.source === "Sonarr" ? "je-calendar-sonarr-icon" : (event.source === "Shoko" ? "je-calendar-shoko-icon" : "je-calendar-radarr-icon");
     const subtitle = event.subtitle ? `<span class="je-calendar-event-subtitle">${escapeHtml(event.subtitle)}</span>` : "";
     const hasFileClass = event.hasFile ? " je-has-file" : "";
     const tooltip = buildEventTooltip(event);
-    const hasBackdropClass = (state.settings.displayMode === "backdrop" && (event.backdropUrl || event.posterUrl)) ? " je-has-backdrop" : "";
+    const hasBackdropClass = (state.settings.displayMode === "backdrop" && getEventPosterUrl(event)) ? " je-has-backdrop" : "";
     const statusIcons = renderStatusIcons(event);
     const statusTop = statusIcons ? `<div class="je-calendar-event-status-top">${statusIcons}</div>` : "";
     const timeText = formatTimeText(event);
@@ -282,7 +363,7 @@
         <span class="je-calendar-event-title">${escapeHtml(event.title)}</span>
         ${subtitle}
         <div class="je-calendar-event-type">
-          <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
+          ${renderTypeIconHtml(event, typeIcon, iconClass)}
           <span>${releaseTypeLabel} • <span class="je-arr-badge" title="${sourceLabel}">${sourceLabel}</span></span>
           ${timeText ? ` • ${timeText}` : ""}${playButton}
         </div>
@@ -294,10 +375,10 @@
   function renderAgendaEvent(event) {
     const color = getEventColor(event);
     const releaseTypeLabel = formatReleaseLabel(event);
-    const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
+    const typeIcon = event.source === "Shoko" ? SHOKO_ICON_URL : (event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL);
     const sourceLabelRaw = buildInstanceLabel(event);
     const sourceLabel = escapeHtml(sourceLabelRaw);
-    const iconClass = event.source === "Sonarr" ? "je-sonarr-icon" : "je-radarr-icon";
+    const iconClass = event.source === "Sonarr" ? "je-sonarr-icon" : (event.source === "Shoko" ? "je-shoko-icon" : "je-radarr-icon");
     const subtitle = event.subtitle || "";
     const timeLabel = formatEventTime(event.releaseDate);
     const hasFileClass = event.hasFile ? " je-has-file" : "";
@@ -318,6 +399,7 @@
     else if (event.releaseType === "DigitalRelease") materialIcon = "ondemand_video";
     else if (event.releaseType === "PhysicalRelease") materialIcon = "album";
     else if (event.releaseType === "Episode") materialIcon = "tv_guide";
+    else if (event.releaseType === "Anime") materialIcon = "animation";
 
     const subtitleHtml = subtitle
       ? `<span class="je-calendar-agenda-subtitle">${escapeHtml(subtitle)}</span>`
@@ -336,7 +418,7 @@
             ${subtitleHtml}
           </div>
           <div class="je-calendar-agenda-event-meta">
-            <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
+            ${renderTypeIconHtml(event, typeIcon, iconClass)}
             <span>${releaseTypeLabel}</span>
             <span>•</span>
             <span class="je-arr-badge" title="${sourceLabel}">${sourceLabel}</span>
@@ -351,12 +433,12 @@
     if (!events.length) return "";
 
     return events.map((event) => {
-      const poster = event.posterUrl || event.backdropUrl;
+      const poster = getEventPosterUrl(event);
       const releaseTypeLabel = formatReleaseLabel(event);
-      const typeIcon = event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL;
+      const typeIcon = event.source === "Shoko" ? SHOKO_ICON_URL : (event.type === "Series" ? SONARR_ICON_URL : RADARR_ICON_URL);
       const sourceLabelRaw = buildInstanceLabel(event);
       const sourceLabel = escapeHtml(sourceLabelRaw);
-      const iconClass = event.source === "Sonarr" ? "je-calendar-sonarr-icon" : "je-calendar-radarr-icon";
+      const iconClass = event.source === "Sonarr" ? "je-calendar-sonarr-icon" : (event.source === "Shoko" ? "je-calendar-shoko-icon" : "je-calendar-radarr-icon");
       const statusIcons = renderStatusIcons(event);
       const timePill = buildTimePill(event);
       const playButton = event.hasFile ? `<button class="je-calendar-play-btn je-calendar-play-btn-card" title="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" aria-label="${window.JellyfinEnhanced.t?.("jellyseerr_btn_available")}" data-event-id="${escapeHtml(event.id)}"><span class="material-icons">play_arrow</span></button>` : "";
@@ -376,7 +458,7 @@
                 </div>
                 ${event.subtitle ? `<div class="je-calendar-card-subtitle">${escapeHtml(event.subtitle)}</div>` : `<div class="je-calendar-card-subtitle"></div>`}
                 <div class="je-calendar-card-meta">
-                  <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
+                  ${renderTypeIconHtml(event, typeIcon, iconClass)}
                   <span>${releaseTypeLabel}</span>
                   <span>•</span>
                   <span class="je-arr-badge" title="${sourceLabel}">${sourceLabel}</span>
@@ -396,7 +478,7 @@
           </div>
           ${event.subtitle ? `<div class="je-calendar-card-subtitle">${escapeHtml(event.subtitle)}</div>` : `<div class="je-calendar-card-subtitle"></div>`}
           <div class="je-calendar-card-meta">
-            <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
+            ${renderTypeIconHtml(event, typeIcon, iconClass)}
             <span>${releaseTypeLabel}</span>
             <span>•</span>
             <span class="je-arr-badge" title="${sourceLabel}">${sourceLabel}</span>
@@ -415,4 +497,6 @@
   P.renderEvent = renderEvent;
   P.renderAgendaEvent = renderAgendaEvent;
   P.renderCardItems = renderCardItems;
+  P.eventHasTime = eventHasTime;
+  P.compareEventsWithinDay = compareEventsWithinDay;
 })();

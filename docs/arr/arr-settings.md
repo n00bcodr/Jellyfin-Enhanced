@@ -95,6 +95,37 @@ The original `SonarrUrl`, `SonarrApiKey`, `RadarrUrl`, and `RadarrApiKey` fields
 
 ---
 
+## Shoko
+
+Adds upcoming anime episodes from your Shoko Server collection to the [Calendar page](#calendar-page-settings), alongside Sonarr/Radarr releases. Single instance — one Shoko server per household, the same shape as [Seerr](../seerr/seerr-settings.md).
+
+### Instance Fields
+
+| Field | Required | Description |
+|---|---|---|
+| **Shoko URL** | Yes | Base URL of your Shoko Server (e.g., `http://192.168.1.100:8111`) |
+| **Shoko API Key** | Yes | API key generated in Shoko's own web UI |
+| **Shoko URL Mappings** | No | Reverse-proxy URL remapping, same format as the other *arr URL mappings |
+
+### Generating a Shoko API Key
+
+1. In Shoko's web UI, go to **Settings** → **API Keys**
+2. Click **Add API Key** and give it a name (e.g. `Jellyfin Enhanced`)
+3. Copy the generated key into the **Shoko API Key** field on the plugin's ***arr Settings** tab
+
+### Setup
+
+1. Open plugin settings → ***arr Settings** tab
+2. Fill in **Shoko URL** and **Shoko API Key**
+3. Optionally add **Shoko URL Mappings** if Shoko sits behind a reverse proxy — see [URL Mappings (per-instance)](#url-mappings-per-instance) above for the format
+4. Click **Save**
+5. Enable the [Calendar page](#calendar-page-settings) if you haven't already — anime episodes appear there automatically once Shoko is configured
+
+!!! note
+    Anime cards are matched to your Jellyfin library via [Shokofin](https://github.com/ShokoAnime/Shokofin)'s provider IDs. Anime not yet imported into Jellyfin still appears on the calendar, but the card isn't clickable until Shokofin brings it into your library. See [anime calendar events](../arr/arr-features.md#anime-calendar-events-shoko) for full scope details.
+
+---
+
 ## Calendar Page Settings
 
 Found in the ***arr Settings** tab under "Calendar Page".

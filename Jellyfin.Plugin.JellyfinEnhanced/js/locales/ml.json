@@ -279,6 +279,8 @@
     "hidden_content_add_back_to_cw": "Add back to Continue Watching",
     "feature_auto_skip_outro": "{{icon:skip}} Auto-Skip Outro",
     "calendar_episode": "Episode",
+    "calendar_anime": "Anime",
+    "calendar_open_in_shoko": "Open in Shoko",
     "feature_tags_hide_on_hover": "{{icon:eye}} Hide Tags on Hover",
     "jellyseerr_card_view_on_jellyseerr": "View on Seerr",
     "reviews_form_error_save": "Failed to save review. Please try again.",

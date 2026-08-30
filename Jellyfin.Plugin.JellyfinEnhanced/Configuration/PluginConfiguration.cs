@@ -189,6 +189,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SonarrInstances = "[]";
             RadarrInstances = "[]";
 
+            // Shoko Settings (single-instance, like Jellyseerr — Shoko is one server per household)
+            ShokoUrl = "";
+            ShokoApiKey = "";
+            ShokoUrlMappings = "";
+            ShokoShowEpisodes = true;
+            ShokoShowSpecials = false;
+            ShokoShowCredits = false;
+            ShokoShowTrailers = false;
+            ShokoShowParodies = false;
+            ShokoShowOther = false;
+
             // Arr Tags Sync Settings
             ArrTagsSyncEnabled = false;
             SonarrApiKey = "";
@@ -628,6 +639,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Multi-Instance Sonarr/Radarr Support (JSON arrays of ArrInstance)
         public string SonarrInstances { get; set; } = "[]";
         public string RadarrInstances { get; set; } = "[]";
+
+        // Shoko Settings — single-instance (URL + API key), like Jellyseerr, not the
+        // Sonarr/Radarr instance-list pattern: Shoko is one server per household.
+        public string ShokoUrl { get; set; }
+        public string ShokoApiKey { get; set; }
+        public string ShokoUrlMappings { get; set; }
+
+        // Which AniDB episode types to include on the calendar — Credits/Trailer/Parody/Other
+        // default off since they're calendar noise for most users.
+        public bool ShokoShowEpisodes { get; set; }
+        public bool ShokoShowSpecials { get; set; }
+        public bool ShokoShowCredits { get; set; }
+        public bool ShokoShowTrailers { get; set; }
+        public bool ShokoShowParodies { get; set; }
+        public bool ShokoShowOther { get; set; }
 
         // Arr Tags Sync Settings
         public bool ArrTagsSyncEnabled { get; set; }
@@ -1080,6 +1106,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             _ = TryDeserializeInstances(RadarrInstances, out var r);
             return r == InstanceParseResult.Corrupt;
         }
+
+        /// <summary>
+        /// True when both <see cref="ShokoUrl"/> and <see cref="ShokoApiKey"/> are set. Unlike
+        /// Sonarr/Radarr, there is no JSON instance list to corrupt — Shoko is two flat fields.
+        /// </summary>
+        public bool IsShokoConfigured()
+            => !string.IsNullOrWhiteSpace(ShokoUrl) && !string.IsNullOrWhiteSpace(ShokoApiKey);
 
         private enum InstanceParseResult { ExplicitlyEmpty, Parsed, Corrupt }
 
