@@ -66,7 +66,7 @@
   border-radius: 4px;
   padding: 2px 5px;
   background: rgba(155, 89, 182, 0.15) !important;
-  color: #d199f5 !important; /* this impacts ALL rendered code */
+  color: #c472f7 !important; /* this impacts ALL rendered code */
 }
 
 /* Annotations wider, for more content */

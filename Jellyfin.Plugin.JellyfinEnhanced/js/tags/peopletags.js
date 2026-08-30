@@ -17,7 +17,7 @@
         const logPrefix = '🪼 Jellyfin Enhanced: People Tags:';
         const CACHE_KEY = 'JellyfinEnhanced-peopleTagsCache';
         const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-peopleTagsCacheTimestamp';
-        const CACHE_TTL = (JE.pluginConfig?.PeopleTagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
+        const CACHE_TTL = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
 
         // Country mapping dictionary
         const COUNTRY_MAP = {

@@ -64,6 +64,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // for misses — see WikidataAwardsService for details.
             serviceCollection.AddSingleton<WikidataAwardsService>();
             serviceCollection.AddSingleton<MdblistService>();
+            // Opt-in anonymous usage reporting: UsageEventCounterService holds the
+            // current period's counters (debounced disk persistence, same pattern
+            // as WikidataAwardsService); AnalyticsReportingService builds/sends the
+            // payload on AnalyticsReportTask's cadence. See AnalyticsReportingService
+            // for what's collected and why it's safe to ship the anon key in-client.
+            serviceCollection.AddSingleton<UsageEventCounterService>();
+            serviceCollection.AddSingleton<AnalyticsReportingService>();
+            serviceCollection.AddTransient<AnalyticsReportTask>();
             serviceCollection.AddTransient<RefreshCdnAssetsTask>();
             serviceCollection.AddTransient<ArrTagsSyncTask>();
             serviceCollection.AddTransient<MdblistRatingsFetchTask>();

@@ -47,7 +47,7 @@
             addMainStyles, addSeasonModalStyles, updateJellyseerrIcon,
             renderJellyseerrResults, showMovieRequestModal, showSeasonSelectionModal,
             showCollectionRequestModal, hideHoverPopover, toggleHoverPopoverLock, updateJellyseerrResults,
-            createJellyseerrCard
+            createJellyseerrCard, clearInjectedSearchResults
         } = JE.jellyseerrUI;
 
         /**
@@ -74,8 +74,7 @@
                         searchResults.insertBefore(jellyseerrSection, searchResults.firstChild);
                     }
                 }
-                const noResultsMessage = searchPage.querySelector('.noItemsMessage');
-                if (noResultsMessage) noResultsMessage.classList.add('section-hidden');
+                searchPage.querySelectorAll('.noItemsMessage').forEach(el => el.classList.add('section-hidden'));
 
                 JE.toast(JE.t('jellyseerr_toast_filter_on'), 3000);
 
@@ -87,8 +86,7 @@
                     jellyseerrOriginalPosition.remove();
                     jellyseerrOriginalPosition = null;
                 }
-                const noResultsMessage = searchPage.querySelector('.noItemsMessage');
-                if (noResultsMessage) noResultsMessage.classList.remove('section-hidden');
+                searchPage.querySelectorAll('.noItemsMessage').forEach(el => el.classList.remove('section-hidden'));
 
                 hiddenSections = [];
                 JE.toast(JE.t('jellyseerr_toast_filter_off'), 3000);
@@ -126,7 +124,17 @@
             resetSearchPagination();
             searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
 
-            const data = await search(query, 1, { skipCache });
+            // Cancel any still-in-flight search/collection requests from the
+            // previous keystroke instead of letting them queue up.
+            const signal = JE.requestManager?.getAbortSignal('jellyseerr-search');
+
+            let data;
+            try {
+                data = await search(query, 1, { skipCache, signal });
+            } catch (error) {
+                if (error.name === 'AbortError') return; // superseded by a newer search
+                throw error;
+            }
             if (lastProcessedQuery !== query) return; // superseded by a newer search while this was in flight
 
             let results = data.results || [];
@@ -141,7 +149,7 @@
                 renderJellyseerrResults(results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
 
                 // Enrich with collections in the background, then re-render
-                prepareResultsWithCollections(results).then(enrichedResults => {
+                prepareResultsWithCollections(results, { signal }).then(enrichedResults => {
                     if (lastProcessedQuery !== query) return;
                     if (JE.hiddenContent) enrichedResults = JE.hiddenContent.filterJellyseerrResults(enrichedResults, 'search');
                     if (enrichedResults.length > results.length) {
@@ -222,14 +230,14 @@
          * @param {Array} rawResults Raw search results from Seerr.
          * @returns {Promise<Array>} Enriched results including collections and badges.
          */
-        async function prepareResultsWithCollections(rawResults) {
+        async function prepareResultsWithCollections(rawResults, options = {}) {
             let results = rawResults || [];
             if (JE.pluginConfig.ShowCollectionsInSearch === false) {
                 return results;
             }
 
             try {
-                results = await JE.jellyseerrAPI.addCollections(results);
+                results = await JE.jellyseerrAPI.addCollections(results, options);
             } catch (e) {
                 console.debug(`${logPrefix} Collection addition failed:`, e);
             }
@@ -290,8 +298,9 @@
                 resetSearchPagination();
                 searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
 
-                const data = await search(query, 1);
-                let results = await prepareResultsWithCollections(data.results || []);
+                const signal = JE.requestManager?.getAbortSignal('jellyseerr-search');
+                const data = await search(query, 1, { signal });
+                let results = await prepareResultsWithCollections(data.results || [], { signal });
                 if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
 
                 searchCurrentPage = data.page || 1;
@@ -310,7 +319,9 @@
                     setupSearchInfiniteScroll(query);
                 }
             } catch (error) {
-                console.warn(`${logPrefix} Failed to refresh Seerr data:`, error);
+                if (error.name !== 'AbortError') {
+                    console.warn(`${logPrefix} Failed to refresh Seerr data:`, error);
+                }
             }
         }
 
@@ -327,7 +338,7 @@
                     clearTimeout(debounceTimeout);
                     debounceTimeout = setTimeout(() => {
                         if (!isJellyseerrActive) {
-                            document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
+                            clearInjectedSearchResults();
                             return;
                         }
                         const latestQuery = searchInput.value;
@@ -341,7 +352,7 @@
                         }
                         lastProcessedQuery = latestQuery;
                         resetSearchPagination();
-                        document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
+                        clearInjectedSearchResults();
                         fetchAndRenderResults(latestQuery);
                     }, 300);
                 } else {
@@ -349,7 +360,7 @@
                     lastProcessedQuery = null;
                     isJellyseerrOnlyMode = false;
                     resetSearchPagination();
-                    document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
+                    clearInjectedSearchResults();
                 }
             };
 
@@ -395,7 +406,7 @@
                     lastProcessedQuery = null;
                     isJellyseerrOnlyMode = false;
                     resetSearchPagination();
-                    document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
+                    clearInjectedSearchResults();
                     return;
                 }
                 tryAttachSearchListener();

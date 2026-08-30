@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Arr;
 using MediaBrowser.Model.Plugins;
 
@@ -367,6 +368,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerCurrentSeasonStripTitle = true;
             SpoilerCurrentSeasonStripOverview = true;
             SpoilerCurrentSeasonStripRatings = true;
+
+            // Usage Statistics (opt-in anonymous analytics). Off by default;
+            // sub-categories default on so that when an admin opts in for the
+            // first time, everything is shared unless they deliberately narrow
+            // it down (see AnalyticsHasBeenConfigured / the config-page cascade).
+            AnalyticsEnabled = false;
+            AnalyticsShareFeatureFlags = true;
+            AnalyticsShareUsageCounts = true;
+            AnalyticsShareDataSizes = true;
+            AnalyticsHasBeenConfigured = false;
+            AnalyticsInstallId = string.Empty;
+            AnalyticsInstallSecret = string.Empty;
+            AnalyticsReportIntervalDays = 15;
+            AnalyticsLastReportedAt = 0;
+            AnalyticsLastPayloadJson = string.Empty;
+            AnalyticsLastReportedPluginVersion = string.Empty;
+            AnalyticsForbiddenSinceLastSuccess = 0;
         }
 
         // Maintenance Mode
@@ -376,8 +394,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Sent as a native Jellyfin broadcast to all active sessions.</summary>
         public string MaintenanceModeNotificationMessage { get; set; } = string.Empty;
         /// <summary>"none" | "disable_accounts" | "disable_remote" | "both"</summary>
+        [AnalyticsInclude]
         public string MaintenanceModeAction { get; set; } = "disable_accounts";
-        /// <summary>"all" or a JSON array of user ID strings.</summary>
+        /// <summary>
+        /// "all" or a JSON array of user ID strings. Deliberately NOT
+        /// [AnalyticsInclude]: the raw value can hold real Jellyfin user
+        /// GUIDs, so analytics shares only a derived "all"/"selected" — see
+        /// AnalyticsReportingService.GetStringSettings.
+        /// </summary>
         public string MaintenanceModeAffectedUsers { get; set; } = "all";
 
         // Jellyfin Enhanced Settings
@@ -390,11 +414,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Kill-switch for the request-time <script> injection middleware
         // (ScriptInjectionStartupFilter). When true, the middleware no-ops and the
         // plugin falls back to the legacy on-disk index.html rewrite. Default false.
+        [AnalyticsExclude]
         public bool DisableScriptInjectionMiddleware { get; set; }
 
         // Kill-switch for the request-time branding-asset middleware
         // (BrandingAssetStartupFilter). When true, custom logo/banner/favicon images
         // are not served and jellyfin-web's stock assets are used. Default false.
+        [AnalyticsExclude]
         public bool DisableBrandingMiddleware { get; set; }
 
         // Jellyfin Elsewhere Settings
@@ -510,8 +536,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int DefaultSubtitleSize { get; set; }
         public int DefaultSubtitleFont { get; set; }
         public bool DisableCustomSubtitleStyles { get; set; }
+        [AnalyticsInclude]
         public string QualityTagsPosition { get; set; } = "top-left";
+        [AnalyticsInclude]
         public string GenreTagsPosition { get; set; } = "top-right";
+        [AnalyticsInclude]
         public string LanguageTagsPosition { get; set; } = "bottom-left";
         /// <summary>
         /// Comma-separated list of language codes (e.g. "en,ja,fr") that should be
@@ -520,6 +549,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// code here are shown first, in the order listed; remaining slots are then
         /// filled with the item's other languages in their original detection order.
         /// Empty (default) preserves the pre-existing unprioritized behavior.
+        /// Deliberately NOT [AnalyticsInclude]: this is a free-text box (the
+        /// UI invites language names, not just codes), so analytics shares a
+        /// normalized codes-only derivation instead — see
+        /// AnalyticsReportingService.GetStringSettings.
         /// </summary>
         public string LanguageTagsPriority { get; set; } = string.Empty;
         /// <summary>
@@ -531,6 +564,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// is empty.
         /// </summary>
         public bool LanguageTagsPriorityStrict { get; set; }
+        [AnalyticsInclude]
         public string RatingTagsPosition { get; set; } = "bottom-right";
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool GenreTagsEnabled { get; set; }
@@ -667,10 +701,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// this flag to ensure it never deletes a Custom Tabs entry the admin
         /// created manually. Hidden field — no UI; managed entirely by saveConfig.
         /// </summary>
+        [AnalyticsExclude]
         public bool BookmarksCustomTabJeOwned { get; set; }
 
         // Icon Settings
         public bool UseIcons { get; set; }
+        [AnalyticsInclude]
         public string IconStyle { get; set; }
 
         // Extras Settings
@@ -710,6 +746,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public bool ActivityFeedUseNativeTab { get; set; }
         public bool ActivityFeedAutoCreateCustomTab { get; set; }
+        [AnalyticsExclude]
         public bool ActivityFeedCustomTabJeOwned { get; set; }
 
         // Requests Page Settings (Sonarr/Radarr Queue Monitoring)
@@ -725,6 +762,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public bool DownloadsUseNativeTab { get; set; }
         public bool DownloadsAutoCreateCustomTab { get; set; }
+        [AnalyticsExclude]
         public bool DownloadsCustomTabJeOwned { get; set; }
         public bool DownloadsPagePollingEnabled { get; set; }
         public int DownloadsPollIntervalSeconds { get; set; }
@@ -747,6 +785,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public bool CalendarUseNativeTab { get; set; }
         public bool CalendarAutoCreateCustomTab { get; set; }
+        [AnalyticsExclude]
         public bool CalendarCustomTabJeOwned { get; set; }
         public string CalendarFirstDayOfWeek { get; set; }
         public string CalendarTimeFormat { get; set; }
@@ -762,6 +801,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RecommendationsUseCustomTabs { get; set; }
         public bool RecommendationsUseNativeTab { get; set; }
         public bool RecommendationsAutoCreateCustomTab { get; set; }
+        [AnalyticsExclude]
         public bool RecommendationsCustomTabJeOwned { get; set; }
 
         // Hidden Content Settings
@@ -777,6 +817,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public bool HiddenContentUseNativeTab { get; set; }
         public bool HiddenContentAutoCreateCustomTab { get; set; }
+        [AnalyticsExclude]
         public bool HiddenContentCustomTabJeOwned { get; set; }
 
         // Admin cross-user hidden-content view + management
@@ -898,6 +939,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Placeholder for stripped Overview so the client doesn't render a
         // "Description" header over blank. Configurable for localisation.
         public string SpoilerOverviewPlaceholder { get; set; } = "Spoiler Guard activated";
+
+        // Usage Statistics: opt-in anonymous analytics reported to the
+        // Jellyfin Enhanced community analytics project. See
+        // AnalyticsReportingService for exactly what's collected; every
+        // category below is independently toggleable and the master switch
+        // defaults off. A live "what would be sent" preview on the config
+        // page reads the same AnalyticsReportingService.BuildPayload the
+        // real report uses, so it can never drift from reality.
+        public bool AnalyticsEnabled { get; set; }
+        /// <summary>Shares a boolean on/off snapshot of every feature toggle (never URLs/keys/free text).</summary>
+        public bool AnalyticsShareFeatureFlags { get; set; } = true;
+        /// <summary>Shares per-feature usage counters (e.g. "seerr.request_submitted": 12), reset each period after a successful send.</summary>
+        public bool AnalyticsShareUsageCounts { get; set; } = true;
+        /// <summary>Shares byte sizes only (never contents) of the plugin's own on-disk data files; see AnalyticsReportingService.GetDataFileSizes for exactly what's included.</summary>
+        public bool AnalyticsShareDataSizes { get; set; } = true;
+        /// <summary>
+        /// Hidden field, no UI. True once the admin has explicitly saved the
+        /// master toggle on at least once; used only to decide whether
+        /// turning the master ON should cascade the three sub-toggles to ON
+        /// (first time) or leave them exactly as the admin last set them
+        /// (every time after).
+        /// </summary>
+        public bool AnalyticsHasBeenConfigured { get; set; }
+        /// <summary>Hidden field, no UI. Server-minted (not client-generated) on first opt-in; never derived from anything identifying.</summary>
+        public string AnalyticsInstallId { get; set; } = string.Empty;
+        /// <summary>Hidden field, no UI. High-entropy secret issued alongside AnalyticsInstallId at registration; required on every report so a guessed/leaked install id alone can't be used to overwrite or impersonate this install.</summary>
+        public string AnalyticsInstallSecret { get; set; } = string.Empty;
+        /// <summary>Admin-configurable reporting cadence in days. Clamped to 7-30 wherever it's read.</summary>
+        public int AnalyticsReportIntervalDays { get; set; } = 15;
+        /// <summary>Hidden field, no UI. Unix ms of the last successful report; drives the config page's "Last sent" display and the task's due-check.</summary>
+        public long AnalyticsLastReportedAt { get; set; }
+        /// <summary>Hidden field, no UI. The exact JSON payload from the last successful report, shown verbatim on the config page.</summary>
+        public string AnalyticsLastPayloadJson { get; set; } = string.Empty;
+        /// <summary>Hidden field, no UI. Plugin version as of the last successful report; a mismatch against the running version forces an immediate report (bypassing AnalyticsReportIntervalDays) so version-adoption data isn't stale for up to 30 days after an upgrade.</summary>
+        public string AnalyticsLastReportedPluginVersion { get; set; } = string.Empty;
+        /// <summary>
+        /// Hidden field, no UI. Count of report_stats 403 responses since the
+        /// last successful report. PERSISTED (not an in-memory field) because
+        /// send attempts happen at most daily: an in-memory counter on a
+        /// server restarted every day or two would never reach the
+        /// re-registration threshold and the install would 403 forever — the
+        /// exact stuck state the threshold logic exists to escape.
+        /// </summary>
+        public int AnalyticsForbiddenSinceLastSuccess { get; set; }
+
+        /// <summary>
+        /// The only shape of MaintenanceModeAffectedUsers that may ever leave
+        /// the server: the raw value can be a JSON array of real Jellyfin user
+        /// GUIDs. Shared by the analytics payload (AnalyticsReportingService.
+        /// GetStringSettings) and the anonymous public-config endpoint so the
+        /// two can never drift apart or regress to exposing the raw value.
+        /// Empty/unset means the default, i.e. "all".
+        /// </summary>
+        public static string DeriveAffectedUsersShape(string? value) =>
+            string.IsNullOrEmpty(value) || value == "all" ? "all" : "selected";
 
         /// <summary>
         /// Returns configured Sonarr instances, falling back to legacy single-instance fields for migration.
