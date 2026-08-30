@@ -21,6 +21,10 @@
             /* LAYOUT & ICONS */
             .jellyseerr-section { margin-bottom: 1em; }
             .jellyseerr-section .itemsContainer { }
+            /* Hides the native (React-owned) no-results message while the plugin
+               shows its own replacement — the native element must never be
+               mutated directly or React's reconciler crashes (NotFoundError). */
+            .jellyseerr-native-message-hidden { display: none !important; }
             #jellyseerr-search-icon { position: absolute; right: 10px; top: 68%; transform: translateY(-50%); user-select: none; z-index: 10; transition: filter .2s, opacity .2s, transform .2s; }
             .inputContainer { position: relative !important; }
             .jellyseerr-icon { width: 30px; height: 50px; filter: drop-shadow(2px 2px 6px #000); }
