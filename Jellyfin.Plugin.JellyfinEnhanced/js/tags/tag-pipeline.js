@@ -42,6 +42,7 @@
         '#pluginCatalogPage .cardImageContainer',
         '#devicesPage .cardImageContainer',
         '#mediaLibraryPage .cardImageContainer',
+        '.listItemImage:not(.listItemImage-large)', // Small list rows (Playlists, Albums); listItemImage-large (e.g. episode lists) is big enough for overlays
     ];
 
     /**
@@ -101,11 +102,35 @@
 
     /**
      * Get the first episode of a series/season (cached, shared across all renderers).
+     * @param {string} userId The user ID.
+     * @param {string} parentId The series or season ID.
+     * @param {string|null} [firstEpisodeId=null] Known first episode ID, when available.
+     * @returns {Promise<object|null>} The first episode item or null.
      */
-    async function getFirstEpisode(userId, parentId) {
+    async function getFirstEpisode(userId, parentId, firstEpisodeId = null) {
         if (firstEpisodeCache.has(parentId)) return firstEpisodeCache.get(parentId);
 
         const promise = (async () => {
+            // /tag-data already returns the first episode ID for Series/Season.
+            // Use it directly so the normal path stays entirely inside the
+            // region-aware Enhanced projection and avoids an extra /Items call.
+            if (firstEpisodeId) {
+                try {
+                    const enriched = await ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`),
+                        data: JSON.stringify([firstEpisodeId]),
+                        contentType: 'application/json',
+                        dataType: 'json'
+                    });
+
+                    const episode = enriched?.Items?.[0];
+                    if (episode) return episode;
+                } catch {
+                    // Fall through to the native Jellyfin lookup below.
+                }
+            }
+
             try {
                 const response = await ApiClient.ajax({
                     type: 'GET',
@@ -121,7 +146,25 @@
                     }),
                     dataType: 'json'
                 });
-                return response?.Items?.[0] || null;
+
+                const episode = response?.Items?.[0] || null;
+                if (!episode?.Id) return episode;
+
+                // Native Jellyfin may have reduced an explicit Matroska BCP-47
+                // language to its base ISO-639 code. Enrich it when possible.
+                try {
+                    const enriched = await ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`),
+                        data: JSON.stringify([episode.Id]),
+                        contentType: 'application/json',
+                        dataType: 'json'
+                    });
+
+                    return enriched?.Items?.[0] || episode;
+                } catch {
+                    return episode;
+                }
             } catch {
                 return null;
             }
@@ -269,6 +312,8 @@
 
     let scanScheduled = false;
     const CARDS_PER_CHUNK = 5; // ~2.5ms per card with cache render, 5 cards = ~12ms (under 16ms frame budget)
+    // Separate, much larger threshold for yielding during batch render (see processBatch).
+    const RENDER_YIELD_CHUNK = 40;
     let scanGeneration = 0; // Incremented on each new scan to cancel stale chunk chains
 
     /**
@@ -280,6 +325,16 @@
     const scheduleIdle = typeof requestIdleCallback === 'function'
         ? (fn) => requestIdleCallback(fn, { timeout: 500 })
         : (fn) => setTimeout(fn, 16);
+
+    /**
+     * Resolves on the next idle slot. Used to break up long synchronous
+     * render loops (e.g. a batch fetch response covering many search
+     * results) so they don't block the main thread in one tick.
+     * @returns {Promise<void>}
+     */
+    function idleYield() {
+        return new Promise((resolve) => scheduleIdle(resolve));
+    }
 
     function scheduleScan() {
         if (scanScheduled) return;
@@ -378,6 +433,7 @@
                             try { renderer.renderFromServerCache(renderTarget, serverEntry, itemId); } catch {}
                         }
                     }
+                    JE.core.tagRenderer.applyCornerStacking(renderTarget);
                     continue; // Fully rendered from server cache, skip queue
                 }
 
@@ -391,6 +447,7 @@
                         allCacheHits = false;
                     }
                 }
+                JE.core.tagRenderer.applyCornerStacking(renderTarget);
 
                 if (!allCacheHits) {
                     requestQueue.push({ el, renderTarget, itemId, itemType });
@@ -460,7 +517,13 @@
             // Chunk into batches of SERVER_BATCH_LIMIT to avoid 400 errors
             while (requestQueue.length > 0) {
                 if (myGeneration !== batchGeneration) break; // navigation happened
-                const batch = requestQueue.splice(0, SERVER_BATCH_LIMIT);
+                const batch = requestQueue.splice(0, SERVER_BATCH_LIMIT)
+                    // Drop cards removed from the DOM since they were queued (e.g. a
+                    // page like search re-renders its whole result set on every
+                    // keystroke, on the same generation). Skipping them here avoids
+                    // fetching and rendering tag data nobody will ever see.
+                    .filter((entry) => document.contains(entry.el));
+                if (batch.length === 0) continue;
                 await processBatch(batch, myGeneration);
             }
         } finally {
@@ -559,6 +622,9 @@
                 // Render to ALL cards with this ID (same item can appear in multiple rows)
                 for (const entry of batchEntries) {
                     const { renderTarget } = entry;
+                    // The card may have been removed from the DOM (e.g. search
+                    // re-rendered its results) since this entry was queued.
+                    if (!document.contains(renderTarget)) continue;
                     const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
                     for (const [name, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;
@@ -568,6 +634,10 @@
                             console.warn(`${logPrefix} Renderer "${name}" failed for item ${itemId}:`, err);
                         }
                     }
+                    // One coalesced layout pass per card instead of one per
+                    // renderer, avoiding repeated forced reflows when multiple
+                    // tag types share a corner.
+                    JE.core.tagRenderer.applyCornerStacking(renderTarget);
                 }
             };
 
@@ -577,19 +647,27 @@
                 if (r.isEnabled() && r.needsFirstEpisode) { anyNeedsFirstEp = true; break; }
             }
 
-            // Process all items: render immediately what we can, fetch first episodes in parallel
+            // Process all items: render immediately what we can, fetch first episodes in parallel.
+            // Yield every RENDER_YIELD_CHUNK items so a large batch (e.g. a
+            // broad search) can't block the main thread in one long synchronous stretch.
             const pendingFirstEps = [];
+            let renderedSinceYield = 0;
             for (const item of items) {
                 if (anyNeedsFirstEp && item.FirstEpisode?.NeedsStreamFetch) {
                     // Series/Season: fetch first episode in background, render when ready
                     pendingFirstEps.push(
-                        getFirstEpisode(userId, item.Id)
+                        getFirstEpisode(userId, item.Id, item.FirstEpisode.Id)
                             .then(ep => renderItem(item, ep))
                             .catch(() => renderItem(item, null))
                     );
                 } else {
                     // Movies, Episodes, etc: render immediately (no extra fetch needed)
                     renderItem(item, item.FirstEpisode || null);
+                    if (++renderedSinceYield >= RENDER_YIELD_CHUNK) {
+                        renderedSinceYield = 0;
+                        await idleYield();
+                        if (generation !== batchGeneration) return; // navigation or user switch while yielded
+                    }
                 }
             }
 
@@ -611,12 +689,14 @@
                     const firstEpisode = (item.Type === 'Series' || item.Type === 'Season')
                         ? await getFirstEpisode(userId, item.Id) : null;
                     if (generation !== batchGeneration) break; // switched during the awaits above
+                    if (!document.contains(renderTarget)) continue; // card removed while awaiting
                     const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget };
 
                     for (const [, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;
                         try { renderer.render(renderTarget, item, extras); } catch {}
                     }
+                    JE.core.tagRenderer.applyCornerStacking(renderTarget);
                 } catch {}
             }
         }

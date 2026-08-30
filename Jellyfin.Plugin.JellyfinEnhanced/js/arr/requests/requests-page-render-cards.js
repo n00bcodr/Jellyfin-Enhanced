@@ -438,9 +438,8 @@
    * @param {HTMLElement} container
    */
   async function hydrateExternalLinks(container) {
-    const isAdmin = JE.currentSettings?.isAdmin === true;
     const arrLinksEnabled = JE.pluginConfig?.ArrLinksEnabled === true;
-    if (!isAdmin || !arrLinksEnabled) return;
+    if (!arrLinksEnabled || !JE.helpers.isAdmin()) return;
 
     const slots = container.querySelectorAll('.je-request-external-links[data-tmdb-id]');
     if (!slots.length) return;

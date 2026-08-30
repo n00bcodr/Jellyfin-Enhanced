@@ -179,6 +179,17 @@
     }
 
     /**
+     * Removes every plugin-owned node injected into the search page (results
+     * section and no-results replacement message) and restores the native
+     * no-results message if positionSection hid it. React-safe: only removes
+     * plugin-owned nodes and toggles a class on native ones.
+     */
+    ui.clearInjectedSearchResults = function() {
+        document.querySelectorAll('.jellyseerr-section, .jellyseerr-no-results-message').forEach(el => el.remove());
+        document.querySelectorAll('.jellyseerr-native-message-hidden').forEach(el => el.classList.remove('jellyseerr-native-message-hidden'));
+    };
+
+    /**
      * Renders Seerr search results into the search page with improved placement logic.
      * @param {Array} results - Array of search result items.
      * @param {string} query - The search query that generated these results.
@@ -207,17 +218,19 @@
 
         const sectionToInject = createJellyseerrSection(results, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
 
-        const primarySectionKeywords = ['movies', 'shows', 'film', 'serier', 'filme', 'serien', 'películas', 'series', 'films', 'séries', 'serie tv'];
+        const primaryCardTypes = ['movie', 'series'];
 
         /**
-         * Finds the last Movies/Shows section in the search results.
+         * Finds the last Movies/Shows section in the search results, identified
+         * by each card's data-type attribute rather than the (locale-dependent)
+         * section title text.
          * @returns {HTMLElement|null}
          */
         function findLastPrimarySection() {
             const allSections = Array.from(searchPage.querySelectorAll('.verticalSection:not(.jellyseerr-section)'));
             for (let i = allSections.length - 1; i >= 0; i--) {
-                const title = allSections[i].querySelector('.sectionTitle')?.textContent.trim().toLowerCase();
-                if (title && primarySectionKeywords.some(keyword => title.includes(keyword))) {
+                const cardType = allSections[i].querySelector('[data-type]')?.dataset.type?.toLowerCase();
+                if (cardType && primaryCardTypes.includes(cardType)) {
                     return allSections[i];
                 }
             }
@@ -231,52 +244,75 @@
          *   no-results message; false if using fallback placement.
          */
         function positionSection() {
-            const noResultsMessage = searchPage.querySelector('.noItemsMessage');
+            const noResultsMessage = searchPage.querySelector('.noItemsMessage:not(.jellyseerr-no-results-message)');
             if (noResultsMessage) {
-                noResultsMessage.textContent = JE.t('jellyseerr_no_results_jellyfin', { query });
-                noResultsMessage.parentElement.insertBefore(sectionToInject, noResultsMessage.nextSibling);
+                // The no-results message is React-owned, and React reuses the same
+                // DOM node for the results container on a later query (both render
+                // as plain keyless divs, and cached queries swap between them with
+                // no <Loading/> commit in between). Rewriting its textContent here
+                // would replace React's own text node, so the next reconciliation
+                // of that div throws NotFoundError ("Failed to execute
+                // 'removeChild' on 'Node'"). Never mutate its children — hide it
+                // with a class and show a plugin-owned message beside it instead.
+                noResultsMessage.classList.add('jellyseerr-native-message-hidden');
+
+                let message = searchPage.querySelector('.jellyseerr-no-results-message');
+                if (!message) {
+                    message = document.createElement('div');
+                    message.className = 'noItemsMessage centerMessage jellyseerr-no-results-message';
+                }
+                // Only write on change — this element is inside the subtree the
+                // reposition MutationObserver below watches, so an unconditional
+                // write re-triggers it every time, looping forever.
+                const desiredText = JE.t('jellyseerr_no_results_jellyfin', { query });
+                if (message.textContent !== desiredText) {
+                    message.textContent = desiredText;
+                }
+                if (message.previousElementSibling !== noResultsMessage) {
+                    noResultsMessage.parentElement.insertBefore(message, noResultsMessage.nextSibling);
+                }
+                if (sectionToInject.previousElementSibling !== message) {
+                    message.parentElement.insertBefore(sectionToInject, message.nextSibling);
+                }
                 return true;
             }
 
+            // Not (or no longer) in the no-results state: drop the replacement
+            // message and restore the native one if a previous pass hid it.
+            searchPage.querySelectorAll('.jellyseerr-no-results-message').forEach(el => el.remove());
+            searchPage.querySelectorAll('.jellyseerr-native-message-hidden').forEach(el => el.classList.remove('jellyseerr-native-message-hidden'));
+
             const lastPrimary = findLastPrimarySection();
             if (lastPrimary) {
-                lastPrimary.after(sectionToInject);
+                if (sectionToInject.previousElementSibling !== lastPrimary) {
+                    lastPrimary.after(sectionToInject);
+                }
                 return true;
             }
 
             const resultsContainer = searchPage.querySelector('.searchResults, [class*="searchResults"], .padded-top.padded-bottom-page');
             if (resultsContainer) {
-                resultsContainer.appendChild(sectionToInject);
-            } else {
+                if (sectionToInject.parentElement !== resultsContainer || resultsContainer.lastElementChild !== sectionToInject) {
+                    resultsContainer.appendChild(sectionToInject);
+                }
+            } else if (searchPage.lastElementChild !== sectionToInject) {
                 searchPage.appendChild(sectionToInject);
             }
             return false;
         }
 
-        // Inject immediately — don't wait for Movies/Shows sections to load
-        const isAfterPrimary = positionSection();
+        positionSection();
 
-        // If not yet positioned after Movies/Shows, watch for them to appear
-        // and reposition once they do
-        if (!isAfterPrimary) {
-            const observer = new MutationObserver(() => {
-                if (!sectionToInject.isConnected) {
-                    // A newer render call has replaced this section — stop watching.
-                    observer.disconnect();
-                    return;
-                }
-                if (findLastPrimarySection()) {
-                    observer.disconnect();
-                    clearTimeout(pendingRepositionTimeout);
-                    pendingRepositionObserver = null;
-                    positionSection();
-                }
-            });
-            observer.observe(searchPage, { childList: true, subtree: true });
-            pendingRepositionObserver = observer;
-            // Safety timeout — disconnect if primary sections never appear
-            pendingRepositionTimeout = setTimeout(() => observer.disconnect(), 5000);
-        }
+        const observer = new MutationObserver(() => {
+            if (!sectionToInject.isConnected) {
+                observer.disconnect();
+                return;
+            }
+            positionSection();
+        });
+        observer.observe(searchPage, { childList: true, subtree: true });
+        pendingRepositionObserver = observer;
+        pendingRepositionTimeout = setTimeout(() => observer.disconnect(), 5000);
     };
 
     /**

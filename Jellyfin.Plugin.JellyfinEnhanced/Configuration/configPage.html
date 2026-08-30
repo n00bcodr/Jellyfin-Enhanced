@@ -2565,6 +2565,50 @@
                 <div id="admin" class="jellyfin-tab-content">
 
                     <fieldset class="je-fieldset-wide">
+                        <legend class="sectionTitle">Usage Statistics</legend>
+                        <div class="configSection">
+                            <div class="je-setting-description">
+                                <div class="je-info-banner-compact">
+                                    <i class="material-icons je-info-icon-sm">info</i>
+                                    <div>
+                                        Fully opt-in and off by default. No URLs, API keys, usernames, filenames, or media titles are ever collected. <br/>
+                                        Turning this on always includes just an anonymous install ID, plugin version, and Jellyfin version/target, enough to answer "how many installs are on the latest version." Uncheck all three options below to share only that and nothing else. <br/>
+                                        See the live preview below for exactly what would be sent, or read the full breakdown of what each option collects and why: <a class="sectionTitle" href="https://n00bcodr.github.io/Jellyfin-Enhanced/advanced/community-analytics/" target="_blank" rel="noopener">Community Analytics documentation</a>.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="checkboxContainer je-main-feature"><label><input id="analyticsEnabled" is="emby-checkbox" type="checkbox"/><span>Share Anonymous Usage Statistics</span></label></div>
+                            <div class="je-setting-description" data-desc-for="analyticsEnabled">
+                                <div class="fieldDescription je-field-desc-md">
+                                    Periodically sends an anonymous report to the Jellyfin Enhanced community analytics project.
+                                    <br/>
+                                    Each install gets a random ID that identifies nothing about you or your server.
+                                </div>
+                            </div>
+
+                            <div id="analyticsSubOptionsContainer" style="margin-left: 20px;">
+                                <div class="checkboxContainer"><label><input id="analyticsShareFeatureFlags" is="emby-checkbox" type="checkbox"/><span>Feature toggle states (on/off only)</span></label></div>
+                                <div class="checkboxContainer"><label><input id="analyticsShareUsageCounts" is="emby-checkbox" type="checkbox"/><span>Feature usage counts</span></label></div>
+                                <div class="checkboxContainer"><label><input id="analyticsShareDataSizes" is="emby-checkbox" type="checkbox"/><span>Data file sizes (bytes only, never contents)</span></label></div>
+
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="analyticsReportIntervalDays">Reporting interval (days)</label>
+                                    <input id="analyticsReportIntervalDays" is="emby-input" type="number" min="7" max="30" step="1"/>
+                                    <div class="fieldDescription">How often a report is sent, between 7 and 30 days.</div>
+                                </div>
+
+                                <button id="analyticsPreviewBtn" class="emby-button raised" type="button" style="width:fit-content; margin-top: 10px;">Preview</button>
+                                <div id="analyticsPreviewContainer" style="display:none; margin-top: 10px;">
+                                    <div class="fieldDescription">This reflects what would be sent based on the selections above.</div>
+                                    <pre id="analyticsPreviewJson" class="je-json-preview" style="white-space: pre-wrap; word-break: break-all; max-height: 320px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; font-size: 12px;"></pre>
+                                </div>
+                                <div id="analyticsLastSent" class="fieldDescription" style="margin-top: 10px;"></div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="je-fieldset-wide">
                         <legend class="sectionTitle">Maintenance Mode</legend>
                         <div class="configSection">
 
@@ -5451,6 +5495,110 @@
                     document.getElementById('activeStreamsAllUsersContainer').style.display = this.checked ? '' : 'none';
                 });
 
+                // Usage Statistics (opt-in analytics)
+                (function() {
+                    var masterEl = document.querySelector('#analyticsEnabled');
+                    var subContainer = document.getElementById('analyticsSubOptionsContainer');
+                    var flagsEl = document.querySelector('#analyticsShareFeatureFlags');
+                    var countsEl = document.querySelector('#analyticsShareUsageCounts');
+                    var sizesEl = document.querySelector('#analyticsShareDataSizes');
+                    var intervalEl = document.querySelector('#analyticsReportIntervalDays');
+                    var previewBtn = document.getElementById('analyticsPreviewBtn');
+                    var previewContainer = document.getElementById('analyticsPreviewContainer');
+                    var previewJson = document.getElementById('analyticsPreviewJson');
+                    var lastSentEl = document.getElementById('analyticsLastSent');
+
+                    masterEl.checked = config.AnalyticsEnabled || false;
+                    flagsEl.checked = config.AnalyticsShareFeatureFlags !== false;
+                    countsEl.checked = config.AnalyticsShareUsageCounts !== false;
+                    sizesEl.checked = config.AnalyticsShareDataSizes !== false;
+                    intervalEl.value = config.AnalyticsReportIntervalDays || 15;
+                    subContainer.style.display = masterEl.checked ? '' : 'none';
+
+                    if (config.AnalyticsLastReportedAt) {
+                        var d = new Date(config.AnalyticsLastReportedAt);
+                        lastSentEl.textContent = 'Last report sent: ' + formatDateTimeDMY(d);
+                    } else {
+                        lastSentEl.textContent = 'No report has been sent yet.';
+                    }
+
+                    masterEl.addEventListener('change', function() {
+                        subContainer.style.display = this.checked ? '' : 'none';
+                        // Once the admin has turned the master on this session,
+                        // the save handler must persist AnalyticsHasBeenConfigured
+                        // EVEN IF the master is off again at save time — otherwise
+                        // an enable -> uncheck a category -> disable -> save
+                        // sequence stores the unchecks with the flag still false,
+                        // and the next session's enable re-cascades all three
+                        // over a recorded opt-out. dataset (not a closure var)
+                        // because the save handler lives outside this IIFE.
+                        if (this.checked) masterEl.dataset.jeTouched = '1';
+                        // First time the admin ever turns this on, default every
+                        // sub-category to shared; after that, leave their choices alone.
+                        if (this.checked && !config.AnalyticsHasBeenConfigured) {
+                            flagsEl.checked = true;
+                            countsEl.checked = true;
+                            sizesEl.checked = true;
+                            // One-shot: mark configured on the page copy too, or an
+                            // off/on toggle in the same session re-forces all three
+                            // and silently reverts a deliberate uncheck (the server
+                            // copy only updates on save, the closure never does).
+                            config.AnalyticsHasBeenConfigured = true;
+                            // The programmatic .checked writes above fire no change
+                            // events, so refresh an open preview by hand — it must
+                            // never show less than what would now be sent.
+                            if (previewContainer.style.display !== 'none') runPreview();
+                        }
+                    });
+
+                    // Monotonic token: runPreview has several auto-triggers
+                    // (button, sub-toggle changes, the first-enable cascade),
+                    // and overlapping responses would otherwise race
+                    // last-write-wins — the preview could show a payload
+                    // contradicting the current checkboxes.
+                    var previewSeq = 0;
+                    async function runPreview() {
+                        var seq = ++previewSeq;
+                        previewBtn.disabled = true;
+                        try {
+                            var res = await ApiClient.ajax({
+                                type: 'POST',
+                                url: ApiClient.getUrl('/JellyfinEnhanced/usage/preview'),
+                                data: JSON.stringify({
+                                    shareFeatureFlags: flagsEl.checked,
+                                    shareUsageCounts: countsEl.checked,
+                                    shareDataSizes: sizesEl.checked
+                                }),
+                                contentType: 'application/json',
+                                dataType: 'json'
+                            });
+                            if (seq !== previewSeq) return; // superseded by a newer preview
+                            previewJson.textContent = JSON.stringify(res.Payload, null, 2);
+                            previewContainer.style.display = '';
+                        } catch (err) {
+                            if (seq !== previewSeq) return; // superseded by a newer preview
+                            // ApiClient.ajax rejects with the fetch Response on a
+                            // non-2xx (no .message), so build something readable
+                            // instead of "[object Response]".
+                            var reason = (err && err.message)
+                                || (err && err.status ? 'HTTP ' + err.status + (err.statusText ? ' ' + err.statusText : '') : 'check server logs');
+                            previewJson.textContent = 'Failed to build preview: ' + reason;
+                            previewContainer.style.display = '';
+                        } finally {
+                            if (seq === previewSeq) previewBtn.disabled = false;
+                        }
+                    }
+
+                    previewBtn.addEventListener('click', runPreview);
+                    // Re-run automatically once a preview has been shown, so toggling a
+                    // sub-option updates it live instead of looking stuck until re-clicked.
+                    [flagsEl, countsEl, sizesEl].forEach(function(el) {
+                        el.addEventListener('change', function() {
+                            if (previewContainer.style.display !== 'none') runPreview();
+                        });
+                    });
+                })();
+
                 document.querySelector('#activityFeedEnabled').checked = config.ActivityFeedEnabled || false;
                 document.querySelector('#activityFeedShowWatched').checked = config.ActivityFeedShowWatched !== false;
                 document.querySelector('#activityFeedShowFavorited').checked = config.ActivityFeedShowFavorited !== false;
@@ -5887,6 +6035,23 @@
             config.PluginIconsEnabled = document.querySelector('#pluginIconsEnabled').checked;
             config.ActiveStreamsEnabled = document.querySelector('#activeStreamsEnabled').checked;
             config.ActiveStreamsAllUsers = document.querySelector('#activeStreamsAllUsers').checked;
+
+            // Usage Statistics
+            config.AnalyticsEnabled = document.querySelector('#analyticsEnabled').checked;
+            config.AnalyticsShareFeatureFlags = document.querySelector('#analyticsShareFeatureFlags').checked;
+            config.AnalyticsShareUsageCounts = document.querySelector('#analyticsShareUsageCounts').checked;
+            config.AnalyticsShareDataSizes = document.querySelector('#analyticsShareDataSizes').checked;
+            var analyticsIntervalRaw = parseInt(document.querySelector('#analyticsReportIntervalDays').value, 10);
+            config.AnalyticsReportIntervalDays = isNaN(analyticsIntervalRaw) ? 15 : Math.min(30, Math.max(7, analyticsIntervalRaw));
+            // Persist "configured" when saving with the master ON, and also
+            // when the admin turned it on at any point this session (dataset
+            // flag set by the master toggle handler) even if it's off again
+            // now — their sub-category choices from that interaction are being
+            // saved and must not be re-cascaded over on the next enable.
+            if (config.AnalyticsEnabled || document.querySelector('#analyticsEnabled').dataset.jeTouched === '1') {
+                config.AnalyticsHasBeenConfigured = true;
+            }
+
             config.ActivityFeedEnabled = document.querySelector('#activityFeedEnabled').checked;
             config.ActivityFeedShowWatched = document.querySelector('#activityFeedShowWatched').checked;
             config.ActivityFeedShowFavorited = document.querySelector('#activityFeedShowFavorited').checked;
@@ -7269,7 +7434,7 @@
             if (d.toDateString() === now.toDateString()) {
                 return 'Last tested ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
             }
-            return 'Last tested ' + d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+            return 'Last tested ' + formatDateDMY(d);
         }
 
         /**
@@ -9758,19 +9923,27 @@
             btn.addEventListener('click', testTmdbConnection);
         });
 
-        // Formats a Date as "DD-MMM-YYYY, HH:MM AM/PM" for the MDBList quota
-        // reset display -- explicit instead of toLocaleString() so it doesn't
-        // vary by the browser's locale.
-        function formatResetDate(d) {
-            var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        // Shared date formatting for the whole config page, explicit instead
+        // of toLocaleString()/toLocaleDateString() so display doesn't vary by
+        // the admin's browser locale. Function declarations hoist through this
+        // file's single top-level IIFE, so these are callable from anywhere in
+        // it regardless of where they're defined relative to the call site.
+        var JE_DATE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        /** Formats a Date as "DD-MMM-YYYY" (e.g. "28-Aug-2026"). */
+        function formatDateDMY(d) {
             var day = String(d.getDate()).padStart(2, '0');
-            var month = MONTHS[d.getMonth()];
-            var year = d.getFullYear();
+            var month = JE_DATE_MONTHS[d.getMonth()];
+            return day + '-' + month + '-' + d.getFullYear();
+        }
+
+        /** Formats a Date as "DD-MMM-YYYY, HH:MM AM/PM" (e.g. "28-Aug-2026, 12:02 AM"). */
+        function formatDateTimeDMY(d) {
             var hours24 = d.getHours();
             var ampm = hours24 >= 12 ? 'PM' : 'AM';
             var hours12 = hours24 % 12 || 12;
             var minutes = String(d.getMinutes()).padStart(2, '0');
-            return day + '-' + month + '-' + year + ', ' + hours12 + ':' + minutes + ' ' + ampm;
+            return formatDateDMY(d) + ', ' + hours12 + ':' + minutes + ' ' + ampm;
         }
 
         /**
@@ -9805,7 +9978,7 @@
                     var plan = (status && status.Plan) ? status.Plan : 'Free';
                     var resetSeconds = (status && status.RateLimitResetUnixSeconds) ? status.RateLimitResetUnixSeconds : 0;
                     var resetDate = new Date(resetSeconds * 1000);
-                    var resetText = (isFinite(resetDate.getTime()) && resetSeconds > 0) ? formatResetDate(resetDate) : 'unknown';
+                    var resetText = (isFinite(resetDate.getTime()) && resetSeconds > 0) ? formatDateTimeDMY(resetDate) : 'unknown';
                     statusLine.textContent = remaining + ' / ' + limit + ' requests remaining today (' + plan + ' plan) · resets ' + resetText;
                 }
             } catch (e) {

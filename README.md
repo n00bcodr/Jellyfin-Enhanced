@@ -44,9 +44,17 @@ Quick links:
 
 1. In Jellyfin, go to **Dashboard** → **Plugins** → **Repositories**
 2. Click **➕** and add the repository:
-   ```
-   https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/10.11/manifest.json
-   ```
+
+> [!NOTE]
+> **If you are on Jellyfin version 12, use the version 12 manifest**
+> ``` 
+> https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/12/manifest.json 
+> ```
+> **If you are on 10.11.x, use the version 11 manifest**
+> ``` 
+> https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/10.11/manifest.json 
+> ```
+
 3. Go to **Catalog** tab, find **Jellyfin Enhanced**, and click **Install**
 4. **Restart** your Jellyfin server
 

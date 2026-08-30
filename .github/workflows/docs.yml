@@ -8,6 +8,8 @@ on:
       - 'docs/**'
       - 'mkdocs.yml'
       - '.github/workflows/docs.yml'
+      - 'Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html'
+      - 'scripts/generate_config_flag_groups.py'
   workflow_dispatch:
 
 permissions:
@@ -48,6 +50,9 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
+
+      - name: Generate config flag groups
+        run: python scripts/generate_config_flag_groups.py
 
       - name: Build site
         run: mkdocs build -d site

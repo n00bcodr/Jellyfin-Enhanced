@@ -13,6 +13,20 @@
     // getHeaderRightContainer below) so it's only added once.
     let muiHeaderButtonCSSInjected = false;
 
+    // ── Admin check ──────────────────────────────────────────────────────────
+    // Single source of truth for "is the current user an administrator?".
+    // Sourced from JE.currentSettings.isAdmin, which the server computes fresh
+    // from the authenticated caller on every settings.json GET and never
+    // persists to the file (see GetUserSettingsSettings in
+    // JellyfinEnhancedController.cs). This is a UX gate only: every admin-only
+    // endpoint enforces access independently server-side.
+    /**
+     * @returns {boolean}
+     */
+    function isAdmin() {
+        return JE.currentSettings?.isAdmin === true;
+    }
+
     // Shared cache for item payloads to deduplicate cross-module ApiClient.getItem calls
     const itemCache = new Map();
     const ITEM_CACHE_TTL_MS = 30000; // 30s -- long enough for batch prefetch to warm cache before tag systems scan
@@ -674,6 +688,30 @@
         return Number.isFinite(contentHeight) && contentHeight > 0 ? contentHeight : fallback;
     }
 
+    /**
+     * Bumps one opt-in usage-analytics counter (e.g. "seerr.request_submitted").
+     * Fire-and-forget: no-ops client-side when analytics/usage-counts aren't
+     * both enabled (avoiding a pointless network call from the majority of
+     * installs, which have this off by default), and the server independently
+     * no-ops the same way, so this is always safe to call unconditionally
+     * from any feature module without checking config first.
+     * @param {string} key - feature_key, e.g. "seerr.request_submitted".
+     *   Server-side validated as ^[a-z0-9_.]{1,64}$ AND against the allowlist
+     *   in UsageEventCounterService.KnownKeys -- a new key must be added there
+     *   in the same change that starts emitting it, or the endpoint rejects it.
+     */
+    function trackUsage(key) {
+        try {
+            if (!JE.pluginConfig?.AnalyticsEnabled || !JE.pluginConfig?.AnalyticsShareUsageCounts) return;
+            ApiClient.ajax({
+                type: 'POST',
+                url: ApiClient.getUrl('/JellyfinEnhanced/usage/track'),
+                data: JSON.stringify({ key }),
+                contentType: 'application/json'
+            }).catch(() => { /* best-effort; never surface analytics failures */ });
+        } catch { /* best-effort */ }
+    }
+
     // Expose helpers. Entries marked (core) are thin aliases over JE.core.*
     // kept for the frozen JE.helpers contract — new code should call core
     // directly.
@@ -705,9 +743,11 @@
         resolveProtectedAvatarUrl,
         hydrateAvatarImages,
         clearAvatarObjectUrlCache,
+        trackUsage,
         getHandlerCount: () => JE.core.navigation.getViewHandlerCount(), // (core)
         getObserverCount: () => JE.core.dom.getObserverCount(), // (core)
-        getBodySubscriberCount: () => JE.core.dom.getBodySubscriberCount() // (core)
+        getBodySubscriberCount: () => JE.core.dom.getBodySubscriberCount(), // (core)
+        isAdmin
     };
 
     console.log('🪼 Jellyfin Enhanced: Helpers initialized successfully');

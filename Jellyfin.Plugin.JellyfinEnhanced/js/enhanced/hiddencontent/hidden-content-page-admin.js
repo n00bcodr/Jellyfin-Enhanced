@@ -21,35 +21,16 @@
   // ============================================================
 
   /**
-   * Resolves whether the current user is an administrator, caching the result.
-   * Prefers values already determined elsewhere (settings.json flag, pre-fetched
-   * user) and falls back to a single ApiClient.getCurrentUser() call. This is a
-   * UX gate only — the server independently enforces admin access on every
-   * admin/* endpoint, so a false positive here cannot leak another user's data.
-   * @returns {Promise<boolean>}
+   * Resolves whether the current user is an administrator, mirroring the
+   * shared JE.helpers.isAdmin() into this page's own state.adminIsAdmin
+   * (read synchronously elsewhere in this module: init.js, render.js).
+   * @returns {boolean}
    */
-  async function resolveIsAdmin() {
-    if (state.adminIsAdmin !== null) return state.adminIsAdmin;
-    // A positive flag is trustworthy; a falsy one may simply be "not yet resolved",
-    // so only short-circuit on an explicit true and otherwise verify authoritatively.
-    if (JE.currentSettings && JE.currentSettings.isAdmin === true) {
-      state.adminIsAdmin = true;
-      return true;
+  function resolveIsAdmin() {
+    if (state.adminIsAdmin === null) {
+      state.adminIsAdmin = JE.helpers.isAdmin();
     }
-    if (JE.currentUser && JE.currentUser.Policy) {
-      state.adminIsAdmin = JE.currentUser.Policy.IsAdministrator === true;
-      return state.adminIsAdmin;
-    }
-    try {
-      const user = await ApiClient.getCurrentUser();
-      // Authoritative result — cache it even when false.
-      state.adminIsAdmin = !!(user && user.Policy && user.Policy.IsAdministrator);
-      return state.adminIsAdmin;
-    } catch (e) {
-      // Transient failure: do NOT cache false, so a later render retries instead of
-      // permanently disabling the admin filter for an actual admin.
-      return false;
-    }
+    return state.adminIsAdmin;
   }
 
   /**
@@ -68,8 +49,8 @@
     // completion must NOT repopulate adminUsers — that would defeat the fresh re-init on re-open.
     const token = state.adminLoadToken;
     try {
-      const isAdmin = await resolveIsAdmin();
-      if (!isAdmin) return; // leave adminUsers null; resolveIsAdmin governs retry semantics
+      const isAdmin = resolveIsAdmin();
+      if (!isAdmin) return;
       const list = await JE.hiddenContent.fetchHiddenContentUsers();
       // null = transient failure: leave adminUsers null so a later render retries, and do NOT
       // re-render here (re-rendering would re-enter this function and spin a fetch/render loop).

@@ -10,58 +10,16 @@
             return;
         }
 
-        // Identity epoch this initialization belongs to. Captured BEFORE the
-        // async admin resolution below: if the user switches while those
-        // requests are in flight, this stale invocation must stop — otherwise
-        // it would write user A's admin flag through user B's identity and
-        // install an observer that no longer looks stale to the epoch guard.
+        // Identity epoch this initialization belongs to, for the async work
+        // further below (arr instance lookups, observer setup): if the user
+        // switches mid-flight, that stale invocation must stop.
         const initEpoch = JE.session ? JE.session.getEpoch() : 0;
         const initIsCurrent = () => !JE.session || JE.session.isCurrent(initEpoch);
 
-        // Check admin status on every script initialization
-        let isAdmin = false;
-
-        try {
-            // Use the user object pre-fetched during plugin.js init (Stage 2) when available.
-            // Falls back to a short direct fetch so the module isn't blocked for up to 10 s.
-            let user = JE.currentUser || null;
-            if (!user) {
-                for (let i = 0; i < 5; i++) {  // shortened retry window (~2.5s)
-                    try {
-                        user = await ApiClient.getCurrentUser();
-                        if (user) break;
-                    } catch (e) {
-                        // swallow error, retry
-                    }
-                    await new Promise(r => setTimeout(r, 500));
-                }
-            }
-
-            if (!user) {
-                console.error(`${logPrefix} Could not get current user after retries.`);
-                return;
-            }
-
-            // The awaits above may have spanned a user switch — this `user`
-            // object belongs to the previous identity. Bail; the
-            // je:user-data-loaded listener re-runs initialization fresh.
-            if (!initIsCurrent()) return;
-
-            isAdmin = user?.Policy?.IsAdministrator === true;
-
-            // Update settings.json if the value changed
-            if (JE?.currentSettings && JE.currentSettings.isAdmin !== isAdmin && typeof JE.saveUserSettings === 'function') {
-                JE.currentSettings.isAdmin = isAdmin;
-                await JE.saveUserSettings('settings.json', JE.currentSettings);
-                console.log(`${logPrefix} Updated admin status in settings.json: ${isAdmin}`);
-            } else if (JE?.currentSettings) {
-                JE.currentSettings.isAdmin = isAdmin;
-                console.log(`${logPrefix} Admin status: ${isAdmin}`);
-            }
-        } catch (err) {
-            console.error(`${logPrefix} Error checking admin status:`, err);
-            return;
-        }
+        // Shared admin check (js/enhanced/helpers.js), same source every
+        // admin-gated module in the plugin reads.
+        const isAdmin = JE.helpers.isAdmin();
+        console.log(`${logPrefix} Admin status: ${isAdmin}`);
 
         if (!isAdmin) {
             console.log(`${logPrefix} User is not an administrator. Links will not be shown.`);
@@ -818,8 +776,8 @@
     // the admin gate, the observer and the slug caches all live in the init
     // closure, so a fresh call rebuilds them for the new user (the previous
     // observer retires itself via the epoch guard above). Runs off
-    // je:user-data-loaded so JE.currentUser/currentSettings are already the
-    // new user's when the admin check reads them.
+    // je:user-data-loaded so JE.currentSettings is already the new user's
+    // when the admin check reads it.
     document.addEventListener('je:user-data-loaded', () => {
         if (!JE?.pluginConfig?.ArrLinksEnabled) return;
         try { JE._arrLinksObserver?.disconnect(); } catch (_) { /* already gone */ }

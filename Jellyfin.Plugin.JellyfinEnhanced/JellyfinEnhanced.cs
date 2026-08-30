@@ -20,6 +20,8 @@ using Newtonsoft.Json;
 using MediaBrowser.Common.Net;
 using System.Reflection;
 using System.Runtime.Loader;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced
 {
@@ -27,13 +29,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
     {
         private readonly IApplicationPaths _applicationPaths;
         private readonly Logger _logger;
+        private readonly Services.AnalyticsReportingService _analyticsReportingService;
         private const string PluginName = "Jellyfin Enhanced";
 
-        public JellyfinEnhanced(IApplicationPaths applicationPaths, IServerConfigurationManager serverConfigurationManager, IXmlSerializer xmlSerializer, Logger logger) : base(applicationPaths, xmlSerializer)
+        public JellyfinEnhanced(
+            IApplicationPaths applicationPaths,
+            IServerConfigurationManager serverConfigurationManager,
+            IXmlSerializer xmlSerializer,
+            Logger logger,
+            Services.AnalyticsReportingService analyticsReportingService) : base(applicationPaths, xmlSerializer)
         {
             Instance = this;
             _applicationPaths = applicationPaths;
             _logger = logger;
+            _analyticsReportingService = analyticsReportingService;
             _logger.Info($"{PluginName} v{Version} initialized. Plugin logs will be written to: {_logger.CurrentLogFilePath}");
             // Set the User-Agent used by every Seerr/TMDB outbound HTTP call.
             // Cloudflare's Browser Integrity Check / Bot Fight Mode flags
@@ -209,8 +218,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Configuration, so an actual OFF<->ON transition is distinguishable
             // from an unrelated config save (this method fires on every save).
             var tagCacheWasEnabled = Configuration?.TagCacheServerMode == true;
+            var analyticsWasEnabled = Configuration?.AnalyticsEnabled == true;
 
-            base.UpdateConfiguration(configuration);
+            // The Analytics* identity/bookkeeping fields are server-minted and
+            // never editable on the config page, but a save replaces the whole
+            // Configuration object with whatever the client posted. A snapshot
+            // fetched before a background registration/report finished would
+            // post them back empty, silently discarding this install's minted
+            // credentials — the backend row could then never be opted out, and
+            // the next send would register a duplicate install. Treat
+            // "incomplete incoming (either half missing — e.g. a restored
+            // backup with the secret redacted), complete current" as
+            // "preserve current". Runs under AnalyticsCredentialLock so the
+            // object swap can't interleave with AnalyticsReportingService
+            // writing freshly minted credentials to the live object — without
+            // it, registration could write to an already-replaced object and
+            // SaveConfiguration would persist empty credentials while the
+            // backend row exists.
+            lock (AnalyticsCredentialLock)
+            {
+                if (configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)
+                {
+                    var incomingIncomplete = string.IsNullOrEmpty(incoming.AnalyticsInstallId) || string.IsNullOrEmpty(incoming.AnalyticsInstallSecret);
+                    var currentComplete = !string.IsNullOrEmpty(current.AnalyticsInstallId) && !string.IsNullOrEmpty(current.AnalyticsInstallSecret);
+                    if (incomingIncomplete && currentComplete)
+                    {
+                        incoming.AnalyticsInstallId = current.AnalyticsInstallId;
+                        incoming.AnalyticsInstallSecret = current.AnalyticsInstallSecret;
+                    }
+                    if (incoming.AnalyticsLastReportedAt == 0 && current.AnalyticsLastReportedAt != 0)
+                    {
+                        incoming.AnalyticsLastReportedAt = current.AnalyticsLastReportedAt;
+                        incoming.AnalyticsLastPayloadJson = current.AnalyticsLastPayloadJson;
+                        incoming.AnalyticsLastReportedPluginVersion = current.AnalyticsLastReportedPluginVersion;
+                    }
+                }
+
+                base.UpdateConfiguration(configuration);
+            }
             try
             {
                 Controllers.JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
@@ -226,6 +271,87 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             if (tagCacheWasEnabled != (Configuration?.TagCacheServerMode == true))
             {
                 Services.TagCacheService.Instance?.QueueServerModeTransition();
+            }
+
+            // ON->OFF: flag this install as opted out on the backend so it
+            // drops out of every public view without deleting its history.
+            // Queued (not bare Task.Run): a network call must never block a
+            // config save, but a quick OFF-then-ON toggle must also never let
+            // set_opted_out land AFTER the re-enable's report_stats — that
+            // would leave the install flagged opted out on the backend until
+            // the next due report, up to a full 7-30 day interval. The queue
+            // runs transitions strictly in save order, and each action
+            // re-checks the CURRENT enabled state when it actually runs, so a
+            // stale transition degrades to a no-op instead of undoing a newer one.
+            if (analyticsWasEnabled && Configuration?.AnalyticsEnabled != true)
+            {
+                QueueAnalyticsTransition("flag analytics opt-out", async () =>
+                {
+                    var config = Configuration;
+                    if (config == null || config.AnalyticsEnabled) return; // re-enabled meanwhile; opt-out is moot
+                    await _analyticsReportingService.SendOptOutAsync(config, CancellationToken.None).ConfigureAwait(false);
+                });
+            }
+
+            // OFF->ON: always force an immediate report rather than deferring to
+            // ReportIfDueAsync's interval/version check. On a first-ever opt-in
+            // that check would say "due" anyway, but on a disable-then-re-enable
+            // AnalyticsLastReportedAt/AnalyticsLastReportedPluginVersion still
+            // hold values from before the disable, so the check can say "not
+            // due" and skip sending, which would also leave opted_out=true on
+            // the backend forever, since only a real report_stats call clears it.
+            if (!analyticsWasEnabled && Configuration?.AnalyticsEnabled == true)
+            {
+                // Consent boundary: clear pre-consent counters SYNCHRONOUSLY,
+                // before the enabled=true state is acted on by anything else.
+                // Done here rather than inside the queued ForceSend so the
+                // daily scheduled send can't slip in between enable and the
+                // queued transition and ship a previous consent window's
+                // counters with a months-old period start.
+                _analyticsReportingService.ResetCountersForConsentBoundary();
+
+                QueueAnalyticsTransition("send initial analytics report", () =>
+                    _analyticsReportingService.ForceSendAsync(CancellationToken.None));
+            }
+        }
+
+        /// <summary>
+        /// Guards every read-modify-write of the Analytics install credentials
+        /// (AnalyticsInstallId/Secret) across UpdateConfiguration's object swap
+        /// and AnalyticsReportingService's post-HTTP writes + SaveConfiguration.
+        /// </summary>
+        internal static readonly object AnalyticsCredentialLock = new object();
+
+        private readonly object _analyticsTransitionLock = new object();
+        private Task _analyticsTransitionChain = Task.CompletedTask;
+
+        /// <summary>
+        /// Chains analytics opt-in/opt-out side effects so they run strictly in
+        /// the order the admin's saves produced them, off the request thread.
+        /// The chain can never fault: each link swallows and logs its own
+        /// errors, so one failed transition can't block every later one.
+        /// </summary>
+        private void QueueAnalyticsTransition(string description, Func<Task> action)
+        {
+            lock (_analyticsTransitionLock)
+            {
+                var previous = _analyticsTransitionChain;
+                _analyticsTransitionChain = Task.Run(async () =>
+                {
+                    await previous.ConfigureAwait(false);
+                    try
+                    {
+                        await action().ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Shutdown path, silent.
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Warning($"Jellyfin Enhanced: failed to {description}: {ex.Message}");
+                    }
+                });
             }
         }
         private void CleanupOldScript()
