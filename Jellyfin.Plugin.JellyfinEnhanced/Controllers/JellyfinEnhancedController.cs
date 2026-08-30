@@ -7023,26 +7023,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             var stubMediaSources = spEp.GetMediaSources(false);
                             stubStreams = stubMediaSources
-                                .SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>())
-                                .Where(s => s.Type == MediaStreamType.Video || s.Type == MediaStreamType.Audio)
-                                .Select(s => (object)new
+                                .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spEp.Path))
+                                .Where(resolved =>
+                                    resolved.Stream.Type == MediaStreamType.Video
+                                    || resolved.Stream.Type == MediaStreamType.Audio)
+                                .Select(resolved =>
                                 {
-                                    Type = s.Type.ToString(),
-                                    Language = s.Language,
-                                    Codec = s.Codec,
-                                    CodecTag = s.CodecTag,
-                                    Profile = s.Profile,
-                                    Height = s.Height,
-                                    Channels = s.Channels,
-                                    ChannelLayout = s.ChannelLayout,
-                                    VideoRangeType = s.VideoRangeType,
-                                    // DisplayTitle's GETTER prepends the raw Title field,
-                                    // which on user-muxed mkvs (MakeMKV / Plex / Sonarr
-                                    // renamers) commonly carries the episode name — under
-                                    // SpoilerReplaceTitle that leaks via the stream projection.
-                                    // Null it; qualitytags.js recomputes overlay text from
-                                    // Codec / Height / VideoRangeType / Profile, not Title.
-                                    DisplayTitle = (string?)null,
+                                    var s = resolved.Stream;
+                                    return (object)new
+                                    {
+                                        Type = s.Type.ToString(),
+                                        Language = resolved.Language,
+                                        Codec = s.Codec,
+                                        CodecTag = s.CodecTag,
+                                        Profile = s.Profile,
+                                        Height = s.Height,
+                                        Channels = s.Channels,
+                                        ChannelLayout = s.ChannelLayout,
+                                        VideoRangeType = s.VideoRangeType,
+                                        // DisplayTitle's GETTER prepends the raw Title field,
+                                        // which on user-muxed mkvs (MakeMKV / Plex / Sonarr
+                                        // renamers) commonly carries the episode name — under
+                                        // SpoilerReplaceTitle that leaks via the stream projection.
+                                        // Null it; qualitytags.js recomputes overlay text from
+                                        // Codec / Height / VideoRangeType / Profile, not Title.
+                                        DisplayTitle = default(string?),
+                                    };
                                 })
                                 .ToList();
                             // stubSources stays null — see comment above.
@@ -7132,20 +7138,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             var stubMs = spMovie.GetMediaSources(false);
                             stubStreams = stubMs
-                                .SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>())
-                                .Where(s => s.Type == MediaStreamType.Video || s.Type == MediaStreamType.Audio)
-                                .Select(s => (object)new
+                                .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spMovie.Path))
+                                .Where(resolved =>
+                                    resolved.Stream.Type == MediaStreamType.Video
+                                    || resolved.Stream.Type == MediaStreamType.Audio)
+                                .Select(resolved =>
                                 {
-                                    Type = s.Type.ToString(),
-                                    Language = s.Language,
-                                    Codec = s.Codec,
-                                    CodecTag = s.CodecTag,
-                                    Profile = s.Profile,
-                                    Height = s.Height,
-                                    Channels = s.Channels,
-                                    ChannelLayout = s.ChannelLayout,
-                                    VideoRangeType = s.VideoRangeType,
-                                    DisplayTitle = (string?)null,
+                                    var s = resolved.Stream;
+                                    return (object)new
+                                    {
+                                        Type = s.Type.ToString(),
+                                        Language = resolved.Language,
+                                        Codec = s.Codec,
+                                        CodecTag = s.CodecTag,
+                                        Profile = s.Profile,
+                                        Height = s.Height,
+                                        Channels = s.Channels,
+                                        ChannelLayout = s.ChannelLayout,
+                                        VideoRangeType = s.VideoRangeType,
+                                        DisplayTitle = default(string?),
+                                    };
                                 })
                                 .ToList();
                         }
@@ -7243,20 +7255,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var mediaSources = item.GetMediaSources(false);
                     // OPT-5: Only include fields tag renderers need from MediaStreams
                     trimmedStreams = mediaSources
-                        .SelectMany(s => s.MediaStreams ?? Enumerable.Empty<MediaStream>())
-                        .Where(s => s.Type == MediaStreamType.Video || s.Type == MediaStreamType.Audio)
-                        .Select(s => (object)new
+                        .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, item.Path))
+                        .Where(resolved =>
+                            resolved.Stream.Type == MediaStreamType.Video
+                            || resolved.Stream.Type == MediaStreamType.Audio)
+                        .Select(resolved =>
                         {
-                            Type = s.Type.ToString(),
-                            Language = s.Language,
-                            Codec = s.Codec,
-                            CodecTag = s.CodecTag,
-                            Profile = s.Profile,
-                            Height = s.Height,
-                            Channels = s.Channels,
-                            ChannelLayout = s.ChannelLayout,
-                            VideoRangeType = s.VideoRangeType,
-                            DisplayTitle = s.DisplayTitle,
+                            var s = resolved.Stream;
+                            return (object)new
+                            {
+                                Type = s.Type.ToString(),
+                                Language = resolved.Language,
+                                Codec = s.Codec,
+                                CodecTag = s.CodecTag,
+                                Profile = s.Profile,
+                                Height = s.Height,
+                                Channels = s.Channels,
+                                ChannelLayout = s.ChannelLayout,
+                                VideoRangeType = s.VideoRangeType,
+                                DisplayTitle = s.DisplayTitle,
+                            };
                         })
                         .ToList();
                     // Include filenames only (not full paths) for IMAX/3D/media-stub detection.

@@ -345,12 +345,42 @@
     // (pt-BR → Brazilian flag, es-419 → Mexican, bare pt/es stay default).
 
     /**
+     * Fetches one item through Enhanced's region-aware tag-data projection.
+     * @param {string} userId The user ID.
+     * @param {string} itemId The item ID.
+     * @returns {Promise<object|null>} The projected item or null.
+     */
+    async function fetchTagDataItem(userId, itemId) {
+        try {
+            const response = await ApiClient.ajax({
+                type: 'POST',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`),
+                data: JSON.stringify([itemId]),
+                contentType: 'application/json',
+                dataType: 'json'
+            });
+            return response?.Items?.[0] || null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
      * Fetches the first episode of a series or season for language detection.
      * @param {string} userId The user ID.
      * @param {string} parentId The series or season ID.
+     * @param {string|null} [firstEpisodeId=null] Known first episode ID, when available.
      * @returns {Promise<object|null>} The first episode item or null.
      */
-    async function fetchFirstEpisodeForLanguage(userId, parentId) {
+    async function fetchFirstEpisodeForLanguage(userId, parentId, firstEpisodeId = null) {
+        // The parent /tag-data response normally already identifies its first
+        // episode. Stay on the Enhanced path when that ID is available.
+        if (firstEpisodeId) {
+            const enriched = await fetchTagDataItem(userId, firstEpisodeId);
+            if (enriched) return enriched;
+        }
+
+        // Native lookup is retained only as a compatibility fallback.
         try {
             const response = await ApiClient.ajax({
                 type: 'GET',
@@ -366,7 +396,11 @@
                 }),
                 dataType: 'json'
             });
-            return response.Items?.[0] || null;
+
+            const episode = response.Items?.[0] || null;
+            if (!episode?.Id) return episode;
+
+            return await fetchTagDataItem(userId, episode.Id) || episode;
         } catch {
             return null;
         }
@@ -535,15 +569,27 @@
 
             try {
                 const userId = ApiClient.getCurrentUserId();
-                const item = JE.helpers?.getItemCached
-                    ? await JE.helpers.getItemCached(itemId, { userId })
-                    : await ApiClient.getItem(userId, itemId);
+
+                // Prefer Enhanced's tag-data projection because it restores
+                // authoritative Matroska BCP-47 stream languages. Fall back to
+                // the native Jellyfin item to preserve existing behaviour if the
+                // Enhanced endpoint is unavailable.
+                const item = await fetchTagDataItem(userId, itemId)
+                    || (JE.helpers?.getItemCached
+                        ? await JE.helpers.getItemCached(itemId, { userId })
+                        : await ApiClient.getItem(userId, itemId));
 
                 let sourceItem = item;
 
-                // For Series/Season, fetch the first episode to get language info
+                // For Series/Season, fetch the first episode to get language info.
+                // fetchFirstEpisodeForLanguage enriches that episode through
+                // /tag-data before returning it.
                 if (item.Type === 'Series' || item.Type === 'Season') {
-                    const episode = await fetchFirstEpisodeForLanguage(userId, item.Id);
+                    const episode = await fetchFirstEpisodeForLanguage(
+                        userId,
+                        item.Id,
+                        item.FirstEpisode?.Id
+                    );
                     if (episode) {
                         sourceItem = episode;
                     } else {
@@ -555,8 +601,9 @@
                 }
 
                 const languages = new Set();
-                sourceItem?.MediaSources?.forEach(source => {
-                    source.MediaStreams?.filter(stream => stream.Type === 'Audio').forEach(stream => {
+
+                const collectAudioLanguages = (streams) => {
+                    streams?.filter(stream => stream.Type === 'Audio').forEach(stream => {
                         const langCode = stream.Language;
                         if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
                             try {
@@ -567,6 +614,14 @@
                             }
                         }
                     });
+                };
+
+                // /tag-data exposes its trimmed stream projection directly on
+                // MediaStreams. Native Jellyfin items keep streams inside each
+                // MediaSource, so support both shapes for graceful fallback.
+                collectAudioLanguages(sourceItem?.MediaStreams);
+                sourceItem?.MediaSources?.forEach(source => {
+                    collectAudioLanguages(source.MediaStreams);
                 });
 
                 const uniqueLanguages = Array.from(languages).map(JSON.parse);
