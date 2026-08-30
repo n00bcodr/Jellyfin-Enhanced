@@ -14,6 +14,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
     /// Tag the property here, at its declaration, so adding a new enum-style
     /// setting (e.g. a *Position or *Style field) automatically starts being
     /// tracked without a second file to remember to edit.
+    /// Tagged values are sent VERBATIM, so the attribute may only go on
+    /// fixed-choice values. A string whose raw value isn't safe to share
+    /// as-is (free text, or anything that can hold an identifier) must NOT
+    /// be tagged — derive a safe value in
+    /// AnalyticsReportingService.GetStringSettings instead, the way
+    /// MaintenanceModeAffectedUsers and LanguageTagsPriority are.
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
     public sealed class AnalyticsIncludeAttribute : Attribute

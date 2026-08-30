@@ -5460,16 +5460,41 @@
 
                     masterEl.addEventListener('change', function() {
                         subContainer.style.display = this.checked ? '' : 'none';
+                        // Once the admin has turned the master on this session,
+                        // the save handler must persist AnalyticsHasBeenConfigured
+                        // EVEN IF the master is off again at save time — otherwise
+                        // an enable -> uncheck a category -> disable -> save
+                        // sequence stores the unchecks with the flag still false,
+                        // and the next session's enable re-cascades all three
+                        // over a recorded opt-out. dataset (not a closure var)
+                        // because the save handler lives outside this IIFE.
+                        if (this.checked) masterEl.dataset.jeTouched = '1';
                         // First time the admin ever turns this on, default every
                         // sub-category to shared; after that, leave their choices alone.
                         if (this.checked && !config.AnalyticsHasBeenConfigured) {
                             flagsEl.checked = true;
                             countsEl.checked = true;
                             sizesEl.checked = true;
+                            // One-shot: mark configured on the page copy too, or an
+                            // off/on toggle in the same session re-forces all three
+                            // and silently reverts a deliberate uncheck (the server
+                            // copy only updates on save, the closure never does).
+                            config.AnalyticsHasBeenConfigured = true;
+                            // The programmatic .checked writes above fire no change
+                            // events, so refresh an open preview by hand — it must
+                            // never show less than what would now be sent.
+                            if (previewContainer.style.display !== 'none') runPreview();
                         }
                     });
 
+                    // Monotonic token: runPreview has several auto-triggers
+                    // (button, sub-toggle changes, the first-enable cascade),
+                    // and overlapping responses would otherwise race
+                    // last-write-wins — the preview could show a payload
+                    // contradicting the current checkboxes.
+                    var previewSeq = 0;
                     async function runPreview() {
+                        var seq = ++previewSeq;
                         previewBtn.disabled = true;
                         try {
                             var res = await ApiClient.ajax({
@@ -5483,13 +5508,20 @@
                                 contentType: 'application/json',
                                 dataType: 'json'
                             });
+                            if (seq !== previewSeq) return; // superseded by a newer preview
                             previewJson.textContent = JSON.stringify(res.Payload, null, 2);
                             previewContainer.style.display = '';
                         } catch (err) {
-                            previewJson.textContent = 'Failed to build preview: ' + (err && err.message ? err.message : err);
+                            if (seq !== previewSeq) return; // superseded by a newer preview
+                            // ApiClient.ajax rejects with the fetch Response on a
+                            // non-2xx (no .message), so build something readable
+                            // instead of "[object Response]".
+                            var reason = (err && err.message)
+                                || (err && err.status ? 'HTTP ' + err.status + (err.statusText ? ' ' + err.statusText : '') : 'check server logs');
+                            previewJson.textContent = 'Failed to build preview: ' + reason;
                             previewContainer.style.display = '';
                         } finally {
-                            previewBtn.disabled = false;
+                            if (seq === previewSeq) previewBtn.disabled = false;
                         }
                     }
 
@@ -5938,7 +5970,12 @@
             config.AnalyticsShareDataSizes = document.querySelector('#analyticsShareDataSizes').checked;
             var analyticsIntervalRaw = parseInt(document.querySelector('#analyticsReportIntervalDays').value, 10);
             config.AnalyticsReportIntervalDays = isNaN(analyticsIntervalRaw) ? 15 : Math.min(30, Math.max(7, analyticsIntervalRaw));
-            if (config.AnalyticsEnabled) {
+            // Persist "configured" when saving with the master ON, and also
+            // when the admin turned it on at any point this session (dataset
+            // flag set by the master toggle handler) even if it's off again
+            // now — their sub-category choices from that interaction are being
+            // saved and must not be re-cascaded over on the next enable.
+            if (config.AnalyticsEnabled || document.querySelector('#analyticsEnabled').dataset.jeTouched === '1') {
                 config.AnalyticsHasBeenConfigured = true;
             }
 

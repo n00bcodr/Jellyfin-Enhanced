@@ -6,7 +6,7 @@ admin turns it on from the plugin's config page (**Admin → Usage Statistics**)
 the exact payload before it's ever sent.
 
 This page shows the current aggregate results, live, straight from the same database every opted-in
-install reports to. It reads three public, read-only views. No per-install data, no IP addresses, no
+install reports to. It reads four public, read-only views. No per-install data, no IP addresses, no
 identifying information of any kind is exposed here or anywhere in this system.
 
 !!! info "What these numbers are, and aren't"
@@ -34,8 +34,8 @@ Turning the master toggle on alone, with all three categories below left uncheck
 Enough to answer "how many installs are on the latest version" and nothing else.
 
 !!! info
-    These are **only** sent when the toggle is enabled and saved incase title "Always Included"
-    might is a bit misleading.
+    Despite the heading, "always" means "with every report", not "unconditionally": nothing at all
+    is sent until the master toggle is enabled and saved.
 
 ### Feature toggle states
 
@@ -49,9 +49,13 @@ set of non-boolean fixed-choice settings, since a string *could* be a URL or API
 specific ones are ever safe to include:
 
 - Icon style (`IconStyle`)
-- Maintenance Mode action and affected-users choice (`MaintenanceModeAction`, `MaintenanceModeAffectedUsers`)
+- Maintenance Mode action (`MaintenanceModeAction`), and whether it applies to all users or a
+  selection (`MaintenanceModeAffectedUsers`, sent only as `all`/`selected` — the actual user
+  selection never leaves your server)
 - Tag overlay positions (`QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `RatingTagsPosition`)
-- Language tag priority list (`LanguageTagsPriority`, language codes only, e.g. `en,ja,fr`)
+- Language tag priority list (`LanguageTagsPriority`) — normalized before sending: only tokens
+  shaped like language codes (e.g. `en,ja,fr`) are included, anything else typed into that box is
+  dropped
 
 No other string setting is ever included: URLs, API keys, branding text/images, and every other
 free-text field are permanently excluded by design, not by an admin-configurable option.
@@ -112,8 +116,18 @@ counts above do for other features.
   const SUPABASE_URL = "https://cgsdfzfdoxunzoofzhgd.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_ShFKE3ognn7ZgncCGmCR-A_R1tPApiW";
 
+  // Hard cap on rows pulled from any one view. The report_stats/register_install
+  // RPCs are reachable by anyone holding the anon key on this page, so a
+  // distinct plugin_version/target/flag_name/setting_name string is
+  // attacker-mintable; without a limit a flood of forged installs would make
+  // every visitor's browser download and render thousands of rows. Each
+  // renderer additionally slices to what it displays.
+  const MAX_ROWS = 500;
+
   async function fetchView(name, query) {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${name}?${query || "select=*"}`, {
+    const q = query || "select=*";
+    const withLimit = /(^|&)limit=/.test(q) ? q : `${q}&limit=${MAX_ROWS}`;
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${name}?${withLimit}`, {
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
     });
     if (!res.ok) throw new Error(`${name}: ${res.status}`);
@@ -123,6 +137,15 @@ counts above do for other features.
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
   }
+
+  // Numeric coercion for every count/percentage field before it goes into
+  // innerHTML. These come from the public views and are ultimately derived
+  // from attacker-forgeable report_stats input; the string fields are already
+  // escapeHtml'd, so coercing the numeric ones closes the last report-derived
+  // path into the DOM (and keeps style="width:N%" well-formed and the
+  // sort/reduce/Math math honest against a non-numeric value).
+  function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
+  function pct(v) { return Math.max(0, Math.min(100, num(v))); }
 
   // Same "DD-MMM-YYYY" convention as the config page's own formatDateDMY --
   // explicit instead of toLocaleDateString() so it doesn't vary by the
@@ -138,7 +161,9 @@ counts above do for other features.
   // (e.g. a "total.*" analytics key, which was never a config-page control
   // to begin with).
   function humanize(name) {
-    const spaced = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
+    // String() guard: name can originate from a report-supplied field.
+    const s = String(name == null ? '' : name);
+    const spaced = s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
     return spaced.charAt(0).toUpperCase() + spaced.slice(1);
   }
 
@@ -148,7 +173,11 @@ counts above do for other features.
   // Home tab" (its actual checkbox text) instead of "Recommendations Use
   // Native Tab".
   function labeledName(rawName) {
-    const display = FLAG_LABELS_MAP[rawName] || humanize(rawName);
+    // hasOwnProperty guard: rawName is report-supplied, so a name like
+    // "toString" or "constructor" would otherwise pull a function off
+    // Object.prototype instead of a label.
+    const display = Object.prototype.hasOwnProperty.call(FLAG_LABELS_MAP, rawName)
+      ? FLAG_LABELS_MAP[rawName] : humanize(rawName);
     return `${escapeHtml(display)}<br/><code class="je-flag-raw">${escapeHtml(rawName)}</code>`;
   }
 
@@ -159,31 +188,39 @@ counts above do for other features.
   // it's still worth surfacing as its own signal rather than only the
   // matched pairing.
   function isTargetMismatch(target, jellyfinVersion) {
-    if (!jellyfinVersion) return false;
-    const majorIsTwelve = jellyfinVersion.startsWith('12.');
-    return (target === 'jf10' && majorIsTwelve) || (target === 'jf12' && !majorIsTwelve);
+    // Compare major-version ranges (jf10 <-> 10.x/11.x, jf12 <-> 12.x and
+    // later) rather than keying on startsWith('12.'), which would flag every
+    // jf12 install the day Jellyfin 13 ships and miss a jf10 build on it.
+    const major = parseInt(jellyfinVersion, 10);
+    if (!Number.isFinite(major)) return false;
+    return (target === 'jf10' && major >= 12) || (target === 'jf12' && major < 12);
   }
 
   function renderVersionCards(rows) {
-    const totalInstalls = rows.reduce((sum, r) => sum + r.install_count, 0);
-    const byTarget = {};
-    rows.forEach(r => { byTarget[r.jellyfin_target] = (byTarget[r.jellyfin_target] || 0) + r.install_count; });
+    const totalInstalls = rows.reduce((sum, r) => sum + num(r.install_count), 0);
+    // Object.create(null) wherever report-supplied strings become keys: an
+    // inherited name like "hasOwnProperty" must index nothing.
+    const byTarget = Object.create(null);
+    rows.forEach(r => { byTarget[r.jellyfin_target] = (byTarget[r.jellyfin_target] || 0) + num(r.install_count); });
 
     let html = `<div class="je-stat-cards">
       <div class="je-stat-card"><div class="je-stat-value">${totalInstalls}</div><div class="je-stat-label">Reporting installs</div></div>`;
-    Object.keys(byTarget).sort().forEach(target => {
+    // Cap per-target cards BY COUNT: a distinct jellyfin_target is
+    // attacker-mintable, and an alphabetical cut would let forged names that
+    // sort first evict the genuine jf10/jf12 cards.
+    Object.keys(byTarget).sort((a, b) => byTarget[b] - byTarget[a]).slice(0, 12).forEach(target => {
       html += `<div class="je-stat-card"><div class="je-stat-value">${byTarget[target]}</div><div class="je-stat-label">on ${escapeHtml(target)}</div></div>`;
     });
     html += `</div>`;
 
     html += `<table class="je-analytics-table"><thead><tr><th>Plugin Target</th><th>Jellyfin target</th><th>Jellyfin version</th><th>Installs</th><th>Most recently seen</th></tr></thead><tbody>`;
-    rows.sort((a, b) => b.install_count - a.install_count).forEach(r => {
+    rows.sort((a, b) => num(b.install_count) - num(a.install_count)).slice(0, 50).forEach(r => {
       const seen = formatDateDMY(new Date(r.most_recent_seen));
       const mismatch = isTargetMismatch(r.jellyfin_target, r.jellyfin_version);
       const versionCell = mismatch
         ? `<span class="je-analytics-mismatch" title="This build target doesn't match the running server's major version">${escapeHtml(r.jellyfin_version)} ⚠</span>`
         : escapeHtml(r.jellyfin_version);
-      html += `<tr><td>${escapeHtml(r.plugin_version)}</td><td>${escapeHtml(r.jellyfin_target)}</td><td>${versionCell}</td><td>${r.install_count}</td><td>${seen}</td></tr>`;
+      html += `<tr><td>${escapeHtml(r.plugin_version)}</td><td>${escapeHtml(r.jellyfin_target)}</td><td>${versionCell}</td><td>${num(r.install_count)}</td><td>${seen}</td></tr>`;
     });
     html += `</tbody></table>`;
     return html;
@@ -197,22 +234,47 @@ counts above do for other features.
   // either way.
   const TOTAL_COUNT_PREFIX = 'total.';
 
+  // Periods are report-supplied and the anon key is public, so treat them as
+  // hostile: validate the shape strictly (a pseudo-date like "2026-08-2z"
+  // passes a lexicographic compare and renders as NaN), reject the future,
+  // and aggregate over a TRAILING WINDOW rather than "the single most recent
+  // period" — genuine installs report period STARTS up to 30 days old, so
+  // one forged row stamped with today's date would otherwise become the only
+  // period shown and hide every real install's rows.
+  const PERIOD_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const TODAY = new Date().toISOString().slice(0, 10);
+  const WINDOW_DAYS = 45; // max reporting interval (30d) + slack
+  const WINDOW_START = new Date(Date.now() - WINDOW_DAYS * 864e5).toISOString().slice(0, 10);
+  function recentValidPeriods(rows) {
+    return rows.filter(r => typeof r.period === 'string' && PERIOD_RE.test(r.period)
+      && r.period <= TODAY && r.period >= WINDOW_START);
+  }
+
   function renderUsageTable(rows) {
-    const deltaRows = rows.filter(r => !r.feature_key.startsWith(TOTAL_COUNT_PREFIX));
+    const deltaRows = recentValidPeriods(rows).filter(r => !String(r.feature_key || '').startsWith(TOTAL_COUNT_PREFIX));
     if (!deltaRows.length) {
       return `<p><em>No usage-count data reported yet. This fills in once opted-in installs have accumulated activity over a reporting cycle.</em></p>`;
     }
-    // Most recent period only, top 20 by total count.
-    const latestPeriod = deltaRows.reduce((max, r) => r.period > max ? r.period : max, deltaRows[0].period);
-    const latest = deltaRows.filter(r => r.period === latestPeriod).sort((a, b) => b.total_count - a.total_count).slice(0, 20);
-    const maxCount = Math.max(...latest.map(r => r.total_count), 1);
+    // Aggregate per key across the whole window: counts sum (per-period
+    // deltas), install counts take the max — the same install can appear in
+    // several periods, so summing those would double-count it.
+    const byKey = Object.create(null);
+    deltaRows.forEach(r => {
+      const k = String(r.feature_key || '');
+      const e = byKey[k] || (byKey[k] = { total: 0, installs: 0 });
+      e.total += num(r.total_count);
+      e.installs = Math.max(e.installs, num(r.install_count));
+    });
+    const latest = Object.keys(byKey).map(k => ({ key: k, total: byKey[k].total, installs: byKey[k].installs }))
+      .sort((a, b) => b.total - a.total).slice(0, 20);
+    const maxCount = Math.max(...latest.map(r => r.total), 1);
 
-    let html = `<p>Most recent reporting period: <strong>${formatDateDMY(new Date(`${latestPeriod}T00:00:00`))}</strong></p>`;
+    let html = `<p>Activity reported over the trailing <strong>${WINDOW_DAYS}-day</strong> window (top 20 keys):</p>`;
     html += `<table class="je-analytics-table"><thead><tr><th>Feature key</th><th>Total uses</th><th>Installs reporting it</th><th></th></tr></thead><tbody>`;
     latest.forEach(r => {
-      const pct = Math.round((r.total_count / maxCount) * 100);
-      html += `<tr><td>${labeledName(r.feature_key)}</td><td>${r.total_count}</td><td>${r.install_count}</td>
-        <td style="width:120px;"><div class="je-analytics-bar-track"><div class="je-analytics-bar-fill" style="width:${pct}%;"></div></div></td></tr>`;
+      const barPct = pct(Math.round((r.total / maxCount) * 100));
+      html += `<tr><td>${labeledName(r.key)}</td><td>${r.total}</td><td>${r.installs}</td>
+        <td style="width:120px;"><div class="je-analytics-bar-track"><div class="je-analytics-bar-fill" style="width:${barPct}%;"></div></div></td></tr>`;
     });
     html += `</tbody></table>`;
     return html;
@@ -225,20 +287,32 @@ counts above do for other features.
   // scanning needed: a per-install total.X of 0 vs. >0 is all it takes to
   // know whether that install has any at all.
   function renderTotalCounts(rows) {
-    const totalRows = rows.filter(r => r.feature_key.startsWith(TOTAL_COUNT_PREFIX));
+    const totalRows = recentValidPeriods(rows).filter(r => String(r.feature_key || '').startsWith(TOTAL_COUNT_PREFIX));
     if (!totalRows.length) {
       return `<p><em>No total-count data reported yet.</em></p>`;
     }
-    const latestPeriod = totalRows.reduce((max, r) => r.period > max ? r.period : max, totalRows[0].period);
-    const latest = totalRows.filter(r => r.period === latestPeriod).sort((a, b) => a.feature_key.localeCompare(b.feature_key));
+    // Point-in-time snapshots: per key keep only its most recent period's row
+    // (summing across periods would double-count the same installs).
+    const byKey = Object.create(null);
+    totalRows.forEach(r => {
+      const k = String(r.feature_key || '');
+      if (!byKey[k] || r.period > byKey[k].period) byKey[k] = r;
+    });
+    // Cap BY COUNT, not alphabetically: total.* keys are attacker-mintable
+    // via direct report_stats calls, and an alphabetical slice would let a
+    // few forged names that sort first evict every genuine card. Rank by
+    // count for the cut, then alphabetical for display.
+    const latest = Object.values(byKey)
+      .sort((a, b) => num(b.total_count) - num(a.total_count)).slice(0, 24)
+      .sort((a, b) => String(a.feature_key).localeCompare(String(b.feature_key)));
 
     let html = `<div class="je-stat-cards">`;
     latest.forEach(r => {
-      const label = humanize(r.feature_key.slice(TOTAL_COUNT_PREFIX.length));
+      const label = humanize(String(r.feature_key).slice(TOTAL_COUNT_PREFIX.length));
       html += `<div class="je-stat-card">
-        <div class="je-stat-value">${r.total_count}</div>
+        <div class="je-stat-value">${num(r.total_count)}</div>
         <div class="je-stat-label">${escapeHtml(label)}</div>
-        <div class="je-stat-label">${r.nonzero_install_count} of ${r.install_count} reporting installs</div>
+        <div class="je-stat-label">${num(r.nonzero_install_count)} of ${num(r.install_count)} reporting installs</div>
       </div>`;
     });
     html += `</div>`;
@@ -269,16 +343,18 @@ counts above do for other features.
   }
 
   function groupFor(flagName) {
-    return FLAG_GROUPS_MAP[flagName] || 'Other';
+    // Same hasOwnProperty guard as labeledName: flagName is report-supplied.
+    return Object.prototype.hasOwnProperty.call(FLAG_GROUPS_MAP, flagName)
+      ? FLAG_GROUPS_MAP[flagName] : 'Other';
   }
 
   function renderFlagRates(rows) {
-    const reporting = rows.filter(r => r.reporting_count > 0);
+    const reporting = rows.filter(r => num(r.reporting_count) > 0);
     if (!reporting.length) {
       return `<p><em>No config-flag data reported yet.</em></p>`;
     }
 
-    const groups = {};
+    const groups = Object.create(null);
     reporting.forEach(r => {
       const g = groupFor(r.flag_name);
       (groups[g] = groups[g] || []).push(r);
@@ -292,9 +368,14 @@ counts above do for other features.
     });
 
     return groupNames.map((g, i) => {
-      const items = groups[g].sort((a, b) => a.flag_name.localeCompare(b.flag_name));
-      let rowsHtml = items.map(r => `<tr><td>${labeledName(r.flag_name)}</td><td>${r.enabled_pct}%</td>
-        <td style="width:120px;"><div class="je-analytics-bar-track"><div class="je-analytics-bar-fill" style="width:${r.enabled_pct}%;"></div></div></td></tr>`).join('');
+      // Cap rows per group BY reporting_count, then alphabetical for display:
+      // flag_name is attacker-mintable via report_stats, and an alphabetical
+      // cut would let forged names that sort first evict genuine rows.
+      const items = groups[g]
+        .sort((a, b) => num(b.reporting_count) - num(a.reporting_count)).slice(0, 200)
+        .sort((a, b) => String(a.flag_name).localeCompare(String(b.flag_name)));
+      let rowsHtml = items.map(r => `<tr><td>${labeledName(r.flag_name)}</td><td>${pct(r.enabled_pct)}%</td>
+        <td style="width:120px;"><div class="je-analytics-bar-track"><div class="je-analytics-bar-fill" style="width:${pct(r.enabled_pct)}%;"></div></div></td></tr>`).join('');
       return `<details class="je-flag-group"${i === 0 ? ' open' : ''}>
         <summary>${escapeHtml(g)} (${items.length})</summary>
         <table class="je-analytics-table"><thead><tr><th>Feature toggle</th><th>% of reporting installs with it ON</th><th></th></tr></thead>
@@ -311,18 +392,27 @@ counts above do for other features.
       return `<p><em>No settings data reported yet.</em></p>`;
     }
 
-    const bySetting = {};
+    // Object.create(null): setting_name is report-supplied, and a name like
+    // "toString" hitting an inherited member would throw and blank the page.
+    const bySetting = Object.create(null);
     rows.forEach(r => { (bySetting[r.setting_name] = bySetting[r.setting_name] || []).push(r); });
 
-    const names = Object.keys(bySetting).sort((a, b) => a.localeCompare(b));
+    // Cap BY total reporting installs, then alphabetical for display:
+    // setting_name is attacker-mintable, and an alphabetical cut would let
+    // forged names that sort first evict the genuine settings.
+    const totalFor = name => bySetting[name].reduce((s, v) => s + num(v.install_count), 0);
+    const names = Object.keys(bySetting)
+      .sort((a, b) => totalFor(b) - totalFor(a)).slice(0, 100)
+      .sort((a, b) => a.localeCompare(b));
 
     return names.map((name, i) => {
-      const values = bySetting[name].slice().sort((a, b) => b.install_count - a.install_count);
-      const total = values.reduce((sum, v) => sum + v.install_count, 0);
+      // Cap values per setting too — setting_value is equally forgeable.
+      const values = bySetting[name].slice().sort((a, b) => num(b.install_count) - num(a.install_count)).slice(0, 100);
+      const total = values.reduce((sum, v) => sum + num(v.install_count), 0);
       const rowsHtml = values.map(v => {
-        const pct = total > 0 ? Math.round((v.install_count / total) * 100) : 0;
-        return `<tr><td>${escapeHtml(v.setting_value)}</td><td>${v.install_count}</td><td>${pct}%</td>
-          <td style="width:120px;"><div class="je-analytics-bar-track"><div class="je-analytics-bar-fill" style="width:${pct}%;"></div></div></td></tr>`;
+        const barPct = total > 0 ? pct(Math.round((num(v.install_count) / total) * 100)) : 0;
+        return `<tr><td>${escapeHtml(v.setting_value)}</td><td>${num(v.install_count)}</td><td>${barPct}%</td>
+          <td style="width:120px;"><div class="je-analytics-bar-track"><div class="je-analytics-bar-fill" style="width:${barPct}%;"></div></div></td></tr>`;
       }).join('');
       return `<details class="je-flag-group"${i === 0 ? ' open' : ''}>
         <summary>${labeledName(name)} (${total} reporting)</summary>
@@ -332,28 +422,40 @@ counts above do for other features.
     }).join('');
   }
 
+  // One poisoned view's data must not blank the whole dashboard: a section
+  // that throws renders its own error line while every other section still
+  // shows.
+  function renderSection(titleHtml, fn, rows) {
+    let body;
+    try {
+      body = fn(rows);
+    } catch (err) {
+      body = `<p class="je-analytics-error">Couldn't render this section (${escapeHtml(err && err.message ? err.message : err)}).</p>`;
+    }
+    return `<h3>${titleHtml}</h3>${body}`;
+  }
+
   async function render() {
     const el = document.getElementById("je-analytics-dashboard");
     try {
+      // Explicit order= on every view: with the row limit in fetchView, an
+      // unordered query would let PostgREST truncate an arbitrary subset once
+      // a view outgrows the limit — ordering makes the kept rows the newest/
+      // biggest ones deterministically.
       const [versionRows, usageRows, flagRows, settingRows] = await Promise.all([
-        fetchView("v_version_adoption"),
-        fetchView("v_feature_usage_totals"),
+        fetchView("v_version_adoption", "select=*&order=most_recent_seen.desc"),
+        fetchView("v_feature_usage_totals", "select=*&order=period.desc"),
         fetchView("v_config_flag_rates", "select=*&order=enabled_pct.desc"),
-        fetchView("v_config_setting_values", "select=*"),
+        fetchView("v_config_setting_values", "select=*&order=install_count.desc"),
         loadFlagGroups()
       ]);
 
       el.innerHTML = `
-        <h3>Installs &amp; versions</h3>
-        ${renderVersionCards(versionRows)}
-        <h3>Current totals (across reporting installs)</h3>
-        ${renderTotalCounts(usageRows)}
-        <h3>Feature usage (most recent period)</h3>
-        ${renderUsageTable(usageRows)}
-        <h3>Feature toggle adoption</h3>
-        ${renderFlagRates(flagRows)}
-        <h3>Settings distribution</h3>
-        ${renderSettingValues(settingRows)}
+        ${renderSection('Installs &amp; versions', renderVersionCards, versionRows)}
+        ${renderSection('Current totals (across reporting installs)', renderTotalCounts, usageRows)}
+        ${renderSection('Feature usage (most recent period)', renderUsageTable, usageRows)}
+        ${renderSection('Feature toggle adoption', renderFlagRates, flagRows)}
+        ${renderSection('Settings distribution', renderSettingValues, settingRows)}
         <div class="je-analytics-updated">Loaded live just now from the community analytics project. Refresh this page any time for current numbers.</div>
       `;
     } catch (err) {

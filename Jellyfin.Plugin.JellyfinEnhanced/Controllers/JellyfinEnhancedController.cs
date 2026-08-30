@@ -3183,7 +3183,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.MaintenanceModeEnabled,
                 config.MaintenanceModeMessage,
                 config.MaintenanceModeAction,
-                config.MaintenanceModeAffectedUsers,
+                // Derived, never the raw value: the stored setting can be a
+                // JSON array of real user GUIDs, and this endpoint is
+                // anonymous (pre-login). No client script reads this field —
+                // enforcement is server-side — so only the shape is exposed.
+                MaintenanceModeAffectedUsers = PluginConfiguration.DeriveAffectedUsersShape(config.MaintenanceModeAffectedUsers),
 
                 // Spoiler Guard — frontend uses these to decide whether the per-show toggle appears.
                 config.SpoilerBlurEnabled,
@@ -3253,7 +3257,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// TMDB_API_KEY (that key is unrelated to this lookup).
         /// </summary>
         /// <summary>
-        /// Bumps one feature-usage counter (e.g. "rating.half_star_used") for the
+        /// Bumps one feature-usage counter (e.g. "seerr.request_submitted") for the
         /// current analytics reporting period. No-ops silently (not an error)
         /// unless analytics AND the usage-counts category are both enabled, so a
         /// client that fires this unconditionally never needs to check config
@@ -3276,9 +3280,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var key = keyEl.GetString() ?? string.Empty;
+            // IsKnownKey restricts this endpoint to the finite set of counters
+            // the plugin actually emits: without it, any authenticated user
+            // could mint unbounded distinct counter rows or forge "total.*"
+            // snapshot keys alongside the real ones.
             if (!Services.UsageEventCounterService.IsValidKey(key))
             {
                 return BadRequest("Invalid feature key.");
+            }
+            if (!Services.UsageEventCounterService.IsKnownKey(key))
+            {
+                // Loud on purpose: a well-formed-but-unlisted key is almost
+                // always a new client counter shipped without the matching
+                // KnownKeys entry — silently 400ing it would read as "nobody
+                // uses this feature" on the dashboard forever. (key already
+                // passed the charset check above, so it's safe to log.)
+                _logger.Warning($"[Analytics] Rejected unknown usage key '{key}' — new counters must be added to UsageEventCounterService.KnownKeys in the same change that emits them.");
+                return BadRequest("Unknown feature key.");
             }
 
             _usageEventCounterService.Increment(key);

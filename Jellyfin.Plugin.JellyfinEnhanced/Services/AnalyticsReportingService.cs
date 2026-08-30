@@ -36,6 +36,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
 
+        // Serializes sends: the daily scheduled task and an opt-in transition
+        // can otherwise overlap and race registration, the counter reset, and
+        // SaveConfiguration.
+        private readonly SemaphoreSlim _sendGate = new(1, 1);
+
+        // 403s tolerated before discarding credentials and re-registering. A
+        // single Forbidden can be a transient edge/WAF block rather than
+        // proof the backend lost this install's row — discarding credentials
+        // on the first one would fork the install into a new backend row (and
+        // the old one could never be opted out again). The count itself lives
+        // in config (AnalyticsForbiddenSinceLastSuccess), NOT in a field:
+        // attempts happen at most daily, so an in-memory count on a server
+        // restarted every day or two would never reach the threshold and the
+        // install would 403 forever. Semantics: 403s since the last
+        // successful report (other failures neither bump nor reset it).
+        private const int ForbiddenResetThreshold = 3;
+
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IApplicationPaths _applicationPaths;
         private readonly IServerApplicationHost _appHost;
@@ -58,6 +75,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _userConfigurationManager = userConfigurationManager;
             _logger = logger;
         }
+
+        /// <summary>
+        /// Today (UTC) as yyyy-MM-dd. InvariantCulture is load-bearing: with
+        /// the host's culture, a Thai locale renders the Buddhist-calendar
+        /// year ("2569-08-30"), the backend accepts it, and the dashboard's
+        /// future-period filter then drops that install's rows as forged —
+        /// permanently.
+        /// </summary>
+        private static string UtcToday() =>
+            DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
+        /// <summary>
+        /// Opt-in consent boundary: clears every counter and starts the
+        /// period at today. Called synchronously from
+        /// JellyfinEnhanced.UpdateConfiguration on the OFF-&gt;ON transition,
+        /// BEFORE anything can act on the newly enabled state, so no send can
+        /// ever ship pre-consent counters or a pre-consent period start.
+        /// </summary>
+        public void ResetCountersForConsentBoundary() =>
+            _counters.ResetForNewPeriod(UtcToday());
 
         private static string JellyfinTarget =>
 #if NET10_0_OR_GREATER
@@ -107,24 +144,65 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
                 using var doc = JsonDocument.Parse(body);
-                var row = doc.RootElement[0];
 
-                config.AnalyticsInstallId = row.GetProperty("install_id").GetString() ?? string.Empty;
-                config.AnalyticsInstallSecret = row.GetProperty("secret").GetString() ?? string.Empty;
-                JellyfinEnhanced.Instance?.SaveConfiguration();
+                // PostgREST returns a single-row array for this RPC; accept a
+                // bare object too, and treat any other 2xx shape as a logged
+                // failure instead of an uncaught InvalidOperationException/
+                // KeyNotFoundException (neither derives from JsonException).
+                var root = doc.RootElement;
+                var row = root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0 ? root[0] : root;
+                if (row.ValueKind != JsonValueKind.Object
+                    || !row.TryGetProperty("install_id", out var idEl) || idEl.ValueKind != JsonValueKind.String
+                    || !row.TryGetProperty("secret", out var secretEl) || secretEl.ValueKind != JsonValueKind.String)
+                {
+                    _logger.Warning("[Analytics] Registration failed: unexpected response shape.");
+                    return;
+                }
+
+                var installId = idEl.GetString() ?? string.Empty;
+                var installSecret = secretEl.GetString() ?? string.Empty;
+
+                // Write to the CURRENT live configuration, not only the object
+                // captured when this call started: a config save can replace
+                // Configuration mid-flight, and SaveConfiguration persists the
+                // live object — writing only to a replaced snapshot would
+                // persist empty credentials while the backend row already
+                // exists. Under AnalyticsCredentialLock so the live-read,
+                // writes, and save can't interleave with UpdateConfiguration's
+                // object swap.
+                lock (JellyfinEnhanced.AnalyticsCredentialLock)
+                {
+                    var live = JellyfinEnhanced.Instance?.Configuration ?? config;
+                    live.AnalyticsInstallId = installId;
+                    live.AnalyticsInstallSecret = installSecret;
+                    config.AnalyticsInstallId = installId;
+                    config.AnalyticsInstallSecret = installSecret;
+                    try
+                    {
+                        JellyfinEnhanced.Instance?.SaveConfiguration();
+                    }
+                    catch (Exception ex)
+                    {
+                        // The backend row EXISTS at this point — a disk failure
+                        // here must not be reported as "Registration failed"
+                        // (the admin would chase the network while the fault is
+                        // local, and a restart would mint a duplicate row).
+                        _logger.Warning($"[Analytics] Registered, but failed to persist credentials to disk: {ex.Message}. A restart before this is fixed will re-register and orphan this registration.");
+                    }
+                }
                 _logger.Info("[Analytics] Registered a new install with the community analytics backend.");
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 // Shutdown path, silent.
             }
-            catch (HttpRequestException ex)
+            catch (Exception ex)
             {
+                // Everything else — HTTP errors, HttpClient timeouts (which
+                // surface as TaskCanceledException without our token set),
+                // malformed JSON, disk errors from SaveConfiguration — gets
+                // exactly one warning line. Telemetry must never propagate.
                 _logger.Warning($"[Analytics] Registration failed: {ex.Message}");
-            }
-            catch (JsonException ex)
-            {
-                _logger.Warning($"[Analytics] Registration failed: unexpected response shape ({ex.Message})");
             }
         }
 
@@ -146,9 +224,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// reflects real current state either way. Callers must have already
         /// awaited EnsureRegisteredAsync.
         /// </summary>
-        public AnalyticsPayload BuildPayload(PluginConfiguration config, bool shareFeatureFlags, bool shareUsageCounts, bool shareDataSizes)
+        public AnalyticsPayload BuildPayload(PluginConfiguration config, bool shareFeatureFlags, bool shareUsageCounts, bool shareDataSizes) =>
+            BuildPayload(config, shareFeatureFlags, shareUsageCounts, shareDataSizes, _counters.GetSnapshot());
+
+        /// <summary>
+        /// Core builder over a caller-supplied counter snapshot. SendAsync
+        /// takes the snapshot itself so that, after a successful send, it can
+        /// subtract EXACTLY what this payload contained from the live counters
+        /// — a second internal snapshot here could differ from the one the
+        /// reset uses, dropping or double-counting increments that landed in
+        /// between.
+        /// </summary>
+        private AnalyticsPayload BuildPayload(
+            PluginConfiguration config,
+            bool shareFeatureFlags,
+            bool shareUsageCounts,
+            bool shareDataSizes,
+            (string PeriodStart, Dictionary<string, int> Counters) snapshot)
         {
-            var (periodStart, counters) = _counters.GetSnapshot();
+            var (periodStart, counters) = snapshot;
 
             var payload = new AnalyticsPayload
             {
@@ -207,19 +301,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
-        /// Every string property explicitly marked [AnalyticsInclude]. See that
+        /// Every string property explicitly marked [AnalyticsInclude] (sent
+        /// verbatim — so the attribute may ONLY go on fixed-choice values),
+        /// plus derived entries for settings whose raw value is not safe to
+        /// share and must be reduced to a safe shape first. See the
         /// attribute's doc comment for why strings can't auto-include by type
         /// the way bools do. Empty/null values are skipped so a never-set field
         /// doesn't crowd out real answers in the dashboard's value-distribution view.
         /// </summary>
         private static Dictionary<string, string> GetStringSettings(PluginConfiguration config)
         {
-            return typeof(PluginConfiguration)
+            var settings = typeof(PluginConfiguration)
                 .GetProperties(BindingFlags.Public | BindingFlags.Instance)
                 .Where(p => p.PropertyType == typeof(string) && p.GetCustomAttribute<Model.AnalyticsIncludeAttribute>() != null)
                 .Select(p => new { p.Name, Value = p.GetValue(config) as string })
                 .Where(x => !string.IsNullOrEmpty(x.Value))
                 .ToDictionary(x => x.Name, x => x.Value!);
+
+            // Derived, never verbatim: the stored value can be a JSON array of
+            // real Jellyfin user GUIDs. One shared helper with the anonymous
+            // public-config endpoint so the two shapes can never drift.
+            settings["MaintenanceModeAffectedUsers"] = PluginConfiguration.DeriveAffectedUsersShape(config.MaintenanceModeAffectedUsers);
+
+            // Free-text field: the config page invites language names or codes
+            // ("English, Japanese, fr"). Only tokens shaped like language codes
+            // are shared, so anything else an admin typed or pasted into the
+            // box never leaves the server. Up to two extra subtags so
+            // well-formed BCP-47 forms like zh-Hans-CN survive the filter.
+            var languageCodes = (config.LanguageTagsPriority ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(t => System.Text.RegularExpressions.Regex.IsMatch(t, "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$"))
+                .Select(t => t.ToLowerInvariant());
+            var joinedCodes = string.Join(",", languageCodes);
+            if (!string.IsNullOrEmpty(joinedCodes))
+            {
+                settings["LanguageTagsPriority"] = joinedCodes;
+            }
+
+            return settings;
         }
 
         /// <summary>
@@ -342,15 +461,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// the backend, since only a real report_stats call does that. A
         /// re-enable must always send, regardless of when the last report went out.
         /// </summary>
-        public Task ForceSendAsync(CancellationToken cancellationToken)
+        public async Task ForceSendAsync(CancellationToken cancellationToken)
         {
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || !config.AnalyticsEnabled) return Task.CompletedTask;
+            // The consent-boundary counter reset happens synchronously at the
+            // OFF->ON transition (ResetCountersForConsentBoundary), not here:
+            // this runs from a queued transition and a due scheduled send
+            // could otherwise beat it to the gate and ship pre-consent data.
+            await _sendGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                // Re-read live state under the gate: by the time the queued
+                // transition runs, a later save may have disabled analytics
+                // again — in which case this send must not happen.
+                var config = JellyfinEnhanced.Instance?.Configuration;
+                if (config == null || !config.AnalyticsEnabled) return;
 
-            return SendAsync(config, cancellationToken);
+                await SendCoreAsync(config, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _sendGate.Release();
+            }
         }
 
         private async Task SendAsync(PluginConfiguration config, CancellationToken cancellationToken)
+        {
+            await _sendGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await SendCoreAsync(config, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _sendGate.Release();
+            }
+        }
+
+        private async Task SendCoreAsync(PluginConfiguration config, CancellationToken cancellationToken)
         {
             await EnsureRegisteredAsync(config, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrEmpty(config.AnalyticsInstallId) || string.IsNullOrEmpty(config.AnalyticsInstallSecret))
@@ -359,7 +506,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            var payload = BuildPayload(config);
+            var snapshot = _counters.GetSnapshot();
+            var payload = BuildPayload(
+                config,
+                config.AnalyticsShareFeatureFlags,
+                config.AnalyticsShareUsageCounts,
+                config.AnalyticsShareDataSizes,
+                snapshot);
 
             try
             {
@@ -390,45 +543,79 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     _logger.Warning($"[Analytics] Report failed with status {(int)response.StatusCode}");
 
-                    // 403 means the backend has no row matching this install id
-                    // + secret pair (e.g. it was removed server-side). Without
-                    // this, a install stuck in that state would fail forever --
-                    // EnsureRegisteredAsync only registers when the local id/
-                    // secret are EMPTY, and they aren't here, just stale.
-                    // Clearing them makes the next attempt register fresh.
+                    // 403 means the backend found no row matching this install
+                    // id + secret pair (e.g. it was removed server-side).
+                    // Without a reset, an install stuck in that state would
+                    // fail forever — EnsureRegisteredAsync only registers when
+                    // the local id/secret are EMPTY, and they aren't here,
+                    // just stale. But a single 403 can also be a transient
+                    // edge/WAF block, and wiping valid credentials forks the
+                    // install into a duplicate backend row, so it takes
+                    // ForbiddenResetThreshold consecutive 403s before clearing.
                     if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
                     {
-                        config.AnalyticsInstallId = string.Empty;
-                        config.AnalyticsInstallSecret = string.Empty;
-                        JellyfinEnhanced.Instance?.SaveConfiguration();
-                        _logger.Warning("[Analytics] Backend rejected our credentials; will re-register on the next attempt.");
+                        lock (JellyfinEnhanced.AnalyticsCredentialLock)
+                        {
+                            var live403 = JellyfinEnhanced.Instance?.Configuration ?? config;
+                            live403.AnalyticsForbiddenSinceLastSuccess++;
+                            if (live403.AnalyticsForbiddenSinceLastSuccess >= ForbiddenResetThreshold)
+                            {
+                                live403.AnalyticsForbiddenSinceLastSuccess = 0;
+                                live403.AnalyticsInstallId = string.Empty;
+                                live403.AnalyticsInstallSecret = string.Empty;
+                                config.AnalyticsInstallId = string.Empty;
+                                config.AnalyticsInstallSecret = string.Empty;
+                                _logger.Warning("[Analytics] Backend rejected our credentials repeatedly; will re-register on the next attempt.");
+                            }
+                            JellyfinEnhanced.Instance?.SaveConfiguration();
+                        }
                     }
 
                     return;
                 }
 
-                // Success: start a fresh counting period and record when/what was sent.
-                var newPeriod = DateTime.UtcNow.ToString("yyyy-MM-dd");
-                _counters.ResetForNewPeriod(newPeriod);
+                // Success: start a fresh counting period — subtracting exactly
+                // what this payload's snapshot contained, so increments that
+                // landed during the HTTP call carry over — and record when/
+                // what was sent on the CURRENT live configuration (see
+                // EnsureRegisteredAsync for why not just the captured object).
+                var newPeriod = UtcToday();
+                _counters.ResetForNewPeriod(newPeriod, snapshot.Counters);
 
-                config.AnalyticsLastReportedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                config.AnalyticsLastPayloadJson = JsonSerializer.Serialize(payload);
-                config.AnalyticsLastReportedPluginVersion = payload.PluginVersion;
-                JellyfinEnhanced.Instance?.SaveConfiguration();
+                lock (JellyfinEnhanced.AnalyticsCredentialLock)
+                {
+                    var live = JellyfinEnhanced.Instance?.Configuration ?? config;
+                    live.AnalyticsForbiddenSinceLastSuccess = 0;
+                    live.AnalyticsLastReportedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    live.AnalyticsLastPayloadJson = JsonSerializer.Serialize(payload);
+                    live.AnalyticsLastReportedPluginVersion = payload.PluginVersion;
+                    try
+                    {
+                        JellyfinEnhanced.Instance?.SaveConfiguration();
+                    }
+                    catch (Exception ex)
+                    {
+                        // The report WAS delivered — a disk failure here must
+                        // not be logged as "Report failed" (the admin would
+                        // chase the network, and the unpersisted
+                        // LastReportedAt means a daily resend until fixed).
+                        _logger.Warning($"[Analytics] Report sent, but failed to persist last-reported state to disk: {ex.Message}");
+                    }
+                }
 
                 _logger.Info("[Analytics] Report sent successfully.");
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 // Shutdown path, silent.
             }
-            catch (HttpRequestException ex)
+            catch (Exception ex)
             {
+                // Everything else — HTTP errors, HttpClient timeouts (which
+                // surface as TaskCanceledException without our token set),
+                // serialization and disk errors — gets exactly one warning
+                // line. Telemetry must never propagate an exception.
                 _logger.Warning($"[Analytics] Report failed: {ex.Message}");
-            }
-            catch (JsonException ex)
-            {
-                _logger.Warning($"[Analytics] Report failed: payload serialization error ({ex.Message})");
             }
         }
 
@@ -448,6 +635,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
+            await _sendGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 var rpcBody = new Dictionary<string, object?>
@@ -473,17 +661,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 _logger.Info("[Analytics] Flagged this install as opted out.");
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 // Shutdown path, silent.
             }
-            catch (HttpRequestException ex)
+            catch (Exception ex)
             {
+                // Includes HttpClient timeouts (TaskCanceledException without
+                // our token set); see SendCoreAsync's catch for rationale.
                 _logger.Warning($"[Analytics] Opt-out flag failed: {ex.Message}");
             }
-            catch (JsonException ex)
+            finally
             {
-                _logger.Warning($"[Analytics] Opt-out flag failed: payload serialization error ({ex.Message})");
+                _sendGate.Release();
             }
         }
     }

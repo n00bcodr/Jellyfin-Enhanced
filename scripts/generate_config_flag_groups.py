@@ -135,7 +135,11 @@ class ConfigPageParser(HTMLParser):
             target_id = frame["for_id"] or frame["found_input_id"]
             if target_id:
                 text = re.sub(r"\s+", " ", "".join(frame["text_parts"])).strip()
-                if text and target_id not in self.labels:
+                # First label wins: the membership test must use the same
+                # PascalCase key the store uses, or (for the camelCase id
+                # majority) it checks a key that can never exist and a second
+                # label for the same input would silently overwrite the first.
+                if text and id_to_property(target_id) not in self.labels:
                     self.labels[id_to_property(target_id)] = text
         elif self._label_stack and tag in SKIP_TEXT_INSIDE_TAGS:
             top = self._label_stack[-1]
@@ -166,15 +170,6 @@ class ConfigPageParser(HTMLParser):
 
         if self._in_legend and self._legend_skip_depth == 0:
             self._current_title_parts.append(data)
-
-    def handle_entityref(self, name):
-        import html as html_module
-        decoded = html_module.unescape(f"&{name};")
-        if self._label_stack and self._label_stack[-1]["icon_skip_depth"] == 0:
-            self._label_stack[-1]["text_parts"].append(decoded)
-        if self._in_legend and self._legend_skip_depth == 0:
-            self._current_title_parts.append(decoded)
-
 
 def main():
     markup = CONFIG_PAGE.read_text(encoding="utf-8")

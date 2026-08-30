@@ -689,14 +689,16 @@
     }
 
     /**
-     * Bumps one opt-in usage-analytics counter (e.g. "rating.half_star_used").
+     * Bumps one opt-in usage-analytics counter (e.g. "seerr.request_submitted").
      * Fire-and-forget: no-ops client-side when analytics/usage-counts aren't
      * both enabled (avoiding a pointless network call from the majority of
      * installs, which have this off by default), and the server independently
      * no-ops the same way, so this is always safe to call unconditionally
      * from any feature module without checking config first.
-     * @param {string} key - feature_key, e.g. "bookmarks.created". Server-side
-     *   validated as ^[a-z0-9_.]{1,64}$ -- keep to that shape.
+     * @param {string} key - feature_key, e.g. "seerr.request_submitted".
+     *   Server-side validated as ^[a-z0-9_.]{1,64}$ AND against the allowlist
+     *   in UsageEventCounterService.KnownKeys -- a new key must be added there
+     *   in the same change that starts emitting it, or the endpoint rejects it.
      */
     function trackUsage(key) {
         try {

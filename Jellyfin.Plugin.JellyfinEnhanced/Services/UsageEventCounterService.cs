@@ -11,7 +11,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
     /// <summary>
     /// Holds the current reporting period's feature-usage counters in memory
-    /// (one int per feature_key, e.g. "rating.half_star_used"), persisted to
+    /// (one int per feature_key, e.g. "seerr.request_submitted"), persisted to
     /// usage-counters.json with the same debounced atomic-write pattern as
     /// WikidataAwardsService/TagCacheService.
     ///
@@ -42,7 +42,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             _applicationPaths = applicationPaths;
             _logger = logger;
-            _periodStart = DateTime.UtcNow.ToString("yyyy-MM-dd");
+            // InvariantCulture is load-bearing: the host culture can render a
+            // non-Gregorian year (e.g. Thai Buddhist "2569-08-30"), which the
+            // dashboard's future-period filter would then drop as forged.
+            _periodStart = DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
             LoadFromDisk();
         }
 
@@ -54,8 +57,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             !string.IsNullOrEmpty(key) && key.Length <= 64 &&
             System.Text.RegularExpressions.Regex.IsMatch(key, @"^[a-z0-9_.]+$");
 
+        /// <summary>
+        /// The finite set of per-period action counters the plugin actually
+        /// emits (client-side via /usage/track, server-side from event
+        /// handlers). The track endpoint rejects anything not listed here, so
+        /// an arbitrary authenticated client can't mint unbounded distinct
+        /// counter rows (unbounded memory/disk/payload growth), forge
+        /// "total.*" snapshot keys next to the real ones, or place invented
+        /// key text on the public dashboard. Add a key here in the same change
+        /// that starts emitting it.
+        /// </summary>
+        private static readonly HashSet<string> KnownKeys = new(StringComparer.Ordinal)
+        {
+            "seerr.request_submitted",
+            "continue_watching.auto_removed",
+        };
+
+        public static bool IsKnownKey(string key) => KnownKeys.Contains(key);
+
         public void Increment(string key)
         {
+            // The consent gate lives here, not only in the HTTP endpoint, so
+            // server-side callers (event handlers) can't accumulate
+            // pre-opt-in data either: with analytics or the usage-counts
+            // category off, nothing is counted or written to disk at all.
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.AnalyticsEnabled || !config.AnalyticsShareUsageCounts) return;
             if (!IsValidKey(key)) return;
             _counters.AddOrUpdate(key, 1, (_, v) => v + 1);
             ScheduleDebouncedSave();
@@ -66,13 +93,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             (_periodStart, new Dictionary<string, int>(_counters));
 
         /// <summary>
-        /// Called after a successful report send: clears every counter and starts
-        /// a fresh period. Saved immediately (not debounced) since this only runs
-        /// once per reporting cycle at most.
+        /// Starts a fresh period. With a snapshot of what was just sent, only
+        /// the sent amounts are subtracted, so increments that landed between
+        /// the payload snapshot and the send completing carry into the new
+        /// period instead of being silently dropped. With no snapshot (the
+        /// opt-in consent boundary), every counter is cleared outright. Saved
+        /// immediately (not debounced) since this runs at most once per
+        /// reporting cycle.
         /// </summary>
-        public void ResetForNewPeriod(string newPeriodStart)
+        public void ResetForNewPeriod(string newPeriodStart, IReadOnlyDictionary<string, int>? sentCounters = null)
         {
-            _counters.Clear();
+            if (sentCounters == null)
+            {
+                _counters.Clear();
+            }
+            else
+            {
+                foreach (var kvp in sentCounters)
+                {
+                    // Math.Max(0, ...): if a consent-boundary Clear interleaved
+                    // with an in-flight send, subtracting the sent snapshot
+                    // could otherwise go negative — and a negative count must
+                    // never persist or ship in a payload.
+                    var remaining = _counters.AddOrUpdate(kvp.Key, 0, (_, v) => Math.Max(0, v - kvp.Value));
+                    if (remaining <= 0)
+                    {
+                        // Pair-remove is atomic on (key, value): a concurrent
+                        // Increment between the update above and this remove
+                        // changes the value and the remove correctly no-ops.
+                        ((ICollection<KeyValuePair<string, int>>)_counters)
+                            .Remove(new KeyValuePair<string, int>(kvp.Key, remaining));
+                    }
+                }
+            }
+
             _periodStart = newPeriodStart;
             SaveToDisk();
         }
@@ -89,7 +143,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (data == null || data.SchemaVersion != CurrentSchemaVersion) return;
 
                 if (!string.IsNullOrEmpty(data.PeriodStart)) _periodStart = data.PeriodStart;
-                foreach (var kvp in data.Counters) _counters[kvp.Key] = kvp.Value;
+
+                // Filter loaded keys through the same allowlist Increment
+                // enforces: a file written by a pre-allowlist build can carry
+                // keys any authenticated user minted through the then-open
+                // track endpoint — including forged "total.*" snapshot keys
+                // that would ship next to (and GREATEST-merge over) the real
+                // totals. Also drop non-positive counts defensively.
+                var dropped = 0;
+                foreach (var kvp in data.Counters)
+                {
+                    if (!IsValidKey(kvp.Key) || !IsKnownKey(kvp.Key) || kvp.Value <= 0) { dropped++; continue; }
+                    _counters[kvp.Key] = kvp.Value;
+                }
+                if (dropped > 0)
+                {
+                    _logger.Warning($"[Analytics] Dropped {dropped} unknown/invalid persisted usage counter(s) from a previous build.");
+                }
                 _logger.Info($"[Analytics] Loaded {_counters.Count} usage counter(s) for period {_periodStart}");
             }
             catch (IOException ex)

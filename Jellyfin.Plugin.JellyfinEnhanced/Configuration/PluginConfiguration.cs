@@ -384,6 +384,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AnalyticsLastReportedAt = 0;
             AnalyticsLastPayloadJson = string.Empty;
             AnalyticsLastReportedPluginVersion = string.Empty;
+            AnalyticsForbiddenSinceLastSuccess = 0;
         }
 
         // Maintenance Mode
@@ -395,6 +396,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>"none" | "disable_accounts" | "disable_remote" | "both"</summary>
         [AnalyticsInclude]
         public string MaintenanceModeAction { get; set; } = "disable_accounts";
+        /// <summary>
+        /// "all" or a JSON array of user ID strings. Deliberately NOT
+        /// [AnalyticsInclude]: the raw value can hold real Jellyfin user
+        /// GUIDs, so analytics shares only a derived "all"/"selected" — see
+        /// AnalyticsReportingService.GetStringSettings.
+        /// </summary>
         public string MaintenanceModeAffectedUsers { get; set; } = "all";
 
         // Jellyfin Enhanced Settings
@@ -542,8 +549,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// code here are shown first, in the order listed; remaining slots are then
         /// filled with the item's other languages in their original detection order.
         /// Empty (default) preserves the pre-existing unprioritized behavior.
+        /// Deliberately NOT [AnalyticsInclude]: this is a free-text box (the
+        /// UI invites language names, not just codes), so analytics shares a
+        /// normalized codes-only derivation instead — see
+        /// AnalyticsReportingService.GetStringSettings.
         /// </summary>
-        [AnalyticsInclude]
         public string LanguageTagsPriority { get; set; } = string.Empty;
         /// <summary>
         /// When true, only languages matching <see cref="LanguageTagsPriority"/> are
@@ -940,7 +950,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool AnalyticsEnabled { get; set; }
         /// <summary>Shares a boolean on/off snapshot of every feature toggle (never URLs/keys/free text).</summary>
         public bool AnalyticsShareFeatureFlags { get; set; } = true;
-        /// <summary>Shares per-feature usage counters (e.g. "rating.half_star_used": 12), reset each period after a successful send.</summary>
+        /// <summary>Shares per-feature usage counters (e.g. "seerr.request_submitted": 12), reset each period after a successful send.</summary>
         public bool AnalyticsShareUsageCounts { get; set; } = true;
         /// <summary>Shares byte sizes only (never contents) of the plugin's own on-disk data files; see AnalyticsReportingService.GetDataFileSizes for exactly what's included.</summary>
         public bool AnalyticsShareDataSizes { get; set; } = true;
@@ -964,6 +974,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string AnalyticsLastPayloadJson { get; set; } = string.Empty;
         /// <summary>Hidden field, no UI. Plugin version as of the last successful report; a mismatch against the running version forces an immediate report (bypassing AnalyticsReportIntervalDays) so version-adoption data isn't stale for up to 30 days after an upgrade.</summary>
         public string AnalyticsLastReportedPluginVersion { get; set; } = string.Empty;
+        /// <summary>
+        /// Hidden field, no UI. Count of report_stats 403 responses since the
+        /// last successful report. PERSISTED (not an in-memory field) because
+        /// send attempts happen at most daily: an in-memory counter on a
+        /// server restarted every day or two would never reach the
+        /// re-registration threshold and the install would 403 forever — the
+        /// exact stuck state the threshold logic exists to escape.
+        /// </summary>
+        public int AnalyticsForbiddenSinceLastSuccess { get; set; }
+
+        /// <summary>
+        /// The only shape of MaintenanceModeAffectedUsers that may ever leave
+        /// the server: the raw value can be a JSON array of real Jellyfin user
+        /// GUIDs. Shared by the analytics payload (AnalyticsReportingService.
+        /// GetStringSettings) and the anonymous public-config endpoint so the
+        /// two can never drift apart or regress to exposing the raw value.
+        /// Empty/unset means the default, i.e. "all".
+        /// </summary>
+        public static string DeriveAffectedUsersShape(string? value) =>
+            string.IsNullOrEmpty(value) || value == "all" ? "all" : "selected";
 
         /// <summary>
         /// Returns configured Sonarr instances, falling back to legacy single-instance fields for migration.
