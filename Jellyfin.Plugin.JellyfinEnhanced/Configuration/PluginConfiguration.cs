@@ -395,8 +395,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>"none" | "disable_accounts" | "disable_remote" | "both"</summary>
         [AnalyticsInclude]
         public string MaintenanceModeAction { get; set; } = "disable_accounts";
-        /// <summary>"all" or a JSON array of user ID strings.</summary>
-        [AnalyticsInclude]
         public string MaintenanceModeAffectedUsers { get; set; } = "all";
 
         // Jellyfin Enhanced Settings
