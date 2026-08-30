@@ -685,6 +685,12 @@
       object-fit: contain;
     }
 
+    .je-calendar-shoko-link {
+      display: inline-flex;
+      align-items: center;
+      line-height: 0;
+    }
+
     .je-calendar-legend {
       display: flex;
       flex-wrap: wrap;

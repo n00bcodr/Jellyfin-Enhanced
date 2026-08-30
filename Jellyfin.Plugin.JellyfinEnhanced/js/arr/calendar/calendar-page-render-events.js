@@ -245,6 +245,57 @@
     return encodeURI(url).replace(/'/g, "%27");
   }
 
+  // Reverse-proxy URL mapping (local copy of arr-links.js's helper).
+  function parseUrlMappings(mappingsString) {
+    const mappings = [];
+    if (!mappingsString) return mappings;
+    mappingsString.split('\n').forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      const parts = trimmed.split('|').map(p => p.trim());
+      if (parts.length === 2 && parts[0] && parts[1]) {
+        mappings.push({ jellyfinUrl: parts[0], arrUrl: parts[1] });
+      }
+    });
+    return mappings;
+  }
+
+  function getMappedUrl(urlMappings, defaultUrl) {
+    if (!defaultUrl) return null;
+    if (!urlMappings || urlMappings.length === 0) return defaultUrl.replace(/\/$/, '');
+    const serverAddress = (typeof ApiClient !== 'undefined' && ApiClient.serverAddress)
+      ? ApiClient.serverAddress()
+      : window.location.origin;
+    const currentUrl = serverAddress.replace(/\/+$/, '').toLowerCase();
+    for (const mapping of urlMappings) {
+      const normalizedJellyfinUrl = mapping.jellyfinUrl.replace(/\/+$/, '').toLowerCase();
+      if (currentUrl === normalizedJellyfinUrl) {
+        return mapping.arrUrl.replace(/\/$/, '');
+      }
+    }
+    return defaultUrl.replace(/\/$/, '');
+  }
+
+  // Deep link to a Shoko-sourced event's series page in Shoko's own web UI.
+  function getShokoWebUiUrl(event) {
+    if (event.source !== "Shoko" || !event.shokoSeriesId) return null;
+    const baseUrl = getMappedUrl(
+      parseUrlMappings(window.JellyfinEnhanced.pluginConfig?.ShokoUrlMappings || ''),
+      window.JellyfinEnhanced.pluginConfig?.ShokoUrl
+    );
+    if (!baseUrl) return null;
+    return `${baseUrl}/webui/collection/series/${event.shokoSeriesId}`;
+  }
+
+  // Type icon, wrapped in a link to Shoko when one is resolvable.
+  function renderTypeIconHtml(event, typeIcon, iconClass) {
+    const img = `<img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />`;
+    const shokoUrl = getShokoWebUiUrl(event);
+    if (!shokoUrl) return img;
+    const label = window.JellyfinEnhanced.t?.("calendar_open_in_shoko") || "Open in Shoko";
+    return `<a href="${escapeHtml(shokoUrl)}" target="_blank" rel="noopener noreferrer" class="je-calendar-shoko-link" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}" onclick="event.stopPropagation();">${img}</a>`;
+  }
+
   // Shoko never sends image URLs to the client (no Shoko-authenticated URLs are exposed) — once
   // matched to a Jellyfin item, its poster comes from Jellyfin's own image API instead.
   function getShokoPosterUrl(event) {
@@ -312,7 +363,7 @@
         <span class="je-calendar-event-title">${escapeHtml(event.title)}</span>
         ${subtitle}
         <div class="je-calendar-event-type">
-          <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
+          ${renderTypeIconHtml(event, typeIcon, iconClass)}
           <span>${releaseTypeLabel} • <span class="je-arr-badge" title="${sourceLabel}">${sourceLabel}</span></span>
           ${timeText ? ` • ${timeText}` : ""}${playButton}
         </div>
@@ -367,7 +418,7 @@
             ${subtitleHtml}
           </div>
           <div class="je-calendar-agenda-event-meta">
-            <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
+            ${renderTypeIconHtml(event, typeIcon, iconClass)}
             <span>${releaseTypeLabel}</span>
             <span>•</span>
             <span class="je-arr-badge" title="${sourceLabel}">${sourceLabel}</span>
@@ -407,7 +458,7 @@
                 </div>
                 ${event.subtitle ? `<div class="je-calendar-card-subtitle">${escapeHtml(event.subtitle)}</div>` : `<div class="je-calendar-card-subtitle"></div>`}
                 <div class="je-calendar-card-meta">
-                  <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
+                  ${renderTypeIconHtml(event, typeIcon, iconClass)}
                   <span>${releaseTypeLabel}</span>
                   <span>•</span>
                   <span class="je-arr-badge" title="${sourceLabel}">${sourceLabel}</span>
@@ -427,7 +478,7 @@
           </div>
           ${event.subtitle ? `<div class="je-calendar-card-subtitle">${escapeHtml(event.subtitle)}</div>` : `<div class="je-calendar-card-subtitle"></div>`}
           <div class="je-calendar-card-meta">
-            <img src="${typeIcon}" alt="${escapeHtml(event.type)}" class="${iconClass}" />
+            ${renderTypeIconHtml(event, typeIcon, iconClass)}
             <span>${releaseTypeLabel}</span>
             <span>•</span>
             <span class="je-arr-badge" title="${sourceLabel}">${sourceLabel}</span>

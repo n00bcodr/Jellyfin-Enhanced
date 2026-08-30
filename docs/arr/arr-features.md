@@ -300,7 +300,7 @@ When [Shoko is configured](arr-settings.md#shoko), upcoming anime episodes from 
 
 **Dedup:**
 
-Shoko events are never deduped against Sonarr/Radarr events, even for the same anime — a title tracked in both shows up twice. See [ADR 0002](../adr/0002-no-shoko-sonarr-dedup.md) for why.
+Shoko events are never deduped against Sonarr/Radarr events, even for the same anime — a title tracked in both shows up twice. Sonarr/Radarr dedup keys on TVDB/TMDB ids, which Shoko doesn't carry; Shoko identifies anime by its own AniDB/Shoko-internal ids instead. Matching across the two by title alone would risk merging unrelated entries, so the two sources are kept deliberately separate rather than guessed at.
 
 ---
 

@@ -252,6 +252,8 @@
     "hidden_content_add_back_to_cw": "Повернутись в «Продовження Перегляду»",
     "feature_auto_skip_outro": "{{icon:skip}} Автопропуск кінцівки",
     "calendar_episode": "Епізод",
+    "calendar_anime": "Аніме",
+    "calendar_open_in_shoko": "Відкрити в Shoko",
     "feature_tags_hide_on_hover": "{{icon:eye}} Приховувати теги при наведенні",
     "jellyseerr_card_view_on_jellyseerr": "Переглянути на Seerr",
     "reviews_form_error_save": "Не вдалося зберегти відгук. Будь ласка, спробуйте знову.",

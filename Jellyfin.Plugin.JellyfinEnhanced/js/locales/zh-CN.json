@@ -481,6 +481,8 @@
     "calendar_digital_release": "数码发行",
     "calendar_physical_release": "实体发行",
     "calendar_episode": "集",
+    "calendar_anime": "动漫",
+    "calendar_open_in_shoko": "在 Shoko 中打开",
     "calendar_series": "剧集",
     "calendar_loading": "记录日历..…",
     "calendar_no_releases": "没有即将上映／发行",

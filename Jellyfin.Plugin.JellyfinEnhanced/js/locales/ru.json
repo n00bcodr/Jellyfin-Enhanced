@@ -481,6 +481,8 @@
     "calendar_digital_release": "Цифровой релиз",
     "calendar_physical_release": "Физический релиз",
     "calendar_episode": "Эпизод",
+    "calendar_anime": "Аниме",
+    "calendar_open_in_shoko": "Открыть в Shoko",
     "calendar_series": "Сериалы",
     "calendar_loading": "Загрузка календаря…",
     "calendar_no_releases": "Нет предстоящих релизов",
