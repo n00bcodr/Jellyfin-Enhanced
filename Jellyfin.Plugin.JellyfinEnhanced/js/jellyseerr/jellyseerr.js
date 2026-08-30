@@ -47,7 +47,7 @@
             addMainStyles, addSeasonModalStyles, updateJellyseerrIcon,
             renderJellyseerrResults, showMovieRequestModal, showSeasonSelectionModal,
             showCollectionRequestModal, hideHoverPopover, toggleHoverPopoverLock, updateJellyseerrResults,
-            createJellyseerrCard
+            createJellyseerrCard, clearInjectedSearchResults
         } = JE.jellyseerrUI;
 
         /**
@@ -74,8 +74,7 @@
                         searchResults.insertBefore(jellyseerrSection, searchResults.firstChild);
                     }
                 }
-                const noResultsMessage = searchPage.querySelector('.noItemsMessage');
-                if (noResultsMessage) noResultsMessage.classList.add('section-hidden');
+                searchPage.querySelectorAll('.noItemsMessage').forEach(el => el.classList.add('section-hidden'));
 
                 JE.toast(JE.t('jellyseerr_toast_filter_on'), 3000);
 
@@ -87,8 +86,7 @@
                     jellyseerrOriginalPosition.remove();
                     jellyseerrOriginalPosition = null;
                 }
-                const noResultsMessage = searchPage.querySelector('.noItemsMessage');
-                if (noResultsMessage) noResultsMessage.classList.remove('section-hidden');
+                searchPage.querySelectorAll('.noItemsMessage').forEach(el => el.classList.remove('section-hidden'));
 
                 hiddenSections = [];
                 JE.toast(JE.t('jellyseerr_toast_filter_off'), 3000);
@@ -340,7 +338,7 @@
                     clearTimeout(debounceTimeout);
                     debounceTimeout = setTimeout(() => {
                         if (!isJellyseerrActive) {
-                            document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
+                            clearInjectedSearchResults();
                             return;
                         }
                         const latestQuery = searchInput.value;
@@ -354,7 +352,7 @@
                         }
                         lastProcessedQuery = latestQuery;
                         resetSearchPagination();
-                        document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
+                        clearInjectedSearchResults();
                         fetchAndRenderResults(latestQuery);
                     }, 300);
                 } else {
@@ -362,7 +360,7 @@
                     lastProcessedQuery = null;
                     isJellyseerrOnlyMode = false;
                     resetSearchPagination();
-                    document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
+                    clearInjectedSearchResults();
                 }
             };
 
@@ -408,7 +406,7 @@
                     lastProcessedQuery = null;
                     isJellyseerrOnlyMode = false;
                     resetSearchPagination();
-                    document.querySelectorAll('.jellyseerr-section').forEach(el => el.remove());
+                    clearInjectedSearchResults();
                     return;
                 }
                 tryAttachSearchListener();
