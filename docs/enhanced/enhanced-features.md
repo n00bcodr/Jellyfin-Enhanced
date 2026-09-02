@@ -305,6 +305,8 @@ Search, request, and discover media directly from Jellyfin's search interface.
 **Features:**
 
 - Search Seerr from Jellyfin search bar
+- Further result pages load ahead as you scroll the row (see [Seamless Scrolling](../seerr/seerr-features.md#seamless-scrolling))
+- Results respect each user's parental controls (see [Parental Ratings](../seerr/seerr-features.md#parental-ratings))
 - Request movies and TV shows
 - View request status (pending, approved, available)
 - Auto-add requested media to watchlist

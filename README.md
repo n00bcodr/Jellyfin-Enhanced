@@ -87,6 +87,8 @@ For detailed installation instructions and troubleshooting, see the [Installatio
 - **Search & Request** - Request media directly from Jellyfin search
 - **Item Details** - Recommendations and similar items on detail pages
 - **Discovery Pages** - Browse by genre, network, person, or tag
+- **Seamless Scrolling** - Results load ahead of you, no loading gaps, nothing skipped
+- **Parental Ratings** - Seerr results respect each user's rating limit and blocked/allowed tags
 - **Issue Reporting** - Report problems directly to Seerr
 - **Watchlist Sync** - Auto-sync with Jellyfin watchlist
 
