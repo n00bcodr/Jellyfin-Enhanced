@@ -152,15 +152,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var blockSeries = blocked.Contains(UnratedItem.Series);
 
             // Tag branch of the native parental controls, normalised the way core
-            // normalises both sides of its comparison. The sub-toggle drops them
-            // wholesale, reverting to rating-only behaviour.
-            var blockedTags = new HashSet<string>(StringComparer.Ordinal);
-            var allowedTags = new HashSet<string>(StringComparer.Ordinal);
-            if (JellyfinEnhanced.Instance?.Configuration?.JellyseerrRespectParentalTags == true)
-            {
-                blockedTags = ParentalTagDecision.CleanTags(user.GetPreference(PreferenceKind.BlockedTags));
-                allowedTags = ParentalTagDecision.CleanTags(user.GetPreference(PreferenceKind.AllowedTags));
-            }
+            // normalises both sides of its comparison.
+            var blockedTags = ParentalTagDecision.CleanTags(user.GetPreference(PreferenceKind.BlockedTags));
+            var allowedTags = ParentalTagDecision.CleanTags(user.GetPreference(PreferenceKind.AllowedTags));
 
             policy = new Policy(user.MaxParentalRatingScore, user.MaxParentalRatingSubScore, blockMovies, blockSeries, blockedTags, allowedTags);
             return policy.IsRestricted;

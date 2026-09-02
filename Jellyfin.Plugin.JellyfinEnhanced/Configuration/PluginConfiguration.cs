@@ -172,7 +172,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrResponseCacheTtlMinutes = 10;
             JellyseerrUserIdCacheTtlMinutes = 30;
             JellyseerrRespectParentalRatings = true;
-            JellyseerrRespectParentalTags = true;
             JellyseerrSeamlessScrollPrefetch = true;
             JellyseerrLazyPosters = true;
             JellyseerrParentalRatingCacheTtlMinutes = 1440;
@@ -623,17 +622,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int JellyseerrResponseCacheTtlMinutes { get; set; }
         public int JellyseerrUserIdCacheTtlMinutes { get; set; }
 
-        // Enforce each Jellyfin user's own parental-rating limit (max parental
-        // rating + "block unrated") on Seerr search, discovery, similar /
-        // recommended, person, collection, requests, watchlist and detail
-        // surfaces (issue #581). Users without a limit are unaffected.
+        // Enforce each Jellyfin user's own parental controls — max parental
+        // rating, "block unrated", and Blocked / Allowed Tags (matched against a
+        // title's TMDB keywords, and for blocked tags its genres) — on Seerr
+        // search, discovery, similar / recommended, person, collection, requests,
+        // watchlist and detail surfaces (issue #581). Users without any
+        // restriction are unaffected.
         public bool JellyseerrRespectParentalRatings { get; set; }
-
-        // Sub-toggle of JellyseerrRespectParentalRatings: also enforce each
-        // user's tag-based parental controls (Blocked Tags / Allowed Tags) by
-        // matching them against a title's TMDB keywords (and, for blocked tags,
-        // its genres). Needs one Seerr detail lookup per title (cached).
-        public bool JellyseerrRespectParentalTags { get; set; }
 
         // Seamless scroll: keep several pages of Seerr results rendered ahead of
         // the viewer and prefetch the pages after that, so search rows and
