@@ -138,6 +138,11 @@
         // Bumped on every sort / filter change and cleanup: a batch that started
         // under an older generation must not write counters or flags.
         let loadGeneration = 0;
+        // isLoading is owned by whichever load set it last; a stale load's
+        // finally must not release a newer owner's flag.
+        let loadingOwner = 0;
+        const takeLoading = () => { isLoading = true; return ++loadingOwner; };
+        const releaseLoading = (owner) => { if (loadingOwner === owner) isLoading = false; };
         // TMDB refuses discover pages beyond 500 (Seerr answers HTTP 500) even
         // though it reports totalPages in the thousands; never ask for them.
         const TMDB_MAX_PAGE = 500;
@@ -473,8 +478,7 @@
 
             const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
             const generation = loadGeneration;
-
-            isLoading = true;
+            const owner = takeLoading();
 
             // Track page state before increment so we can roll back on failure
             const prevTvPage = tvCurrentPage;
@@ -608,7 +612,7 @@
                 console.error(`${logPrefix} Error loading more items:`, error);
                 throw error; // Re-throw for seamlessScroll retry handling
             } finally {
-                isLoading = false;
+                releaseLoading(owner);
                 // A filter change that re-armed the engine while this load was in
                 // flight found isLoading true and stopped; wake it now.
                 if (generation !== loadGeneration && scrollState.fill) scrollState.fill();
@@ -655,9 +659,12 @@
             lastBatchPages = 0;
             lastBatchRendered = -1;
             // This re-fetch owns the loading flag until its page 1 lands, so a
-            // filter change in the meantime can't start page 2 ahead of it.
+            // filter change in the meantime can't start page 2 ahead of it. Its
+            // own staleness is its abort signal (a newer sort or cleanup aborts
+            // it); the load generation only tells it whether a filter change
+            // means the engine needs waking afterwards.
             const generation = loadGeneration;
-            isLoading = true;
+            const owner = takeLoading();
             cachedTvResults = [];
             cachedMovieResults = [];
             if (itemDeduplicator) itemDeduplicator.clear();
@@ -684,9 +691,8 @@
 
             try {
                 const results = await Promise.all(fetchPromises);
-                if (signal.aborted) return;
                 // Superseded (another sort change, navigation): nothing here is ours.
-                if (generation !== loadGeneration) return;
+                if (signal.aborted) return;
                 // Read the filter at commit time — it may have changed meanwhile.
                 const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
 
@@ -729,13 +735,9 @@
                     console.error(`${logPrefix} Sort change error:`, error);
                 }
             } finally {
-                if (generation === loadGeneration) {
-                    isLoading = false;
-                } else if (isLoading) {
-                    // A newer generation is waiting on us; release and wake it.
-                    isLoading = false;
-                    if (scrollState.fill) scrollState.fill();
-                }
+                releaseLoading(owner);
+                // A filter change re-armed the engine while page 1 was in flight; wake it.
+                if (generation !== loadGeneration && scrollState.fill) scrollState.fill();
             }
         }
 

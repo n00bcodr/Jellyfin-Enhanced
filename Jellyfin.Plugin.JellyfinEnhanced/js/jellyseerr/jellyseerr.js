@@ -43,7 +43,10 @@
         let searchSignal = null;
         // True from the moment a navigation starts until the delayed teardown
         // check has run; no search load may start or re-arm in that window.
+        // Exposed through the engine's hasMore check so the pause is never
+        // mistaken for a run of empty pages.
         let searchSuspended = false;
+        let navigateSettleTimer = null;
         // Items fetched vs cards rendered for the current query (after hidden
         // content + dedup filtering); sizes the parallel page batches.
         const searchYield = { fetched: 0, rendered: 0 };
@@ -320,7 +323,7 @@
                 searchScrollState,
                 '.jellyseerr-section',
                 (hint) => loadMoreSearchResults(query, hint),
-                () => searchHasMore,
+                () => searchHasMore && !searchSuspended,
                 () => searchIsLoading,
                 { horizontal: true, trackSelector: '.itemsContainer', scrollerSelector: '.emby-scroller' }
             );
@@ -537,7 +540,14 @@
             // patches pushState/replaceState, plus popstate and hashchange.
             const onNav = () => {
                 searchSuspended = true;
-                setTimeout(() => { searchSuspended = false; handleNavigate(); }, 200);
+                // One timer for overlapping navigations: only the latest one settles.
+                clearTimeout(navigateSettleTimer);
+                navigateSettleTimer = setTimeout(() => {
+                    searchSuspended = false;
+                    handleNavigate();
+                    // Still on the same search: resume filling where we paused.
+                    if (searchScrollState.fill) searchScrollState.fill();
+                }, 200);
             };
             if (JE.helpers?.onNavigate) {
                 JE.helpers.onNavigate(onNav);

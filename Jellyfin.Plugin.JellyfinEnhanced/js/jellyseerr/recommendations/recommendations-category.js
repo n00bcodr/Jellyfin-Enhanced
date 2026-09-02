@@ -225,12 +225,17 @@
     sortContainer.textContent = '';
     sortContainer.appendChild(JE.discoveryFilter.createSortControl(SORT_MODULE, () => {
       JE.discoveryFilter.cleanupScrollObserver(state.categoryState);
-      loadInitialCategoryPage(category, container, stale).then(() => {
-        if (stale()) return;
+      // A sort reload is its own operation: page 1 and load-mores of the
+      // previous sort must not land in the re-sorted list.
+      const sortGeneration = ++state.categoryGeneration;
+      const sortStale = () => sortGeneration !== state.categoryGeneration || !state.categoryPageVisible;
+      state.categoryState = { activeScrollObserver: null, page: 1, totalPages: 0, hasMore: true, isLoading: false };
+      loadInitialCategoryPage(category, container, sortStale).then(() => {
+        if (sortStale()) return;
         JE.discoveryFilter.setupInfiniteScroll(
           state.categoryState,
           '#je-recommendations-category-page .content-primary',
-          (hint) => loadMoreCategoryItems(category, container, hint, stale),
+          (hint) => loadMoreCategoryItems(category, container, hint, sortStale),
           () => state.categoryState.hasMore,
           () => state.categoryState.isLoading
         );
