@@ -145,7 +145,7 @@ A beautiful, modern theme for Jellyfin with multiple color variants.
 **Repository URL:** Unified Manifest for all plugins
 
 ```
-https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/10.11/manifest.json
+https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/manifest.json
 ```
 
 ### Installing Themes
@@ -165,7 +165,7 @@ https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/10.11/manifest.
 
 | Plugin | Jellyfin 10.11 | Jellyfin 10.10 | Notes |
 |--------|----------------|----------------|-------|
-| Jellyfin Enhanced | ✅ | ❌ | Use 10.11 manifest |
+| Jellyfin Enhanced | ✅ | ✅ (frozen at 10.11.1.0) | One manifest for all lines |
 | Jellyfin Tweaks | ✅ | ✅ | |
 | JS Injector | ✅ | ✅ |  |
 
