@@ -122,7 +122,7 @@
     "activity_verb_favorited": "favorited",
     "jellyseerr_btn_deleted": "Deleted",
     "panel_settings_ui_file_sizes_desc": "Display total file size on item detail pages.",
-    "toast_speed_normal": "{{icon:speed}} Speed: Normal",
+    "toast_speed_normal": "{{icon:speed}} Gschwindigkeit: Normal",
     "panel_settings_random_button": "Random Button Settings",
     "remove_continue_watching_error": "Could not remove item: User or Item ID not found.",
     "panel_settings_spoiler_guard_override_reviews_desc": "Uncheck to see the TMDB / user reviews panel on series detail pages.",
