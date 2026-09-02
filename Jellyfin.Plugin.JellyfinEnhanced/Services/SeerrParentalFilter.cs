@@ -46,6 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public readonly record struct Result(bool Block, string Body);
 
         private const int MaxConcurrentFetches = 20;
+        private static readonly JsonSerializerOptions RelaxedJson = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
         private const int MaxCacheEntries = 20000;
         private static readonly TimeSpan OverallBudget = TimeSpan.FromSeconds(12);
         private static readonly TimeSpan PerFetchTimeout = TimeSpan.FromSeconds(8);
@@ -176,12 +177,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <param name="jellyfinUserId">The calling Jellyfin user.</param>
         public async Task<Result> ApplyAsync(string json, string apiPath, string? jellyfinUserId, CancellationToken requestAborted = default)
         {
-            if (string.IsNullOrEmpty(json) || !TryGetRestrictedPolicy(jellyfinUserId, out var policy))
+            if (string.IsNullOrEmpty(json))
             {
                 return new Result(false, json);
             }
 
+            // Classify first: paths that carry no titles cost nobody a policy lookup.
             var plan = ClassifyPath(apiPath);
+            if (plan.Category == Category.None || !TryGetRestrictedPolicy(jellyfinUserId, out var policy))
+            {
+                return new Result(false, json);
+            }
+
             try
             {
                 switch (plan.Category)
@@ -298,10 +305,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var path = tmdbApiPath.TrimStart('/');
+            var query = string.Empty;
             var q = path.IndexOf('?');
             if (q >= 0)
             {
+                query = path.Substring(q + 1);
                 path = path.Substring(0, q);
+            }
+
+            // append_to_response can smuggle whole title lists (similar,
+            // recommendations, lists) into an otherwise bare detail lookup.
+            if (query.Contains("append_to_response", StringComparison.OrdinalIgnoreCase))
+            {
+                return TmdbAccess.Deny;
             }
 
             var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -311,30 +327,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var head = parts[0].ToLowerInvariant();
-            if (head is "genre" or "genres" or "configuration" or "company" or "network")
+            if (head is "genre" or "genres" or "configuration")
             {
                 return TmdbAccess.Allow; // no titles in these
             }
 
-            if (head == "search" && parts.Length >= 2 && parts[1].ToLowerInvariant() is "company" or "keyword" or "person")
+            // Studio / network logos: bare {head}/{id} only (company/{id}/movies is a title list).
+            if (head is "company" or "network")
+            {
+                return parts.Length == 2 ? TmdbAccess.Allow : TmdbAccess.Deny;
+            }
+
+            if (head == "search" && parts.Length == 2 && parts[1].ToLowerInvariant() is "company" or "keyword" or "person")
             {
                 return TmdbAccess.Allow;
             }
 
             if (TryParseTmdbTitlePath(path, out mediaType, out tmdbId))
             {
+                var sub = parts.Length >= 3 ? string.Join('/', parts.Skip(2)).ToLowerInvariant() : string.Empty;
+
                 // Watch providers and reviews carry no title metadata beyond what the
                 // caller already has (and are used for library items too).
-                if (parts.Length >= 3)
+                if (sub == "watch/providers" || sub == "reviews")
                 {
-                    var sub = string.Join('/', parts.Skip(2)).ToLowerInvariant();
-                    if (sub == "watch/providers" || sub == "reviews")
-                    {
-                        return TmdbAccess.Allow;
-                    }
+                    return TmdbAccess.Allow;
                 }
 
-                return TmdbAccess.GateTitle;
+                // The bare title and the sub-resources the client actually uses
+                // (certifications, seasons, episodes) are gated on the title itself.
+                if (sub.Length == 0
+                    || sub == "release_dates"
+                    || sub == "content_ratings"
+                    || sub.StartsWith("season/", StringComparison.Ordinal))
+                {
+                    return TmdbAccess.GateTitle;
+                }
+
+                // similar, recommendations, lists, credits, ... return other titles.
+                return TmdbAccess.Deny;
             }
 
             return TmdbAccess.Deny;
@@ -470,12 +501,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            if (removed > 0)
+            if (removed == 0)
             {
-                _logger.Debug($"Parental filter removed {removed} item(s) from {plan.Container} response.");
+                return json; // nothing changed: hand back the upstream bytes untouched
             }
 
-            return root.ToJsonString();
+            _logger.Debug($"Parental filter removed {removed} item(s) from {plan.Container} response.");
+            return root.ToJsonString(RelaxedJson);
         }
 
         private async Task<Dictionary<string, Signature?>> ResolveScoresAsync(
@@ -531,37 +563,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             // Budget for this response; also stops waiting when the browser aborts
-            // the request (superseded typeahead search). Shared fetch tasks keep
-            // running for other waiters — only this caller's wait is bounded.
+            // the request (superseded typeahead search). The fetches themselves are
+            // NOT cancelled by the budget: rows still queued when the caller gives
+            // up keep resolving in the background and warm the cache, so a big
+            // list (500 requests, a prolific actor) is complete on the next load
+            // instead of restarting cold every time.
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
             cts.CancelAfter(OverallBudget);
-            using var throttle = new SemaphoreSlim(MaxConcurrentFetches);
+            var throttle = new SemaphoreSlim(MaxConcurrentFetches);
 
             var tasks = keys.Select(async kvp =>
             {
+                await throttle.WaitAsync().ConfigureAwait(false);
                 try
                 {
-                    await throttle.WaitAsync(cts.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    return (kvp.Key, (Signature?)null); // over budget while queued -> fail closed
-                }
-
-                try
-                {
-                    var score = await GetSignatureAsync(kvp.Value.MediaType, kvp.Value.TmdbId, region, needTags, cts.Token).ConfigureAwait(false);
+                    var score = await GetSignatureAsync(kvp.Value.MediaType, kvp.Value.TmdbId, region, needTags, CancellationToken.None).ConfigureAwait(false);
                     return (kvp.Key, score);
                 }
                 finally
                 {
                     throttle.Release();
                 }
-            });
+            }).ToList();
 
-            foreach (var (key, score) in await Task.WhenAll(tasks).ConfigureAwait(false))
+            try
             {
-                scores[key] = score;
+                await Task.WhenAll(tasks).WaitAsync(cts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!requestAborted.IsCancellationRequested)
+            {
+                // Over budget: keep what finished, hide the rest (fail closed); the
+                // remaining tasks continue and populate the cache.
+                _logger.Debug($"Parental filter: {tasks.Count(t => !t.IsCompleted)} of {tasks.Count} title lookups still pending after {OverallBudget.TotalSeconds:0}s; hiding them for this response.");
+            }
+
+            foreach (var task in tasks)
+            {
+                if (task.IsCompletedSuccessfully)
+                {
+                    var (key, score) = task.Result;
+                    scores[key] = score;
+                }
             }
 
             requestAborted.ThrowIfCancellationRequested();
@@ -677,18 +719,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             try
             {
-                using var cts = new CancellationTokenSource(PerFetchTimeout);
-                var (detail, hasTagData) = await FetchDetailAsync(mediaType, tmdbId, needTags, cts.Token).ConfigureAwait(false);
+                JsonElement? detail = null;
+                var hasTagData = false;
+                try
+                {
+                    using var cts = new CancellationTokenSource(PerFetchTimeout);
+                    (detail, hasTagData) = await FetchDetailAsync(mediaType, tmdbId, needTags, cts.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    // Timeouts and transport faults count as "could not verify" too.
+                    _logger.Debug($"Parental filter: lookup failed for {mediaType}/{tmdbId}: {ex.Message}");
+                }
+
+                var now = DateTime.UtcNow;
+                var ttl = CacheTtl();
                 if (detail == null)
                 {
-                    _certCache[key] = (null, true, DateTime.UtcNow); // negative entry, retried after NegativeCacheTtl
+                    // Negative entry (retried after NegativeCacheTtl) — unless a fresh
+                    // positive entry exists, which a failed *tag* upgrade must not erase:
+                    // rating-only users would otherwise lose a title Seerr merely
+                    // failed to answer for a moment.
+                    _certCache.AddOrUpdate(
+                        key,
+                        _ => (null, true, now),
+                        (_, current) => !current.Unresolved && current.Sig != null && now - current.CachedAt < ttl
+                            ? current
+                            : (null, true, now));
                     TrimCache();
                     return null;
                 }
 
                 var resolved = SignatureFromDetail(detail.Value, mediaType, region, includeTags: hasTagData);
-                var now = DateTime.UtcNow;
-                var ttl = CacheTtl();
                 // A rating-only refresh must not erase tags a concurrent full fetch
                 // just cached — but must not resurrect EXPIRED tags either (that
                 // would extend them another TTL and let an upstream keyword change
@@ -902,8 +964,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return new EndpointPlan { Category = Category.None };
             }
 
-            // Requests list: results[] with tmdbId/mediaType nested under `media`.
-            if (apiPath.StartsWith("/api/v1/request", StringComparison.OrdinalIgnoreCase))
+            // Requests / issues lists: results[] with tmdbId/mediaType nested under `media`.
+            if (apiPath.StartsWith("/api/v1/request", StringComparison.OrdinalIgnoreCase)
+                || apiPath.StartsWith("/api/v1/issue?", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(apiPath, "/api/v1/issue", StringComparison.OrdinalIgnoreCase))
             {
                 return new EndpointPlan { Category = Category.List, Container = Container.Results, IdField = "tmdbId", NestedMedia = true };
             }

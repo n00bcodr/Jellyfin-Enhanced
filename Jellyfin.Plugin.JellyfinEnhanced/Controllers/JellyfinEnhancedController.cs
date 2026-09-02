@@ -3317,7 +3317,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var tmdbCallerId = UserHelper.GetCurrentUserId(User)?.ToString();
             if (_parentalFilter.TryGetRestrictedPolicy(tmdbCallerId, out _))
             {
-                switch (Services.SeerrParentalFilter.ClassifyTmdbPassthrough(apiPath, out var gatedType, out var gatedId))
+                // The route captures only the path; the query (append_to_response=...) matters too.
+                switch (Services.SeerrParentalFilter.ClassifyTmdbPassthrough(apiPath + HttpContext.Request.QueryString.Value, out var gatedType, out var gatedId))
                 {
                     case Services.SeerrParentalFilter.TmdbAccess.Deny:
                         return ParentalBlockedResult();
@@ -9043,7 +9044,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     // Parental ratings (#581): drop rows above the caller's limit before
                     // enrichment attaches titles and posters to them.
-                    json = (await _parentalFilter.ApplyAsync(json, "/api/v1/request", jellyfinUserId, HttpContext.RequestAborted)).Body;
+                    var parental = await _parentalFilter.ApplyAsync(json, "/api/v1/request", jellyfinUserId, HttpContext.RequestAborted);
+                    if (parental.Block)
+                    {
+                        // The filter could not run to completion: never hand a
+                        // restricted user the unfiltered list.
+                        return ParentalBlockedResult();
+                    }
+                    json = parental.Body;
                 }
 
                 if (json == null)

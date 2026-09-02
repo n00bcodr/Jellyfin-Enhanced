@@ -88,6 +88,10 @@
      */
     function cardsNeeded(container, hint, fallback = 40) {
         if (!container || !hint || !(hint.deficitPx > 0)) return fallback;
+        // Never plan a batch smaller than ~one screen of cards: right after the
+        // first render the deficit is tiny, and a one-page batch loses the race
+        // against a fast reader.
+        const targetPx = Math.max(hint.deficitPx, (hint.spanPx || 0) * 0.75);
         const cards = container.querySelectorAll('.card');
         let first = null;
         for (let i = 0; i < cards.length && i < 60; i++) {
@@ -98,7 +102,7 @@
         const rect = first.getBoundingClientRect();
         if (hint.horizontal) {
             const width = rect.width || 150;
-            return Math.ceil(hint.deficitPx / width) + 2;
+            return Math.ceil(targetPx / width) + 2;
         }
         const rowHeight = rect.height || 250;
         let perRow = 1;
@@ -108,7 +112,7 @@
             if (Math.abs(card.getBoundingClientRect().top - rect.top) < 2) perRow++;
             else break;
         }
-        return Math.ceil(hint.deficitPx / rowHeight) * perRow + perRow;
+        return Math.ceil(targetPx / rowHeight) * perRow + perRow;
     }
 
     // ============================================================================
