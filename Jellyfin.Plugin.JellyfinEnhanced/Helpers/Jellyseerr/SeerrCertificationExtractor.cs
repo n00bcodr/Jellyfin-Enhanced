@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
@@ -51,11 +52,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                 return default;
             }
 
-            if (!TryPickRegionEntry(results, region, out var regionRelease))
+            // The preferred region's entry often exists with only empty
+            // certifications (digital/physical rows). For enforcement that must not
+            // read as "unrated" while another entry is rated: fall through region ->
+            // US -> first entry that actually carries a certification.
+            foreach (var entry in CandidateEntries(results, region))
             {
-                return default;
+                var result = MovieCertFromEntry(entry);
+                if (!string.IsNullOrWhiteSpace(result.Certification))
+                {
+                    return result;
+                }
             }
 
+            return default;
+        }
+
+        private static CertificationResult MovieCertFromEntry(JsonElement regionRelease)
+        {
             if (!regionRelease.TryGetProperty("release_dates", out var dates) || dates.ValueKind != JsonValueKind.Array)
             {
                 return default;
@@ -107,15 +121,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                 return default;
             }
 
-            if (!TryPickRegionEntry(results, region, out var regionRating))
+            foreach (var entry in CandidateEntries(results, region))
             {
-                return default;
+                var rating = ReadString(entry, "rating");
+                if (!string.IsNullOrWhiteSpace(rating))
+                {
+                    return new CertificationResult(rating, ReadString(entry, "iso_3166_1"));
+                }
             }
 
-            var rating = ReadString(regionRating, "rating");
-            return string.IsNullOrWhiteSpace(rating)
-                ? default
-                : new CertificationResult(rating, ReadString(regionRating, "iso_3166_1"));
+            return default;
+        }
+
+        // Entries in preference order: the requested region, then US, then the rest.
+        private static IEnumerable<JsonElement> CandidateEntries(JsonElement results, string region)
+        {
+            JsonElement? regionEntry = null;
+            JsonElement? usEntry = null;
+            var others = new List<JsonElement>();
+            foreach (var entry in results.EnumerateArray())
+            {
+                if (entry.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var iso = ReadString(entry, "iso_3166_1");
+                if (regionEntry is null && string.Equals(iso, region, StringComparison.OrdinalIgnoreCase))
+                {
+                    regionEntry = entry;
+                }
+                else if (usEntry is null && string.Equals(iso, "US", StringComparison.OrdinalIgnoreCase))
+                {
+                    usEntry = entry;
+                }
+                else
+                {
+                    others.Add(entry);
+                }
+            }
+
+            if (regionEntry is not null)
+            {
+                yield return regionEntry.Value;
+            }
+
+            if (usEntry is not null)
+            {
+                yield return usEntry.Value;
+            }
+
+            foreach (var entry in others)
+            {
+                yield return entry;
+            }
         }
 
         private static bool TryGetResultsArray(JsonElement detail, string container, out JsonElement results)
@@ -134,50 +193,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
 
             return detail.TryGetProperty("results", out results)
                 && results.ValueKind == JsonValueKind.Array;
-        }
-
-        // region -> US -> first available, mirroring getContentRating.
-        private static bool TryPickRegionEntry(JsonElement results, string region, out JsonElement picked)
-        {
-            picked = default;
-            JsonElement? first = null;
-            JsonElement? us = null;
-
-            foreach (var entry in results.EnumerateArray())
-            {
-                if (entry.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                first ??= entry;
-                var iso = ReadString(entry, "iso_3166_1");
-
-                if (string.Equals(iso, region, StringComparison.OrdinalIgnoreCase))
-                {
-                    picked = entry;
-                    return true;
-                }
-
-                if (us is null && string.Equals(iso, "US", StringComparison.OrdinalIgnoreCase))
-                {
-                    us = entry;
-                }
-            }
-
-            if (us is not null)
-            {
-                picked = us.Value;
-                return true;
-            }
-
-            if (first is not null)
-            {
-                picked = first.Value;
-                return true;
-            }
-
-            return false;
         }
 
         private static string? ReadString(JsonElement element, string property)

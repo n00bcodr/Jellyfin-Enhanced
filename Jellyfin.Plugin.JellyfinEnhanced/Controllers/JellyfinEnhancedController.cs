@@ -710,8 +710,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         private async Task<IActionResult> ApplyParentalFilterAsync(string json, string apiPath, string jellyfinUserId)
         {
-            var result = await _parentalFilter.ApplyAsync(json, apiPath, jellyfinUserId, HttpContext.RequestAborted);
-            return result.Block ? ParentalBlockedResult() : Content(result.Body, "application/json");
+            try
+            {
+                var result = await _parentalFilter.ApplyAsync(json, apiPath, jellyfinUserId, HttpContext.RequestAborted);
+                return result.Block ? ParentalBlockedResult() : Content(result.Body, "application/json");
+            }
+            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                return StatusCode(499); // browser went away (also reachable from the response-cache path)
+            }
         }
 
         private async Task<bool> IsRequestBodyParentalBlockedAsync(string body, string jellyfinUserId)
@@ -3315,10 +3322,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // that title and anything else (search, discover, trending, lists) is
             // refused, because it would return titles unfiltered.
             var tmdbCallerId = UserHelper.GetCurrentUserId(User)?.ToString();
+            var queryString = HttpContext.Request.QueryString;
             if (_parentalFilter.TryGetRestrictedPolicy(tmdbCallerId, out _))
             {
-                // The route captures only the path; the query (append_to_response=...) matters too.
-                switch (Services.SeerrParentalFilter.ClassifyTmdbPassthrough(apiPath + HttpContext.Request.QueryString.Value, out var gatedType, out var gatedId))
+                // The route captures only the path; the query matters too. Work on the
+                // DECODED keys so percent-encoding (append%5Fto%5Fresponse) can't slip
+                // a title list past the classifier, and forward only a small set of
+                // harmless parameters, rebuilt from the decoded values.
+                var allowedKeys = new[] { "language", "page", "region", "include_adult", "query" };
+                var decodedQuery = string.Join("&", HttpContext.Request.Query
+                    .Where(kv => allowedKeys.Contains(kv.Key, StringComparer.OrdinalIgnoreCase))
+                    .Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value.ToString())}"));
+                if (HttpContext.Request.Query.Keys.Any(k => !allowedKeys.Contains(k, StringComparer.OrdinalIgnoreCase)))
+                {
+                    return ParentalBlockedResult();
+                }
+                switch (Services.SeerrParentalFilter.ClassifyTmdbPassthrough(apiPath + (decodedQuery.Length > 0 ? "?" + decodedQuery : string.Empty), out var gatedType, out var gatedId))
                 {
                     case Services.SeerrParentalFilter.TmdbAccess.Deny:
                         return ParentalBlockedResult();
@@ -3329,6 +3348,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         }
                         break;
                 }
+                queryString = decodedQuery.Length > 0 ? new QueryString("?" + decodedQuery) : QueryString.Empty;
             }
 
             var config = JellyfinEnhanced.Instance?.Configuration;
@@ -3338,7 +3358,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var httpClient = _httpClientFactory.CreateClient();
-            var queryString = HttpContext.Request.QueryString;
             var separator = queryString.HasValue ? "&" : "?";
             var requestUri = $"https://api.themoviedb.org/3/{apiPath}{queryString}{separator}api_key={config.TMDB_API_KEY}";
 

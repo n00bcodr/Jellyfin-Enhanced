@@ -61,6 +61,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IServerConfigurationManager _serverConfig;
         private readonly Logger _logger;
 
+        // One outbound fan-out limit for the whole server, not per response: a
+        // handful of restricted users opening big lists must not multiply it.
+        private readonly SemaphoreSlim _throttle = new(MaxConcurrentFetches);
+
         /// <summary>
         /// A title's parental signature: its rating score and, when fetched from a
         /// body that carries them, its cleaned TMDB keyword and genre names.
@@ -72,6 +76,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Unresolved = the fetch failed (negative entry, short TTL); Sig with a null
         // Score and Unresolved false = fetched fine but the title is unrated.
         private readonly ConcurrentDictionary<string, (Signature? Sig, bool Unresolved, DateTime CachedAt)> _certCache = new(StringComparer.Ordinal);
+
+        // Titles whose *tag* upgrade recently failed while a good rating-only entry
+        // exists: tag-rule callers get "unverified" (hidden) without re-fetching
+        // until NegativeCacheTtl passes; rating-only callers are unaffected.
+        private readonly ConcurrentDictionary<string, DateTime> _tagFetchFailedAt = new(StringComparer.Ordinal);
 
         // Coalesces concurrent fetches of the same title (tag-bearing and
         // rating-only fetches coalesce separately: a rating-only fetch in flight
@@ -112,8 +121,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static bool IsEnabled()
         {
+            // Not tied to JellyseerrEnabled: the TMDB passthrough is reachable
+            // without Seerr and must be gated by the same policy.
             var config = JellyfinEnhanced.Instance?.Configuration;
-            return config != null && config.JellyseerrEnabled && config.JellyseerrRespectParentalRatings;
+            return config != null && config.JellyseerrRespectParentalRatings;
         }
 
         /// <summary>
@@ -208,6 +219,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     case Category.SubResource:
                         return new Result(await IsTitleBlockedAsync(plan.MediaType!, plan.ParentId, policy).ConfigureAwait(false), json);
+
+                    case Category.NestedDetail:
+                        // e.g. /api/v1/issue/{id}: the title sits under `media`.
+                        return new Result(await IsNestedMediaBlockedAsync(json, policy).ConfigureAwait(false), json);
 
                     default:
                         return new Result(false, json);
@@ -443,6 +458,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return !IsAllowed(resolved, mediaType, policy);
         }
 
+        private async Task<bool> IsNestedMediaBlockedAsync(string json, Policy policy)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.ValueKind != JsonValueKind.Object
+                    || !doc.RootElement.TryGetProperty("media", out var media)
+                    || media.ValueKind != JsonValueKind.Object)
+                {
+                    return false; // no title in the body -> nothing to leak
+                }
+
+                var mediaType = NormalizeMediaType(media.TryGetProperty("mediaType", out var mt) && mt.ValueKind == JsonValueKind.String ? mt.GetString() : null);
+                if (mediaType == null || !media.TryGetProperty("tmdbId", out var idEl) || !idEl.TryGetInt32(out var tmdbId))
+                {
+                    return true; // a title we cannot identify cannot be verified
+                }
+
+                return await IsTitleBlockedAsync(mediaType, tmdbId, policy).ConfigureAwait(false);
+            }
+            catch (JsonException)
+            {
+                return true;
+            }
+        }
+
         private async Task<bool> IsTitleBlockedAsync(string mediaType, int tmdbId, Policy policy)
         {
             if (tmdbId <= 0)
@@ -497,7 +538,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
 
                     // Person rows embed a `knownFor` list of titles that must be filtered too.
-                    FilterKnownFor(row, policy, region, scores);
+                    removed += FilterKnownFor(row, policy, region, scores);
                 }
             }
 
@@ -570,7 +611,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // instead of restarting cold every time.
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
             cts.CancelAfter(OverallBudget);
-            var throttle = new SemaphoreSlim(MaxConcurrentFetches);
+            var throttle = _throttle;
 
             var tasks = keys.Select(async kvp =>
             {
@@ -637,7 +678,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return IsAllowed(score, mediaType, policy);
         }
 
-        private void FilterKnownFor(
+        private int FilterKnownFor(
             JsonObject row,
             Policy policy,
             string region,
@@ -645,9 +686,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             if (row["knownFor"] is not JsonArray knownFor)
             {
-                return;
+                return 0;
             }
 
+            var removed = 0;
             for (var j = knownFor.Count - 1; j >= 0; j--)
             {
                 if (knownFor[j] is not JsonObject entry)
@@ -664,6 +706,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (IsAdult(entry) || !TryGetTmdbId(entry, "id", out var tmdbId))
                 {
                     knownFor.RemoveAt(j);
+                    removed++;
                     continue;
                 }
 
@@ -671,8 +714,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (!IsAllowed(score, mediaType, policy))
                 {
                     knownFor.RemoveAt(j);
+                    removed++;
                 }
             }
+
+            return removed;
         }
 
         // ── Score resolution (cache -> in-flight -> fetch) ───────────────────
@@ -695,6 +741,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // A rating-only entry can't satisfy a tag-rule caller; fall through to fetch.
                     return cached.Sig;
                 }
+            }
+
+            if (needTags && _tagFetchFailedAt.TryGetValue(key, out var failedAt))
+            {
+                if (DateTime.UtcNow - failedAt < NegativeCacheTtl)
+                {
+                    return null; // tag data recently unavailable -> hidden for tag-rule users, no refetch
+                }
+
+                _tagFetchFailedAt.TryRemove(key, out _);
             }
 
             // Coalesce concurrent fetches. The shared task carries its own timeout;
@@ -736,6 +792,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var ttl = CacheTtl();
                 if (detail == null)
                 {
+                    if (needTags)
+                    {
+                        _tagFetchFailedAt[key] = now;
+                    }
+
                     // Negative entry (retried after NegativeCacheTtl) — unless a fresh
                     // positive entry exists, which a failed *tag* upgrade must not erase:
                     // rating-only users would otherwise lose a title Seerr merely
@@ -751,6 +812,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 var resolved = SignatureFromDetail(detail.Value, mediaType, region, includeTags: hasTagData);
+                if (hasTagData)
+                {
+                    _tagFetchFailedAt.TryRemove(key, out _);
+                }
+
                 // A rating-only refresh must not erase tags a concurrent full fetch
                 // just cached — but must not resurrect EXPIRED tags either (that
                 // would extend them another TTL and let an upstream keyword change
@@ -796,6 +862,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (now - kv.Value.CachedAt > limit)
                 {
                     _certCache.TryRemove(kv.Key, out _);
+                }
+            }
+
+            foreach (var kv in _tagFetchFailedAt)
+            {
+                if (now - kv.Value > NegativeCacheTtl)
+                {
+                    _tagFetchFailedAt.TryRemove(kv.Key, out _);
                 }
             }
 
@@ -942,7 +1016,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // ── Endpoint classification ──────────────────────────────────────────
 
-        private enum Category { None, List, Detail, SubResource }
+        private enum Category { None, List, Detail, SubResource, NestedDetail }
 
         private enum Container { None, Results, Parts, CombinedCredits }
 
@@ -962,6 +1036,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (string.IsNullOrEmpty(apiPath))
             {
                 return new EndpointPlan { Category = Category.None };
+            }
+
+            // Single issue: gate on the media it is about.
+            if (apiPath.StartsWith("/api/v1/issue/", StringComparison.OrdinalIgnoreCase))
+            {
+                return new EndpointPlan { Category = Category.NestedDetail };
             }
 
             // Requests / issues lists: results[] with tmdbId/mediaType nested under `media`.
