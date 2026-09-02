@@ -96,12 +96,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public void ResetCountersForConsentBoundary() =>
             _counters.ResetForNewPeriod(UtcToday());
 
-        private static string JellyfinTarget =>
-#if NET10_0_OR_GREATER
-            "jf12";
-#else
-            "jf10";
-#endif
+        private static string JellyfinTarget => HostCompatibilityService.BuiltFor;
 
         private string PluginConfigDir =>
             Path.Join(_applicationPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced");

@@ -64,6 +64,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.WhatsNewService _whatsNewService;
         private readonly Services.UsageEventCounterService _usageEventCounterService;
         private readonly Services.AnalyticsReportingService _analyticsReportingService;
+        private readonly Services.HostCompatibilityService _hostCompatibility;
         private readonly IServerConfigurationManager _serverConfigurationManager;
         private readonly INetworkManager _networkManager;
 
@@ -184,6 +185,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.WhatsNewService whatsNewService,
             Services.UsageEventCounterService usageEventCounterService,
             Services.AnalyticsReportingService analyticsReportingService,
+            Services.HostCompatibilityService hostCompatibility,
             IServerConfigurationManager serverConfigurationManager,
             INetworkManager networkManager)
         {
@@ -206,6 +208,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _whatsNewService = whatsNewService;
             _usageEventCounterService = usageEventCounterService;
             _analyticsReportingService = analyticsReportingService;
+            _hostCompatibility = hostCompatibility;
             _serverConfigurationManager = serverConfigurationManager;
             _networkManager = networkManager;
         }
@@ -1400,6 +1403,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // reads the fields it needs (name, hostname, port, apiKey,
             // useSsl, baseUrl, is4k) rather than us re-serializing here.
             return Content(json ?? "[]", "application/json");
+        }
+
+        /// <summary>
+        /// Which Jellyfin line this DLL was built for vs which one is running it.
+        /// Drives the mismatch banner at the top of the config page.
+        /// </summary>
+        [HttpGet("host-compat")]
+        [Authorize]
+        public ActionResult GetHostCompatibility()
+        {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
+            return new JsonResult(new
+            {
+                builtFor = Services.HostCompatibilityService.BuiltFor,
+                hostTarget = _hostCompatibility.HostTarget,
+                hostVersion = _hostCompatibility.HostVersionString,
+                pluginVersion = JellyfinEnhanced.Instance?.Version.ToString(),
+                mismatch = _hostCompatibility.IsMismatch,
+                expectedAsset = _hostCompatibility.ExpectedAssetName,
+                manifestUrl = Services.HostCompatibilityService.ManifestUrl,
+                message = _hostCompatibility.MismatchMessage
+            });
         }
 
         // Admin-only. Backs the "Import from Seerr" picker's URL-mapping pre-fill --

@@ -81,6 +81,19 @@
                 </div>
             </div>
 
+            <div id="je-host-mismatch" class="je-danger-banner" style="display: none;" role="alert">
+                <i class="material-icons je-danger-icon" aria-hidden="true">error_outline</i>
+                <div style="min-width:0;">
+                    <strong>Wrong build for this Jellyfin version</strong>: <span id="je-host-mismatch-msg"></span>
+                    <div style="margin-top:8px;">
+                        Fix: uninstall Jellyfin Enhanced, make sure a plugin repository points at
+                        <code id="je-host-mismatch-manifest" style="overflow-wrap:anywhere; word-break:break-word;"></code>,
+                        then reinstall it from the catalog. See the
+                        <a class="sectionTitle" href="https://n00bcodr.github.io/Jellyfin-Enhanced/installation/installation/" target="_blank" rel="noopener">installation guide</a>.
+                    </div>
+                </div>
+            </div>
+
             <div id="je-probe-warning" class="je-note-banner" style="display: none;" role="status" aria-live="polite">
                 <i class="material-icons je-note-icon">warning_amber</i>
                 <div>
@@ -3910,6 +3923,31 @@
         //   'probe-failed' — HTTP/JSON/auth error reading the config
         var customTabsCompatState = null;
 
+        // Build-target vs host check (a jf10 zip loaded by a Jellyfin 12 host).
+        // Server-side truth lives in HostCompatibilityService; this only
+        // shows or hides the banner at the top of the page.
+        function checkHostCompatibility() {
+            ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/JellyfinEnhanced/host-compat'),
+                dataType: 'json'
+            }).then(function(info) {
+                var banner = document.getElementById('je-host-mismatch');
+                var msgEl = document.getElementById('je-host-mismatch-msg');
+                var urlEl = document.getElementById('je-host-mismatch-manifest');
+                if (!banner || !msgEl || !urlEl) return;
+                if (info && info.mismatch) {
+                    msgEl.textContent = info.message || '';
+                    urlEl.textContent = info.manifestUrl;
+                    banner.style.display = '';
+                } else {
+                    banner.style.display = 'none';
+                }
+            }).catch(function(err) {
+                console.warn('[JE] host-compat probe failed:', err);
+            });
+        }
+
         /**
          * Checks installed plugins (Plugin Pages, Custom Tabs, etc.) and updates
          * dependency state for Plugin Pages / Custom Tabs dependent settings.
@@ -5238,6 +5276,7 @@
 
         function loadConfig() {
             Dashboard.showLoadingMsg();
+            checkHostCompatibility();
             checkInstalledPlugins();
             ApiClient.getPluginConfiguration(pluginId).then((config) => {
                 CUSTOM_TAB_MANAGED_ENTRIES.forEach(function(entry) {
