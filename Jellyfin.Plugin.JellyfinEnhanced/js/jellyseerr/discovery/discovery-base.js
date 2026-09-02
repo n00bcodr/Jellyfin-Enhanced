@@ -664,7 +664,7 @@
             // it); the load generation only tells it whether a filter change
             // means the engine needs waking afterwards.
             const generation = loadGeneration;
-            const owner = takeLoading();
+            let owner = 0;
             cachedTvResults = [];
             cachedMovieResults = [];
             if (itemDeduplicator) itemDeduplicator.clear();
@@ -690,6 +690,7 @@
             }
 
             try {
+                owner = takeLoading();
                 const results = await Promise.all(fetchPromises);
                 // Superseded (another sort change, navigation): nothing here is ours.
                 if (signal.aborted) return;

@@ -518,6 +518,14 @@
                     return;
                 }
                 tryAttachSearchListener();
+                // The row itself was removed (e.g. by a view re-render) while the
+                // query is unchanged: handleSearch would skip it as already
+                // processed, so rebuild it here.
+                if (isJellyseerrActive && searchInput.value.trim() && searchInput.value === lastProcessedQuery
+                    && !document.querySelector('.jellyseerr-section')) {
+                    resetSearchPagination();
+                    fetchAndRenderResults(searchInput.value);
+                }
             }
 
             // Listen for manual refresh events from the UI

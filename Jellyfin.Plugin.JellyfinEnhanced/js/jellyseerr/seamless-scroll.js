@@ -480,6 +480,9 @@
                 state.activeScrollObserver.disconnect();
                 state.activeScrollObserver = null;
             }
+            // A self-healed (sentinel gone) engine must not leave a dead fill()
+            // behind for callers to poke; only clear it if it is still ours.
+            if (state.fill === fill) state.fill = null;
         };
 
         // Store for cleanup
