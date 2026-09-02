@@ -172,6 +172,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrResponseCacheTtlMinutes = 10;
             JellyseerrUserIdCacheTtlMinutes = 30;
             JellyseerrRespectParentalRatings = true;
+            JellyseerrRespectParentalTags = true;
             JellyseerrParentalRatingCacheTtlMinutes = 1440;
             TriggerSeerrScanOnItemAdded = false;
             SeerrScanDebounceSeconds = 60;
@@ -625,6 +626,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // recommended, person, collection, requests, watchlist and detail
         // surfaces (issue #581). Users without a limit are unaffected.
         public bool JellyseerrRespectParentalRatings { get; set; }
+
+        // Sub-toggle of JellyseerrRespectParentalRatings: also enforce each
+        // user's tag-based parental controls (Blocked Tags / Allowed Tags) by
+        // matching them against a title's TMDB keywords (and, for blocked tags,
+        // its genres). Needs one Seerr detail lookup per title (cached).
+        public bool JellyseerrRespectParentalTags { get; set; }
 
         // How long a resolved TMDB certification -> parental score is cached
         // (user-neutral). Certifications almost never change, so default 24h.

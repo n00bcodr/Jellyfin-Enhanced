@@ -1674,6 +1674,10 @@
                                     <div class="je-setting-description" data-desc-for="jellyseerrRespectParentalRatings">
                                         <div class="fieldDescription je-field-desc-xl">Hide Seerr search, discovery, similar/recommended, person, collection and request results above a user's Jellyfin parental rating limit (Max Parental Rating and "Block unrated" in the user's policy), and refuse requests for them. Uses the server's metadata country to read TMDB certifications; titles whose rating cannot be determined are hidden for restricted users. Users without a limit are unaffected.</div>
                                     </div>
+                                    <div class="checkboxContainer"><label><input id="jellyseerrRespectParentalTags" is="emby-checkbox" type="checkbox"/><span>Also respect users' Blocked / Allowed Tags</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="jellyseerrRespectParentalTags">
+                                        <div class="fieldDescription je-field-desc-xl">Match a user's Blocked Tags against each Seerr title's TMDB keywords and genres (Jellyfin imports TMDB keywords as item tags, so blocking "zombie" or "horror" works like it does in the library), and treat Allowed Tags as a strict allow-list matched against keywords. Blocked tags always win. Titles whose keywords cannot be fetched are hidden for users with tag rules. Needs the setting above.</div>
+                                    </div>
                                 </div>
                             </details>
 
@@ -5415,6 +5419,7 @@
                 document.querySelector('#jellyseerrResponseCacheTtlMinutes').value = config.JellyseerrResponseCacheTtlMinutes || 10;
                 document.querySelector('#jellyseerrUserIdCacheTtlMinutes').value = config.JellyseerrUserIdCacheTtlMinutes || 30;
                 document.querySelector('#jellyseerrRespectParentalRatings').checked = config.JellyseerrRespectParentalRatings !== false;
+                document.querySelector('#jellyseerrRespectParentalTags').checked = config.JellyseerrRespectParentalTags !== false;
                 document.querySelector('#jellyseerrParentalRatingCacheTtlMinutes').value = config.JellyseerrParentalRatingCacheTtlMinutes || 1440;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
@@ -5906,6 +5911,7 @@
             config.JellyseerrResponseCacheTtlMinutes = parseInt(document.querySelector('#jellyseerrResponseCacheTtlMinutes').value, 10) || 10;
             config.JellyseerrUserIdCacheTtlMinutes = parseInt(document.querySelector('#jellyseerrUserIdCacheTtlMinutes').value, 10) || 30;
             config.JellyseerrRespectParentalRatings = document.querySelector('#jellyseerrRespectParentalRatings').checked;
+            config.JellyseerrRespectParentalTags = document.querySelector('#jellyseerrRespectParentalTags').checked;
             config.JellyseerrParentalRatingCacheTtlMinutes = parseInt(document.querySelector('#jellyseerrParentalRatingCacheTtlMinutes').value, 10) || 1440;
             config.JellyseerrShowNetworkDiscovery = document.querySelector('#jellyseerrShowNetworkDiscovery').checked;
             config.JellyseerrShowGenreDiscovery = document.querySelector('#jellyseerrShowGenreDiscovery').checked;

@@ -104,6 +104,7 @@ Seerr results respect each user's Jellyfin parental controls (**Max Parental Rat
 - Certifications are read from TMDB for the server's metadata country (falling back to US), the same value the More Info modal shows, and scored with Jellyfin's own rating table.
 - Titles whose rating cannot be determined are hidden for restricted users. Users without a limit are unaffected and nothing extra is fetched for them.
 - Resolved ratings are cached (default 24 hours) so the extra lookups are one-off. Disable with **Respect users' parental ratings** under the Seerr settings.
+- **Blocked Tags / Allowed Tags** from the user's policy are enforced too (sub-toggle **Also respect users' Blocked / Allowed Tags**). A blocked tag matches a title's TMDB keywords and genre names, so blocking "zombie" (a keyword Jellyfin would import as an item tag) or "horror" (a genre) both work; Allowed Tags act as a strict allow-list matched against keywords only, exactly like the library. Blocked tags always win. Keyword coverage on TMDB is community-sourced, so genre blocks give broader coverage than keyword blocks.
 
 ### Issue Reporting
 

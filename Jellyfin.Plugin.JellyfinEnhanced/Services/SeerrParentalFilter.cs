@@ -60,13 +60,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IServerConfigurationManager _serverConfig;
         private readonly Logger _logger;
 
-        // Resolved (score, subScore) per "{mediaType}:{tmdbId}:{region}" — user-neutral.
-        // Unresolved = the fetch failed (negative entry, short TTL); Score null with
-        // Unresolved false = fetched fine but the title is unrated.
-        private readonly ConcurrentDictionary<string, (int? Score, int? SubScore, bool Unresolved, DateTime CachedAt)> _certCache = new(StringComparer.Ordinal);
+        /// <summary>
+        /// A title's parental signature: its rating score and, when fetched from a
+        /// body that carries them, its cleaned TMDB keyword and genre names.
+        /// Keywords/Genres null = tag data not fetched (rating-only lookup).
+        /// </summary>
+        private sealed record Signature(int? Score, int? SubScore, string[]? Keywords, string[]? Genres);
 
-        // Coalesces concurrent fetches of the same title.
-        private readonly ConcurrentDictionary<string, Lazy<Task<(int? Score, int? SubScore)?>>> _inFlight = new(StringComparer.Ordinal);
+        // Resolved signature per "{mediaType}:{tmdbId}:{region}" — user-neutral.
+        // Unresolved = the fetch failed (negative entry, short TTL); Sig with a null
+        // Score and Unresolved false = fetched fine but the title is unrated.
+        private readonly ConcurrentDictionary<string, (Signature? Sig, bool Unresolved, DateTime CachedAt)> _certCache = new(StringComparer.Ordinal);
+
+        // Coalesces concurrent fetches of the same title (tag-bearing and
+        // rating-only fetches coalesce separately: a rating-only fetch in flight
+        // cannot satisfy a caller with tag rules).
+        private readonly ConcurrentDictionary<string, Lazy<Task<Signature?>>> _inFlight = new(StringComparer.Ordinal);
 
         public SeerrParentalFilter(
             IHttpClientFactory httpClientFactory,
@@ -84,10 +93,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // ── Policy ───────────────────────────────────────────────────────────
 
-        /// <summary>A user's effective parental limit.</summary>
-        public readonly record struct Policy(int? MaxScore, int? MaxSubScore, bool BlockUnratedMovies, bool BlockUnratedSeries)
+        /// <summary>A user's effective parental limit (rating limit + cleaned tag rules).</summary>
+        public readonly record struct Policy(
+            int? MaxScore,
+            int? MaxSubScore,
+            bool BlockUnratedMovies,
+            bool BlockUnratedSeries,
+            HashSet<string> BlockedTags,
+            HashSet<string> AllowedTags)
         {
-            public bool IsRestricted => MaxScore.HasValue || BlockUnratedMovies || BlockUnratedSeries;
+            public bool HasTagRules => (BlockedTags?.Count ?? 0) > 0 || (AllowedTags?.Count ?? 0) > 0;
+
+            public bool IsRestricted => MaxScore.HasValue || BlockUnratedMovies || BlockUnratedSeries || HasTagRules;
 
             public bool BlocksUnrated(string mediaType) => mediaType == "tv" ? BlockUnratedSeries : BlockUnratedMovies;
         }
@@ -122,7 +139,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var blockMovies = blocked.Contains(UnratedItem.Movie);
             var blockSeries = blocked.Contains(UnratedItem.Series);
 
-            policy = new Policy(user.MaxParentalRatingScore, user.MaxParentalRatingSubScore, blockMovies, blockSeries);
+            // Tag branch of the native parental controls, normalised the way core
+            // normalises both sides of its comparison. The sub-toggle drops them
+            // wholesale, reverting to rating-only behaviour.
+            var blockedTags = new HashSet<string>(StringComparer.Ordinal);
+            var allowedTags = new HashSet<string>(StringComparer.Ordinal);
+            if (JellyfinEnhanced.Instance?.Configuration?.JellyseerrRespectParentalTags == true)
+            {
+                blockedTags = ParentalTagDecision.CleanTags(user.GetPreference(PreferenceKind.BlockedTags));
+                allowedTags = ParentalTagDecision.CleanTags(user.GetPreference(PreferenceKind.AllowedTags));
+            }
+
+            policy = new Policy(user.MaxParentalRatingScore, user.MaxParentalRatingSubScore, blockMovies, blockSeries, blockedTags, allowedTags);
             return policy.IsRestricted;
         }
 
@@ -314,7 +342,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // ── Decisions ────────────────────────────────────────────────────────
 
-        private bool IsAllowed((int? Score, int? SubScore)? resolved, string mediaType, Policy policy)
+        private bool IsAllowed(Signature? resolved, string mediaType, Policy policy)
         {
             // Could not verify -> fail closed.
             if (resolved == null)
@@ -322,12 +350,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return false;
             }
 
-            return ParentalRatingDecision.IsAllowed(
-                resolved.Value.Score,
-                resolved.Value.SubScore,
+            var ratingAllowed = ParentalRatingDecision.IsAllowed(
+                resolved.Score,
+                resolved.SubScore,
                 policy.BlocksUnrated(mediaType),
                 policy.MaxScore,
                 policy.MaxSubScore);
+            if (!ratingAllowed)
+            {
+                return false;
+            }
+
+            if (!policy.HasTagRules)
+            {
+                return true;
+            }
+
+            // Tag branch. A missing tag set under active tag rules means the title
+            // could not be verified -> fail closed, like the rating path.
+            if (resolved.Keywords == null || resolved.Genres == null)
+            {
+                return false;
+            }
+
+            return ParentalTagDecision.IsAllowed(resolved.Keywords, resolved.Genres, policy.BlockedTags, policy.AllowedTags);
         }
 
         private bool IsDetailBodyBlocked(string json, string mediaType, Policy policy)
@@ -356,10 +402,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // The detail body already carries the certification: score it directly
             // and seed the cache so list rows for this title need no fetch.
             var region = Region();
-            var resolved = ScoreFromDetail(detail, mediaType, region);
+            // Seerr detail bodies carry certification AND keywords/genres.
+            var resolved = SignatureFromDetail(detail, mediaType, region, includeTags: true);
             if (detail.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.Number && idEl.TryGetInt32(out var tmdbId))
             {
-                _certCache[CacheKey(mediaType, tmdbId, region)] = (resolved.Score, resolved.SubScore, false, DateTime.UtcNow);
+                _certCache[CacheKey(mediaType, tmdbId, region)] = (resolved, false, DateTime.UtcNow);
             }
 
             return !IsAllowed(resolved, mediaType, policy);
@@ -373,7 +420,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             using var cts = new CancellationTokenSource(OverallBudget);
-            var resolved = await GetScoreAsync(mediaType, tmdbId, Region(), cts.Token).ConfigureAwait(false);
+            var resolved = await GetSignatureAsync(mediaType, tmdbId, Region(), policy.HasTagRules, cts.Token).ConfigureAwait(false);
             return !IsAllowed(resolved, mediaType, policy);
         }
 
@@ -393,7 +440,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var region = Region();
-            var scores = await ResolveScoresAsync(arrays, plan, region, requestAborted).ConfigureAwait(false);
+            var scores = await ResolveScoresAsync(arrays, plan, region, policy.HasTagRules, requestAborted).ConfigureAwait(false);
 
             var removed = 0;
             foreach (var array in arrays)
@@ -431,10 +478,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return root.ToJsonString();
         }
 
-        private async Task<Dictionary<string, (int? Score, int? SubScore)?>> ResolveScoresAsync(
+        private async Task<Dictionary<string, Signature?>> ResolveScoresAsync(
             IReadOnlyList<JsonArray> arrays,
             EndpointPlan plan,
             string region,
+            bool needTags,
             CancellationToken requestAborted)
         {
             var keys = new Dictionary<string, (string MediaType, int TmdbId)>(StringComparer.Ordinal);
@@ -476,7 +524,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            var scores = new Dictionary<string, (int? Score, int? SubScore)?>(StringComparer.Ordinal);
+            var scores = new Dictionary<string, Signature?>(StringComparer.Ordinal);
             if (keys.Count == 0)
             {
                 return scores;
@@ -497,12 +545,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 catch (OperationCanceledException)
                 {
-                    return (kvp.Key, ((int?, int?)?)null); // over budget while queued -> fail closed
+                    return (kvp.Key, (Signature?)null); // over budget while queued -> fail closed
                 }
 
                 try
                 {
-                    var score = await GetScoreAsync(kvp.Value.MediaType, kvp.Value.TmdbId, region, cts.Token).ConfigureAwait(false);
+                    var score = await GetSignatureAsync(kvp.Value.MediaType, kvp.Value.TmdbId, region, needTags, cts.Token).ConfigureAwait(false);
                     return (kvp.Key, score);
                 }
                 finally
@@ -525,7 +573,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             EndpointPlan plan,
             Policy policy,
             string region,
-            IReadOnlyDictionary<string, (int? Score, int? SubScore)?> scores)
+            IReadOnlyDictionary<string, Signature?> scores)
         {
             var mediaType = ResolveMediaType(item, plan);
             if (mediaType == null)
@@ -551,7 +599,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             JsonObject row,
             Policy policy,
             string region,
-            IReadOnlyDictionary<string, (int? Score, int? SubScore)?> scores)
+            IReadOnlyDictionary<string, Signature?> scores)
         {
             if (row["knownFor"] is not JsonArray knownFor)
             {
@@ -587,7 +635,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // ── Score resolution (cache -> in-flight -> fetch) ───────────────────
 
-        private async Task<(int? Score, int? SubScore)?> GetScoreAsync(string mediaType, int tmdbId, string region, CancellationToken ct)
+        private async Task<Signature?> GetSignatureAsync(string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct)
         {
             var key = CacheKey(mediaType, tmdbId, region);
             if (_certCache.TryGetValue(key, out var cached))
@@ -600,17 +648,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         return null; // recently failed to verify -> still hidden, no refetch
                     }
                 }
-                else if (age < CacheTtl())
+                else if (age < CacheTtl() && (!needTags || cached.Sig?.Keywords != null))
                 {
-                    return (cached.Score, cached.SubScore);
+                    // A rating-only entry can't satisfy a tag-rule caller; fall through to fetch.
+                    return cached.Sig;
                 }
             }
 
             // Coalesce concurrent fetches. The shared task carries its own timeout;
             // each caller bounds only its own wait, so one request's budget can't
             // cancel a fetch another request depends on.
-            var lazy = _inFlight.GetOrAdd(key, k => new Lazy<Task<(int? Score, int? SubScore)?>>(
-                () => FetchAndCacheAsync(k, mediaType, tmdbId, region),
+            var inFlightKey = needTags ? key + "|tags" : key;
+            var lazy = _inFlight.GetOrAdd(inFlightKey, _ => new Lazy<Task<Signature?>>(
+                () => FetchAndCacheAsync(inFlightKey, key, mediaType, tmdbId, region, needTags),
                 LazyThreadSafetyMode.ExecutionAndPublication));
 
             try
@@ -623,27 +673,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private async Task<(int? Score, int? SubScore)?> FetchAndCacheAsync(string key, string mediaType, int tmdbId, string region)
+        private async Task<Signature?> FetchAndCacheAsync(string inFlightKey, string key, string mediaType, int tmdbId, string region, bool needTags)
         {
             try
             {
                 using var cts = new CancellationTokenSource(PerFetchTimeout);
-                var detail = await FetchDetailAsync(mediaType, tmdbId, cts.Token).ConfigureAwait(false);
+                var (detail, hasTagData) = await FetchDetailAsync(mediaType, tmdbId, needTags, cts.Token).ConfigureAwait(false);
                 if (detail == null)
                 {
-                    _certCache[key] = (null, null, true, DateTime.UtcNow); // negative entry, retried after NegativeCacheTtl
+                    _certCache[key] = (null, true, DateTime.UtcNow); // negative entry, retried after NegativeCacheTtl
                     TrimCache();
                     return null;
                 }
 
-                var resolved = ScoreFromDetail(detail.Value, mediaType, region);
-                _certCache[key] = (resolved.Score, resolved.SubScore, false, DateTime.UtcNow);
+                var resolved = SignatureFromDetail(detail.Value, mediaType, region, includeTags: hasTagData);
+                var now = DateTime.UtcNow;
+                var ttl = CacheTtl();
+                // A rating-only refresh must not erase tags a concurrent full fetch
+                // just cached — but must not resurrect EXPIRED tags either (that
+                // would extend them another TTL and let an upstream keyword change
+                // bypass a tag-restricted user). Keep existing tags only while the
+                // existing entry is itself still fresh.
+                _certCache.AddOrUpdate(
+                    key,
+                    _ => (resolved, false, now),
+                    (_, current) =>
+                    {
+                        if (resolved.Keywords == null && current.Sig?.Keywords != null && !current.Unresolved && now - current.CachedAt < ttl)
+                        {
+                            return (resolved with { Keywords = current.Sig.Keywords, Genres = current.Sig.Genres }, false, now);
+                        }
+
+                        return (resolved, false, now);
+                    });
                 TrimCache();
                 return resolved;
             }
             finally
             {
-                _inFlight.TryRemove(key, out _);
+                _inFlight.TryRemove(inFlightKey, out _);
             }
         }
 
@@ -678,47 +746,62 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private (int? Score, int? SubScore) ScoreFromDetail(JsonElement detail, string mediaType, string region)
+        private Signature SignatureFromDetail(JsonElement detail, string mediaType, string region, bool includeTags)
         {
+            string[]? keywords = null;
+            string[]? genres = null;
+            if (includeTags)
+            {
+                var extracted = SeerrTagSignatureExtractor.Extract(detail);
+                keywords = extracted.Keywords.ToArray();
+                genres = extracted.Genres.ToArray();
+            }
+
             var cert = SeerrCertificationExtractor.Extract(detail, mediaType, region);
             if (string.IsNullOrWhiteSpace(cert.Certification))
             {
-                return (null, null);
+                return new Signature(null, null, keywords, genres); // known-unrated
             }
 
             try
             {
                 var score = _localization.GetRatingScore(cert.Certification, cert.Iso ?? region);
-                return score == null ? (null, null) : (score.Score, score.SubScore);
+                return score == null
+                    ? new Signature(null, null, keywords, genres)
+                    : new Signature(score.Score, score.SubScore, keywords, genres);
             }
             catch (Exception ex)
             {
                 _logger.Debug($"Parental filter: could not score certification '{cert.Certification}' ({cert.Iso}): {ex.Message}");
-                return (null, null);
+                return new Signature(null, null, keywords, genres);
             }
         }
 
-        // TMDB's dedicated cert endpoints (tiny payload) when a TMDB key is set,
-        // else Seerr's full detail. Certification data does not vary per user, so
-        // X-Api-User is deliberately omitted — that is what keeps the cache shareable.
-        private async Task<JsonElement?> FetchDetailAsync(string mediaType, int tmdbId, CancellationToken ct)
+        // Rating-only lookups prefer TMDB's dedicated cert endpoints (tiny payload)
+        // when a TMDB key is set and fall back to Seerr's full detail. When tag
+        // rules are active the Seerr full detail is required: it is the one body
+        // carrying certifications AND keywords/genres. Certification and keyword
+        // data don't vary per user, so X-Api-User is deliberately omitted — that
+        // is what keeps the cache shareable. Returns whether the body carries tags.
+        private async Task<(JsonElement? Detail, bool HasTagData)> FetchDetailAsync(string mediaType, int tmdbId, bool needTags, CancellationToken ct)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
             {
-                return null;
+                return (null, false);
             }
 
-            if (!string.IsNullOrEmpty(config.TMDB_API_KEY))
+            if (!needTags && !string.IsNullOrEmpty(config.TMDB_API_KEY))
             {
                 var fromTmdb = await FetchCertFromTmdbAsync(mediaType, tmdbId, config.TMDB_API_KEY, ct).ConfigureAwait(false);
                 if (fromTmdb != null)
                 {
-                    return fromTmdb;
+                    return (fromTmdb, false);
                 }
             }
 
-            return await FetchDetailFromSeerrAsync(mediaType, tmdbId, config, ct).ConfigureAwait(false);
+            var fromSeerr = await FetchDetailFromSeerrAsync(mediaType, tmdbId, config, ct).ConfigureAwait(false);
+            return (fromSeerr, fromSeerr != null);
         }
 
         private async Task<JsonElement?> FetchCertFromTmdbAsync(string mediaType, int tmdbId, string apiKey, CancellationToken ct)

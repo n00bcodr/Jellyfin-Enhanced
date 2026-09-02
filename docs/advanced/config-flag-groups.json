@@ -139,6 +139,7 @@
     "JellyseerrExcludeBlocklistedItems": "Discovery & UI Extras",
     "JellyseerrExcludeLibraryItems": "Discovery & UI Extras",
     "JellyseerrRespectParentalRatings": "Discovery & UI Extras",
+    "JellyseerrRespectParentalTags": "Discovery & UI Extras",
     "JellyseerrParentalRatingCacheTtlMinutes": "Debug",
     "JellyseerrImportBlockedUsers": "Users",
     "JellyseerrResponseCacheTtlMinutes": "Debug",
