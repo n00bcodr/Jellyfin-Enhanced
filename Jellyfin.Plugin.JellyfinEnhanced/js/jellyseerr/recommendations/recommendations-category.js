@@ -90,6 +90,8 @@
   // Items fetched vs cards rendered (after in-library/hidden filtering) for
   // the current category; sizes the parallel batches.
   const yieldStats = { fetched: 0, rendered: 0 };
+  // TMDB pages overlap as popularity shifts between requests; drop repeats.
+  let categoryDeduplicator = null;
 
   function prefetchCategoryPages(category, count) {
     const st = state.categoryState;
@@ -138,6 +140,7 @@
           break;
         }
         results = sortResults(results, JE.discoveryFilter.getSortMode(SORT_MODULE));
+        if (categoryDeduplicator) results = categoryDeduplicator.filter(results);
         // Filters out already-in-library/hidden items - a raw non-empty API
         // page can still render zero actual cards.
         fragment.appendChild(JE.discoveryFilter.createCardsFragment(results, { cardClass: 'portraitCard' }));
@@ -168,12 +171,14 @@
     state.categoryState.totalPages = 0;
     yieldStats.fetched = 0;
     yieldStats.rendered = 0;
+    categoryDeduplicator = JE.seamlessScroll?.createDeduplicator?.() || null;
     try {
       // Warm pages 2-3 while page 1 is in flight.
       for (let p = 2; p <= 3; p++) fetchWithManagedRequest(`${category.path}?page=${p}`).catch(() => {});
       const response = await fetchWithManagedRequest(`${category.path}?page=1`);
       if (isStale?.()) return;
-      const results = sortResults(response?.results || [], JE.discoveryFilter.getSortMode(SORT_MODULE));
+      let results = sortResults(response?.results || [], JE.discoveryFilter.getSortMode(SORT_MODULE));
+      if (categoryDeduplicator) results = categoryDeduplicator.filter(results);
       const fragment = JE.discoveryFilter.createCardsFragment(results, { cardClass: 'portraitCard' });
       yieldStats.fetched += results.length;
       yieldStats.rendered += fragment.childNodes.length;
