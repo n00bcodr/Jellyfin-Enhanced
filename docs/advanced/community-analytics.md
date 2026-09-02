@@ -6,7 +6,7 @@ admin turns it on from the plugin's config page (**Admin → Usage Statistics**)
 the exact payload before it's ever sent.
 
 This page shows the current aggregate results, live, straight from the same database every opted-in
-install reports to. It reads four public, read-only views. No per-install data, no IP addresses, no
+install reports to. It reads six public, read-only views. No per-install data, no IP addresses, no
 identifying information of any kind is exposed here or anywhere in this system.
 
 !!! info "What these numbers are, and aren't"
@@ -77,12 +77,40 @@ Byte size only (never contents) of the custom branding folder, if anything has b
 (logo/banner/favicon images). This answers "is this feature actually used" the same way the usage
 counts above do for other features.
 
-<div id="je-analytics-dashboard">
-  <p id="je-analytics-loading">Loading live data…</p>
-</div>
+## Live Dashboard
+
+<p id="je-analytics-loading">Loading live data…</p>
+<p id="je-analytics-error-banner" class="je-analytics-error" hidden></p>
+
+### Installs & Versions
+
+<div id="je-section-versions"></div>
+
+### Current Totals
+
+<p class="je-section-subtitle">Across reporting installs</p>
+
+<div id="je-section-totals"></div>
+
+### Feature Usage
+
+<p class="je-section-subtitle">Last 45 days</p>
+
+<div id="je-section-usage"></div>
+
+### Feature Toggle Adoption
+
+<div id="je-section-flags"></div>
+
+### Settings Distribution
+
+<div id="je-section-settings"></div>
+
+<p class="je-analytics-updated" id="je-analytics-updated"></p>
 
 <style>
-#je-analytics-dashboard { margin-top: 1.5em; }
+#je-analytics-error-banner { margin: 1em 0; }
+.je-section-subtitle { opacity: 0.65; font-size: 0.9em; margin-top: -0.6em; }
 .je-stat-cards { display: flex; flex-wrap: wrap; gap: 1em; margin: 1em 0; }
 .je-stat-card {
   flex: 1 1 200px;
@@ -92,6 +120,8 @@ counts above do for other features.
 }
 .je-stat-card .je-stat-value { font-size: 1.8em; font-weight: 700; }
 .je-stat-card .je-stat-label { opacity: 0.7; font-size: 0.85em; }
+.je-stat-card .je-stat-label-primary { font-size: 1.05em; font-weight: 600; margin-top: 0.4em; }
+.je-stat-card .je-stat-label-secondary { opacity: 0.65; font-size: 0.6em; margin-top: 0.15em; }
 .je-analytics-table { width: 100%; border-collapse: collapse; margin: 1em 0; }
 .je-analytics-table th, .je-analytics-table td {
   text-align: left; padding: 0.4em 0.7em; border-bottom: 1px solid var(--md-default-fg-color--lightest, #ddd);
@@ -116,12 +146,9 @@ counts above do for other features.
   const SUPABASE_URL = "https://cgsdfzfdoxunzoofzhgd.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_ShFKE3ognn7ZgncCGmCR-A_R1tPApiW";
 
-  // Hard cap on rows pulled from any one view. The report_stats/register_install
-  // RPCs are reachable by anyone holding the anon key on this page, so a
-  // distinct plugin_version/target/flag_name/setting_name string is
-  // attacker-mintable; without a limit a flood of forged installs would make
-  // every visitor's browser download and render thousands of rows. Each
-  // renderer additionally slices to what it displays.
+  // Hard cap on rows pulled from any one view. report_stats is reachable by
+  // anyone holding the anon key, so a flood of forged installs shouldn't be
+  // able to make every visitor download/render unbounded rows.
   const MAX_ROWS = 500;
 
   async function fetchView(name, query) {
@@ -138,12 +165,7 @@ counts above do for other features.
     return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
   }
 
-  // Numeric coercion for every count/percentage field before it goes into
-  // innerHTML. These come from the public views and are ultimately derived
-  // from attacker-forgeable report_stats input; the string fields are already
-  // escapeHtml'd, so coercing the numeric ones closes the last report-derived
-  // path into the DOM (and keeps style="width:N%" well-formed and the
-  // sort/reduce/Math math honest against a non-numeric value).
+  // Coerces report-derived fields before they hit innerHTML/style="width:N%".
   function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
   function pct(v) { return Math.max(0, Math.min(100, num(v))); }
 
@@ -156,10 +178,7 @@ counts above do for other features.
     return `${day}-${DATE_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
   }
 
-  // Fallback only: same heuristic as the config page's own
-  // jeHumanizeSettingId. Used when FLAG_LABELS_MAP has nothing for a name
-  // (e.g. a "total.*" analytics key, which was never a config-page control
-  // to begin with).
+  // Fallback for names with no config-page label (e.g. "total.*" keys).
   function humanize(name) {
     // String() guard: name can originate from a report-supplied field.
     const s = String(name == null ? '' : name);
@@ -167,11 +186,7 @@ counts above do for other features.
     return spaced.charAt(0).toUpperCase() + spaced.slice(1);
   }
 
-  // Prefers the real label text captured from the config page itself (see
-  // FLAG_LABELS_MAP below) over the algorithmic humanize() fallback, so e.g.
-  // "RecommendationsUseNativeTab" reads as "Add Recommendations as a native
-  // Home tab" (its actual checkbox text) instead of "Recommendations Use
-  // Native Tab".
+  // Prefers the config page's real label text over the humanize() fallback.
   function labeledName(rawName) {
     // hasOwnProperty guard: rawName is report-supplied, so a name like
     // "toString" or "constructor" would otherwise pull a function off
@@ -181,16 +196,11 @@ counts above do for other features.
     return `${escapeHtml(display)}<br/><code class="je-flag-raw">${escapeHtml(rawName)}</code>`;
   }
 
-  // A "jf10" build reports a jellyfin_version starting with "12." (or a
-  // "jf12" build reporting "10." / "11.") when someone installs the build
-  // for the other major version: both run since the request-time
-  // injection middleware is plain ASP.NET and works on either runtime, but
-  // it's still worth surfacing as its own signal rather than only the
-  // matched pairing.
+  // Flags a jf10 build running on a v12+ server or vice versa (both work,
+  // since the injection middleware is plain ASP.NET on either runtime, but
+  // it's the wrong build for that server). Compares major-version ranges
+  // rather than startsWith('12.'), so this doesn't misfire once Jellyfin 13 ships.
   function isTargetMismatch(target, jellyfinVersion) {
-    // Compare major-version ranges (jf10 <-> 10.x/11.x, jf12 <-> 12.x and
-    // later) rather than keying on startsWith('12.'), which would flag every
-    // jf12 install the day Jellyfin 13 ships and miss a jf10 build on it.
     const major = parseInt(jellyfinVersion, 10);
     if (!Number.isFinite(major)) return false;
     return (target === 'jf10' && major >= 12) || (target === 'jf12' && major < 12);
@@ -205,15 +215,13 @@ counts above do for other features.
 
     let html = `<div class="je-stat-cards">
       <div class="je-stat-card"><div class="je-stat-value">${totalInstalls}</div><div class="je-stat-label">Reporting installs</div></div>`;
-    // Cap per-target cards BY COUNT: a distinct jellyfin_target is
-    // attacker-mintable, and an alphabetical cut would let forged names that
-    // sort first evict the genuine jf10/jf12 cards.
+    // Cap BY COUNT, not alphabetically: jellyfin_target is attacker-mintable.
     Object.keys(byTarget).sort((a, b) => byTarget[b] - byTarget[a]).slice(0, 12).forEach(target => {
       html += `<div class="je-stat-card"><div class="je-stat-value">${byTarget[target]}</div><div class="je-stat-label">on ${escapeHtml(target)}</div></div>`;
     });
     html += `</div>`;
 
-    html += `<table class="je-analytics-table"><thead><tr><th>Plugin Target</th><th>Jellyfin target</th><th>Jellyfin version</th><th>Installs</th><th>Most recently seen</th></tr></thead><tbody>`;
+    html += `<table class="je-analytics-table"><thead><tr><th>Plugin Version</th><th>Jellyfin Target</th><th>Jellyfin Version</th><th>Installs</th><th>Recently Seen On</th></tr></thead><tbody>`;
     rows.sort((a, b) => num(b.install_count) - num(a.install_count)).slice(0, 50).forEach(r => {
       const seen = formatDateDMY(new Date(r.most_recent_seen));
       const mismatch = isTargetMismatch(r.jellyfin_target, r.jellyfin_version);
@@ -226,106 +234,68 @@ counts above do for other features.
     return html;
   }
 
-  // "total.*" keys are point-in-time snapshots (current item counts read
-  // straight off disk, e.g. total.bookmarks) reported through the same
-  // usage_events pipeline as real per-period action counters (e.g.
-  // bookmarks.created), but the two mean very different things, so they're
-  // rendered in separate sections rather than one table that could be misread
-  // either way.
+  // "total.*" keys are point-in-time snapshots (e.g. total.bookmarks), sent
+  // through the same pipeline as per-period action counters (e.g.
+  // bookmarks.created) but rendered separately since they mean different things.
   const TOTAL_COUNT_PREFIX = 'total.';
 
-  // Periods are report-supplied and the anon key is public, so treat them as
-  // hostile: validate the shape strictly (a pseudo-date like "2026-08-2z"
-  // passes a lexicographic compare and renders as NaN), reject the future,
-  // and aggregate over a TRAILING WINDOW rather than "the single most recent
-  // period" — genuine installs report period STARTS up to 30 days old, so
-  // one forged row stamped with today's date would otherwise become the only
-  // period shown and hide every real install's rows.
-  const PERIOD_RE = /^\d{4}-\d{2}-\d{2}$/;
-  const TODAY = new Date().toISOString().slice(0, 10);
-  const WINDOW_DAYS = 45; // max reporting interval (30d) + slack
-  const WINDOW_START = new Date(Date.now() - WINDOW_DAYS * 864e5).toISOString().slice(0, 10);
-  function recentValidPeriods(rows) {
-    return rows.filter(r => typeof r.period === 'string' && PERIOD_RE.test(r.period)
-      && r.period <= TODAY && r.period >= WINDOW_START);
-  }
+  const WINDOW_DAYS = 45; // must match v_feature_usage_window's own interval
 
+  // Sourced from v_feature_usage_window: count(distinct install_id) done
+  // server-side, since taking Math.max(install_count) across per-period rows
+  // client-side undercounts once different installs land in different periods.
   function renderUsageTable(rows) {
-    const deltaRows = recentValidPeriods(rows).filter(r => !String(r.feature_key || '').startsWith(TOTAL_COUNT_PREFIX));
-    if (!deltaRows.length) {
+    if (!rows.length) {
       return `<p><em>No usage-count data reported yet. This fills in once opted-in installs have accumulated activity over a reporting cycle.</em></p>`;
     }
-    // Aggregate per key across the whole window: counts sum (per-period
-    // deltas), install counts take the max — the same install can appear in
-    // several periods, so summing those would double-count it.
-    const byKey = Object.create(null);
-    deltaRows.forEach(r => {
-      const k = String(r.feature_key || '');
-      const e = byKey[k] || (byKey[k] = { total: 0, installs: 0 });
-      e.total += num(r.total_count);
-      e.installs = Math.max(e.installs, num(r.install_count));
-    });
-    const latest = Object.keys(byKey).map(k => ({ key: k, total: byKey[k].total, installs: byKey[k].installs }))
-      .sort((a, b) => b.total - a.total).slice(0, 20);
-    const maxCount = Math.max(...latest.map(r => r.total), 1);
-
-    let html = `<p>Activity reported over the trailing <strong>${WINDOW_DAYS}-day</strong> window (top 20 keys):</p>`;
+    const maxCount = Math.max(...rows.map(r => num(r.total_count)), 1);
+    let html = rows.length >= 20 ? `<p>Showing the top 20 keys.</p>` : '';
     html += `<table class="je-analytics-table"><thead><tr><th>Feature key</th><th>Total uses</th><th>Installs reporting it</th><th></th></tr></thead><tbody>`;
-    latest.forEach(r => {
-      const barPct = pct(Math.round((r.total / maxCount) * 100));
-      html += `<tr><td>${labeledName(r.key)}</td><td>${r.total}</td><td>${r.installs}</td>
+    rows.forEach(r => {
+      const barPct = pct(Math.round((num(r.total_count) / maxCount) * 100));
+      html += `<tr><td>${labeledName(String(r.feature_key || ''))}</td><td>${num(r.total_count)}</td><td>${num(r.install_count)}</td>
         <td style="width:120px;"><div class="je-analytics-bar-track"><div class="je-analytics-bar-fill" style="width:${barPct}%;"></div></div></td></tr>`;
     });
     html += `</tbody></table>`;
     return html;
   }
 
-  // Current totals (not deltas) summed across every reporting install's most
-  // recent report: "how many bookmarks exist right now, across every
-  // opted-in server", not "how many were created this period". Adoption
-  // (nonzero_install_count) comes straight from the view, no per-user
-  // scanning needed: a per-install total.X of 0 vs. >0 is all it takes to
-  // know whether that install has any at all.
-  function renderTotalCounts(rows) {
-    const totalRows = recentValidPeriods(rows).filter(r => String(r.feature_key || '').startsWith(TOTAL_COUNT_PREFIX));
-    if (!totalRows.length) {
+  // Current totals (not deltas), summed from v_current_totals, which picks
+  // each install's own latest report before summing -- installs report on
+  // staggered schedules, so picking a single global "most recent period"
+  // would drop every install that didn't happen to report that exact date.
+  // brandingRow (from v_branding_usage) is folded in as a count-only card.
+  function renderTotalCounts(rows, brandingRow) {
+    if (!rows.length && !brandingRow) {
       return `<p><em>No total-count data reported yet.</em></p>`;
     }
-    // Point-in-time snapshots: per key keep only its most recent period's row
-    // (summing across periods would double-count the same installs).
-    const byKey = Object.create(null);
-    totalRows.forEach(r => {
-      const k = String(r.feature_key || '');
-      if (!byKey[k] || r.period > byKey[k].period) byKey[k] = r;
-    });
-    // Cap BY COUNT, not alphabetically: total.* keys are attacker-mintable
-    // via direct report_stats calls, and an alphabetical slice would let a
-    // few forged names that sort first evict every genuine card. Rank by
-    // count for the cut, then alphabetical for display.
-    const latest = Object.values(byKey)
-      .sort((a, b) => num(b.total_count) - num(a.total_count)).slice(0, 24)
-      .sort((a, b) => String(a.feature_key).localeCompare(String(b.feature_key)));
+    // Already aggregated server-side and capped/ordered by the fetch itself;
+    // just order alphabetically for display.
+    const latest = rows.slice().sort((a, b) => String(a.feature_key).localeCompare(String(b.feature_key)));
 
     let html = `<div class="je-stat-cards">`;
     latest.forEach(r => {
       const label = humanize(String(r.feature_key).slice(TOTAL_COUNT_PREFIX.length));
       html += `<div class="je-stat-card">
         <div class="je-stat-value">${num(r.total_count)}</div>
-        <div class="je-stat-label">${escapeHtml(label)}</div>
-        <div class="je-stat-label">${num(r.nonzero_install_count)} of ${num(r.install_count)} reporting installs</div>
+        <div class="je-stat-label-primary">${escapeHtml(label)}</div>
+        <div class="je-stat-label-secondary">Present on ${num(r.nonzero_install_count)} of ${num(r.install_count)} reporting installs</div>
       </div>`;
     });
+    if (brandingRow) {
+      html += `<div class="je-stat-card">
+        <div class="je-stat-value">${num(brandingRow.nonzero_install_count)}</div>
+        <div class="je-stat-label-primary">Using Custom branding</div>
+        <div class="je-stat-label-secondary">Used on ${num(brandingRow.nonzero_install_count)} of ${num(brandingRow.install_count)} reporting installs</div>
+      </div>`;
+    }
     html += `</div>`;
     return html;
   }
 
-  // Both generated from configPage.html's own fieldset/legend/label
-  // structure by scripts/generate_config_flag_groups.py (run automatically
-  // before every docs build), so a setting's group and display text here
-  // always match what's actually on the config page, with nothing to
-  // hand-maintain. A setting genuinely absent from the config page
-  // (internal bookkeeping, no admin-facing control) has neither and falls
-  // back to "Other" / the algorithmic humanize().
+  // Both generated from configPage.html's fieldset/legend/label structure by
+  // scripts/generate_config_flag_groups.py, run before every docs build. A
+  // setting absent from the config page falls back to "Other" / humanize().
   let FLAG_GROUPS_MAP = {};
   let FLAG_LABELS_MAP = {};
 
@@ -367,7 +337,7 @@ counts above do for other features.
       return a.localeCompare(b);
     });
 
-    return groupNames.map((g, i) => {
+    return groupNames.map(g => {
       // Cap rows per group BY reporting_count, then alphabetical for display:
       // flag_name is attacker-mintable via report_stats, and an alphabetical
       // cut would let forged names that sort first evict genuine rows.
@@ -376,7 +346,7 @@ counts above do for other features.
         .sort((a, b) => String(a.flag_name).localeCompare(String(b.flag_name)));
       let rowsHtml = items.map(r => `<tr><td>${labeledName(r.flag_name)}</td><td>${pct(r.enabled_pct)}%</td>
         <td style="width:120px;"><div class="je-analytics-bar-track"><div class="je-analytics-bar-fill" style="width:${pct(r.enabled_pct)}%;"></div></div></td></tr>`).join('');
-      return `<details class="je-flag-group"${i === 0 ? ' open' : ''}>
+      return `<details class="je-flag-group">
         <summary>${escapeHtml(g)} (${items.length})</summary>
         <table class="je-analytics-table"><thead><tr><th>Feature toggle</th><th>% of reporting installs with it ON</th><th></th></tr></thead>
         <tbody>${rowsHtml}</tbody></table>
@@ -405,7 +375,7 @@ counts above do for other features.
       .sort((a, b) => totalFor(b) - totalFor(a)).slice(0, 100)
       .sort((a, b) => a.localeCompare(b));
 
-    return names.map((name, i) => {
+    return names.map(name => {
       // Cap values per setting too — setting_value is equally forgeable.
       const values = bySetting[name].slice().sort((a, b) => num(b.install_count) - num(a.install_count)).slice(0, 100);
       const total = values.reduce((sum, v) => sum + num(v.install_count), 0);
@@ -414,7 +384,7 @@ counts above do for other features.
         return `<tr><td>${escapeHtml(v.setting_value)}</td><td>${num(v.install_count)}</td><td>${barPct}%</td>
           <td style="width:120px;"><div class="je-analytics-bar-track"><div class="je-analytics-bar-fill" style="width:${barPct}%;"></div></div></td></tr>`;
       }).join('');
-      return `<details class="je-flag-group"${i === 0 ? ' open' : ''}>
+      return `<details class="je-flag-group">
         <summary>${labeledName(name)} (${total} reporting)</summary>
         <table class="je-analytics-table"><thead><tr><th>Value</th><th>Installs</th><th>%</th><th></th></tr></thead>
         <tbody>${rowsHtml}</tbody></table>
@@ -422,44 +392,52 @@ counts above do for other features.
     }).join('');
   }
 
-  // One poisoned view's data must not blank the whole dashboard: a section
-  // that throws renders its own error line while every other section still
-  // shows.
-  function renderSection(titleHtml, fn, rows) {
-    let body;
+  // One poisoned view must not blank the whole dashboard: a section that
+  // throws renders its own error line into its own div, every other section
+  // still shows. Headings are static Markdown (so the sidebar TOC picks them
+  // up at build time); this only fills the content div underneath each one.
+  function setSection(id, fn, ...args) {
+    const el = document.getElementById(id);
+    if (!el) return;
     try {
-      body = fn(rows);
+      el.innerHTML = fn(...args);
     } catch (err) {
-      body = `<p class="je-analytics-error">Couldn't render this section (${escapeHtml(err && err.message ? err.message : err)}).</p>`;
+      el.innerHTML = `<p class="je-analytics-error">Couldn't render this section (${escapeHtml(err && err.message ? err.message : err)}).</p>`;
     }
-    return `<h3>${titleHtml}</h3>${body}`;
   }
 
   async function render() {
-    const el = document.getElementById("je-analytics-dashboard");
+    const loadingEl = document.getElementById('je-analytics-loading');
+    const errorEl = document.getElementById('je-analytics-error-banner');
     try {
-      // Explicit order= on every view: with the row limit in fetchView, an
-      // unordered query would let PostgREST truncate an arbitrary subset once
-      // a view outgrows the limit — ordering makes the kept rows the newest/
-      // biggest ones deterministically.
-      const [versionRows, usageRows, flagRows, settingRows] = await Promise.all([
+      // Explicit order= on every view: an unordered query plus fetchView's row
+      // limit would let PostgREST truncate an arbitrary subset once a view
+      // outgrows it, instead of deterministically keeping the top rows.
+      const [versionRows, windowRows, totalRows, brandingRows, flagRows, settingRows] = await Promise.all([
         fetchView("v_version_adoption", "select=*&order=most_recent_seen.desc"),
-        fetchView("v_feature_usage_totals", "select=*&order=period.desc"),
+        fetchView("v_feature_usage_window", "select=*&order=total_count.desc&limit=20"),
+        fetchView("v_current_totals", "select=*&order=total_count.desc&limit=24"),
+        fetchView("v_branding_usage", "select=*"),
         fetchView("v_config_flag_rates", "select=*&order=enabled_pct.desc"),
         fetchView("v_config_setting_values", "select=*&order=install_count.desc"),
         loadFlagGroups()
       ]);
 
-      el.innerHTML = `
-        ${renderSection('Installs &amp; versions', renderVersionCards, versionRows)}
-        ${renderSection('Current totals (across reporting installs)', renderTotalCounts, usageRows)}
-        ${renderSection('Feature usage (most recent period)', renderUsageTable, usageRows)}
-        ${renderSection('Feature toggle adoption', renderFlagRates, flagRows)}
-        ${renderSection('Settings distribution', renderSettingValues, settingRows)}
-        <div class="je-analytics-updated">Loaded live just now from the community analytics project. Refresh this page any time for current numbers.</div>
-      `;
+      setSection('je-section-versions', renderVersionCards, versionRows);
+      setSection('je-section-totals', renderTotalCounts, totalRows, brandingRows[0]);
+      setSection('je-section-usage', renderUsageTable, windowRows);
+      setSection('je-section-flags', renderFlagRates, flagRows);
+      setSection('je-section-settings', renderSettingValues, settingRows);
+
+      const updatedEl = document.getElementById('je-analytics-updated');
+      if (updatedEl) updatedEl.textContent = 'Loaded live just now from the community analytics project. Refresh this page any time for current numbers.';
+      if (loadingEl) loadingEl.remove();
     } catch (err) {
-      el.innerHTML = `<p class="je-analytics-error">Couldn't load live analytics data right now (${escapeHtml(err.message)}). Try refreshing.</p>`;
+      if (loadingEl) loadingEl.remove();
+      if (errorEl) {
+        errorEl.hidden = false;
+        errorEl.textContent = `Couldn't load live analytics data right now (${err.message}). Try refreshing.`;
+      }
     }
   }
 
