@@ -39,6 +39,14 @@
         let searchHasMore = false;
         const searchScrollState = {};
         let searchDeduplicator = null;
+        /** @type {AbortSignal|null} */
+        let searchSignal = null;
+        // Items fetched vs cards rendered for the current query (after hidden
+        // content + dedup filtering); sizes the parallel page batches.
+        const searchYield = { fetched: 0, rendered: 0 };
+        const MAX_SEARCH_PAGES_PER_LOAD = 4;
+        // TMDB refuses search pages beyond 500; never ask for them.
+        const TMDB_MAX_PAGE = 500;
 
 
         // Destructure modules for easy access
@@ -110,8 +118,49 @@
             searchTotalPages = 0;
             searchIsLoading = false;
             searchHasMore = false;
+            searchYield.fetched = 0;
+            searchYield.rendered = 0;
             if (searchDeduplicator) searchDeduplicator.clear();
             JE.seamlessScroll?.cleanupInfiniteScroll(searchScrollState);
+        }
+
+        /**
+         * Warms the request cache with the next `count` result pages so the
+         * following load-more is served instantly. Fire-and-forget.
+         * @param {string} query
+         * @param {number} count
+         * @param {AbortSignal|null} signal
+         */
+        function prefetchSearchPages(query, count, signal) {
+            if (!searchHasMore) return;
+            if (signal?.aborted) signal = undefined;
+            const last = Math.min(searchTotalPages, searchCurrentPage + Math.max(1, count));
+            for (let p = searchCurrentPage + 1; p <= last; p++) {
+                search(query, p, { signal }).catch(() => {});
+            }
+        }
+
+        /**
+         * Inserts synthetic collection cards into the existing results row,
+         * each right after the movie it belongs to, without rebuilding the
+         * section (a rebuild would drop the pages appended by infinite scroll
+         * and detach its sentinel).
+         * @param {Array} enrichedResults Results with collection cards spliced in.
+         */
+        function insertCollectionCards(enrichedResults) {
+            const container = document.querySelector('.jellyseerr-section .itemsContainer');
+            if (!container) return;
+            for (let i = 0; i < enrichedResults.length; i++) {
+                const item = enrichedResults[i];
+                if (item.mediaType !== 'collection') continue;
+                if (searchDeduplicator && !searchDeduplicator.add(item)) continue;
+                const prev = enrichedResults[i - 1];
+                const anchor = prev
+                    ? container.querySelector(`.jellyseerr-more-info-link[data-tmdb-id="${prev.id}"][data-media-type="${prev.mediaType}"]`)?.closest('.card')
+                    : null;
+                const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
+                if (anchor) anchor.after(card); else container.appendChild(card);
+            }
         }
 
         /**
@@ -126,7 +175,8 @@
 
             // Cancel any still-in-flight search/collection requests from the
             // previous keystroke instead of letting them queue up.
-            const signal = JE.requestManager?.getAbortSignal('jellyseerr-search');
+            const signal = JE.requestManager?.getAbortSignal('jellyseerr-search') || null;
+            searchSignal = signal;
 
             let data;
             try {
@@ -139,68 +189,100 @@
 
             let results = data.results || [];
             searchCurrentPage = data.page || 1;
-            searchTotalPages = data.totalPages || 1;
+            searchTotalPages = Math.min(data.totalPages || 1, TMDB_MAX_PAGE);
             searchHasMore = searchCurrentPage < searchTotalPages;
 
+            searchYield.fetched += results.length;
             if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
             if (searchDeduplicator) searchDeduplicator.filter(results);
+            searchYield.rendered += results.length;
 
             if (results.length > 0) {
                 renderJellyseerrResults(results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
 
-                // Enrich with collections in the background, then re-render
+                // Set up infinite scroll if more pages exist (it fills the row
+                // buffer immediately, so start it before the collection lookups
+                // compete for request slots).
+                if (searchHasMore) {
+                    setupSearchInfiniteScroll(query);
+                }
+
+                // Enrich with collections in the background, then slot the
+                // collection cards into the existing row.
                 prepareResultsWithCollections(results, { signal }).then(enrichedResults => {
                     if (lastProcessedQuery !== query) return;
                     if (JE.hiddenContent) enrichedResults = JE.hiddenContent.filterJellyseerrResults(enrichedResults, 'search');
                     if (enrichedResults.length > results.length) {
-                        renderJellyseerrResults(enrichedResults, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
+                        insertCollectionCards(enrichedResults);
                     }
                 }).catch(() => {});
-
-                // Set up infinite scroll if more pages exist
-                if (searchHasMore) {
-                    setupSearchInfiniteScroll(query);
-                }
             }
         }
 
         /**
-         * Loads the next page of search results and appends cards to the container.
+         * Loads the next page(s) of search results and appends cards to the
+         * container. Several pages are fetched in parallel when the row buffer
+         * deficit (or a low post-filter yield) calls for it, and the pages
+         * after those are prefetched into the cache.
          * @param {string} query The current search query.
+         * @param {{deficitPx?: number, horizontal?: boolean}} [hint] From the scroll engine.
          */
-        async function loadMoreSearchResults(query) {
+        async function loadMoreSearchResults(query, hint) {
             if (searchIsLoading || !searchHasMore || lastProcessedQuery !== query) return;
 
             searchIsLoading = true;
-            const nextPage = searchCurrentPage + 1;
+            // A signal that was already aborted (e.g. by the global navigation
+            // abort) must not poison every later load of this query.
+            const signal = (searchSignal && !searchSignal.aborted) ? searchSignal : undefined;
+            const firstPage = searchCurrentPage + 1;
 
             try {
-                const data = await search(query, nextPage);
+                const itemsContainer = document.querySelector('.jellyseerr-section .itemsContainer');
+                const wantCards = JE.seamlessScroll?.cardsNeeded?.(itemsContainer, hint, 20) || 20;
+                const yieldRatio = searchYield.fetched >= 20
+                    ? Math.min(1, Math.max(0.1, searchYield.rendered / searchYield.fetched))
+                    : 0.9;
+                const remaining = Math.max(1, searchTotalPages - searchCurrentPage);
+                const pageBudget = Number.isFinite(hint?.pageBudget) ? Math.max(1, hint.pageBudget) : Infinity;
+                const count = Math.min(MAX_SEARCH_PAGES_PER_LOAD, remaining, pageBudget, Math.max(1, Math.ceil(wantCards / (20 * yieldRatio))));
+                const pages = [];
+                for (let p = firstPage; p < firstPage + count; p++) pages.push(p);
+
+                const responses = await Promise.all(pages.map(p => search(query, p, { signal, throwOnError: true })));
                 if (lastProcessedQuery !== query) return; // query changed during fetch
 
-                let results = data.results || [];
-                searchCurrentPage = data.page || nextPage;
-                searchTotalPages = data.totalPages || searchTotalPages;
+                let results = [];
+                responses.forEach((data, i) => {
+                    results.push(...(data.results || []));
+                    searchCurrentPage = data.page || pages[i];
+                    if (data.totalPages) searchTotalPages = Math.min(data.totalPages, TMDB_MAX_PAGE);
+                });
                 searchHasMore = searchCurrentPage < searchTotalPages;
 
+                // Keep the cache warm for the next load while this one renders —
+                // but only once the viewer has actually started reading the row,
+                // so a row that is merely displayed costs no extra Seerr searches.
+                if (hint?.engaged) prefetchSearchPages(query, count, signal);
+
+                searchYield.fetched += results.length;
                 if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
                 if (searchDeduplicator) results = searchDeduplicator.filter(results);
+                searchYield.rendered += results.length;
 
-                if (results.length > 0) {
-                    const itemsContainer = document.querySelector('.jellyseerr-section .itemsContainer');
-                    if (itemsContainer) {
-                        const fragment = document.createDocumentFragment();
-                        results.forEach(item => {
-                            const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
-                            fragment.appendChild(card);
-                        });
-                        itemsContainer.appendChild(fragment);
-                    }
+                if (results.length > 0 && itemsContainer) {
+                    const fragment = document.createDocumentFragment();
+                    results.forEach(item => {
+                        const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
+                        fragment.appendChild(card);
+                    });
+                    itemsContainer.appendChild(fragment);
                 }
+                return { pages: pages.length, rendered: results.length };
             } catch (error) {
                 if (error.name !== 'AbortError') {
                     console.warn(`${logPrefix} Failed to load more search results:`, error);
-                    // Roll back page on failure
+                    // Roll back so the retry fetches the same pages
+                    searchCurrentPage = firstPage - 1;
                     searchHasMore = true;
                 }
                 throw error; // Re-throw for seamlessScroll retry handling
@@ -219,9 +301,10 @@
             JE.seamlessScroll.setupInfiniteScroll(
                 searchScrollState,
                 '.jellyseerr-section',
-                () => loadMoreSearchResults(query),
+                (hint) => loadMoreSearchResults(query, hint),
                 () => searchHasMore,
-                () => searchIsLoading
+                () => searchIsLoading,
+                { horizontal: true, trackSelector: '.itemsContainer', scrollerSelector: '.emby-scroller' }
             );
         }
 
@@ -298,13 +381,14 @@
                 resetSearchPagination();
                 searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
 
-                const signal = JE.requestManager?.getAbortSignal('jellyseerr-search');
-                const data = await search(query, 1, { signal });
+                const signal = JE.requestManager?.getAbortSignal('jellyseerr-search') || null;
+                searchSignal = signal;
+                const data = await search(query, 1, { signal, skipCache: true });
                 let results = await prepareResultsWithCollections(data.results || [], { signal });
                 if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
 
                 searchCurrentPage = data.page || 1;
-                searchTotalPages = data.totalPages || 1;
+                searchTotalPages = Math.min(data.totalPages || 1, TMDB_MAX_PAGE);
                 searchHasMore = searchCurrentPage < searchTotalPages;
                 if (searchDeduplicator) searchDeduplicator.filter(results);
 

@@ -13,6 +13,79 @@
     const escapeHtml = JE.escapeHtml;
     const addTouchTapListener = JE.core.ui.addTouchTapListener;
 
+    // ---- Lazy poster loading -------------------------------------------------
+    // The infinite-scroll engine keeps roughly three viewports of cards rendered
+    // ahead of the viewer. If every card set its poster as an inline
+    // background-image at creation time, all of those off-screen cards would
+    // fire requests at image.tmdb.org immediately. Instead the poster URL is
+    // parked on the element (data-je-poster) and applied only when the card
+    // comes within ~800px of the viewport, via one shared IntersectionObserver.
+    // IntersectionObserver is geometry-based, so it also works inside
+    // emby-scroller rows (which scroll via CSS transforms on TV clients) and
+    // for elements observed while still inside a DocumentFragment: they simply
+    // report as not intersecting until they are attached to the document.
+    const POSTER_DATA_KEY = 'jePoster'; // dataset key for the data-je-poster attribute
+    let posterObserver = null;
+
+    function applyPoster(el) {
+        if (!el) return;
+        const url = el.dataset[POSTER_DATA_KEY];
+        if (posterObserver) {
+            try { posterObserver.unobserve(el); } catch (_) { /* ignore */ }
+        }
+        if (!url) return;
+        delete el.dataset[POSTER_DATA_KEY];
+        // posterUrl is validated/derived in createJellyseerrCard, so the only
+        // characters that could upset the url() literal are quotes; escape anyway.
+        el.style.backgroundImage = `url("${url.replace(/["\\]/g, '\\$&')}")`;
+    }
+
+    function getPosterObserver() {
+        if (posterObserver) return posterObserver;
+        if (typeof IntersectionObserver === 'undefined') return null;
+        try {
+            posterObserver = new IntersectionObserver((entries) => {
+                for (const entry of entries) {
+                    if (entry.isIntersecting || entry.intersectionRatio > 0) {
+                        applyPoster(entry.target);
+                    }
+                }
+            }, { root: null, rootMargin: '800px', threshold: 0 });
+        } catch (_) {
+            posterObserver = null;
+        }
+        return posterObserver;
+    }
+
+    function observePoster(el, url) {
+        el.dataset[POSTER_DATA_KEY] = url;
+        const observer = getPosterObserver();
+        if (!observer) {
+            // No IntersectionObserver support: behave exactly as before.
+            applyPoster(el);
+            return;
+        }
+        try {
+            observer.observe(el);
+        } catch (_) {
+            applyPoster(el);
+        }
+    }
+
+    /**
+     * Forces the poster of a Seerr card (or the poster container itself) to
+     * load immediately instead of waiting for it to scroll into view.
+     * @param {HTMLElement} card - Card element or its .jellyseerr-poster-image.
+     */
+    function loadPosterNow(card) {
+        if (!card) return;
+        const el = card.classList && card.classList.contains('jellyseerr-poster-image')
+            ? card
+            : card.querySelector && card.querySelector('.jellyseerr-poster-image');
+        applyPoster(el);
+    }
+    ui.loadPosterNow = loadPosterNow;
+
     /**
      * Creates an individual Seerr result card.
      * @param {Object} item - Search result item from Seerr API.
@@ -87,7 +160,7 @@
             <div class="cardBox cardBox-bottompadded">
                 <div class="cardScalable">
                     <div class="cardPadder cardPadder-overflowPortrait"></div>
-                    <div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image" style="background-image: url('${posterUrl}');">
+                    <div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image">
                         <div class="jellyseerr-status-badge"></div>
                         <div class="jellyseerr-elsewhere-icons"></div>
                         <div class="cardIndicators"></div>
@@ -108,6 +181,10 @@
                     <div class="jellyseerr-rating">${icons.star}<span>${rating}</span></div>
                 </div>
             </div>`;
+
+        // Poster is loaded lazily (see observePoster above); the URL is stored via
+        // dataset rather than interpolated into the markup.
+        observePoster(card.querySelector('.jellyseerr-poster-image'), posterUrl);
 
         // Set the status badge icon based on the item's status
         internal.setStatusBadge(card, item);

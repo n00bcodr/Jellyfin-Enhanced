@@ -82,47 +82,78 @@
     return page;
   }
 
-  // Cap on consecutive fetched pages that render zero visible cards (all
-  // filtered out as already-in-library/hidden) before giving up on this
-  // load-more call. Without this, a heavily-owned studio/network can come
-  // back with real API pages that render nothing, so the scroll sentinel
-  // never moves and re-fires the same "load more" instantly forever.
-  const MAX_CONSECUTIVE_EMPTY_PAGES = 20;
+  // Upper bound on pages fetched in parallel by one load-more call.
+  const MAX_PAGES_PER_LOAD = 4;
+  // TMDB refuses discover pages beyond 500 (Seerr answers HTTP 500).
+  const TMDB_MAX_PAGE = 500;
+  const clampPages = (totalPages) => Math.min(Number(totalPages) || 1, TMDB_MAX_PAGE);
+  // Items fetched vs cards rendered (after in-library/hidden filtering) for
+  // the current category; sizes the parallel batches.
+  const yieldStats = { fetched: 0, rendered: 0 };
 
-  async function loadMoreCategoryItems(category, container) {
-    state.categoryState.isLoading = true;
+  function prefetchCategoryPages(category, count) {
+    const st = state.categoryState;
+    if (!st.hasMore) return;
+    const last = st.totalPages ? Math.min(st.totalPages, st.page + count) : st.page + count;
+    for (let p = st.page + 1; p <= last; p++) {
+      fetchWithManagedRequest(`${category.path}?page=${p}`).catch(() => {});
+    }
+  }
+
+  // Fetches the next batch of pages in parallel (sized from the scroll
+  // engine's buffer deficit and the observed post-filter yield) and appends
+  // their cards. A batch that renders nothing (every item already in the
+  // library / hidden) is fine: the scroll engine simply calls again for the
+  // pages after it, so heavily-owned categories never stall. The pages after
+  // this batch are prefetched into the cache while it renders.
+  async function loadMoreCategoryItems(category, container, hint) {
+    const st = state.categoryState;
+    st.isLoading = true;
+    const firstPage = st.page + 1;
     try {
-      let nextPage = state.categoryState.page;
-      let renderedAnyCards = false;
-      let emptyPagesSkipped = 0;
+      const wantCards = JE.seamlessScroll?.cardsNeeded?.(container, hint, 20) || 20;
+      const yieldRatio = yieldStats.fetched >= 20 ? Math.min(1, Math.max(0.1, yieldStats.rendered / yieldStats.fetched)) : 0.9;
+      let count = Math.min(MAX_PAGES_PER_LOAD, Math.max(1, Math.ceil(wantCards / (20 * yieldRatio))));
+      if (st.totalPages) count = Math.min(count, st.totalPages - st.page);
+      const pageBudget = Number.isFinite(hint?.pageBudget) ? Math.max(0, hint.pageBudget) : Infinity;
+      count = Math.min(count, pageBudget);
+      if (count < 1) { st.hasMore = false; return { pages: 0, rendered: 0 }; }
+      const pages = [];
+      for (let p = firstPage; p < firstPage + count; p++) pages.push(p);
 
-      while (!renderedAnyCards && emptyPagesSkipped < MAX_CONSECUTIVE_EMPTY_PAGES) {
-        nextPage += 1;
-        const response = await fetchWithManagedRequest(`${category.path}?page=${nextPage}`);
+      const responses = await Promise.all(pages.map(p => fetchWithManagedRequest(`${category.path}?page=${p}`)));
+
+      const fragment = document.createDocumentFragment();
+      for (let i = 0; i < responses.length; i++) {
+        const response = responses[i];
         let results = response?.results || [];
-        console.debug(`${logPrefix} category page ${nextPage}/${response?.totalPages}: ${results.length} raw result(s)`);
-
+        console.debug(`${logPrefix} category page ${pages[i]}/${response?.totalPages}: ${results.length} raw result(s)`);
+        st.page = pages[i];
+        if (response?.totalPages) st.totalPages = clampPages(response.totalPages);
         if (results.length === 0) {
-          state.categoryState.page = nextPage;
-          state.categoryState.hasMore = false;
-          return;
+          st.hasMore = false;
+          break;
         }
-
         results = sortResults(results, JE.discoveryFilter.getSortMode(SORT_MODULE));
-
         // Filters out already-in-library/hidden items - a raw non-empty API
         // page can still render zero actual cards.
-        const fragment = JE.discoveryFilter.createCardsFragment(results, { cardClass: 'portraitCard' });
-        renderedAnyCards = fragment.childNodes.length > 0;
-        container.appendChild(fragment);
-
-        state.categoryState.page = nextPage;
-        state.categoryState.hasMore = nextPage < (response?.totalPages || 1);
-        if (!state.categoryState.hasMore) return;
-        if (!renderedAnyCards) emptyPagesSkipped++;
+        fragment.appendChild(JE.discoveryFilter.createCardsFragment(results, { cardClass: 'portraitCard' }));
+        yieldStats.fetched += results.length;
+        st.hasMore = pages[i] < clampPages(response?.totalPages);
       }
+      const rendered = fragment.childNodes.length;
+      yieldStats.rendered += rendered;
+      container.appendChild(fragment);
+      const remainingBudget = pageBudget === Infinity ? Infinity : Math.max(0, pageBudget - pages.length);
+      const prefetch = rendered > 0 ? count : Math.min(count, remainingBudget);
+      if (prefetch > 0) prefetchCategoryPages(category, prefetch);
+      return { pages: pages.length, rendered };
+    } catch (error) {
+      // Roll back so the retry fetches the same pages.
+      st.page = firstPage - 1;
+      throw error;
     } finally {
-      state.categoryState.isLoading = false;
+      st.isLoading = false;
     }
   }
 
@@ -130,11 +161,20 @@
     container.textContent = '';
     state.categoryState.page = 1;
     state.categoryState.hasMore = true;
+    state.categoryState.totalPages = 0;
+    yieldStats.fetched = 0;
+    yieldStats.rendered = 0;
     try {
+      // Warm pages 2-3 while page 1 is in flight.
+      for (let p = 2; p <= 3; p++) fetchWithManagedRequest(`${category.path}?page=${p}`).catch(() => {});
       const response = await fetchWithManagedRequest(`${category.path}?page=1`);
       const results = sortResults(response?.results || [], JE.discoveryFilter.getSortMode(SORT_MODULE));
-      container.appendChild(JE.discoveryFilter.createCardsFragment(results, { cardClass: 'portraitCard' }));
-      state.categoryState.hasMore = 1 < (response?.totalPages || 1);
+      const fragment = JE.discoveryFilter.createCardsFragment(results, { cardClass: 'portraitCard' });
+      yieldStats.fetched += results.length;
+      yieldStats.rendered += fragment.childNodes.length;
+      container.appendChild(fragment);
+      state.categoryState.totalPages = clampPages(response?.totalPages);
+      state.categoryState.hasMore = 1 < clampPages(response?.totalPages);
     } catch (error) {
       console.error(`${logPrefix} Failed to load category`, error);
     }
@@ -153,7 +193,7 @@
     // categoryState wholesale - otherwise it leaks (nothing else references it).
     JE.discoveryFilter.cleanupScrollObserver(state.categoryState);
     state.categoryPageVisible = true;
-    state.categoryState = { activeScrollObserver: null, page: 1, hasMore: true, isLoading: false };
+    state.categoryState = { activeScrollObserver: null, page: 1, totalPages: 0, hasMore: true, isLoading: false };
 
     const page = createCategoryPageContainer();
     document.getElementById('je-recommendations-category-title').textContent = category.title;
@@ -180,7 +220,7 @@
         JE.discoveryFilter.setupInfiniteScroll(
           state.categoryState,
           '#je-recommendations-category-page .content-primary',
-          () => loadMoreCategoryItems(category, container),
+          (hint) => loadMoreCategoryItems(category, container, hint),
           () => state.categoryState.hasMore,
           () => state.categoryState.isLoading
         );
@@ -213,7 +253,7 @@
     JE.discoveryFilter.setupInfiniteScroll(
       state.categoryState,
       '#je-recommendations-category-page .content-primary',
-      () => loadMoreCategoryItems(category, container),
+      (hint) => loadMoreCategoryItems(category, container, hint),
       () => state.categoryState.hasMore,
       () => state.categoryState.isLoading
     );

@@ -535,9 +535,9 @@
      * @param {Function} hasMoreCheck - Function that returns whether more pages exist
      * @param {Function} isLoadingCheck - Function that returns whether currently loading
      */
-    function setupInfiniteScroll(state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck) {
+    function setupInfiniteScroll(state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck, options) {
         JE.seamlessScroll.setupInfiniteScroll(
-            state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck
+            state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck, options
         );
     }
 

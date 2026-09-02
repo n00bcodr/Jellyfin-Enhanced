@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
@@ -691,6 +692,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null)
         {
+            // Propagate client disconnects (superseded search queries, page
+            // navigations) to the upstream Seerr/TMDB call so we stop doing
+            // work nobody will read. Only GETs are cancellable: POSTs (requests,
+            // issues) must run to completion even if the browser goes away.
+            var ct = method == HttpMethod.Get ? HttpContext.RequestAborted : CancellationToken.None;
+
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
             {
@@ -880,8 +887,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         method, requestUri, config.JellyseerrApiKey, jellyseerrUserId, content);
                     if (content != null) _logger.Debug($"Request body: {content}");
 
-                    using var response = await httpClient.SendAsync(request);
-                    var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+                    using var response = await httpClient.SendAsync(request, ct);
+                    var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri, ct);
 
                     if (error == null && json != null)
                     {
@@ -936,6 +943,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // admins keep the upstream URL in the response;
                     // non-admins get a sanitised version that strips it.
                     lastErrorBody = IsAdminUser() ? error.ToAdminResponseShape() : error.ToResponseShape();
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    // The browser aborted the request (superseded search, page
+                    // navigation). Not an upstream failure: don't log as error,
+                    // don't cache, don't fail over to the next Seerr URL.
+                    // 499 = "client closed request"; nobody is listening anyway.
+                    // A timeout-caused OperationCanceledException (ct not
+                    // cancelled) falls through to the generic handler below.
+                    return StatusCode(499);
                 }
                 catch (Exception ex)
                 {

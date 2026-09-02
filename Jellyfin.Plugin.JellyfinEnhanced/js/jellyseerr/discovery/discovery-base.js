@@ -121,6 +121,24 @@
         let movieCurrentPage = 1;
         let tvHasMorePages = true;
         let movieHasMorePages = true;
+        // Page counts reported by the feeds (Infinity until the first page answers).
+        let tvTotalPages = Infinity;
+        let movieTotalPages = Infinity;
+        // Items fetched vs cards actually rendered (after library/hidden/dedup
+        // filtering). Drives how many pages a load fetches in parallel.
+        const yieldStats = { fetched: 0, rendered: 0 };
+        // Upper bound on pages fetched per feed in one load; a run of batches
+        // that render nothing (all filtered) doubles the batch up to the
+        // escalated cap so a heavily-hidden stretch is crossed in few round trips.
+        const MAX_PAGES_PER_FEED = 4;
+        const MAX_PAGES_PER_FEED_ESCALATED = 8;
+        // TMDB refuses discover pages beyond 500 (Seerr answers HTTP 500) even
+        // though it reports totalPages in the thousands; never ask for them.
+        const TMDB_MAX_PAGE = 500;
+        /** @param {any} totalPages */
+        const clampPages = (totalPages) => Math.min(Number(totalPages) || 1, TMDB_MAX_PAGE);
+        let lastBatchPages = 0;
+        let lastBatchRendered = -1;
         /** @type {{tvId: (number|null), movieId: (number|null)}|null} */
         let currentFeeds = null;
         /** @type {Array<any>} */
@@ -164,9 +182,12 @@
          * @param {number} feedId
          * @param {number} page
          * @param {AbortSignal} [signal]
+         * @param {boolean} [tolerant=false] - true: swallow failures as an empty
+         *   last page (initial render: one feed failing must not hide the other);
+         *   false: throw so the scroll engine retries the page.
          * @returns {Promise<{results: Array<any>, totalPages: number}>}
          */
-        async function fetchFeedPage(kind, feedId, page = 1, signal) {
+        async function fetchFeedPage(kind, feedId, page = 1, signal, tolerant = false) {
             try {
                 if (signal?.aborted) {
                     throw new DOMException('Aborted', 'AbortError');
@@ -182,8 +203,48 @@
                 }
                 return response || { results: [], totalPages: 1 };
             } catch (error) {
-                if (error.name === 'AbortError') throw error;
+                if (error.name === 'AbortError' || !tolerant) throw error;
                 return { results: [], totalPages: 1 };
+            }
+        }
+
+        /**
+         * Pages `start`..`start+count-1`, clipped to the feed's page count.
+         * @param {number} start
+         * @param {number} count
+         * @param {number} total
+         * @returns {number[]}
+         */
+        function pageRange(start, count, total) {
+            const pages = [];
+            for (let p = start; p < start + count && p <= total; p++) pages.push(p);
+            return pages;
+        }
+
+        /** Fraction of fetched items that survive filtering, for batch sizing. */
+        function estimateYield() {
+            if (yieldStats.fetched < 20) return 0.8;
+            return Math.min(1, Math.max(0.05, yieldStats.rendered / yieldStats.fetched));
+        }
+
+        /**
+         * Warms the request cache with the next pages of the active feeds so the
+         * following load is served instantly. Fire-and-forget; errors are ignored
+         * here and surface (with retry) when the page is actually needed.
+         * @param {string} filterMode
+         * @param {number} pagesPerFeed
+         * @param {AbortSignal} [signal]
+         */
+        function prefetchAhead(filterMode, pagesPerFeed, signal) {
+            if (!currentFeeds) return;
+            const count = Math.max(1, Math.min(MAX_PAGES_PER_FEED_ESCALATED, pagesPerFeed));
+            if (currentFeeds.tvId && (filterMode === 'mixed' || filterMode === 'tv') && tvHasMorePages) {
+                pageRange(tvCurrentPage + 1, count, tvTotalPages)
+                    .forEach(p => fetchFeedPage('tv', currentFeeds.tvId, p, signal).catch(() => {}));
+            }
+            if (currentFeeds.movieId && (filterMode === 'mixed' || filterMode === 'movies') && movieHasMorePages) {
+                pageRange(movieCurrentPage + 1, count, movieTotalPages)
+                    .forEach(p => fetchFeedPage('movie', currentFeeds.movieId, p, signal).catch(() => {}));
             }
         }
 
@@ -339,7 +400,7 @@
          * @param {string} mode - Current filter mode
          * @param {boolean} [reset=false] - Clear existing cards and reset counter
          */
-        function renderChunk(itemsContainer, mode, reset = false) {
+        function renderChunk(itemsContainer, mode, reset = false, chunkSize = PAGE_SIZE) {
             if (!itemsContainer) return;
 
             if (reset) {
@@ -348,7 +409,7 @@
             }
 
             currentPagedResults = getPagedResultsForMode(mode);
-            const nextChunk = currentPagedResults.slice(renderedCount, renderedCount + PAGE_SIZE);
+            const nextChunk = currentPagedResults.slice(renderedCount, renderedCount + chunkSize);
             if (nextChunk.length === 0) {
                 hasMorePages = false;
                 return;
@@ -368,15 +429,27 @@
          * server page(s) for the active filter mode; client-paged renders the
          * next local chunk.
          */
-        async function loadMoreItems() {
+        /**
+         * Loads more items for infinite scroll. dual-feed fetches the next
+         * server page(s) for the active filter mode — several per feed in
+         * parallel when the buffer deficit (or a low post-filter yield) calls
+         * for it — then prefetches the pages after that; client-paged renders
+         * the next local chunk.
+         * @param {{deficitPx?: number, horizontal?: boolean}} [hint] - From the scroll engine.
+         */
+        async function loadMoreItems(hint) {
             if (isClientPaged) {
                 if (isLoading || !hasMorePages || !clientListActive) return;
 
                 isLoading = true;
                 try {
                     const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
-                    const itemsContainer = document.querySelector(`${sectionSelector} .itemsContainer`);
-                    renderChunk(/** @type {HTMLElement|null} */ (itemsContainer), filterMode, false);
+                    const itemsContainer = /** @type {HTMLElement|null} */ (
+                        document.querySelector(`${sectionSelector} .itemsContainer`));
+                    const chunk = Math.max(PAGE_SIZE, JE.seamlessScroll?.cardsNeeded?.(itemsContainer, hint, PAGE_SIZE) || PAGE_SIZE);
+                    const before = renderedCount;
+                    renderChunk(itemsContainer, filterMode, false, chunk);
+                    return { pages: 1, rendered: renderedCount - before };
                 } catch (error) {
                     if (error.name === 'AbortError') return;
                     console.error(`${logPrefix} Error loading more items:`, error);
@@ -401,52 +474,76 @@
 
             try {
                 const signal = currentAbortController?.signal;
-                const promises = [];
+                const itemsContainer = /** @type {HTMLElement|null} */ (
+                    document.querySelector(`${sectionSelector} .itemsContainer`));
 
                 // Determine which endpoints to fetch based on filter mode and available IDs
-                const needTv = currentFeeds.tvId && (filterMode === 'mixed' || filterMode === 'tv') && tvHasMorePages;
-                const needMovies = currentFeeds.movieId && (filterMode === 'mixed' || filterMode === 'movies') && movieHasMorePages;
-
-                if (needTv) {
-                    tvCurrentPage++;
-                    promises.push(
-                        fetchFeedPage('tv', currentFeeds.tvId, tvCurrentPage, signal)
-                            .then(r => ({ type: 'tv', data: r }))
-                    );
-                }
-                if (needMovies) {
-                    movieCurrentPage++;
-                    promises.push(
-                        fetchFeedPage('movie', currentFeeds.movieId, movieCurrentPage, signal)
-                            .then(r => ({ type: 'movie', data: r }))
-                    );
-                }
-
-                if (promises.length === 0) {
+                const needTv = !!currentFeeds.tvId && (filterMode === 'mixed' || filterMode === 'tv') && tvHasMorePages;
+                const needMovies = !!currentFeeds.movieId && (filterMode === 'mixed' || filterMode === 'movies') && movieHasMorePages;
+                const feedCount = (needTv ? 1 : 0) + (needMovies ? 1 : 0);
+                if (feedCount === 0) {
                     hasMorePages = false;
                     return;
                 }
 
-                const results = await Promise.all(promises);
+                // Size the batch from the buffer deficit and the observed yield:
+                // a heavily filtered feed (library items, hidden content, single
+                // media type) needs more pages per load to render the same rows.
+                const wantCards = JE.seamlessScroll?.cardsNeeded?.(itemsContainer, hint, 40) || 40;
+                const expectedPerPage = Math.max(1, 20 * feedCount * estimateYield());
+                let pagesPerFeed = Math.min(MAX_PAGES_PER_FEED, Math.max(1, Math.ceil(wantCards / expectedPerPage)));
+                if (lastBatchRendered === 0 && lastBatchPages > 0) {
+                    // Everything in the last batch was filtered out: jump to a full
+                    // batch at once, then double, so a hidden stretch costs at most
+                    // a couple of round trips.
+                    pagesPerFeed = Math.min(MAX_PAGES_PER_FEED_ESCALATED, Math.max(pagesPerFeed, MAX_PAGES_PER_FEED, lastBatchPages * 2));
+                }
+                // Never plan more pages than the scroll engine's empty-page budget allows.
+                const pageBudget = Number.isFinite(hint?.pageBudget) ? Math.max(0, hint.pageBudget) : Infinity;
+                pagesPerFeed = Math.max(1, Math.min(pagesPerFeed, Math.floor(pageBudget / feedCount)));
+                console.debug(`${logPrefix} load: deficit=${Math.round(hint?.deficitPx || 0)}px want=${wantCards} yield=${estimateYield().toFixed(2)} pagesPerFeed=${pagesPerFeed} budget=${pageBudget}`);
+
+                const tvPages = needTv ? pageRange(tvCurrentPage + 1, pagesPerFeed, tvTotalPages) : [];
+                const moviePages = needMovies ? pageRange(movieCurrentPage + 1, pagesPerFeed, movieTotalPages) : [];
+                if (tvPages.length === 0 && moviePages.length === 0) {
+                    tvHasMorePages = tvHasMorePages && tvCurrentPage < tvTotalPages;
+                    movieHasMorePages = movieHasMorePages && movieCurrentPage < movieTotalPages;
+                    updateHasMorePages(filterMode);
+                    return { pages: 0, rendered: 0 };
+                }
+                const pagesFetched = tvPages.length + moviePages.length;
+
+                const [tvResponses, movieResponses] = await Promise.all([
+                    Promise.all(tvPages.map(p => fetchFeedPage('tv', /** @type {number} */ (currentFeeds.tvId), p, signal))),
+                    Promise.all(moviePages.map(p => fetchFeedPage('movie', /** @type {number} */ (currentFeeds.movieId), p, signal)))
+                ]);
 
                 if (signal?.aborted) return;
 
-                let newTvResults = [];
-                let newMovieResults = [];
+                const newTvResults = [];
+                const newMovieResults = [];
 
-                results.forEach(r => {
-                    if (r.type === 'tv') {
-                        newTvResults = r.data.results || [];
-                        tvHasMorePages = tvCurrentPage < (r.data.totalPages || 1);
-                        cachedTvResults = [...cachedTvResults, ...newTvResults];
-                    } else {
-                        newMovieResults = r.data.results || [];
-                        movieHasMorePages = movieCurrentPage < (r.data.totalPages || 1);
-                        cachedMovieResults = [...cachedMovieResults, ...newMovieResults];
-                    }
+                tvResponses.forEach((r, i) => {
+                    newTvResults.push(...(r.results || []));
+                    tvTotalPages = clampPages(r.totalPages);
+                    tvCurrentPage = tvPages[i];
                 });
+                if (tvPages.length > 0) {
+                    tvHasMorePages = tvCurrentPage < tvTotalPages;
+                    cachedTvResults = [...cachedTvResults, ...newTvResults];
+                }
+                movieResponses.forEach((r, i) => {
+                    newMovieResults.push(...(r.results || []));
+                    movieTotalPages = clampPages(r.totalPages);
+                    movieCurrentPage = moviePages[i];
+                });
+                if (moviePages.length > 0) {
+                    movieHasMorePages = movieCurrentPage < movieTotalPages;
+                    cachedMovieResults = [...cachedMovieResults, ...newMovieResults];
+                }
 
                 updateHasMorePages(filterMode);
+                lastBatchPages = pagesPerFeed;
 
                 // Get items to add based on filter mode
                 let itemsToAdd;
@@ -459,21 +556,34 @@
                                  [...newTvResults, ...newMovieResults];
                 }
 
-                if (itemsToAdd.length === 0) return;
+                yieldStats.fetched += itemsToAdd.length;
+                lastBatchRendered = 0;
 
                 // Deduplicate items using deduplicator (if available)
-                if (itemDeduplicator) {
+                if (itemDeduplicator && itemsToAdd.length > 0) {
                     itemsToAdd = itemDeduplicator.filter(itemsToAdd);
-                    if (itemsToAdd.length === 0) return;
                 }
 
-                const itemsContainer = document.querySelector(`${sectionSelector} .itemsContainer`);
-                if (itemsContainer) {
+                if (itemsContainer && itemsToAdd.length > 0) {
                     const fragment = createCardsFragment(itemsToAdd);
+                    yieldStats.rendered += fragment.childNodes.length;
+                    lastBatchRendered = fragment.childNodes.length;
                     if (fragment.childNodes.length > 0) {
                         itemsContainer.appendChild(fragment);
                     }
                 }
+
+                // Keep the cache warm for the next load while this one renders.
+                // After a productive batch prefetch twice as deep; after an empty
+                // batch (the next one will be bigger anyway) prefetch only what
+                // the remaining empty-page budget still allows.
+                const remainingBudget = pageBudget === Infinity ? Infinity : Math.max(0, pageBudget - pagesFetched);
+                const prefetchPerFeed = lastBatchRendered > 0
+                    ? pagesPerFeed * 2
+                    : Math.min(pagesPerFeed, Math.floor(remainingBudget / feedCount));
+                if (prefetchPerFeed > 0) prefetchAhead(filterMode, prefetchPerFeed, signal);
+
+                return { pages: pagesFetched, rendered: lastBatchRendered };
             } catch (error) {
                 // Roll back page counters on failure so retry fetches the same page
                 tvCurrentPage = prevTvPage;
@@ -517,6 +627,12 @@
             movieCurrentPage = 1;
             tvHasMorePages = true;
             movieHasMorePages = true;
+            tvTotalPages = Infinity;
+            movieTotalPages = Infinity;
+            yieldStats.fetched = 0;
+            yieldStats.rendered = 0;
+            lastBatchPages = 0;
+            lastBatchRendered = -1;
             isLoading = false;
             cachedTvResults = [];
             cachedMovieResults = [];
@@ -527,17 +643,19 @@
             currentAbortController = new AbortController();
             const signal = currentAbortController.signal;
             const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
+            // Warm pages 2-3 while page 1 is in flight.
+            prefetchAhead(filterMode, 2, signal);
 
             // Build fetch promises for available media types
             const fetchPromises = [];
             if (currentFeeds.tvId) {
                 fetchPromises.push(
-                    fetchFeedPage('tv', currentFeeds.tvId, 1, signal).then(r => ({ type: 'tv', data: r }))
+                    fetchFeedPage('tv', currentFeeds.tvId, 1, signal, true).then(r => ({ type: 'tv', data: r }))
                 );
             }
             if (currentFeeds.movieId) {
                 fetchPromises.push(
-                    fetchFeedPage('movie', currentFeeds.movieId, 1, signal).then(r => ({ type: 'movie', data: r }))
+                    fetchFeedPage('movie', currentFeeds.movieId, 1, signal, true).then(r => ({ type: 'movie', data: r }))
                 );
             }
 
@@ -548,10 +666,12 @@
                 results.forEach(r => {
                     if (r.type === 'tv') {
                         cachedTvResults = r.data.results || [];
-                        tvHasMorePages = 1 < (r.data.totalPages || 1);
+                        tvTotalPages = clampPages(r.data.totalPages);
+                        tvHasMorePages = 1 < tvTotalPages;
                     } else {
                         cachedMovieResults = r.data.results || [];
-                        movieHasMorePages = 1 < (r.data.totalPages || 1);
+                        movieTotalPages = clampPages(r.data.totalPages);
+                        movieHasMorePages = 1 < movieTotalPages;
                     }
                 });
 
@@ -564,6 +684,8 @@
 
                 if (displayResults.length > 0) {
                     const fragment = createCardsFragment(displayResults);
+                    yieldStats.fetched += displayResults.length;
+                    yieldStats.rendered += fragment.childNodes.length;
                     itemsContainer.appendChild(fragment);
                     if (itemDeduplicator) {
                         displayResults.forEach(item => itemDeduplicator.add(item));
@@ -660,6 +782,12 @@
             hasMorePages = true;
             tvHasMorePages = true;
             movieHasMorePages = true;
+            tvTotalPages = Infinity;
+            movieTotalPages = Infinity;
+            yieldStats.fetched = 0;
+            yieldStats.rendered = 0;
+            lastBatchPages = 0;
+            lastBatchRendered = -1;
             currentFeeds = { tvId: resolved.tvId || null, movieId: resolved.movieId || null };
 
             // Clear cached results
@@ -669,17 +797,21 @@
             // Initialize deduplicator for infinite scroll
             itemDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
 
+            // Warm pages 2-3 of each feed while page 1 is in flight so the first
+            // buffer fill after render is served from cache.
+            prefetchAhead('mixed', 2, signal);
+
             // Fetch TV and Movies separately (only if IDs available)
             const fetchPromises = [];
             if (currentFeeds.tvId) {
                 fetchPromises.push(
-                    fetchFeedPage('tv', currentFeeds.tvId, 1, signal)
+                    fetchFeedPage('tv', currentFeeds.tvId, 1, signal, true)
                         .then(r => ({ type: 'tv', data: r }))
                 );
             }
             if (currentFeeds.movieId) {
                 fetchPromises.push(
-                    fetchFeedPage('movie', currentFeeds.movieId, 1, signal)
+                    fetchFeedPage('movie', currentFeeds.movieId, 1, signal, true)
                         .then(r => ({ type: 'movie', data: r }))
                 );
             }
@@ -695,10 +827,12 @@
             fetchResults.forEach(r => {
                 if (r.type === 'tv') {
                     cachedTvResults = r.data.results || [];
-                    tvHasMorePages = 1 < (r.data.totalPages || 1);
+                    tvTotalPages = clampPages(r.data.totalPages);
+                    tvHasMorePages = 1 < tvTotalPages;
                 } else {
                     cachedMovieResults = r.data.results || [];
-                    movieHasMorePages = 1 < (r.data.totalPages || 1);
+                    movieTotalPages = clampPages(r.data.totalPages);
+                    movieHasMorePages = 1 < movieTotalPages;
                 }
             });
 
@@ -735,6 +869,8 @@
             const fragment = createCardsFragment(displayResults);
             if (fragment.childNodes.length === 0) return;
 
+            yieldStats.fetched += displayResults.length;
+            yieldStats.rendered += fragment.childNodes.length;
             itemsContainer.appendChild(fragment);
 
             // Seed deduplicator with initial items to prevent duplicates on scroll
@@ -926,6 +1062,12 @@
             movieCurrentPage = 1;
             tvHasMorePages = true;
             movieHasMorePages = true;
+            tvTotalPages = Infinity;
+            movieTotalPages = Infinity;
+            yieldStats.fetched = 0;
+            yieldStats.rendered = 0;
+            lastBatchPages = 0;
+            lastBatchRendered = -1;
             currentFeeds = null;
             clientListActive = false;
             currentPagedResults = [];
