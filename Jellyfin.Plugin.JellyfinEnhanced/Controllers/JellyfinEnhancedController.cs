@@ -3321,10 +3321,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // is limited to title-free lookups; single-title lookups are gated on
             // that title and anything else (search, discover, trending, lists) is
             // refused, because it would return titles unfiltered.
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
+            {
+                return StatusCode(503, "TMDB API key is not configured.");
+            }
+
             var tmdbCallerId = UserHelper.GetCurrentUserId(User)?.ToString();
             var queryString = HttpContext.Request.QueryString;
             if (_parentalFilter.TryGetRestrictedPolicy(tmdbCallerId, out _))
             {
+                // Kestrel decodes %3F in the path, so a query (even a double-encoded
+                // append_to_response) can arrive inside apiPath. Restricted users get
+                // plain path characters only.
+                if (apiPath.IndexOfAny(new[] { '?', '%', '&', '#', ';', '=', '\\' }) >= 0)
+                {
+                    return ParentalBlockedResult();
+                }
+
                 // The route captures only the path; the query matters too. Work on the
                 // DECODED keys so percent-encoding (append%5Fto%5Fresponse) can't slip
                 // a title list past the classifier, and forward only a small set of
@@ -3349,12 +3363,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         break;
                 }
                 queryString = decodedQuery.Length > 0 ? new QueryString("?" + decodedQuery) : QueryString.Empty;
-            }
-
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
-            {
-                return StatusCode(503, "TMDB API key is not configured.");
             }
 
             var httpClient = _httpClientFactory.CreateClient();

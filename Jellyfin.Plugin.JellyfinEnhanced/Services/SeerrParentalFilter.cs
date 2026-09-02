@@ -471,7 +471,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 var mediaType = NormalizeMediaType(media.TryGetProperty("mediaType", out var mt) && mt.ValueKind == JsonValueKind.String ? mt.GetString() : null);
-                if (mediaType == null || !media.TryGetProperty("tmdbId", out var idEl) || !idEl.TryGetInt32(out var tmdbId))
+                if (mediaType == null || !media.TryGetProperty("tmdbId", out var idEl) || idEl.ValueKind != JsonValueKind.Number || !idEl.TryGetInt32(out var tmdbId))
                 {
                     return true; // a title we cannot identify cannot be verified
                 }
@@ -615,6 +615,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var tasks = keys.Select(async kvp =>
             {
+                // Cache hits never occupy a slot.
+                if (TryGetFreshSignature(kvp.Key, needTags, out var hit))
+                {
+                    return (kvp.Key, hit);
+                }
+
+                // A superseded request (typeahead) doesn't need cache warming.
+                if (requestAborted.IsCancellationRequested)
+                {
+                    return (kvp.Key, (Signature?)null);
+                }
+
                 await throttle.WaitAsync().ConfigureAwait(false);
                 try
                 {
@@ -723,9 +735,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // ── Score resolution (cache -> in-flight -> fetch) ───────────────────
 
-        private async Task<Signature?> GetSignatureAsync(string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct)
+        /// <summary>
+        /// Answers from the cache when it can: a fresh positive entry that satisfies
+        /// the caller (tag data present when tag rules are active), or a fresh
+        /// negative entry (null = still unverified). False = a fetch is needed.
+        /// </summary>
+        private bool TryGetFreshSignature(string key, bool needTags, out Signature? signature)
         {
-            var key = CacheKey(mediaType, tmdbId, region);
+            signature = null;
             if (_certCache.TryGetValue(key, out var cached))
             {
                 var age = DateTime.UtcNow - cached.CachedAt;
@@ -733,13 +750,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     if (age < NegativeCacheTtl)
                     {
-                        return null; // recently failed to verify -> still hidden, no refetch
+                        return true; // recently failed to verify -> still hidden, no refetch
                     }
                 }
                 else if (age < CacheTtl() && (!needTags || cached.Sig?.Keywords != null))
                 {
                     // A rating-only entry can't satisfy a tag-rule caller; fall through to fetch.
-                    return cached.Sig;
+                    signature = cached.Sig;
+                    return true;
                 }
             }
 
@@ -747,10 +765,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 if (DateTime.UtcNow - failedAt < NegativeCacheTtl)
                 {
-                    return null; // tag data recently unavailable -> hidden for tag-rule users, no refetch
+                    return true; // tag data recently unavailable -> hidden for tag-rule users, no refetch
                 }
 
                 _tagFetchFailedAt.TryRemove(key, out _);
+            }
+
+            return false;
+        }
+
+        private async Task<Signature?> GetSignatureAsync(string mediaType, int tmdbId, string region, bool needTags, CancellationToken ct)
+        {
+            var key = CacheKey(mediaType, tmdbId, region);
+            if (TryGetFreshSignature(key, needTags, out var fresh))
+            {
+                return fresh;
             }
 
             // Coalesce concurrent fetches. The shared task carries its own timeout;
@@ -976,7 +1005,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task<JsonElement?> FetchDetailFromSeerrAsync(string mediaType, int tmdbId, Configuration.PluginConfiguration config, CancellationToken ct)
         {
-            if (string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (!config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
             {
                 return null;
             }
