@@ -97,6 +97,14 @@ Browse and discover content by various criteria.
 1. Check respective discovery options in settings
 2. Access via custom navigation or direct URLs
 
+### Parental Ratings
+
+Seerr results respect each user's Jellyfin parental controls (**Max Parental Rating** and **Block unrated items** in the user's policy). For a restricted user, titles above the limit are removed from search, discovery ("More from" sections and the Recommendations page), similar/recommended rows, person filmographies, collections, the requests list and the watchlist; opening such a title's details or requesting it is refused.
+
+- Certifications are read from TMDB for the server's metadata country (falling back to US), the same value the More Info modal shows, and scored with Jellyfin's own rating table.
+- Titles whose rating cannot be determined are hidden for restricted users. Users without a limit are unaffected and nothing extra is fetched for them.
+- Resolved ratings are cached (default 24 hours) so the extra lookups are one-off. Disable with **Respect users' parental ratings** under the Seerr settings.
+
 ### Issue Reporting
 
 Report problems with media directly to Seerr.

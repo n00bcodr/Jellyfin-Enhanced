@@ -171,6 +171,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrDisableCache = false;
             JellyseerrResponseCacheTtlMinutes = 10;
             JellyseerrUserIdCacheTtlMinutes = 30;
+            JellyseerrRespectParentalRatings = true;
+            JellyseerrParentalRatingCacheTtlMinutes = 1440;
             TriggerSeerrScanOnItemAdded = false;
             SeerrScanDebounceSeconds = 60;
 
@@ -617,6 +619,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrDisableCache { get; set; }
         public int JellyseerrResponseCacheTtlMinutes { get; set; }
         public int JellyseerrUserIdCacheTtlMinutes { get; set; }
+
+        // Enforce each Jellyfin user's own parental-rating limit (max parental
+        // rating + "block unrated") on Seerr search, discovery, similar /
+        // recommended, person, collection, requests, watchlist and detail
+        // surfaces (issue #581). Users without a limit are unaffected.
+        public bool JellyseerrRespectParentalRatings { get; set; }
+
+        // How long a resolved TMDB certification -> parental score is cached
+        // (user-neutral). Certifications almost never change, so default 24h.
+        public int JellyseerrParentalRatingCacheTtlMinutes { get; set; }
 
         // Arr Links Settings
         public bool ArrLinksEnabled { get; set; }

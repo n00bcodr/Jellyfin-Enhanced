@@ -64,6 +64,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // for misses — see WikidataAwardsService for details.
             serviceCollection.AddSingleton<WikidataAwardsService>();
             serviceCollection.AddSingleton<MdblistService>();
+            serviceCollection.AddSingleton<SeerrParentalFilter>();
             // Opt-in anonymous usage reporting: UsageEventCounterService holds the
             // current period's counters (debounced disk persistence, same pattern
             // as WikidataAwardsService); AnalyticsReportingService builds/sends the

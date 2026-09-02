@@ -49,6 +49,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly Logger _logger;
         private readonly IUserManager _userManager;
+        private readonly Services.SeerrParentalFilter _parentalFilter;
         private readonly IUserDataManager _userDataManager;
         private readonly ILibraryManager _libraryManager;
         private readonly IDtoService _dtoService;
@@ -182,6 +183,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.SpoilerUserResolver spoilerResolver,
             Services.WikidataAwardsService wikidataAwardsService,
             Services.MdblistService mdblistService,
+            Services.SeerrParentalFilter parentalFilter,
             Services.WhatsNewService whatsNewService,
             Services.UsageEventCounterService usageEventCounterService,
             Services.AnalyticsReportingService analyticsReportingService,
@@ -204,6 +206,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _spoilerResolver = spoilerResolver;
             _wikidataAwardsService = wikidataAwardsService;
             _mdblistService = mdblistService;
+            _parentalFilter = parentalFilter;
             _whatsNewService = whatsNewService;
             _usageEventCounterService = usageEventCounterService;
             _analyticsReportingService = analyticsReportingService;
@@ -690,6 +693,58 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch { /* best-effort eviction */ }
         }
 
+        private IActionResult ParentalBlockedResult()
+        {
+            return StatusCode(403, new
+            {
+                error = true,
+                code = "parental_block",
+                message = "This title is above your parental rating limit."
+            });
+        }
+
+        /// <summary>
+        /// Runs the caller's parental-rating limit over a proxied Seerr body:
+        /// list responses come back filtered, blocked detail/sub-resource
+        /// responses become 403. Unrestricted users pass through untouched.
+        /// </summary>
+        private async Task<IActionResult> ApplyParentalFilterAsync(string json, string apiPath, string jellyfinUserId)
+        {
+            var result = await _parentalFilter.ApplyAsync(json, apiPath, jellyfinUserId, HttpContext.RequestAborted);
+            return result.Block ? ParentalBlockedResult() : Content(result.Body, "application/json");
+        }
+
+        private async Task<bool> IsRequestBodyParentalBlockedAsync(string body, string jellyfinUserId)
+        {
+            // Unrestricted users: nothing to check, whatever the body looks like.
+            if (!_parentalFilter.TryGetRestrictedPolicy(jellyfinUserId, out _)) return false;
+
+            // Restricted users: a body we cannot identify as an allowed movie/tv
+            // title is refused (fail closed), including string ids like "550".
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                var rootEl = doc.RootElement;
+                if (rootEl.ValueKind != JsonValueKind.Object || !rootEl.TryGetProperty("mediaId", out var idEl)) return true;
+                int mediaId;
+                if (idEl.ValueKind == JsonValueKind.Number)
+                {
+                    if (!idEl.TryGetInt32(out mediaId)) return true;
+                }
+                else if (idEl.ValueKind != JsonValueKind.String || !int.TryParse(idEl.GetString(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out mediaId))
+                {
+                    return true;
+                }
+                var mediaType = rootEl.TryGetProperty("mediaType", out var mtEl) && mtEl.ValueKind == JsonValueKind.String ? mtEl.GetString() : null;
+                if (mediaType != "movie" && mediaType != "tv") return true;
+                return mediaId <= 0 || await _parentalFilter.IsBlockedAsync(mediaType, mediaId, jellyfinUserId);
+            }
+            catch (JsonException)
+            {
+                return true;
+            }
+        }
+
         private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null)
         {
             // Propagate client disconnects (superseded search queries, page
@@ -834,15 +889,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var cacheKey = isPublicScope
                 ? $"public:{apiPath}"
                 : $"{jellyfinUserId}:{apiPath}";
+            // Parental ratings (#581): a restricted user may not request a title
+            // above their limit, whichever surface the request came from.
+            if (method == HttpMethod.Post
+                && apiPath.StartsWith("/api/v1/request", StringComparison.OrdinalIgnoreCase)
+                && content != null
+                && await IsRequestBodyParentalBlockedAsync(content, jellyfinUserId))
+            {
+                return ParentalBlockedResult();
+            }
+
             if (isCacheable)
             {
+                string? cachedContent = null;
                 lock (_responseCacheLock)
                 {
                     if (_responseCache.TryGetValue(cacheKey, out var cached) &&
                         DateTime.UtcNow - cached.CachedAt < GetResponseCacheTtl())
                     {
-                        return Content(cached.Content, "application/json");
+                        cachedContent = cached.Content;
                     }
+                }
+                if (cachedContent != null)
+                {
+                    return await ApplyParentalFilterAsync(cachedContent, apiPath, jellyfinUserId);
                 }
             }
 
@@ -923,7 +993,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             EvictMovieTvCacheForRequest(content);
                         }
-                        return Content(json, "application/json");
+                        return method == HttpMethod.Get
+                            ? await ApplyParentalFilterAsync(json, apiPath, jellyfinUserId)
+                            : Content(json, "application/json");
                     }
 
                     _logger.Warning($"Seerr request failed for user {ResolveUserDisplay(jellyfinUserId)} at {trimmedUrl}: code={error!.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
@@ -3238,6 +3310,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> ProxyTmdbRequest(string apiPath)
         {
+            // Parental ratings (#581): for a restricted user the raw TMDB passthrough
+            // is limited to title-free lookups; single-title lookups are gated on
+            // that title and anything else (search, discover, trending, lists) is
+            // refused, because it would return titles unfiltered.
+            var tmdbCallerId = UserHelper.GetCurrentUserId(User)?.ToString();
+            if (_parentalFilter.TryGetRestrictedPolicy(tmdbCallerId, out _))
+            {
+                switch (Services.SeerrParentalFilter.ClassifyTmdbPassthrough(apiPath, out var gatedType, out var gatedId))
+                {
+                    case Services.SeerrParentalFilter.TmdbAccess.Deny:
+                        return ParentalBlockedResult();
+                    case Services.SeerrParentalFilter.TmdbAccess.GateTitle:
+                        if (await _parentalFilter.IsBlockedAsync(gatedType, gatedId, tmdbCallerId))
+                        {
+                            return ParentalBlockedResult();
+                        }
+                        break;
+                }
+            }
+
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
             {
@@ -8947,6 +9039,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         _logger.Warning($"Seerr requests fetch threw at {candidateUrl}: {innerEx.Message}");
                     }
                 }
+                if (json != null)
+                {
+                    // Parental ratings (#581): drop rows above the caller's limit before
+                    // enrichment attaches titles and posters to them.
+                    json = (await _parentalFilter.ApplyAsync(json, "/api/v1/request", jellyfinUserId, HttpContext.RequestAborted)).Body;
+                }
+
                 if (json == null)
                 {
                     var error = lastError!;

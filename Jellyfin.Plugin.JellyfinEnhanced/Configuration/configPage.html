@@ -1670,6 +1670,10 @@
                                     <div class="je-setting-description" data-desc-for="jellyseerrExcludeBlocklistedItems">
                                         <div class="fieldDescription je-field-desc-xl">When enabled, items marked as blocklisted in Seerr will not appear in similar/recommended suggestions.</div>
                                     </div>
+                                    <div class="checkboxContainer"><label><input id="jellyseerrRespectParentalRatings" is="emby-checkbox" type="checkbox"/><span>Respect users' parental ratings</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="jellyseerrRespectParentalRatings">
+                                        <div class="fieldDescription je-field-desc-xl">Hide Seerr search, discovery, similar/recommended, person, collection and request results above a user's Jellyfin parental rating limit (Max Parental Rating and "Block unrated" in the user's policy), and refuse requests for them. Uses the server's metadata country to read TMDB certifications; titles whose rating cannot be determined are hidden for restricted users. Users without a limit are unaffected.</div>
+                                    </div>
                                 </div>
                             </details>
 
@@ -1980,6 +1984,13 @@
                             </div>
                                 <div class="je-setting-description" data-desc-for="jellyseerrUserIdCacheTtlMinutes">
                                     <div class="fieldDescription">How long the Jellyfin → Seerr user ID mapping is cached. Default: 30 minutes.</div>
+                                </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="jellyseerrParentalRatingCacheTtlMinutes">Parental Rating Cache TTL (min)</label>
+                                <input id="jellyseerrParentalRatingCacheTtlMinutes" is="emby-input" type="number" min="1" value="1440"/>
+                            </div>
+                                <div class="je-setting-description" data-desc-for="jellyseerrParentalRatingCacheTtlMinutes">
+                                    <div class="fieldDescription">How long a title's TMDB certification (used by "Respect users' parental ratings") is cached. Default: 1440 minutes (24 hours).</div>
                                 </div>
                         </div>
                     </fieldset>
@@ -5403,6 +5414,8 @@
                 document.querySelector('#jellyseerrDisableCache').checked = !!config.JellyseerrDisableCache;
                 document.querySelector('#jellyseerrResponseCacheTtlMinutes').value = config.JellyseerrResponseCacheTtlMinutes || 10;
                 document.querySelector('#jellyseerrUserIdCacheTtlMinutes').value = config.JellyseerrUserIdCacheTtlMinutes || 30;
+                document.querySelector('#jellyseerrRespectParentalRatings').checked = config.JellyseerrRespectParentalRatings !== false;
+                document.querySelector('#jellyseerrParentalRatingCacheTtlMinutes').value = config.JellyseerrParentalRatingCacheTtlMinutes || 1440;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
                 document.querySelector('#JellyseerrApiKey').value = config.JellyseerrApiKey;
@@ -5892,6 +5905,8 @@
             config.JellyseerrDisableCache = document.querySelector('#jellyseerrDisableCache').checked;
             config.JellyseerrResponseCacheTtlMinutes = parseInt(document.querySelector('#jellyseerrResponseCacheTtlMinutes').value, 10) || 10;
             config.JellyseerrUserIdCacheTtlMinutes = parseInt(document.querySelector('#jellyseerrUserIdCacheTtlMinutes').value, 10) || 30;
+            config.JellyseerrRespectParentalRatings = document.querySelector('#jellyseerrRespectParentalRatings').checked;
+            config.JellyseerrParentalRatingCacheTtlMinutes = parseInt(document.querySelector('#jellyseerrParentalRatingCacheTtlMinutes').value, 10) || 1440;
             config.JellyseerrShowNetworkDiscovery = document.querySelector('#jellyseerrShowNetworkDiscovery').checked;
             config.JellyseerrShowGenreDiscovery = document.querySelector('#jellyseerrShowGenreDiscovery').checked;
             config.JellyseerrShowTagDiscovery = document.querySelector('#jellyseerrShowTagDiscovery').checked;
