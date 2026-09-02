@@ -117,7 +117,7 @@
       if (st.totalPages) count = Math.min(count, st.totalPages - st.page);
       const pageBudget = Number.isFinite(hint?.pageBudget) ? Math.max(0, hint.pageBudget) : Infinity;
       count = Math.min(count, pageBudget);
-      if (count < 1) { st.hasMore = false; return { pages: 0, rendered: 0 }; }
+      if (count < 1) return { pages: 0, rendered: 0 }; // out of budget for now; the valve decides, not us
       const pages = [];
       for (let p = firstPage; p < firstPage + count; p++) pages.push(p);
 
@@ -193,6 +193,10 @@
     // categoryState wholesale - otherwise it leaks (nothing else references it).
     JE.discoveryFilter.cleanupScrollObserver(state.categoryState);
     state.categoryPageVisible = true;
+    // Generation token: Back pressed (or another category opened) before page 1
+    // lands must not install an engine on a page nobody is looking at.
+    const generation = (state.categoryGeneration = (state.categoryGeneration || 0) + 1);
+    const stale = () => generation !== state.categoryGeneration || !state.categoryPageVisible;
     state.categoryState = { activeScrollObserver: null, page: 1, totalPages: 0, hasMore: true, isLoading: false };
 
     const page = createCategoryPageContainer();
@@ -217,6 +221,7 @@
     sortContainer.appendChild(JE.discoveryFilter.createSortControl(SORT_MODULE, () => {
       JE.discoveryFilter.cleanupScrollObserver(state.categoryState);
       loadInitialCategoryPage(category, container).then(() => {
+        if (stale()) return;
         JE.discoveryFilter.setupInfiniteScroll(
           state.categoryState,
           '#je-recommendations-category-page .content-primary',
@@ -249,6 +254,7 @@
     page.dispatchEvent(new CustomEvent("pageshow", { bubbles: true, detail: {} }));
 
     await loadInitialCategoryPage(category, container);
+    if (stale()) return;
 
     JE.discoveryFilter.setupInfiniteScroll(
       state.categoryState,
@@ -263,6 +269,7 @@
     if (!state.categoryPageVisible) return;
 
     JE.discoveryFilter.cleanupScrollObserver(state.categoryState);
+    JE.jellyseerrUI?.releasePosters?.();
 
     const page = document.getElementById("je-recommendations-category-page");
     if (page) {

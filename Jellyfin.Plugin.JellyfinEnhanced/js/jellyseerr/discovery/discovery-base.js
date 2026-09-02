@@ -132,6 +132,12 @@
         // escalated cap so a heavily-hidden stretch is crossed in few round trips.
         const MAX_PAGES_PER_FEED = 4;
         const MAX_PAGES_PER_FEED_ESCALATED = 8;
+        // Prefetch per feed stays below the shared 8-slot request pool so a
+        // demand batch never queues behind a wave of prefetches.
+        const MAX_PREFETCH_PER_FEED = 3;
+        // Bumped on every sort / filter change and cleanup: a batch that started
+        // under an older generation must not write counters or flags.
+        let loadGeneration = 0;
         // TMDB refuses discover pages beyond 500 (Seerr answers HTTP 500) even
         // though it reports totalPages in the thousands; never ask for them.
         const TMDB_MAX_PAGE = 500;
@@ -237,7 +243,7 @@
          */
         function prefetchAhead(filterMode, pagesPerFeed, signal) {
             if (!currentFeeds) return;
-            const count = Math.max(1, Math.min(MAX_PAGES_PER_FEED_ESCALATED, pagesPerFeed));
+            const count = Math.max(1, Math.min(MAX_PREFETCH_PER_FEED, pagesPerFeed));
             if (currentFeeds.tvId && (filterMode === 'mixed' || filterMode === 'tv') && tvHasMorePages) {
                 pageRange(tvCurrentPage + 1, count, tvTotalPages)
                     .forEach(p => fetchFeedPage('tv', currentFeeds.tvId, p, signal).catch(() => {}));
@@ -465,6 +471,7 @@
             }
 
             const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
+            const generation = loadGeneration;
 
             isLoading = true;
 
@@ -479,7 +486,11 @@
 
                 // Determine which endpoints to fetch based on filter mode and available IDs
                 const needTv = !!currentFeeds.tvId && (filterMode === 'mixed' || filterMode === 'tv') && tvHasMorePages;
-                const needMovies = !!currentFeeds.movieId && (filterMode === 'mixed' || filterMode === 'movies') && movieHasMorePages;
+                let needMovies = !!currentFeeds.movieId && (filterMode === 'mixed' || filterMode === 'movies') && movieHasMorePages;
+                // With less budget left than feeds, fetch one feed only so the
+                // empty-page valve is exact rather than overrun by a page.
+                const pageBudget = Number.isFinite(hint?.pageBudget) ? Math.max(0, hint.pageBudget) : Infinity;
+                if (needTv && needMovies && pageBudget < 2) needMovies = false;
                 const feedCount = (needTv ? 1 : 0) + (needMovies ? 1 : 0);
                 if (feedCount === 0) {
                     hasMorePages = false;
@@ -499,7 +510,6 @@
                     pagesPerFeed = Math.min(MAX_PAGES_PER_FEED_ESCALATED, Math.max(pagesPerFeed, MAX_PAGES_PER_FEED, lastBatchPages * 2));
                 }
                 // Never plan more pages than the scroll engine's empty-page budget allows.
-                const pageBudget = Number.isFinite(hint?.pageBudget) ? Math.max(0, hint.pageBudget) : Infinity;
                 pagesPerFeed = Math.max(1, Math.min(pagesPerFeed, Math.floor(pageBudget / feedCount)));
                 console.debug(`${logPrefix} load: deficit=${Math.round(hint?.deficitPx || 0)}px want=${wantCards} yield=${estimateYield().toFixed(2)} pagesPerFeed=${pagesPerFeed} budget=${pageBudget}`);
 
@@ -519,6 +529,9 @@
                 ]);
 
                 if (signal?.aborted) return;
+                // Sort / filter changed while this batch was in flight: its pages are
+                // cached for the new generation to reuse, but its bookkeeping is stale.
+                if (generation !== loadGeneration) return;
 
                 const newTvResults = [];
                 const newMovieResults = [];
@@ -585,14 +598,19 @@
 
                 return { pages: pagesFetched, rendered: lastBatchRendered };
             } catch (error) {
-                // Roll back page counters on failure so retry fetches the same page
-                tvCurrentPage = prevTvPage;
-                movieCurrentPage = prevMoviePage;
+                if (generation === loadGeneration) {
+                    // Roll back page counters on failure so retry fetches the same page
+                    tvCurrentPage = prevTvPage;
+                    movieCurrentPage = prevMoviePage;
+                }
                 if (error.name === 'AbortError') return;
                 console.error(`${logPrefix} Error loading more items:`, error);
                 throw error; // Re-throw for seamlessScroll retry handling
             } finally {
                 isLoading = false;
+                // A filter change that re-armed the engine while this load was in
+                // flight found isLoading true and stopped; wake it now.
+                if (generation !== loadGeneration && scrollState.fill) scrollState.fill();
             }
         }
 
@@ -623,6 +641,7 @@
             cleanupScrollObserver();
 
             // Reset pagination state for fresh fetch
+            loadGeneration++;
             tvCurrentPage = 1;
             movieCurrentPage = 1;
             tvHasMorePages = true;
@@ -727,6 +746,14 @@
             // Use fast CSS-based visibility (no DOM rebuild)
             JE.discoveryFilter.applyFilterVisibility(itemsContainer, newMode);
 
+            // A batch still in flight belongs to the old mode: retire its
+            // bookkeeping, and start the new mode with fresh batch statistics.
+            loadGeneration++;
+            yieldStats.fetched = 0;
+            yieldStats.rendered = 0;
+            lastBatchPages = 0;
+            lastBatchRendered = -1;
+
             // Update hasMorePages based on filter mode
             updateHasMorePages(newMode);
 
@@ -788,6 +815,7 @@
             yieldStats.rendered = 0;
             lastBatchPages = 0;
             lastBatchRendered = -1;
+            loadGeneration++;
             currentFeeds = { tvId: resolved.tvId || null, movieId: resolved.movieId || null };
 
             // Clear cached results
@@ -1046,10 +1074,12 @@
 
         /** Cleanup function — aborts in-flight requests and resets state. */
         function cleanup() {
+            loadGeneration++;
             if (currentAbortController) {
                 currentAbortController.abort();
                 currentAbortController = null;
             }
+            JE.jellyseerrUI?.releasePosters?.();
             if (spec.mode !== 'one-shot') {
                 cleanupScrollObserver();
             }

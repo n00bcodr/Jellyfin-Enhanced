@@ -132,8 +132,7 @@
          * @param {AbortSignal|null} signal
          */
         function prefetchSearchPages(query, count, signal) {
-            if (!searchHasMore) return;
-            if (signal?.aborted) signal = undefined;
+            if (!searchHasMore || signal?.aborted) return;
             const last = Math.min(searchTotalPages, searchCurrentPage + Math.max(1, count));
             for (let p = searchCurrentPage + 1; p <= last; p++) {
                 search(query, p, { signal }).catch(() => {});
@@ -230,10 +229,20 @@
         async function loadMoreSearchResults(query, hint) {
             if (searchIsLoading || !searchHasMore || lastProcessedQuery !== query) return;
 
+            // The global navigation abort cancels the query's signal. If the
+            // search page is still visible with this very query (e.g. jellyfin-web
+            // rewrote the URL's query param), re-arm a fresh signal for it;
+            // otherwise the row is stale and must stop, not carry on unabortable.
+            if (searchSignal?.aborted) {
+                const visibleInput = document.querySelector('#searchPage:not(.hide) #searchTextInput');
+                if (!visibleInput || visibleInput.value !== query) {
+                    searchHasMore = false;
+                    return;
+                }
+                searchSignal = JE.requestManager?.getAbortSignal('jellyseerr-search') || null;
+            }
             searchIsLoading = true;
-            // A signal that was already aborted (e.g. by the global navigation
-            // abort) must not poison every later load of this query.
-            const signal = (searchSignal && !searchSignal.aborted) ? searchSignal : undefined;
+            const signal = searchSignal || undefined;
             const firstPage = searchCurrentPage + 1;
 
             try {
@@ -259,15 +268,20 @@
                 });
                 searchHasMore = searchCurrentPage < searchTotalPages;
 
-                // Keep the cache warm for the next load while this one renders —
-                // but only once the viewer has actually started reading the row,
-                // so a row that is merely displayed costs no extra Seerr searches.
-                if (hint?.engaged) prefetchSearchPages(query, count, signal);
-
                 searchYield.fetched += results.length;
                 if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
                 if (searchDeduplicator) results = searchDeduplicator.filter(results);
                 searchYield.rendered += results.length;
+
+                // Keep the cache warm for the next load while this one renders —
+                // only once the viewer has actually started reading the row (a row
+                // that is merely displayed costs no extra Seerr searches), and never
+                // beyond the empty-page budget after a batch that rendered nothing.
+                if (hint?.engaged) {
+                    const remainingBudget = pageBudget === Infinity ? Infinity : Math.max(0, pageBudget - pages.length);
+                    const prefetch = results.length > 0 ? count : Math.min(count, remainingBudget);
+                    if (prefetch > 0) prefetchSearchPages(query, prefetch, signal);
+                }
 
                 if (results.length > 0 && itemsContainer) {
                     const fragment = document.createDocumentFragment();
@@ -484,7 +498,9 @@
              * Otherwise, (re)attach the search listener as usual.
              */
             function handleNavigate() {
-                const searchInput = document.querySelector('#searchPage #searchTextInput');
+                // Only a *visible* search page keeps the row alive; jellyfin-web may
+                // keep the view in the DOM with .hide after navigating away.
+                const searchInput = document.querySelector('#searchPage:not(.hide) #searchTextInput');
                 if (!searchInput) {
                     clearTimeout(debounceTimeout);
                     lastProcessedQuery = null;

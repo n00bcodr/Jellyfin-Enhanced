@@ -26,6 +26,10 @@
     // report as not intersecting until they are attached to the document.
     const POSTER_DATA_KEY = 'jePoster'; // dataset key for the data-je-poster attribute
     let posterObserver = null;
+    // Every observed poster container; IntersectionObserver holds strong references
+    // to its targets, so cards removed before they ever scrolled into view must be
+    // unobserved explicitly or they (and their handlers) are retained forever.
+    const observedPosters = new Set();
 
     function applyPoster(el) {
         if (!el) return;
@@ -33,6 +37,7 @@
         if (posterObserver) {
             try { posterObserver.unobserve(el); } catch (_) { /* ignore */ }
         }
+        observedPosters.delete(el);
         if (!url) return;
         delete el.dataset[POSTER_DATA_KEY];
         // posterUrl is validated/derived in createJellyseerrCard, so the only
@@ -67,24 +72,29 @@
         }
         try {
             observer.observe(el);
+            observedPosters.add(el);
         } catch (_) {
             applyPoster(el);
         }
     }
 
     /**
-     * Forces the poster of a Seerr card (or the poster container itself) to
-     * load immediately instead of waiting for it to scroll into view.
-     * @param {HTMLElement} card - Card element or its .jellyseerr-poster-image.
+     * Stops observing posters whose cards have been removed from the document
+     * (or that sit under `root`, when given). Call after tearing down a result
+     * row / discovery section so detached cards can be garbage-collected.
+     * @param {HTMLElement} [root]
      */
-    function loadPosterNow(card) {
-        if (!card) return;
-        const el = card.classList && card.classList.contains('jellyseerr-poster-image')
-            ? card
-            : card.querySelector && card.querySelector('.jellyseerr-poster-image');
-        applyPoster(el);
+    function releasePosters(root) {
+        if (!posterObserver) return;
+        for (const el of [...observedPosters]) {
+            if (!el.isConnected || (root && root.contains(el))) {
+                try { posterObserver.unobserve(el); } catch (_) { /* ignore */ }
+                observedPosters.delete(el);
+            }
+        }
     }
-    ui.loadPosterNow = loadPosterNow;
+    ui.releasePosters = releasePosters;
+
 
     /**
      * Creates an individual Seerr result card.

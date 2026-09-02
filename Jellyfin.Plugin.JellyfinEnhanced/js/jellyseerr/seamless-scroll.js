@@ -295,7 +295,15 @@
          * Measures how much rendered content is still ahead of the viewer.
          * @returns {{ahead: number, target: number, span: number, inRange: boolean}}
          */
+        // A section that is detached or display:none measures as all zeros, which
+        // would read as "infinitely short" and start a fill storm into a page
+        // nobody can see (e.g. Back pressed before page 1 landed). Not in range.
+        const isDisplayed = () => section.isConnected && section.getClientRects().length > 0;
+
         const measure = () => {
+            if (!isDisplayed()) {
+                return { ahead: 0, target: 0, span: 0, inRange: false };
+            }
             if (horizontal) {
                 const track = section.querySelector(trackSelector);
                 const scroller = section.querySelector(scrollerSelector) || section;

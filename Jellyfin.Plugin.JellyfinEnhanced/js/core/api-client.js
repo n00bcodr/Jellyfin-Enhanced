@@ -616,12 +616,18 @@
             }
         };
 
-        // Concurrency limit + in-flight dedup (GET with a cache key only)
-        return withConcurrencyLimit(() =>
-            (isGet && cacheKey)
-                ? deduplicatedFetch(cacheKey, fetchFn)
-                : fetchFn()
-        );
+        // In-flight dedup OUTSIDE the concurrency limit so only the one unique
+        // fetch takes a pool slot (waiters share its promise without holding
+        // slots), and re-check the cache once a slot is acquired: a prefetch that
+        // completed while this call queued must not be fetched a second time.
+        const limitedFetch = () => withConcurrencyLimit(() => {
+            if (isGet && !skipCache && cacheKey) {
+                const cached = getCached(cacheKey);
+                if (cached) return Promise.resolve(cached);
+            }
+            return fetchFn();
+        });
+        return (isGet && cacheKey) ? deduplicatedFetch(cacheKey, limitedFetch) : limitedFetch();
     }
 
     /**

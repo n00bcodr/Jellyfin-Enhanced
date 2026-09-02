@@ -369,8 +369,14 @@
                 return data;
             };
 
-            return JE.requestManager.withConcurrencyLimit(() =>
-                JE.requestManager.deduplicatedFetch(cacheKey, fetchFn)
+            // Dedup outside the pool (only the unique fetch holds a slot) and
+            // re-check the cache after acquiring the slot, so a prefetch that
+            // finished while we queued is not fetched again.
+            return JE.requestManager.deduplicatedFetch(cacheKey, () =>
+                JE.requestManager.withConcurrencyLimit(() => {
+                    const hit = JE.requestManager.getCached(cacheKey);
+                    return hit ? Promise.resolve(hit) : fetchFn();
+                })
             );
         }
 
