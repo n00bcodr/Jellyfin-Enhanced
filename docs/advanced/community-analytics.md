@@ -109,11 +109,23 @@ counts above do for other features.
 <p class="je-analytics-updated" id="je-analytics-updated"></p>
 
 <style>
+/* Same Material Icons font the config page's tabs use; this docs page is a
+   separate static site so it needs its own copy loaded. */
+@import url('https://fonts.googleapis.com/icon?family=Material+Icons');
+.je-pill-icon {
+  font-family: 'Material Icons'; font-weight: normal; font-style: normal;
+  font-size: 1.1em; line-height: 1; letter-spacing: normal; text-transform: none;
+  white-space: nowrap; word-wrap: normal; direction: ltr;
+  -webkit-font-smoothing: antialiased; vertical-align: -0.2em; margin-right: 0.3em;
+}
+.je-pill-icon-img { width: 1em; height: 1em; vertical-align: -0.15em; margin-right: 0.3em; }
 #je-analytics-error-banner { margin: 1em 0; }
 .je-section-subtitle { opacity: 0.65; font-size: 0.9em; margin-top: -0.6em; }
 .je-stat-cards { display: flex; flex-wrap: wrap; gap: 1em; margin: 1em 0; }
+.je-stat-card.je-stat-card-hero { flex-basis: 100%; }
 .je-stat-card {
-  flex: 1 1 200px;
+  flex: 1 1 110px;
+  min-width: 0;
   border: 1px solid var(--md-default-fg-color--lightest, #ddd);
   border-radius: 8px;
   padding: 1em 1.2em;
@@ -122,10 +134,11 @@ counts above do for other features.
 .je-stat-card .je-stat-label { opacity: 0.7; font-size: 0.85em; }
 .je-stat-card .je-stat-label-primary { font-size: 1.05em; font-weight: 600; margin-top: 0.4em; }
 .je-stat-card .je-stat-label-secondary { opacity: 0.65; font-size: 0.6em; margin-top: 0.15em; }
+.je-table-scroll { overflow-x: auto; }
 .je-analytics-table { width: 100%; border-collapse: collapse; margin: 1em 0; }
 .je-analytics-table th, .je-analytics-table td {
   text-align: left; padding: 0.4em 0.7em; border-bottom: 1px solid var(--md-default-fg-color--lightest, #ddd);
-  font-size: 0.9em;
+  font-size: 0.9em; vertical-align: top;
 }
 .je-analytics-bar-track {
   background: var(--md-default-fg-color--lightest, #eee);
@@ -135,10 +148,29 @@ counts above do for other features.
 .je-analytics-updated { font-size: 0.8em; opacity: 0.6; margin-top: 1.5em; }
 .je-analytics-error { color: #c0392b; }
 .je-analytics-mismatch { color: #d35400; font-weight: 600; }
-.je-flag-group { border: 1px solid var(--md-default-fg-color--lightest, #ddd); border-radius: 8px; margin: 0.6em 0; padding: 0.2em 1em; }
-.je-flag-group summary { cursor: pointer; padding: 0.6em 0; font-weight: 600; }
-.je-flag-group table { margin-top: 0; margin-bottom: 0.8em; }
-.je-flag-raw { opacity: 0.55; font-size: 0.8em; }
+.je-pill-row { display: flex; flex-wrap: wrap; gap: 0.4em; margin-bottom: 0.6em; }
+.je-pill {
+  cursor: pointer; font: inherit; font-size: 0.85em; padding: 0.3em 0.8em;
+  border: 1px solid var(--md-default-fg-color--lightest, #ddd); border-radius: 999px;
+  background: transparent; color: inherit;
+}
+.je-pill:hover { opacity: 0.8; }
+.je-pill-active { background: var(--md-accent-fg-color, #7c4dff); border-color: transparent; color: rgba(0, 0, 0, 0.87); }
+.je-table-search {
+  display: block; width: 100%; max-width: 320px; margin-bottom: 0.6em;
+  padding: 0.4em 0.6em; border: 1px solid var(--md-default-fg-color--lightest, #ddd);
+  border-radius: 6px; background: transparent; color: inherit; font: inherit;
+}
+.je-sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
+.je-sortable-th:hover { opacity: 0.75; }
+.je-sort-active { font-weight: 700; }
+.je-pct-cell { display: inline-flex; align-items: center; gap: 0.5em; white-space: nowrap; }
+.je-inline-bar-track {
+  flex: 0 0 auto;
+  width: 100px; height: 8px; border-radius: 4px; overflow: hidden;
+  background: var(--md-default-fg-color--lightest, #eee);
+}
+.je-inline-bar-track .je-analytics-bar-fill { height: 100%; }
 </style>
 
 <script>
@@ -169,6 +201,13 @@ counts above do for other features.
   function num(v) { return Number.isFinite(Number(v)) ? Number(v) : 0; }
   function pct(v) { return Math.max(0, Math.min(100, num(v))); }
 
+  // Bar first, percentage after, both in a nowrap span: a leading number of
+  // variable width (6% vs 100%) would otherwise misalign the bars, and a
+  // squeezed cell could wrap the number onto its own line above the bar.
+  function barCell(p) {
+    return `<span class="je-pct-cell"><div class="je-inline-bar-track"><div class="je-analytics-bar-fill" style="width:${p}%;"></div></div>${p}%</span>`;
+  }
+
   // Same "DD-MMM-YYYY" convention as the config page's own formatDateDMY --
   // explicit instead of toLocaleDateString() so it doesn't vary by the
   // visitor's browser locale.
@@ -186,14 +225,15 @@ counts above do for other features.
     return spaced.charAt(0).toUpperCase() + spaced.slice(1);
   }
 
-  // Prefers the config page's real label text over the humanize() fallback.
+  // Prefers the config page's real label over the humanize() fallback; the
+  // raw PropertyName is a hover title rather than always-visible text.
   function labeledName(rawName) {
     // hasOwnProperty guard: rawName is report-supplied, so a name like
     // "toString" or "constructor" would otherwise pull a function off
     // Object.prototype instead of a label.
     const display = Object.prototype.hasOwnProperty.call(FLAG_LABELS_MAP, rawName)
       ? FLAG_LABELS_MAP[rawName] : humanize(rawName);
-    return `${escapeHtml(display)}<br/><code class="je-flag-raw">${escapeHtml(rawName)}</code>`;
+    return `<span title="${escapeHtml(rawName)}">${escapeHtml(display)}</span>`;
   }
 
   // Flags a jf10 build running on a v12+ server or vice versa (both work,
@@ -214,14 +254,14 @@ counts above do for other features.
     rows.forEach(r => { byTarget[r.jellyfin_target] = (byTarget[r.jellyfin_target] || 0) + num(r.install_count); });
 
     let html = `<div class="je-stat-cards">
-      <div class="je-stat-card"><div class="je-stat-value">${totalInstalls}</div><div class="je-stat-label">Reporting installs</div></div>`;
+      <div class="je-stat-card je-stat-card-hero"><div class="je-stat-value">${totalInstalls}</div><div class="je-stat-label">Reporting installs</div></div>`;
     // Cap BY COUNT, not alphabetically: jellyfin_target is attacker-mintable.
     Object.keys(byTarget).sort((a, b) => byTarget[b] - byTarget[a]).slice(0, 12).forEach(target => {
       html += `<div class="je-stat-card"><div class="je-stat-value">${byTarget[target]}</div><div class="je-stat-label">on ${escapeHtml(target)}</div></div>`;
     });
     html += `</div>`;
 
-    html += `<table class="je-analytics-table"><thead><tr><th>Plugin Version</th><th>Jellyfin Target</th><th>Jellyfin Version</th><th>Installs</th><th>Recently Seen On</th></tr></thead><tbody>`;
+    html += `<div class="je-table-scroll"><table class="je-analytics-table"><thead><tr><th>Plugin Version</th><th>Jellyfin Target</th><th>Jellyfin Version</th><th>Installs</th><th>Recently Seen On</th></tr></thead><tbody>`;
     rows.sort((a, b) => num(b.install_count) - num(a.install_count)).slice(0, 50).forEach(r => {
       const seen = formatDateDMY(new Date(r.most_recent_seen));
       const mismatch = isTargetMismatch(r.jellyfin_target, r.jellyfin_version);
@@ -230,7 +270,7 @@ counts above do for other features.
         : escapeHtml(r.jellyfin_version);
       html += `<tr><td>${escapeHtml(r.plugin_version)}</td><td>${escapeHtml(r.jellyfin_target)}</td><td>${versionCell}</td><td>${num(r.install_count)}</td><td>${seen}</td></tr>`;
     });
-    html += `</tbody></table>`;
+    html += `</tbody></table></div>`;
     return html;
   }
 
@@ -250,21 +290,19 @@ counts above do for other features.
     }
     const maxCount = Math.max(...rows.map(r => num(r.total_count)), 1);
     let html = rows.length >= 20 ? `<p>Showing the top 20 keys.</p>` : '';
-    html += `<table class="je-analytics-table"><thead><tr><th>Feature key</th><th>Total uses</th><th>Installs reporting it</th><th></th></tr></thead><tbody>`;
+    html += `<div class="je-table-scroll"><table class="je-analytics-table"><thead><tr><th>Feature key</th><th>Total uses</th><th>Installs reporting it</th><th></th></tr></thead><tbody>`;
     rows.forEach(r => {
       const barPct = pct(Math.round((num(r.total_count) / maxCount) * 100));
       html += `<tr><td>${labeledName(String(r.feature_key || ''))}</td><td>${num(r.total_count)}</td><td>${num(r.install_count)}</td>
         <td style="width:120px;"><div class="je-analytics-bar-track"><div class="je-analytics-bar-fill" style="width:${barPct}%;"></div></div></td></tr>`;
     });
-    html += `</tbody></table>`;
+    html += `</tbody></table></div>`;
     return html;
   }
 
   // Current totals (not deltas), summed from v_current_totals, which picks
-  // each install's own latest report before summing -- installs report on
-  // staggered schedules, so picking a single global "most recent period"
-  // would drop every install that didn't happen to report that exact date.
-  // brandingRow (from v_branding_usage) is folded in as a count-only card.
+  // each install's own latest report before summing (installs report on
+  // staggered schedules). brandingRow is folded in as a count-only card.
   function renderTotalCounts(rows, brandingRow) {
     if (!rows.length && !brandingRow) {
       return `<p><em>No total-count data reported yet.</em></p>`;
@@ -293,11 +331,14 @@ counts above do for other features.
     return html;
   }
 
-  // Both generated from configPage.html's fieldset/legend/label structure by
-  // scripts/generate_config_flag_groups.py, run before every docs build. A
-  // setting absent from the config page falls back to "Other" / humanize().
+  // All generated by scripts/generate_config_flag_groups.py before every
+  // docs build. A setting absent from the config page falls back to
+  // "Other"/humanize(); one absent from defaults just shows no default.
   let FLAG_GROUPS_MAP = {};
   let FLAG_LABELS_MAP = {};
+  let FLAG_TABS_MAP = {};
+  let TAB_ICONS_MAP = {};
+  let FLAG_DEFAULTS_MAP = {};
 
   async function loadFlagGroups() {
     try {
@@ -306,10 +347,23 @@ counts above do for other features.
         const data = await res.json();
         FLAG_GROUPS_MAP = data.groups || {};
         FLAG_LABELS_MAP = data.labels || {};
+        FLAG_TABS_MAP = data.tabs || {};
+        TAB_ICONS_MAP = data.tabIcons || {};
+        FLAG_DEFAULTS_MAP = data.defaults || {};
       }
     } catch (err) {
       // Non-fatal: everything just falls into "Other" / humanize() until this loads.
     }
+  }
+
+  // {type: "material", value: ligature} or {type: "img", src: url}; no icon
+  // for "Other" (unmapped names) or if this tab genuinely has none.
+  function iconFor(tabName) {
+    const icon = TAB_ICONS_MAP[tabName];
+    if (!icon) return '';
+    if (icon.type === 'material') return `<i class="je-pill-icon" aria-hidden="true">${escapeHtml(icon.value)}</i>`;
+    if (icon.type === 'img') return `<img class="je-pill-icon-img" src="${escapeHtml(icon.src)}" alt="" />`;
+    return '';
   }
 
   function groupFor(flagName) {
@@ -318,45 +372,158 @@ counts above do for other features.
       ? FLAG_GROUPS_MAP[flagName] : 'Other';
   }
 
+  function tabFor(flagName) {
+    return Object.prototype.hasOwnProperty.call(FLAG_TABS_MAP, flagName)
+      ? FLAG_TABS_MAP[flagName] : 'Other';
+  }
+
+  // Flat, sortable/filterable table with optional facet pills (e.g. by
+  // "tab") above it. columns: {key, label, render(row), sortValue(row),
+  // text(row) -- optional search haystack, defaults to sortValue}. Returns
+  // {html, mount}; setSection calls mount(container) after insertion to
+  // wire up click-to-sort/type-to-filter/pill-click via event delegation.
+  function renderSortableTable(rows, columns, initialSortKey, facetKey) {
+    const uid = Math.random().toString(36).slice(2);
+    const tbodyId = 'je-tbody-' + uid;
+    let sortKey = initialSortKey || columns[0].key;
+    let sortDir = 'asc';
+    let filterText = '';
+    let activeFacet = null; // null = "All"
+
+    const facetCol = facetKey ? columns.find(c => c.key === facetKey) : null;
+
+    function haystack(row) {
+      return columns.map(c => String((c.text || c.sortValue)(row))).join(' ').toLowerCase();
+    }
+
+    function visibleRows() {
+      let filtered = facetCol && activeFacet !== null
+        ? rows.filter(r => facetCol.sortValue(r) === activeFacet) : rows;
+      if (filterText) filtered = filtered.filter(r => haystack(r).includes(filterText));
+      const col = columns.find(c => c.key === sortKey);
+      const dir = sortDir === 'asc' ? 1 : -1;
+      return filtered.slice().sort((a, b) => {
+        const av = col.sortValue(a), bv = col.sortValue(b);
+        if (av < bv) return -1 * dir;
+        if (av > bv) return 1 * dir;
+        return 0;
+      });
+    }
+
+    function renderRows() {
+      const list = visibleRows();
+      if (!list.length) return `<tr><td colspan="${columns.length}"><em>No matches.</em></td></tr>`;
+      return list.map(row => `<tr>${columns.map(c => `<td>${c.render(row)}</td>`).join('')}</tr>`).join('');
+    }
+
+    function renderHead() {
+      return columns.map(c => {
+        const active = c.key === sortKey;
+        return `<th class="je-sortable-th${active ? ' je-sort-active' : ''}" data-sort-key="${c.key}">${escapeHtml(c.label)}${active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}</th>`;
+      }).join('');
+    }
+
+    function facetCounts() {
+      const counts = Object.create(null);
+      rows.forEach(r => {
+        const v = facetCol.sortValue(r);
+        counts[v] = (counts[v] || 0) + 1;
+      });
+      return counts;
+    }
+
+    function renderPills() {
+      if (!facetCol) return '';
+      const counts = facetCounts();
+      const names = Object.keys(counts).sort((a, b) => {
+        if (a === 'Other') return 1;
+        if (b === 'Other') return -1;
+        return a.localeCompare(b);
+      });
+      // Icons are tab-icon data specifically, so only show them when this
+      // facet actually is the tab column.
+      const pill = (value, label, active, iconHtml) =>
+        `<button type="button" class="je-pill${active ? ' je-pill-active' : ''}" data-facet-value="${escapeHtml(value)}">${iconHtml || ''}${escapeHtml(label)}</button>`;
+      return pill('', `All (${rows.length})`, activeFacet === null, '')
+        + names.map(n => pill(n, `${n} (${counts[n]})`, activeFacet === n, facetKey === 'tab' ? iconFor(n) : '')).join('');
+    }
+
+    const html = `
+      <div class="je-pill-row">${renderPills()}</div>
+      <input type="text" class="je-table-search" placeholder="Filter…" />
+      <div class="je-table-scroll"><table class="je-analytics-table"><thead><tr>${renderHead()}</tr></thead>
+      <tbody id="${tbodyId}">${renderRows()}</tbody></table></div>
+    `;
+
+    function mount(container) {
+      const pillRow = container.querySelector('.je-pill-row');
+      const input = container.querySelector('.je-table-search');
+      const thead = container.querySelector('thead');
+      const tbody = container.querySelector('#' + tbodyId);
+
+      if (pillRow) {
+        pillRow.addEventListener('click', e => {
+          const btn = e.target.closest('button[data-facet-value]');
+          if (!btn) return;
+          activeFacet = btn.dataset.facetValue || null;
+          pillRow.innerHTML = renderPills();
+          tbody.innerHTML = renderRows();
+        });
+      }
+
+      input.addEventListener('input', () => {
+        filterText = input.value.trim().toLowerCase();
+        tbody.innerHTML = renderRows();
+      });
+
+      thead.addEventListener('click', e => {
+        const th = e.target.closest('th[data-sort-key]');
+        if (!th) return;
+        const key = th.dataset.sortKey;
+        sortDir = key === sortKey && sortDir === 'asc' ? 'desc' : 'asc';
+        sortKey = key;
+        thead.innerHTML = renderHead();
+        tbody.innerHTML = renderRows();
+      });
+    }
+
+    return { html, mount };
+  }
+
   function renderFlagRates(rows) {
     const reporting = rows.filter(r => num(r.reporting_count) > 0);
     if (!reporting.length) {
       return `<p><em>No config-flag data reported yet.</em></p>`;
     }
 
-    const groups = Object.create(null);
-    reporting.forEach(r => {
-      const g = groupFor(r.flag_name);
-      (groups[g] = groups[g] || []).push(r);
+    const items = reporting.map(r => {
+      // hasOwnProperty guard: r.flag_name is report-supplied.
+      const hasDefault = Object.prototype.hasOwnProperty.call(FLAG_DEFAULTS_MAP, r.flag_name);
+      return {
+        tab: tabFor(r.flag_name),
+        group: groupFor(r.flag_name),
+        flagName: r.flag_name,
+        label: Object.prototype.hasOwnProperty.call(FLAG_LABELS_MAP, r.flag_name) ? FLAG_LABELS_MAP[r.flag_name] : humanize(r.flag_name),
+        defaultOn: hasDefault ? FLAG_DEFAULTS_MAP[r.flag_name] : null,
+        enabledPct: pct(r.enabled_pct),
+      };
     });
 
-    // Named groups alphabetically first, "Other" always last.
-    const groupNames = Object.keys(groups).sort((a, b) => {
-      if (a === 'Other') return 1;
-      if (b === 'Other') return -1;
-      return a.localeCompare(b);
-    });
+    const columns = [
+      { key: 'tab', label: 'Tab', sortValue: i => i.tab, render: i => escapeHtml(i.tab) },
+      { key: 'group', label: 'Group', sortValue: i => i.group, render: i => escapeHtml(i.group) },
+      { key: 'toggle', label: 'Feature toggle', sortValue: i => i.label, text: i => `${i.label} ${i.flagName}`, render: i => labeledName(i.flagName) },
+      { key: 'default', label: 'Default', sortValue: i => i.defaultOn === null ? -1 : (i.defaultOn ? 1 : 0), render: i => i.defaultOn === null ? '—' : (i.defaultOn ? 'ON' : 'OFF') },
+      { key: 'pct', label: '% ON', sortValue: i => i.enabledPct, render: i => barCell(i.enabledPct) },
+    ];
 
-    return groupNames.map(g => {
-      // Cap rows per group BY reporting_count, then alphabetical for display:
-      // flag_name is attacker-mintable via report_stats, and an alphabetical
-      // cut would let forged names that sort first evict genuine rows.
-      const items = groups[g]
-        .sort((a, b) => num(b.reporting_count) - num(a.reporting_count)).slice(0, 200)
-        .sort((a, b) => String(a.flag_name).localeCompare(String(b.flag_name)));
-      let rowsHtml = items.map(r => `<tr><td>${labeledName(r.flag_name)}</td><td>${pct(r.enabled_pct)}%</td>
-        <td style="width:120px;"><div class="je-analytics-bar-track"><div class="je-analytics-bar-fill" style="width:${pct(r.enabled_pct)}%;"></div></div></td></tr>`).join('');
-      return `<details class="je-flag-group">
-        <summary>${escapeHtml(g)} (${items.length})</summary>
-        <table class="je-analytics-table"><thead><tr><th>Feature toggle</th><th>% of reporting installs with it ON</th><th></th></tr></thead>
-        <tbody>${rowsHtml}</tbody></table>
-      </details>`;
-    }).join('');
+    // Faceted by tab, sorted by group -- sorting by tab would be a no-op
+    // once narrowed to one pill.
+    return renderSortableTable(items, columns, 'group', 'tab');
   }
 
-  // Groups by setting_name and shows the distribution of values reported for
-  // it (e.g. IconStyle: lucide 62%, material 38%), not a % ON like
-  // renderFlagRates, since these aren't booleans.
+  // One row per (setting, value) pair -- e.g. IconStyle contributes a
+  // "lucide" row and a "material" row, each with its own install share.
   function renderSettingValues(rows) {
     if (!rows.length) {
       return `<p><em>No settings data reported yet.</em></p>`;
@@ -367,40 +534,61 @@ counts above do for other features.
     const bySetting = Object.create(null);
     rows.forEach(r => { (bySetting[r.setting_name] = bySetting[r.setting_name] || []).push(r); });
 
-    // Cap BY total reporting installs, then alphabetical for display:
-    // setting_name is attacker-mintable, and an alphabetical cut would let
-    // forged names that sort first evict the genuine settings.
-    const totalFor = name => bySetting[name].reduce((s, v) => s + num(v.install_count), 0);
-    const names = Object.keys(bySetting)
-      .sort((a, b) => totalFor(b) - totalFor(a)).slice(0, 100)
-      .sort((a, b) => a.localeCompare(b));
-
-    return names.map(name => {
-      // Cap values per setting too — setting_value is equally forgeable.
-      const values = bySetting[name].slice().sort((a, b) => num(b.install_count) - num(a.install_count)).slice(0, 100);
+    const items = [];
+    Object.keys(bySetting).forEach(name => {
+      const values = bySetting[name];
       const total = values.reduce((sum, v) => sum + num(v.install_count), 0);
-      const rowsHtml = values.map(v => {
-        const barPct = total > 0 ? pct(Math.round((num(v.install_count) / total) * 100)) : 0;
-        return `<tr><td>${escapeHtml(v.setting_value)}</td><td>${num(v.install_count)}</td><td>${barPct}%</td>
-          <td style="width:120px;"><div class="je-analytics-bar-track"><div class="je-analytics-bar-fill" style="width:${barPct}%;"></div></div></td></tr>`;
-      }).join('');
-      return `<details class="je-flag-group">
-        <summary>${labeledName(name)} (${total} reporting)</summary>
-        <table class="je-analytics-table"><thead><tr><th>Value</th><th>Installs</th><th>%</th><th></th></tr></thead>
-        <tbody>${rowsHtml}</tbody></table>
-      </details>`;
-    }).join('');
+      // hasOwnProperty guard: name is report-supplied.
+      const hasDefault = Object.prototype.hasOwnProperty.call(FLAG_DEFAULTS_MAP, name);
+      const defaultValue = hasDefault ? String(FLAG_DEFAULTS_MAP[name]) : null;
+      // Always humanize(), never the config page's short contextual label
+      // (e.g. "Position") -- on the real config page that's unambiguous
+      // because it's visually nested under a "Quality Tags"/"Genre Tags"/etc.
+      // heading, but flattened into one table it isn't, and the Group column
+      // ("Media Tags") is too coarse to disambiguate on its own.
+      const label = humanize(name);
+      values.forEach(v => {
+        items.push({
+          tab: tabFor(name),
+          group: groupFor(name),
+          settingName: name,
+          label,
+          value: String(v.setting_value),
+          installCount: num(v.install_count),
+          sharePct: total > 0 ? pct(Math.round((num(v.install_count) / total) * 100)) : 0,
+          isDefault: defaultValue !== null && String(v.setting_value) === defaultValue,
+        });
+      });
+    });
+
+    const columns = [
+      { key: 'tab', label: 'Tab', sortValue: i => i.tab, render: i => escapeHtml(i.tab) },
+      { key: 'group', label: 'Group', sortValue: i => i.group, render: i => escapeHtml(i.group) },
+      { key: 'setting', label: 'Setting', sortValue: i => i.label, text: i => `${i.label} ${i.settingName}`, render: i => `<span title="${escapeHtml(i.settingName)}">${escapeHtml(i.label)}</span>` },
+      { key: 'value', label: 'Value', sortValue: i => i.value, render: i => escapeHtml(i.value) + (i.isDefault ? ' <em>(default)</em>' : '') },
+      { key: 'installs', label: 'Installs', sortValue: i => i.installCount, render: i => String(i.installCount) },
+      { key: 'share', label: '%', sortValue: i => i.sharePct, render: i => barCell(i.sharePct) },
+    ];
+
+    // Faceted by tab, sorted by group -- sorting by tab would be a no-op
+    // once narrowed to one pill.
+    return renderSortableTable(items, columns, 'group', 'tab');
   }
 
-  // One poisoned view must not blank the whole dashboard: a section that
-  // throws renders its own error line into its own div, every other section
-  // still shows. Headings are static Markdown (so the sidebar TOC picks them
-  // up at build time); this only fills the content div underneath each one.
+  // A section that throws renders its own error line rather than blanking
+  // the whole dashboard. Accepts a plain HTML string or {html, mount} (for
+  // renderers needing to wire up interactivity once inserted into the DOM).
   function setSection(id, fn, ...args) {
     const el = document.getElementById(id);
     if (!el) return;
     try {
-      el.innerHTML = fn(...args);
+      const result = fn(...args);
+      if (result && typeof result === 'object' && typeof result.mount === 'function') {
+        el.innerHTML = result.html;
+        result.mount(el);
+      } else {
+        el.innerHTML = result;
+      }
     } catch (err) {
       el.innerHTML = `<p class="je-analytics-error">Couldn't render this section (${escapeHtml(err && err.message ? err.message : err)}).</p>`;
     }
