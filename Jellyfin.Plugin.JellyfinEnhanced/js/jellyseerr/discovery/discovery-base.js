@@ -106,6 +106,50 @@
 
         // ---- Chassis state (all modes) -------------------------------------
         const processedPages = new Set();
+        // The page that was visible when the current navigation started, with
+        // the first item its list held: it stays the visible page for a moment
+        // (stale) until the router swaps pages or re-fills that same element for
+        // the new route. Plus the view element the router showed, when it did.
+        /** @type {Element|null} */
+        let visibleAtNavigation = null;
+        /** @type {string} */
+        let visibleContentAtNavigation = '';
+
+        /**
+         * Cheap signature of what a list page currently shows; React may reuse
+         * the same child nodes for a new route, so compare content, not identity.
+         * @param {Element|null} pageEl
+         */
+        function listSignature(pageEl) {
+            const container = pageEl?.querySelector('.itemsContainer');
+            if (!container) return '';
+            const first = container.firstElementChild;
+            return `${container.childElementCount}|${first?.getAttribute('data-id') || first?.getAttribute('data-index') || first?.textContent?.trim().slice(0, 40) || ''}`;
+        }
+        /** @type {HTMLElement|null} */
+        let shownView = null;
+        /** @type {string|null} */
+        let shownViewHash = null;
+
+        /**
+         * The router's 'viewshow' names the page it is showing (including a
+         * restored one on Back) — and on Back it fires BEFORE popstate, so it
+         * must be remembered with the hash it was shown for rather than reset
+         * by the navigation that follows.
+         * @param {Event} e
+         */
+        function rememberShownView(e) {
+            const target = /** @type {HTMLElement|null} */ (e.target instanceof HTMLElement ? e.target : null);
+            if (!target) return;
+            shownView = target;
+            shownViewHash = window.location.hash;
+        }
+
+        function currentShownView() {
+            return shownView && shownView.isConnected && !shownView.classList.contains('hide') && shownViewHash === window.location.hash
+                ? shownView
+                : null;
+        }
         /** @type {AbortController|null} */
         let currentAbortController = null;
         /** @type {string|null} */
@@ -803,7 +847,12 @@
          * @returns {Promise<HTMLElement|null>}
          */
         function waitForPageReady(signal) {
-            return JE.discoveryFilter.waitForPageReady(signal, { type: isDualFeed ? 'list' : 'detail' });
+            return JE.discoveryFilter.waitForPageReady(signal, {
+                type: isDualFeed ? 'list' : 'detail',
+                getView: currentShownView,
+                isStalePage: (pageEl) => !!pageEl && pageEl === visibleAtNavigation
+                    && listSignature(pageEl) === visibleContentAtNavigation
+            });
         }
 
         /**
@@ -817,14 +866,16 @@
         function keepAttached(section, listPage, signal) {
             if (!JE.helpers?.onBodyMutation) return;
             const handle = JE.helpers.onBodyMutation(`jellyseerr-${key}-discovery-keepattached`, () => {
-                if (signal.aborted || !section.isConnected) {
-                    if (!signal.aborted && section.isConnected === false) {
-                        const container = document.querySelector('.page:not(.hide) .itemsContainer') ||
-                                          document.querySelector('.libraryPage:not(.hide) .itemsContainer') || listPage;
-                        const parent = container?.closest('.verticalSection') || container?.parentElement;
-                        if (parent?.parentElement && !signal.aborted) parent.parentElement.appendChild(section);
-                    }
-                }
+                if (signal.aborted) return;
+                const detached = !section.isConnected;
+                const onHiddenPage = !detached && !!section.closest('.page.hide');
+                if (!detached && !onHiddenPage) return;
+                const view = currentShownView();
+                const container = view?.querySelector('.itemsContainer') ||
+                                  document.querySelector('.page:not(.hide) .itemsContainer') ||
+                                  document.querySelector('.libraryPage:not(.hide) .itemsContainer') || listPage;
+                const parent = container?.closest('.verticalSection') || container?.parentElement;
+                if (parent?.parentElement && !parent.parentElement.contains(section)) parent.parentElement.appendChild(section);
             });
             setTimeout(() => handle?.unsubscribe?.(), 6000);
             signal.addEventListener('abort', () => handle?.unsubscribe?.(), { once: true });
@@ -1140,6 +1191,9 @@
         /** Cleanup function — aborts in-flight requests and resets state. */
         function cleanup() {
             loadGeneration++;
+            // Leaving the route: take our section with us, so a page element the
+            // router reuses for the next route never shows the previous one's.
+            document.querySelectorAll(sectionSelector).forEach(el => el.remove());
             if (currentAbortController) {
                 currentAbortController.abort();
                 currentAbortController = null;
@@ -1198,12 +1252,38 @@
         // results into user B's session.
         JE.session?.onUserChange(`discovery-${key}`, cleanup);
 
-        /** Handles page navigation — renders when the URL matches the module. */
-        function handlePageNavigation() {
+        /**
+         * Handles page navigation — renders when the URL matches the module.
+         * Called from the navigate pipeline (no arguments) and from the view
+         * pipeline as (view, element, ...); the element is the page the router
+         * showed and becomes the anchor for the section.
+         * @param {string} [view]
+         * @param {HTMLElement} [element]
+         */
+        function handlePageNavigation(view, element) {
             const id = spec.getIdFromUrl();
-            if (id) {
-                requestAnimationFrame(() => render());
+            if (!id) return;
+            if (element instanceof HTMLElement) {
+                shownView = element;
+                shownViewHash = window.location.hash;
             }
+            requestAnimationFrame(() => render());
+        }
+
+        /** @type {string|null} */
+        let snapshotHash = null;
+
+        /**
+         * Records which page is showing the moment a navigation is announced —
+         * on the raw events, before the router has reacted — so the stale-page
+         * check compares against the genuinely old page. The deduplicated
+         * navigate callback can run after the router already swapped pages.
+         */
+        function snapshotVisiblePage() {
+            if (window.location.hash === snapshotHash) return; // same navigation, second event
+            snapshotHash = window.location.hash;
+            visibleAtNavigation = document.querySelector('.page:not(.hide)');
+            visibleContentAtNavigation = listSignature(visibleAtNavigation);
         }
 
         /** Initialize navigation listeners + lifecycle teardown wiring. */
@@ -1216,6 +1296,8 @@
             const lifecycle = JE.core.lifecycle.register(`jellyseerr-${key}-discovery`);
             lifecycle.onTeardown(cleanup);
             lifecycle.teardownOn('navigate');
+            ['je:navigate', 'hashchange', 'popstate'].forEach(type => window.addEventListener(type, snapshotVisiblePage, true));
+            document.addEventListener('viewshow', rememberShownView, true);
             JE.core.navigation.onNavigate(handlePageNavigation);
 
             handlePageNavigation();

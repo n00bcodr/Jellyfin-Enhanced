@@ -466,7 +466,7 @@
      * @returns {Promise<HTMLElement|null>}
      */
     function waitForPageReady(signal, options = {}) {
-        const { type = 'list' } = options;
+        const { type = 'list', getView = null, isStalePage = null } = options;
 
         return new Promise((resolve) => {
             if (signal?.aborted) {
@@ -474,7 +474,7 @@
                 return;
             }
 
-            const checkContainer = () => {
+            const checkContainer = (allowStale = false) => {
                 if (type === 'detail') {
                     // Jellyfin 12 dropped the .detailPageContent wrapper; fall back to
                     // .detailPageSecondaryContainer, then the page itself.
@@ -483,12 +483,27 @@
                                           document.querySelector('.itemDetailPage:not(.hide)');
                     return detailContent;
                 }
-                // List page: the container existing is enough — waiting for Jellyfin
-                // to finish filling it (a slow library query) would hold the Seerr
-                // section back; renderDualFeed re-attaches if the page re-renders.
-                const listContainer = document.querySelector('.page:not(.hide) .itemsContainer') ||
-                                      document.querySelector('.libraryPage:not(.hide) .itemsContainer');
-                return listContainer || null;
+                // List page. Prefer the view element the router just showed (it is
+                // the page for this navigation by definition). Otherwise take the
+                // visible list container — but during a transition the visible page
+                // is still the OLD one, so a page that already existed when the
+                // navigation started is stale until a new one appears. The container
+                // merely existing is enough: waiting for Jellyfin to fill it (a slow
+                // library query) would hold the Seerr section back.
+                const view = getView?.();
+                if (view) {
+                    const viewContainer = view.querySelector('.itemsContainer');
+                    if (viewContainer) return viewContainer;
+                }
+                const candidates = document.querySelectorAll('.page:not(.hide) .itemsContainer, .libraryPage:not(.hide) .itemsContainer');
+                let staleFallback = null;
+                for (const candidate of candidates) {
+                    if (!isStalePage || !isStalePage(candidate.closest('.page'))) return candidate;
+                    // Same element reused for the new route (no new page appeared in
+                    // time): accept it once it holds items, as the old code did.
+                    if (allowStale && candidate.children.length > 0 && !staleFallback) staleFallback = candidate;
+                }
+                return staleFallback;
             };
 
             const immediate = checkContainer();
@@ -500,7 +515,7 @@
             let observerHandle = null;
             let timeoutId = null;
 
-            const cleanup = () => {
+            let cleanup = () => {
                 if (observerHandle) {
                     observerHandle.unsubscribe();
                     observerHandle = null;
@@ -518,17 +533,28 @@
                 }, { once: true });
             }
 
-            observerHandle = JE.helpers.onBodyMutation('jellyseerr-discovery-container-detect', () => {
+            const recheck = () => {
                 const container = checkContainer();
                 if (container) {
                     cleanup();
                     resolve(container);
                 }
-            });
+            };
+            observerHandle = JE.helpers.onBodyMutation('jellyseerr-discovery-container-detect', recheck);
+            // The router hides the old page by toggling a class, which the body
+            // observer does not report; a light poll catches that.
+            const pollId = setInterval(recheck, 100);
+            const stopPoll = () => clearInterval(pollId);
+            if (signal) signal.addEventListener('abort', stopPoll, { once: true });
+            // Bounded wait: past this the visible page is accepted even if it
+            // looks stale (a reused element), as long as it holds items.
             timeoutId = setTimeout(() => {
+                stopPoll();
                 cleanup();
-                resolve(checkContainer());
-            }, 3000);
+                resolve(checkContainer(true));
+            }, type === 'list' ? 1500 : 3000);
+            const originalCleanup = cleanup;
+            cleanup = () => { stopPoll(); originalCleanup(); };
         });
     }
 
