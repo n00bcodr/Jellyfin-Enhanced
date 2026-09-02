@@ -673,8 +673,6 @@
             if (currentAbortController) currentAbortController.abort();
             currentAbortController = new AbortController();
             const signal = currentAbortController.signal;
-            // Warm pages 2-3 while page 1 is in flight.
-            prefetchAhead(JE.discoveryFilter?.getFilterMode(key) || 'mixed', 2, signal);
 
             // Build fetch promises for available media types
             const fetchPromises = [];
@@ -809,6 +807,30 @@
         }
 
         /**
+         * The list page may still be settling when the section goes in (it is
+         * inserted as soon as the container exists, not once it is full). If a
+         * re-render drops the section during the first seconds, put it back.
+         * @param {HTMLElement} section
+         * @param {HTMLElement} listPage
+         * @param {AbortSignal} signal
+         */
+        function keepAttached(section, listPage, signal) {
+            if (!JE.helpers?.onBodyMutation) return;
+            const handle = JE.helpers.onBodyMutation(`jellyseerr-${key}-discovery-keepattached`, () => {
+                if (signal.aborted || !section.isConnected) {
+                    if (!signal.aborted && section.isConnected === false) {
+                        const container = document.querySelector('.page:not(.hide) .itemsContainer') ||
+                                          document.querySelector('.libraryPage:not(.hide) .itemsContainer') || listPage;
+                        const parent = container?.closest('.verticalSection') || container?.parentElement;
+                        if (parent?.parentElement && !signal.aborted) parent.parentElement.appendChild(section);
+                    }
+                }
+            });
+            setTimeout(() => handle?.unsubscribe?.(), 6000);
+            signal.addEventListener('abort', () => handle?.unsubscribe?.(), { once: true });
+        }
+
+        /**
          * Renders the dual-feed section body (genre / tag / network).
          * @param {string} id
          * @param {AbortSignal} signal
@@ -844,9 +866,9 @@
             // Initialize deduplicator for infinite scroll
             itemDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
 
-            // Warm pages 2-3 of each feed while page 1 is in flight so the first
-            // buffer fill after render is served from cache.
-            prefetchAhead('mixed', 2, signal);
+            // (No prefetch alongside page 1: extra requests in flight at Seerr
+            // slow page 1 down, and the engine's first fill fetches pages 2-3
+            // the moment page 1 has rendered.)
 
             // Fetch TV and Movies separately (only if IDs available)
             const fetchPromises = [];
@@ -863,12 +885,36 @@
                 );
             }
 
-            const [fetchResults, listPage] = await Promise.all([
-                Promise.all(fetchPromises),
-                pageReadyPromise
-            ]);
-
+            // Show the section as soon as the page can hold it: the header goes
+            // in now and the cards stream in when page 1 lands, so the first
+            // visit doesn't sit on a blank page waiting for Seerr.
+            const listPage = await pageReadyPromise;
             if (signal.aborted) return;
+            let section = null;
+            let itemsContainer = null;
+            if (listPage) {
+                const existing = document.querySelector(sectionSelector);
+                if (existing) existing.remove();
+                section = createSectionContainer(resolved.title, false, handleFilterChange, handleSortChange);
+                itemsContainer = section.querySelector('.itemsContainer');
+                const parentContainer = listPage.closest('.verticalSection') || listPage.parentElement;
+                if (parentContainer?.parentElement) {
+                    parentContainer.parentElement.appendChild(section);
+                    keepAttached(section, listPage, signal);
+                } else {
+                    section = null;
+                }
+            }
+
+            let fetchResults;
+            try {
+                fetchResults = await Promise.all(fetchPromises);
+            } catch (error) {
+                section?.remove();
+                throw error;
+            }
+
+            if (signal.aborted) { section?.remove(); return; }
 
             // Process results
             fetchResults.forEach(r => {
@@ -903,18 +949,23 @@
                 displayResults = [...cachedTvResults, ...cachedMovieResults];
             }
 
-            if (displayResults.length === 0) return;
-
-            if (!listPage) return;
-
-            const existing = document.querySelector(sectionSelector);
-            if (existing) existing.remove();
-
-            const section = createSectionContainer(resolved.title, hasBoth, handleFilterChange, handleSortChange);
-            const itemsContainer = section.querySelector('.itemsContainer');
+            if (displayResults.length === 0 || !section || !itemsContainer) {
+                section?.remove();
+                return;
+            }
 
             const fragment = createCardsFragment(displayResults);
-            if (fragment.childNodes.length === 0) return;
+            if (fragment.childNodes.length === 0) {
+                section.remove();
+                return;
+            }
+
+            // Both media types present: add the All / Movies / Series control now.
+            if (hasBoth && JE.discoveryFilter?.createFilterControl) {
+                const header = section.querySelector('.jellyseerr-discovery-header');
+                const title = header?.querySelector('.sectionTitle');
+                if (header && title) title.after(JE.discoveryFilter.createFilterControl(key, handleFilterChange));
+            }
 
             yieldStats.fetched += displayResults.length;
             yieldStats.rendered += fragment.childNodes.length;
@@ -925,17 +976,12 @@
                 displayResults.forEach(item => itemDeduplicator.add(item));
             }
 
-            const parentContainer = listPage.closest('.verticalSection') || listPage.parentElement;
-            if (parentContainer?.parentElement) {
-                parentContainer.parentElement.appendChild(section);
-
-                if (hasMorePages) {
-                    setupInfiniteScroll();
-                }
-
-                // Mark as successfully processed AFTER successful render
-                processedPages.add(pageKey);
+            if (hasMorePages) {
+                setupInfiniteScroll();
             }
+
+            // Mark as successfully processed AFTER successful render
+            processedPages.add(pageKey);
 
             // End metrics
             if (JE.requestManager?.metrics?.enabled) {

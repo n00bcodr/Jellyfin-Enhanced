@@ -460,7 +460,7 @@
                         resetSearchPagination();
                         clearInjectedSearchResults();
                         fetchAndRenderResults(latestQuery);
-                    }, 300);
+                    }, 200);
                 } else {
                     clearTimeout(debounceTimeout);
                     lastProcessedQuery = null;

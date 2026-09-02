@@ -483,10 +483,12 @@
                                           document.querySelector('.itemDetailPage:not(.hide)');
                     return detailContent;
                 }
-                // List page
+                // List page: the container existing is enough — waiting for Jellyfin
+                // to finish filling it (a slow library query) would hold the Seerr
+                // section back; renderDualFeed re-attaches if the page re-renders.
                 const listContainer = document.querySelector('.page:not(.hide) .itemsContainer') ||
                                       document.querySelector('.libraryPage:not(.hide) .itemsContainer');
-                return listContainer?.children.length > 0 ? listContainer : null;
+                return listContainer || null;
             };
 
             const immediate = checkContainer();

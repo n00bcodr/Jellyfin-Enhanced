@@ -173,10 +173,8 @@
     yieldStats.rendered = 0;
     categoryDeduplicator = JE.seamlessScroll?.createDeduplicator?.() || null;
     try {
-      // Warm pages 2-3 while page 1 is in flight.
-      if (JE.pluginConfig?.JellyseerrSeamlessScrollPrefetch !== false) {
-        for (let p = 2; p <= 3; p++) fetchWithManagedRequest(`${category.path}?page=${p}`).catch(() => {});
-      }
+      // Page 1 alone first: extra requests in flight at Seerr slow it down, and
+      // the engine's first fill fetches pages 2-3 the moment page 1 renders.
       const response = await fetchWithManagedRequest(`${category.path}?page=1`);
       if (isStale?.()) return;
       let results = sortResults(response?.results || [], JE.discoveryFilter.getSortMode(SORT_MODULE));
