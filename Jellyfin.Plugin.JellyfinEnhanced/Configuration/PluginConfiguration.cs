@@ -173,6 +173,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrUserIdCacheTtlMinutes = 30;
             JellyseerrRespectParentalRatings = true;
             JellyseerrRespectParentalTags = true;
+            JellyseerrSeamlessScrollPrefetch = true;
+            JellyseerrLazyPosters = true;
             JellyseerrParentalRatingCacheTtlMinutes = 1440;
             TriggerSeerrScanOnItemAdded = false;
             SeerrScanDebounceSeconds = 60;
@@ -632,6 +634,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // matching them against a title's TMDB keywords (and, for blocked tags,
         // its genres). Needs one Seerr detail lookup per title (cached).
         public bool JellyseerrRespectParentalTags { get; set; }
+
+        // Seamless scroll: keep several pages of Seerr results rendered ahead of
+        // the viewer and prefetch the pages after that, so search rows and
+        // "More from" sections never show a loading gap. Off = load one batch
+        // at a time only when needed (fewer Seerr/TMDB requests).
+        public bool JellyseerrSeamlessScrollPrefetch { get; set; }
+
+        // Load Seerr card posters only as they approach the viewport instead of
+        // all at once when a page of cards is rendered.
+        public bool JellyseerrLazyPosters { get; set; }
 
         // How long a resolved TMDB certification -> parental score is cached
         // (user-neutral). Certifications almost never change, so default 24h.

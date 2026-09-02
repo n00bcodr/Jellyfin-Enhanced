@@ -247,7 +247,7 @@
          * @param {AbortSignal} [signal]
          */
         function prefetchAhead(filterMode, pagesPerFeed, signal) {
-            if (!currentFeeds) return;
+            if (!currentFeeds || JE.pluginConfig?.JellyseerrSeamlessScrollPrefetch === false) return;
             const count = Math.max(1, Math.min(MAX_PREFETCH_PER_FEED, pagesPerFeed));
             if (currentFeeds.tvId && (filterMode === 'mixed' || filterMode === 'tv') && tvHasMorePages) {
                 pageRange(tvCurrentPage + 1, count, tvTotalPages)

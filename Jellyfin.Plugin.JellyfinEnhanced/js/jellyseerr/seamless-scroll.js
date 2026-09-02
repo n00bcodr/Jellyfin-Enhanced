@@ -74,7 +74,14 @@
         return Math.max(0, Math.round(clampedDelay + jitter));
     }
 
+    // With read-ahead disabled the buffer shrinks to one viewport, i.e. load the
+    // next batch only once the viewer is about a screen from the end.
+    function readAheadEnabled() {
+        return JE.pluginConfig?.JellyseerrSeamlessScrollPrefetch !== false;
+    }
+
     function verticalBufferPx() {
+        if (!readAheadEnabled()) return window.innerHeight;
         return Math.max(window.innerHeight * CONFIG.bufferViewports, CONFIG.minBufferPx);
     }
 
@@ -320,7 +327,7 @@
                 const scrollerRect = scroller.getBoundingClientRect();
                 const visibleRight = Math.min(scrollerRect.right, window.innerWidth);
                 const span = Math.max(scrollerRect.width || window.innerWidth, 400);
-                const widths = engaged ? CONFIG.bufferRowWidths : CONFIG.idleRowWidths;
+                const widths = !readAheadEnabled() ? 1 : (engaged ? CONFIG.bufferRowWidths : CONFIG.idleRowWidths);
                 return { ahead: endRight - visibleRight, target: span * widths, span, inRange };
             }
             const rect = sentinel.getBoundingClientRect();

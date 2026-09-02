@@ -138,7 +138,7 @@
          * @param {AbortSignal|null} signal
          */
         function prefetchSearchPages(query, count, signal) {
-            if (!searchHasMore || signal?.aborted) return;
+            if (!searchHasMore || signal?.aborted || JE.pluginConfig?.JellyseerrSeamlessScrollPrefetch === false) return;
             const last = Math.min(searchTotalPages, searchCurrentPage + Math.max(1, count));
             for (let p = searchCurrentPage + 1; p <= last; p++) {
                 search(query, p, { signal }).catch(() => {});

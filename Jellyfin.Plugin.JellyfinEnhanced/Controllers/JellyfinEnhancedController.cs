@@ -3189,6 +3189,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrShowDetailPageLinkAsText,
                 config.JellyseerrExcludeLibraryItems,
                 config.JellyseerrExcludeBlocklistedItems,
+                config.JellyseerrSeamlessScrollPrefetch,
+                config.JellyseerrLazyPosters,
                 config.JellyseerrDisableCache,
                 JellyseerrBaseUrl = jellyseerrBaseUrl,
                 JellyseerrUrlMappings = jellyseerrUrlMappings,

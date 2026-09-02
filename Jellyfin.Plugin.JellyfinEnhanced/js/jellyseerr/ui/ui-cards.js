@@ -64,7 +64,7 @@
 
     function observePoster(el, url) {
         el.dataset[POSTER_DATA_KEY] = url;
-        const observer = getPosterObserver();
+        const observer = JE.pluginConfig?.JellyseerrLazyPosters === false ? null : getPosterObserver();
         if (!observer) {
             // No IntersectionObserver support: behave exactly as before.
             applyPoster(el);

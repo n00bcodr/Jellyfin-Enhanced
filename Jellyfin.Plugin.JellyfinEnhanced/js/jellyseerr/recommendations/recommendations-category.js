@@ -95,7 +95,7 @@
 
   function prefetchCategoryPages(category, count) {
     const st = state.categoryState;
-    if (!st.hasMore) return;
+    if (!st.hasMore || JE.pluginConfig?.JellyseerrSeamlessScrollPrefetch === false) return;
     const last = st.totalPages ? Math.min(st.totalPages, st.page + count) : st.page + count;
     for (let p = st.page + 1; p <= last; p++) {
       fetchWithManagedRequest(`${category.path}?page=${p}`).catch(() => {});
@@ -174,7 +174,9 @@
     categoryDeduplicator = JE.seamlessScroll?.createDeduplicator?.() || null;
     try {
       // Warm pages 2-3 while page 1 is in flight.
-      for (let p = 2; p <= 3; p++) fetchWithManagedRequest(`${category.path}?page=${p}`).catch(() => {});
+      if (JE.pluginConfig?.JellyseerrSeamlessScrollPrefetch !== false) {
+        for (let p = 2; p <= 3; p++) fetchWithManagedRequest(`${category.path}?page=${p}`).catch(() => {});
+      }
       const response = await fetchWithManagedRequest(`${category.path}?page=1`);
       if (isStale?.()) return;
       let results = sortResults(response?.results || [], JE.discoveryFilter.getSortMode(SORT_MODULE));

@@ -97,6 +97,13 @@ Browse and discover content by various criteria.
 1. Check respective discovery options in settings
 2. Access via custom navigation or direct URLs
 
+### Seamless Scrolling
+
+Seerr search rows, the "More from" sections and the Recommendations page keep a few screens of results rendered ahead of you, fetch several pages at once (more when filters hide most of a page) and prefetch the pages after that, so scrolling never shows a loading gap while still showing every result. After 40 consecutive pages that render nothing (everything hidden or already in your library) loading pauses on a **Keep looking** button rather than hammering Seerr. Card posters load as they approach the screen.
+
+- **Seamless scrolling: preload results ahead** (default on): turn off to load one batch at a time only when needed.
+- **Load Seerr posters as they come into view** (default on): turn off to load every poster immediately.
+
 ### Parental Ratings
 
 Seerr results respect each user's Jellyfin parental controls (**Max Parental Rating** and **Block unrated items** in the user's policy). For a restricted user, titles above the limit are removed from search, discovery ("More from" sections and the Recommendations page), similar/recommended rows, person filmographies, collections, the requests list and the watchlist; opening such a title's details or requesting it is refused.
