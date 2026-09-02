@@ -41,6 +41,9 @@
         let searchDeduplicator = null;
         /** @type {AbortSignal|null} */
         let searchSignal = null;
+        // True from the moment a navigation starts until the delayed teardown
+        // check has run; no search load may start or re-arm in that window.
+        let searchSuspended = false;
         // Items fetched vs cards rendered for the current query (after hidden
         // content + dedup filtering); sizes the parallel page batches.
         const searchYield = { fetched: 0, rendered: 0 };
@@ -233,6 +236,7 @@
             // search page is still visible with this very query (e.g. jellyfin-web
             // rewrote the URL's query param), re-arm a fresh signal for it;
             // otherwise the row is stale and must stop, not carry on unabortable.
+            if (searchSuspended) return;
             if (searchSignal?.aborted) {
                 const visibleInput = document.querySelector('#searchPage:not(.hide) #searchTextInput');
                 if (!visibleInput || visibleInput.value !== query) {
@@ -406,6 +410,7 @@
                 searchHasMore = searchCurrentPage < searchTotalPages;
                 if (searchDeduplicator) searchDeduplicator.filter(results);
 
+                JE.jellyseerrUI?.releasePosters?.(itemsContainer);
                 while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
                 results.forEach(item => {
                     const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
@@ -530,13 +535,16 @@
             // miss the search page if no further DOM mutations occur after render.
             // Uses the shared je:navigate event (from helpers.js) which already
             // patches pushState/replaceState, plus popstate and hashchange.
+            const onNav = () => {
+                searchSuspended = true;
+                setTimeout(() => { searchSuspended = false; handleNavigate(); }, 200);
+            };
             if (JE.helpers?.onNavigate) {
-                JE.helpers.onNavigate(() => setTimeout(handleNavigate, 200));
+                JE.helpers.onNavigate(onNav);
             } else {
                 // Fallback if helpers.js hasn't loaded yet — may double-fire with
                 // onNavigate if helpers loads later, but tryAttachSearchListener is
                 // idempotent (guarded by dataset.jellyseerrListener) so this is safe.
-                const onNav = () => setTimeout(handleNavigate, 200);
                 window.addEventListener('popstate', onNav);
                 window.addEventListener('hashchange', onNav);
             }

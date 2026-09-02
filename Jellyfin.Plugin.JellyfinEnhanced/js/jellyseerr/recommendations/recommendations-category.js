@@ -106,7 +106,7 @@
   // library / hidden) is fine: the scroll engine simply calls again for the
   // pages after it, so heavily-owned categories never stall. The pages after
   // this batch are prefetched into the cache while it renders.
-  async function loadMoreCategoryItems(category, container, hint) {
+  async function loadMoreCategoryItems(category, container, hint, isStale) {
     const st = state.categoryState;
     st.isLoading = true;
     const firstPage = st.page + 1;
@@ -122,6 +122,9 @@
       for (let p = firstPage; p < firstPage + count; p++) pages.push(p);
 
       const responses = await Promise.all(pages.map(p => fetchWithManagedRequest(`${category.path}?page=${p}`)));
+      // Another category (or Back) took over while these pages were in flight:
+      // they are cached for later, but this page's DOM and state are not ours.
+      if (isStale?.() || state.categoryState !== st) return { pages: 0, rendered: 0 };
 
       const fragment = document.createDocumentFragment();
       for (let i = 0; i < responses.length; i++) {
@@ -157,7 +160,8 @@
     }
   }
 
-  async function loadInitialCategoryPage(category, container) {
+  async function loadInitialCategoryPage(category, container, isStale) {
+    JE.jellyseerrUI?.releasePosters?.(container);
     container.textContent = '';
     state.categoryState.page = 1;
     state.categoryState.hasMore = true;
@@ -168,6 +172,7 @@
       // Warm pages 2-3 while page 1 is in flight.
       for (let p = 2; p <= 3; p++) fetchWithManagedRequest(`${category.path}?page=${p}`).catch(() => {});
       const response = await fetchWithManagedRequest(`${category.path}?page=1`);
+      if (isStale?.()) return;
       const results = sortResults(response?.results || [], JE.discoveryFilter.getSortMode(SORT_MODULE));
       const fragment = JE.discoveryFilter.createCardsFragment(results, { cardClass: 'portraitCard' });
       yieldStats.fetched += results.length;
@@ -220,12 +225,12 @@
     sortContainer.textContent = '';
     sortContainer.appendChild(JE.discoveryFilter.createSortControl(SORT_MODULE, () => {
       JE.discoveryFilter.cleanupScrollObserver(state.categoryState);
-      loadInitialCategoryPage(category, container).then(() => {
+      loadInitialCategoryPage(category, container, stale).then(() => {
         if (stale()) return;
         JE.discoveryFilter.setupInfiniteScroll(
           state.categoryState,
           '#je-recommendations-category-page .content-primary',
-          (hint) => loadMoreCategoryItems(category, container, hint),
+          (hint) => loadMoreCategoryItems(category, container, hint, stale),
           () => state.categoryState.hasMore,
           () => state.categoryState.isLoading
         );
@@ -253,13 +258,13 @@
     page.dispatchEvent(new CustomEvent("viewshow", { bubbles: true, detail: { type: "custom", isRestored: false, options: {} } }));
     page.dispatchEvent(new CustomEvent("pageshow", { bubbles: true, detail: {} }));
 
-    await loadInitialCategoryPage(category, container);
+    await loadInitialCategoryPage(category, container, stale);
     if (stale()) return;
 
     JE.discoveryFilter.setupInfiniteScroll(
       state.categoryState,
       '#je-recommendations-category-page .content-primary',
-      (hint) => loadMoreCategoryItems(category, container, hint),
+      (hint) => loadMoreCategoryItems(category, container, hint, stale),
       () => state.categoryState.hasMore,
       () => state.categoryState.isLoading
     );
@@ -269,9 +274,9 @@
     if (!state.categoryPageVisible) return;
 
     JE.discoveryFilter.cleanupScrollObserver(state.categoryState);
-    JE.jellyseerrUI?.releasePosters?.();
 
     const page = document.getElementById("je-recommendations-category-page");
+    JE.jellyseerrUI?.releasePosters?.(page || undefined);
     if (page) {
       page.classList.add("hide");
       page.dispatchEvent(new CustomEvent("viewhide", { bubbles: true, detail: { type: "custom" } }));

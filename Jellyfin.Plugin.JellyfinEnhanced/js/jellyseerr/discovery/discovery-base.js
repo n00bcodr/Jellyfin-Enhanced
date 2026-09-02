@@ -410,6 +410,7 @@
             if (!itemsContainer) return;
 
             if (reset) {
+                JE.jellyseerrUI?.releasePosters?.(itemsContainer);
                 while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
                 renderedCount = 0;
             }
@@ -637,6 +638,7 @@
             if (!itemsContainer || !currentFeeds || (!currentFeeds.tvId && !currentFeeds.movieId)) return;
 
             // Clear existing cards and scroll observer
+            JE.jellyseerrUI?.releasePosters?.(itemsContainer);
             while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
             cleanupScrollObserver();
 
@@ -652,7 +654,10 @@
             yieldStats.rendered = 0;
             lastBatchPages = 0;
             lastBatchRendered = -1;
-            isLoading = false;
+            // This re-fetch owns the loading flag until its page 1 lands, so a
+            // filter change in the meantime can't start page 2 ahead of it.
+            const generation = loadGeneration;
+            isLoading = true;
             cachedTvResults = [];
             cachedMovieResults = [];
             if (itemDeduplicator) itemDeduplicator.clear();
@@ -661,9 +666,8 @@
             if (currentAbortController) currentAbortController.abort();
             currentAbortController = new AbortController();
             const signal = currentAbortController.signal;
-            const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
             // Warm pages 2-3 while page 1 is in flight.
-            prefetchAhead(filterMode, 2, signal);
+            prefetchAhead(JE.discoveryFilter?.getFilterMode(key) || 'mixed', 2, signal);
 
             // Build fetch promises for available media types
             const fetchPromises = [];
@@ -681,6 +685,10 @@
             try {
                 const results = await Promise.all(fetchPromises);
                 if (signal.aborted) return;
+                // Superseded (another sort change, navigation): nothing here is ours.
+                if (generation !== loadGeneration) return;
+                // Read the filter at commit time — it may have changed meanwhile.
+                const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
 
                 results.forEach(r => {
                     if (r.type === 'tv') {
@@ -719,6 +727,14 @@
             } catch (error) {
                 if (error.name !== 'AbortError') {
                     console.error(`${logPrefix} Sort change error:`, error);
+                }
+            } finally {
+                if (generation === loadGeneration) {
+                    isLoading = false;
+                } else if (isLoading) {
+                    // A newer generation is waiting on us; release and wake it.
+                    isLoading = false;
+                    if (scrollState.fill) scrollState.fill();
                 }
             }
         }
@@ -1079,7 +1095,8 @@
                 currentAbortController.abort();
                 currentAbortController = null;
             }
-            JE.jellyseerrUI?.releasePosters?.();
+            const section = document.querySelector(sectionSelector);
+            JE.jellyseerrUI?.releasePosters?.(section || undefined);
             if (spec.mode !== 'one-shot') {
                 cleanupScrollObserver();
             }

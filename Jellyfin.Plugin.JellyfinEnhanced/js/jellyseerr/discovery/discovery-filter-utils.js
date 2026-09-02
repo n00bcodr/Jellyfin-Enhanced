@@ -376,7 +376,8 @@
                 JE.requestManager.withConcurrencyLimit(() => {
                     const hit = JE.requestManager.getCached(cacheKey);
                     return hit ? Promise.resolve(hit) : fetchFn();
-                })
+                }),
+                signal
             );
         }
 
