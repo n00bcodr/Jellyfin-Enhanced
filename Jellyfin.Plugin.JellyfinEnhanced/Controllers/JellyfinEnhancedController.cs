@@ -9039,11 +9039,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         string? username = requestedBy?["username"]?.Value<string>();
                         string? avatar = requestedBy?["avatar"]?.Value<string>();
 
-                        // Proxy avatar through our backend to avoid CORS/mixed content issues
+                        // Proxy avatar through our backend to avoid CORS/mixed content issues.
+                        // Jellyseerr returns two different shapes in `user.avatar`:
+                        //   - a relative path for media-server users, e.g. "/avatarproxy/<jellyfinUserId>"
+                        //   - an absolute Gravatar URL for locally-created Jellyseerr users,
+                        //     e.g. "https://gravatar.com/avatar/<md5>?default=mm&size=200"
+                        // ProxyAvatar only accepts relative Jellyseerr paths (it rejects anything
+                        // containing "://" as an SSRF guard), so wrapping an absolute URL always
+                        // returns 400 and the requester ends up with no avatar. An absolute HTTPS
+                        // URL is already safe for the browser to load directly - <img> needs no
+                        // CORS, and HTTPS rules out mixed content - so pass it through untouched.
                         string? avatarUrl = null;
                         if (!string.IsNullOrEmpty(avatar))
                         {
-                            avatarUrl = $"/JellyfinEnhanced/proxy/avatar?path={Uri.EscapeDataString(avatar)}";
+                            avatarUrl = avatar.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                                ? avatar
+                                : $"/JellyfinEnhanced/proxy/avatar?path={Uri.EscapeDataString(avatar)}";
                         }
 
                         // Handle createdAt - could be string or DateTime
