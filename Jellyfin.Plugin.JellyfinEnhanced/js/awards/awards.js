@@ -18,6 +18,27 @@
             const style = document.createElement('style');
             style.id = styleId;
             style.textContent = `
+                @font-face {
+                    font-family: 'Material Symbols Rounded';
+                    font-style: normal;
+                    font-weight: 100 700;
+                    font-display: block;
+                    src: url(${JE.cdn.url('gfont', 's/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2')}) format('woff2');
+                }
+                .je-awards-label .material-symbols-rounded {
+                    font-family: 'Material Symbols Rounded';
+                    font-weight: normal;
+                    font-style: normal;
+                    line-height: 1;
+                    letter-spacing: normal;
+                    text-transform: none;
+                    display: inline-block;
+                    white-space: nowrap;
+                    word-wrap: normal;
+                    direction: ltr;
+                    -webkit-font-feature-settings: 'liga';
+                    font-feature-settings: 'liga';
+                }
                 .je-awards-section {
                     /* Some themes (e.g. ElegantFin) style .detailSection as a
                        grid, which blows this <details> out to a huge width —
