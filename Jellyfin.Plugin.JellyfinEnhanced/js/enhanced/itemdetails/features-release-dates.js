@@ -1,7 +1,4 @@
-/**
- * @file Details-page release/air-date chip resolved from TMDB via the plugin proxy.
- * Split from features.js (code motion; bodies verbatim).
- */
+/** @file Details-page release/air-date chips resolved from TMDB via the plugin proxy. */
 (function(JE) {
     'use strict';
 
@@ -9,17 +6,10 @@
     const internal = JE.internals.features = JE.internals.features || {};
 
     const RELEASEDATE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
-    const releaseDateCache = new Map(); // Map<itemId, { infos: Array<{date, icon, titleKey}>, ts: number }>
+    const releaseDateCache = new Map(); // Map<itemId, { infos, ts }>
 
-    /**
-     * Fetches a path from TMDB via the plugin's proxy endpoint.
-     * @param {string} path TMDB API path, e.g. `/movie/{id}/release_dates`.
-     * @returns {Promise<object|null>}
-     */
     function tmdbGet(path) {
         const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb${path}`);
-        // Jellyfin 12 authenticates from the Authorization header; the legacy
-        // X-Emby-Token is kept for 10.11 back-compat.
         return fetch(url, { headers: { "Authorization": `MediaBrowser Token="${ApiClient.accessToken()}"`, "X-Emby-Token": ApiClient.accessToken() } })
             .then(r => r.ok ? r.json() : Promise.reject(`API Error: ${r.status}`))
             .catch(error => {
@@ -38,15 +28,13 @@
         return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
     }
 
-    // TMDB /movie/{id}/release_dates `type` values, bucketed into the three
-    // distinct release moments we show, in chronological display order.
-    // Theatrical premiere(1)/limited(2)/wide(3) collapse into one "cinema"
-    // bucket (earliest of the three) so a movie doesn't show three near-
-    // identical theatrical chips; digital(4) and physical(5) stay separate.
+    // TMDB release_dates `type` values bucketed into the three release
+    // moments we show; theatrical premiere/limited/wide (1-3) collapse into
+    // one "cinema" bucket, digital(4) and physical(5) stay separate.
     const MOVIE_RELEASE_BUCKETS = [
-        { types: [1, 2, 3], icon: 'local_movies', titleKey: 'calendar_cinema_release' },
-        { types: [4], icon: 'ondemand_video', titleKey: 'calendar_digital_release' },
-        { types: [5], icon: 'album', titleKey: 'calendar_physical_release' },
+        { types: [1, 2, 3], icon: 'local_movies', titleKey: 'calendar_cinema_release', type: 'cinema' },
+        { types: [4], icon: 'ondemand_video', titleKey: 'calendar_digital_release', type: 'digital' },
+        { types: [5], icon: 'album', titleKey: 'calendar_physical_release', type: 'physical' },
     ];
 
     /** Returns the earliest `release_date` among entries of the given bucket's types, or null. */
@@ -56,16 +44,8 @@
         return matches.reduce((a, b) => (a.release_date < b.release_date ? a : b));
     }
 
-    /**
-     * Resolves every known release date for a movie (cinema/digital/physical,
-     * whichever TMDB has). Each bucket is resolved independently, cascading
-     * through the configured region, then US, then any region at all that
-     * has that type. This matters because most countries only ever record a
-     * single release type (often just theatrical) — locking the whole movie
-     * to one region's entry would silently drop digital/physical dates that
-     * TMDB has recorded under a different country.
-     * @returns {Promise<Array<{date: string, icon: string, titleKey: string}>>}
-     */
+    // Each bucket cascades through the configured region, then US, then any
+    // region at all, since most countries only record one release type.
     async function getMovieReleaseInfo(tmdbId) {
         const data = await tmdbGet(`/movie/${tmdbId}/release_dates`);
         const results = data?.results;
@@ -88,19 +68,17 @@
                     if (earliest) break;
                 }
             }
-            if (earliest) infos.push({ date: earliest.release_date, icon: bucket.icon, titleKey: bucket.titleKey });
+            if (earliest) infos.push({ date: earliest.release_date, icon: bucket.icon, titleKey: bucket.titleKey, type: bucket.type });
         }
         return infos;
     }
 
-    /** Resolves the next (or, if none, most recent) episode air date for a series. */
     async function getSeriesReleaseInfo(tmdbId) {
         const data = await tmdbGet(`/tv/${tmdbId}`);
         const date = data?.next_episode_to_air?.air_date || data?.last_episode_to_air?.air_date;
-        return date ? [{ date, icon: 'tv_guide', titleKey: 'calendar_episode' }] : [];
+        return date ? [{ date, icon: 'tv_guide', titleKey: 'calendar_episode', type: 'episode' }] : [];
     }
 
-    /** Resolves the next (or, if none, most recent) episode air date within a season. */
     async function getSeasonReleaseInfo(tmdbId, seasonNumber) {
         const data = await tmdbGet(`/tv/${tmdbId}/season/${seasonNumber}`);
         const episodes = data?.episodes;
@@ -112,22 +90,14 @@
         const today = todayIso();
         const upcoming = withDates.find(e => e.air_date >= today);
         const date = (upcoming || withDates[withDates.length - 1]).air_date;
-        return [{ date, icon: 'tv_guide', titleKey: 'calendar_episode' }];
+        return [{ date, icon: 'tv_guide', titleKey: 'calendar_episode', type: 'episode' }];
     }
 
-    /** Resolves a single episode's air date. */
     async function getEpisodeReleaseInfo(tmdbId, seasonNumber, episodeNumber) {
         const data = await tmdbGet(`/tv/${tmdbId}/season/${seasonNumber}/episode/${episodeNumber}`);
-        return data?.air_date ? [{ date: data.air_date, icon: 'tv_guide', titleKey: 'calendar_episode' }] : [];
+        return data?.air_date ? [{ date: data.air_date, icon: 'tv_guide', titleKey: 'calendar_episode', type: 'episode' }] : [];
     }
 
-    /**
-     * Resolves release/air date info for an item, branching on Jellyfin item
-     * type. Season/Episode look up the series' TMDB ID (preferring
-     * SeriesProviderIds, falling back to fetching the series item) the same
-     * way reviews.js does for TMDB reviews.
-     * @returns {Promise<Array<{date: string, icon: string, titleKey: string}>>}
-     */
     async function resolveReleaseInfo(item, userId) {
         const mediaType = item?.Type;
 
@@ -162,35 +132,22 @@
         return [];
     }
 
-    /**
-     * Shows a release/air date chip (icon + date per known release type) on
-     * an item's details page. Unlike file size / audio language, there's no
-     * "unavailable" dash state: most back-catalog items genuinely have no
-     * digital/physical release date recorded on TMDB, so the chip is skipped
-     * entirely rather than always rendering a placeholder.
-     *
-     * A placeholder element (with dataset.itemId set) is inserted
-     * synchronously, before the async TMDB fetch starts. This is required for
-     * the dedup check above to work: the shared MutationObserver re-invokes
-     * handleItemDetails() several times in quick succession (debounced, but
-     * still well within the requestIdleCallback window of a slow TMDB
-     * round-trip), and without an early placeholder each of those calls would
-     * independently fetch and append its own chip for the same item.
-     * @param {string} itemId The ID of the item.
-     * @param {HTMLElement} container The DOM element to append the chip to.
-     */
+    // No dates found is a valid outcome (most back-catalog items lack a
+    // digital/physical date on TMDB), so no chip is rendered rather than a
+    // placeholder dash. The placeholder below is inserted synchronously so
+    // repeated calls from the debounced MutationObserver dedupe against it
+    // instead of each firing their own TMDB fetch.
     async function displayReleaseDate(itemId, container) {
-        const existing = container.querySelector('.mediaInfoItem-releaseDate');
-        if (existing) {
-            // Already rendered (or in flight) for this itemId — nothing to do.
-            if (existing.dataset.itemId === itemId) return;
-            existing.remove();
+        const existing = container.querySelectorAll('.mediaInfoItem-releaseDate');
+        if (existing.length > 0) {
+            if (existing[0].dataset.itemId === itemId) return;
+            existing.forEach(el => el.remove());
         }
 
         const now = Date.now();
         const cached = releaseDateCache.get(itemId);
         if (cached && (now - cached.ts) < RELEASEDATE_CACHE_TTL) {
-            if (cached.infos.length > 0) renderReleaseDateChip(container, itemId, cached.infos);
+            if (cached.infos.length > 0) renderReleaseDateChips(container, itemId, cached.infos);
             return;
         }
 
@@ -208,10 +165,9 @@
                     : await ApiClient.getItem(userId, itemId);
                 const infos = await resolveReleaseInfo(item, userId);
                 releaseDateCache.set(itemId, { infos, ts: now });
-                // The user may have navigated away while this was in flight.
-                if (!placeholder.isConnected) return;
+                if (!placeholder.isConnected) return; // navigated away while fetching
                 if (infos.length > 0) {
-                    fillReleaseDateChip(placeholder, infos);
+                    fillReleaseDateChips(placeholder, infos);
                 } else {
                     placeholder.remove();
                 }
@@ -260,27 +216,46 @@
         `);
     }
 
-    /** Fills an existing release-date placeholder element with one icon+date pair per known release type. */
-    function fillReleaseDateChip(chip, infos) {
+    function fillReleaseDateChip(chip, info) {
         ensureReleaseDateIconFont();
-        chip.title = JE.t('release_date_tooltip');
-        chip.style.display = 'flex';
+        chip.classList.add(`je-release-date-${info.type}`);
+        chip.title = JE.t(info.titleKey);
+        chip.style.display = 'inline-flex';
         chip.style.alignItems = 'center';
-        chip.style.gap = '0.6em';
+        chip.style.gap = '0.3em';
+        chip.style.whiteSpace = 'nowrap';
         chip.style.margin = '0 1em 0 0 !important';
-        chip.innerHTML = infos.map(info => `<span style="display: inline-flex; align-items: center;"><span class="je-release-date-icon" style="font-size: inherit; margin-right: 0.3em;" title="${JE.t(info.titleKey)}">${info.icon}</span>${formatReleaseDate(info.date)}</span>`).join('');
+        chip.innerHTML = `<span class="je-release-date-icon" style="font-size: inherit;">${info.icon}</span><span>${formatReleaseDate(info.date)}</span>`;
     }
 
-    /** Creates and appends a fresh release-date chip (cache-hit path, where there's no placeholder to fill). */
-    function renderReleaseDateChip(container, itemId, infos) {
-        const chip = document.createElement('div');
-        chip.className = 'mediaInfoItem mediaInfoItem-releaseDate';
-        chip.dataset.itemId = itemId;
-        fillReleaseDateChip(chip, infos);
-        container.appendChild(chip);
+    // Each date is its own flex sibling (like every other stat chip in this
+    // row) rather than one chip bundling all of them, so the row's own
+    // flex-wrap breaks lines between whole chips instead of wrapping inside
+    // a single nested chip.
+    function fillReleaseDateChips(placeholder, infos) {
+        fillReleaseDateChip(placeholder, infos[0]);
+        let anchor = placeholder;
+        for (let i = 1; i < infos.length; i++) {
+            const chip = document.createElement('div');
+            chip.className = 'mediaInfoItem mediaInfoItem-releaseDate';
+            chip.dataset.itemId = placeholder.dataset.itemId;
+            fillReleaseDateChip(chip, infos[i]);
+            anchor.after(chip);
+            anchor = chip;
+        }
     }
 
-    // Shared with the details-page dispatcher (features-details-page.js).
+    /** Cache-hit path, where there's no placeholder to fill. */
+    function renderReleaseDateChips(container, itemId, infos) {
+        infos.forEach(info => {
+            const chip = document.createElement('div');
+            chip.className = 'mediaInfoItem mediaInfoItem-releaseDate';
+            chip.dataset.itemId = itemId;
+            fillReleaseDateChip(chip, info);
+            container.appendChild(chip);
+        });
+    }
+
     internal.displayReleaseDate = displayReleaseDate;
 
 })(window.JellyfinEnhanced);
