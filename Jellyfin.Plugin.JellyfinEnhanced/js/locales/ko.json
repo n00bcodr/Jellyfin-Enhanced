@@ -672,5 +672,7 @@
     "jellyseerr_btn_view_status": "View Status",
     "jellyseerr_report_issue_submitting": "Submitting…",
     "jellyseerr_season_status_processing": "Processing",
-    "jellyseerr_toast_collection_requested": "Requested"
+    "jellyseerr_toast_collection_requested": "Requested",
+    "calendar_anime": "Anime",
+    "calendar_open_in_shoko": "Open in Shoko"
 }
