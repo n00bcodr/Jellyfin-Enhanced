@@ -52,9 +52,42 @@
         Hausa: 'ng', hau: 'ng', ha: 'ng', Yoruba: 'ng', yor: 'ng', yo: 'ng', Igbo: 'ng', ibo: 'ng', ig: 'ng',
         Brazilian: 'br', bra: 'br',
         Catalan: 'es-ct', cat: 'es-ct', ca: 'es-ct', Galician: 'es-ga', glg: 'es-ga', gl: 'es-ga',
-        Basque: 'es-pv', eus: 'es-pv', baq: 'es-pv', eu: 'es-pv'
+        Basque: 'es-pv', eus: 'es-pv', baq: 'es-pv', eu: 'es-pv',
+        // ISO 639-2 `zxx` = "no linguistic content": silent films, and films
+        // with a score/sound design but no dialogue. Not a country, so it
+        // resolves to a synthetic token rendered from `specialFlags` below
+        // rather than to a flag-icons code.
+        zxx: 'zxx', 'No linguistic content': 'zxx', 'Not applicable': 'zxx'
     };
 
+    /**
+     * Flag tokens that are NOT flag-icons codes and therefore cannot be built
+     * into a CDN URL. Values are self-contained data URIs, so they cost no
+     * request and cannot 404. Keep the artwork 4:3 to match the flag set —
+     * the overlay sizes by width and lets height follow.
+     */
+    const specialFlags = {
+        // Crossed-out speech bubble: "no dialogue". Deliberately not a flag,
+        // because no country is being claimed.
+        zxx: 'data:image/svg+xml,' + encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480">' +
+            '<rect width="640" height="480" fill="#3d4552"/>' +
+            '<path d="M150 130H490A40 40 0 0 1 530 170V300A40 40 0 0 1 490 340H300L210 420V340H150A40 40 0 0 1 110 300V170A40 40 0 0 1 150 130Z" fill="#fff"/>' +
+            '<path d="M140 380L500 100" stroke="#e5484d" stroke-width="52" stroke-linecap="round"/>' +
+            '</svg>'
+        )
+    };
+
+    /**
+     * Turn a flag token from `resolveFlag` into an `img.src`. Real flag-icons
+     * codes go through the plugin's local CDN route as before; synthetic
+     * tokens (`zxx`) render from the inline table above.
+     * @param {string} flagCode
+     * @returns {string}
+     */
+    function flagSrc(flagCode) {
+        return specialFlags[flagCode] || JE.cdn.flagSvg(flagCode);
+    }
     /**
      * Non-standard codes seen in real media that already IMPLY a region.
      * `pob`/`pb` are the de-facto Brazilian Portuguese codes used by
@@ -173,6 +206,9 @@
         const parsed = parseLanguageTag(code);
         if (parsed) {
             const baseFlag = baseLanguageFlags[parsed.base] || null;
+            // A synthetic token is not a country and cannot be refined by a
+            // region or script: `zxx-US` still means "no dialogue", not US.
+            if (baseFlag && specialFlags[baseFlag]) return baseFlag;
             // A region only refines a language we know (pt-BR). For an
             // unmapped base ('und-419', 'eo-FR') the region alone proves
             // nothing about the audio language — stay flagless, exactly as
@@ -210,9 +246,11 @@
     JE.core.mediaLanguage = {
         parseLanguageTag,
         resolveFlag,
-        baseLanguageFlags
+        flagSrc,
+        baseLanguageFlags,
+        specialFlags
     };
 
     console.log('🪼 Jellyfin Enhanced: Media language core initialized');
-
+ 
 })(window.JellyfinEnhanced);
