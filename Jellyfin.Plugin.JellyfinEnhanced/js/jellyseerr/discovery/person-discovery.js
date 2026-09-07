@@ -152,7 +152,9 @@
         } catch (error) {
             if (error.name === 'AbortError') throw error;
             console.error(`${logPrefix} Error fetching credits:`, error);
-            return { cast: [], crew: [] };
+            // In particular, parental_pending is not an empty filmography.
+            // Let the discovery base offer a retry once automatic retries end.
+            throw error;
         }
     }
 

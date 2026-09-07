@@ -351,6 +351,13 @@
             const cached = JE.requestManager.getCached(cacheKey);
             if (cached) return cached;
 
+            // Identity epoch at request start. Cache keys carry no user id and the
+            // cache is flushed on a user switch, so a response that lands after the
+            // switch must neither be cached nor handed back: it was fetched under
+            // the previous user's permissions (and their parental filter).
+            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+            const stillCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
+
             const fetchFn = async () => {
                 const response = await JE.requestManager.fetchWithRetry(url, {
                     method: 'GET',
@@ -365,12 +372,25 @@
                     signal
                 });
                 const data = await response.json();
+                if (!stillCurrent()) {
+                    throw new DOMException('User changed during request', 'AbortError');
+                }
                 JE.requestManager.setCache(cacheKey, data);
                 return data;
             };
 
-            return JE.requestManager.withConcurrencyLimit(() =>
-                JE.requestManager.deduplicatedFetch(cacheKey, fetchFn)
+            // Dedup outside the pool (only the unique fetch holds a slot) and
+            // re-check the cache after acquiring the slot, so a prefetch that
+            // finished while we queued is not fetched again.
+            return JE.requestManager.deduplicatedFetch(cacheKey, () =>
+                JE.requestManager.withConcurrencyLimit(() => {
+                    if (!stillCurrent()) {
+                        return Promise.reject(new DOMException('User changed during request', 'AbortError'));
+                    }
+                    const hit = JE.requestManager.getCached(cacheKey);
+                    return hit ? Promise.resolve(hit) : fetchFn();
+                }),
+                signal
             );
         }
 
@@ -458,8 +478,12 @@
      * @param {string} [options.type] - Type of page: 'list' or 'detail'
      * @returns {Promise<HTMLElement|null>}
      */
+    // Unique id per wait: body subscribers are keyed by id, and two discovery
+    // modules can wait on the same page at once (person + collection on a detail).
+    let containerDetectSeq = 0;
+
     function waitForPageReady(signal, options = {}) {
-        const { type = 'list' } = options;
+        const { type = 'list', getView = null, isStalePage = null } = options;
 
         return new Promise((resolve) => {
             if (signal?.aborted) {
@@ -467,7 +491,7 @@
                 return;
             }
 
-            const checkContainer = () => {
+            const checkContainer = (allowStale = false) => {
                 if (type === 'detail') {
                     // Jellyfin 12 dropped the .detailPageContent wrapper; fall back to
                     // .detailPageSecondaryContainer, then the page itself.
@@ -476,10 +500,27 @@
                                           document.querySelector('.itemDetailPage:not(.hide)');
                     return detailContent;
                 }
-                // List page
-                const listContainer = document.querySelector('.page:not(.hide) .itemsContainer') ||
-                                      document.querySelector('.libraryPage:not(.hide) .itemsContainer');
-                return listContainer?.children.length > 0 ? listContainer : null;
+                // List page. Prefer the view element the router just showed (it is
+                // the page for this navigation by definition). Otherwise take the
+                // visible list container — but during a transition the visible page
+                // is still the OLD one, so a page that already existed when the
+                // navigation started is stale until a new one appears. The container
+                // merely existing is enough: waiting for Jellyfin to fill it (a slow
+                // library query) would hold the Seerr section back.
+                const view = getView?.();
+                if (view) {
+                    const viewContainer = view.querySelector('.itemsContainer');
+                    if (viewContainer) return viewContainer;
+                }
+                const candidates = document.querySelectorAll('.page:not(.hide) .itemsContainer, .libraryPage:not(.hide) .itemsContainer');
+                let staleFallback = null;
+                for (const candidate of candidates) {
+                    if (!isStalePage || !isStalePage(candidate.closest('.page, .libraryPage'))) return candidate;
+                    // Same element reused for the new route (no new page appeared in
+                    // time): accept it once it holds items, as the old code did.
+                    if (allowStale && candidate.children.length > 0 && !staleFallback) staleFallback = candidate;
+                }
+                return staleFallback;
             };
 
             const immediate = checkContainer();
@@ -491,7 +532,7 @@
             let observerHandle = null;
             let timeoutId = null;
 
-            const cleanup = () => {
+            let cleanup = () => {
                 if (observerHandle) {
                     observerHandle.unsubscribe();
                     observerHandle = null;
@@ -509,17 +550,38 @@
                 }, { once: true });
             }
 
-            observerHandle = JE.helpers.onBodyMutation('jellyseerr-discovery-container-detect', () => {
-                const container = checkContainer();
+            let allowStale = false;
+            const recheck = () => {
+                const container = checkContainer(allowStale);
                 if (container) {
                     cleanup();
                     resolve(container);
                 }
-            });
+            };
+            observerHandle = JE.helpers.onBodyMutation(`jellyseerr-discovery-container-detect-${++containerDetectSeq}`, recheck);
+            // The router hides the old page by toggling a class, which the body
+            // observer does not report; a light poll catches that.
+            const pollId = setInterval(recheck, 100);
+            const stopPoll = () => clearInterval(pollId);
+            if (signal) signal.addEventListener('abort', stopPoll, { once: true });
+            // Bounded wait for the reused-element case: past this the visible page
+            // is accepted even if it looks stale, as long as it holds items. When NO
+            // page is visible at all — the router has hidden the old one and is still
+            // loading the new one, which a cold list query can hold for seconds —
+            // keep waiting instead of answering null: giving up here left the section
+            // off the page for good, because the render still in progress swallows
+            // the re-entry the router's later 'viewshow' would have triggered.
             timeoutId = setTimeout(() => {
-                cleanup();
-                resolve(checkContainer());
-            }, 3000);
+                allowStale = true;
+                recheck();
+                if (!timeoutId) return; // resolved
+                timeoutId = setTimeout(() => {
+                    cleanup();
+                    resolve(checkContainer(true));
+                }, 30000);
+            }, type === 'list' ? 1500 : 3000);
+            const originalCleanup = cleanup;
+            cleanup = () => { stopPoll(); originalCleanup(); };
         });
     }
 
@@ -535,9 +597,9 @@
      * @param {Function} hasMoreCheck - Function that returns whether more pages exist
      * @param {Function} isLoadingCheck - Function that returns whether currently loading
      */
-    function setupInfiniteScroll(state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck) {
+    function setupInfiniteScroll(state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck, options) {
         JE.seamlessScroll.setupInfiniteScroll(
-            state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck
+            state, sectionSelector, loadMoreFn, hasMoreCheck, isLoadingCheck, options
         );
     }
 

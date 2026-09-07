@@ -106,10 +106,55 @@
 
         // ---- Chassis state (all modes) -------------------------------------
         const processedPages = new Set();
+        // The page that was visible when the current navigation started, with
+        // the first item its list held: it stays the visible page for a moment
+        // (stale) until the router swaps pages or re-fills that same element for
+        // the new route. Plus the view element the router showed, when it did.
+        /** @type {Element|null} */
+        let visibleAtNavigation = null;
+        /** @type {string} */
+        let visibleContentAtNavigation = '';
+
+        /**
+         * Cheap signature of what a list page currently shows; React may reuse
+         * the same child nodes for a new route, so compare content, not identity.
+         * @param {Element|null} pageEl
+         */
+        function listSignature(pageEl) {
+            const container = pageEl?.querySelector('.itemsContainer');
+            if (!container) return '';
+            const first = container.firstElementChild;
+            return `${container.childElementCount}|${first?.getAttribute('data-id') || first?.getAttribute('data-index') || first?.textContent?.trim().slice(0, 40) || ''}`;
+        }
+        /** @type {HTMLElement|null} */
+        let shownView = null;
+        /** @type {string|null} */
+        let shownViewHash = null;
+
+        /**
+         * The router's 'viewshow' names the page it is showing (including a
+         * restored one on Back) — and on Back it fires BEFORE popstate, so it
+         * must be remembered with the hash it was shown for rather than reset
+         * by the navigation that follows.
+         * @param {Event} e
+         */
+        function rememberShownView(e) {
+            const target = /** @type {HTMLElement|null} */ (e.target instanceof HTMLElement ? e.target : null);
+            if (!target) return;
+            shownView = target;
+            shownViewHash = window.location.hash;
+        }
+
+        function currentShownView() {
+            return shownView && shownView.isConnected && !shownView.classList.contains('hide') && shownViewHash === window.location.hash
+                ? shownView
+                : null;
+        }
         /** @type {AbortController|null} */
         let currentAbortController = null;
         /** @type {string|null} */
         let currentRenderingPageKey = null;
+        let keepAttachedSeq = 0;
 
         // ---- Pagination state (dual-feed + client-paged) --------------------
         let isLoading = false;
@@ -121,6 +166,35 @@
         let movieCurrentPage = 1;
         let tvHasMorePages = true;
         let movieHasMorePages = true;
+        // Page counts reported by the feeds (Infinity until the first page answers).
+        let tvTotalPages = Infinity;
+        let movieTotalPages = Infinity;
+        // Items fetched vs cards actually rendered (after library/hidden/dedup
+        // filtering). Drives how many pages a load fetches in parallel.
+        const yieldStats = { fetched: 0, rendered: 0 };
+        // Upper bound on pages fetched per feed in one load; a run of batches
+        // that render nothing (all filtered) doubles the batch up to the
+        // escalated cap so a heavily-hidden stretch is crossed in few round trips.
+        const MAX_PAGES_PER_FEED = 4;
+        const MAX_PAGES_PER_FEED_ESCALATED = 8;
+        // Prefetch per feed stays below the shared 8-slot request pool so a
+        // demand batch never queues behind a wave of prefetches.
+        const MAX_PREFETCH_PER_FEED = 3;
+        // Bumped on every sort / filter change and cleanup: a batch that started
+        // under an older generation must not write counters or flags.
+        let loadGeneration = 0;
+        // isLoading is owned by whichever load set it last; a stale load's
+        // finally must not release a newer owner's flag.
+        let loadingOwner = 0;
+        const takeLoading = () => { isLoading = true; return ++loadingOwner; };
+        const releaseLoading = (owner) => { if (loadingOwner === owner) isLoading = false; };
+        // TMDB refuses discover pages beyond 500 (Seerr answers HTTP 500) even
+        // though it reports totalPages in the thousands; never ask for them.
+        const TMDB_MAX_PAGE = 500;
+        /** @param {any} totalPages */
+        const clampPages = (totalPages) => Math.min(Number(totalPages) || 1, TMDB_MAX_PAGE);
+        let lastBatchPages = 0;
+        let lastBatchRendered = -1;
         /** @type {{tvId: (number|null), movieId: (number|null)}|null} */
         let currentFeeds = null;
         /** @type {Array<any>} */
@@ -164,9 +238,12 @@
          * @param {number} feedId
          * @param {number} page
          * @param {AbortSignal} [signal]
+         * @param {boolean} [tolerant=false] - true: swallow failures as an empty
+         *   last page (initial render: one feed failing must not hide the other);
+         *   false: throw so the scroll engine retries the page.
          * @returns {Promise<{results: Array<any>, totalPages: number}>}
          */
-        async function fetchFeedPage(kind, feedId, page = 1, signal) {
+        async function fetchFeedPage(kind, feedId, page = 1, signal, tolerant = false) {
             try {
                 if (signal?.aborted) {
                     throw new DOMException('Aborted', 'AbortError');
@@ -182,8 +259,50 @@
                 }
                 return response || { results: [], totalPages: 1 };
             } catch (error) {
-                if (error.name === 'AbortError') throw error;
-                return { results: [], totalPages: 1 };
+                if (error.name === 'AbortError' || !tolerant) throw error;
+                // Mark the failure: the caller keeps the feed open so the scroll
+                // engine re-fetches page 1 with retries instead of ending the feed.
+                return { results: [], totalPages: 1, failed: true };
+            }
+        }
+
+        /**
+         * Pages `start`..`start+count-1`, clipped to the feed's page count.
+         * @param {number} start
+         * @param {number} count
+         * @param {number} total
+         * @returns {number[]}
+         */
+        function pageRange(start, count, total) {
+            const pages = [];
+            for (let p = start; p < start + count && p <= total; p++) pages.push(p);
+            return pages;
+        }
+
+        /** Fraction of fetched items that survive filtering, for batch sizing. */
+        function estimateYield() {
+            if (yieldStats.fetched < 20) return 0.8;
+            return Math.min(1, Math.max(0.05, yieldStats.rendered / yieldStats.fetched));
+        }
+
+        /**
+         * Warms the request cache with the next pages of the active feeds so the
+         * following load is served instantly. Fire-and-forget; errors are ignored
+         * here and surface (with retry) when the page is actually needed.
+         * @param {string} filterMode
+         * @param {number} pagesPerFeed
+         * @param {AbortSignal} [signal]
+         */
+        function prefetchAhead(filterMode, pagesPerFeed, signal) {
+            if (!currentFeeds) return;
+            const count = Math.max(1, Math.min(MAX_PREFETCH_PER_FEED, pagesPerFeed));
+            if (currentFeeds.tvId && (filterMode === 'mixed' || filterMode === 'tv') && tvHasMorePages) {
+                pageRange(tvCurrentPage + 1, count, tvTotalPages)
+                    .forEach(p => fetchFeedPage('tv', currentFeeds.tvId, p, signal).catch(() => {}));
+            }
+            if (currentFeeds.movieId && (filterMode === 'mixed' || filterMode === 'movies') && movieHasMorePages) {
+                pageRange(movieCurrentPage + 1, count, movieTotalPages)
+                    .forEach(p => fetchFeedPage('movie', currentFeeds.movieId, p, signal).catch(() => {}));
             }
         }
 
@@ -338,17 +457,19 @@
          * @param {HTMLElement|null} itemsContainer
          * @param {string} mode - Current filter mode
          * @param {boolean} [reset=false] - Clear existing cards and reset counter
+         * @param {number} [chunkSize=PAGE_SIZE] - How many items to render this call
          */
-        function renderChunk(itemsContainer, mode, reset = false) {
+        function renderChunk(itemsContainer, mode, reset = false, chunkSize = PAGE_SIZE) {
             if (!itemsContainer) return;
 
             if (reset) {
+                JE.jellyseerrUI?.releasePosters?.(itemsContainer);
                 while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
                 renderedCount = 0;
             }
 
             currentPagedResults = getPagedResultsForMode(mode);
-            const nextChunk = currentPagedResults.slice(renderedCount, renderedCount + PAGE_SIZE);
+            const nextChunk = currentPagedResults.slice(renderedCount, renderedCount + chunkSize);
             if (nextChunk.length === 0) {
                 hasMorePages = false;
                 return;
@@ -365,18 +486,25 @@
 
         /**
          * Loads more items for infinite scroll. dual-feed fetches the next
-         * server page(s) for the active filter mode; client-paged renders the
-         * next local chunk.
+         * server page(s) for the active filter mode — several per feed in
+         * parallel when the buffer deficit (or a low post-filter yield) calls
+         * for it — then prefetches the pages after that; client-paged renders
+         * the next local chunk.
+         * @param {{deficitPx?: number, horizontal?: boolean}} [hint] - From the scroll engine.
          */
-        async function loadMoreItems() {
+        async function loadMoreItems(hint) {
             if (isClientPaged) {
                 if (isLoading || !hasMorePages || !clientListActive) return;
 
                 isLoading = true;
                 try {
                     const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
-                    const itemsContainer = document.querySelector(`${sectionSelector} .itemsContainer`);
-                    renderChunk(/** @type {HTMLElement|null} */ (itemsContainer), filterMode, false);
+                    const itemsContainer = /** @type {HTMLElement|null} */ (
+                        document.querySelector(`${sectionSelector} .itemsContainer`));
+                    const chunk = Math.max(PAGE_SIZE, JE.seamlessScroll?.cardsNeeded?.(itemsContainer, hint, PAGE_SIZE) || PAGE_SIZE);
+                    const before = renderedCount;
+                    renderChunk(itemsContainer, filterMode, false, chunk);
+                    return { pages: 1, rendered: renderedCount - before };
                 } catch (error) {
                     if (error.name === 'AbortError') return;
                     console.error(`${logPrefix} Error loading more items:`, error);
@@ -392,8 +520,8 @@
             }
 
             const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
-
-            isLoading = true;
+            const generation = loadGeneration;
+            const owner = takeLoading();
 
             // Track page state before increment so we can roll back on failure
             const prevTvPage = tvCurrentPage;
@@ -401,52 +529,103 @@
 
             try {
                 const signal = currentAbortController?.signal;
-                const promises = [];
+                const itemsContainer = /** @type {HTMLElement|null} */ (
+                    document.querySelector(`${sectionSelector} .itemsContainer`));
 
                 // Determine which endpoints to fetch based on filter mode and available IDs
-                const needTv = currentFeeds.tvId && (filterMode === 'mixed' || filterMode === 'tv') && tvHasMorePages;
-                const needMovies = currentFeeds.movieId && (filterMode === 'mixed' || filterMode === 'movies') && movieHasMorePages;
-
-                if (needTv) {
-                    tvCurrentPage++;
-                    promises.push(
-                        fetchFeedPage('tv', currentFeeds.tvId, tvCurrentPage, signal)
-                            .then(r => ({ type: 'tv', data: r }))
-                    );
-                }
-                if (needMovies) {
-                    movieCurrentPage++;
-                    promises.push(
-                        fetchFeedPage('movie', currentFeeds.movieId, movieCurrentPage, signal)
-                            .then(r => ({ type: 'movie', data: r }))
-                    );
-                }
-
-                if (promises.length === 0) {
+                const needTv = !!currentFeeds.tvId && (filterMode === 'mixed' || filterMode === 'tv') && tvHasMorePages;
+                let needMovies = !!currentFeeds.movieId && (filterMode === 'mixed' || filterMode === 'movies') && movieHasMorePages;
+                // With less budget left than feeds, fetch one feed only so the
+                // empty-page valve is exact rather than overrun by a page.
+                const pageBudget = Number.isFinite(hint?.pageBudget) ? Math.max(0, hint.pageBudget) : Infinity;
+                if (needTv && needMovies && pageBudget < 2) needMovies = false;
+                const feedCount = (needTv ? 1 : 0) + (needMovies ? 1 : 0);
+                if (feedCount === 0) {
                     hasMorePages = false;
                     return;
                 }
 
-                const results = await Promise.all(promises);
+                // Size the batch from the buffer deficit and the observed yield:
+                // a heavily filtered feed (library items, hidden content, single
+                // media type) needs more pages per load to render the same rows.
+                const wantCards = JE.seamlessScroll?.cardsNeeded?.(itemsContainer, hint, 40) || 40;
+                const expectedPerPage = Math.max(1, 20 * feedCount * estimateYield());
+                let pagesPerFeed = Math.min(MAX_PAGES_PER_FEED, Math.max(1, Math.ceil(wantCards / expectedPerPage)));
+                if (lastBatchRendered === 0 && lastBatchPages > 0) {
+                    // Everything in the last batch was filtered out: jump to a full
+                    // batch at once, then double, so a hidden stretch costs at most
+                    // a couple of round trips.
+                    pagesPerFeed = Math.min(MAX_PAGES_PER_FEED_ESCALATED, Math.max(pagesPerFeed, MAX_PAGES_PER_FEED, lastBatchPages * 2));
+                }
+                // Never plan more pages than the scroll engine's empty-page budget allows.
+                pagesPerFeed = Math.max(1, Math.min(pagesPerFeed, Math.floor(pageBudget / feedCount)));
+                console.debug(`${logPrefix} load: deficit=${Math.round(hint?.deficitPx || 0)}px want=${wantCards} yield=${estimateYield().toFixed(2)} pagesPerFeed=${pagesPerFeed} budget=${pageBudget}`);
+
+                const tvPages = needTv ? pageRange(tvCurrentPage + 1, pagesPerFeed, tvTotalPages) : [];
+                const moviePages = needMovies ? pageRange(movieCurrentPage + 1, pagesPerFeed, movieTotalPages) : [];
+                if (tvPages.length === 0 && moviePages.length === 0) {
+                    tvHasMorePages = tvHasMorePages && tvCurrentPage < tvTotalPages;
+                    movieHasMorePages = movieHasMorePages && movieCurrentPage < movieTotalPages;
+                    updateHasMorePages(filterMode);
+                    return { pages: 0, rendered: 0 };
+                }
+                const pagesFetched = tvPages.length + moviePages.length;
+
+                const [tvSettled, movieSettled] = await Promise.all([
+                    Promise.allSettled(tvPages.map(p => fetchFeedPage('tv', /** @type {number} */ (currentFeeds.tvId), p, signal))),
+                    Promise.allSettled(moviePages.map(p => fetchFeedPage('movie', /** @type {number} */ (currentFeeds.movieId), p, signal)))
+                ]);
 
                 if (signal?.aborted) return;
+                // Sort / filter changed while this batch was in flight: its pages are
+                // cached for the new generation to reuse, but its bookkeeping is stale.
+                if (generation !== loadGeneration) return;
 
-                let newTvResults = [];
-                let newMovieResults = [];
+                // Commit each feed's pages in order up to its first failure: a flaky
+                // upstream (Seerr's TMDB call failing for one page) must not throw
+                // away the pages that did arrive. The counters stop before the failed
+                // page, so the next fill re-fetches from there.
+                const newTvResults = [];
+                const newMovieResults = [];
+                let firstError = null;
+                let committedPages = 0;
 
-                results.forEach(r => {
-                    if (r.type === 'tv') {
-                        newTvResults = r.data.results || [];
-                        tvHasMorePages = tvCurrentPage < (r.data.totalPages || 1);
-                        cachedTvResults = [...cachedTvResults, ...newTvResults];
-                    } else {
-                        newMovieResults = r.data.results || [];
-                        movieHasMorePages = movieCurrentPage < (r.data.totalPages || 1);
-                        cachedMovieResults = [...cachedMovieResults, ...newMovieResults];
+                const commit = (settled, pages, onPage) => {
+                    for (let i = 0; i < settled.length; i++) {
+                        const s = settled[i];
+                        if (s.status !== 'fulfilled') {
+                            if (s.reason?.name === 'AbortError') throw s.reason;
+                            if (!firstError) firstError = s.reason;
+                            return;
+                        }
+                        onPage(s.value, pages[i]);
+                        committedPages++;
                     }
+                };
+                commit(tvSettled, tvPages, (r, page) => {
+                    newTvResults.push(...(r.results || []));
+                    tvTotalPages = clampPages(r.totalPages);
+                    tvCurrentPage = page;
+                    tvHasMorePages = tvCurrentPage < tvTotalPages;
                 });
+                if (newTvResults.length > 0) cachedTvResults = [...cachedTvResults, ...newTvResults];
+                commit(movieSettled, moviePages, (r, page) => {
+                    newMovieResults.push(...(r.results || []));
+                    movieTotalPages = clampPages(r.totalPages);
+                    movieCurrentPage = page;
+                    movieHasMorePages = movieCurrentPage < movieTotalPages;
+                });
+                if (newMovieResults.length > 0) cachedMovieResults = [...cachedMovieResults, ...newMovieResults];
+
+                if (firstError && committedPages === 0) {
+                    throw firstError; // nothing arrived at all: let the engine retry with backoff
+                }
+                if (firstError) {
+                    console.debug(`${logPrefix} ${committedPages} of ${pagesFetched} page(s) arrived; the rest will be retried on the next load (${firstError.message})`);
+                }
 
                 updateHasMorePages(filterMode);
+                lastBatchPages = pagesPerFeed;
 
                 // Get items to add based on filter mode
                 let itemsToAdd;
@@ -459,30 +638,49 @@
                                  [...newTvResults, ...newMovieResults];
                 }
 
-                if (itemsToAdd.length === 0) return;
+                yieldStats.fetched += itemsToAdd.length;
+                lastBatchRendered = 0;
 
                 // Deduplicate items using deduplicator (if available)
-                if (itemDeduplicator) {
+                if (itemDeduplicator && itemsToAdd.length > 0) {
                     itemsToAdd = itemDeduplicator.filter(itemsToAdd);
-                    if (itemsToAdd.length === 0) return;
                 }
 
-                const itemsContainer = document.querySelector(`${sectionSelector} .itemsContainer`);
-                if (itemsContainer) {
+                if (itemsContainer && itemsToAdd.length > 0) {
                     const fragment = createCardsFragment(itemsToAdd);
+                    yieldStats.rendered += fragment.childNodes.length;
+                    lastBatchRendered = fragment.childNodes.length;
                     if (fragment.childNodes.length > 0) {
                         itemsContainer.appendChild(fragment);
                     }
+                    ensureFilterControl(itemsContainer);
                 }
+
+                // Keep the cache warm for the next load while this one renders.
+                // After a productive batch prefetch twice as deep; after an empty
+                // batch (the next one will be bigger anyway) prefetch only what
+                // the remaining empty-page budget still allows.
+                const remainingBudget = pageBudget === Infinity ? Infinity : Math.max(0, pageBudget - pagesFetched);
+                const prefetchPerFeed = lastBatchRendered > 0
+                    ? pagesPerFeed * 2
+                    : Math.min(pagesPerFeed, Math.floor(remainingBudget / feedCount));
+                if (prefetchPerFeed > 0) prefetchAhead(filterMode, prefetchPerFeed, signal);
+
+                return { pages: committedPages, rendered: lastBatchRendered };
             } catch (error) {
-                // Roll back page counters on failure so retry fetches the same page
-                tvCurrentPage = prevTvPage;
-                movieCurrentPage = prevMoviePage;
+                if (generation === loadGeneration) {
+                    // Roll back page counters on failure so retry fetches the same page
+                    tvCurrentPage = prevTvPage;
+                    movieCurrentPage = prevMoviePage;
+                }
                 if (error.name === 'AbortError') return;
                 console.error(`${logPrefix} Error loading more items:`, error);
                 throw error; // Re-throw for seamlessScroll retry handling
             } finally {
-                isLoading = false;
+                releaseLoading(owner);
+                // A filter change that re-armed the engine while this load was in
+                // flight found isLoading true and stopped; wake it now.
+                if (generation !== loadGeneration && scrollState.fill) scrollState.fill();
             }
         }
 
@@ -509,15 +707,29 @@
             if (!itemsContainer || !currentFeeds || (!currentFeeds.tvId && !currentFeeds.movieId)) return;
 
             // Clear existing cards and scroll observer
+            JE.jellyseerrUI?.releasePosters?.(itemsContainer);
             while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
             cleanupScrollObserver();
 
             // Reset pagination state for fresh fetch
+            loadGeneration++;
             tvCurrentPage = 1;
             movieCurrentPage = 1;
             tvHasMorePages = true;
             movieHasMorePages = true;
-            isLoading = false;
+            tvTotalPages = Infinity;
+            movieTotalPages = Infinity;
+            yieldStats.fetched = 0;
+            yieldStats.rendered = 0;
+            lastBatchPages = 0;
+            lastBatchRendered = -1;
+            // This re-fetch owns the loading flag until its page 1 lands, so a
+            // filter change in the meantime can't start page 2 ahead of it. Its
+            // own staleness is its abort signal (a newer sort or cleanup aborts
+            // it); the load generation only tells it whether a filter change
+            // means the engine needs waking afterwards.
+            const generation = loadGeneration;
+            let owner = 0;
             cachedTvResults = [];
             cachedMovieResults = [];
             if (itemDeduplicator) itemDeduplicator.clear();
@@ -526,32 +738,40 @@
             if (currentAbortController) currentAbortController.abort();
             currentAbortController = new AbortController();
             const signal = currentAbortController.signal;
-            const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
 
             // Build fetch promises for available media types
             const fetchPromises = [];
             if (currentFeeds.tvId) {
                 fetchPromises.push(
-                    fetchFeedPage('tv', currentFeeds.tvId, 1, signal).then(r => ({ type: 'tv', data: r }))
+                    fetchFeedPage('tv', currentFeeds.tvId, 1, signal, true).then(r => ({ type: 'tv', data: r }))
                 );
             }
             if (currentFeeds.movieId) {
                 fetchPromises.push(
-                    fetchFeedPage('movie', currentFeeds.movieId, 1, signal).then(r => ({ type: 'movie', data: r }))
+                    fetchFeedPage('movie', currentFeeds.movieId, 1, signal, true).then(r => ({ type: 'movie', data: r }))
                 );
             }
 
             try {
+                owner = takeLoading();
                 const results = await Promise.all(fetchPromises);
+                // Superseded (another sort change, navigation): nothing here is ours.
                 if (signal.aborted) return;
+                // Read the filter at commit time — it may have changed meanwhile.
+                const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
 
+                // Same failure handling as the first render: a feed whose page 1
+                // failed stays at page 0 with more pages, so the engine re-fetches
+                // it with backoff instead of the sort change ending the feed.
                 results.forEach(r => {
                     if (r.type === 'tv') {
                         cachedTvResults = r.data.results || [];
-                        tvHasMorePages = 1 < (r.data.totalPages || 1);
+                        if (r.data.failed) { tvCurrentPage = 0; tvHasMorePages = true; }
+                        else { tvTotalPages = clampPages(r.data.totalPages); tvHasMorePages = 1 < tvTotalPages; }
                     } else {
                         cachedMovieResults = r.data.results || [];
-                        movieHasMorePages = 1 < (r.data.totalPages || 1);
+                        if (r.data.failed) { movieCurrentPage = 0; movieHasMorePages = true; }
+                        else { movieTotalPages = clampPages(r.data.totalPages); movieHasMorePages = 1 < movieTotalPages; }
                     }
                 });
 
@@ -564,6 +784,8 @@
 
                 if (displayResults.length > 0) {
                     const fragment = createCardsFragment(displayResults);
+                    yieldStats.fetched += displayResults.length;
+                    yieldStats.rendered += fragment.childNodes.length;
                     itemsContainer.appendChild(fragment);
                     if (itemDeduplicator) {
                         displayResults.forEach(item => itemDeduplicator.add(item));
@@ -579,6 +801,10 @@
                 if (error.name !== 'AbortError') {
                     console.error(`${logPrefix} Sort change error:`, error);
                 }
+            } finally {
+                releaseLoading(owner);
+                // A filter change re-armed the engine while page 1 was in flight; wake it.
+                if (generation !== loadGeneration && scrollState.fill) scrollState.fill();
             }
         }
 
@@ -604,6 +830,14 @@
 
             // Use fast CSS-based visibility (no DOM rebuild)
             JE.discoveryFilter.applyFilterVisibility(itemsContainer, newMode);
+
+            // A batch still in flight belongs to the old mode: retire its
+            // bookkeeping, and start the new mode with fresh batch statistics.
+            loadGeneration++;
+            yieldStats.fetched = 0;
+            yieldStats.rendered = 0;
+            lastBatchPages = 0;
+            lastBatchRendered = -1;
 
             // Update hasMorePages based on filter mode
             updateHasMorePages(newMode);
@@ -637,7 +871,55 @@
          * @returns {Promise<HTMLElement|null>}
          */
         function waitForPageReady(signal) {
-            return JE.discoveryFilter.waitForPageReady(signal, { type: isDualFeed ? 'list' : 'detail' });
+            return JE.discoveryFilter.waitForPageReady(signal, {
+                type: isDualFeed ? 'list' : 'detail',
+                getView: currentShownView,
+                isStalePage: (pageEl) => !!pageEl && pageEl === visibleAtNavigation
+                    && listSignature(pageEl) === visibleContentAtNavigation
+            });
+        }
+
+        /**
+         * Adds the All / Movies / Series control once both media types have
+         * appeared (page 1 of one feed may have arrived late or failed).
+         * @param {HTMLElement} itemsContainer
+         */
+        function ensureFilterControl(itemsContainer) {
+            if (!isDualFeed || !JE.discoveryFilter?.createFilterControl) return;
+            const section = itemsContainer.closest(sectionSelector);
+            const header = section?.querySelector('.jellyseerr-discovery-header');
+            if (!header || header.querySelector('.jellyseerr-discovery-filter')) return;
+            if (!JE.discoveryFilter.hasBothTypes(cachedTvResults, cachedMovieResults)) return;
+            const title = header.querySelector('.sectionTitle');
+            if (title) title.after(JE.discoveryFilter.createFilterControl(key, handleFilterChange));
+        }
+
+        /**
+         * The list page may still be settling when the section goes in (it is
+         * inserted as soon as the container exists, not once it is full). If a
+         * re-render drops the section during the first seconds, put it back.
+         * @param {HTMLElement} section
+         * @param {HTMLElement} listPage
+         * @param {AbortSignal} signal
+         */
+        function keepAttached(section, listPage, signal) {
+            if (!JE.helpers?.onBodyMutation) return;
+            // Unique id per call: body subscribers are keyed by id, so a stale
+            // handle unsubscribing a shared id would silently drop the successor's.
+            const handle = JE.helpers.onBodyMutation(`jellyseerr-${key}-discovery-keepattached-${++keepAttachedSeq}`, () => {
+                if (signal.aborted) return;
+                const detached = !section.isConnected;
+                const onHiddenPage = !detached && !!section.closest('.page.hide');
+                if (!detached && !onHiddenPage) return;
+                const view = currentShownView();
+                const container = view?.querySelector('.itemsContainer') ||
+                                  document.querySelector('.page:not(.hide) .itemsContainer') ||
+                                  document.querySelector('.libraryPage:not(.hide) .itemsContainer') || listPage;
+                const parent = container?.closest('.verticalSection') || container?.parentElement;
+                if (parent?.parentElement && !parent.parentElement.contains(section)) parent.parentElement.appendChild(section);
+            });
+            const timer = setTimeout(() => handle?.unsubscribe?.(), 6000);
+            signal.addEventListener('abort', () => { clearTimeout(timer); handle?.unsubscribe?.(); }, { once: true });
         }
 
         /**
@@ -647,11 +929,18 @@
          * @param {string} pageKey
          */
         async function renderDualFeed(id, signal, pageKey) {
-            const pageReadyPromise = waitForPageReady(signal);
+            // The page wait runs alongside the feed resolution, on its own
+            // controller: an early exit (nothing to show, Seerr off for this user)
+            // must stop its polling rather than leave it running until the next
+            // navigation aborts the render's signal.
+            const pageReadyAbort = new AbortController();
+            const stopPageWait = () => pageReadyAbort.abort();
+            signal.addEventListener('abort', stopPageWait, { once: true });
+            const pageReadyPromise = waitForPageReady(pageReadyAbort.signal);
 
             const resolved = await spec.resolveFeeds({ id, signal });
             if (signal.aborted) return;
-            if (!resolved || (!resolved.tvId && !resolved.movieId)) return;
+            if (!resolved || (!resolved.tvId && !resolved.movieId)) { stopPageWait(); return; }
 
             // Reset pagination state
             tvCurrentPage = 1;
@@ -660,6 +949,13 @@
             hasMorePages = true;
             tvHasMorePages = true;
             movieHasMorePages = true;
+            tvTotalPages = Infinity;
+            movieTotalPages = Infinity;
+            yieldStats.fetched = 0;
+            yieldStats.rendered = 0;
+            lastBatchPages = 0;
+            lastBatchRendered = -1;
+            loadGeneration++;
             currentFeeds = { tvId: resolved.tvId || null, movieId: resolved.movieId || null };
 
             // Clear cached results
@@ -669,41 +965,79 @@
             // Initialize deduplicator for infinite scroll
             itemDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
 
+            // (No prefetch alongside page 1: extra requests in flight at Seerr
+            // slow page 1 down, and the engine's first fill fetches pages 2-3
+            // the moment page 1 has rendered.)
+
             // Fetch TV and Movies separately (only if IDs available)
             const fetchPromises = [];
             if (currentFeeds.tvId) {
                 fetchPromises.push(
-                    fetchFeedPage('tv', currentFeeds.tvId, 1, signal)
+                    fetchFeedPage('tv', currentFeeds.tvId, 1, signal, true)
                         .then(r => ({ type: 'tv', data: r }))
                 );
             }
             if (currentFeeds.movieId) {
                 fetchPromises.push(
-                    fetchFeedPage('movie', currentFeeds.movieId, 1, signal)
+                    fetchFeedPage('movie', currentFeeds.movieId, 1, signal, true)
                         .then(r => ({ type: 'movie', data: r }))
                 );
             }
 
-            const [fetchResults, listPage] = await Promise.all([
-                Promise.all(fetchPromises),
-                pageReadyPromise
-            ]);
+            // Show the section as soon as the page can hold it: the header goes
+            // in now and the cards stream in when page 1 lands, so the first
+            // visit doesn't sit on a blank page waiting for Seerr.
+            const listPage = await pageReadyPromise;
+            signal.removeEventListener('abort', stopPageWait);
+            if (signal.aborted) return;
+            let section = null;
+            let itemsContainer = null;
+            if (listPage) {
+                const existing = document.querySelector(sectionSelector);
+                if (existing) existing.remove();
+                section = createSectionContainer(resolved.title, false, handleFilterChange, handleSortChange);
+                itemsContainer = section.querySelector('.itemsContainer');
+                const parentContainer = listPage.closest('.verticalSection') || listPage.parentElement;
+                if (parentContainer?.parentElement) {
+                    parentContainer.parentElement.appendChild(section);
+                    keepAttached(section, listPage, signal);
+                } else {
+                    section = null;
+                }
+            }
+
+            // A failure here tears the section down only while this render still
+            // owns it: an abort means a sort change took the section over (its own
+            // load fills the same container) or a navigation's cleanup already
+            // removed it — removing it now would delete the successor's section.
+            let fetchResults;
+            try {
+                fetchResults = await Promise.all(fetchPromises);
+            } catch (error) {
+                if (!signal.aborted) section?.remove();
+                throw error;
+            }
 
             if (signal.aborted) return;
 
-            // Process results
+            // Process results. A feed whose page 1 failed (Seerr/TMDB hiccup) is
+            // left at page 0 with more pages, so the engine's first fill fetches
+            // page 1 again with backoff and, if it keeps failing, a retry button —
+            // rather than the section quietly never appearing.
+            let anyFailed = false;
             fetchResults.forEach(r => {
                 if (r.type === 'tv') {
                     cachedTvResults = r.data.results || [];
-                    tvHasMorePages = 1 < (r.data.totalPages || 1);
+                    if (r.data.failed) { anyFailed = true; tvCurrentPage = 0; tvHasMorePages = true; }
+                    else { tvTotalPages = clampPages(r.data.totalPages); tvHasMorePages = 1 < tvTotalPages; }
                 } else {
                     cachedMovieResults = r.data.results || [];
-                    movieHasMorePages = 1 < (r.data.totalPages || 1);
+                    if (r.data.failed) { anyFailed = true; movieCurrentPage = 0; movieHasMorePages = true; }
+                    else { movieTotalPages = clampPages(r.data.totalPages); movieHasMorePages = 1 < movieTotalPages; }
                 }
             });
 
             // Determine if we have both types (only show filter if BOTH have results)
-            const hasBoth = JE.discoveryFilter?.hasBothTypes(cachedTvResults, cachedMovieResults) || false;
 
             // Always start each section on defaults instead of persisting previous choice.
             JE.discoveryFilter?.resetFilterMode?.(key);
@@ -722,19 +1056,22 @@
                 displayResults = [...cachedTvResults, ...cachedMovieResults];
             }
 
-            if (displayResults.length === 0) return;
-
-            if (!listPage) return;
-
-            const existing = document.querySelector(sectionSelector);
-            if (existing) existing.remove();
-
-            const section = createSectionContainer(resolved.title, hasBoth, handleFilterChange, handleSortChange);
-            const itemsContainer = section.querySelector('.itemsContainer');
-
+            if (!section || !itemsContainer) return;
+            // An empty page 1 is not an empty feed: the parental filter and the
+            // in-library/hidden filters can strip a page bare while later pages
+            // still hold titles (upstream page counts are preserved). Only give up
+            // when the feed itself says there is nothing more.
             const fragment = createCardsFragment(displayResults);
-            if (fragment.childNodes.length === 0) return;
+            if (fragment.childNodes.length === 0 && !anyFailed && !hasMorePages) {
+                section.remove();
+                return;
+            }
 
+            // Both media types present: add the All / Movies / Series control now.
+            ensureFilterControl(itemsContainer);
+
+            yieldStats.fetched += displayResults.length;
+            yieldStats.rendered += fragment.childNodes.length;
             itemsContainer.appendChild(fragment);
 
             // Seed deduplicator with initial items to prevent duplicates on scroll
@@ -742,17 +1079,12 @@
                 displayResults.forEach(item => itemDeduplicator.add(item));
             }
 
-            const parentContainer = listPage.closest('.verticalSection') || listPage.parentElement;
-            if (parentContainer?.parentElement) {
-                parentContainer.parentElement.appendChild(section);
-
-                if (hasMorePages) {
-                    setupInfiniteScroll();
-                }
-
-                // Mark as successfully processed AFTER successful render
-                processedPages.add(pageKey);
+            if (hasMorePages) {
+                setupInfiniteScroll();
             }
+
+            // Mark as successfully processed AFTER successful render
+            processedPages.add(pageKey);
 
             // End metrics
             if (JE.requestManager?.metrics?.enabled) {
@@ -839,6 +1171,38 @@
         }
 
         /**
+         * Offers a retry when a full-list discovery fails before cards exist.
+         * The scroll engine cannot offer its retry UI until that list loads.
+         * @param {AbortSignal} signal - The render that owns this placeholder.
+         */
+        async function showClientPagedRetry(signal) {
+            const detailSection = await waitForPageReady(signal);
+            if (signal.aborted || !detailSection) return;
+
+            document.querySelector(sectionSelector)?.remove();
+            const section = document.createElement('div');
+            section.className = `verticalSection jellyseerr-${key}-discovery-section je-retry-row`;
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'raised emby-button';
+            button.textContent = '⟳ Tap to retry';
+            button.addEventListener('click', async () => {
+                if (signal.aborted || button.disabled) return;
+                button.disabled = true;
+                try {
+                    // render() creates a fresh controller and repeats the full
+                    // lookup; failed responses have not been cached as empty.
+                    await render();
+                } finally {
+                    section.remove();
+                }
+            }, { signal });
+            section.appendChild(button);
+            detailSection.appendChild(section);
+            signal.addEventListener('abort', () => section.remove(), { once: true });
+        }
+
+        /**
          * Main render entry — chassis shared by every mode: page-key dedup,
          * re-entry guard, config gate, abort-controller swap, metrics and
          * error handling.
@@ -866,6 +1230,7 @@
             }
             currentAbortController = new AbortController();
             const signal = currentAbortController.signal;
+            const myController = currentAbortController;
 
             // Start metrics if enabled
             if (JE.requestManager?.metrics?.enabled) {
@@ -902,18 +1267,30 @@
                     return;
                 }
                 console.error(`${logPrefix} Error rendering ${key} discovery:`, error);
+                if (isClientPaged && !signal.aborted) {
+                    await showClientPagedRetry(signal);
+                }
             } finally {
-                // Clear rendering key after completion (success, abort, or failure)
-                currentRenderingPageKey = null;
+                // Clear the re-entry guard after completion (success, abort, or
+                // failure) — unless a newer render has taken over: an aborted render
+                // can settle after its successor started and must not clear its key.
+                if (currentAbortController === myController) currentRenderingPageKey = null;
             }
         }
 
         /** Cleanup function — aborts in-flight requests and resets state. */
         function cleanup() {
+            loadGeneration++;
+            // Leaving the route: take our section with us, so a page element the
+            // router reuses for the next route never shows the previous one's.
+            document.querySelectorAll(sectionSelector).forEach(el => el.remove());
             if (currentAbortController) {
                 currentAbortController.abort();
                 currentAbortController = null;
             }
+            // The section is gone already; the root-less call sweeps every poster
+            // whose card is no longer in the document.
+            JE.jellyseerrUI?.releasePosters?.();
             if (spec.mode !== 'one-shot') {
                 cleanupScrollObserver();
             }
@@ -926,6 +1303,12 @@
             movieCurrentPage = 1;
             tvHasMorePages = true;
             movieHasMorePages = true;
+            tvTotalPages = Infinity;
+            movieTotalPages = Infinity;
+            yieldStats.fetched = 0;
+            yieldStats.rendered = 0;
+            lastBatchPages = 0;
+            lastBatchRendered = -1;
             currentFeeds = null;
             clientListActive = false;
             currentPagedResults = [];
@@ -960,12 +1343,38 @@
         // results into user B's session.
         JE.session?.onUserChange(`discovery-${key}`, cleanup);
 
-        /** Handles page navigation — renders when the URL matches the module. */
-        function handlePageNavigation() {
+        /**
+         * Handles page navigation — renders when the URL matches the module.
+         * Called from the navigate pipeline (no arguments) and from the view
+         * pipeline as (view, element, ...); the element is the page the router
+         * showed and becomes the anchor for the section.
+         * @param {string} [view]
+         * @param {HTMLElement} [element]
+         */
+        function handlePageNavigation(view, element) {
             const id = spec.getIdFromUrl();
-            if (id) {
-                requestAnimationFrame(() => render());
+            if (!id) return;
+            if (element instanceof HTMLElement) {
+                shownView = element;
+                shownViewHash = window.location.hash;
             }
+            requestAnimationFrame(() => render());
+        }
+
+        /** @type {string|null} */
+        let snapshotHash = null;
+
+        /**
+         * Records which page is showing the moment a navigation is announced —
+         * on the raw events, before the router has reacted — so the stale-page
+         * check compares against the genuinely old page. The deduplicated
+         * navigate callback can run after the router already swapped pages.
+         */
+        function snapshotVisiblePage() {
+            if (window.location.hash === snapshotHash) return; // same navigation, second event
+            snapshotHash = window.location.hash;
+            visibleAtNavigation = document.querySelector('.page:not(.hide)');
+            visibleContentAtNavigation = listSignature(visibleAtNavigation);
         }
 
         /** Initialize navigation listeners + lifecycle teardown wiring. */
@@ -978,6 +1387,8 @@
             const lifecycle = JE.core.lifecycle.register(`jellyseerr-${key}-discovery`);
             lifecycle.onTeardown(cleanup);
             lifecycle.teardownOn('navigate');
+            ['je:navigate', 'hashchange', 'popstate'].forEach(type => window.addEventListener(type, snapshotVisiblePage, true));
+            document.addEventListener('viewshow', rememberShownView, true);
             JE.core.navigation.onNavigate(handlePageNavigation);
 
             handlePageNavigation();

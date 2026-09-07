@@ -364,7 +364,9 @@
             // Final abort check before DOM manipulation
             if (signal.aborted) return;
 
-            // Remove any existing Jellyseerr sections to avoid duplicates
+            // Remove any existing Jellyseerr sections to avoid duplicates (their
+            // cards must be unobserved first: lazy posters hold strong references)
+            JE.jellyseerrUI?.releasePosters?.(detailPageContent);
             detailPageContent.querySelectorAll('.jellyseerr-details-section').forEach(el => el.remove());
 
             // Create and insert sections
