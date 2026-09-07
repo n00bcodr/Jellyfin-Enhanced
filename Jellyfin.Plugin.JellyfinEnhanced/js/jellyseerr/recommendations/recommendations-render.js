@@ -279,6 +279,8 @@
     const abortController = new AbortController();
     state.currentAbortController = abortController;
 
+    // Cards leaving the document must be unobserved first (lazy posters).
+    JE.jellyseerrUI?.releasePosters?.(container);
     container.textContent = '';
 
     const heading = document.createElement('h1');

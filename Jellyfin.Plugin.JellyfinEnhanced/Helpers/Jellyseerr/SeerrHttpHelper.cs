@@ -175,7 +175,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                 var buffer = new char[8192];
                 var sb = new StringBuilder(8192);
                 int read;
-                while ((read = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
+                while ((read = await reader.ReadAsync(buffer.AsMemory(), ct).ConfigureAwait(false)) > 0)
                 {
                     if (sb.Length + read > MaxBodyBytes) { sb.Append(buffer, 0, MaxBodyBytes - sb.Length); break; }
                     sb.Append(buffer, 0, read);

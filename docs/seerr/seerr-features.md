@@ -38,6 +38,7 @@ Search, request, and discover media directly from Jellyfin using your Seerr inst
 2. Results from both Jellyfin and Seerr appear
 3. Seerr results show request status
 4. Click to request or view details
+5. Scroll the Seerr row sideways; further pages load ahead of you (see [Seamless Scrolling](#seamless-scrolling))
 
 #### 4K TV Requesting:
 
@@ -87,15 +88,36 @@ Browse and discover content by various criteria.
 
 #### Features
 
-- Filter by TV/Movies/All
-- Infinite scroll with pagination
+- Filter by TV/Movies/All, sort by Popular / Top Rated / Newest / Oldest
+- Seamless infinite scroll (see [Seamless Scrolling](#seamless-scrolling))
 - Request directly from discovery
 - Library awareness (hide owned items)
+- Respects each user's parental controls (see [Parental Ratings](#parental-ratings))
 
 #### Configure
 
 1. Check respective discovery options in settings
 2. Access via custom navigation or direct URLs
+
+### Seamless Scrolling
+
+Seerr search rows, the "More from" sections (genre, network, person, tag) and the Recommendations page load further results before you reach them, so scrolling never shows a loading gap while still showing every result:
+
+- The section appears as soon as the page opens (its heading first, cards streaming in when Seerr answers) instead of waiting for Jellyfin's own list and every request to finish.
+- A few screens of results are kept rendered ahead of you (about three screens for vertical sections, four row-widths for the search row once you start scrolling it). Several pages are fetched at once, more when filters hide most of a page, and the pages after those are prefetched into the cache.
+- Filtered pages never stall the feed: if a page renders no cards (everything hidden, blocklisted or already in your library) the next pages are requested straight away. After 40 consecutive empty pages loading pauses on a **Keep looking** button rather than hammering Seerr; pressing it resumes exactly where the feed left off, so nothing is skipped.
+- Card posters are loaded from TMDB as cards approach the screen rather than a whole page at a time.
+- Failed page loads are retried with backoff and then offer **Tap to retry**. TMDB's 500-page limit is respected.
+
+### Parental Ratings
+
+Seerr results respect each user's Jellyfin parental controls: **Max Parental Rating**, **Block unrated items** and **Blocked / Allowed Tags** from the user's policy. For a restricted user, titles they may not see are removed from search, discovery ("More from" sections and the Recommendations page), similar/recommended rows, person filmographies (including "known for" titles), collections, the requests list and page, the watchlist and the issue list; opening such a title's details, seasons or related rows, requesting it, or fetching it through the plugin's TMDB endpoints is refused. This is always on and needs no setting: users without any restriction are unaffected.
+
+- Certifications are read from TMDB only for the server's metadata country (US when no country is configured) and scored with Jellyfin's own rating table. Missing or unrecognized local ratings follow the user's **Block unrated items** policy; ratings from other countries are not substituted. The More Info modal may show a different region's rating if a user has picked another Elsewhere region.
+- Titles whose rating cannot be determined are hidden for restricted users. A discovery or search page whose lookups have not finished within the plugin's budget is re-fetched automatically once they have, rather than shown with gaps. Users without a limit are unaffected and nothing extra is fetched for them.
+- Resolved ratings and keywords are cached server-wide for 24 hours so the extra lookups are one-off; a lookup that fails is retried after 5 minutes. With a TMDB API key configured the lookups use TMDB's small certification endpoints; otherwise Seerr's title details are used.
+- **Blocked Tags / Allowed Tags** are enforced too. A blocked tag matches a title's TMDB keywords and genre names, so blocking "zombie" (a keyword Jellyfin would import as an item tag) or "horror" (a genre) both work; Allowed Tags act as a strict allow-list matched against keywords only, exactly like the library. Blocked tags always win. Keyword coverage on TMDB is community-sourced, so genre blocks give broader coverage than keyword blocks. A tag matches the same way it does in your library: the whole value, ignoring case only ("Sci-Fi" matches "sci-fi" but not "sci fi"), so a tag that works on your library items works here.
+- Collection cards themselves (e.g. "Saw Collection") are not rated and stay visible; their parts are filtered when opened.
 
 ### Issue Reporting
 
