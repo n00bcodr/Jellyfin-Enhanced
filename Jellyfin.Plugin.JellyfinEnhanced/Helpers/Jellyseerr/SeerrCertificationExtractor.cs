@@ -8,14 +8,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
     /// Extracts the content-rating certification from a Seerr movie/TV detail
     /// payload (<c>/api/v1/movie/{id}</c> or <c>/api/v1/tv/{id}</c>) or from TMDB's
     /// dedicated <c>/movie/{id}/release_dates</c> and <c>/tv/{id}/content_ratings</c>
-    /// responses. This is a C# port of the client's <c>getContentRating</c>
-    /// (js/jellyseerr/moreinfo/more-info-modal-data.js) so the server-side parental
-    /// filter reads exactly the certification the more-info modal displays.
-    ///
-    /// Region resolution: prefer the requested region, then <c>US</c>, then the
-    /// first available entry. The ISO actually used is returned alongside the
-    /// certification so the caller can resolve the score against that country's
-    /// rating system.
+    /// responses. Only certifications from the requested country are used for
+    /// enforcement. A missing local certification stays unrated so the user's
+    /// block-unrated policy applies; a permissive foreign rating must not bypass it.
+    /// The ISO is returned alongside the certification for country-specific scoring.
     ///
     /// Adapted from Jellyfin-Canopy (GPL-3.0), Helpers/Seerr/SeerrCertificationExtractor.cs.
     /// </summary>
@@ -28,7 +24,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
 
         /// <summary>
         /// Reads the certification for <paramref name="mediaType"/> ("movie" or "tv")
-        /// from a detail object, preferring <paramref name="region"/>.
+        /// from a detail object for <paramref name="region"/> only.
         /// </summary>
         public static CertificationResult Extract(JsonElement detail, string? mediaType, string region)
         {
@@ -52,11 +48,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                 return default;
             }
 
-            // The preferred region's entry often exists with only empty
-            // certifications (digital/physical rows). For enforcement that must not
-            // read as "unrated" while another entry is rated: fall through region ->
-            // US -> first entry that actually carries a certification.
-            foreach (var entry in CandidateEntries(results, region))
+            foreach (var entry in RegionEntries(results, region))
             {
                 var result = MovieCertFromEntry(entry);
                 if (!string.IsNullOrWhiteSpace(result.Certification))
@@ -121,7 +113,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                 return default;
             }
 
-            foreach (var entry in CandidateEntries(results, region))
+            foreach (var entry in RegionEntries(results, region))
             {
                 var rating = ReadString(entry, "rating");
                 if (!string.IsNullOrWhiteSpace(rating))
@@ -133,47 +125,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
             return default;
         }
 
-        // Entries in preference order: the requested region, then US, then the rest.
-        private static IEnumerable<JsonElement> CandidateEntries(JsonElement results, string region)
+        private static IEnumerable<JsonElement> RegionEntries(JsonElement results, string region)
         {
-            JsonElement? regionEntry = null;
-            JsonElement? usEntry = null;
-            var others = new List<JsonElement>();
             foreach (var entry in results.EnumerateArray())
             {
-                if (entry.ValueKind != JsonValueKind.Object)
+                if (string.Equals(ReadString(entry, "iso_3166_1"), region, StringComparison.OrdinalIgnoreCase))
                 {
-                    continue;
+                    yield return entry;
                 }
-
-                var iso = ReadString(entry, "iso_3166_1");
-                if (regionEntry is null && string.Equals(iso, region, StringComparison.OrdinalIgnoreCase))
-                {
-                    regionEntry = entry;
-                }
-                else if (usEntry is null && string.Equals(iso, "US", StringComparison.OrdinalIgnoreCase))
-                {
-                    usEntry = entry;
-                }
-                else
-                {
-                    others.Add(entry);
-                }
-            }
-
-            if (regionEntry is not null)
-            {
-                yield return regionEntry.Value;
-            }
-
-            if (usEntry is not null)
-            {
-                yield return usEntry.Value;
-            }
-
-            foreach (var entry in others)
-            {
-                yield return entry;
             }
         }
 

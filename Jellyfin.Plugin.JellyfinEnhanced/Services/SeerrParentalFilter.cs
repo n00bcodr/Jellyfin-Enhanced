@@ -34,8 +34,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// exposure is the failure mode that matters here.
     ///
     /// Rating semantics mirror Jellyfin's own <c>BaseItem.IsParentalAllowed</c>
-    /// (see <see cref="ParentalRatingDecision"/>); the certification is read the
-    /// same way the more-info modal displays it (<see cref="SeerrCertificationExtractor"/>).
+    /// (see <see cref="ParentalRatingDecision"/>); certifications are resolved only
+    /// for the configured rating country (<see cref="SeerrCertificationExtractor"/>).
     /// Design adapted from Jellyfin-Canopy's SeerrParentalFilter (GPL-3.0), rating branch only.
     /// </summary>
     public sealed class SeerrParentalFilter
