@@ -25,13 +25,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly WhatsNewService _whatsNewService;
         private readonly ITaskManager _taskManager;
         private readonly AnalyticsReportingService _analyticsReportingService;
+        private readonly HostCompatibilityService _hostCompatibility;
 
         public string Name => "Jellyfin Enhanced Startup";
         public string Key => "JellyfinEnhancedStartup";
         public string Description => "Initializes Jellyfin Enhanced background services and performs necessary cleanups. The client script is injected at request time by the injection middleware.";
         public string Category => "Jellyfin Enhanced";
 
-        public StartupService(Logger logger, IApplicationPaths applicationPaths, AutoSeasonRequestMonitor autoSeasonRequestMonitor, AutoMovieRequestMonitor autoMovieRequestMonitor, WatchlistMonitor watchlistMonitor, TagCacheService tagCacheService, TagCacheMonitor tagCacheMonitor, SeerrScanTriggerService seerrScanTriggerService, ActivityFavoriteMonitor activityFavoriteMonitor, WhatsNewService whatsNewService, ITaskManager taskManager, AnalyticsReportingService analyticsReportingService)
+        public StartupService(Logger logger, IApplicationPaths applicationPaths, AutoSeasonRequestMonitor autoSeasonRequestMonitor, AutoMovieRequestMonitor autoMovieRequestMonitor, WatchlistMonitor watchlistMonitor, TagCacheService tagCacheService, TagCacheMonitor tagCacheMonitor, SeerrScanTriggerService seerrScanTriggerService, ActivityFavoriteMonitor activityFavoriteMonitor, WhatsNewService whatsNewService, ITaskManager taskManager, AnalyticsReportingService analyticsReportingService, HostCompatibilityService hostCompatibility)
         {
             _logger = logger;
             _applicationPaths = applicationPaths;
@@ -49,6 +50,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _whatsNewService = whatsNewService;
             _taskManager = taskManager;
             _analyticsReportingService = analyticsReportingService;
+            _hostCompatibility = hostCompatibility;
         }
 
         public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
@@ -56,6 +58,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             await Task.Run(() =>
             {
                 _logger.Info("Jellyfin Enhanced Startup Task run successfully.");
+                if (_hostCompatibility.IsMismatch)
+                {
+                    // Loud on purpose: a mismatched build is a common cause of "random feature X throws" reports.
+                    _logger.Error($"BUILD/HOST MISMATCH: {_hostCompatibility.MismatchMessage} Install {_hostCompatibility.ExpectedAssetName} from {HostCompatibilityService.ManifestUrl}");
+                }
                 EnsureScriptInjected();
 
                 // Diffs the config page's settings against the previous startup's

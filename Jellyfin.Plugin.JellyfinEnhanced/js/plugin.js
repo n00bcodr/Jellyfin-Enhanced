@@ -913,6 +913,7 @@
                 'extras/colored-activity-icons.js',
                 'extras/colored-ratings.js',
                 'extras/plugin-icons.js',
+                'extras/plugin-revisions.js',
                 'extras/theme-selector.js',
                 'extras/active-streams.js',
                 'extras/activity-page.js',
@@ -979,6 +980,7 @@
             });
 
             // Stage 6: Initialize feature modules
+            if (typeof JE.initializePluginRevisions === 'function') JE.initializePluginRevisions();
             if (typeof JE.initializeEnhancedScript === 'function') JE.initializeEnhancedScript();
             if (typeof JE.initializeElsewhereScript === 'function' && JE.pluginConfig?.ElsewhereEnabled) JE.initializeElsewhereScript();
             if (typeof JE.initializeJellyseerrScript === 'function' && JE.pluginConfig?.JellyseerrEnabled && JE.pluginConfig?.JellyseerrShowSearchResults !== false) JE.initializeJellyseerrScript();

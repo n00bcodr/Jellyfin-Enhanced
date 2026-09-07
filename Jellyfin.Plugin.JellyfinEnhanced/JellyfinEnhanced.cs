@@ -37,13 +37,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             IServerConfigurationManager serverConfigurationManager,
             IXmlSerializer xmlSerializer,
             Logger logger,
-            Services.AnalyticsReportingService analyticsReportingService) : base(applicationPaths, xmlSerializer)
+            Services.AnalyticsReportingService analyticsReportingService,
+            Services.HostCompatibilityService hostCompatibility) : base(applicationPaths, xmlSerializer)
         {
             Instance = this;
             _applicationPaths = applicationPaths;
             _logger = logger;
             _analyticsReportingService = analyticsReportingService;
             _logger.Info($"{PluginName} v{Version} initialized. Plugin logs will be written to: {_logger.CurrentLogFilePath}");
+
+            if (hostCompatibility.IsMismatch)
+            {
+                // Logged here, the earliest point at which a plugin service can be
+                // resolved (the service itself needs only the app host), so the line
+                // lands before any scheduled task runs. StartupService repeats it so
+                // the verdict also shows up in the startup-task log on every boot.
+                _logger.Error($"BUILD/HOST MISMATCH: {hostCompatibility.MismatchMessage} Install {hostCompatibility.ExpectedAssetName} from {Services.HostCompatibilityService.ManifestUrl}");
+            }
+
             // Set the User-Agent used by every Seerr/TMDB outbound HTTP call.
             // Cloudflare's Browser Integrity Check / Bot Fight Mode flags
             // empty UA as bot �            Helpers.Jellyseerr.SeerrHttpHelper.UserAgent = $"JellyfinEnhanced/{Version}";
