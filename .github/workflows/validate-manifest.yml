@@ -1,6 +1,6 @@
 name: Validate legacy plugin manifest
 
-# Run on every PR so a required check never stays pending because of path filters.
+# Run on every PR, including changes to the validation workflow itself.
 on:
   pull_request:
   merge_group:
