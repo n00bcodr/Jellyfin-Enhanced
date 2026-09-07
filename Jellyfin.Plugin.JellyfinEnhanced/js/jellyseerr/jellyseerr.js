@@ -202,9 +202,15 @@
             if (searchDeduplicator) results = searchDeduplicator.filter(results);
             searchYield.rendered += results.length;
 
-            if (results.length > 0) {
+            // Even an empty first page needs a section for the scroll engine:
+            // parental/hidden-content filtering can remove every card while
+            // later pages still contain results. Without a row, setup exits
+            // before it can fetch those pages.
+            if (results.length > 0 || searchHasMore) {
                 renderJellyseerrResults(results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
+            }
 
+            if (results.length > 0) {
                 // Enrich with collections in the background, then slot the
                 // collection cards into the existing row.
                 prepareResultsWithCollections(results, { signal }).then(enrichedResults => {
