@@ -524,7 +524,7 @@
                 const countryCode = JE.core.mediaLanguage.resolveFlag(lang);
                 if (countryCode) {
                     const flag = document.createElement('img');
-                    flag.src = JE.cdn.flagSvg(countryCode);
+                    flag.src = JE.core.mediaLanguage.flagSrc(countryCode);
                     flag.alt = `${lang.name} flag`;
                     flag.style.width = '18px';
                     flag.style.marginRight = '0.3em';
