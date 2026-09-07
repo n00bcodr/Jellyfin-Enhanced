@@ -196,7 +196,7 @@
 
         orderByPriority(uniqueFlags).slice(0, maxToShow).forEach(flagInfo => {
             const img = document.createElement('img');
-            img.src = JE.cdn.flagSvg(flagInfo.countryCode);
+            img.src = JE.core.mediaLanguage.flagSrc(flagInfo.countryCode);
             img.className = flagClass;
             img.alt = flagInfo.allLanguages.join(', ');
             img.title = flagInfo.allLanguages.join(', ');
