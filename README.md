@@ -46,14 +46,11 @@ Quick links:
 2. Click **➕** and add the repository:
 
 > [!NOTE]
-> **If you are on Jellyfin version 12, use the version 12 manifest**
-> ``` 
-> https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/12/manifest.json 
 > ```
-> **If you are on 10.11.x, use the version 11 manifest**
-> ``` 
-> https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/10.11/manifest.json 
+> https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/manifest.json
 > ```
+>
+> One manifest for every Jellyfin version (10.11.x, 12.x incl. RCs): Jellyfin picks the matching build automatically.
 
 3. Go to **Catalog** tab, find **Jellyfin Enhanced**, and click **Install**
 4. **Restart** your Jellyfin server
@@ -87,6 +84,7 @@ For detailed installation instructions and troubleshooting, see the [Installatio
 - **Search & Request** - Request media directly from Jellyfin search
 - **Item Details** - Recommendations and similar items on detail pages
 - **Discovery Pages** - Browse by genre, network, person, or tag
+- **Parental Ratings** - Seerr results respect each user's rating limit and blocked/allowed tags
 - **Issue Reporting** - Report problems directly to Seerr
 - **Watchlist Sync** - Auto-sync with Jellyfin watchlist
 

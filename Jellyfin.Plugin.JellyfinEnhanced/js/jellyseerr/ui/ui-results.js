@@ -186,6 +186,7 @@
      */
     ui.clearInjectedSearchResults = function() {
         document.querySelectorAll('.jellyseerr-section, .jellyseerr-no-results-message').forEach(el => el.remove());
+        ui.releasePosters?.();
         document.querySelectorAll('.jellyseerr-native-message-hidden').forEach(el => el.classList.remove('jellyseerr-native-message-hidden'));
     };
 

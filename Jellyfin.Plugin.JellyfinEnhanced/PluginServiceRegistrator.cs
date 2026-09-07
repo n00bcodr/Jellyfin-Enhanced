@@ -18,6 +18,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
         {
             serviceCollection.AddSingleton<StartupService>();
+            // Build-target vs host-version check; logged at startup and surfaced
+            // on the config page so a jf10 zip on a Jellyfin 12 host is not silent.
+            serviceCollection.AddSingleton<HostCompatibilityService>();
 
             // Request-time injection middlewares (Jellyfin 10.11 & 12):
             //   - ScriptInjectionStartupFilter injects the client <script> into the
@@ -64,6 +67,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // for misses — see WikidataAwardsService for details.
             serviceCollection.AddSingleton<WikidataAwardsService>();
             serviceCollection.AddSingleton<MdblistService>();
+            serviceCollection.AddSingleton<SeerrParentalFilter>();
             // Opt-in anonymous usage reporting: UsageEventCounterService holds the
             // current period's counters (debounced disk persistence, same pattern
             // as WikidataAwardsService); AnalyticsReportingService builds/sends the

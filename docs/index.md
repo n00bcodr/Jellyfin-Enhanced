@@ -41,6 +41,8 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 - **Search Integration** - Request media from Jellyfin search
 - **Item Details** - Recommendations and similar items
 - **Discovery Pages** - Browse by genre, network, person, or tag
+- **Seamless Scrolling** - Results load ahead of you, no loading gaps, nothing skipped
+- **Parental Ratings** - Seerr results respect each user's rating limit and blocked/allowed tags
 - **Issue Reporting** - Report problems directly to Seerr
 - **Watchlist Sync** - Auto-sync with Jellyfin watchlist
 - **Auto Requests** - Auto next season and next movie (in collection) requests

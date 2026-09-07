@@ -23,6 +23,8 @@
     <PropertyGroup Condition="'$(JellyfinTarget)' == 'jf12'">
         <TargetFramework>net10.0</TargetFramework>
         <JellyfinVersion>12.0.0-rc1</JellyfinVersion>
+        <!-- Explicit target symbol so code never has to infer the Jellyfin line from the TFM. -->
+        <DefineConstants>$(DefineConstants);JF12</DefineConstants>
     </PropertyGroup>
 
     <!-- Jellyfin 10.11 / .NET 9. Pinned to 10.11.0 (as upstream does) so the artifact
@@ -30,6 +32,7 @@
     <PropertyGroup Condition="'$(JellyfinTarget)' == 'jf10'">
         <TargetFramework>net9.0</TargetFramework>
         <JellyfinVersion>10.11.0</JellyfinVersion>
+        <DefineConstants>$(DefineConstants);JF10</DefineConstants>
     </PropertyGroup>
 
     <ItemGroup>

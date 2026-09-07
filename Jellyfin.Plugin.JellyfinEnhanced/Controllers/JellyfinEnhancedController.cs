@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
@@ -48,6 +49,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly Logger _logger;
         private readonly IUserManager _userManager;
+        private readonly Services.SeerrParentalFilter _parentalFilter;
         private readonly IUserDataManager _userDataManager;
         private readonly ILibraryManager _libraryManager;
         private readonly IDtoService _dtoService;
@@ -64,6 +66,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.WhatsNewService _whatsNewService;
         private readonly Services.UsageEventCounterService _usageEventCounterService;
         private readonly Services.AnalyticsReportingService _analyticsReportingService;
+        private readonly Services.HostCompatibilityService _hostCompatibility;
         private readonly IServerConfigurationManager _serverConfigurationManager;
         private readonly INetworkManager _networkManager;
 
@@ -181,9 +184,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.SpoilerUserResolver spoilerResolver,
             Services.WikidataAwardsService wikidataAwardsService,
             Services.MdblistService mdblistService,
+            Services.SeerrParentalFilter parentalFilter,
             Services.WhatsNewService whatsNewService,
             Services.UsageEventCounterService usageEventCounterService,
             Services.AnalyticsReportingService analyticsReportingService,
+            Services.HostCompatibilityService hostCompatibility,
             IServerConfigurationManager serverConfigurationManager,
             INetworkManager networkManager)
         {
@@ -203,9 +208,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _spoilerResolver = spoilerResolver;
             _wikidataAwardsService = wikidataAwardsService;
             _mdblistService = mdblistService;
+            _parentalFilter = parentalFilter;
             _whatsNewService = whatsNewService;
             _usageEventCounterService = usageEventCounterService;
             _analyticsReportingService = analyticsReportingService;
+            _hostCompatibility = hostCompatibility;
             _serverConfigurationManager = serverConfigurationManager;
             _networkManager = networkManager;
         }
@@ -689,8 +696,82 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             catch { /* best-effort eviction */ }
         }
 
+        private IActionResult ParentalBlockedResult()
+        {
+            return StatusCode(403, new
+            {
+                error = true,
+                code = "parental_block",
+                message = "This title is above your parental rating limit."
+            });
+        }
+
+        /// <summary>
+        /// Runs the caller's parental-rating limit over a proxied Seerr body:
+        /// list responses come back filtered, blocked detail/sub-resource
+        /// responses become 403. Unrestricted users pass through untouched.
+        /// </summary>
+        private async Task<IActionResult> ApplyParentalFilterAsync(string json, string apiPath, string jellyfinUserId)
+        {
+            try
+            {
+                var result = await _parentalFilter.ApplyAsync(json, apiPath, jellyfinUserId, HttpContext.RequestAborted);
+                if (result.Block) return ParentalBlockedResult();
+                if (result.RetryLater)
+                {
+                    // Titles on this page are still being verified (the lookups keep
+                    // running server-side): a retryable status makes the client
+                    // re-fetch the page instead of showing the unverified rows as gone.
+                    Response.Headers["Retry-After"] = "2";
+                    return StatusCode(504, new { error = true, code = "parental_pending", message = "Parental rating lookups for this page are still running; retry shortly." });
+                }
+                return Content(result.Body, "application/json");
+            }
+            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                return StatusCode(499); // browser went away (also reachable from the response-cache path)
+            }
+        }
+
+        private async Task<bool> IsRequestBodyParentalBlockedAsync(string body, string jellyfinUserId)
+        {
+            // Unrestricted users: nothing to check, whatever the body looks like.
+            if (!_parentalFilter.TryGetRestrictedPolicy(jellyfinUserId, out _)) return false;
+
+            // Restricted users: a body we cannot identify as an allowed movie/tv
+            // title is refused (fail closed), including string ids like "550".
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                var rootEl = doc.RootElement;
+                if (rootEl.ValueKind != JsonValueKind.Object || !rootEl.TryGetProperty("mediaId", out var idEl)) return true;
+                int mediaId;
+                if (idEl.ValueKind == JsonValueKind.Number)
+                {
+                    if (!idEl.TryGetInt32(out mediaId)) return true;
+                }
+                else if (idEl.ValueKind != JsonValueKind.String || !int.TryParse(idEl.GetString(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out mediaId))
+                {
+                    return true;
+                }
+                var mediaType = rootEl.TryGetProperty("mediaType", out var mtEl) && mtEl.ValueKind == JsonValueKind.String ? mtEl.GetString() : null;
+                if (mediaType != "movie" && mediaType != "tv") return true;
+                return mediaId <= 0 || await _parentalFilter.IsBlockedAsync(mediaType, mediaId, jellyfinUserId);
+            }
+            catch (JsonException)
+            {
+                return true;
+            }
+        }
+
         private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null)
         {
+            // Propagate client disconnects (superseded search queries, page
+            // navigations) to the upstream Seerr/TMDB call so we stop doing
+            // work nobody will read. Only GETs are cancellable: POSTs (requests,
+            // issues) must run to completion even if the browser goes away.
+            var ct = method == HttpMethod.Get ? HttpContext.RequestAborted : CancellationToken.None;
+
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
             {
@@ -827,15 +908,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var cacheKey = isPublicScope
                 ? $"public:{apiPath}"
                 : $"{jellyfinUserId}:{apiPath}";
+            // Parental ratings (#581): a restricted user may not request a title
+            // above their limit, whichever surface the request came from.
+            if (method == HttpMethod.Post
+                && apiPath.StartsWith("/api/v1/request", StringComparison.OrdinalIgnoreCase)
+                && content != null
+                && await IsRequestBodyParentalBlockedAsync(content, jellyfinUserId))
+            {
+                return ParentalBlockedResult();
+            }
+
             if (isCacheable)
             {
+                string? cachedContent = null;
                 lock (_responseCacheLock)
                 {
                     if (_responseCache.TryGetValue(cacheKey, out var cached) &&
                         DateTime.UtcNow - cached.CachedAt < GetResponseCacheTtl())
                     {
-                        return Content(cached.Content, "application/json");
+                        cachedContent = cached.Content;
                     }
+                }
+                if (cachedContent != null)
+                {
+                    return await ApplyParentalFilterAsync(cachedContent, apiPath, jellyfinUserId);
                 }
             }
 
@@ -876,12 +972,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 try
                 {
-                    using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                        method, requestUri, config.JellyseerrApiKey, jellyseerrUserId, content);
-                    if (content != null) _logger.Debug($"Request body: {content}");
+                    string? json = null;
+                    Helpers.Jellyseerr.SeerrError? error = null;
+                    // Seerr answers 5xx when its own TMDB call fails, which happens in
+                    // bursts (a cold page fires several TMDB calls at once) and clears
+                    // within a second. Retry idempotent GETs a couple of times before
+                    // reporting the failure, so a page's first load doesn't come up empty.
+                    var attempts = method == HttpMethod.Get ? 3 : 1;
+                    for (var attempt = 1; attempt <= attempts; attempt++)
+                    {
+                        using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                            method, requestUri, config.JellyseerrApiKey, jellyseerrUserId, content);
+                        if (content != null && attempt == 1) _logger.Debug($"Request body: {content}");
 
-                    using var response = await httpClient.SendAsync(request);
-                    var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+                        using var response = await httpClient.SendAsync(request, ct);
+                        (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri, ct);
+                        var transient = error != null && error.HttpStatus >= 500 && error.HttpStatus <= 599
+                            && error.Code != Helpers.Jellyseerr.SeerrErrorCode.HtmlResponse
+                            && error.Code != Helpers.Jellyseerr.SeerrErrorCode.Cloudflare5xx;
+                        if (!transient || attempt == attempts) break;
+                        _logger.Debug($"Seerr returned {error!.HttpStatus} for {apiPath}; retrying ({attempt}/{attempts - 1})");
+                        await Task.Delay(TimeSpan.FromMilliseconds(400 * attempt), ct);
+                    }
 
                     if (error == null && json != null)
                     {
@@ -916,7 +1028,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             EvictMovieTvCacheForRequest(content);
                         }
-                        return Content(json, "application/json");
+                        return method == HttpMethod.Get
+                            ? await ApplyParentalFilterAsync(json, apiPath, jellyfinUserId)
+                            : Content(json, "application/json");
                     }
 
                     _logger.Warning($"Seerr request failed for user {ResolveUserDisplay(jellyfinUserId)} at {trimmedUrl}: code={error!.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
@@ -936,6 +1050,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // admins keep the upstream URL in the response;
                     // non-admins get a sanitised version that strips it.
                     lastErrorBody = IsAdminUser() ? error.ToAdminResponseShape() : error.ToResponseShape();
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    // The browser aborted the request (superseded search, page
+                    // navigation). Not an upstream failure: don't log as error,
+                    // don't cache, don't fail over to the next Seerr URL.
+                    // 499 = "client closed request"; nobody is listening anyway.
+                    // A timeout-caused OperationCanceledException (ct not
+                    // cancelled) falls through to the generic handler below.
+                    return StatusCode(499);
                 }
                 catch (Exception ex)
                 {
@@ -1400,6 +1524,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // reads the fields it needs (name, hostname, port, apiKey,
             // useSsl, baseUrl, is4k) rather than us re-serializing here.
             return Content(json ?? "[]", "application/json");
+        }
+
+        /// <summary>
+        /// Which Jellyfin line this DLL was built for vs which one is running it.
+        /// Exposes build/host compatibility for administrator diagnostics.
+        /// </summary>
+        [HttpGet("host-compat")]
+        [Authorize]
+        public ActionResult GetHostCompatibility()
+        {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
+            return new JsonResult(new
+            {
+                builtFor = Services.HostCompatibilityService.BuiltFor,
+                hostTarget = _hostCompatibility.HostTarget,
+                hostVersion = _hostCompatibility.HostVersionString,
+                pluginVersion = JellyfinEnhanced.Instance?.Version.ToString(),
+                mismatch = _hostCompatibility.IsMismatch,
+                expectedAsset = _hostCompatibility.ExpectedAssetName,
+                manifestUrl = Services.HostCompatibilityService.ManifestUrl,
+                message = _hostCompatibility.MismatchMessage
+            });
         }
 
         // Admin-only. Backs the "Import from Seerr" picker's URL-mapping pre-fill --
@@ -3221,21 +3371,62 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> ProxyTmdbRequest(string apiPath)
         {
+            // Parental ratings (#581): for a restricted user the raw TMDB passthrough
+            // is limited to title-free lookups; single-title lookups are gated on
+            // that title and anything else (search, discover, trending, lists) is
+            // refused, because it would return titles unfiltered.
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
             {
                 return StatusCode(503, "TMDB API key is not configured.");
             }
 
-            var httpClient = _httpClientFactory.CreateClient();
+            var tmdbCallerId = UserHelper.GetCurrentUserId(User)?.ToString();
             var queryString = HttpContext.Request.QueryString;
+            if (_parentalFilter.TryGetRestrictedPolicy(tmdbCallerId, out _))
+            {
+                // Kestrel decodes %3F in the path, so a query (even a double-encoded
+                // append_to_response) can arrive inside apiPath. Restricted users get
+                // plain path characters only.
+                if (apiPath.IndexOfAny(new[] { '?', '%', '&', '#', ';', '=', '\\' }) >= 0)
+                {
+                    return ParentalBlockedResult();
+                }
+
+                // The route captures only the path; the query matters too. Work on the
+                // DECODED keys so percent-encoding (append%5Fto%5Fresponse) can't slip
+                // a title list past the classifier, and forward only a small set of
+                // harmless parameters, rebuilt from the decoded values.
+                var allowedKeys = new[] { "language", "page", "region", "include_adult", "query" };
+                var decodedQuery = string.Join("&", HttpContext.Request.Query
+                    .Where(kv => allowedKeys.Contains(kv.Key, StringComparer.OrdinalIgnoreCase))
+                    .Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value.ToString())}"));
+                if (HttpContext.Request.Query.Keys.Any(k => !allowedKeys.Contains(k, StringComparer.OrdinalIgnoreCase)))
+                {
+                    return ParentalBlockedResult();
+                }
+                switch (Services.SeerrParentalFilter.ClassifyTmdbPassthrough(apiPath + (decodedQuery.Length > 0 ? "?" + decodedQuery : string.Empty), out var gatedType, out var gatedId))
+                {
+                    case Services.SeerrParentalFilter.TmdbAccess.Deny:
+                        return ParentalBlockedResult();
+                    case Services.SeerrParentalFilter.TmdbAccess.GateTitle:
+                        if (await _parentalFilter.IsBlockedAsync(gatedType, gatedId, tmdbCallerId))
+                        {
+                            return ParentalBlockedResult();
+                        }
+                        break;
+                }
+                queryString = decodedQuery.Length > 0 ? new QueryString("?" + decodedQuery) : QueryString.Empty;
+            }
+
+            var httpClient = _httpClientFactory.CreateClient();
             var separator = queryString.HasValue ? "&" : "?";
             var requestUri = $"https://api.themoviedb.org/3/{apiPath}{queryString}{separator}api_key={config.TMDB_API_KEY}";
 
             try
             {
-                var response = await httpClient.GetAsync(requestUri);
-                var content = await response.Content.ReadAsStringAsync();
+                var response = await httpClient.GetAsync(requestUri, HttpContext.RequestAborted);
+                var content = await response.Content.ReadAsStringAsync(HttpContext.RequestAborted);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -8930,6 +9121,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         _logger.Warning($"Seerr requests fetch threw at {candidateUrl}: {innerEx.Message}");
                     }
                 }
+                if (json != null)
+                {
+                    // Parental ratings (#581): drop rows above the caller's limit before
+                    // enrichment attaches titles and posters to them.
+                    var parental = await _parentalFilter.ApplyAsync(json, "/api/v1/request", jellyfinUserId, HttpContext.RequestAborted);
+                    if (parental.Block)
+                    {
+                        // The filter could not run to completion: never hand a
+                        // restricted user the unfiltered list.
+                        return ParentalBlockedResult();
+                    }
+                    json = parental.Body;
+                }
+
                 if (json == null)
                 {
                     var error = lastError!;

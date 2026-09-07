@@ -225,9 +225,9 @@
      * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
      */
     api.search = async function(query, page = 1, options = {}) {
+        const { skipCache = false, signal, throwOnError = false } = options;
         try {
             const lang = (navigator.language || 'en').split('-')[0];
-            const { skipCache = false, signal } = options;
             const data = await get(`/search?query=${encodeURIComponent(query)}&page=${page}&language=${lang}`, { skipCache, signal });
 
             // Filter out people results before returning (immutable — don't mutate cached response)
@@ -239,7 +239,7 @@
             return data;
         } catch (error) {
             // Superseded search — let the caller drop it instead of rendering "no results".
-            if (error.name === 'AbortError') throw error;
+            if (error.name === 'AbortError' || throwOnError) throw error;
             console.error('%s Search failed for query "%s":', logPrefix, query, error);
             return { results: [] };
         }
@@ -295,16 +295,24 @@
         if (!results || results.length === 0) return results;
         const { signal } = options;
 
-        return Promise.all(results.map(async (item) => {
-            if (item.mediaType !== 'movie') return item;
-            try {
-                const collection = await api.fetchMovieCollection(item.id, { signal });
-                if (collection) return { ...item, collection };
-            } catch (e) {
-                // ignore per-movie errors (including AbortError — superseded search)
-            }
-            return item;
-        }));
+        // Look movies up a few at a time so the per-movie detail calls leave
+        // request slots free for the result pages infinite scroll is loading.
+        const out = results.slice();
+        const movieIndexes = [];
+        results.forEach((item, i) => { if (item.mediaType === 'movie') movieIndexes.push(i); });
+        const CHUNK = 4;
+        for (let c = 0; c < movieIndexes.length; c += CHUNK) {
+            if (signal?.aborted) break;
+            await Promise.all(movieIndexes.slice(c, c + CHUNK).map(async (i) => {
+                try {
+                    const collection = await api.fetchMovieCollection(results[i].id, { signal });
+                    if (collection) out[i] = { ...results[i], collection };
+                } catch (e) {
+                    // ignore per-movie errors (including AbortError — superseded search)
+                }
+            }));
+        }
+        return out;
     };
 
     /**

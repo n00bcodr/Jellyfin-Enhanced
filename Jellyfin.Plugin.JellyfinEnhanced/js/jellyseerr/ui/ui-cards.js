@@ -13,6 +13,104 @@
     const escapeHtml = JE.escapeHtml;
     const addTouchTapListener = JE.core.ui.addTouchTapListener;
 
+    // ---- Lazy poster loading -------------------------------------------------
+    // The infinite-scroll engine keeps roughly three viewports of cards rendered
+    // ahead of the viewer. If every card set its poster as an inline
+    // background-image at creation time, all of those off-screen cards would
+    // fire requests at image.tmdb.org immediately. Instead the poster URL is
+    // parked on the element (data-je-poster) and applied only when the card
+    // comes within ~800px of the viewport, via one shared IntersectionObserver.
+    // IntersectionObserver is geometry-based, so it also works inside
+    // emby-scroller rows (which scroll via CSS transforms on TV clients) and
+    // for elements observed while still inside a DocumentFragment: they simply
+    // report as not intersecting until they are attached to the document.
+    const POSTER_DATA_KEY = 'jePoster'; // dataset key for the data-je-poster attribute
+    let posterObserver = null;
+    // Every observed poster container; IntersectionObserver holds strong references
+    // to its targets, so cards removed before they ever scrolled into view must be
+    // unobserved explicitly or they (and their handlers) are retained forever.
+    const observedPosters = new Set();
+
+    /**
+     * Sets the poster image on a card's image element and stops observing it.
+     * @param {HTMLElement|null} el - Element carrying the pending poster URL in its dataset
+     */
+    function applyPoster(el) {
+        if (!el) return;
+        const url = el.dataset[POSTER_DATA_KEY];
+        if (posterObserver) {
+            try { posterObserver.unobserve(el); } catch (_) { /* ignore */ }
+        }
+        observedPosters.delete(el);
+        if (!url) return;
+        delete el.dataset[POSTER_DATA_KEY];
+        // posterUrl is validated/derived in createJellyseerrCard, so the only
+        // characters that could upset the url() literal are quotes; escape anyway.
+        el.style.backgroundImage = `url("${url.replace(/["\\]/g, '\\$&')}")`;
+    }
+
+    /**
+     * The shared IntersectionObserver that loads posters as cards approach the
+     * viewport; null where IntersectionObserver is unavailable.
+     * @returns {IntersectionObserver|null}
+     */
+    function getPosterObserver() {
+        if (posterObserver) return posterObserver;
+        if (typeof IntersectionObserver === 'undefined') return null;
+        try {
+            posterObserver = new IntersectionObserver((entries) => {
+                for (const entry of entries) {
+                    if (entry.isIntersecting || entry.intersectionRatio > 0) {
+                        applyPoster(entry.target);
+                    }
+                }
+            }, { root: null, rootMargin: '800px', threshold: 0 });
+        } catch (_) {
+            posterObserver = null;
+        }
+        return posterObserver;
+    }
+
+    /**
+     * Defers a card's poster until it nears the viewport (or applies it at once
+     * where IntersectionObserver is unsupported).
+     * @param {HTMLElement} el - The card's image element
+     * @param {string} url - Poster URL
+     */
+    function observePoster(el, url) {
+        el.dataset[POSTER_DATA_KEY] = url;
+        const observer = getPosterObserver();
+        if (!observer) {
+            // No IntersectionObserver support: behave exactly as before.
+            applyPoster(el);
+            return;
+        }
+        try {
+            observer.observe(el);
+            observedPosters.add(el);
+        } catch (_) {
+            applyPoster(el);
+        }
+    }
+
+    /**
+     * Stops observing posters whose cards have been removed from the document
+     * (or that sit under `root`, when given). Call after tearing down a result
+     * row / discovery section so detached cards can be garbage-collected.
+     * @param {HTMLElement} [root]
+     */
+    function releasePosters(root) {
+        if (!posterObserver) return;
+        for (const el of [...observedPosters]) {
+            if (!el.isConnected || (root && root.contains(el))) {
+                try { posterObserver.unobserve(el); } catch (_) { /* ignore */ }
+                observedPosters.delete(el);
+            }
+        }
+    }
+    ui.releasePosters = releasePosters;
+
+
     /**
      * Creates an individual Seerr result card.
      * @param {Object} item - Search result item from Seerr API.
@@ -87,7 +185,7 @@
             <div class="cardBox cardBox-bottompadded">
                 <div class="cardScalable">
                     <div class="cardPadder cardPadder-overflowPortrait"></div>
-                    <div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image" style="background-image: url('${posterUrl}');">
+                    <div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image">
                         <div class="jellyseerr-status-badge"></div>
                         <div class="jellyseerr-elsewhere-icons"></div>
                         <div class="cardIndicators"></div>
@@ -108,6 +206,10 @@
                     <div class="jellyseerr-rating">${icons.star}<span>${rating}</span></div>
                 </div>
             </div>`;
+
+        // Poster is loaded lazily (see observePoster above); the URL is stored via
+        // dataset rather than interpolated into the markup.
+        observePoster(card.querySelector('.jellyseerr-poster-image'), posterUrl);
 
         // Set the status badge icon based on the item's status
         internal.setStatusBadge(card, item);

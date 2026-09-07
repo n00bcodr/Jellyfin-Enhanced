@@ -43,7 +43,7 @@
     };
 
     // In-flight request deduplication
-    /** @type {Map<string, Promise<any>>} */
+    /** @type {Map<string, {promise: Promise<any>, signal: AbortSignal|null}>} */
     const inFlightRequests = new Map();
 
     // Response cache with TTL
@@ -205,31 +205,40 @@
      * @param {AbortSignal} [signal]
      */
     function deduplicatedFetch(key, fetchFn, signal) {
-        // If a signal is provided, don't deduplicate - each caller needs their own abortable request
-        // This prevents one caller's abort from affecting others
-        if (signal) {
-            return fetchFn();
-        }
-
-        if (inFlightRequests.has(key)) {
+        // Share an in-flight request only with callers on the SAME abort signal
+        // (or both unsignalled): a caller must never adopt a request that another
+        // caller's controller can abort — or already has. The entry is dropped
+        // synchronously when its signal aborts, so `abort(); fetch(sameKey)` in
+        // one synchronous block starts a fresh request instead of inheriting a
+        // dead promise (its `.finally` would only run a task later).
+        const wanted = signal || null;
+        const existing = inFlightRequests.get(key);
+        if (existing && existing.signal === wanted && !(signal && signal.aborted)) {
             if (metrics.enabled) {
                 console.debug(`${logPrefix} Reusing in-flight request for ${key}`);
             }
-            return inFlightRequests.get(key);
+            return existing.promise;
         }
 
-        const promise = fetchFn()
-            .finally(() => {
-                // Only remove OUR entry: after a user-switch flush a new
-                // request may already occupy this key — deleting it would let
-                // a third caller start a duplicate fetch.
-                if (inFlightRequests.get(key) === promise) {
-                    inFlightRequests.delete(key);
-                }
-            });
+        /** @type {{promise: Promise<any>, signal: AbortSignal|null}} */
+        const entry = { promise: /** @type {Promise<any>} */ (/** @type {unknown} */ (null)), signal: wanted };
+        const release = () => {
+            // Only remove OUR entry: after a user-switch flush a new
+            // request may already occupy this key — deleting it would let
+            // a third caller start a duplicate fetch.
+            if (inFlightRequests.get(key) === entry) {
+                inFlightRequests.delete(key);
+            }
+        };
+        const onAbort = () => release();
+        if (signal) signal.addEventListener('abort', onAbort, { once: true });
+        entry.promise = fetchFn().finally(() => {
+            release();
+            if (signal) signal.removeEventListener('abort', onAbort);
+        });
 
-        inFlightRequests.set(key, promise);
-        return promise;
+        inFlightRequests.set(key, entry);
+        return entry.promise;
     }
 
     /**
@@ -616,12 +625,18 @@
             }
         };
 
-        // Concurrency limit + in-flight dedup (GET with a cache key only)
-        return withConcurrencyLimit(() =>
-            (isGet && cacheKey)
-                ? deduplicatedFetch(cacheKey, fetchFn)
-                : fetchFn()
-        );
+        // In-flight dedup OUTSIDE the concurrency limit so only the one unique
+        // fetch takes a pool slot (waiters share its promise without holding
+        // slots), and re-check the cache once a slot is acquired: a prefetch that
+        // completed while this call queued must not be fetched a second time.
+        const limitedFetch = () => withConcurrencyLimit(() => {
+            if (isGet && !skipCache && cacheKey) {
+                const cached = getCached(cacheKey);
+                if (cached) return Promise.resolve(cached);
+            }
+            return fetchFn();
+        });
+        return (isGet && cacheKey) ? deduplicatedFetch(cacheKey, limitedFetch, signal) : limitedFetch();
     }
 
     /**

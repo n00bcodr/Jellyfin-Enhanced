@@ -23,6 +23,9 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │                                     # /JellyfinEnhanced/* endpoint the client calls
 ├── PluginPages/                      # HTML wrappers for the sidebar/plugin pages
 ├── Helpers/  Extensions/  ScheduledTasks/
+│   └── Helpers/Jellyseerr/           # SeerrHttpHelper, ParentalRatingDecision,
+│                                     # ParentalTagDecision, SeerrCertificationExtractor,
+│                                     # SeerrTagSignatureExtractor
 ├── EventHandlers/
 │   ├── ContinueWatchingPlaybackEvents.cs
 │   ├── SpoilerAutoEnableEvents.cs
@@ -32,8 +35,9 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   ├── Arr/                          # ArrInstance.cs, ArrItem.cs, ArrType.cs
 │   └── Jellyseerr/                   # JellyseerrPermission.cs, JellyseerrUser.cs
 ├── Services/
-│   ├── …                             # 17 root-level services (Radarr, Sonarr,
+│   ├── …                             # 18 root-level services (Radarr, Sonarr,
 │   │                                 # TagCache*, CdnAsset, WatchlistMonitor,
+│   │                                 # SeerrParentalFilter,
 │   │                                 # ScriptInjectionStartupFilter, …)
 │   ├── Identity/
 │   │   └── RequestIdentityService.cs
@@ -228,7 +232,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`jellyseerr.js`**: The Seerr search-results integration — intercepts Jellyfin's search page, renders Seerr results and handles their pagination/infinite scroll. Gated on `JellyseerrShowSearchResults`; the other Seerr components initialise independently of it.
     * **`modal.js`**: Advanced request modals.
     * **`request-manager.js`**: Thin alias onto `JE.core.api.manager`, kept as a stable public surface.
-    * **`seamless-scroll.js`**: Infinite scroll with prefetch, deduplication and backoff, reused by the discovery modules.
+    * **`seamless-scroll.js`**: The buffer-fill infinite-scroll engine shared by the search row, the discovery modules and the Recommendations category page: keeps several screens of cards rendered ahead, passes each consumer a hint (deficit, engagement, empty-page budget) so it can fetch several pages in parallel and prefetch the next, pauses on a "Keep looking" button after 40 consecutive empty pages, and retries failures with backoff. Also owns the deduplicator helper.
     * **`seerr-detail-link.js`** / **`seerr-status.js`**: Detail-page link into Seerr, and the shared media/display status constants.
     * **`/discovery/`**: `discovery-base.js` owns the whole discovery lifecycle — three pagination strategies, abort handling, config gating, card rendering, filtering and cleanup. Each of `genre`, `network`, `person`, `tag` and `collection` supplies a small spec describing how to resolve its feeds. `discovery-filter-utils.js` provides shared TV/Movies/All filtering and card creation.
     * **`/moreinfo/`**: The Seerr More Info modal — cast, crew, extended metadata, seasons and request actions.
