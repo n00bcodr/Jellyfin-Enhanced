@@ -7,8 +7,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
     /// to a given Jellyfin user:
     ///  - no usable rating -> allowed unless the user blocks unrated items of this type;
     ///  - the user has no rating limit -> allowed;
-    ///  - otherwise the item's (score, subScore) must be &lt;= the user's
-    ///    (maxScore, maxSubScore), compared lexicographically.
+    ///  - otherwise the ceilings are applied exactly as core does: when the user
+    ///    has a sub-score limit BOTH ceilings must hold (sub-score AND score);
+    ///    with no sub-score limit only the score ceiling applies.
     ///
     /// Adapted from Jellyfin-Canopy (GPL-3.0), Helpers/Seerr/ParentalRatingDecision.cs.
     /// </summary>
@@ -47,13 +48,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                 return true;
             }
 
-            // Compare (score, subScore) lexicographically against the user's max.
-            if (itemScore.Value != maxScore.Value)
+            // Both ceilings, exactly as core: a sub-score limit is NOT a tie-break
+            // on equal scores, it is an independent ceiling. Comparing the pair
+            // lexicographically would admit (score 6, sub 1) under a (12, 0) limit,
+            // which the library itself hides.
+            if (maxSubScore is not null)
             {
-                return itemScore.Value < maxScore.Value;
+                return (itemSubScore ?? 0) <= maxSubScore.Value && itemScore.Value <= maxScore.Value;
             }
 
-            return maxSubScore is null || (itemSubScore ?? 0) <= maxSubScore.Value;
+            return itemScore.Value <= maxScore.Value;
         }
     }
 }

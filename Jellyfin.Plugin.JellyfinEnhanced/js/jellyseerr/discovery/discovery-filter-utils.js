@@ -351,6 +351,13 @@
             const cached = JE.requestManager.getCached(cacheKey);
             if (cached) return cached;
 
+            // Identity epoch at request start. Cache keys carry no user id and the
+            // cache is flushed on a user switch, so a response that lands after the
+            // switch must neither be cached nor handed back: it was fetched under
+            // the previous user's permissions (and their parental filter).
+            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+            const stillCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
+
             const fetchFn = async () => {
                 const response = await JE.requestManager.fetchWithRetry(url, {
                     method: 'GET',
@@ -365,6 +372,9 @@
                     signal
                 });
                 const data = await response.json();
+                if (!stillCurrent()) {
+                    throw new DOMException('User changed during request', 'AbortError');
+                }
                 JE.requestManager.setCache(cacheKey, data);
                 return data;
             };
@@ -374,6 +384,9 @@
             // finished while we queued is not fetched again.
             return JE.requestManager.deduplicatedFetch(cacheKey, () =>
                 JE.requestManager.withConcurrencyLimit(() => {
+                    if (!stillCurrent()) {
+                        return Promise.reject(new DOMException('User changed during request', 'AbortError'));
+                    }
                     const hit = JE.requestManager.getCached(cacheKey);
                     return hit ? Promise.resolve(hit) : fetchFn();
                 }),
@@ -465,6 +478,10 @@
      * @param {string} [options.type] - Type of page: 'list' or 'detail'
      * @returns {Promise<HTMLElement|null>}
      */
+    // Unique id per wait: body subscribers are keyed by id, and two discovery
+    // modules can wait on the same page at once (person + collection on a detail).
+    let containerDetectSeq = 0;
+
     function waitForPageReady(signal, options = {}) {
         const { type = 'list', getView = null, isStalePage = null } = options;
 
@@ -498,7 +515,7 @@
                 const candidates = document.querySelectorAll('.page:not(.hide) .itemsContainer, .libraryPage:not(.hide) .itemsContainer');
                 let staleFallback = null;
                 for (const candidate of candidates) {
-                    if (!isStalePage || !isStalePage(candidate.closest('.page'))) return candidate;
+                    if (!isStalePage || !isStalePage(candidate.closest('.page, .libraryPage'))) return candidate;
                     // Same element reused for the new route (no new page appeared in
                     // time): accept it once it holds items, as the old code did.
                     if (allowStale && candidate.children.length > 0 && !staleFallback) staleFallback = candidate;
@@ -533,25 +550,35 @@
                 }, { once: true });
             }
 
+            let allowStale = false;
             const recheck = () => {
-                const container = checkContainer();
+                const container = checkContainer(allowStale);
                 if (container) {
                     cleanup();
                     resolve(container);
                 }
             };
-            observerHandle = JE.helpers.onBodyMutation('jellyseerr-discovery-container-detect', recheck);
+            observerHandle = JE.helpers.onBodyMutation(`jellyseerr-discovery-container-detect-${++containerDetectSeq}`, recheck);
             // The router hides the old page by toggling a class, which the body
             // observer does not report; a light poll catches that.
             const pollId = setInterval(recheck, 100);
             const stopPoll = () => clearInterval(pollId);
             if (signal) signal.addEventListener('abort', stopPoll, { once: true });
-            // Bounded wait: past this the visible page is accepted even if it
-            // looks stale (a reused element), as long as it holds items.
+            // Bounded wait for the reused-element case: past this the visible page
+            // is accepted even if it looks stale, as long as it holds items. When NO
+            // page is visible at all — the router has hidden the old one and is still
+            // loading the new one, which a cold list query can hold for seconds —
+            // keep waiting instead of answering null: giving up here left the section
+            // off the page for good, because the render still in progress swallows
+            // the re-entry the router's later 'viewshow' would have triggered.
             timeoutId = setTimeout(() => {
-                stopPoll();
-                cleanup();
-                resolve(checkContainer(true));
+                allowStale = true;
+                recheck();
+                if (!timeoutId) return; // resolved
+                timeoutId = setTimeout(() => {
+                    cleanup();
+                    resolve(checkContainer(true));
+                }, 30000);
             }, type === 'list' ? 1500 : 3000);
             const originalCleanup = cleanup;
             cleanup = () => { stopPoll(); originalCleanup(); };

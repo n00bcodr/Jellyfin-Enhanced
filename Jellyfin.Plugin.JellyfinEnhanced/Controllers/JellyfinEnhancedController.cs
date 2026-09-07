@@ -713,7 +713,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var result = await _parentalFilter.ApplyAsync(json, apiPath, jellyfinUserId, HttpContext.RequestAborted);
-                return result.Block ? ParentalBlockedResult() : Content(result.Body, "application/json");
+                if (result.Block) return ParentalBlockedResult();
+                if (result.RetryLater)
+                {
+                    // Titles on this page are still being verified (the lookups keep
+                    // running server-side): a retryable status makes the client
+                    // re-fetch the page instead of showing the unverified rows as gone.
+                    Response.Headers["Retry-After"] = "2";
+                    return StatusCode(504, new { error = true, code = "parental_pending", message = "Parental rating lookups for this page are still running; retry shortly." });
+                }
+                return Content(result.Body, "application/json");
             }
             catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
             {
@@ -960,12 +969,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 try
                 {
-                    using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                        method, requestUri, config.JellyseerrApiKey, jellyseerrUserId, content);
-                    if (content != null) _logger.Debug($"Request body: {content}");
+                    string? json = null;
+                    Helpers.Jellyseerr.SeerrError? error = null;
+                    // Seerr answers 5xx when its own TMDB call fails, which happens in
+                    // bursts (a cold page fires several TMDB calls at once) and clears
+                    // within a second. Retry idempotent GETs a couple of times before
+                    // reporting the failure, so a page's first load doesn't come up empty.
+                    var attempts = method == HttpMethod.Get ? 3 : 1;
+                    for (var attempt = 1; attempt <= attempts; attempt++)
+                    {
+                        using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                            method, requestUri, config.JellyseerrApiKey, jellyseerrUserId, content);
+                        if (content != null && attempt == 1) _logger.Debug($"Request body: {content}");
 
-                    using var response = await httpClient.SendAsync(request, ct);
-                    var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri, ct);
+                        using var response = await httpClient.SendAsync(request, ct);
+                        (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri, ct);
+                        var transient = error != null && error.HttpStatus >= 500 && error.HttpStatus <= 599
+                            && error.Code != Helpers.Jellyseerr.SeerrErrorCode.HtmlResponse
+                            && error.Code != Helpers.Jellyseerr.SeerrErrorCode.Cloudflare5xx;
+                        if (!transient || attempt == attempts) break;
+                        _logger.Debug($"Seerr returned {error!.HttpStatus} for {apiPath}; retrying ({attempt}/{attempts - 1})");
+                        await Task.Delay(TimeSpan.FromMilliseconds(400 * attempt), ct);
+                    }
 
                     if (error == null && json != null)
                     {
@@ -3189,8 +3214,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrShowDetailPageLinkAsText,
                 config.JellyseerrExcludeLibraryItems,
                 config.JellyseerrExcludeBlocklistedItems,
-                config.JellyseerrSeamlessScrollPrefetch,
-                config.JellyseerrLazyPosters,
                 config.JellyseerrDisableCache,
                 JellyseerrBaseUrl = jellyseerrBaseUrl,
                 JellyseerrUrlMappings = jellyseerrUrlMappings,
@@ -3373,8 +3396,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                var response = await httpClient.GetAsync(requestUri);
-                var content = await response.Content.ReadAsStringAsync();
+                var response = await httpClient.GetAsync(requestUri, HttpContext.RequestAborted);
+                var content = await response.Content.ReadAsStringAsync(HttpContext.RequestAborted);
 
                 if (response.IsSuccessStatusCode)
                 {

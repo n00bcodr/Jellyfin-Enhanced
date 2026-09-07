@@ -1670,18 +1670,6 @@
                                     <div class="je-setting-description" data-desc-for="jellyseerrExcludeBlocklistedItems">
                                         <div class="fieldDescription je-field-desc-xl">When enabled, items marked as blocklisted in Seerr will not appear in similar/recommended suggestions.</div>
                                     </div>
-                                    <div class="checkboxContainer"><label><input id="jellyseerrSeamlessScrollPrefetch" is="emby-checkbox" type="checkbox"/><span>Seamless scrolling: preload results ahead</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="jellyseerrSeamlessScrollPrefetch">
-                                        <div class="fieldDescription je-field-desc-xl">Keeps a few screens of Seerr results rendered ahead of you in search rows, "More from" sections and the Recommendations page, fetching several pages at once and prefetching the next ones, so scrolling never shows a loading gap. Turn off to load one batch at a time only when needed (fewer Seerr/TMDB requests, but visible loading on fast scrolls).</div>
-                                    </div>
-                                    <div class="checkboxContainer"><label><input id="jellyseerrLazyPosters" is="emby-checkbox" type="checkbox"/><span>Load Seerr posters as they come into view</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="jellyseerrLazyPosters">
-                                        <div class="fieldDescription je-field-desc-xl">Fetches each card's poster from TMDB only when the card approaches the screen, instead of all posters of a page at once. Turn off if you prefer every poster to load immediately.</div>
-                                    </div>
-                                    <div class="checkboxContainer"><label><input id="jellyseerrRespectParentalRatings" is="emby-checkbox" type="checkbox"/><span>Respect users' parental ratings</span></label></div>
-                                    <div class="je-setting-description" data-desc-for="jellyseerrRespectParentalRatings">
-                                        <div class="fieldDescription je-field-desc-xl">Apply each user's Jellyfin parental controls to Seerr results: search, discovery ("More from" sections and the Recommendations page), similar/recommended rows, person filmographies, collections, the requests list and the watchlist hide titles the user may not see, and opening or requesting such a title is refused.<br/>Covers the user's <b>Max Parental Rating</b> and <b>Block unrated items</b> (TMDB certifications read for the server's metadata country) and their <b>Blocked / Allowed Tags</b>: blocked tags match a title's TMDB keywords and genres (Jellyfin imports TMDB keywords as item tags, so blocking "zombie" or "horror" works like it does in the library), allowed tags act as a strict allow-list matched against keywords, and blocked always wins. Titles whose rating or keywords cannot be determined are hidden for restricted users. Users without any restriction are unaffected and nothing extra is fetched for them.</div>
-                                    </div>
                                 </div>
                             </details>
 
@@ -1992,13 +1980,6 @@
                             </div>
                                 <div class="je-setting-description" data-desc-for="jellyseerrUserIdCacheTtlMinutes">
                                     <div class="fieldDescription">How long the Jellyfin → Seerr user ID mapping is cached. Default: 30 minutes.</div>
-                                </div>
-                            <div class="inputContainer">
-                                <label class="inputLabel" for="jellyseerrParentalRatingCacheTtlMinutes">Parental Rating Cache TTL (min)</label>
-                                <input id="jellyseerrParentalRatingCacheTtlMinutes" is="emby-input" type="number" min="1" value="1440"/>
-                            </div>
-                                <div class="je-setting-description" data-desc-for="jellyseerrParentalRatingCacheTtlMinutes">
-                                    <div class="fieldDescription">How long a title's TMDB certification (used by "Respect users' parental ratings") is cached. Default: 1440 minutes (24 hours).</div>
                                 </div>
                         </div>
                     </fieldset>
@@ -5422,10 +5403,6 @@
                 document.querySelector('#jellyseerrDisableCache').checked = !!config.JellyseerrDisableCache;
                 document.querySelector('#jellyseerrResponseCacheTtlMinutes').value = config.JellyseerrResponseCacheTtlMinutes || 10;
                 document.querySelector('#jellyseerrUserIdCacheTtlMinutes').value = config.JellyseerrUserIdCacheTtlMinutes || 30;
-                document.querySelector('#jellyseerrSeamlessScrollPrefetch').checked = config.JellyseerrSeamlessScrollPrefetch !== false;
-                document.querySelector('#jellyseerrLazyPosters').checked = config.JellyseerrLazyPosters !== false;
-                document.querySelector('#jellyseerrRespectParentalRatings').checked = config.JellyseerrRespectParentalRatings !== false;
-                document.querySelector('#jellyseerrParentalRatingCacheTtlMinutes').value = config.JellyseerrParentalRatingCacheTtlMinutes || 1440;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
                 document.querySelector('#JellyseerrApiKey').value = config.JellyseerrApiKey;
@@ -5915,10 +5892,6 @@
             config.JellyseerrDisableCache = document.querySelector('#jellyseerrDisableCache').checked;
             config.JellyseerrResponseCacheTtlMinutes = parseInt(document.querySelector('#jellyseerrResponseCacheTtlMinutes').value, 10) || 10;
             config.JellyseerrUserIdCacheTtlMinutes = parseInt(document.querySelector('#jellyseerrUserIdCacheTtlMinutes').value, 10) || 30;
-            config.JellyseerrSeamlessScrollPrefetch = document.querySelector('#jellyseerrSeamlessScrollPrefetch').checked;
-            config.JellyseerrLazyPosters = document.querySelector('#jellyseerrLazyPosters').checked;
-            config.JellyseerrRespectParentalRatings = document.querySelector('#jellyseerrRespectParentalRatings').checked;
-            config.JellyseerrParentalRatingCacheTtlMinutes = parseInt(document.querySelector('#jellyseerrParentalRatingCacheTtlMinutes').value, 10) || 1440;
             config.JellyseerrShowNetworkDiscovery = document.querySelector('#jellyseerrShowNetworkDiscovery').checked;
             config.JellyseerrShowGenreDiscovery = document.querySelector('#jellyseerrShowGenreDiscovery').checked;
             config.JellyseerrShowTagDiscovery = document.querySelector('#jellyseerrShowTagDiscovery').checked;

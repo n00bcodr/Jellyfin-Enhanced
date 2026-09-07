@@ -31,6 +31,10 @@
     // unobserved explicitly or they (and their handlers) are retained forever.
     const observedPosters = new Set();
 
+    /**
+     * Sets the poster image on a card's image element and stops observing it.
+     * @param {HTMLElement|null} el - Element carrying the pending poster URL in its dataset
+     */
     function applyPoster(el) {
         if (!el) return;
         const url = el.dataset[POSTER_DATA_KEY];
@@ -45,6 +49,11 @@
         el.style.backgroundImage = `url("${url.replace(/["\\]/g, '\\$&')}")`;
     }
 
+    /**
+     * The shared IntersectionObserver that loads posters as cards approach the
+     * viewport; null where IntersectionObserver is unavailable.
+     * @returns {IntersectionObserver|null}
+     */
     function getPosterObserver() {
         if (posterObserver) return posterObserver;
         if (typeof IntersectionObserver === 'undefined') return null;
@@ -62,9 +71,15 @@
         return posterObserver;
     }
 
+    /**
+     * Defers a card's poster until it nears the viewport (or applies it at once
+     * where IntersectionObserver is unsupported).
+     * @param {HTMLElement} el - The card's image element
+     * @param {string} url - Poster URL
+     */
     function observePoster(el, url) {
         el.dataset[POSTER_DATA_KEY] = url;
-        const observer = JE.pluginConfig?.JellyseerrLazyPosters === false ? null : getPosterObserver();
+        const observer = getPosterObserver();
         if (!observer) {
             // No IntersectionObserver support: behave exactly as before.
             applyPoster(el);

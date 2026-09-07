@@ -43,9 +43,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Outcome of <see cref="ApplyAsync"/>.</summary>
         /// <param name="Block">True when the whole response must be refused (blocked detail / sub-resource).</param>
         /// <param name="Body">The (possibly filtered) JSON body to return when not blocked.</param>
-        public readonly record struct Result(bool Block, string Body);
+        /// <param name="RetryLater">True when a paged feed could not be verified within the budget: the body is the safe partial page, but the caller should answer 504 so the client re-fetches once the pending lookups (which keep running) have landed in the cache.</param>
+        public readonly record struct Result(bool Block, string Body, bool RetryLater = false);
 
-        private const int MaxConcurrentFetches = 20;
+        // TMDB's light certification endpoints answer in ~0.4-1.3 s from a cold
+        // connection; 16 in flight keeps a two-feed page (40 titles) under ~2 s
+        // and stays well under TMDB's ~50 req/s.
+        private const int MaxConcurrentFetches = 16;
+        // Re-serialised (filtered) bodies keep '<', '>' and '&' literal, as Seerr's
+        // own JSON does; the default encoder would escape them to \uXXXX. Safe for
+        // application/json, and it keeps filtered and unfiltered bodies alike.
         private static readonly JsonSerializerOptions RelaxedJson = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
         private const int MaxCacheEntries = 20000;
         private static readonly TimeSpan OverallBudget = TimeSpan.FromSeconds(12);
@@ -61,8 +68,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IServerConfigurationManager _serverConfig;
         private readonly Logger _logger;
 
-        // One outbound fan-out limit for the whole server, not per response: a
-        // handful of restricted users opening big lists must not multiply it.
+        // One outbound fan-out limit for list responses across the whole server,
+        // not per response: a handful of restricted users opening big lists must
+        // not multiply it. Single-title checks (a detail page, a request POST) are
+        // one coalesced lookup each and bypass it.
         private readonly SemaphoreSlim _throttle = new(MaxConcurrentFetches);
 
         /// <summary>
@@ -87,6 +96,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // cannot satisfy a caller with tag rules).
         private readonly ConcurrentDictionary<string, Lazy<Task<Signature?>>> _inFlight = new(StringComparer.Ordinal);
 
+        /// <summary>Creates the filter; registered as a singleton so its caches and fetch pool are shared.</summary>
         public SeerrParentalFilter(
             IHttpClientFactory httpClientFactory,
             IUserManager userManager,
@@ -112,20 +122,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             HashSet<string> BlockedTags,
             HashSet<string> AllowedTags)
         {
+            /// <summary>True when the user has any Blocked or Allowed Tags (keyword lookups are then needed).</summary>
             public bool HasTagRules => (BlockedTags?.Count ?? 0) > 0 || (AllowedTags?.Count ?? 0) > 0;
 
+            /// <summary>True when anything at all may be hidden from this user.</summary>
             public bool IsRestricted => MaxScore.HasValue || BlockUnratedMovies || BlockUnratedSeries || HasTagRules;
 
+            /// <summary>Whether unrated titles of the given kind ("movie" / "tv") are hidden.</summary>
             public bool BlocksUnrated(string mediaType) => mediaType == "tv" ? BlockUnratedSeries : BlockUnratedMovies;
         }
 
-        private static bool IsEnabled()
-        {
-            // Not tied to JellyseerrEnabled: the TMDB passthrough is reachable
-            // without Seerr and must be gated by the same policy.
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            return config != null && config.JellyseerrRespectParentalRatings;
-        }
+        // Always on (there is no admin toggle): a user's Jellyfin parental controls
+        // are the policy, and the filter does nothing for users without any. Not
+        // tied to JellyseerrEnabled: the TMDB passthrough is reachable without
+        // Seerr and must be gated by the same policy.
+        private static bool IsEnabled() => JellyfinEnhanced.Instance?.Configuration != null;
 
         /// <summary>
         /// Resolves the caller's parental policy. Returns false when the feature is
@@ -151,10 +162,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var blockMovies = blocked.Contains(UnratedItem.Movie);
             var blockSeries = blocked.Contains(UnratedItem.Series);
 
-            // Tag branch of the native parental controls, normalised the way core
-            // normalises both sides of its comparison.
-            var blockedTags = ParentalTagDecision.CleanTags(user.GetPreference(PreferenceKind.BlockedTags));
-            var allowedTags = ParentalTagDecision.CleanTags(user.GetPreference(PreferenceKind.AllowedTags));
+            // Tag branch of the native parental controls, compared the way core
+            // compares tags (raw values, case-insensitive ordinal).
+            var blockedTags = ParentalTagDecision.ToTagSet(user.GetPreference(PreferenceKind.BlockedTags));
+            var allowedTags = ParentalTagDecision.ToTagSet(user.GetPreference(PreferenceKind.AllowedTags));
 
             policy = new Policy(user.MaxParentalRatingScore, user.MaxParentalRatingSubScore, blockMovies, blockSeries, blockedTags, allowedTags);
             return policy.IsRestricted;
@@ -166,11 +177,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return string.IsNullOrWhiteSpace(code) ? "US" : code.Trim().ToUpperInvariant();
         }
 
-        private static TimeSpan CacheTtl()
-        {
-            var minutes = JellyfinEnhanced.Instance?.Configuration?.JellyseerrParentalRatingCacheTtlMinutes ?? 1440;
-            return TimeSpan.FromMinutes(Math.Max(1, minutes));
-        }
+        // Certifications almost never change: a resolved rating is kept a day.
+        private static TimeSpan CacheTtl() => TimeSpan.FromHours(24);
 
         // ── Public entry points ──────────────────────────────────────────────
 
@@ -180,6 +188,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <param name="json">Upstream JSON body.</param>
         /// <param name="apiPath">Seerr API path (e.g. "/api/v1/search?query=x&amp;page=1").</param>
         /// <param name="jellyfinUserId">The calling Jellyfin user.</param>
+        /// <param name="requestAborted">Stops the lookups when the caller has gone away.</param>
+        /// <returns>Whether the response must be refused, the (filtered) body, and whether the client should re-fetch it.</returns>
         public async Task<Result> ApplyAsync(string json, string apiPath, string? jellyfinUserId, CancellationToken requestAborted = default)
         {
             if (string.IsNullOrEmpty(json))
@@ -201,22 +211,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     case Category.List:
                         // Similar / recommendations of a blocked title expose nothing of it.
                         if (plan.ParentId > 0 && plan.MediaType != null
-                            && await IsTitleBlockedAsync(plan.MediaType, plan.ParentId, policy).ConfigureAwait(false))
+                            && await IsTitleBlockedAsync(plan.MediaType, plan.ParentId, policy, requestAborted).ConfigureAwait(false))
                         {
                             return new Result(true, json);
                         }
 
-                        return new Result(false, await FilterListAsync(json, plan, policy, requestAborted).ConfigureAwait(false));
+                        var (filtered, retryLater) = await FilterListAsync(json, plan, policy, requestAborted).ConfigureAwait(false);
+                        return new Result(false, filtered, retryLater);
 
                     case Category.Detail:
                         return new Result(IsDetailBodyBlocked(json, plan.MediaType!, policy), json);
 
                     case Category.SubResource:
-                        return new Result(await IsTitleBlockedAsync(plan.MediaType!, plan.ParentId, policy).ConfigureAwait(false), json);
+                        return new Result(await IsTitleBlockedAsync(plan.MediaType!, plan.ParentId, policy, requestAborted).ConfigureAwait(false), json);
 
                     case Category.NestedDetail:
                         // e.g. /api/v1/issue/{id}: the title sits under `media`.
-                        return new Result(await IsNestedMediaBlockedAsync(json, policy).ConfigureAwait(false), json);
+                        return new Result(await IsNestedMediaBlockedAsync(json, policy, requestAborted).ConfigureAwait(false), json);
 
                     default:
                         return new Result(false, json);
@@ -230,9 +241,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 // Never fail open on an unexpected error for a restricted user.
                 _logger.Warning($"Parental filter failed for {apiPath}: {ex.Message}");
-                return plan.Category == Category.None
-                    ? new Result(false, json)
-                    : new Result(true, json);
+                return new Result(true, json);
             }
         }
 
@@ -240,7 +249,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// Whether a single title is blocked for the caller (request POSTs, TMDB
         /// passthrough). False for unrestricted users without any lookup.
         /// </summary>
-        public async Task<bool> IsBlockedAsync(string? mediaType, int tmdbId, string? jellyfinUserId)
+        /// <param name="mediaType">"movie" or "tv" (anything else is not rating-gated).</param>
+        /// <param name="tmdbId">The TMDB id of the title.</param>
+        /// <param name="jellyfinUserId">The calling Jellyfin user.</param>
+        /// <param name="requestAborted">Stops the lookup when the caller has gone away.</param>
+        /// <returns>True when the title must be refused to this user.</returns>
+        public async Task<bool> IsBlockedAsync(string? mediaType, int tmdbId, string? jellyfinUserId, CancellationToken requestAborted = default)
         {
             var type = NormalizeMediaType(mediaType);
             if (type == null || tmdbId <= 0 || !TryGetRestrictedPolicy(jellyfinUserId, out var policy))
@@ -250,7 +264,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             try
             {
-                return await IsTitleBlockedAsync(type, tmdbId, policy).ConfigureAwait(false);
+                return await IsTitleBlockedAsync(type, tmdbId, policy, requestAborted).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -296,7 +310,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>How a restricted user may use a TMDB passthrough path.</summary>
-        public enum TmdbAccess { Allow, GateTitle, Deny }
+        public enum TmdbAccess
+        {
+            /// <summary>Title-free lookup: forwarded as-is.</summary>
+            Allow,
+            /// <summary>A single title's own data: forwarded only if that title is allowed.</summary>
+            GateTitle,
+            /// <summary>Would return other titles unfiltered: refused.</summary>
+            Deny
+        }
 
         /// <summary>
         /// Classifies a TMDB passthrough path for a restricted user: title-free
@@ -335,10 +357,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return TmdbAccess.Deny;
             }
 
+            // Only plain segments: a dot-segment or anything outside [A-Za-z0-9_-]
+            // could be normalised by the URI layer into a different, unclassified
+            // path, so it is refused here rather than trusted to the host.
+            if (parts.Any(p => !p.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-')))
+            {
+                return TmdbAccess.Deny;
+            }
+
             var head = parts[0].ToLowerInvariant();
             if (head is "genre" or "genres" or "configuration")
             {
-                return TmdbAccess.Allow; // no titles in these
+                return parts.Length <= 3 ? TmdbAccess.Allow : TmdbAccess.Deny; // no titles in these
             }
 
             // Studio / network logos: bare {head}/{id} only (company/{id}/movies is a title list).
@@ -347,7 +377,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return parts.Length == 2 ? TmdbAccess.Allow : TmdbAccess.Deny;
             }
 
-            if (head == "search" && parts.Length == 2 && parts[1].ToLowerInvariant() is "company" or "keyword" or "person")
+            // Company and keyword search return no titles. Person search does (each
+            // hit carries knownFor titles); the client reaches it through the
+            // explicit tmdb/search/person route, which goes via Seerr's filtered search.
+            if (head == "search" && parts.Length == 2 && parts[1].ToLowerInvariant() is "company" or "keyword")
             {
                 return TmdbAccess.Allow;
             }
@@ -442,17 +475,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // The detail body already carries the certification: score it directly
             // and seed the cache so list rows for this title need no fetch.
             var region = Region();
-            // Seerr detail bodies carry certification AND keywords/genres.
-            var resolved = SignatureFromDetail(detail, mediaType, region, includeTags: true);
+            // Seerr detail bodies carry certification AND (normally) keywords/genres;
+            // without a keyword container the tags stay unknown rather than empty.
+            var resolved = SignatureFromDetail(detail, mediaType, region, includeTags: SeerrTagSignatureExtractor.HasKeywordData(detail));
             if (detail.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.Number && idEl.TryGetInt32(out var tmdbId))
             {
-                _certCache[CacheKey(mediaType, tmdbId, region)] = (resolved, false, DateTime.UtcNow);
+                StoreSignature(CacheKey(mediaType, tmdbId, region), resolved, DateTime.UtcNow, CacheTtl());
             }
 
             return !IsAllowed(resolved, mediaType, policy);
         }
 
-        private async Task<bool> IsNestedMediaBlockedAsync(string json, Policy policy)
+        private async Task<bool> IsNestedMediaBlockedAsync(string json, Policy policy, CancellationToken requestAborted)
         {
             try
             {
@@ -470,7 +504,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return true; // a title we cannot identify cannot be verified
                 }
 
-                return await IsTitleBlockedAsync(mediaType, tmdbId, policy).ConfigureAwait(false);
+                return await IsTitleBlockedAsync(mediaType, tmdbId, policy, requestAborted).ConfigureAwait(false);
             }
             catch (JsonException)
             {
@@ -478,35 +512,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private async Task<bool> IsTitleBlockedAsync(string mediaType, int tmdbId, Policy policy)
+        private async Task<bool> IsTitleBlockedAsync(string mediaType, int tmdbId, Policy policy, CancellationToken requestAborted = default)
         {
             if (tmdbId <= 0)
             {
                 return true;
             }
 
-            using var cts = new CancellationTokenSource(OverallBudget);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
+            cts.CancelAfter(OverallBudget);
             var resolved = await GetSignatureAsync(mediaType, tmdbId, Region(), policy.HasTagRules, cts.Token).ConfigureAwait(false);
             return !IsAllowed(resolved, mediaType, policy);
         }
 
         // ── List filtering ───────────────────────────────────────────────────
 
-        private async Task<string> FilterListAsync(string json, EndpointPlan plan, Policy policy, CancellationToken requestAborted)
+        private async Task<(string Body, bool RetryLater)> FilterListAsync(string json, EndpointPlan plan, Policy policy, CancellationToken requestAborted)
         {
             if (JsonNode.Parse(json) is not JsonObject root)
             {
-                return json;
+                return (json, false);
             }
 
             var arrays = CollectArrays(root, plan).ToList();
             if (arrays.Count == 0)
             {
-                return json;
+                return (json, false);
             }
 
             var region = Region();
-            var scores = await ResolveScoresAsync(arrays, plan, region, policy.HasTagRules, requestAborted).ConfigureAwait(false);
+            var (scores, pending) = await ResolveScoresAsync(arrays, plan, region, policy.HasTagRules, requestAborted).ConfigureAwait(false);
+            // A discover/search page whose titles could not all be verified in time
+            // is not an empty page: the lookups keep running, so tell the caller to
+            // have the client come back for it rather than rendering the gaps as
+            // "nothing here" (the request list keeps its partial-page behaviour).
+            // Person filmographies and collection parts are fetched whole and cached
+            // by the client, so a partially-resolved one would stick as a complete
+            // list. They get the same retry answer as a paged feed.
+            var retryLater = pending > 0 && !plan.NestedMedia
+                && plan.Container is Container.Results or Container.CombinedCredits or Container.Parts;
 
             var removed = 0;
             foreach (var array in arrays)
@@ -538,14 +582,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             if (removed == 0)
             {
-                return json; // nothing changed: hand back the upstream bytes untouched
+                return (json, retryLater); // nothing changed: hand back the upstream bytes untouched
             }
 
             _logger.Debug($"Parental filter removed {removed} item(s) from {plan.Container} response.");
-            return root.ToJsonString(RelaxedJson);
+            return (root.ToJsonString(RelaxedJson), retryLater);
         }
 
-        private async Task<Dictionary<string, Signature?>> ResolveScoresAsync(
+        private async Task<(Dictionary<string, Signature?> Scores, int Pending)> ResolveScoresAsync(
             IReadOnlyList<JsonArray> arrays,
             EndpointPlan plan,
             string region,
@@ -594,18 +638,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var scores = new Dictionary<string, Signature?>(StringComparer.Ordinal);
             if (keys.Count == 0)
             {
-                return scores;
+                return (scores, 0);
             }
 
             // Budget for this response; also stops waiting when the browser aborts
-            // the request (superseded typeahead search). The fetches themselves are
-            // NOT cancelled by the budget: rows still queued when the caller gives
-            // up keep resolving in the background and warm the cache, so a big
-            // list (500 requests, a prolific actor) is complete on the next load
-            // instead of restarting cold every time.
+            // the request (superseded typeahead search). Fetches already holding a
+            // slot are NOT cancelled by the budget: they finish and warm the cache.
+            // Rows still QUEUED for a slot when the caller gives up are dropped:
+            // the pool is shared by every request, and letting each abandoned page
+            // keep its 20-100 queued lookups meant a user browsing several pages
+            // pushed the page they are looking at behind everything they had left,
+            // until nothing resolved within the budget at all.
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
             cts.CancelAfter(OverallBudget);
             var throttle = _throttle;
+            var droppedFromQueue = 0;
 
             var tasks = keys.Select(async kvp =>
             {
@@ -621,7 +668,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return (kvp.Key, (Signature?)null);
                 }
 
-                await throttle.WaitAsync().ConfigureAwait(false);
+                try
+                {
+                    await throttle.WaitAsync(cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    Interlocked.Increment(ref droppedFromQueue);
+                    return (kvp.Key, (Signature?)null); // never got a slot: unverified, not cached as anything
+                }
+
                 try
                 {
                     var score = await GetSignatureAsync(kvp.Value.MediaType, kvp.Value.TmdbId, region, needTags, CancellationToken.None).ConfigureAwait(false);
@@ -633,15 +689,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }).ToList();
 
+            var whenAll = Task.WhenAll(tasks);
+            // The element tasks never throw today; observe a fault anyway so an
+            // abandoned WhenAll can never surface as an unobserved task exception.
+            _ = whenAll.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
             try
             {
-                await Task.WhenAll(tasks).WaitAsync(cts.Token).ConfigureAwait(false);
+                await whenAll.WaitAsync(cts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!requestAborted.IsCancellationRequested)
             {
                 // Over budget: keep what finished, hide the rest (fail closed); the
-                // remaining tasks continue and populate the cache.
-                _logger.Debug($"Parental filter: {tasks.Count(t => !t.IsCompleted)} of {tasks.Count} title lookups still pending after {OverallBudget.TotalSeconds:0}s; hiding them for this response.");
+                // in-flight tasks continue and populate the cache, the queued ones
+                // have been dropped.
+            }
+
+            // Counted after the wait rather than only in the catch: when the budget
+            // fires, the queued waiters complete (as dropped) before WhenAll sees the
+            // cancellation, so WhenAll can finish normally with rows never looked up.
+            var pending = tasks.Count(t => !t.IsCompletedSuccessfully) + droppedFromQueue;
+            if (pending > 0)
+            {
+                _logger.Debug($"Parental filter: {pending} of {tasks.Count} title lookups unresolved after {OverallBudget.TotalSeconds:0}s ({droppedFromQueue} never started); hiding them for this response.");
             }
 
             foreach (var task in tasks)
@@ -654,7 +723,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             requestAborted.ThrowIfCancellationRequested();
-            return scores;
+            return (scores, pending);
         }
 
         private bool ShouldKeep(
@@ -667,7 +736,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var mediaType = ResolveMediaType(item, plan);
             if (mediaType == null)
             {
-                return true; // persons, collections — never rating-gated
+                // Persons and collections carry no rating of their own (a person's
+                // knownFor titles are filtered below, a collection's parts when it is
+                // opened). Anything else without a recognised media type cannot be
+                // verified and fails closed like every other unverifiable row.
+                var raw = ReadString(item, "mediaType")?.ToLowerInvariant();
+                return raw is "person" or "collection";
             }
 
             if (IsAdult(item))
@@ -703,13 +777,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     continue;
                 }
 
+                // knownFor holds titles only; one without a recognised media type
+                // cannot be verified and is dropped like any other unverifiable row.
                 var mediaType = NormalizeMediaType(ReadString(entry, "mediaType"));
-                if (mediaType == null)
-                {
-                    continue;
-                }
-
-                if (IsAdult(entry) || !TryGetTmdbId(entry, "id", out var tmdbId))
+                if (mediaType == null || IsAdult(entry) || !TryGetTmdbId(entry, "id", out var tmdbId))
                 {
                     knownFor.RemoveAt(j);
                     removed++;
@@ -788,9 +859,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 return await lazy.Value.WaitAsync(ct).ConfigureAwait(false);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return null; // over budget or fetch faulted -> cannot verify -> fail closed
+                // Over budget or fetch faulted -> cannot verify -> fail closed.
+                if (ex is not OperationCanceledException)
+                {
+                    _logger.Debug($"Parental filter: lookup for {mediaType}/{tmdbId} failed: {ex.Message}");
+                }
+
+                return null;
             }
         }
 
@@ -840,24 +917,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _tagFetchFailedAt.TryRemove(key, out _);
                 }
 
-                // A rating-only refresh must not erase tags a concurrent full fetch
-                // just cached — but must not resurrect EXPIRED tags either (that
-                // would extend them another TTL and let an upstream keyword change
-                // bypass a tag-restricted user). Keep existing tags only while the
-                // existing entry is itself still fresh.
-                _certCache.AddOrUpdate(
-                    key,
-                    _ => (resolved, false, now),
-                    (_, current) =>
-                    {
-                        if (resolved.Keywords == null && current.Sig?.Keywords != null && !current.Unresolved && now - current.CachedAt < ttl)
-                        {
-                            return (resolved with { Keywords = current.Sig.Keywords, Genres = current.Sig.Genres }, false, now);
-                        }
-
-                        return (resolved, false, now);
-                    });
-                TrimCache();
+                StoreSignature(key, resolved, now, ttl);
                 return resolved;
             }
             finally
@@ -868,11 +928,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private int _trimCounter;
 
+        /// <summary>
+        /// Caches a resolved signature. A rating-only refresh must not erase tags a
+        /// concurrent full fetch just cached — but must not resurrect EXPIRED tags
+        /// either (that would extend them another TTL and let an upstream keyword
+        /// change bypass a tag-restricted user), so existing tags are kept only
+        /// while the existing entry is itself still fresh.
+        /// </summary>
+        private void StoreSignature(string key, Signature resolved, DateTime now, TimeSpan ttl)
+        {
+            _certCache.AddOrUpdate(
+                key,
+                _ => (resolved, false, now),
+                (_, current) =>
+                {
+                    if (resolved.Keywords == null && current.Sig?.Keywords != null && !current.Unresolved && now - current.CachedAt < ttl)
+                    {
+                        return (resolved with { Keywords = current.Sig.Keywords, Genres = current.Sig.Genres }, false, now);
+                    }
+
+                    return (resolved, false, now);
+                });
+            TrimCache();
+        }
+
         private void TrimCache()
         {
             // Cheap amortised maintenance: every 500 inserts drop expired entries,
             // and if the cache is still over its hard cap evict the oldest quarter.
-            if (Interlocked.Increment(ref _trimCounter) % 500 != 0 && _certCache.Count < MaxCacheEntries)
+            // (Gated on the counter alone: ConcurrentDictionary.Count takes every
+            // bucket lock, far too much for a check on the fetch hot path.)
+            if (Interlocked.Increment(ref _trimCounter) % 500 != 0)
             {
                 return;
             }
@@ -960,7 +1046,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var fromSeerr = await FetchDetailFromSeerrAsync(mediaType, tmdbId, config, ct).ConfigureAwait(false);
-            return (fromSeerr, fromSeerr != null);
+            // "Has tag data" means the body carries a keyword container, not merely
+            // that the call succeeded: an empty set from a body without one would
+            // let a blocked-tag rule pass instead of failing closed.
+            return (fromSeerr, fromSeerr != null && SeerrTagSignatureExtractor.HasKeywordData(fromSeerr.Value));
         }
 
         private async Task<JsonElement?> FetchCertFromTmdbAsync(string mediaType, int tmdbId, string apiKey, CancellationToken ct)
@@ -1266,7 +1355,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception)
             {
-                return false;
+                return true; // unreadable flag: treat as adult (fail closed)
             }
         }
 

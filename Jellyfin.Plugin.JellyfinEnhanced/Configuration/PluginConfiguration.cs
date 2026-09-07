@@ -171,10 +171,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrDisableCache = false;
             JellyseerrResponseCacheTtlMinutes = 10;
             JellyseerrUserIdCacheTtlMinutes = 30;
-            JellyseerrRespectParentalRatings = true;
-            JellyseerrSeamlessScrollPrefetch = true;
-            JellyseerrLazyPosters = true;
-            JellyseerrParentalRatingCacheTtlMinutes = 1440;
             TriggerSeerrScanOnItemAdded = false;
             SeerrScanDebounceSeconds = 60;
 
@@ -621,28 +617,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrDisableCache { get; set; }
         public int JellyseerrResponseCacheTtlMinutes { get; set; }
         public int JellyseerrUserIdCacheTtlMinutes { get; set; }
-
-        // Enforce each Jellyfin user's own parental controls — max parental
-        // rating, "block unrated", and Blocked / Allowed Tags (matched against a
-        // title's TMDB keywords, and for blocked tags its genres) — on Seerr
-        // search, discovery, similar / recommended, person, collection, requests,
-        // watchlist and detail surfaces (issue #581). Users without any
-        // restriction are unaffected.
-        public bool JellyseerrRespectParentalRatings { get; set; }
-
-        // Seamless scroll: keep several pages of Seerr results rendered ahead of
-        // the viewer and prefetch the pages after that, so search rows and
-        // "More from" sections never show a loading gap. Off = load one batch
-        // at a time only when needed (fewer Seerr/TMDB requests).
-        public bool JellyseerrSeamlessScrollPrefetch { get; set; }
-
-        // Load Seerr card posters only as they approach the viewport instead of
-        // all at once when a page of cards is rendered.
-        public bool JellyseerrLazyPosters { get; set; }
-
-        // How long a resolved TMDB certification -> parental score is cached
-        // (user-neutral). Certifications almost never change, so default 24h.
-        public int JellyseerrParentalRatingCacheTtlMinutes { get; set; }
 
         // Arr Links Settings
         public bool ArrLinksEnabled { get; set; }

@@ -154,6 +154,7 @@
         let currentAbortController = null;
         /** @type {string|null} */
         let currentRenderingPageKey = null;
+        let keepAttachedSeq = 0;
 
         // ---- Pagination state (dual-feed + client-paged) --------------------
         let isLoading = false;
@@ -259,7 +260,9 @@
                 return response || { results: [], totalPages: 1 };
             } catch (error) {
                 if (error.name === 'AbortError' || !tolerant) throw error;
-                return { results: [], totalPages: 1 };
+                // Mark the failure: the caller keeps the feed open so the scroll
+                // engine re-fetches page 1 with retries instead of ending the feed.
+                return { results: [], totalPages: 1, failed: true };
             }
         }
 
@@ -291,7 +294,7 @@
          * @param {AbortSignal} [signal]
          */
         function prefetchAhead(filterMode, pagesPerFeed, signal) {
-            if (!currentFeeds || JE.pluginConfig?.JellyseerrSeamlessScrollPrefetch === false) return;
+            if (!currentFeeds) return;
             const count = Math.max(1, Math.min(MAX_PREFETCH_PER_FEED, pagesPerFeed));
             if (currentFeeds.tvId && (filterMode === 'mixed' || filterMode === 'tv') && tvHasMorePages) {
                 pageRange(tvCurrentPage + 1, count, tvTotalPages)
@@ -454,6 +457,7 @@
          * @param {HTMLElement|null} itemsContainer
          * @param {string} mode - Current filter mode
          * @param {boolean} [reset=false] - Clear existing cards and reset counter
+         * @param {number} [chunkSize=PAGE_SIZE] - How many items to render this call
          */
         function renderChunk(itemsContainer, mode, reset = false, chunkSize = PAGE_SIZE) {
             if (!itemsContainer) return;
@@ -480,11 +484,6 @@
             hasMorePages = renderedCount < currentPagedResults.length;
         }
 
-        /**
-         * Loads more items for infinite scroll. dual-feed fetches the next
-         * server page(s) for the active filter mode; client-paged renders the
-         * next local chunk.
-         */
         /**
          * Loads more items for infinite scroll. dual-feed fetches the next
          * server page(s) for the active filter mode — several per feed in
@@ -572,9 +571,9 @@
                 }
                 const pagesFetched = tvPages.length + moviePages.length;
 
-                const [tvResponses, movieResponses] = await Promise.all([
-                    Promise.all(tvPages.map(p => fetchFeedPage('tv', /** @type {number} */ (currentFeeds.tvId), p, signal))),
-                    Promise.all(moviePages.map(p => fetchFeedPage('movie', /** @type {number} */ (currentFeeds.movieId), p, signal)))
+                const [tvSettled, movieSettled] = await Promise.all([
+                    Promise.allSettled(tvPages.map(p => fetchFeedPage('tv', /** @type {number} */ (currentFeeds.tvId), p, signal))),
+                    Promise.allSettled(moviePages.map(p => fetchFeedPage('movie', /** @type {number} */ (currentFeeds.movieId), p, signal)))
                 ]);
 
                 if (signal?.aborted) return;
@@ -582,26 +581,47 @@
                 // cached for the new generation to reuse, but its bookkeeping is stale.
                 if (generation !== loadGeneration) return;
 
+                // Commit each feed's pages in order up to its first failure: a flaky
+                // upstream (Seerr's TMDB call failing for one page) must not throw
+                // away the pages that did arrive. The counters stop before the failed
+                // page, so the next fill re-fetches from there.
                 const newTvResults = [];
                 const newMovieResults = [];
+                let firstError = null;
+                let committedPages = 0;
 
-                tvResponses.forEach((r, i) => {
+                const commit = (settled, pages, onPage) => {
+                    for (let i = 0; i < settled.length; i++) {
+                        const s = settled[i];
+                        if (s.status !== 'fulfilled') {
+                            if (s.reason?.name === 'AbortError') throw s.reason;
+                            if (!firstError) firstError = s.reason;
+                            return;
+                        }
+                        onPage(s.value, pages[i]);
+                        committedPages++;
+                    }
+                };
+                commit(tvSettled, tvPages, (r, page) => {
                     newTvResults.push(...(r.results || []));
                     tvTotalPages = clampPages(r.totalPages);
-                    tvCurrentPage = tvPages[i];
-                });
-                if (tvPages.length > 0) {
+                    tvCurrentPage = page;
                     tvHasMorePages = tvCurrentPage < tvTotalPages;
-                    cachedTvResults = [...cachedTvResults, ...newTvResults];
-                }
-                movieResponses.forEach((r, i) => {
+                });
+                if (newTvResults.length > 0) cachedTvResults = [...cachedTvResults, ...newTvResults];
+                commit(movieSettled, moviePages, (r, page) => {
                     newMovieResults.push(...(r.results || []));
                     movieTotalPages = clampPages(r.totalPages);
-                    movieCurrentPage = moviePages[i];
-                });
-                if (moviePages.length > 0) {
+                    movieCurrentPage = page;
                     movieHasMorePages = movieCurrentPage < movieTotalPages;
-                    cachedMovieResults = [...cachedMovieResults, ...newMovieResults];
+                });
+                if (newMovieResults.length > 0) cachedMovieResults = [...cachedMovieResults, ...newMovieResults];
+
+                if (firstError && committedPages === 0) {
+                    throw firstError; // nothing arrived at all: let the engine retry with backoff
+                }
+                if (firstError) {
+                    console.debug(`${logPrefix} ${committedPages} of ${pagesFetched} page(s) arrived; the rest will be retried on the next load (${firstError.message})`);
                 }
 
                 updateHasMorePages(filterMode);
@@ -633,6 +653,7 @@
                     if (fragment.childNodes.length > 0) {
                         itemsContainer.appendChild(fragment);
                     }
+                    ensureFilterControl(itemsContainer);
                 }
 
                 // Keep the cache warm for the next load while this one renders.
@@ -645,7 +666,7 @@
                     : Math.min(pagesPerFeed, Math.floor(remainingBudget / feedCount));
                 if (prefetchPerFeed > 0) prefetchAhead(filterMode, prefetchPerFeed, signal);
 
-                return { pages: pagesFetched, rendered: lastBatchRendered };
+                return { pages: committedPages, rendered: lastBatchRendered };
             } catch (error) {
                 if (generation === loadGeneration) {
                     // Roll back page counters on failure so retry fetches the same page
@@ -739,15 +760,18 @@
                 // Read the filter at commit time — it may have changed meanwhile.
                 const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
 
+                // Same failure handling as the first render: a feed whose page 1
+                // failed stays at page 0 with more pages, so the engine re-fetches
+                // it with backoff instead of the sort change ending the feed.
                 results.forEach(r => {
                     if (r.type === 'tv') {
                         cachedTvResults = r.data.results || [];
-                        tvTotalPages = clampPages(r.data.totalPages);
-                        tvHasMorePages = 1 < tvTotalPages;
+                        if (r.data.failed) { tvCurrentPage = 0; tvHasMorePages = true; }
+                        else { tvTotalPages = clampPages(r.data.totalPages); tvHasMorePages = 1 < tvTotalPages; }
                     } else {
                         cachedMovieResults = r.data.results || [];
-                        movieTotalPages = clampPages(r.data.totalPages);
-                        movieHasMorePages = 1 < movieTotalPages;
+                        if (r.data.failed) { movieCurrentPage = 0; movieHasMorePages = true; }
+                        else { movieTotalPages = clampPages(r.data.totalPages); movieHasMorePages = 1 < movieTotalPages; }
                     }
                 });
 
@@ -856,6 +880,21 @@
         }
 
         /**
+         * Adds the All / Movies / Series control once both media types have
+         * appeared (page 1 of one feed may have arrived late or failed).
+         * @param {HTMLElement} itemsContainer
+         */
+        function ensureFilterControl(itemsContainer) {
+            if (!isDualFeed || !JE.discoveryFilter?.createFilterControl) return;
+            const section = itemsContainer.closest(sectionSelector);
+            const header = section?.querySelector('.jellyseerr-discovery-header');
+            if (!header || header.querySelector('.jellyseerr-discovery-filter')) return;
+            if (!JE.discoveryFilter.hasBothTypes(cachedTvResults, cachedMovieResults)) return;
+            const title = header.querySelector('.sectionTitle');
+            if (title) title.after(JE.discoveryFilter.createFilterControl(key, handleFilterChange));
+        }
+
+        /**
          * The list page may still be settling when the section goes in (it is
          * inserted as soon as the container exists, not once it is full). If a
          * re-render drops the section during the first seconds, put it back.
@@ -865,7 +904,9 @@
          */
         function keepAttached(section, listPage, signal) {
             if (!JE.helpers?.onBodyMutation) return;
-            const handle = JE.helpers.onBodyMutation(`jellyseerr-${key}-discovery-keepattached`, () => {
+            // Unique id per call: body subscribers are keyed by id, so a stale
+            // handle unsubscribing a shared id would silently drop the successor's.
+            const handle = JE.helpers.onBodyMutation(`jellyseerr-${key}-discovery-keepattached-${++keepAttachedSeq}`, () => {
                 if (signal.aborted) return;
                 const detached = !section.isConnected;
                 const onHiddenPage = !detached && !!section.closest('.page.hide');
@@ -877,8 +918,8 @@
                 const parent = container?.closest('.verticalSection') || container?.parentElement;
                 if (parent?.parentElement && !parent.parentElement.contains(section)) parent.parentElement.appendChild(section);
             });
-            setTimeout(() => handle?.unsubscribe?.(), 6000);
-            signal.addEventListener('abort', () => handle?.unsubscribe?.(), { once: true });
+            const timer = setTimeout(() => handle?.unsubscribe?.(), 6000);
+            signal.addEventListener('abort', () => { clearTimeout(timer); handle?.unsubscribe?.(); }, { once: true });
         }
 
         /**
@@ -888,11 +929,18 @@
          * @param {string} pageKey
          */
         async function renderDualFeed(id, signal, pageKey) {
-            const pageReadyPromise = waitForPageReady(signal);
+            // The page wait runs alongside the feed resolution, on its own
+            // controller: an early exit (nothing to show, Seerr off for this user)
+            // must stop its polling rather than leave it running until the next
+            // navigation aborts the render's signal.
+            const pageReadyAbort = new AbortController();
+            const stopPageWait = () => pageReadyAbort.abort();
+            signal.addEventListener('abort', stopPageWait, { once: true });
+            const pageReadyPromise = waitForPageReady(pageReadyAbort.signal);
 
             const resolved = await spec.resolveFeeds({ id, signal });
             if (signal.aborted) return;
-            if (!resolved || (!resolved.tvId && !resolved.movieId)) return;
+            if (!resolved || (!resolved.tvId && !resolved.movieId)) { stopPageWait(); return; }
 
             // Reset pagination state
             tvCurrentPage = 1;
@@ -940,6 +988,7 @@
             // in now and the cards stream in when page 1 lands, so the first
             // visit doesn't sit on a blank page waiting for Seerr.
             const listPage = await pageReadyPromise;
+            signal.removeEventListener('abort', stopPageWait);
             if (signal.aborted) return;
             let section = null;
             let itemsContainer = null;
@@ -957,31 +1006,38 @@
                 }
             }
 
+            // A failure here tears the section down only while this render still
+            // owns it: an abort means a sort change took the section over (its own
+            // load fills the same container) or a navigation's cleanup already
+            // removed it — removing it now would delete the successor's section.
             let fetchResults;
             try {
                 fetchResults = await Promise.all(fetchPromises);
             } catch (error) {
-                section?.remove();
+                if (!signal.aborted) section?.remove();
                 throw error;
             }
 
-            if (signal.aborted) { section?.remove(); return; }
+            if (signal.aborted) return;
 
-            // Process results
+            // Process results. A feed whose page 1 failed (Seerr/TMDB hiccup) is
+            // left at page 0 with more pages, so the engine's first fill fetches
+            // page 1 again with backoff and, if it keeps failing, a retry button —
+            // rather than the section quietly never appearing.
+            let anyFailed = false;
             fetchResults.forEach(r => {
                 if (r.type === 'tv') {
                     cachedTvResults = r.data.results || [];
-                    tvTotalPages = clampPages(r.data.totalPages);
-                    tvHasMorePages = 1 < tvTotalPages;
+                    if (r.data.failed) { anyFailed = true; tvCurrentPage = 0; tvHasMorePages = true; }
+                    else { tvTotalPages = clampPages(r.data.totalPages); tvHasMorePages = 1 < tvTotalPages; }
                 } else {
                     cachedMovieResults = r.data.results || [];
-                    movieTotalPages = clampPages(r.data.totalPages);
-                    movieHasMorePages = 1 < movieTotalPages;
+                    if (r.data.failed) { anyFailed = true; movieCurrentPage = 0; movieHasMorePages = true; }
+                    else { movieTotalPages = clampPages(r.data.totalPages); movieHasMorePages = 1 < movieTotalPages; }
                 }
             });
 
             // Determine if we have both types (only show filter if BOTH have results)
-            const hasBoth = JE.discoveryFilter?.hasBothTypes(cachedTvResults, cachedMovieResults) || false;
 
             // Always start each section on defaults instead of persisting previous choice.
             JE.discoveryFilter?.resetFilterMode?.(key);
@@ -1000,23 +1056,19 @@
                 displayResults = [...cachedTvResults, ...cachedMovieResults];
             }
 
-            if (displayResults.length === 0 || !section || !itemsContainer) {
-                section?.remove();
-                return;
-            }
-
+            if (!section || !itemsContainer) return;
+            // An empty page 1 is not an empty feed: the parental filter and the
+            // in-library/hidden filters can strip a page bare while later pages
+            // still hold titles (upstream page counts are preserved). Only give up
+            // when the feed itself says there is nothing more.
             const fragment = createCardsFragment(displayResults);
-            if (fragment.childNodes.length === 0) {
+            if (fragment.childNodes.length === 0 && !anyFailed && !hasMorePages) {
                 section.remove();
                 return;
             }
 
             // Both media types present: add the All / Movies / Series control now.
-            if (hasBoth && JE.discoveryFilter?.createFilterControl) {
-                const header = section.querySelector('.jellyseerr-discovery-header');
-                const title = header?.querySelector('.sectionTitle');
-                if (header && title) title.after(JE.discoveryFilter.createFilterControl(key, handleFilterChange));
-            }
+            ensureFilterControl(itemsContainer);
 
             yieldStats.fetched += displayResults.length;
             yieldStats.rendered += fragment.childNodes.length;
@@ -1146,6 +1198,7 @@
             }
             currentAbortController = new AbortController();
             const signal = currentAbortController.signal;
+            const myController = currentAbortController;
 
             // Start metrics if enabled
             if (JE.requestManager?.metrics?.enabled) {
@@ -1183,8 +1236,10 @@
                 }
                 console.error(`${logPrefix} Error rendering ${key} discovery:`, error);
             } finally {
-                // Clear rendering key after completion (success, abort, or failure)
-                currentRenderingPageKey = null;
+                // Clear the re-entry guard after completion (success, abort, or
+                // failure) — unless a newer render has taken over: an aborted render
+                // can settle after its successor started and must not clear its key.
+                if (currentAbortController === myController) currentRenderingPageKey = null;
             }
         }
 
@@ -1198,8 +1253,9 @@
                 currentAbortController.abort();
                 currentAbortController = null;
             }
-            const section = document.querySelector(sectionSelector);
-            JE.jellyseerrUI?.releasePosters?.(section || undefined);
+            // The section is gone already; the root-less call sweeps every poster
+            // whose card is no longer in the document.
+            JE.jellyseerrUI?.releasePosters?.();
             if (spec.mode !== 'one-shot') {
                 cleanupScrollObserver();
             }

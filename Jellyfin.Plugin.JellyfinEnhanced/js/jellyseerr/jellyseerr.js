@@ -138,7 +138,7 @@
          * @param {AbortSignal|null} signal
          */
         function prefetchSearchPages(query, count, signal) {
-            if (!searchHasMore || signal?.aborted || JE.pluginConfig?.JellyseerrSeamlessScrollPrefetch === false) return;
+            if (!searchHasMore || signal?.aborted) return;
             const last = Math.min(searchTotalPages, searchCurrentPage + Math.max(1, count));
             for (let p = searchCurrentPage + 1; p <= last; p++) {
                 search(query, p, { signal }).catch(() => {});
@@ -199,18 +199,11 @@
 
             searchYield.fetched += results.length;
             if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
-            if (searchDeduplicator) searchDeduplicator.filter(results);
+            if (searchDeduplicator) results = searchDeduplicator.filter(results);
             searchYield.rendered += results.length;
 
             if (results.length > 0) {
                 renderJellyseerrResults(results, query, isJellyseerrOnlyMode, isJellyseerrActive, jellyseerrUserFound);
-
-                // Set up infinite scroll if more pages exist (it fills the row
-                // buffer immediately, so start it before the collection lookups
-                // compete for request slots).
-                if (searchHasMore) {
-                    setupSearchInfiniteScroll(query);
-                }
 
                 // Enrich with collections in the background, then slot the
                 // collection cards into the existing row.
@@ -221,6 +214,15 @@
                         insertCollectionCards(enrichedResults);
                     }
                 }).catch(() => {});
+            }
+
+            // Start the engine whenever pages remain, even if this page rendered
+            // nothing (everything filtered out): later pages may still have titles,
+            // and the engine's empty-page valve decides when to stop. It fills the
+            // row buffer immediately, so start it before the collection lookups
+            // compete for request slots.
+            if (searchHasMore) {
+                setupSearchInfiniteScroll(query);
             }
         }
 
@@ -264,15 +266,28 @@
                 const pages = [];
                 for (let p = firstPage; p < firstPage + count; p++) pages.push(p);
 
-                const responses = await Promise.all(pages.map(p => search(query, p, { signal, throwOnError: true })));
+                const settled = await Promise.allSettled(pages.map(p => search(query, p, { signal, throwOnError: true })));
                 if (lastProcessedQuery !== query) return; // query changed during fetch
 
+                // Commit pages in order up to the first failure; a flaky page must
+                // not discard the ones that arrived (they are re-fetched next load).
                 let results = [];
-                responses.forEach((data, i) => {
+                let committed = 0;
+                let firstError = null;
+                for (let i = 0; i < settled.length; i++) {
+                    const s = settled[i];
+                    if (s.status !== 'fulfilled') {
+                        if (s.reason?.name === 'AbortError') throw s.reason;
+                        firstError = s.reason;
+                        break;
+                    }
+                    const data = s.value;
                     results.push(...(data.results || []));
                     searchCurrentPage = data.page || pages[i];
                     if (data.totalPages) searchTotalPages = Math.min(data.totalPages, TMDB_MAX_PAGE);
-                });
+                    committed++;
+                }
+                if (firstError && committed === 0) throw firstError;
                 searchHasMore = searchCurrentPage < searchTotalPages;
 
                 searchYield.fetched += results.length;
@@ -298,7 +313,7 @@
                     });
                     itemsContainer.appendChild(fragment);
                 }
-                return { pages: pages.length, rendered: results.length };
+                return { pages: committed, rendered: itemsContainer ? results.length : 0 };
             } catch (error) {
                 if (error.name !== 'AbortError') {
                     console.warn(`${logPrefix} Failed to load more search results:`, error);

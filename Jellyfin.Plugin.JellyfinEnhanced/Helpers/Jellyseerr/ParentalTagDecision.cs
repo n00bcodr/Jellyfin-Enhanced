@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
-using System.Text;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
 {
@@ -17,9 +15,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
     ///  - AllowedTags (when non-empty) is a strict allow-list: the item must carry
     ///    at least one allowed tag or it is hidden.
     ///  - Both lists empty: no gating.
-    ///  - Matching is whole-token over values normalised like core's
-    ///    <c>GetCleanValue()</c> (lower-case, diacritics stripped, punctuation to
-    ///    spaces, whitespace collapsed), so "Sci-Fi" == "sci fi".
+    ///  - Matching is whole-value and case-insensitive-ordinal on the RAW strings,
+    ///    exactly as core compares its tags (<c>StringComparer.OrdinalIgnoreCase</c>,
+    ///    no cleaning). Normalising punctuation/diacritics here would widen the
+    ///    allow-list beyond what the library accepts, e.g. an allowed tag
+    ///    "family!" must not be satisfied by the plain keyword "family".
     ///
     /// Adaptation for external titles: the two directions use different match
     /// surfaces because their safe-failure directions are opposite.
@@ -36,9 +36,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
     public static class ParentalTagDecision
     {
         /// <summary>
-        /// Decides whether a title with the given cleaned keyword/genre sets is
-        /// visible under the user's cleaned blocked/allowed tag lists. Set overlap
-        /// only; all inputs must already be cleaned via <see cref="CleanTags"/>.
+        /// Decides whether a title with the given keyword/genre sets is visible
+        /// under the user's blocked/allowed tag lists. Set overlap only; every set
+        /// must have been built by <see cref="ToTagSet"/> so the comparison is the
+        /// case-insensitive ordinal one core uses.
         /// </summary>
         public static bool IsAllowed(
             IReadOnlyCollection<string> titleKeywords,
@@ -66,12 +67,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
         }
 
         /// <summary>
-        /// Normalises a raw tag list the way core normalises both sides of its tag
-        /// comparison, dropping entries that clean to empty.
+        /// Builds a comparison set from raw tag/keyword/genre names: values are kept
+        /// verbatim (only trimmed) and compared case-insensitive-ordinal, which is
+        /// exactly how core matches tags. Null/blank entries are dropped as they
+        /// could never match anything.
         /// </summary>
-        public static HashSet<string> CleanTags(IEnumerable<string?>? raw)
+        public static HashSet<string> ToTagSet(IEnumerable<string?>? raw)
         {
-            var result = new HashSet<string>(StringComparer.Ordinal);
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (raw == null)
             {
                 return result;
@@ -79,52 +82,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
 
             foreach (var value in raw)
             {
-                var cleaned = CleanValue(value);
-                if (!string.IsNullOrEmpty(cleaned))
+                if (!string.IsNullOrWhiteSpace(value))
                 {
-                    result.Add(cleaned);
+                    result.Add(value.Trim());
                 }
             }
 
             return result;
-        }
-
-        /// <summary>
-        /// Mirrors Jellyfin's <c>String.GetCleanValue()</c>: lower-case, strip
-        /// diacritics, replace anything that is not a letter or digit with a space,
-        /// collapse runs of whitespace, trim.
-        /// </summary>
-        public static string CleanValue(string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return string.Empty;
-            }
-
-            var decomposed = value.Normalize(NormalizationForm.FormD);
-            var sb = new StringBuilder(decomposed.Length);
-            var lastWasSpace = true;
-            foreach (var ch in decomposed)
-            {
-                var category = CharUnicodeInfo.GetUnicodeCategory(ch);
-                if (category == UnicodeCategory.NonSpacingMark)
-                {
-                    continue; // diacritic
-                }
-
-                if (char.IsLetterOrDigit(ch))
-                {
-                    sb.Append(char.ToLowerInvariant(ch));
-                    lastWasSpace = false;
-                }
-                else if (!lastWasSpace)
-                {
-                    sb.Append(' ');
-                    lastWasSpace = true;
-                }
-            }
-
-            return sb.ToString().Trim();
         }
     }
 }

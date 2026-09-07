@@ -93,21 +93,33 @@
   // TMDB pages overlap as popularity shifts between requests; drop repeats.
   let categoryDeduplicator = null;
 
+  /**
+   * Warms the request cache with the pages after the current one.
+   * @param {{path: string}} category
+   * @param {number} count - How many pages ahead to fetch
+   */
   function prefetchCategoryPages(category, count) {
     const st = state.categoryState;
-    if (!st.hasMore || JE.pluginConfig?.JellyseerrSeamlessScrollPrefetch === false) return;
+    if (!st.hasMore) return;
     const last = st.totalPages ? Math.min(st.totalPages, st.page + count) : st.page + count;
     for (let p = st.page + 1; p <= last; p++) {
       fetchWithManagedRequest(`${category.path}?page=${p}`).catch(() => {});
     }
   }
 
-  // Fetches the next batch of pages in parallel (sized from the scroll
-  // engine's buffer deficit and the observed post-filter yield) and appends
-  // their cards. A batch that renders nothing (every item already in the
-  // library / hidden) is fine: the scroll engine simply calls again for the
-  // pages after it, so heavily-owned categories never stall. The pages after
-  // this batch are prefetched into the cache while it renders.
+  /**
+   * Fetches the next batch of pages in parallel (sized from the scroll
+   * engine's buffer deficit and the observed post-filter yield) and appends
+   * their cards. A batch that renders nothing (every item already in the
+   * library / hidden) is fine: the scroll engine simply calls again for the
+   * pages after it, so heavily-owned categories never stall. The pages after
+   * this batch are prefetched into the cache while it renders.
+   * @param {{path: string}} category
+   * @param {HTMLElement} container - The category's card container
+   * @param {{deficitPx?: number, pageBudget?: number, engaged?: boolean}} [hint] - From the scroll engine
+   * @param {() => boolean} [isStale] - True once another category (or Back) took over
+   * @returns {Promise<{pages: number, rendered: number}>} Pages consumed and cards appended
+   */
   async function loadMoreCategoryItems(category, container, hint, isStale) {
     const st = state.categoryState;
     st.isLoading = true;
@@ -123,10 +135,20 @@
       const pages = [];
       for (let p = firstPage; p < firstPage + count; p++) pages.push(p);
 
-      const responses = await Promise.all(pages.map(p => fetchWithManagedRequest(`${category.path}?page=${p}`)));
+      const settled = await Promise.allSettled(pages.map(p => fetchWithManagedRequest(`${category.path}?page=${p}`)));
       // Another category (or Back) took over while these pages were in flight:
       // they are cached for later, but this page's DOM and state are not ours.
       if (isStale?.() || state.categoryState !== st) return { pages: 0, rendered: 0 };
+
+      // Commit pages in order up to the first failure (the rest are re-fetched
+      // on the next load); throw only if nothing arrived so the engine retries.
+      const responses = [];
+      let firstError = null;
+      for (const s of settled) {
+        if (s.status !== 'fulfilled') { if (s.reason?.name === 'AbortError') throw s.reason; firstError = s.reason; break; }
+        responses.push(s.value);
+      }
+      if (firstError && responses.length === 0) throw firstError;
 
       const fragment = document.createDocumentFragment();
       for (let i = 0; i < responses.length; i++) {
@@ -134,18 +156,20 @@
         let results = response?.results || [];
         console.debug(`${logPrefix} category page ${pages[i]}/${response?.totalPages}: ${results.length} raw result(s)`);
         st.page = pages[i];
-        if (response?.totalPages) st.totalPages = clampPages(response.totalPages);
-        if (results.length === 0) {
-          st.hasMore = false;
-          break;
-        }
+        const total = response?.totalPages ? clampPages(response.totalPages) : (st.totalPages || 1);
+        st.totalPages = total;
+        // An empty page is not the end of the feed: server-side parental filtering
+        // removes rows while preserving the upstream page counts, so page 2 of 10
+        // can legitimately come back with nothing. Keep committing pages and let
+        // the scroll engine's empty-page valve decide when to stop.
+        st.hasMore = pages[i] < total;
+        if (results.length === 0) continue;
         results = sortResults(results, JE.discoveryFilter.getSortMode(SORT_MODULE));
         if (categoryDeduplicator) results = categoryDeduplicator.filter(results);
         // Filters out already-in-library/hidden items - a raw non-empty API
         // page can still render zero actual cards.
         fragment.appendChild(JE.discoveryFilter.createCardsFragment(results, { cardClass: 'portraitCard' }));
         yieldStats.fetched += results.length;
-        st.hasMore = pages[i] < clampPages(response?.totalPages);
       }
       const rendered = fragment.childNodes.length;
       yieldStats.rendered += rendered;
@@ -163,6 +187,12 @@
     }
   }
 
+  /**
+   * Renders page 1 of a category into an emptied container.
+   * @param {{path: string}} category
+   * @param {HTMLElement} container
+   * @param {() => boolean} [isStale] - True once another category (or Back) took over
+   */
   async function loadInitialCategoryPage(category, container, isStale) {
     JE.jellyseerrUI?.releasePosters?.(container);
     container.textContent = '';
@@ -186,7 +216,12 @@
       state.categoryState.totalPages = clampPages(response?.totalPages);
       state.categoryState.hasMore = 1 < clampPages(response?.totalPages);
     } catch (error) {
-      console.error(`${logPrefix} Failed to load category`, error);
+      // Page 1 failed (a 504 while the parental lookups warm, or a Seerr hiccup):
+      // leave the feed at page 0 with more pages so the engine's first fill asks
+      // for page 1 again, rather than silently starting at page 2.
+      state.categoryState.page = 0;
+      state.categoryState.hasMore = true;
+      console.error(`${logPrefix} Failed to load category page 1; it will be retried`, error);
     }
   }
 

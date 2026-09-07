@@ -17,7 +17,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
     /// </summary>
     public static class SeerrTagSignatureExtractor
     {
-        /// <summary>Extracts the cleaned keyword and genre name sets from a detail body.</summary>
+        /// <summary>
+        /// Whether the body carries a keyword container at all. A detail body without
+        /// one is not "a title with no keywords" — its tags are unknown, and tag rules
+        /// must fail closed on it rather than read the empty set as a clean bill.
+        /// </summary>
+        public static bool HasKeywordData(JsonElement detail)
+            => detail.ValueKind == JsonValueKind.Object
+               && detail.TryGetProperty("keywords", out var keywords)
+               && keywords.ValueKind is JsonValueKind.Array or JsonValueKind.Object;
+
+        /// <summary>Extracts the keyword and genre name sets from a detail body.</summary>
         public static (HashSet<string> Keywords, HashSet<string> Genres) Extract(JsonElement detail)
         {
             var keywordNames = new List<string?>();
@@ -35,7 +45,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr
                 }
             }
 
-            return (ParentalTagDecision.CleanTags(keywordNames), ParentalTagDecision.CleanTags(genreNames));
+            return (ParentalTagDecision.ToTagSet(keywordNames), ParentalTagDecision.ToTagSet(genreNames));
         }
 
         private static void CollectNames(JsonElement container, List<string?> names)

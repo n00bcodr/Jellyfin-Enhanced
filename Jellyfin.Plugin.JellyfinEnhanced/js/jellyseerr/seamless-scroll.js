@@ -45,10 +45,6 @@
         // resumes exactly where the feed left off. 40 pages ≈ 800 items.
         maxConsecutiveEmptyPages: 40,
 
-        // Legacy name kept for callers that read it; the engine now uses the
-        // buffer settings above.
-        prefetchThresholdPx: Math.max(window.innerHeight * 3, 2400),
-
         // Retry configuration
         retry: {
             maxAttempts: 3,
@@ -62,10 +58,19 @@
     // UTILITY FUNCTIONS
     // ============================================================================
 
+    /**
+     * @param {number} ms
+     * @returns {Promise<void>}
+     */
     function sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    /**
+     * Exponential backoff with jitter for load retries.
+     * @param {number} attempt - 1-based retry number
+     * @returns {number} Delay in milliseconds
+     */
     function calculateBackoff(attempt) {
         const { baseDelayMs, maxDelayMs, jitterFactor } = CONFIG.retry;
         const exponentialDelay = baseDelayMs * Math.pow(2, attempt - 1);
@@ -74,14 +79,11 @@
         return Math.max(0, Math.round(clampedDelay + jitter));
     }
 
-    // With read-ahead disabled the buffer shrinks to one viewport, i.e. load the
-    // next batch only once the viewer is about a screen from the end.
-    function readAheadEnabled() {
-        return JE.pluginConfig?.JellyseerrSeamlessScrollPrefetch !== false;
-    }
-
+    /**
+     * How much rendered content a vertical grid keeps below the viewport.
+     * @returns {number} Pixels
+     */
     function verticalBufferPx() {
-        if (!readAheadEnabled()) return window.innerHeight;
         return Math.max(window.innerHeight * CONFIG.bufferViewports, CONFIG.minBufferPx);
     }
 
@@ -327,7 +329,7 @@
                 const scrollerRect = scroller.getBoundingClientRect();
                 const visibleRight = Math.min(scrollerRect.right, window.innerWidth);
                 const span = Math.max(scrollerRect.width || window.innerWidth, 400);
-                const widths = !readAheadEnabled() ? 1 : (engaged ? CONFIG.bufferRowWidths : CONFIG.idleRowWidths);
+                const widths = engaged ? CONFIG.bufferRowWidths : CONFIG.idleRowWidths;
                 return { ahead: endRight - visibleRight, target: span * widths, span, inRange };
             }
             const rect = sentinel.getBoundingClientRect();
@@ -407,6 +409,9 @@
                     const result = await wrappedLoad({ deficitPx: deficit, aheadPx: g.ahead, spanPx: g.span, horizontal, engaged, pageBudget });
                     if (!result) break;
                     if (typeof result === 'object' && typeof result.pages === 'number') {
+                        // A load that fetched nothing and rendered nothing made no
+                        // progress (a consumer's guard return): stop rather than spin.
+                        if (result.pages === 0 && !(result.rendered > 0)) break;
                         emptyPages = result.rendered > 0 ? 0 : emptyPages + result.pages;
                     } else {
                         const after = contentEnd();
@@ -515,16 +520,6 @@
         if (state.activeScrollObserver) {
             state.activeScrollObserver.disconnect();
             state.activeScrollObserver = null;
-        }
-
-        if (state.scrollController) {
-            state.scrollController.destroy();
-            state.scrollController = null;
-        }
-
-        if (state._scrollHandler) {
-            window.removeEventListener('scroll', state._scrollHandler);
-            state._scrollHandler = null;
         }
 
         if (state._sentinel) {
