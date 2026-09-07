@@ -19,7 +19,7 @@
 3. Give the repository a name (e.g., "Jellyfin Enhanced")
 4. Set the **Repository URL** to the manifest:
    ```
-   https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/10.11/manifest.json
+   https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/manifest.json
    ```
 
 5. Click **Save**
