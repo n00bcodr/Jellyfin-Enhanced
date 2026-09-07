@@ -1171,6 +1171,38 @@
         }
 
         /**
+         * Offers a retry when a full-list discovery fails before cards exist.
+         * The scroll engine cannot offer its retry UI until that list loads.
+         * @param {AbortSignal} signal - The render that owns this placeholder.
+         */
+        async function showClientPagedRetry(signal) {
+            const detailSection = await waitForPageReady(signal);
+            if (signal.aborted || !detailSection) return;
+
+            document.querySelector(sectionSelector)?.remove();
+            const section = document.createElement('div');
+            section.className = `verticalSection jellyseerr-${key}-discovery-section je-retry-row`;
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'raised emby-button';
+            button.textContent = '⟳ Tap to retry';
+            button.addEventListener('click', async () => {
+                if (signal.aborted || button.disabled) return;
+                button.disabled = true;
+                try {
+                    // render() creates a fresh controller and repeats the full
+                    // lookup; failed responses have not been cached as empty.
+                    await render();
+                } finally {
+                    section.remove();
+                }
+            }, { signal });
+            section.appendChild(button);
+            detailSection.appendChild(section);
+            signal.addEventListener('abort', () => section.remove(), { once: true });
+        }
+
+        /**
          * Main render entry — chassis shared by every mode: page-key dedup,
          * re-entry guard, config gate, abort-controller swap, metrics and
          * error handling.
@@ -1235,6 +1267,9 @@
                     return;
                 }
                 console.error(`${logPrefix} Error rendering ${key} discovery:`, error);
+                if (isClientPaged && !signal.aborted) {
+                    await showClientPagedRetry(signal);
+                }
             } finally {
                 // Clear the re-entry guard after completion (success, abort, or
                 // failure) — unless a newer render has taken over: an aborted render

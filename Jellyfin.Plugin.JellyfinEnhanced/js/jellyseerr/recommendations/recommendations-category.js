@@ -216,6 +216,9 @@
       state.categoryState.totalPages = clampPages(response?.totalPages);
       state.categoryState.hasMore = 1 < clampPages(response?.totalPages);
     } catch (error) {
+      // A failed request can also settle after navigation or a sort reload.
+      // It must not reset the pagination now owned by that newer operation.
+      if (isStale?.()) return;
       // Page 1 failed (a 504 while the parental lookups warm, or a Seerr hiccup):
       // leave the feed at page 0 with more pages so the engine's first fill asks
       // for page 1 again, rather than silently starting at page 2.
