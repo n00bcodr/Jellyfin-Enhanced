@@ -1407,7 +1407,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// Which Jellyfin line this DLL was built for vs which one is running it.
-        /// Drives the mismatch banner at the top of the config page.
+        /// Exposes build/host compatibility for administrator diagnostics.
         /// </summary>
         [HttpGet("host-compat")]
         [Authorize]

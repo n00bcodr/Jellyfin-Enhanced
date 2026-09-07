@@ -76,7 +76,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 ? "Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip"
                 : "Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip";
 
-        /// <summary>One-line diagnosis for the log and the config page. Remediation text lives in the config page.</summary>
+        /// <summary>One-line diagnosis for the log and administrator diagnostics endpoint.</summary>
         public string? MismatchMessage => !IsMismatch
             ? null
             : $"This copy of Jellyfin Enhanced was built for Jellyfin {(BuiltFor == "jf12" ? "12.x" : "10.11.x")} " +
