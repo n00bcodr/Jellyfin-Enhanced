@@ -1,0 +1,33 @@
+name: Validate legacy plugin manifest
+
+# Run on every PR so a required check never stays pending because of path filters.
+on:
+  pull_request:
+  merge_group:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-legacy-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.x'
+      - name: Check out the shared manifest validator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: n00bcodr/jellyfin-plugins
+          # Shared validator from jellyfin-plugins PR #2. Keep this immutable;
+          # update deliberately when its validation policy changes.
+          ref: 14154a1840341c61ec62fb0b971d7299fb959c9d
+          path: .manifest-validator
+          persist-credentials: false
+      - name: Validate ordering, build pairs and latest ZIP checksums
+        run: python3 .manifest-validator/tools/validate_manifest.py manifest.json --checksums 2

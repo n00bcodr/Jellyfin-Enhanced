@@ -169,6 +169,20 @@ Every PR runs a few automated checks (GitHub Actions, `.github/workflows/`). The
 
 Two more workflows exist but aren't part of the PR gate: **Check Unused Translation Keys** and **OpenSSF Scorecard** are both maintainer-triggered/scheduled, not run against your PR - a scorecard badge or unused-key report you might see elsewhere in the repo isn't something your PR needs to pass.
 
+### Manifest releases
+
+The legacy `manifest.json` must keep both Jellyfin builds of each supported release, ordered by
+plugin version descending and then `targetAbi` descending. Use the shared release/publishing tools
+from [jellyfin-plugins](https://github.com/n00bcodr/jellyfin-plugins/tree/main/tools); do not run jprm
+on the unified catalog. Submit updates through PRs in both repositories and merge after validation.
+
+An administrator must require the **`validate-legacy-manifest`** check on this repository's `main`
+branch, and **`validate-manifest`** on `jellyfin-plugins/main`, with PRs required, up-to-date branches
+or merge queues, no bypass actors, and no force pushes or branch deletion. Enable Actions first.
+The workflow alone cannot prevent a direct push from exposing a bad manifest before CI completes.
+The legacy workflow pins an immutable revision of the shared validator; review and update that pin
+when its rules change. The companion repository's tools README contains the release procedure.
+
 ## 🧪 Testing
 
 Before submitting a PR, ensure you've tested:
