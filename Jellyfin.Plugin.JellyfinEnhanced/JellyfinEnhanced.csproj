@@ -18,11 +18,11 @@
         <AssemblyName>Jellyfin.Plugin.JellyfinEnhanced</AssemblyName>
     </PropertyGroup>
 
-    <!-- Jellyfin 12 / .NET 10. The Jellyfin.Controller/Model 12.0.0-rc1 NuGet packages
-         bring the rest (incl. EF Core) transitively. Bump to 12.0.0 once it ships. -->
+    <!-- Jellyfin 12 / .NET 10. The Jellyfin.Controller/Model 12.0.0 NuGet packages
+         bring the rest (incl. EF Core) transitively. -->
     <PropertyGroup Condition="'$(JellyfinTarget)' == 'jf12'">
         <TargetFramework>net10.0</TargetFramework>
-        <JellyfinVersion>12.0.0-rc1</JellyfinVersion>
+        <JellyfinVersion>12.0.0</JellyfinVersion>
         <!-- Explicit target symbol so code never has to infer the Jellyfin line from the TFM. -->
         <DefineConstants>$(DefineConstants);JF12</DefineConstants>
     </PropertyGroup>
