@@ -13,6 +13,39 @@
     // getHeaderRightContainer below) so it's only added once.
     let muiHeaderButtonCSSInjected = false;
 
+    // Containers with the mobile-drawer-auto-close listener already attached.
+    const drawerAutoCloseContainers = new WeakSet();
+
+    /**
+     * Closes jellyfin-web's mobile nav drawer (SwipeableDrawer) if open, so
+     * tapping a header icon doesn't leave it open behind the action. Scoped
+     * below the `md` (900px) breakpoint since `.MuiDrawer-paper` at/above it
+     * belongs to the unrelated permanent sidebar drawer.
+     */
+    function closeMobileDrawerIfOpen() {
+        if (window.matchMedia('(min-width: 900px)').matches) return;
+        const paper = document.querySelector('.MuiDrawer-paper');
+        if (!paper) return;
+        // Position, not the translated open/closed aria-label, since closed
+        // slides the paper fully off-screen and open slides it into view.
+        if (paper.getBoundingClientRect().right <= 0) return; // already closed
+        // onOpen/onClose both just flip one boolean, so clicking the
+        // backdrop (what a real outside click does) toggles it closed --
+        // only safe because we've confirmed it's open above.
+        paper.closest('.MuiModal-root')?.querySelector(':scope > .MuiBackdrop-root')?.click();
+    }
+
+    /**
+     * Wires closeMobileDrawerIfOpen() into a header-icon container via a
+     * capturing listener, so any button inside it closes the drawer first.
+     * @param {HTMLElement|null} container
+     */
+    function attachDrawerAutoClose(container) {
+        if (!container || drawerAutoCloseContainers.has(container)) return;
+        drawerAutoCloseContainers.add(container);
+        container.addEventListener('click', closeMobileDrawerIfOpen, true);
+    }
+
     // ── Admin check ──────────────────────────────────────────────────────────
     // Single source of truth for "is the current user an administrator?".
     // Sourced from JE.currentSettings.isAdmin, which the server computes fresh
@@ -261,7 +294,10 @@
      */
     function getHeaderRightContainer() {
         const legacy = document.querySelector('.headerRight');
-        if (legacy && legacy.offsetParent !== null) return legacy;
+        if (legacy && legacy.offsetParent !== null) {
+            attachDrawerAutoClose(legacy);
+            return legacy;
+        }
 
         const userMenuButton = document.querySelector('[aria-controls="app-user-menu"]');
         const toolbar = userMenuButton?.closest('.MuiToolbar-root') || document.querySelector('.MuiAppBar-root .MuiToolbar-root');
@@ -300,7 +336,15 @@
             userMenuBox = userMenuBox.parentElement;
         }
         const buttonsTray = userMenuBox?.previousElementSibling;
-        if (buttonsTray) return buttonsTray;
+        // This Box is `flex-wrap: wrap` with no width floor, so once it runs
+        // out of room every icon (native ones included) wraps to its own
+        // line. Forcing `nowrap` was tried and made it worse -- combined with
+        // `flex-end` alignment, overflow spilled off-screen with no way back.
+        // See isCollapsed() in getHeaderButtonTray for the actual mitigation.
+        if (buttonsTray) {
+            attachDrawerAutoClose(buttonsTray);
+            return buttonsTray;
+        }
 
         // No user-menu available (e.g. public/video pages) - fall back to a
         // synthetic container appended to the toolbar itself.
@@ -310,6 +354,7 @@
             container.className = 'headerRight';
             toolbar.appendChild(container);
         }
+        attachDrawerAutoClose(container);
         return container;
     }
 
@@ -411,16 +456,25 @@
         toggle.title = 'More';
         toggle.innerHTML = '<i class="material-icons">more_vert</i>';
 
-        // The MUI toolbar's own drawer-toggle button only exists in the DOM at
-        // all below its internal breakpoint, so its presence is a more reliable
-        // "are we narrow" signal than guessing a pixel breakpoint of our own.
-        // The legacy layout's hamburger has no such guarantee (its visibility
-        // is a page-type/settings toggle, not a viewport breakpoint), so that
-        // case falls back to a plain width check.
+        // Computes whether the tray needs to collapse rather than measuring
+        // rendered height/width directly -- both were tried and got stuck in
+        // stale states once collapsed (see git history). Always-visible rows
+        // are measurable regardless of collapse state; each collapsible icon
+        // is a fixed 48px (the MUI convention forced above) whether rendered
+        // or not. This is idempotent -- same correct answer every call.
+        const ICON_WIDTH_PX = 48;
         const isCollapsed = () => {
-            if (document.querySelector('[aria-label="Open Menu"]')) return true;
-            if (document.querySelector('.MuiAppBar-root .MuiToolbar-root')) return false;
-            return window.matchMedia('(max-width: 760px)').matches;
+            if (!headerRight) {
+                return window.matchMedia('(max-width: 760px)').matches;
+            }
+            let visibleWidth = 0;
+            for (const child of headerRight.children) {
+                if (child === group) continue; // this tray's own group, accounted for below
+                visibleWidth += child.getBoundingClientRect().width;
+            }
+            const collapsibleIconCount = tray.querySelectorAll('.headerButton.paper-icon-button-light').length;
+            const neededIfExpanded = visibleWidth + collapsibleIconCount * ICON_WIDTH_PX;
+            return neededIfExpanded > headerRight.clientWidth;
         };
         let isOpen = false;
 
@@ -495,8 +549,16 @@
         // wholesale so any active theme's own styling applies automatically.
         const DIALOG_CLASSES = ['focuscontainer', 'dialog', 'actionsheet-not-fullscreen', 'actionSheet', 'centeredDialog'];
 
+        // Skip the DOM churn below when nothing changed -- the shared body
+        // observer fires on virtually any page mutation, so without this
+        // every unrelated one would re-run it.
+        let lastAppliedCollapsed = null;
+        let lastAppliedIsOpen = null;
         const applyState = () => {
             const collapsed = isCollapsed();
+            if (collapsed === lastAppliedCollapsed && isOpen === lastAppliedIsOpen) return;
+            lastAppliedCollapsed = collapsed;
+            lastAppliedIsOpen = isOpen;
             toggle.style.setProperty('display', collapsed ? 'inline-flex' : 'none', 'important');
             content.classList.toggle('actionSheetContent', collapsed);
             tray.classList.toggle('actionSheetScroller', collapsed);
@@ -520,8 +582,19 @@
             applyState();
         });
         window.addEventListener('resize', debounce(applyState, 150));
+        // Also recompute on DOM changes (e.g. nav links landing later), via
+        // the shared body-mutation observer rather than a dedicated one.
+        JE.helpers.onBodyMutation('je-header-tray-overflow', debounce(applyState, 150));
         document.addEventListener('click', (e) => {
             if (isOpen && !group.contains(e.target)) {
+                isOpen = false;
+                applyState();
+            }
+        });
+        // The above only closes on clicks *outside* the group, so picking a
+        // row inside the open dropdown never closed it. Close on that too.
+        tray.addEventListener('click', (e) => {
+            if (isOpen && e.target.closest('button, a')) {
                 isOpen = false;
                 applyState();
             }
