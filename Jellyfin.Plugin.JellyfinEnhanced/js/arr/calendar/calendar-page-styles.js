@@ -771,6 +771,32 @@
       opacity: 0.7;
     }
 
+    /* Loading is a transient state, not an empty one: motion plus a live
+       region so it is distinguishable both visually and to screen readers. */
+    .je-calendar-loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75em;
+      padding: 2em;
+      opacity: 0.85;
+    }
+    .je-calendar-loading-spinner {
+      width: 1.15em;
+      height: 1.15em;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      flex-shrink: 0;
+      animation: je-calendar-spin 0.8s linear infinite;
+    }
+    @keyframes je-calendar-spin { to { transform: rotate(360deg); } }
+    /* Slowed rather than disabled: removing it entirely would leave no
+       progress cue at all for the users who opt into reduced motion. */
+    @media (prefers-reduced-motion: reduce) {
+      .je-calendar-loading-spinner { animation-duration: 2.4s; }
+    }
+
     .je-calendar-agenda {
       display: flex;
       flex-direction: column;

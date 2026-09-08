@@ -453,7 +453,7 @@
         </div>
       </div>
 
-      ${state.isLoading ? `<div class="je-calendar-empty">${window.JellyfinEnhanced.t("calendar_loading")}</div>` : ""}
+      ${state.isLoading ? `<div class="je-calendar-loading" role="status" aria-live="polite"><span class="je-calendar-loading-spinner" aria-hidden="true"></span><span>${window.JellyfinEnhanced.t("calendar_loading")}</span></div>` : ""}
 
         <div class="je-calendar-layout">
           <div class="je-calendar-main">
