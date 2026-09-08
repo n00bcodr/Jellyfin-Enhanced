@@ -869,13 +869,17 @@
                             <div class="checkboxContainer"><label><input id="bookmarksUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages for Bookmarks Library</span></label></div>
                             <div class="je-setting-description" data-desc-for="bookmarksUsePluginPages">
                                 <div class="fieldDescription je-field-desc-xl">
-                                    Adds a "Bookmarks" link to the sidebar via <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-pages" target="_blank">Plugin Pages</a>.<br/>
+                                    Adds a "Bookmarks" link via <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-pages" target="_blank">Plugin Pages</a>.<br/>
                                     <strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.
                                     <span class="je-installed-badge" data-plugin="pluginpages"><i class="material-icons" aria-hidden="true">check_circle</i>Plugin Pages detected</span>
                                 </div>
                             </div>
 
                             <div class="checkboxContainer"><label><input id="bookmarksUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs for Bookmarks</span></label></div>
+                            <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-bookmarks" style="display:none;">
+                                <i class="material-icons je-note-icon">info</i>
+                                <div>On Jellyfin 12, <strong>"Add Bookmarks as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                            </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="bookmarksUseCustomTabs,bookmarksEnabled">
                                 <label><input id="bookmarksAutoCreateCustomTab" is="emby-checkbox" type="checkbox"/><span>Add the Custom Tabs entry for me</span></label>
@@ -952,6 +956,10 @@
                             </div>
 
                             <div class="checkboxContainer"><label><input id="hiddenContentUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs for Hidden Content</span></label></div>
+                            <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-hiddenContent" style="display:none;">
+                                <i class="material-icons je-note-icon">info</i>
+                                <div>On Jellyfin 12, <strong>"Add Hidden Content as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                            </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="hiddenContentUseCustomTabs,hiddenContentEnabled">
                                 <label><input id="hiddenContentAutoCreateCustomTab" is="emby-checkbox" type="checkbox"/><span>Add the Custom Tabs entry for me</span></label>
@@ -1156,6 +1164,10 @@
                             </div>
 
                             <div class="checkboxContainer"><label><input id="downloadsUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs for Requests</span></label></div>
+                            <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-downloads" style="display:none;">
+                                <i class="material-icons je-note-icon">info</i>
+                                <div>On Jellyfin 12, <strong>"Add Requests as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                            </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="downloadsUseCustomTabs,downloadsPageEnabled">
                                 <label><input id="downloadsAutoCreateCustomTab" is="emby-checkbox" type="checkbox"/><span>Add the Custom Tabs entry for me</span></label>
@@ -1246,6 +1258,10 @@
                             </div>
 
                             <div class="checkboxContainer"><label><input id="calendarUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs</span></label></div>
+                            <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-calendar" style="display:none;">
+                                <i class="material-icons je-note-icon">info</i>
+                                <div>On Jellyfin 12, <strong>"Add Calendar as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                            </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="calendarUseCustomTabs,calendarPageEnabled">
                                 <label><input id="calendarAutoCreateCustomTab" is="emby-checkbox" type="checkbox"/><span>Add the Custom Tabs entry for me</span></label>
@@ -1364,6 +1380,10 @@
                             </div>
 
                             <div class="checkboxContainer"><label><input id="recommendationsUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs</span></label></div>
+                            <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-recommendations" style="display:none;">
+                                <i class="material-icons je-note-icon">info</i>
+                                <div>On Jellyfin 12, <strong>"Add Recommendations as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                            </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="recommendationsUseCustomTabs,recommendationsPageEnabled">
                                 <label><input id="recommendationsAutoCreateCustomTab" is="emby-checkbox" type="checkbox"/><span>Add the Custom Tabs entry for me</span></label>
@@ -1441,13 +1461,17 @@
                             <div class="checkboxContainer"><label><input id="activityFeedUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages</span></label></div>
                             <div class="je-setting-description" data-desc-for="activityFeedUsePluginPages">
                                 <div class="fieldDescription je-field-desc-xl">
-                                    Adds an "Activity" link to the sidebar via <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-pages" target="_blank">Plugin Pages</a>.<br/>
+                                    Adds an "Activity" link via <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-pages" target="_blank">Plugin Pages</a>.<br/>
                                     <strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.
                                     <span class="je-installed-badge" data-plugin="pluginpages"><i class="material-icons" aria-hidden="true">check_circle</i>Plugin Pages detected</span>
                                 </div>
                             </div>
 
                             <div class="checkboxContainer"><label><input id="activityFeedUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs</span></label></div>
+                            <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-activityFeed" style="display:none;">
+                                <i class="material-icons je-note-icon">info</i>
+                                <div>On Jellyfin 12, <strong>"Add Activity as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                            </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="activityFeedUseCustomTabs,activityFeedEnabled">
                                 <label><input id="activityFeedAutoCreateCustomTab" is="emby-checkbox" type="checkbox"/><span>Add the Custom Tabs entry for me</span></label>
@@ -3897,6 +3921,14 @@
         // instead of the blunt "Not installed".
         var hasPluginPages = null;
         var hasCustomTabs = null;
+        var isJellyfin12 = (function() {
+            try {
+                var version = typeof ApiClient !== 'undefined' && ApiClient.serverVersion && ApiClient.serverVersion();
+                return parseInt((version || '').split('.')[0], 10) >= 12;
+            } catch (e) {
+                return false;
+            }
+        })();
         var hasIntroSkipper = null;
         var hasInPlayerEpisodePreview = null;
         var hasFileTransformation = null;
@@ -7051,6 +7083,31 @@
             { id: 'activityFeedUseCustomTabs',     checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' }
         ];
 
+        // Informational only (unlike INDIVIDUAL_DEPS) — Native Tab is more
+        // reliable than Custom Tabs on Jellyfin 12, but Custom Tabs still works.
+        var CUSTOM_TABS_V12_HINTS = [
+            { customId: 'bookmarksUseCustomTabs',       nativeId: 'bookmarksUseNativeTab',       bannerId: 'je-v12-hint-bookmarks' },
+            { customId: 'hiddenContentUseCustomTabs',   nativeId: 'hiddenContentUseNativeTab',   bannerId: 'je-v12-hint-hiddenContent' },
+            { customId: 'downloadsUseCustomTabs',       nativeId: 'downloadsUseNativeTab',       bannerId: 'je-v12-hint-downloads' },
+            { customId: 'calendarUseCustomTabs',        nativeId: 'calendarUseNativeTab',        bannerId: 'je-v12-hint-calendar' },
+            { customId: 'recommendationsUseCustomTabs', nativeId: 'recommendationsUseNativeTab', bannerId: 'je-v12-hint-recommendations' },
+            { customId: 'activityFeedUseCustomTabs',    nativeId: 'activityFeedUseNativeTab',     bannerId: 'je-v12-hint-activityFeed' }
+        ];
+
+        /**
+         * Shows the `je-note-banner` under a `*UseCustomTabs` checkbox, on
+         * Jellyfin 12, when it's checked and its Native Tab counterpart isn't.
+         * @param {Object} dep - Entry from CUSTOM_TABS_V12_HINTS
+         */
+        function updateCustomTabsV12Hint(dep) {
+            var checkbox = document.getElementById(dep.customId);
+            var banner = document.getElementById(dep.bannerId);
+            if (!checkbox || !banner) return;
+            var nativeCheckbox = document.getElementById(dep.nativeId);
+            var shouldWarn = isJellyfin12 && checkbox.checked && !(nativeCheckbox && nativeCheckbox.checked);
+            banner.style.display = shouldWarn ? '' : 'none';
+        }
+
         /**
          * Adds a dependency tag to an element's comma-separated data-dep-disabled attribute.
          * @param {HTMLElement} el - The element to tag
@@ -8138,6 +8195,7 @@
         function updateAllDependencies() {
             SECTION_DEPS.forEach(updateSectionDep);
             INDIVIDUAL_DEPS.forEach(updateIndividualDep);
+            CUSTOM_TABS_V12_HINTS.forEach(updateCustomTabsV12Hint);
             PARENT_DEPS.forEach(updateParentDep);
             updateClientTagCacheControlsVisibility();
             // `updateStatusDashboard` and the legacy `renderChecklist` both
@@ -8492,6 +8550,12 @@
         Object.keys(parentIds).forEach(function(id) {
             var el = document.getElementById(id);
             if (el) el.addEventListener('change', updateAllDependencies);
+        });
+        CUSTOM_TABS_V12_HINTS.forEach(function(dep) {
+            [dep.customId, dep.nativeId].forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) el.addEventListener('change', function() { updateCustomTabsV12Hint(dep); });
+            });
         });
 
         var originalTestTmdb = testTmdbConnection;
