@@ -6860,223 +6860,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         // ─── Activity Feed (recently watched / favorited / reviewed) ─────────────
 
-        /// <summary>A single merged, ready-to-serialize Activity Feed row.</summary>
-        private sealed class ActivityFeedItem
-        {
-            public string ActivityType { get; set; } = string.Empty;
-            public string UserId { get; set; } = string.Empty;
-            public string UserName { get; set; } = string.Empty;
-            public long Timestamp { get; set; }
-            public object Item { get; set; } = new { };
-            public double? Rating { get; set; }
-            public string? Content { get; set; }
-            /// <summary>Watched-only: whether this was ever played to completion.</summary>
-            public bool Completed { get; set; }
-            /// <summary>Watched-only: highest fraction (0.0-1.0) of runtime ever observed played.</summary>
-            public double Progress { get; set; }
-        }
-
-        /// <summary>
-        /// Builds the card-rendering summary for an activity feed item. Series
-        /// name/id/episode numbering come off the Episode entity directly
-        /// (cheap, in-memory) -- no extra library lookup needed, same as
-        /// TagCacheService's approach. The series' own images are looked up
-        /// separately (one extra GetItemById) since an episode's own Primary
-        /// is often just an arbitrary auto-extracted video frame, not a
-        /// designed image -- the frontend prefers the series' Thumb/Primary
-        /// over the episode's own.
-        /// </summary>
-        private object BuildActivityItemSummary(BaseItem item)
-        {
-            string? seriesName = null;
-            string? seriesId = null;
-            int? seasonNumber = null;
-            int? episodeNumber = null;
-            bool seriesHasPrimaryImage = false;
-            bool seriesHasThumbImage = false;
-
-            if (item is MediaBrowser.Controller.Entities.TV.Episode ep)
-            {
-                seriesName = ep.SeriesName;
-                seasonNumber = ep.ParentIndexNumber;
-                episodeNumber = ep.IndexNumber;
-                if (ep.SeriesId != Guid.Empty)
-                {
-                    seriesId = ep.SeriesId.ToString("N");
-                    var series = _libraryManager.GetItemById(ep.SeriesId);
-                    if (series != null)
-                    {
-                        seriesHasPrimaryImage = series.HasImage(ImageType.Primary, 0);
-                        seriesHasThumbImage = series.HasImage(ImageType.Thumb, 0);
-                    }
-                }
-            }
-
-            return new
-            {
-                Id = item.Id.ToString("N"),
-                Name = item.Name,
-                Type = item.GetBaseItemKind().ToString(),
-                ProductionYear = item.ProductionYear,
-                SeriesName = seriesName,
-                SeriesId = seriesId,
-                SeasonNumber = seasonNumber,
-                EpisodeNumber = episodeNumber,
-                // No cache-busting tag needed -- /Items/{id}/Images/{type} always
-                // serves whatever is current; a boolean is enough to know
-                // whether to render an <img> at all.
-                HasPrimaryImage = item.HasImage(ImageType.Primary, 0),
-                HasThumbImage = item.HasImage(ImageType.Thumb, 0),
-                SeriesHasPrimaryImage = seriesHasPrimaryImage,
-                SeriesHasThumbImage = seriesHasThumbImage
-            };
-        }
-
-        /// <summary>
-        /// True if this author should be hidden from a non-self, non-admin
-        /// viewer under the admin's hide-hidden/hide-disabled settings. Mirrors
-        /// GetItemReviews' author-visibility logic so Activity applies the same
-        /// moderation rules reviews already do, rather than a second policy.
-        /// </summary>
-        private bool ShouldHideActivityAuthor(JUser? author, bool viewerIsAdmin, bool isSelf, bool hideHidden, bool hideDisabled)
-        {
-            if (viewerIsAdmin || isSelf) return false;
-            if (author == null) return hideHidden || hideDisabled;
-            if (hideHidden && author.HasPermission(PermissionKind.IsHidden)) return true;
-            if (hideDisabled && author.HasPermission(PermissionKind.IsDisabled)) return true;
-            return false;
-        }
-
         [HttpGet("activity")]
         [Authorize]
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         [Produces("application/json")]
-        public IActionResult GetActivityFeed([FromQuery] int limit = 50)
+        public IActionResult GetActivityFeed([FromQuery] int limit = 50, CancellationToken cancellationToken = default)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config?.ActivityFeedEnabled != true) return NotFound();
 
             var viewerUserId = UserHelper.GetCurrentUserId(User);
             if (!viewerUserId.HasValue || viewerUserId.Value == Guid.Empty) return Forbid();
-
             var viewer = _userManager.GetUserById(viewerUserId.Value);
             if (viewer == null) return Forbid();
 
-            limit = Math.Clamp(limit, 1, 200);
-            var viewerIsAdmin = IsAdminUser();
-            var hideHiddenAuthors = config.HideReviewsFromHiddenUsers;
-            var hideDisabledAuthors = config.HideReviewsFromDisabledUsers;
+            cancellationToken.ThrowIfCancellationRequested();
+            var activity = config.ActivityFeedShowWatched || config.ActivityFeedShowFavorited
+                ? _userConfigurationManager.GetAllActivity().Entries.Values.AsEnumerable()
+                : Enumerable.Empty<ActivityEntry>();
+            cancellationToken.ThrowIfCancellationRequested();
+            var reviews = config.ActivityFeedShowReviewed
+                ? _userConfigurationManager.GetAllReviews().Reviews.Values.AsEnumerable()
+                : Enumerable.Empty<UserReview>();
 
-            // Per-viewer accessible item ids -- an activity entry for an item
-            // the viewer can't see in their own library must never render,
-            // even just to prove someone else has it. Same technique as
-            // TagCacheService.GetCacheForUser's per-user access filtering.
-            var accessibleIds = new HashSet<Guid>(
-                _libraryManager.GetItemIds(new InternalItemsQuery(viewer) { Recursive = true }));
-
-            var results = new List<ActivityFeedItem>();
-
-            if (config.ActivityFeedShowWatched || config.ActivityFeedShowFavorited)
-            {
-                var activityStore = _userConfigurationManager.GetAllActivity();
-                foreach (var entry in activityStore.Entries.Values)
-                {
-                    try
-                    {
-                        var isWatched = entry.ActivityType == Services.ActivityService.ActivityTypeWatched;
-                        var isFavorited = entry.ActivityType == Services.ActivityService.ActivityTypeFavorited;
-                        if (isWatched && !config.ActivityFeedShowWatched) continue;
-                        if (isFavorited && !config.ActivityFeedShowFavorited) continue;
-                        if (!isWatched && !isFavorited) continue;
-
-                        if (!Guid.TryParseExact(entry.ItemId, "N", out var itemGuid)) continue;
-                        if (!accessibleIds.Contains(itemGuid)) continue;
-
-                        var item = _libraryManager.GetItemById<BaseItem>(itemGuid);
-                        if (item == null) continue;
-
-                        if (!Guid.TryParseExact(entry.UserId, "N", out var authorGuid)) continue;
-                        var author = _userManager.GetUserById(authorGuid);
-                        var isSelf = author != null && authorGuid == viewer.Id;
-                        if (ShouldHideActivityAuthor(author, viewerIsAdmin, isSelf, hideHiddenAuthors, hideDisabledAuthors)) continue;
-
-                        if (!DateTimeOffset.TryParse(entry.OccurredAt, out var occurred)) continue;
-
-                        results.Add(new ActivityFeedItem
-                        {
-                            ActivityType = entry.ActivityType,
-                            UserId = entry.UserId,
-                            UserName = author?.Username ?? entry.UserId,
-                            Timestamp = occurred.ToUnixTimeMilliseconds(),
-                            Item = BuildActivityItemSummary(item),
-                            Completed = entry.Completed,
-                            Progress = entry.Progress
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Warning($"Skipping activity entry {entry.UserId}:{entry.ItemId}:{entry.ActivityType} due to error: {ex.Message}");
-                    }
-                }
-            }
-
-            if (config.ActivityFeedShowReviewed)
-            {
-                var reviewStore = _userConfigurationManager.GetAllReviews();
-                foreach (var review in reviewStore.Reviews.Values)
-                {
-                    try
-                    {
-                        // Season/episode review keys ("{tmdbId}:s{n}[:e{n}]") resolve
-                        // to their parent series/movie item for display -- drilling
-                        // into the exact season/episode poster isn't worth the extra
-                        // lookups for a feed row.
-                        var baseTmdbId = review.TmdbId.Split(':')[0];
-                        var providerIds = new Dictionary<string, string> { { "Tmdb", baseTmdbId } };
-                        var itemIds = _itemRepository.GetItemIdsByProviders(providerIds);
-                        if (itemIds == null || itemIds.Count == 0) continue;
-                        var itemGuid = itemIds[0];
-                        if (itemGuid == Guid.Empty) continue;
-                        if (!accessibleIds.Contains(itemGuid)) continue;
-
-                        var item = _libraryManager.GetItemById<BaseItem>(itemGuid);
-                        if (item == null) continue;
-
-                        JUser? author = null;
-                        if (Guid.TryParseExact(review.UserId, "N", out var authorGuid))
-                        {
-                            author = _userManager.GetUserById(authorGuid);
-                        }
-                        var isSelf = author != null && author.Id == viewer.Id;
-                        if (ShouldHideActivityAuthor(author, viewerIsAdmin, isSelf, hideHiddenAuthors, hideDisabledAuthors)) continue;
-
-                        var timestampSource = string.IsNullOrEmpty(review.UpdatedAt) ? review.CreatedAt : review.UpdatedAt;
-                        if (!DateTimeOffset.TryParse(timestampSource, out var occurred)) continue;
-
-                        results.Add(new ActivityFeedItem
-                        {
-                            ActivityType = "Reviewed",
-                            UserId = review.UserId,
-                            UserName = author?.Username ?? review.UserId,
-                            Timestamp = occurred.ToUnixTimeMilliseconds(),
-                            Item = BuildActivityItemSummary(item),
-                            Rating = review.Rating,
-                            Content = review.Content
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Warning($"Skipping review activity for {review.UserId}:{review.MediaType}:{review.TmdbId} due to error: {ex.Message}");
-                    }
-                }
-            }
-
-            var ordered = results
-                .OrderByDescending(r => r.Timestamp)
-                .Take(limit)
-                .ToList();
-
-            return Ok(new { items = ordered });
+            var builder = new Services.ActivityFeedBuilder(_libraryManager, _userManager, _itemRepository, _logger);
+            var items = builder.Build(activity, reviews, viewer, IsAdminUser(), config, limit, cancellationToken);
+            return Ok(new { items });
         }
 
         [HttpGet("whats-new")]
