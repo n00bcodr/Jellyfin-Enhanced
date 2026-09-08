@@ -27,13 +27,19 @@
   // rendered bookmarks visible to user B (upstream discussion about stale
   // bookmarks after switching accounts). Drop the guard on the transition,
   // then force a fresh render once the new user's bookmarks are loaded.
-  window.JellyfinEnhanced.session?.onUserChange('bookmarks-library-render', () => {
+  // Dropping the guard is not sufficient on its own now that tab content only
+  // mounts once its tab is opened: a panel that is not currently open gets no
+  // re-render, so user A's markup would simply stay there. Clear the rendered
+  // DOM as well, then let the normal path re-render if the tab is open.
+  function clearRenderedBookmarks() {
+    const all = document.querySelectorAll('.sections.bookmarks');
+    for (let i = 0; i < all.length; i++) all[i].textContent = '';
     lastMountedContainer = null;
     lastRenderTs = 0;
-  });
+  }
+  window.JellyfinEnhanced.session?.onUserChange('bookmarks-library-render', clearRenderedBookmarks);
   document.addEventListener('je:user-data-loaded', () => {
-    lastMountedContainer = null;
-    lastRenderTs = 0;
+    clearRenderedBookmarks();
     renderIfSectionExists();
   });
 
@@ -85,7 +91,12 @@
       //    content for tabs the user never opened.
       const tabContent = el.closest('.tabContent');
       if (tabContent) {
-        if (tabContent.classList.contains('is-active')) return el;
+        // `is-active` is the fast path but is not authoritative on its own:
+        // not every host sets it, and it can be applied without a DOM
+        // mutation for the observers to notice. An actual visibility check
+        // backs it up so the panel still mounts if the class is absent or
+        // lands late — a missing mount is far worse than a late one.
+        if (tabContent.classList.contains('is-active') || el.offsetParent !== null) return el;
         continue;
       }
       // 2. Standard Jellyfin page structure

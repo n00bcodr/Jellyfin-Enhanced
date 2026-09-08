@@ -89,7 +89,12 @@
       //    content for tabs the user never opened.
       var tabContent = el.closest('.tabContent');
       if (tabContent) {
-        if (tabContent.classList.contains('is-active')) return el;
+        // `is-active` is the fast path but is not authoritative on its own:
+        // not every host sets it, and it can be applied without a DOM
+        // mutation for the observers below to notice. An actual visibility
+        // check backs it up so the panel still mounts if the class is absent
+        // or lands late — a missing mount is far worse than a late one.
+        if (tabContent.classList.contains('is-active') || el.offsetParent !== null) return el;
         continue;
       }
       // 2. Standard Jellyfin page structure
@@ -148,15 +153,50 @@
     tryMount();
 
     var mountPending = false;
-    JE.helpers.createObserver('jellyseerr-recommendations-custom-tab', function () {
-      if (!mountPending) {
-        mountPending = true;
-        requestAnimationFrame(function () {
-          mountPending = false;
-          tryMount();
-        });
-      }
-    }, document.body, { childList: true, subtree: true });
+    function scheduleMount() {
+      if (mountPending) return;
+      mountPending = true;
+      requestAnimationFrame(function () {
+        mountPending = false;
+        ensureTabActivationObserver();
+        tryMount();
+      });
+    }
+
+    JE.helpers.createObserver('jellyseerr-recommendations-custom-tab', scheduleMount, document.body,
+      { childList: true, subtree: true });
+
+    // A tab becoming active is a class change, and the shared body observer
+    // only dispatches for batches containing added/removed nodes — so an
+    // activation on its own can go unseen and the panel would never mount.
+    // Watch the panels' shared parent for class changes as well, scoped to
+    // that subtree so this stays cheap.
+    var observedTabsParent = null;
+    function ensureTabActivationObserver() {
+      var anyPanel = document.querySelector('.tabContent');
+      var parent = anyPanel && anyPanel.parentElement;
+      if (!parent || parent === observedTabsParent) return;
+      observedTabsParent = parent;
+      JE.helpers.createObserver('jellyseerr-recommendations-custom-tab-tab-activation', scheduleMount, parent,
+        { attributes: true, attributeFilter: ['class'], subtree: true });
+    }
+    ensureTabActivationObserver();
+
+    // The page module clears per-user state on a user switch, but that relies
+    // on a re-render to refresh what is on screen. Content in a tab that is
+    // not currently open will not get one, so drop the rendered DOM here too —
+    // otherwise the previous user's content stays in the tab until it is
+    // opened. Mirrors the reset in enhanced/bookmarks/bookmarks-library-render.js.
+    function resetForUserChange() {
+      var all = document.querySelectorAll('.jellyfinenhanced.recommendations');
+      for (var i = 0; i < all.length; i++) all[i].textContent = '';
+      lastMountedContainer = null;
+    }
+    JE.session?.onUserChange('jellyseerr-recommendations-custom-tab', resetForUserChange);
+    document.addEventListener('je:user-data-loaded', function () {
+      resetForUserChange();
+      tryMount();
+    });
   }
 
   waitForRecommendations(function (JE) {

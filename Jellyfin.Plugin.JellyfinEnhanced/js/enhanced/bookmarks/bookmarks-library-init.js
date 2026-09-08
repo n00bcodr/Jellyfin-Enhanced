@@ -110,15 +110,33 @@
         // element would become orphaned after returning to home (issue 536).
         // Routes to the shared multiplexed body observer.
         let mountPending = false;
-        JE.helpers.createObserver('bookmarks-library-custom-tab', () => {
-          if (!mountPending) {
-            mountPending = true;
-            requestAnimationFrame(() => {
-              mountPending = false;
-              renderIfSectionExists();
-            });
-          }
-        }, document.body, { childList: true, subtree: true });
+        const scheduleRender = () => {
+          if (mountPending) return;
+          mountPending = true;
+          requestAnimationFrame(() => {
+            mountPending = false;
+            ensureTabActivationObserver();
+            renderIfSectionExists();
+          });
+        };
+        JE.helpers.createObserver('bookmarks-library-custom-tab', scheduleRender,
+          document.body, { childList: true, subtree: true });
+
+        // A tab becoming active is a class change, and the shared body
+        // observer only dispatches for batches containing added/removed
+        // nodes — so an activation on its own can go unseen and the panel
+        // would never render. Watch the panels' shared parent for class
+        // changes as well, scoped to that subtree so this stays cheap.
+        let observedTabsParent = null;
+        function ensureTabActivationObserver() {
+          const anyPanel = document.querySelector('.tabContent');
+          const parent = anyPanel && anyPanel.parentElement;
+          if (!parent || parent === observedTabsParent) return;
+          observedTabsParent = parent;
+          JE.helpers.createObserver('bookmarks-library-tab-activation', scheduleRender,
+            parent, { attributes: true, attributeFilter: ['class'], subtree: true });
+        }
+        ensureTabActivationObserver();
 
         // Try immediate render in case tab is already visible
         renderIfSectionExists();
