@@ -342,8 +342,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
     /// <summary>
     /// A single "recently watched" or "recently favorited" activity record for
-    /// the Activity Feed. One entry per (user, item, type) -- a repeat event
-    /// (re-watch, re-favorite) just bumps OccurredAt rather than duplicating.
+    /// the Activity Feed. One entry per (user, item, type). Re-watching bumps
+    /// OccurredAt; favorites keep their timestamp until removed and re-added.
     /// </summary>
     public class ActivityEntry
     {

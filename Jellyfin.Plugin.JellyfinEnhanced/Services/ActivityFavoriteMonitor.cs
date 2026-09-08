@@ -1,5 +1,6 @@
 using System;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Entities;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
@@ -7,7 +8,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// Records Activity Feed "Favorited" entries by watching
     /// IUserDataManager.UserDataSaved -- Jellyfin has no dedicated
     /// favorite-toggled event; a favorite/unfavorite still lands here as a
-    /// user-data save, distinguished only by UserData.IsFavorite's new value.
+    /// user-data save with UpdateUserRating (also used for likes). Imports
+    /// and general user-data updates can change favorites as well.
     /// A Singleton subscribed for the plugin's lifetime, same pattern as
     /// SpoilerNextUnwatchedService.
     /// </summary>
@@ -30,11 +32,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             try
             {
+                // Playback events are frequent and never toggle favorites.
+                // Filter before touching the shared JSON file, including for
+                // items that have never been favorited. These reasons exist
+                // on both Jellyfin 10.11 and 12.
+                if (e.SaveReason != UserDataSaveReason.UpdateUserRating
+                    && e.SaveReason != UserDataSaveReason.UpdateUserData
+                    && e.SaveReason != UserDataSaveReason.Import) return;
+
                 var cfg = JellyfinEnhanced.Instance?.Configuration;
                 if (cfg?.ActivityFeedEnabled != true || cfg.ActivityFeedShowFavorited != true) return;
 
                 var item = e.Item;
-                if (item == null || e.UserId == Guid.Empty) return;
+                if (item == null || e.UserId == Guid.Empty || e.UserData == null) return;
 
                 if (e.UserData?.IsFavorite == true)
                 {
