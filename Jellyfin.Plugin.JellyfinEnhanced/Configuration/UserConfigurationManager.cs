@@ -748,7 +748,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             finally
             {
                 try { File.Delete(temporaryPath); }
-                catch (Exception ex) { _logger.Warning($"Failed to clean up temporary activity file: {ex.Message}"); }
+                catch (IOException ex) { _logger.Warning($"Failed to clean up temporary activity file: {ex.Message}"); }
+                catch (UnauthorizedAccessException ex) { _logger.Warning($"Failed to clean up temporary activity file: {ex.Message}"); }
             }
         }
 

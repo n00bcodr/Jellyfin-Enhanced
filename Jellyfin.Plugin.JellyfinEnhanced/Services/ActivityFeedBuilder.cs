@@ -135,9 +135,7 @@ internal sealed class ActivityFeedBuilder(
                 try
                 {
                     var author = GetAuthor(candidate.AuthorId);
-                    if (!viewerIsAdmin && author?.Id != viewer.Id
-                        && ((config.HideReviewsFromHiddenUsers && (author == null || author.HasPermission(PermissionKind.IsHidden)))
-                            || (config.HideReviewsFromDisabledUsers && (author == null || author.HasPermission(PermissionKind.IsDisabled)))))
+                    if (ShouldHideAuthor(author, viewer.Id, viewerIsAdmin, config))
                         continue;
 
                     var itemId = candidate.ItemId;
@@ -201,6 +199,16 @@ internal sealed class ActivityFeedBuilder(
             }
         }
         return results;
+    }
+
+    /// <summary>Preserves admin/self exceptions and the configured missing-author fallback.</summary>
+    private static bool ShouldHideAuthor(JUser? author, Guid viewerId, bool viewerIsAdmin, PluginConfiguration config)
+    {
+        if (viewerIsAdmin || author?.Id == viewerId) return false;
+        if (author == null)
+            return config.HideReviewsFromHiddenUsers || config.HideReviewsFromDisabledUsers;
+        if (config.HideReviewsFromHiddenUsers && author.HasPermission(PermissionKind.IsHidden)) return true;
+        return config.HideReviewsFromDisabledUsers && author.HasPermission(PermissionKind.IsDisabled);
     }
 
     /// <summary>Hydrates only emitted cards; episode series lookups share the request's item cache.</summary>
