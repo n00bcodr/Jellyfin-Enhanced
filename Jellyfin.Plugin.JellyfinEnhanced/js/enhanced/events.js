@@ -313,6 +313,7 @@
         // Initial UI setup
         JE.injectGlobalStyles();
         JE.addPluginMenuButton();
+        JE.addUserMenuLink();
         JE.applySavedStylesWhenReady();
 
         // Setup persistent listeners and observers

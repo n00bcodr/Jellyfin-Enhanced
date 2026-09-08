@@ -101,6 +101,48 @@
     };
 
     /**
+     * Adds the "Jellyfin Enhanced" link to the avatar dropdown (`#app-user-menu`)
+     * on Jellyfin 12's MUI toolbar, which has no sidebar to fall back to.
+     * Clones the real "Settings" item so it inherits MUI's actual classes.
+     */
+    JE.addUserMenuLink = () => {
+        const inject = () => {
+            if (document.getElementById('jellyfinEnhancedUserMenuLink')) return;
+            const settingsLink = document.querySelector('#app-user-menu a[href="#/mypreferencesmenu"]');
+            if (!settingsLink) return;
+
+            const link = settingsLink.cloneNode(true);
+            link.id = 'jellyfinEnhancedUserMenuLink';
+            link.href = '#';
+
+            const icon = link.querySelector('svg');
+            if (icon) {
+                const replacement = document.createElement('span');
+                replacement.className = 'material-icons';
+                replacement.setAttribute('aria-hidden', 'true');
+                replacement.textContent = 'tune';
+                icon.replaceWith(replacement);
+            }
+            const text = link.querySelector('.MuiListItemText-primary');
+            if (text) text.textContent = 'Jellyfin Enhanced';
+
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // Not a real MenuItem, so nothing calls onMenuClose -- clicking
+                // the popover's own backdrop closes it instead.
+                document.getElementById('app-user-menu')?.querySelector(':scope > .MuiBackdrop-root')?.click();
+                JE.showEnhancedPanel();
+            });
+
+            settingsLink.insertAdjacentElement('afterend', link);
+        };
+
+        inject();
+        JE.helpers.onBodyMutation('user-menu-link', inject);
+    };
+
+    /**
      * Injects the "Jellyfin Enhanced" link into the user preferences menu (mypreferencesmenu.html).
      * Adds it as the last item in the first vertical section (after Controls).
      */
