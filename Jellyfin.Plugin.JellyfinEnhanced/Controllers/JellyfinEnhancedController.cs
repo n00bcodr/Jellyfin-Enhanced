@@ -3435,9 +3435,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 return StatusCode((int)response.StatusCode, content);
             }
+            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                // Browser went away (navigated off, aborted a superseded fetch) -
+                // expected under normal use, not a failure worth logging.
+                return StatusCode(499);
+            }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to proxy TMDB request. Error: {ex.Message}");
+                _logger.Error($"Failed to proxy TMDB request for '{apiPath}{queryString}'. Error: {ex}");
                 return StatusCode(500, "Failed to connect to TMDB.");
             }
         }
