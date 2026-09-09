@@ -239,6 +239,19 @@
         }
 
         /**
+         * Whether an element already qualifies as a primary (Movies/Shows)
+         * section, regardless of DOM node identity (React can recreate an
+         * equivalent section on its own re-renders).
+         * @param {Element|null} el
+         * @returns {boolean}
+         */
+        function isPrimarySection(el) {
+            if (!el || !el.classList?.contains('verticalSection')) return false;
+            const cardType = el.querySelector('[data-type]')?.dataset.type?.toLowerCase();
+            return !!cardType && primaryCardTypes.includes(cardType);
+        }
+
+        /**
          * Places the section after Movies/Shows if found, otherwise appends
          * to the results container or search page.
          * @returns {boolean} True if positioned after a primary section or
@@ -285,7 +298,7 @@
 
             const lastPrimary = findLastPrimarySection();
             if (lastPrimary) {
-                if (sectionToInject.previousElementSibling !== lastPrimary) {
+                if (!isPrimarySection(sectionToInject.previousElementSibling)) {
                     lastPrimary.after(sectionToInject);
                 }
                 return true;
