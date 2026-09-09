@@ -119,16 +119,34 @@
    * @param {Object} JE - The JellyfinEnhanced global object.
    */
   function watchForContainer(JE) {
+    var wasOnHomePage = false;
+
     function tryMount() {
-      if (!isOnHomePage()) return;
+      var onHome = isOnHomePage();
+
+      if (!onHome) {
+        if (wasOnHomePage) {
+          JE.activityPage.stopPolling?.();
+          lastMountedContainer = null;
+        }
+        wasOnHomePage = false;
+        return;
+      }
+
+      var justReturned = !wasOnHomePage;
+      wasOnHomePage = true;
 
       var container = findActiveContainer();
       if (!container) {
+        if (lastMountedContainer) {
+          JE.activityPage.stopPolling?.();
+        }
         lastMountedContainer = null;
         return;
       }
 
-      var shouldMount = container !== lastMountedContainer
+      var shouldMount = justReturned
+        || container !== lastMountedContainer
         || !container.hasChildNodes()
         || (lastMountedContainer && !document.contains(lastMountedContainer));
 
