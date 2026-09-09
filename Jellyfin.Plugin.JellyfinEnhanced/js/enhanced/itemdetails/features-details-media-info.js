@@ -266,22 +266,22 @@
      * @param {string} itemId The ID of the item.
      * @param {HTMLElement} container The DOM element to append the info to.
      */
-    async function displayItemSize(itemId, container) {
+    async function displayItemSize(itemId, container, mediaSourceId = null) {
+        const cacheKey = `${itemId}|${mediaSourceId || ''}`;
         const existing = container.querySelector('.mediaInfoItem-fileSize');
         if (existing) {
-            // If already rendered for this itemId, do nothing
-            if (existing.dataset.itemId === itemId) return;
-            // Different item now; replace the element
+            if (existing.dataset.itemId === itemId && existing.dataset.sourceId === (mediaSourceId || '')) return;
             existing.remove();
         }
 
         // Check cache first to avoid repeated network calls
         const now = Date.now();
-        const cached = fileSizeCache.get(itemId);
+        const cached = fileSizeCache.get(cacheKey);
 
         const placeholder = document.createElement('div');
         placeholder.className = 'mediaInfoItem mediaInfoItem-fileSize';
         placeholder.dataset.itemId = itemId;
+        placeholder.dataset.sourceId = mediaSourceId || '';
         placeholder.title = JE.t('file_size_tooltip');
         placeholder.style.display = 'flex';
         placeholder.style.alignItems = 'center';
@@ -311,7 +311,7 @@
             try {
                 const itemResult = await ApiClient.ajax({
                     type: 'GET',
-                    url: ApiClient.getUrl(`/JellyfinEnhanced/file-size/${ApiClient.getCurrentUserId()}/${itemId}`),
+                    url: ApiClient.getUrl(`/JellyfinEnhanced/file-size/${ApiClient.getCurrentUserId()}/${itemId}${mediaSourceId ? `?mediaSourceId=${encodeURIComponent(mediaSourceId)}` : ''}`),
                     dataType: 'json'
                 });
                 const totalSize = itemResult?.size ?? 0;
@@ -319,16 +319,16 @@
                 if (totalSize > 0) {
                     placeholder.style.verticalAlign = 'middle';
                     placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">save</span>${formatSize(totalSize)}`;
-                    fileSizeCache.set(itemId, { size: totalSize, unavailable: false, ts: now });
+                    fileSizeCache.set(cacheKey, { size: totalSize, unavailable: false, ts: now });
                 } else {
                     renderUnavailable();
-                    fileSizeCache.set(itemId, { size: null, unavailable: true, ts: now });
+                    fileSizeCache.set(cacheKey, { size: null, unavailable: true, ts: now });
                 }
             } catch (error) {
                 console.error('🪼 Jellyfin Enhanced: Error fetching item size for ID %s:', itemId, error);
                 // Keep placeholder with dash to prevent repeated calls
                 renderUnavailable();
-                fileSizeCache.set(itemId, { size: null, unavailable: true, ts: now });
+                fileSizeCache.set(cacheKey, { size: null, unavailable: true, ts: now });
             }
         };
 
@@ -411,7 +411,8 @@
      * @param {string} itemId The ID of the item.
      * @param {HTMLElement} container The DOM element to append the info to.
      */
-    async function displayAudioLanguages(itemId, container) {
+    async function displayAudioLanguages(itemId, container, mediaSourceId = null) {
+        const cacheKey = `${itemId}|${mediaSourceId || ''}`;
         // show itemMiscInfo if hidden like on season pages
         if (container.classList.contains('hide')) {
             container.classList.remove('hide')
@@ -419,15 +420,14 @@
 
         const existing = container.querySelector('.mediaInfoItem-audioLanguage');
         if (existing) {
-            // If already rendered for this itemId, do nothing
-            if (existing.dataset.itemId === itemId) return;
-            // Different item now, replace the element
+            if (existing.dataset.itemId === itemId && existing.dataset.sourceId === (mediaSourceId || '')) return;
             existing.remove();
         }
 
         const placeholder = document.createElement('div');
         placeholder.className = 'mediaInfoItem mediaInfoItem-audioLanguage';
         placeholder.dataset.itemId = itemId;
+        placeholder.dataset.sourceId = mediaSourceId || '';
         placeholder.title = JE.t('audio_language_tooltip');
         placeholder.style.display = 'flex';
         placeholder.style.verticalAlign = 'middle';
@@ -556,7 +556,7 @@
         const performFetch = async () => {
             // Check cache first
             const now = Date.now();
-            const cached = audioLanguageCache.get(itemId);
+            const cached = audioLanguageCache.get(cacheKey);
             if (cached && (now - cached.ts) < LANGUAGE_CACHE_TTL) {
                 if (cached.unavailable || !cached.languages || cached.languages.length === 0) {
                     renderUnavailable();
@@ -574,10 +574,12 @@
                 // authoritative Matroska BCP-47 stream languages. Fall back to
                 // the native Jellyfin item to preserve existing behaviour if the
                 // Enhanced endpoint is unavailable.
-                const item = await fetchTagDataItem(userId, itemId)
-                    || (JE.helpers?.getItemCached
-                        ? await JE.helpers.getItemCached(itemId, { userId })
-                        : await ApiClient.getItem(userId, itemId));
+                const item = mediaSourceId
+                    ? await ApiClient.getItem(userId, itemId)
+                    : (await fetchTagDataItem(userId, itemId)
+                        || (JE.helpers?.getItemCached
+                            ? await JE.helpers.getItemCached(itemId, { userId })
+                            : await ApiClient.getItem(userId, itemId)));
 
                 let sourceItem = item;
 
@@ -595,7 +597,7 @@
                     } else {
                         // No episodes found
                         renderUnavailable();
-                        audioLanguageCache.set(itemId, { languages: [], unavailable: true, ts: Date.now() });
+                        audioLanguageCache.set(cacheKey, { languages: [], unavailable: true, ts: Date.now() });
                         return;
                     }
                 }
@@ -619,24 +621,32 @@
                 // /tag-data exposes its trimmed stream projection directly on
                 // MediaStreams. Native Jellyfin items keep streams inside each
                 // MediaSource, so support both shapes for graceful fallback.
-                collectAudioLanguages(sourceItem?.MediaStreams);
-                sourceItem?.MediaSources?.forEach(source => {
-                    collectAudioLanguages(source.MediaStreams);
-                });
+                const mediaSources = sourceItem?.MediaSources;
+                const selectedSource = mediaSourceId && Array.isArray(mediaSources)
+                    ? mediaSources.find(source => source.Id === mediaSourceId)
+                    : null;
+                if (selectedSource) {
+                    collectAudioLanguages(selectedSource.MediaStreams);
+                } else {
+                    collectAudioLanguages(sourceItem?.MediaStreams);
+                    mediaSources?.forEach(source => {
+                        collectAudioLanguages(source.MediaStreams);
+                    });
+                }
 
                 const uniqueLanguages = Array.from(languages).map(JSON.parse);
                 if (uniqueLanguages.length > 0) {
                     renderLanguages(uniqueLanguages);
                     // Cache the successful result
-                    audioLanguageCache.set(itemId, { languages: uniqueLanguages, unavailable: false, ts: Date.now() });
+                    audioLanguageCache.set(cacheKey, { languages: uniqueLanguages, unavailable: false, ts: Date.now() });
                 } else {
                     renderUnavailable();
-                    audioLanguageCache.set(itemId, { languages: [], unavailable: true, ts: Date.now() });
+                    audioLanguageCache.set(cacheKey, { languages: [], unavailable: true, ts: Date.now() });
                 }
             } catch (error) {
                 console.error('🪼 Jellyfin Enhanced: Error fetching audio languages for %s:', itemId, error);
                 renderUnavailable();
-                audioLanguageCache.set(itemId, { languages: [], unavailable: true, ts: Date.now() });
+                audioLanguageCache.set(cacheKey, { languages: [], unavailable: true, ts: Date.now() });
             }
         };
 
