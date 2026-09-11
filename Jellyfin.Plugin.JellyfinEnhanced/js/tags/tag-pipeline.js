@@ -404,25 +404,7 @@
                 }
 
                 processedCards.add(el);
-                // Render into cardScalable but INSERT BEFORE the overlay container
-                // so Jellyfin's hover overlay naturally covers tags (DOM order).
-                // Don't render into cardImageContainer — it triggers Jellyfin's
-                // lazy-load to reset opacity:0, breaking image display.
-                const scalable = el.closest('.cardScalable');
-                let renderTarget = scalable || el;
-                if (scalable) {
-                    const overlay = scalable.querySelector('.cardOverlayContainer');
-                    if (overlay) {
-                        // Create a tag container BEFORE the overlay
-                        let tagHost = scalable.querySelector('.je-tag-host');
-                        if (!tagHost) {
-                            tagHost = document.createElement('div');
-                            tagHost.className = 'je-tag-host';
-                            scalable.insertBefore(tagHost, overlay);
-                        }
-                        renderTarget = tagHost;
-                    }
-                }
+                const renderTarget = resolveRenderTarget(el);
 
                 // Try server cache first (all tag data pre-computed in one object)
                 const serverEntry = serverCache?.get(itemId);
@@ -470,6 +452,32 @@
         }
 
         processChunk();
+    }
+
+    /**
+     * Resolves the element tags should render into for a given card: a
+     * `.je-tag-host` div inserted before the card's hover-overlay container
+     * (so Jellyfin's own overlay naturally covers tags in DOM order), falling
+     * back to `.cardScalable` or the card element itself when no overlay
+     * container exists. Never render into `.cardImageContainer` directly —
+     * it triggers Jellyfin's lazy-load to reset opacity:0, breaking the image.
+     * Cheap (a couple of DOM queries) and idempotent, so it's safe to call
+     * again later to re-resolve a card whose subtree Jellyfin rebuilt.
+     * @param {HTMLElement} el - Card image container element.
+     * @returns {HTMLElement} The element to render tags into.
+     */
+    function resolveRenderTarget(el) {
+        const scalable = el.closest('.cardScalable');
+        if (!scalable) return el;
+        const overlay = scalable.querySelector('.cardOverlayContainer');
+        if (!overlay) return scalable;
+        let tagHost = scalable.querySelector('.je-tag-host');
+        if (!tagHost) {
+            tagHost = document.createElement('div');
+            tagHost.className = 'je-tag-host';
+            scalable.insertBefore(tagHost, overlay);
+        }
+        return tagHost;
     }
 
     /**
@@ -621,10 +629,16 @@
 
                 // Render to ALL cards with this ID (same item can appear in multiple rows)
                 for (const entry of batchEntries) {
-                    const { renderTarget } = entry;
-                    // The card may have been removed from the DOM (e.g. search
-                    // re-rendered its results) since this entry was queued.
-                    if (!document.contains(renderTarget)) continue;
+                    let { el, renderTarget } = entry;
+                    // The queued renderTarget can go stale between scan and render
+                    // (Series/Season wait on a first-episode fetch first, giving
+                    // Jellyfin time to rebuild the card's subtree). Re-resolve from
+                    // the still-tracked card element rather than dropping the tag —
+                    // resolveRenderTarget is a couple of cheap DOM queries, not a fetch.
+                    if (!document.contains(renderTarget)) {
+                        if (!document.contains(el)) continue; // card itself is gone
+                        renderTarget = resolveRenderTarget(el);
+                    }
                     const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
                     for (const [name, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;
@@ -678,7 +692,7 @@
         } catch (err) {
             console.warn(`${logPrefix} Batch fetch failed, falling back to individual fetches:`, err);
             // Fallback: process items individually
-            for (const { renderTarget, itemId } of batch) {
+            for (const { el, renderTarget: queuedRenderTarget, itemId } of batch) {
                 if (generation !== batchGeneration) break; // navigation or user switch
                 try {
                     const item = JE.helpers?.getItemCached
@@ -689,7 +703,11 @@
                     const firstEpisode = (item.Type === 'Series' || item.Type === 'Season')
                         ? await getFirstEpisode(userId, item.Id) : null;
                     if (generation !== batchGeneration) break; // switched during the awaits above
-                    if (!document.contains(renderTarget)) continue; // card removed while awaiting
+                    let renderTarget = queuedRenderTarget;
+                    if (!document.contains(renderTarget)) {
+                        if (!document.contains(el)) continue; // card itself is gone
+                        renderTarget = resolveRenderTarget(el);
+                    }
                     const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget };
 
                     for (const [, renderer] of renderers) {
