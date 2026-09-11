@@ -1223,6 +1223,22 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/JellyfinTweaks/master/Jellyfin.Plugin.JellyTweaks/images/thumb.png",
     "versions": [
       {
+        "changelog": "**Build for Jellyfin 12.**\n\n- Fix typo in repository name from 'Jellfin' to 'Jellyfin'\n - Fix typo in repository name from 'Jellfin' to 'Jellyfin'\n - Fix force-write settings, add audio/subtitle/sort tweaks, redesign config page",
+        "targetAbi": "12.0.0.0",
+        "version": "4.1.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/JellyfinTweaks/releases/download/4.1.0.0/Jellyfin.Plugin.JellyTweaks_12.0.0.zip",
+        "checksum": "D5AFDE6F17E9FCD97E6B90E302B37A7F",
+        "timestamp": "2026-09-11T16:28:58"
+      },
+      {
+        "changelog": "**Build for Jellyfin 10.11.** On Jellyfin 12 the catalog installs the Jellyfin 12 build of this version automatically.\n\n- Fix typo in repository name from 'Jellfin' to 'Jellyfin'\n - Fix typo in repository name from 'Jellfin' to 'Jellyfin'\n - Fix force-write settings, add audio/subtitle/sort tweaks, redesign config page",
+        "targetAbi": "10.11.0.0",
+        "version": "4.1.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/JellyfinTweaks/releases/download/4.1.0.0/Jellyfin.Plugin.JellyTweaks_10.11.0.zip",
+        "checksum": "026262A8244AEDD9F51C7FAA6D067BC1",
+        "timestamp": "2026-09-11T16:28:50"
+      },
+      {
         "changelog": "**Build for Jellyfin 12.**\n\n- Update README with new badges and links\n - Update README.md\n - Update funding.yml\n - Add GNU General Public License v3\n - Jellyfin v12 Support and drop support for Jellyfin 10.10",
         "targetAbi": "12.0.0.0",
         "version": "4.0.0.0",
