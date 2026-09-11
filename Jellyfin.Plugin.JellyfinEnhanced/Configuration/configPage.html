@@ -6986,6 +6986,11 @@
                 || document.querySelector('#jellyseerr_TMDB_API_KEY').value.trim().length > 0;
         }
 
+        function isMetadataIconsEnabled() {
+            var el = document.getElementById('metadataIconsEnabled');
+            return !!(el && el.checked);
+        }
+
         /**
          * Returns true iff at least one configured Seerr URL parses as an
          * http(s) URL. A non-empty textarea full of garbage like "seerr.local"
@@ -7080,7 +7085,9 @@
             { id: 'downloadsUseCustomTabs',        checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'calendarUseCustomTabs',         checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'recommendationsUseCustomTabs',  checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
-            { id: 'activityFeedUseCustomTabs',     checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' }
+            { id: 'activityFeedUseCustomTabs',     checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
+            { id: 'showLetterboxdLinkAsText', checkFn: function() { return !isMetadataIconsEnabled(); }, hint: 'Forced to icon mode while Metadata Icons (Druidblack) is enabled', icon: 'block' },
+            { id: 'showArrLinksAsText',       checkFn: function() { return !isMetadataIconsEnabled(); }, hint: 'Forced to icon mode while Metadata Icons (Druidblack) is enabled', icon: 'block' }
         ];
 
         // Informational only (unlike INDIVIDUAL_DEPS) — Native Tab is more
@@ -8515,6 +8522,7 @@
         });
         document.querySelector('#jellyseerrEnabled').addEventListener('change', updateAllDependencies);
         document.querySelector('#tagCacheServerMode').addEventListener('change', updateAllDependencies);
+        document.querySelector('#metadataIconsEnabled').addEventListener('change', updateAllDependencies);
         ['#jellyseerrUrls', '#JellyseerrApiKey'].forEach(function(sel) {
             document.querySelector(sel).addEventListener('input', debouncedUpdateDeps);
         });
