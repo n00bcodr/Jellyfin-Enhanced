@@ -51,5 +51,9 @@
       errorEl.style.display = "block";
     }
   }, INTERVAL);
+
+  window.addEventListener('beforeunload', () => {
+    window.JellyfinEnhanced?.activityPage?.stopPolling?.();
+  });
 })();
 </script>

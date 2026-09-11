@@ -549,14 +549,17 @@
         await loadAll();
 
         if (activeSection) {
-            activeStreamsPollTimer = setInterval(
-                () => refreshActiveStreams(activeSection.section, activeSection.body), ACTIVE_STREAMS_POLL_MS);
+            activeStreamsPollTimer = setInterval(() => {
+                if (document.visibilityState === 'hidden') return;
+                refreshActiveStreams(activeSection.section, activeSection.body);
+            }, ACTIVE_STREAMS_POLL_MS);
         }
     }
 
     window.JellyfinEnhanced.activityPage = {
         injectStyles,
-        renderForCustomTab
+        renderForCustomTab,
+        stopPolling: stopActiveStreamsPolling
     };
 
 })(window.JellyfinEnhanced);

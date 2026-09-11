@@ -45,6 +45,11 @@
         // resumes exactly where the feed left off. 40 pages ≈ 800 items.
         maxConsecutiveEmptyPages: 40,
 
+        // Second safety valve: pause after this many consecutive fills whose
+        // measured buffer didn't grow, even though pages kept returning
+        // non-empty (e.g. mostly-duplicate) results.
+        maxStuckFills: 15,
+
         // Retry configuration
         retry: {
             maxAttempts: 3,
@@ -249,9 +254,12 @@
          * Shows an action row (retry after failures, or "keep looking" once the
          * empty-page budget is spent). In a horizontal row it sits inline at the
          * end of the track so it is where the viewer is looking.
-         * @param {string} label
+         * @param {string|null} [label] - Text label; omit for an icon-only
+         *   button (avoids needing a new translated string).
+         * @param {string|null} [icon] - Material icon ligature shown instead
+         *   of (or in the absence of) the text label.
          */
-        const showRetryRow = (label = '⟳ Tap to retry') => {
+        const showRetryRow = (label = 'Tap to retry', icon = null) => {
             if (retryRow) return;
 
             retryRow = document.createElement('div');
@@ -274,7 +282,19 @@
 
             const retryButton = document.createElement('button');
             retryButton.type = 'button';
-            retryButton.textContent = label;
+            if (label) {
+                retryButton.title = label;
+                retryButton.setAttribute('aria-label', label);
+            }
+            if (icon) {
+                const iconEl = document.createElement('span');
+                iconEl.className = 'material-icons';
+                iconEl.textContent = icon;
+                iconEl.setAttribute('aria-hidden', 'true');
+                retryButton.appendChild(iconEl);
+            } else {
+                retryButton.textContent = label;
+            }
             retryButton.style.cssText = `
                 padding: 0.8em 1.5em;
                 border-radius: 4px;
@@ -283,11 +303,16 @@
                 border: 1px solid rgba(255,255,255,0.2);
                 cursor: pointer;
                 font-size: 1em;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
             `;
 
             retryButton.addEventListener('click', () => {
                 retryCount = 0;
                 emptyPages = 0;
+                stuckFills = 0;
+                lastMeasuredAhead = null;
                 paused = false;
                 engaged = true;
                 removeRetryRow();
@@ -382,6 +407,9 @@
             }
         };
 
+        let lastMeasuredAhead = null;
+        let stuckFills = 0;
+
         /**
          * Keeps loading until the content buffer ahead of the viewer is full,
          * the feed is exhausted, or a load fails permanently.
@@ -398,9 +426,21 @@
                     if (emptyPages >= CONFIG.maxConsecutiveEmptyPages) {
                         console.debug(`${logPrefix} ${emptyPages} consecutive pages rendered nothing; pausing until "Keep looking" is pressed`);
                         paused = true;
-                        showRetryRow('⟳ Keep looking');
+                        showRetryRow(null, 'refresh');
                         break;
                     }
+                    if (lastMeasuredAhead !== null && g.ahead <= lastMeasuredAhead + 1) {
+                        stuckFills++;
+                        if (stuckFills >= CONFIG.maxStuckFills) {
+                            console.warn(`${logPrefix} Buffer measurement hasn't grown after ${stuckFills} loads despite non-empty pages; pausing to avoid a runaway fetch loop`);
+                            paused = true;
+                            showRetryRow(null, 'refresh');
+                            break;
+                        }
+                    } else {
+                        stuckFills = 0;
+                    }
+                    lastMeasuredAhead = g.ahead;
 
                     const before = contentEnd();
                     // pageBudget: how many more pages may be fetched before the
