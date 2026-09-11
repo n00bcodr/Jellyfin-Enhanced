@@ -51,20 +51,6 @@
             document.head.appendChild(style);
         }
 
-        function getImdbId(context) {
-            const links = context.querySelectorAll('.itemExternalLinks a, .externalIdLinks a');
-            for (const link of links) {
-                const href = link.href;
-                if (href.includes('imdb.com/title/')) {
-                    const match = href.match(/\/title\/(tt\d+)/);
-                    if (match) {
-                        return match[1];
-                    }
-                }
-            }
-            return null;
-        }
-
         // Letterboxd has no IMDb/TMDB lookup for people, only a name-based slug
         // (e.g. https://letterboxd.com/actor/tommy-lee-jones/), so we derive it
         // from the person's name the same way Letterboxd does.
@@ -89,7 +75,9 @@
             const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
             if (!itemId) return;
 
-            // If we've already processed this item, skip it
+            // Only caches "unsupported" verdicts (wrong type, no IMDb id) — never
+            // success, since Jellyfin can spawn a fresh #itemDetailPage instance
+            // for an already-processed item; the DOM check below owns that case.
             if (processedItemIds.has(itemId)) {
                 return;
             }
@@ -141,7 +129,7 @@
                     }
                     letterboxdUrl = `https://letterboxd.com/actor/${personSlug}`;
                 } else {
-                    const imdbId = getImdbId(visiblePage);
+                    const imdbId = item.ProviderIds?.Imdb;
                     if (!imdbId) {
                         console.log(`${logPrefix} No IMDb ID found for ${item.Type}.`);
                         processedItemIds.add(itemId);
@@ -152,10 +140,8 @@
 
                 anchorElement.appendChild(document.createTextNode(' '));
                 anchorElement.appendChild(createLinkButton("Letterboxd", letterboxdUrl, "letterboxd-link-icon"));
-                processedItemIds.add(itemId);
             } catch (err) {
                 console.error(`${logPrefix} Error adding Letterboxd link:`, err);
-                processedItemIds.add(itemId);
             } finally {
                 isAddingLinks = false;
             }
