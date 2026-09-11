@@ -7356,7 +7356,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpGet("file-size/{userId}/{itemId}")]
         [Authorize]
         [Produces("application/json")]
-        public IActionResult GetFileSizeByItemId(Guid userId, Guid itemId)
+        public IActionResult GetFileSizeByItemId(Guid userId, Guid itemId, [FromQuery] string? mediaSourceId = null)
         {
             var authorizationResult = AuthorizeUserAccess(userId, out var user);
             if (authorizationResult != null)
@@ -7373,7 +7373,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var allAffectedItems = GetLeafPlayableItems(user, item);
 
             long totalSize = allAffectedItems
-                .Sum(affectedItem => affectedItem.GetMediaSources(false).Sum(source => source.Size ?? 0));
+                .Sum(affectedItem => affectedItem.GetMediaSources(false)
+                    .Where(source => string.IsNullOrEmpty(mediaSourceId) || string.Equals(source.Id, mediaSourceId, StringComparison.OrdinalIgnoreCase))
+                    .Sum(source => source.Size ?? 0));
 
             return Ok(new { success = true, size = totalSize });
         }

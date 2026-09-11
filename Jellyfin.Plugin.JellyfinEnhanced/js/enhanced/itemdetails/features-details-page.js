@@ -277,14 +277,15 @@
                 return;
             }
 
+            const selectedSourceId = visiblePage.querySelector('.selectSource')?.value || null;
             if (JE?.currentSettings?.showWatchProgress) {
                 displayWatchProgress(itemId, container);
             }
             if (JE?.currentSettings?.showFileSizes) {
-                displayItemSize(itemId, container);
+                displayItemSize(itemId, container, selectedSourceId);
             }
             if (JE?.currentSettings?.showAudioLanguages && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(lastDetailsItemType)) {
-                displayAudioLanguages(itemId, container);
+                displayAudioLanguages(itemId, container, selectedSourceId);
             }
             if (JE.pluginConfig?.ShowReleaseDates && JE.pluginConfig?.TmdbEnabled && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(lastDetailsItemType)) {
                 displayReleaseDate(itemId, container);
