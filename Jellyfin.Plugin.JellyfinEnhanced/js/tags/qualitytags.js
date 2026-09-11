@@ -14,7 +14,7 @@
     const containerClass = 'quality-overlay-container';
 
     // Within-category sort orders (more important = lower index inside each category).
-    const resolutionOrder = ['8K', '4K', '1440p', '1080p', '720p', '480p', 'LOW-RES', 'SD'];
+    const resolutionOrder = ['8K', '4K', '1440p', '1080p', '720p', '576p', '480p', 'LOW-RES', 'SD'];
     const sourceOrder = ['BluRay', 'HD DVD', 'DVD', 'VHS', 'HDTV', 'Physical'];
     const dynamicRangeOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HDR'];
     const specialFormatOrder = ['IMAX', '3D'];
@@ -44,6 +44,7 @@
         '1440p': { bg: 'rgba(255, 20, 147, 0.9)', text: '#ffffff' },
         '1080p': { bg: 'rgba(0, 191, 255, 0.9)', text: '#ffffff' },
         '720p': { bg: 'rgba(255, 165, 0, 0.9)', text: '#000000' },
+        '576p': { bg: 'rgba(255, 179, 0, 0.85)', text: '#000000' },
         '480p': { bg: 'rgba(255, 193, 7, 0.85)', text: '#000000' },
         'SD': { bg: 'rgba(108, 117, 125, 0.85)', text: '#ffffff' },
         'HDR': { bg: 'rgba(255, 215, 0, 0.95)', text: '#000000' },
@@ -244,7 +245,7 @@
         if (primaryVideoStream) {
             // Priority 1: DisplayTitle Scan for resolution keywords
             const displayTitle = primaryVideoStream.DisplayTitle || '';
-            const resolutionRegex = /\b(8k|4320p|4k|2160p|1440p|1080p|720p|480p|360p|404p|384p|520p)\b/i;
+            const resolutionRegex = /\b(8k|4320p|4k|2160p|1440p|1080p|720p|576p|480p|360p|404p|384p|520p)\b/i;
             const resolutionMatch = displayTitle.match(resolutionRegex);
 
             const displayTitleHeight = primaryVideoStream.Height || 0;
@@ -264,6 +265,8 @@
                     resolutionTag = '1080p';
                 } else if (found === '720p') {
                     resolutionTag = '720p';
+                } else if (found === '576p') {
+                    resolutionTag = '576p';
                 } else if (found === '480p') {
                     resolutionTag = '480p';
                 } else if (['360p', '404p', '384p', '520p'].includes(found)) {
@@ -285,6 +288,9 @@
                     resolutionTag = '1080p';
                 } else if (height >= 700) {
                     resolutionTag = '720p';
+                } else if (height >= 528) {
+                    // PAL DVD is 720x576; NTSC DVD is 720x480. 528 splits the two evenly.
+                    resolutionTag = '576p';
                 } else if (height >= 400) {
                     resolutionTag = '480p';
                 } else if (height > 0) {
