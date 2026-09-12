@@ -9,7 +9,7 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.features = JE.internals.features || {};
 
-    const { showNotification, REMOVE_SURFACES, buildNativeActionSheetItem, setActionSheetItemIcon,
+    const { showNotification, REMOVE_SURFACES, buildNativeActionSheetItem,
             fitRemoveItemToMenu, removeFromHomeSurface, closeOpenActionSheet, hideEmptyHomeSections,
             getActiveActionSheetScroller } = internal;
 
@@ -142,7 +142,6 @@
             if (await removeFromHomeSurface(t.itemId, t.surface, t.card)) removed++;
         }
         if (removed > 0) {
-            closeOpenActionSheet();
             exitSelectionMode();
             showNotification(JE.t('remove_items_success'), 'success');
             hideEmptyHomeSections();
@@ -178,20 +177,19 @@
             icon: 'visibility_off',
             text: multiSelectRemoveLabel(targets)
         });
-        const textEl = button.querySelector('.actionSheetItemText');
 
         button.addEventListener('click', async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-
             // Recollect the selection at click time, not from the build-time closure: if the
             // sheet was reused after the selection changed, act on the CURRENT selection.
             const current = collectSelectedRemovableCards();
-            if (!current.length) { closeOpenActionSheet(); exitSelectionMode(); return; }
+            if (!current.length) { exitSelectionMode(); return; }
 
-            // Bulk removal (more than one item): close the menu and confirm first, listing each
-            // item and the surface it'll be removed from, so the action is never a surprise.
+            // Bulk removal (more than one item): intercept so jellyfin-web does not race the
+            // confirm, then close the menu and confirm first, listing each item and the surface
+            // it'll be removed from, so the action is never a surprise.
             if (current.length > 1) {
+                e.preventDefault();
+                e.stopPropagation();
                 closeOpenActionSheet();
                 const confirmed = await confirmMultiRemove(current);
                 if (!confirmed) return; // selection kept so the user can adjust
@@ -199,17 +197,8 @@
                 return;
             }
 
-            // Single item: remove directly with in-menu progress feedback.
-            const originalText = textEl.textContent;
-            button.disabled = true;
-            textEl.textContent = JE.t('remove_button_removing');
-            setActionSheetItemIcon(button, 'hourglass_empty');
-
+            // Single item: let the click bubble so jellyfin-web closes the sheet natively.
             await performMultiRemove(current);
-
-            button.disabled = false;
-            textEl.textContent = originalText;
-            setActionSheetItemIcon(button, 'visibility_off');
         });
 
         return button;

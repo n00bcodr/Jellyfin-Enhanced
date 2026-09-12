@@ -495,27 +495,12 @@
         });
         button.dataset.jeItemId = itemId;
         button.dataset.jeSurface = surface;
-        const textEl = button.querySelector('.actionSheetItemText');
 
-        button.addEventListener('click', async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            const originalText = textEl.textContent;
-            button.disabled = true;
-            textEl.textContent = JE.t('remove_button_removing');
-            setActionSheetItemIcon(button, 'hourglass_empty');
-
+        // Let jellyfin-web's actionSheet.ts close the sheet rather than trying to handle it ourselves.
+        button.addEventListener('click', async () => {
             const success = await removeFromHomeSurface(itemId, surface, card);
-
-            // Restore visuals BEFORE close — a stuck sheet under odd themes is better than a stuck "Removing…" label.
-            button.disabled = false;
-            textEl.textContent = originalText;
-            setActionSheetItemIcon(button, 'visibility_off');
-
             if (success) {
-                const closed = closeOpenActionSheet();
-                showNotification(JE.t(config.successKey), closed ? "success" : "info");
+                showNotification(JE.t(config.successKey), "success");
                 hideEmptyHomeSections();
             }
         });
