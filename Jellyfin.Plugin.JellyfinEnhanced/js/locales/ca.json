@@ -385,7 +385,7 @@
     "bookmarks_library_button_cleanup": "Netejar orfes",
     "bookmarks_library_button_delete_all": "Eliminar tot",
     "bookmarks_library_empty_title": "No hi ha marcadors desats",
-    "bookmarks_library_empty_hint": "Els marcadors apareixeran aquí després que els creïs durant la reproducció",
+    "bookmarks_library_empty_hint": "Premeu 'B' mentre mireu el contingut per a guardar un marcador!",
     "toast_bookmark_no_item": "{{icon:error}} No es pot marcar: No s'ha trobat l'element",
     "toast_bookmark_fetch_failed": "{{icon:error}} Error en obtenir detalls de l'element",
     "toast_bookmark_updated": "{{icon:success}} Marcador actualitzat",
