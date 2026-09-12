@@ -76,6 +76,8 @@
             return;
         }
 
+        var addedTabButton = false;
+
         entries.forEach(function (entry) {
             // Assign the index once and cache it -- recomputing on every pass
             // could hand an entry a *different* index later (if something else's
@@ -100,6 +102,7 @@
 
                 slider.appendChild(btn);
                 window.CustomElements?.upgradeSubtree?.(slider);
+                addedTabButton = true;
                 console.log('🪼 Jellyfin Enhanced: [native-tabs] added tab button "' + entry.title + '" at data-index=' + entry.index);
             }
 
@@ -115,6 +118,16 @@
 
             ensureDiscoverable(entry);
         });
+
+        // The tab strip's ScrollerFactory (emby-tabs.js) caches each tab's
+        // width/position at init time and never watches for new children --
+        // appending a button above desyncs that cache, so existing tabs
+        // visually overlap the new one until something unrelated (e.g. a
+        // window resize) happens to call the scroller's own refresh(). Force
+        // that recompute immediately instead of leaving it to chance.
+        if (addedTabButton) {
+            document.querySelector('[is="emby-tabs"]')?.refresh?.();
+        }
 
         syncDeepLink();
     }

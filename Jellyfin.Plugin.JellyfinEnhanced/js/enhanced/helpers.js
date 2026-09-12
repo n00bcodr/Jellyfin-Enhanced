@@ -463,10 +463,37 @@
         // is a fixed 48px (the MUI convention forced above) whether rendered
         // or not. This is idempotent -- same correct answer every call.
         const ICON_WIDTH_PX = 48;
+        // Fallback links register asynchronously as their feature modules
+        // load, so a header row that fits *today's* icon count can still
+        // need to collapse once the next one lands. Once available width is
+        // already this tight, skip the reactive fit-check and collapse
+        // upfront instead of discovering the overflow icon-by-icon.
+        const ALWAYS_COLLAPSE_BELOW_PX = 600;
         const isCollapsed = () => {
             if (!headerRight) {
                 return window.matchMedia('(max-width: 760px)').matches;
             }
+
+            // headerRight (getHeaderRightContainer's buttonsTray) is a
+            // `flex-wrap: wrap` Box with no width floor, so its own
+            // clientWidth grows to fit whatever's inside it rather than
+            // reporting the space actually available. Derive that from the
+            // parent toolbar instead, which has a stable width.
+            const toolbar = headerRight.closest('.MuiToolbar-root');
+            let availableWidth = headerRight.clientWidth;
+            if (toolbar && toolbar !== headerRight) {
+                let siblingsWidth = 0;
+                for (const child of toolbar.children) {
+                    if (child === headerRight || child.contains(headerRight)) continue;
+                    siblingsWidth += child.getBoundingClientRect().width;
+                }
+                availableWidth = toolbar.clientWidth - siblingsWidth;
+            }
+
+            if (availableWidth < ALWAYS_COLLAPSE_BELOW_PX) {
+                return true;
+            }
+
             let visibleWidth = 0;
             for (const child of headerRight.children) {
                 if (child === group) continue; // this tray's own group, accounted for below
@@ -474,7 +501,7 @@
             }
             const collapsibleIconCount = tray.querySelectorAll('.headerButton.paper-icon-button-light').length;
             const neededIfExpanded = visibleWidth + collapsibleIconCount * ICON_WIDTH_PX;
-            return neededIfExpanded > headerRight.clientWidth;
+            return neededIfExpanded > availableWidth;
         };
         let isOpen = false;
 
@@ -599,14 +626,11 @@
                 applyState();
             }
         });
-        // New buttons (native-tabs registers more tabs later) need the same
-        // collapsed-row styling applied once they land, not just whatever was
-        // present at open time.
-        new MutationObserver(() => {
-            if (isCollapsed()) {
-                tray.querySelectorAll('.headerButton.paper-icon-button-light').forEach((row) => setRowCollapsedStyle(row, true));
-            }
-        }).observe(tray, { childList: true, subtree: true });
+        // New buttons (native-tabs registers more tabs later) need the
+        // collapsed state re-evaluated as they land -- through applyState()
+        // itself, not by restyling rows independently, so the row styling
+        // and the container-level toggle/dialog state can't desync.
+        new MutationObserver(applyState).observe(tray, { childList: true, subtree: true });
 
         applyState();
 
