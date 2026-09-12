@@ -432,7 +432,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var etag = $"\"{Convert.ToHexString(SHA256.HashData(bytes))}\"";
                 return new CdnAsset(bytes, contentType, etag);
             }
-            catch (OperationCanceledException)
+            // HttpClient timeouts also throw OperationCanceledException. Only
+            // caller cancellation should abort the refresh or bypass stale cache.
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
