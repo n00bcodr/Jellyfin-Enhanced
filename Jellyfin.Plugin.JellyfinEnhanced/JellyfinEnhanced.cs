@@ -262,6 +262,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                         incoming.AnalyticsLastReportedAt = current.AnalyticsLastReportedAt;
                         incoming.AnalyticsLastPayloadJson = current.AnalyticsLastPayloadJson;
                         incoming.AnalyticsLastReportedPluginVersion = current.AnalyticsLastReportedPluginVersion;
+                        incoming.AnalyticsLastReportedJellyfinTarget = current.AnalyticsLastReportedJellyfinTarget;
+                        incoming.AnalyticsLastReportedJellyfinVersion = current.AnalyticsLastReportedJellyfinVersion;
                     }
                 }
 

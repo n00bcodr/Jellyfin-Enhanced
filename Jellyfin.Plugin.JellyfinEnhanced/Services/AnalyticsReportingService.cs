@@ -414,13 +414,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
-        /// Runs on the scheduled task's cadence: no-ops unless analytics is
+        /// Runs at startup and on the scheduled task's cadence: no-ops unless analytics is
         /// enabled, AND either the configured interval has actually elapsed
-        /// since the last successful send, OR the plugin version has changed
-        /// since that last send. The version check exists because
-        /// v_version_adoption is only useful if it reflects upgrades promptly;
-        /// otherwise "how fast is everyone updating" would lag by up to 30
-        /// days behind reality, which defeats the point of tracking it at all.
+        /// since the last successful send, OR the full plugin version, compiled
+        /// build target or running Jellyfin version has changed. This also
+        /// refreshes same-version build corrections and host-only upgrades.
         /// </summary>
         public async Task ReportIfDueAsync(CancellationToken cancellationToken)
         {
@@ -428,9 +426,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var config = instance?.Configuration;
             if (instance == null || config == null || !config.AnalyticsEnabled) return;
 
-            var currentPluginVersion = instance.Version?.ToString(3) ?? string.Empty;
-            var versionChanged = !string.IsNullOrEmpty(config.AnalyticsLastReportedPluginVersion)
-                && config.AnalyticsLastReportedPluginVersion != currentPluginVersion;
+            var currentPluginVersion = instance.Version?.ToString() ?? string.Empty;
+            // Missing fields from older configurations deliberately trigger one
+            // refresh; only a successful send records the complete combination.
+            var environmentChanged = config.AnalyticsLastReportedPluginVersion != currentPluginVersion
+                || config.AnalyticsLastReportedJellyfinTarget != JellyfinTarget
+                || config.AnalyticsLastReportedJellyfinVersion != (_appHost.ApplicationVersionString ?? string.Empty);
 
             var intervalDays = Math.Clamp(config.AnalyticsReportIntervalDays, 7, 30);
             var lastSent = config.AnalyticsLastReportedAt > 0
@@ -439,7 +440,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var intervalElapsed = !lastSent.HasValue || DateTimeOffset.UtcNow - lastSent.Value >= TimeSpan.FromDays(intervalDays);
 
-            if (!intervalElapsed && !versionChanged)
+            if (!intervalElapsed && !environmentChanged)
             {
                 return;
             }
@@ -502,6 +503,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var snapshot = _counters.GetSnapshot();
+            // Keep the full version locally without changing the backend's
+            // three-component plugin_version payload format.
+            var currentPluginVersion = JellyfinEnhanced.Instance?.Version?.ToString() ?? string.Empty;
             var payload = BuildPayload(
                 config,
                 config.AnalyticsShareFeatureFlags,
@@ -583,7 +587,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     live.AnalyticsForbiddenSinceLastSuccess = 0;
                     live.AnalyticsLastReportedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     live.AnalyticsLastPayloadJson = JsonSerializer.Serialize(payload);
-                    live.AnalyticsLastReportedPluginVersion = payload.PluginVersion;
+                    live.AnalyticsLastReportedPluginVersion = currentPluginVersion;
+                    live.AnalyticsLastReportedJellyfinTarget = payload.JellyfinTarget;
+                    live.AnalyticsLastReportedJellyfinVersion = payload.JellyfinVersion;
                     try
                     {
                         JellyfinEnhanced.Instance?.SaveConfiguration();

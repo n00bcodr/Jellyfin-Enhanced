@@ -395,6 +395,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AnalyticsLastReportedAt = 0;
             AnalyticsLastPayloadJson = string.Empty;
             AnalyticsLastReportedPluginVersion = string.Empty;
+            AnalyticsLastReportedJellyfinTarget = string.Empty;
+            AnalyticsLastReportedJellyfinVersion = string.Empty;
             AnalyticsForbiddenSinceLastSuccess = 0;
         }
 
@@ -998,8 +1000,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public long AnalyticsLastReportedAt { get; set; }
         /// <summary>Hidden field, no UI. The exact JSON payload from the last successful report, shown verbatim on the config page.</summary>
         public string AnalyticsLastPayloadJson { get; set; } = string.Empty;
-        /// <summary>Hidden field, no UI. Plugin version as of the last successful report; a mismatch against the running version forces an immediate report (bypassing AnalyticsReportIntervalDays) so version-adoption data isn't stale for up to 30 days after an upgrade.</summary>
+        /// <summary>Hidden field, no UI. Full plugin assembly version at the last successful report; changes bypass the reporting interval.</summary>
         public string AnalyticsLastReportedPluginVersion { get; set; } = string.Empty;
+        /// <summary>Hidden field, no UI. Compiled build target at the last successful report; detects same-version build corrections.</summary>
+        public string AnalyticsLastReportedJellyfinTarget { get; set; } = string.Empty;
+        /// <summary>Hidden field, no UI. Running Jellyfin version at the last successful report; detects host upgrades independently of plugin upgrades.</summary>
+        public string AnalyticsLastReportedJellyfinVersion { get; set; } = string.Empty;
         /// <summary>
         /// Hidden field, no UI. Count of report_stats 403 responses since the
         /// last successful report. PERSISTED (not an in-memory field) because
