@@ -70,6 +70,11 @@ After restart:
 
 1. Refresh your browser *(`Ctrl+F5` or `Cmd+Shift+R`)*
 2. Access the Jellyfin Enhanced settings panel. Options:
-    - In the sidebar: **Jellyfin Enhanced**
+    - In the sidebar: **Jellyfin Enhanced** *(legacy layout)*
+    - In the user profile menu: **Jellyfin Enhanced** *(Jellyfin 12, see note below)*
     - Press `?`
 3. If you see the panel, installation was successful!
+
+!!! note "Jellyfin 12 has no sidebar"
+
+    Jellyfin 12's default layout has no sidebar. Wherever these docs say a link is "added to the sidebar" (Plugin Pages links, and the Jellyfin Enhanced panel link itself), on Jellyfin 12 look in the **user profile menu** instead.

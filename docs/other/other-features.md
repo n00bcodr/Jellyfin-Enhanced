@@ -417,7 +417,7 @@ Hide specific items from your Jellyfin library without deleting them.
 4. Check **"Enable Hidden Content"**
 5. Optional: Check **"Use Plugin Pages for Hidden Content Library"**
 
-   - Adds a sidebar link to dedicated Hidden Content page
+   - Adds a sidebar link to dedicated Hidden Content page (Jellyfin 12: user profile menu instead)
    - Requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) plugin
    - Restart Jellyfin after enabling for first time
 6. Click **Save**
@@ -440,7 +440,7 @@ Hide specific items from your Jellyfin library without deleting them.
 4. Click to unhide
 
 **Via Dedicated Page** (if enabled):
-1. Click "Hidden Content" in sidebar
+1. Click "Hidden Content" in sidebar (Jellyfin 12: user profile menu instead)
 2. View all hidden items with thumbnails
 3. Search and filter hidden items
 4. Click to unhide

@@ -231,7 +231,7 @@ View upcoming releases from Sonarr and Radarr in a calendar interface.
 2. Navigate to ***arr Settings** tab
 3. Check **"Enable Calendar Page"**
 4. Choose integration method:
-   - **Use Plugin Pages** - Adds sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) plugin)
+   - **Use Plugin Pages** - Adds sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) plugin; Jellyfin 12: user profile menu instead)
    - **Use Custom Tabs** - Adds custom tab (requires [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) plugin)
 5. Configure calendar settings (see below)
 6. Click **Save**
@@ -269,7 +269,7 @@ View upcoming releases from Sonarr and Radarr in a calendar interface.
 
 **Access Calendar:**
 
-- Click "Calendar" in sidebar (Plugin Pages)
+- Click "Calendar" in sidebar (Plugin Pages; Jellyfin 12: user profile menu instead)
 - Navigate to custom tab (Custom Tabs)
 - Direct URL: `/web/index.html#!/jellyfinenhanced/calendar`
 
@@ -322,7 +322,7 @@ Monitor active downloads from Sonarr and Radarr in a dedicated page.
 1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
 2. Navigate to ***arr Settings** tab
 3. Check **"Enable Requests Page"** (under "Requests Page (Downloads)")
-4. Choose integration method (Plugin Pages or Custom Tabs)
+4. Choose integration method (Plugin Pages or Custom Tabs; Jellyfin 12: Plugin Pages links show in the user profile menu instead of the sidebar)
 5. Click **Save** and restart Jellyfin if using Plugin Pages
 
 Direct URL: `/web/index.html#!/jellyfinenhanced/downloads`

@@ -10,7 +10,7 @@ Jellyfin Enhanced is a comprehensive plugin that bundles advanced features and c
 
 ### Can I customize the keyboard shortcuts?
 
-Yes! Open the Jellyfin Enhanced panel by clicking the menu item in the sidebar or pressing `?`, then go to the **Shortcuts** tab. Click on any key to set a custom shortcut. Changes save automatically.
+Yes! Open the Jellyfin Enhanced panel by clicking the menu item in the sidebar (Jellyfin 12: user profile menu instead) or pressing `?`, then go to the **Shortcuts** tab. Click on any key to set a custom shortcut. Changes save automatically.
 
 ### Does this work on mobile apps?
 

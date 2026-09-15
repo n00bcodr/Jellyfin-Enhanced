@@ -48,7 +48,7 @@ Per-user content hiding with server-side storage and granular filtering controls
 
 Access via:
 - Enhanced panel → Settings → Hidden Content
-- Sidebar navigation (if enabled)
+- Sidebar navigation (if enabled; Jellyfin 12: user profile menu instead)
 - Custom tab (if configured)
 
 **Management Features:**
@@ -79,7 +79,7 @@ Access via:
    - Filter recommendations
    - Filter requests page
 6. Choose integration method:
-   - Plugin Pages (requires Plugin Pages plugin)
+   - Plugin Pages (requires Plugin Pages plugin; Jellyfin 12: user profile menu instead of sidebar)
    - Custom Tabs (requires Custom Tabs plugin)
 
 ### Remove from Continue Watching / Next Up
@@ -455,7 +455,7 @@ Shows recently watched, favorited, and reviewed titles across the server, so use
 - Recently reviewed (see [User Reviews](#user-reviews) above)
 - Optional live "who's watching now" section, powered by the same data as the [Active Streams Widget](../other/other-features.md#active-streams-widget)
 - Per-viewer filtering: hidden or disabled review authors are excluded the same way they are in the Reviews section
-- Reachable as a sidebar page (Plugin Pages), a home-page tab (native or Custom Tabs), or both
+- Reachable as a sidebar page (Plugin Pages; Jellyfin 12: user profile menu instead), a home-page tab (native or Custom Tabs), or both
 
 **Setup:**
 
@@ -465,7 +465,7 @@ Shows recently watched, favorited, and reviewed titles across the server, so use
 4. Choose what to show: **Show recently watched**, **Show recently favorited**, **Show recently reviewed**, **Show Active Streams section**
 5. Choose how it's reachable - pick one or more:
    - **Add Activity as a native Home tab** - no external plugin needed
-   - **Use Plugin Pages** - adds a sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages))
+   - **Use Plugin Pages** - adds a sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages); Jellyfin 12: user profile menu instead)
    - **Use Custom Tabs** - adds a home-page tab via [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) instead of the native one
 6. Click **Save**
 

@@ -133,7 +133,7 @@ Found in the ***arr Settings** tab under "Calendar Page".
 | Setting | Description |
 |---|---|
 | **Enable Calendar Page** | Enables the calendar view for upcoming Sonarr/Radarr releases |
-| **Use Plugin Pages** | Adds a sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages)) |
+| **Use Plugin Pages** | Adds a sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages); Jellyfin 12: user profile menu instead) |
 | **Use Custom Tabs** | Adds a custom tab (requires [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs)) |
 | **First Day of Week** | Monday or Sunday |
 | **Time Format** | 12-hour (`5pm/5:30pm`) or 24-hour (`17:00/17:30`) |
@@ -153,7 +153,7 @@ Found in the ***arr Settings** tab under "Requests Page (Downloads)".
 | Setting | Description |
 |---|---|
 | **Enable Requests Page** | Enables a dedicated page showing active downloads from Sonarr/Radarr |
-| **Use Plugin Pages** | Adds a sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages)) |
+| **Use Plugin Pages** | Adds a sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages); Jellyfin 12: user profile menu instead) |
 | **Use Custom Tabs** | Adds a custom tab (requires [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs)) |
 | **Enable Auto-Refresh** | Automatically refreshes download status |
 | **Poll Interval** | How often to refresh, in seconds (30–300, default: 30) |

@@ -160,7 +160,7 @@ Monitor active downloads from Sonarr/Radarr and manage Seerr requests and issues
 4. Optionally check **"Show Downloads in Requests Page"** to display active *arr downloads (enabled by default)
 5. Optionally check **"Show Seerr Issues Section"** to display Seerr issues
 6. Choose integration method:
-   - **Use Plugin Pages** - Adds sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) plugin)
+   - **Use Plugin Pages** - Adds sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) plugin; Jellyfin 12: user profile menu instead)
    - **Use Custom Tabs** - Adds custom tab (requires [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) plugin)
 7. Configure polling settings (see below)
 8. Click **Save**
@@ -183,7 +183,7 @@ Monitor active downloads from Sonarr/Radarr and manage Seerr requests and issues
 
 #### Access Requests Page
 
-- Click "Requests" in sidebar (Plugin Pages)
+- Click "Requests" in sidebar (Plugin Pages; Jellyfin 12: user profile menu instead)
 - Navigate to custom tab (Custom Tabs)
 - Direct URL: `/web/index.html#!/jellyfinenhanced/requests`
 
