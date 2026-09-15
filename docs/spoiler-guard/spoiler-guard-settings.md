@@ -186,7 +186,7 @@ By default every unwatched episode of a guarded series gets the same uniform str
 
 - **Next episode** — the user's first unwatched regular episode, in season/episode order (specials in Season 0 never count). By default this is the only thing advanced mode changes: its **real title shows** while everything else stays hidden — you can see *what* you're about to watch, and nothing more.
 - **Current season** — the other unwatched episodes in the same season as the next episode. Fully stripped by default, with optional per-field reveals.
-- **Everything else** — later seasons, skipped earlier seasons, and specials always keep the full uniform strip. So do search results, card rating overlays, images, and every other protected surface: the reveals apply to the episode metadata itself (episode lists, Next Up, detail pages), never to the stricter surfaces.
+- **Everything else** — later seasons, skipped earlier seasons, and specials always keep the full uniform strip. So do search results, card rating overlays, and every other protected surface: the reveals apply to the episode metadata itself (episode lists, Next Up, detail pages) plus, for the next episode only, its own poster image — never to the stricter surfaces.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -194,6 +194,7 @@ By default every unwatched episode of a guarded series gets the same uniform str
 | **Next episode: keep title hidden** | Off | Unchecked means the next episode's real title shows instead of "Season X, Episode Y". |
 | **Next episode: keep description hidden** | On | Untick to also show the next episode's synopsis. |
 | **Next episode: keep ratings hidden** | On | Untick to show community/critic ratings on the next episode. |
+| **Next episode: keep image hidden** | On | Untick to show the next episode's own Primary/Thumb poster - e.g. on the Next Up row - instead of the usual blur/stock-card replacement. Chapter and scrubbing-preview thumbnails always stay hidden regardless. |
 | **Current season: keep titles hidden** | On | Untick to show real titles across the current season. |
 | **Current season: keep descriptions hidden** | On | Untick to show synopses across the current season. |
 | **Current season: keep ratings hidden** | On | Untick to show ratings across the current season — useful when you want to know which episodes of the season you're in are fan favourites without reading anything about them. |
@@ -271,6 +272,7 @@ Most logs are at INFO; corruption + unexpected shapes log at WARNING.
 | Next episode: keep title hidden | Off |
 | Next episode: keep description hidden | On |
 | Next episode: keep ratings hidden | On |
+| Next episode: keep image hidden | On |
 | Current season: keep titles hidden | On |
 | Current season: keep descriptions hidden | On |
 | Current season: keep ratings hidden | On |

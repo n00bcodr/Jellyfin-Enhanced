@@ -529,6 +529,7 @@
                                     <div class="checkboxContainer"><label><input id="spoilerNextEpisodeStripTitle" is="emby-checkbox" type="checkbox"/><span>Next episode: keep title hidden</span></label></div>
                                     <div class="checkboxContainer"><label><input id="spoilerNextEpisodeStripOverview" is="emby-checkbox" type="checkbox"/><span>Next episode: keep description hidden</span></label></div>
                                     <div class="checkboxContainer"><label><input id="spoilerNextEpisodeStripRatings" is="emby-checkbox" type="checkbox"/><span>Next episode: keep ratings hidden</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="spoilerNextEpisodeStripImage" is="emby-checkbox" type="checkbox"/><span>Next episode: keep image hidden</span></label></div>
                                     <div class="checkboxContainer"><label><input id="spoilerCurrentSeasonStripTitle" is="emby-checkbox" type="checkbox"/><span>Current season: keep titles hidden</span></label></div>
                                     <div class="checkboxContainer"><label><input id="spoilerCurrentSeasonStripOverview" is="emby-checkbox" type="checkbox"/><span>Current season: keep descriptions hidden</span></label></div>
                                     <div class="checkboxContainer"><label><input id="spoilerCurrentSeasonStripRatings" is="emby-checkbox" type="checkbox"/><span>Current season: keep ratings hidden</span></label></div>
@@ -5754,6 +5755,7 @@
                     ['spoilerNextEpisodeStripTitle',     'SpoilerNextEpisodeStripTitle',     false],
                     ['spoilerNextEpisodeStripOverview',  'SpoilerNextEpisodeStripOverview',  true],
                     ['spoilerNextEpisodeStripRatings',   'SpoilerNextEpisodeStripRatings',   true],
+                    ['spoilerNextEpisodeStripImage',     'SpoilerNextEpisodeStripImage',     true],
                     ['spoilerCurrentSeasonStripTitle',   'SpoilerCurrentSeasonStripTitle',   true],
                     ['spoilerCurrentSeasonStripOverview','SpoilerCurrentSeasonStripOverview',true],
                     ['spoilerCurrentSeasonStripRatings', 'SpoilerCurrentSeasonStripRatings', true],
@@ -6190,7 +6192,7 @@
                 'spoilerKeepMoviePosters',
                 'spoilerAdvancedMode',
                 'spoilerNextEpisodeStripTitle', 'spoilerNextEpisodeStripOverview',
-                'spoilerNextEpisodeStripRatings',
+                'spoilerNextEpisodeStripRatings', 'spoilerNextEpisodeStripImage',
                 'spoilerCurrentSeasonStripTitle', 'spoilerCurrentSeasonStripOverview',
                 'spoilerCurrentSeasonStripRatings',
             ].forEach(function (id) {
@@ -7317,7 +7319,7 @@
             { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseNativeTab', 'hiddenContentUseCustomTabs'] },
             { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Guard', children: ['spoilerBlurIntensity', 'spoilerBlurArtwork', 'spoilerStripSeriesOverview', 'spoilerStripOverview', 'spoilerOverviewPlaceholder', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripRatings', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerBlurStrictRefresh', 'spoilerKeepMoviePosters', 'spoilerAdvancedMode'] },
             { parent: 'spoilerStripCast',     label: 'Hide cast on unwatched episodes', children: ['spoilerStripCastMode'] },
-            { parent: 'spoilerAdvancedMode',  label: 'Enable advanced per-category reveals', children: ['spoilerNextEpisodeStripTitle', 'spoilerNextEpisodeStripOverview', 'spoilerNextEpisodeStripRatings', 'spoilerCurrentSeasonStripTitle', 'spoilerCurrentSeasonStripOverview', 'spoilerCurrentSeasonStripRatings'] }
+            { parent: 'spoilerAdvancedMode',  label: 'Enable advanced per-category reveals', children: ['spoilerNextEpisodeStripTitle', 'spoilerNextEpisodeStripOverview', 'spoilerNextEpisodeStripRatings', 'spoilerNextEpisodeStripImage', 'spoilerCurrentSeasonStripTitle', 'spoilerCurrentSeasonStripOverview', 'spoilerCurrentSeasonStripRatings'] }
         ];
 
         /**

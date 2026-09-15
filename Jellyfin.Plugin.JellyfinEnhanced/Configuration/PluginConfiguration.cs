@@ -376,6 +376,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerNextEpisodeStripTitle = false;
             SpoilerNextEpisodeStripOverview = true;
             SpoilerNextEpisodeStripRatings = true;
+            SpoilerNextEpisodeStripImage = true;
             SpoilerCurrentSeasonStripTitle = true;
             SpoilerCurrentSeasonStripOverview = true;
             SpoilerCurrentSeasonStripRatings = true;
@@ -961,6 +962,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool SpoilerNextEpisodeStripTitle { get; set; } = false;
         public bool SpoilerNextEpisodeStripOverview { get; set; } = true;
         public bool SpoilerNextEpisodeStripRatings { get; set; } = true;
+        public bool SpoilerNextEpisodeStripImage { get; set; } = true;
         public bool SpoilerCurrentSeasonStripTitle { get; set; } = true;
         public bool SpoilerCurrentSeasonStripOverview { get; set; } = true;
         public bool SpoilerCurrentSeasonStripRatings { get; set; } = true;

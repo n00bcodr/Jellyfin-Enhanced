@@ -100,6 +100,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IUserDataManager _userDataManager;
         private readonly SpoilerUserResolver _resolver;
         private readonly ImageBlurService _blurService;
+        private readonly SpoilerNextUnwatchedService _nextUnwatched;
         private readonly Logger _logger;
 
         public SpoilerBlurImageFilter(
@@ -109,6 +110,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             IChapterManager chapterManager,
             SpoilerUserResolver resolver,
             ImageBlurService blurService,
+            SpoilerNextUnwatchedService nextUnwatched,
             Logger logger)
         {
             _libraryManager = libraryManager;
@@ -117,6 +119,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _chapterManager = chapterManager;
             _resolver = resolver;
             _blurService = blurService;
+            _nextUnwatched = nextUnwatched;
             _logger = logger;
 
             // When a user marks an episode (or season/series) played or
@@ -545,6 +548,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         await next().ConfigureAwait(false);
                         return;
                     }
+                    if (!isTrickplay
+                        && (string.Equals(imageType, "Primary", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(imageType, "Thumb", StringComparison.OrdinalIgnoreCase))
+                        && pluginConfig.SpoilerAdvancedMode
+                        && !pluginConfig.SpoilerNextEpisodeStripImage
+                        && userState.Prefs?.UseAdvancedCategories != false)
+                    {
+                        var boundary = _nextUnwatched.GetBoundary(effectiveUserId, seriesId);
+                        var category = SpoilerNextUnwatchedService.Categorize(
+                            boundary, episode.Id, episode.ParentIndexNumber, episode.IndexNumber);
+                        if (category == SpoilerEpisodeCategory.NextEpisode)
+                        {
+                            RegisterNoStoreOnStarting(context.HttpContext);
+                            await next().ConfigureAwait(false);
+                            return;
+                        }
+                    }
+
                     // Progressive trickplay reveal for a partially-watched
                     // episode: tile sheets whose whole range is before the
                     // resume point are scenes already seen — pass them through.
