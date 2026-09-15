@@ -16,10 +16,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
     /// <summary>
     /// Local CDN subsystem. Every third-party static asset the client used to load
-    /// directly from an external CDN (jsDelivr icons, Google Fonts, flag CDNs,
-    /// the Jellyfish theme colour sheets, remote locale JSON, …) is instead served
-    /// from the plugin's own <c>/JellyfinEnhanced/cdn/{source}/{path}</c> route,
-    /// backed by this service.
+    /// directly from an external CDN (jsDelivr icons, flag CDNs, the Jellyfish theme
+    /// colour sheets, remote locale JSON, …) is instead served from the plugin's own
+    /// <c>/JellyfinEnhanced/cdn/{source}/{path}</c> route, backed by this service.
+    /// (Google Fonts is bundled directly instead - see <c>GetBundledFont</c>.)
     ///
     /// Design goals:
     ///   * Clients ONLY ever hit the local plugin route — never an external host.
@@ -47,8 +47,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private const long MaxAssetBytes = 8 * 1024 * 1024; // 8 MB
 
         // Browser-like UA so CDNs behind bot protection (Cloudflare) return the real
-        // asset instead of an HTML challenge page. Google Fonts also selects the woff2
-        // variant based on the UA, so a modern UA guarantees we cache woff2.
+        // asset instead of an HTML challenge page.
         private const string UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
         // A request path may only contain these characters. No '..', no '@' (refs are
@@ -104,7 +103,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// sources whose real URL isn't a simple path append (e.g. the Google Fonts css2
         /// endpoint, which needs a `?family=…` query string).
         /// </param>
-        private sealed record CdnSource(string BaseUrl, HashSet<string> AllowedTypes, bool RewriteCss = false, IReadOnlyDictionary<string, string>? FixedPaths = null);
+        private sealed record CdnSource(string BaseUrl, HashSet<string> AllowedTypes, IReadOnlyDictionary<string, string>? FixedPaths = null);
 
         // ── Source registry (the ONLY hosts this service will ever fetch from) ──────
         private static readonly IReadOnlyDictionary<string, CdnSource> Sources = new Dictionary<string, CdnSource>(StringComparer.Ordinal)
@@ -119,16 +118,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ["zesty"] = new("https://cdn.jsdelivr.net/gh/stpnwf/ZestyTheme@latest", Types("image/png", "image/jpeg")),
             // JellyPlugins jellyfin-helper favicon (pinned ref)
             ["jelly-helper"] = new("https://cdn.jsdelivr.net/gh/JellyPlugins/jellyfin-helper@2.0.0.2", Types("image/vnd.microsoft.icon", "image/x-icon", "image/png")),
-            // Google Fonts — Material Symbols woff2 glyph files
-            ["gfont"] = new("https://fonts.gstatic.com", Types("font/woff2", "font/woff", "font/ttf", "application/font-woff2")),
-            // Google Fonts — the css2 stylesheet. The real URL needs a ?family=… query, so
-            // it's mapped via FixedPaths. Its body is rewritten so the @font-face URLs point
-            // back at the local "gfont" route instead of fonts.gstatic.com.
-            ["gfontcss"] = new("https://fonts.googleapis.com", Types("text/css"), RewriteCss: true,
-                FixedPaths: new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["material-symbols-outlined"] = "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@48,400,0,0"
-                }),
             // flagcdn raster flags (people/country tags)
             ["flagcdn"] = new("https://flagcdn.com", Types("image/png")),
             // cdnjs flag-icons SVG flags (language tags)
@@ -225,8 +214,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ("dashboard-icons", "svg/javascript.svg"),
             ("zesty", "images/logo/jellyfin-logo-light.png"),
             ("jelly-helper", "media/favicon.ico"),
-            ("gfont", "s/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2"),
-            ("gfontcss", "material-symbols-outlined"),
             ("ibb", "fdbkXQdP/jellyseerr-poster-not-found.png"),
             ("je-css", "ratings.css"),
             ("icon-metadata", "public-icon.css"),
@@ -417,16 +404,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     _logger.Warning($"[CDN] Asset for source '{source}' exceeded the size cap while streaming.");
                     return null;
-                }
-
-                // Rewrite Google Fonts CSS so the @font-face URLs it contains resolve to
-                // the local "gfont" route (relative to this stylesheet's own URL) instead
-                // of fonts.gstatic.com — otherwise the browser would still hit gstatic.
-                if (src.RewriteCss)
-                {
-                    var css = Encoding.UTF8.GetString(bytes)
-                        .Replace("https://fonts.gstatic.com/", "../gfont/", StringComparison.OrdinalIgnoreCase);
-                    bytes = Encoding.UTF8.GetBytes(css);
                 }
 
                 var etag = $"\"{Convert.ToHexString(SHA256.HashData(bytes))}\"";

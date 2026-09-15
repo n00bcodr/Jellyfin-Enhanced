@@ -3691,7 +3691,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// Local CDN route. Serves a third-party static asset (icon, font, flag, theme
+        /// Local CDN route. Serves a third-party static asset (icon, flag, theme
         /// sheet, remote locale, …) from the plugin's on-disk cache, fetching it from the
         /// fixed upstream CDN on a cache miss. This is the ONLY endpoint clients use for
         /// these assets — they never contact an external host directly.
@@ -3736,6 +3736,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return File(asset.Content, asset.ContentType);
+        }
+
+        // Material Symbols glyph fonts, bundled with the plugin instead of proxied
+        // from Google Fonts (see #830).
+        private static readonly HashSet<string> BundledFontNames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "materialsymbolsrounded.woff2",
+            "materialsymbolsoutlined.woff2"
+        };
+
+        [HttpGet("fonts/{name}")]
+        public IActionResult GetBundledFont(string name)
+        {
+            var sanitized = Path.GetFileName(name);
+            if (!BundledFontNames.Contains(sanitized))
+            {
+                return NotFound();
+            }
+
+            var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.js.fonts.{sanitized}");
+            if (stream == null)
+            {
+                return NotFound();
+            }
+
+            Response.Headers["Cache-Control"] = "public, max-age=31536000, immutable";
+            return File(stream, "font/woff2");
         }
 
         [HttpGet("locales/{lang}.json")]

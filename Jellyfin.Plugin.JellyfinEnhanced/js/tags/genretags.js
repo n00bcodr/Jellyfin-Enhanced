@@ -304,16 +304,30 @@
     };
 
     JE.initializeGenreTags = function() {
-        // Ensure Material Symbols font is loaded
-        if (!document.getElementById('mat-sym')) {
-            const link = document.createElement('link');
-            link.id = 'mat-sym';
-            link.rel = 'stylesheet';
-            // Served locally: the plugin proxies the Google Fonts css2 sheet and rewrites
-            // its @font-face URLs to the local gfont route, so no request reaches Google.
-            link.href = JE.cdn.url('gfontcss', 'material-symbols-outlined');
-            document.head.appendChild(link);
-        }
+        // Material Symbols Outlined font, bundled with the plugin (#830)
+        JE.core.ui.injectCss('mat-sym', `
+            @font-face {
+                font-family: 'Material Symbols Outlined';
+                font-style: normal;
+                font-weight: 400;
+                src: url(${JE.cdn.font('materialsymbolsoutlined.woff2')}) format('woff2');
+            }
+            .material-symbols-outlined {
+                font-family: 'Material Symbols Outlined';
+                font-weight: normal;
+                font-style: normal;
+                font-size: 24px;
+                line-height: 1;
+                letter-spacing: normal;
+                text-transform: none;
+                display: inline-block;
+                white-space: nowrap;
+                word-wrap: normal;
+                direction: ltr;
+                -webkit-font-feature-settings: 'liga';
+                -webkit-font-smoothing: antialiased;
+            }
+        `);
 
         JE.core.tagRenderer.register('genre', spec);
         console.log(`${logPrefix} Initialized successfully.`);
