@@ -15,6 +15,7 @@ internal sealed class ActivityFeedItem
     public string ActivityType { get; set; } = string.Empty;
     public string UserId { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
+    public bool UserHasPrimaryImage { get; set; }
     public long Timestamp { get; set; }
     public object Item { get; set; } = new { };
     public double? Rating { get; set; }
@@ -188,6 +189,7 @@ internal sealed class ActivityFeedBuilder(
                         summaries[itemId] = summary = BuildSummary(item, GetItem);
                     }
                     candidate.Row.UserName = author?.Username ?? candidate.Row.UserId;
+                    candidate.Row.UserHasPrimaryImage = author?.ProfileImage != null;
                     candidate.Row.Item = summary;
                     results.Add(candidate.Row);
                     if (results.Count == limit) break;

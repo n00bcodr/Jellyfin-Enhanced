@@ -8122,6 +8122,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         UserId = s.UserId,
                         UserName = s.UserName,
+                        UserHasPrimaryImage = s.UserPrimaryImageTag != null,
                         Client = s.Client,
                         DeviceName = s.DeviceName,
                         // IP only for admins

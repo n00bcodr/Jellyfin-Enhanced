@@ -697,7 +697,7 @@
         const userRow = document.createElement('div');
         userRow.className = 'je-as-user';
 
-        if (session.UserId && typeof ApiClient !== 'undefined') {
+        if (session.UserId && session.UserHasPrimaryImage && typeof ApiClient !== 'undefined') {
             const img = document.createElement('img');
             img.className = 'je-as-avatar';
             img.alt = '';

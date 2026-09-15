@@ -186,17 +186,28 @@
         return JE.t('activity_time_just_now') || 'just now';
     }
 
+    // Avatar image if the user has one, otherwise a generic person icon.
+    function buildAvatarElement(userId, hasPrimaryImage) {
+        if (!hasPrimaryImage) {
+            const icon = document.createElement('div');
+            icon.className = 'je-activity-icon je-activity-avatar-icon';
+            icon.innerHTML = '<i class="material-icons">person</i>';
+            return icon;
+        }
+        const avatar = document.createElement('img');
+        avatar.className = 'je-activity-avatar';
+        avatar.alt = '';
+        avatar.src = ApiClient.getUrl(`Users/${userId}/Images/Primary`) + '?height=72&quality=80';
+        avatar.onerror = () => { avatar.replaceWith(buildAvatarElement(userId, false)); };
+        return avatar;
+    }
+
     /** Reviews section row: Reviewed (rating + snippet) or Favorited. */
     function renderRow(entry) {
         const row = document.createElement('div');
         row.className = 'je-activity-row';
 
-        const avatar = document.createElement('img');
-        avatar.className = 'je-activity-avatar';
-        avatar.src = ApiClient.getUrl(`Users/${entry.UserId}/Images/Primary`) + '?height=72&quality=80';
-        avatar.alt = '';
-        avatar.onerror = () => { avatar.style.visibility = 'hidden'; };
-        row.appendChild(avatar);
+        row.appendChild(buildAvatarElement(entry.UserId, entry.UserHasPrimaryImage));
 
         const body = document.createElement('div');
         body.className = 'je-activity-body';
@@ -243,12 +254,7 @@
         const row = document.createElement('div');
         row.className = 'je-activity-row';
 
-        const avatar = document.createElement('img');
-        avatar.className = 'je-activity-avatar';
-        avatar.src = ApiClient.getUrl(`Users/${entry.UserId}/Images/Primary`) + '?height=72&quality=80';
-        avatar.alt = '';
-        avatar.onerror = () => { avatar.style.visibility = 'hidden'; };
-        row.appendChild(avatar);
+        row.appendChild(buildAvatarElement(entry.UserId, entry.UserHasPrimaryImage));
 
         const body = document.createElement('div');
         body.className = 'je-activity-body';
@@ -331,12 +337,7 @@
         const row = document.createElement('div');
         row.className = 'je-activity-row';
 
-        const avatar = document.createElement('img');
-        avatar.className = 'je-activity-avatar';
-        avatar.src = ApiClient.getUrl(`Users/${session.UserId}/Images/Primary`) + '?height=72&quality=80';
-        avatar.alt = '';
-        avatar.onerror = () => { avatar.style.visibility = 'hidden'; };
-        row.appendChild(avatar);
+        row.appendChild(buildAvatarElement(session.UserId, session.UserHasPrimaryImage));
 
         const body = document.createElement('div');
         body.className = 'je-activity-body';
