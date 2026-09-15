@@ -5,6 +5,23 @@
 (function(JE) {
     'use strict';
 
+    // Lucide dice-1..dice-6 faces, 24px to match the header's other icons.
+    const DICE_FACES = [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="je-dice-icon"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M12 12h.01"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="je-dice-icon"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M15 9h.01"/><path d="M9 15h.01"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="je-dice-icon"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M16 8h.01"/><path d="M12 12h.01"/><path d="M8 16h.01"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="je-dice-icon"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M16 8h.01"/><path d="M8 8h.01"/><path d="M8 16h.01"/><path d="M16 16h.01"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="je-dice-icon"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M16 8h.01"/><path d="M8 8h.01"/><path d="M8 16h.01"/><path d="M16 16h.01"/><path d="M12 12h.01"/></svg>',
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="je-dice-icon"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M16 8h.01"/><path d="M16 12h.01"/><path d="M16 16h.01"/><path d="M8 8h.01"/><path d="M8 12h.01"/><path d="M8 16h.01"/></svg>'
+    ];
+
+    /** Returns a random dice face's HTML, optionally excluding one index (to avoid repeats). */
+    function randomDiceFace(excludeIndex) {
+        let face;
+        do { face = Math.floor(Math.random() * DICE_FACES.length); } while (face === excludeIndex);
+        return face;
+    }
+
     /**
      * Fetches a random item (Movie or Series) from the user's library.
      * @returns {Promise<object|null>} A promise that resolves to a random item or null.
@@ -100,12 +117,20 @@
         randomButton.setAttribute('is', 'paper-icon-button-light');
         randomButton.className = 'headerButton headerButtonRight paper-icon-button-light';
         randomButton.title = JE.t('random_button_tooltip');
-        randomButton.innerHTML = `<i class="material-icons">casino</i>`;
+        randomButton.innerHTML = `<span class="je-dice-spin"><span class="je-dice-face"></span></span>`;
+        const diceFace = randomButton.querySelector('.je-dice-face');
+        let currentFace = randomDiceFace();
+        diceFace.innerHTML = DICE_FACES[currentFace];
 
         randomButton.addEventListener('click', async () => {
             randomButton.disabled = true;
             randomButton.classList.add('loading');
-            randomButton.innerHTML = '<i class="material-icons">hourglass_empty</i>';
+
+            const rollDice = () => {
+                currentFace = randomDiceFace(currentFace);
+                diceFace.innerHTML = DICE_FACES[currentFace];
+            };
+            const rollInterval = setInterval(rollDice, 120);
 
             try {
                 const item = await getRandomItem();
@@ -113,11 +138,12 @@
                     navigateToItem(item);
                 }
             } finally {
+                clearInterval(rollInterval);
                 setTimeout(() => {
                     if (document.getElementById(randomButton.id)) {
                         randomButton.disabled = false;
                         randomButton.classList.remove('loading');
-                        randomButton.innerHTML = `<i class="material-icons">casino</i>`;
+                        rollDice();
                     }
                 }, 500);
             }

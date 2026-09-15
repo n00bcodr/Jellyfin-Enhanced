@@ -15,7 +15,12 @@
         style.id = styleId;
         style.innerHTML = `
             @keyframes dice { 0%, 100% { transform: rotate(0deg) scale(1); } 10%, 30%, 50% { transform: rotate(-10deg) scale(1.1); } 20%, 40% { transform: rotate(10deg) scale(1.1); } 60% { transform: rotate(360deg) scale(1); } }
-            button#randomItemButton:not(.loading):hover .material-icons { animation: dice 1.5s; }
+            #randomItemButton { display: inline-flex; align-items: center; justify-content: center; }
+            #randomItemButton .je-dice-spin,
+            #randomItemButton .je-dice-face { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; }
+            #randomItemButton .je-dice-face svg { display: block; }
+            button#randomItemButton:not(.loading):hover .je-dice-spin { animation: dice 1.5s; }
+            button#randomItemButton.loading .je-dice-spin { animation: dice 0.6s linear infinite; }
             .layout-desktop #enhancedSettingsBtn { display: none !important; }
             /* Remove menu items render like native action-sheet items; only dim them while the removal is in flight. */
             .actionSheetMenuItem[data-id="remove-continue-watching"]:disabled,
