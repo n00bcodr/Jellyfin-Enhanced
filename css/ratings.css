@@ -247,12 +247,11 @@
 
 /* === ORANGE: Parents Strongly Cautioned === */
 .mediaInfoOfficialRating[rating='AR-16'],                  /* 🇦🇷 Argentina */
-.mediaInfoOfficialRating[rating='AU-M'],                   /* 🇦🇺 Australia */
-.mediaInfoOfficialRating[rating='M'],                      /* 🇦🇺 Australia / 🇺🇸 US (Legacy) */
+.mediaInfoOfficialRating[rating='M'],                      /* 🇺🇸 US (Legacy) */
 .mediaInfoOfficialRating[rating='AT-10'],                  /* 🇦🇹 Austria */
-.mediaInfoOfficialRating[rating='BR-14'],                  /* 🇧� Brazil */
+.mediaInfoOfficialRating[rating='BR-14'],                  /* 🇧🇷 Brazil */
 .mediaInfoOfficialRating[rating='14'],                     /* 🌍 Generic 14 (bare label) */
-.mediaInfoOfficialRating[rating='BE-14'],                  /* 🇧� Belgium — 14 (Kijkwijzer) */
+.mediaInfoOfficialRating[rating='BE-14'],                  /* 🇧🇪 Belgium — 14 (Kijkwijzer) */
 .mediaInfoOfficialRating[rating='14+'],                    /* 🇨🇦 Canada */
 .mediaInfoOfficialRating[rating='CA-14+'],                 /* 🇨🇦 Canada */
 .mediaInfoOfficialRating[rating='CA-13+'],                 /* 🇨🇦 Canada (Quebec) */
@@ -267,7 +266,6 @@
 .mediaInfoOfficialRating[rating='FR-12'],                  /* 🇫🇷 France */
 .mediaInfoOfficialRating[rating='FR--12'],                 /* 🇫🇷 France */
 .mediaInfoOfficialRating[rating='FSK-12'],                 /* 🇩🇪 Germany */
-.mediaInfoOfficialRating[rating='GR-13'],                  /* 🇬🇷 Greece — 13 */
 .mediaInfoOfficialRating[rating='GR-K-15'],                /* 🇬🇷 Greece — legacy 15 label */
 .mediaInfoOfficialRating[rating='HU-12'],                  /* 🇭🇺 Hungary */
 .mediaInfoOfficialRating[rating='IN-UA-13'],               /* 🇮🇳 India — UA 13+ */
@@ -294,7 +292,7 @@
 .mediaInfoOfficialRating[rating='PL-12'],                  /* 🇵🇱 Poland */
 .mediaInfoOfficialRating[rating='PT-M/12'],                /* 🇵🇹 Portugal */
 .mediaInfoOfficialRating[rating='PT-M/14'],                /* 🇵🇹 Portugal — Maiores de 14 anos */
-.mediaInfoOfficialRating[rating='RU-12+'],                 /* �� Russia */
+.mediaInfoOfficialRating[rating='RU-12+'],                 /* 🇷🇺 Russia */
 .mediaInfoOfficialRating[rating='ZA-10-12PG'],             /* 🇿🇦 South Africa */
 .mediaInfoOfficialRating[rating='ES-12'],                  /* 🇪🇸 Spain */
 .mediaInfoOfficialRating[rating='SE-11'],                  /* 🇸🇪 Sweden */
@@ -368,8 +366,6 @@
 
 /* === RED: Restricted / Adults Only === */
 .mediaInfoOfficialRating[rating='AR-18'],                  /* 🇦🇷 Argentina */
-.mediaInfoOfficialRating[rating='AU-R18+'],                /* 🇦🇺 Australia */
-.mediaInfoOfficialRating[rating='R18+'],                   /* 🇦🇺 Australia */
 .mediaInfoOfficialRating[rating='AT-16'],                  /* 🇦🇹 Austria */
 .mediaInfoOfficialRating[rating='BE-16'],                  /* 🇧🇪 Belgium — 16 (Kijkwijzer) */
 .mediaInfoOfficialRating[rating='BR-18'],                  /* 🇧🇷 Brazil */
@@ -436,7 +432,6 @@
 .mediaInfoOfficialRating[rating='TH-20'],                  /* 🇹🇭 Thailand */
 .mediaInfoOfficialRating[rating='GB-R18'],                 /* 🇬🇧 United Kingdom */
 .mediaInfoOfficialRating[rating='UK-R18'],                 /* 🇬🇧 United Kingdom */
-.mediaInfoOfficialRating[rating='R18'],                    /* 🇬🇧 United Kingdom */
 .mediaInfoOfficialRating[rating='VN-C'],                   /* 🇻🇳 Vietnam — C (cinema only, adults) */
 .mediaInfoOfficialRating[rating='NC-17'],                  /* 🇺🇸 United States */
 .mediaInfoOfficialRating[rating='X'] {                     /* 🇺🇸 United States (Legacy) */
@@ -486,9 +481,17 @@
     text-shadow: none !important;
 }
 
-/* === BLACK: Refused Classification / Banned === */
+/* === AUSTRALIA: M rating (official ACB colour — blue) === */
+.mediaInfoOfficialRating[rating='AU-M'] {
+    background-color: #1565C0 !important;
+    border-color: #2196F3 !important;
+}
+
+/* === BLACK: Refused Classification / Banned / Restricted 18+ === */
 .mediaInfoOfficialRating[rating='AU-RC'],                  /* 🇦🇺 Australia — Refused Classification */
-.mediaInfoOfficialRating[rating='RC'] {                    /* 🇦🇺 Australia — RC (bare label) */
+.mediaInfoOfficialRating[rating='RC'],                     /* 🇦🇺 Australia — RC (bare label) */
+.mediaInfoOfficialRating[rating='AU-R18+'],                /* 🇦🇺 Australia — Restricted 18+ (official ACB colour — black) */
+.mediaInfoOfficialRating[rating='R18+'] {                  /* 🇦🇺 Australia — R18+ (bare label) */
     background-color: #000000 !important; /* Black */
     border-color: #424242 !important;
 }
