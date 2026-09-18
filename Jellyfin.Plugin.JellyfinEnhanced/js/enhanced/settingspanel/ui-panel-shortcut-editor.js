@@ -13,6 +13,20 @@
      * Wires the shortcut-key rebinding behaviour inside the open panel.
      * @param {object} ctx Shared panel context assembled in ui-panel.js.
      */
+    // Actions that only fire on the video player page (see JE.keyListener).
+    const PLAYER_ACTIONS = new Set([
+        'BookmarkCurrentTime', 'CycleAspectRatio', 'ShowPlaybackInfo', 'SubtitleMenu',
+        'CycleSubtitleTracks', 'CycleAudioTracks', 'ResetPlaybackSpeed', 'IncreasePlaybackSpeed',
+        'DecreasePlaybackSpeed', 'OpenEpisodePreview', 'SkipIntroOutro', 'FrameStepBack',
+        'FrameStepForward', 'JumpToLastPosition'
+    ]);
+
+    // Keys Jellyfin's built-in player handles natively (combo format matches JE.keyListener).
+    const JELLYFIN_PLAYER_KEYS = new Set([
+        ' ', 'Enter', 'Escape', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+        'PageUp', 'PageDown', 'Home', 'End', 'K', 'J', 'L', 'M', 'F', 'Shift+N', 'Shift+P'
+    ]);
+
     internal.wireShortcutEditor = function(ctx) {
         const { help, pluginShortcuts, primaryAccentColor, kbdBackground } = ctx;
 
@@ -116,7 +130,10 @@
                     const labelWrapper = keyElement.parentElement.nextElementSibling;
                     const combo = (e.metaKey ? 'Meta+' : '') + (e.ctrlKey ? 'Ctrl+' : '') + (e.altKey ? 'Alt+' : '') + (e.shiftKey ? 'Shift+' : '') + (e.key.match(/^[a-zA-Z]$/) ? e.key.toUpperCase() : e.key);
                     const existingAction = Object.keys(JE.state.activeShortcuts).find(name => JE.state.activeShortcuts[name] === combo);
-                    if (existingAction && existingAction !== action) {
+                    // Player actions can't take keys Jellyfin's own player already handles,
+                    // otherwise both would fire on one press.
+                    const isReservedPlayerKey = PLAYER_ACTIONS.has(action) && JELLYFIN_PLAYER_KEYS.has(combo);
+                    if (isReservedPlayerKey || (existingAction && existingAction !== action)) {
                         keyElement.style.background = 'rgb(255 0 0 / 60%)';
                         keyElement.classList.add('shake-error');
                         setTimeout(() => {

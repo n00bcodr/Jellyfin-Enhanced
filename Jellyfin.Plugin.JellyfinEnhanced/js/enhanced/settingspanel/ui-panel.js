@@ -132,7 +132,7 @@
                     document.removeEventListener('mousemove', handleMouseMove);
                     document.removeEventListener('mouseup', handleMouseUp);
                     if (!JE.pluginConfig.DisableAllShortcuts) {
-                        document.addEventListener('keydown', JE.keyListener);
+                        document.addEventListener('keydown', JE.keyListener, true);
                     }
                 }
             }, JE.CONFIG.HELP_PANEL_AUTOCLOSE_DELAY);
@@ -344,7 +344,7 @@
                 document.removeEventListener('mousemove', handleMouseMove);
                 document.removeEventListener('mouseup', handleMouseUp);
                 if (!JE.pluginConfig.DisableAllShortcuts) {
-                    document.addEventListener('keydown', JE.keyListener);
+                    document.addEventListener('keydown', JE.keyListener, true);
                 }
             }
         };
@@ -358,7 +358,7 @@
         document.getElementById('closeSettingsPanel').addEventListener('click', closeHelp);
 
         if (!JE.pluginConfig.DisableAllShortcuts) {
-            document.removeEventListener('keydown', JE.keyListener);
+            document.removeEventListener('keydown', JE.keyListener, true);
         }
         ctx.createToast = createToast;
 

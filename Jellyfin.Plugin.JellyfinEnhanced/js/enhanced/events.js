@@ -67,7 +67,7 @@
         switch (combo) {
             case activeShortcuts.BookmarkCurrentTime:
                 e.preventDefault();
-                e.stopPropagation();
+                e.stopImmediatePropagation();
                 // Open bookmark modal to add/view bookmarks
                 if (JE.bookmarks?.showModal) {
                     JE.bookmarks.showModal('add');
@@ -77,19 +77,19 @@
                 break;
             case activeShortcuts.CycleAspectRatio:
                 e.preventDefault();
-                e.stopPropagation();
+                e.stopImmediatePropagation();
                 JE.cycleAspect();
                 break;
             case activeShortcuts.ShowPlaybackInfo:
                 e.preventDefault();
-                e.stopPropagation();
+                e.stopImmediatePropagation();
                 // Toggles the plugin-rendered playback-info overlay — no
                 // settings menu / stats panel is ever opened.
                 JE.togglePlaybackInfo();
                 break;
             case activeShortcuts.SubtitleMenu:
                 e.preventDefault();
-                e.stopPropagation();
+                e.stopImmediatePropagation();
                 const subtitleMenuTitle = Array.from(document.querySelectorAll('.actionSheetContent .actionSheetTitle')).find(el => el.textContent === 'Subtitles');
                 if (subtitleMenuTitle) {
                     // Subtitle menu is already open, close it
@@ -104,7 +104,7 @@
                 break;
             case activeShortcuts.CycleSubtitleTracks:
                 e.preventDefault();
-                e.stopPropagation();
+                e.stopImmediatePropagation();
                 // Not on key auto-repeat: each cycle is now a real track switch (a stale
                 // check mark no longer collapses repeats onto the same track), and a held
                 // key would fire a ~30ms burst of stream changes — for burned-in subtitles
@@ -114,28 +114,28 @@
                 break;
             case activeShortcuts.CycleAudioTracks:
                 e.preventDefault();
-                e.stopPropagation();
+                e.stopImmediatePropagation();
                 if (e.repeat) break;
                 JE.cycleAudioTrack();
                 break;
             case activeShortcuts.ResetPlaybackSpeed:
                 e.preventDefault();
-                e.stopPropagation();
+                e.stopImmediatePropagation();
                 JE.resetPlaybackSpeed();
                 break;
             case activeShortcuts.IncreasePlaybackSpeed:
                 e.preventDefault();
-                e.stopPropagation();
+                e.stopImmediatePropagation();
                 JE.adjustPlaybackSpeed('increase');
                 break;
             case activeShortcuts.DecreasePlaybackSpeed:
                 e.preventDefault();
-                e.stopPropagation();
+                e.stopImmediatePropagation();
                 JE.adjustPlaybackSpeed('decrease');
                 break;
             case activeShortcuts.OpenEpisodePreview:
                 e.preventDefault();
-                e.stopPropagation();
+                e.stopImmediatePropagation();
                 const popupFocusContainer = document.getElementById('popupFocusContainer');
                 if (popupFocusContainer && popupFocusContainer.classList.contains('opened')) {
                     // Popup is already open, close it by removing all dialog elements
@@ -154,22 +154,22 @@
                 break;
             case activeShortcuts.SkipIntroOutro:
                 e.preventDefault();
-                e.stopPropagation();
+                e.stopImmediatePropagation();
                 JE.skipIntroOutro();
                 break;
             case activeShortcuts.FrameStepBack:
                 e.preventDefault();
-                e.stopPropagation();
+                e.stopImmediatePropagation();
                 JE.frameStep('back');
                 break;
             case activeShortcuts.FrameStepForward:
                 e.preventDefault();
-                e.stopPropagation();
+                e.stopImmediatePropagation();
                 JE.frameStep('forward');
                 break;
             case activeShortcuts.JumpToLastPosition:
                 e.preventDefault();
-                e.stopPropagation();
+                e.stopImmediatePropagation();
                 JE.jumpToLastPosition();
                 break;
         }
@@ -326,7 +326,9 @@
 
         // Conditionally listen for all other shortcuts
         if (!JE.pluginConfig.DisableAllShortcuts) {
-            document.addEventListener('keydown', JE.keyListener);
+            // Capture phase so a matching player shortcut runs before (and suppresses)
+            // Jellyfin's own player key handlers, which would otherwise fire as well.
+            document.addEventListener('keydown', JE.keyListener, true);
         }
 
         // Add Long Press listeners if enabled
