@@ -9,6 +9,22 @@
     "imageUrl": "https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/master/docs/images/icon.png",
     "versions": [
       {
+        "changelog": "**Build for Jellyfin 12.**\n\n- fix(analytics): refresh reports after build or host changes ([#824](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/824))\n - fix(cdn): continue asset refresh after request timeouts ([#825](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/825))\n - fix(native-tabs): stop header tray icons overlapping on narrow displays\n - Translations update from Hosted Weblate ([#811](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/811))\n - chore(ci)(deps): bump the github-actions group with 3 updates ([#832](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/832))\n - fix: continue watching/next up removal not closing ([#828](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/828))\n - feat(random-button): animate a rolling Lucide dice icon\n - docs: clarify Plugin Pages links live in the user profile menu on Jellyfin 12\n - fix(activity-feed): stop requesting avatars for users without a profile image\n - feat(cdn): bundle Material Symbols fonts instead of proxying Google Fonts\n - feat(spoiler-guard): add next-episode image reveal toggle\n - Update Australian Ratings\n - fix(shortcuts): make player shortcuts override Jellyfin defaults and block reserved keys",
+        "targetAbi": "12.0.0.0",
+        "version": "12.8.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/12.8.0.0/Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip",
+        "checksum": "3EE5241E2514EE20BE352B33812F42ED",
+        "timestamp": "2026-09-19T10:48:28"
+      },
+      {
+        "changelog": "**Build for Jellyfin 10.11.** On Jellyfin 12 the catalog installs the Jellyfin 12 build of this version automatically.\n\n- fix(analytics): refresh reports after build or host changes ([#824](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/824))\n - fix(cdn): continue asset refresh after request timeouts ([#825](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/825))\n - fix(native-tabs): stop header tray icons overlapping on narrow displays\n - Translations update from Hosted Weblate ([#811](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/811))\n - chore(ci)(deps): bump the github-actions group with 3 updates ([#832](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/832))\n - fix: continue watching/next up removal not closing ([#828](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/828))\n - feat(random-button): animate a rolling Lucide dice icon\n - docs: clarify Plugin Pages links live in the user profile menu on Jellyfin 12\n - fix(activity-feed): stop requesting avatars for users without a profile image\n - feat(cdn): bundle Material Symbols fonts instead of proxying Google Fonts\n - feat(spoiler-guard): add next-episode image reveal toggle\n - Update Australian Ratings\n - fix(shortcuts): make player shortcuts override Jellyfin defaults and block reserved keys",
+        "targetAbi": "10.11.0.0",
+        "version": "12.8.0.0",
+        "sourceUrl": "https://github.com/n00bcodr/Jellyfin-Enhanced/releases/download/12.8.0.0/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip",
+        "checksum": "3D5D03F420F460058685D4ED3B4067B0",
+        "timestamp": "2026-09-19T10:48:12"
+      },
+      {
         "changelog": "**Build for Jellyfin 12.**\n\n- fix(activity-feed): stop active-streams poll when tab is not visible\n - fix(jellyseerr-search): stop runaway infinite-scroll fetch loop on sparse queries\n - feat(custom-icons): add Jellyfin Helper to supported plugins ([#821](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/821))\n - Details page: file size and audio languages follow the selected version ([#819](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/819))\n - fix(config-page): show why Letterboxd/*arr text mode is locked when Metadata Icons is on\n - fix(letterboxd-links): stop link from permanently failing to (re)appear\n - feat(quality-tags): add 576p resolution tag for PAL DVDs\n - fix(tag-pipeline): re-resolve stale render target instead of dropping the tag",
         "targetAbi": "12.0.0.0",
         "version": "12.7.0.0",
