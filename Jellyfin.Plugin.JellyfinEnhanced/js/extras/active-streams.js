@@ -54,6 +54,14 @@
   height: 40px;
   flex-shrink: 0;
 }
+#je-active-streams.je-as-in-osd {
+  width: 48px;
+  height: 48px;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
 #je-active-streams .je-as-icon {
   display: inline-flex;
   align-items: center;
@@ -1048,10 +1056,18 @@
     };
 
     // ── Panel ────────────────────────────────────────────────────────────────
+    let _headerPanelTop = '';
+
     const togglePanel = () => {
         const panel = document.getElementById('je-active-streams-panel');
         if (!panel) return;
         _panelOpen = !_panelOpen;
+        if (_panelOpen) {
+            const btn = document.getElementById('je-active-streams');
+            panel.style.top = btn?.closest('.osdHeader, .videoOsd-appBar')
+                ? (btn.getBoundingClientRect().bottom + 2) + 'px'
+                : _headerPanelTop;
+        }
         panel.classList.toggle('je-as-panel-open', _panelOpen);
         if (_panelOpen) updateCounter();
     };
@@ -1097,12 +1113,14 @@
         const skinHeaderHeight = skinHeader?.getBoundingClientRect().height || 0;
         if (skinHeaderHeight > 0) {
             panel.style.top = (skinHeaderHeight + 2) + 'px';
+            _headerPanelTop = panel.style.top;
         } else {
             // Jellyfin 12 experimental layout: the legacy .skinHeader is hidden,
             // measure the new MUI AppBar toolbar instead.
             const appBar = document.querySelector('.MuiAppBar-root');
             if (appBar) {
                 panel.style.top = (appBar.getBoundingClientRect().height + 2) + 'px';
+                _headerPanelTop = panel.style.top;
             }
         }
 
@@ -1145,7 +1163,7 @@
         if (document.getElementById('je-active-streams')) return;
         if (attempts > 20) return;
 
-        const headerRight = JE.helpers.getHeaderRightContainer();
+        const headerRight = JE.isVideoPage?.() ? getOsdHeaderContainer() : JE.helpers.getHeaderRightContainer();
         if (!headerRight) {
             setTimeout(() => tryInjectHeader(attempts + 1, generation), 500);
             return;
@@ -1172,9 +1190,28 @@
         btn.addEventListener('click', (e) => { e.stopPropagation(); togglePanel(); });
 
         headerRight.insertBefore(btn, headerRight.firstChild);
+        syncPlacementClasses(btn);
         injectPanel();
         applyThemeVars();
         startPolling();
+    };
+
+    const getOsdHeaderContainer = () => {
+        const bar = document.querySelector('.videoOsd-appBar');
+        if (bar) {
+            const menuButtons = bar.querySelectorAll('[aria-controls="app-sync-play-menu"], [aria-controls="app-remote-play-menu"]');
+            const visible = [...menuButtons].find((el) => el.offsetParent !== null) || menuButtons[0];
+            return visible?.parentElement || null;
+        }
+        return document.querySelector('.skinHeader.osdHeader .headerRight');
+    };
+
+    // videoosd.scss hides every .headerButton in the player bar except back/cast/syncplay.
+    const syncPlacementClasses = (btn) => {
+        const inOsd = !!btn.closest('.osdHeader, .videoOsd-appBar');
+        btn.classList.toggle('je-as-in-osd', inOsd);
+        btn.classList.toggle('headerButton', !inOsd);
+        btn.classList.toggle('headerButtonRight', !inOsd);
     };
 
     // ── Observer ─────────────────────────────────────────────────────────────
@@ -1182,6 +1219,7 @@
         if (_observer) return;
         const callback = () => {
             if (!document.getElementById('je-active-streams')) tryInjectHeader(0);
+            else syncPlacementClasses(document.getElementById('je-active-streams'));
         };
         if (JE?.helpers?.onBodyMutation) {
             _observer = JE.helpers.onBodyMutation('active-streams', callback);
