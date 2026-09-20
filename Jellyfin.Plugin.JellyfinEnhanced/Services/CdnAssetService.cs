@@ -118,6 +118,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ["zesty"] = new("https://cdn.jsdelivr.net/gh/stpnwf/ZestyTheme@latest", Types("image/png", "image/jpeg")),
             // JellyPlugins jellyfin-helper favicon (pinned ref)
             ["jelly-helper"] = new("https://cdn.jsdelivr.net/gh/JellyPlugins/jellyfin-helper@2.0.0.2", Types("image/vnd.microsoft.icon", "image/x-icon", "image/png")),
+            // Moonbase (Moonfin server plugin) icon (pinned ref)
+            ["moonbase"] = new("https://cdn.jsdelivr.net/gh/Moonfin-Client/Plugin@2.2.0", Types("image/png")),
             // flagcdn raster flags (people/country tags)
             ["flagcdn"] = new("https://flagcdn.com", Types("image/png")),
             // cdnjs flag-icons SVG flags (language tags)
@@ -214,6 +216,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ("dashboard-icons", "svg/javascript.svg"),
             ("zesty", "images/logo/jellyfin-logo-light.png"),
             ("jelly-helper", "media/favicon.ico"),
+            ("moonbase", "Jellyfin/backend/assets/icon.png"),
             ("ibb", "fdbkXQdP/jellyseerr-poster-not-found.png"),
             ("je-css", "ratings.css"),
             ("icon-metadata", "public-icon.css"),

@@ -251,6 +251,12 @@
                     type: 'image',
                     src: window.JellyfinEnhanced.cdn.url('jelly-helper', 'media/favicon.ico'),
                     alt: 'Jellyfin Helper'
+                },
+                {
+                    selector: 'a[href*="Moonbase"]',
+                    type: 'image',
+                    src: window.JellyfinEnhanced.cdn.url('moonbase', 'Jellyfin/backend/assets/icon.png'),
+                    alt: 'Moonbase'
                 }
             ];
 
