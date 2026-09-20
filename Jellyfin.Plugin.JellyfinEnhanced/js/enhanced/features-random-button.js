@@ -109,6 +109,11 @@
 
         if (document.getElementById('randomItemButton')) return;
 
+        // Getting the tray also reconnects its existing buttons after a native
+        // header remount; check the ID only after that reconciliation.
+        const headerRight = JE.helpers.getHeaderButtonTray();
+        if (!headerRight || document.getElementById('randomItemButton')) return;
+
         const buttonContainer = document.createElement('div');
         buttonContainer.id = 'randomItemButtonContainer';
 
@@ -117,6 +122,8 @@
         randomButton.setAttribute('is', 'paper-icon-button-light');
         randomButton.className = 'headerButton headerButtonRight paper-icon-button-light';
         randomButton.title = JE.t('random_button_tooltip');
+        const headerLabel = JE.t('header_random_item');
+        randomButton.dataset.headerLabel = headerLabel === 'header_random_item' ? 'Random item' : headerLabel;
         randomButton.innerHTML = `<span class="je-dice-spin"><span class="je-dice-face"></span></span>`;
         const diceFace = randomButton.querySelector('.je-dice-face');
         let currentFace = randomDiceFace();
@@ -150,7 +157,6 @@
         });
 
         buttonContainer.appendChild(randomButton);
-        const headerRight = JE.helpers.getHeaderRightContainer();
-        headerRight?.prepend(buttonContainer);
+        headerRight.prepend(buttonContainer);
     };
 })(window.JellyfinEnhanced);

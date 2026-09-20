@@ -207,6 +207,9 @@
 
         var headerRight = JE.helpers.getHeaderButtonTray?.();
         if (!headerRight) return;
+        // getHeaderButtonTray can reconnect the existing links after React
+        // replaces its toolbar, so repeat the guard before creating a link.
+        if (document.getElementById(linkId)) return;
 
         var group = getOrCreateGroup(headerRight);
         var separator = document.getElementById('je-native-tabs-separator');

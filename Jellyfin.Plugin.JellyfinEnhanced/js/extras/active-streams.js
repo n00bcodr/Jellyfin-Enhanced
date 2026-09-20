@@ -1163,11 +1163,13 @@
         if (document.getElementById('je-active-streams')) return;
         if (attempts > 20) return;
 
-        const headerRight = JE.isVideoPage?.() ? getOsdHeaderContainer() : JE.helpers.getHeaderRightContainer();
+        const headerRight = JE.isVideoPage?.() ? getOsdHeaderContainer() : JE.helpers.getHeaderButtonTray();
         if (!headerRight) {
             setTimeout(() => tryInjectHeader(attempts + 1, generation), 500);
             return;
         }
+        // The shared tray may have just restored this button after a remount.
+        if (document.getElementById('je-active-streams')) return;
 
         const btn = document.createElement('button');
         btn.id = 'je-active-streams';
@@ -1175,6 +1177,7 @@
         btn.setAttribute('is', 'paper-icon-button-light');
         btn.className = 'headerButton headerButtonRight paper-icon-button-light';
         btn.title = 'No active streams';
+        btn.dataset.headerLabel = JE.t('activity_section_active_streams');
 
         const icon = document.createElement('i');
         icon.className = 'material-icons je-as-icon';
