@@ -112,7 +112,7 @@
      */
     async function deliverItem(item) {
         if (JE.currentSettings.randomAutoplay && item?.Id) {
-            const played = await JE.internals.randomRoulette.playItem(item.Id);
+            const played = await JE.internals.randomRoulette.playItem(item);
             if (played) return;
         }
         navigateToItem(item);
@@ -130,7 +130,8 @@
             const cards = await roulette.getPageCandidates();
             if (cards.length > 1) {
                 const card = await roulette.spin(cards);
-                return { Id: card.dataset.id, Type: card.dataset.type };
+                // null = the user navigated away mid-spin; drop the pick silently.
+                return card ? { Id: card.dataset.id, Type: card.dataset.type } : null;
             }
         }
         return getRandomItem();
