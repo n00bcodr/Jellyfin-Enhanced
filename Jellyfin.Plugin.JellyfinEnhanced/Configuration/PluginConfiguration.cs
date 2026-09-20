@@ -83,6 +83,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ShowUserRatingOnPosters = false;
             ShowUserRatingDash = true;
             PauseScreenEnabled = true;
+            ShowPlaybackRatingBadge = false;
             QualityTagsEnabled = false;
             ShowResolutionTag = true;
             ShowSourceTag = true;
@@ -523,6 +524,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ShowUserRatingDash { get; set; } = true;
         public List<Shortcut> Shortcuts { get; set; }
         public bool PauseScreenEnabled { get; set; }
+        public bool ShowPlaybackRatingBadge { get; set; }
         public int PauseScreenDelaySeconds { get; set; } = 5;
         public bool QualityTagsEnabled { get; set; }
         public bool ShowResolutionTag { get; set; } = true;

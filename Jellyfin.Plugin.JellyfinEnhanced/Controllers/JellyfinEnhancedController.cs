@@ -3177,6 +3177,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ShowUserRatingOnPosters,
                 config.ShowUserRatingDash,
                 config.PauseScreenEnabled,
+                config.ShowPlaybackRatingBadge,
                 config.QualityTagsEnabled,
                 config.ShowResolutionTag,
                 config.ShowSourceTag,

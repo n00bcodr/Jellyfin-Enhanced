@@ -735,6 +735,11 @@
                                 <div class="fieldDescription">Long-press anywhere on the player to temporarily play at 2× speed; release to return to normal speed. Beta, touch devices only.</div>
                             </div>
 
+                            <div class="checkboxContainer"><label><input id="showPlaybackRatingBadge" is="emby-checkbox" type="checkbox"/><span>Show Age Rating When Playback Starts</span></label></div>
+                            <div class="je-setting-description" data-desc-for="showPlaybackRatingBadge">
+                                <div class="fieldDescription">Briefly shows the age rating in a corner of the player when a video starts, followed by a line of any content-advisory tags (such as violence or strong language) and a line of its genres.</div>
+                            </div>
+
                             <div class="checkboxContainer"><label><input id="pauseScreenEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Custom Pause Screen</span></label></div>
                             <div class="je-setting-description" data-desc-for="pauseScreenEnabled">
                                 <div class="fieldDescription je-field-desc-sm">This feature is a modified version of the original script by <a class="sectionTitle" href="https://github.com/BobHasNoSoul/Jellyfin-PauseScreen" target="_blank">BobHasNoSoul</a></div>
@@ -5391,6 +5396,7 @@
                 document.querySelector('#enableTagsLocalStorageFallback').checked = config.EnableTagsLocalStorageFallback === true;
                 document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
+                document.querySelector('#showPlaybackRatingBadge').checked = config.ShowPlaybackRatingBadge === true;
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#showAwards').checked = !!config.ShowAwards;
                 document.querySelector('#mdblistRatingsEnabled').checked = !!config.MdblistRatingsEnabled;
@@ -5891,6 +5897,7 @@
             config.ShowRatingInPlayer = document.querySelector('#showRatingInPlayer').checked;
             config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
+            config.ShowPlaybackRatingBadge = document.querySelector('#showPlaybackRatingBadge').checked;
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.ShowAwards = document.querySelector('#showAwards').checked;
             config.MdblistRatingsEnabled = document.querySelector('#mdblistRatingsEnabled').checked;
@@ -7977,6 +7984,7 @@
 
             // Playback
             feat('Custom Pause Screen', bool('pauseScreenEnabled'), 'playback', 'Enabled');
+            feat('Age Rating on Playback Start', bool('showPlaybackRatingBadge'), 'playback', 'Enabled');
             feat('Long press for 2x speed', bool('longPress2xEnabled'), 'playback', 'Enabled (touch devices)');
             var autoSkip = bool('autoSkipIntro') || bool('autoSkipOutro');
             var autoSkipWarn = autoSkip && hasIntroSkipper !== true;
