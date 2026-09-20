@@ -110,6 +110,8 @@
         addSettingToggleListener('autoSkipOutroToggle', 'autoSkipOutro', 'feature_auto_skip_outro');
         addSettingToggleListener('randomButtonToggle', 'randomButtonEnabled', 'feature_random_button');
         addSettingToggleListener('randomUnwatchedOnly', 'randomUnwatchedOnly', 'feature_unwatched_only');
+        addSettingToggleListener('randomRouletteToggle', 'randomRouletteEnabled', 'feature_random_roulette');
+        addSettingToggleListener('randomAutoplayToggle', 'randomAutoplay', 'feature_random_autoplay');
         addSettingToggleListener('showWatchProgressToggle', 'showWatchProgress', 'feature_watch_progress_display');
                 // Watch progress selects
                 const modeSel = document.getElementById('watchProgressModeSelect');
