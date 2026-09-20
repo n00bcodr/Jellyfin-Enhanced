@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Avanzamento totale di visione",
     "file_size_tooltip": "Dimensione totale del file",
     "audio_language_tooltip": "Lingua/e audio",
+    "audio_language_no_dialogue": "Senza dialoghi",
     "remove_continue_watching_error": "Impossibile rimuovere l'elemento: ID utente o elemento non trovato.",
     "remove_continue_watching_error_api": "Impossibile rimuovere l'elemento: {error}",
     "unknown_error": "Errore sconosciuto",

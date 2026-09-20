@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Total tittarprogress",
     "file_size_tooltip": "Total filstorlek",
     "audio_language_tooltip": "Ljudspråk",
+    "audio_language_no_dialogue": "Ingen dialog",
     "remove_continue_watching_error": "Kunde inte ta bort objekt: Användar- eller objekt-ID hittades inte.",
     "remove_continue_watching_error_api": "Kunde inte ta bort objekt: {error}",
     "unknown_error": "Okänt fel",

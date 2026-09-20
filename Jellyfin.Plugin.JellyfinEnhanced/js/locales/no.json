@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Total seerfremdrift",
     "file_size_tooltip": "Total filstørrelse",
     "audio_language_tooltip": "Lydspråk",
+    "audio_language_no_dialogue": "Ingen dialog",
     "remove_continue_watching_error": "Kunne ikke fjerne element: Bruker eller element-ID ikke funnet.",
     "remove_continue_watching_error_api": "Kunne ikke fjerne element: {error}",
     "unknown_error": "Ukjent feil",

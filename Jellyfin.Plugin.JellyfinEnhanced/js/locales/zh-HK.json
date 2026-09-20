@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "總觀看進度",
     "file_size_tooltip": "總檔案大小",
     "audio_language_tooltip": "音訊語言",
+    "audio_language_no_dialogue": "無對白",
     "remove_continue_watching_error": "無法移除項目：找不到用戶或項目 ID。",
     "remove_continue_watching_error_api": "無法移除項目：{error}",
     "unknown_error": "未知錯誤",

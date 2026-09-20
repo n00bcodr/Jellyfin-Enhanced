@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Összesített nézési előrehaladás",
     "file_size_tooltip": "Teljes fájlméret",
     "audio_language_tooltip": "Hang nyelve",
+    "audio_language_no_dialogue": "Párbeszéd nélkül",
     "remove_continue_watching_error": "Nem sikerült eltávolítani az elemet: A felhasználó vagy az elem azonosítója nem található.",
     "remove_continue_watching_error_api": "Nem sikerült eltávolítani az elemet: {error}",
     "unknown_error": "Ismeretlen hiba",

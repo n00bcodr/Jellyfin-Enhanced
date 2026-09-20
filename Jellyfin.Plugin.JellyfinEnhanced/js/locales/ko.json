@@ -235,6 +235,7 @@
     "downloads_status_downloading": "Downloading",
     "active_streams_count": "{count} Active Stream|{count} Active Streams",
     "audio_language_tooltip": "Audio Language(s)",
+    "audio_language_no_dialogue": "대사 없음",
     "jellyseerr_existing_issues": "Issues",
     "spoiler_blur_enabled_movie_toast": "Spoiler Guard: On",
     "hidden_content_show_button_library_desc": "Show the hide button on native Jellyfin library cards",

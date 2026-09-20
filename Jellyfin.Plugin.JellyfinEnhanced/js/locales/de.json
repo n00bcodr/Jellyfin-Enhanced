@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Gesamtfortschritt",
     "file_size_tooltip": "Gesamtdateigröße",
     "audio_language_tooltip": "Audiosprache(n)",
+    "audio_language_no_dialogue": "Kein Dialog",
     "remove_continue_watching_error": "Element konnte nicht entfernt werden: Benutzer- oder Element-ID nicht gefunden.",
     "remove_continue_watching_error_api": "Element konnte nicht entfernt werden: {error}",
     "unknown_error": "Unbekannter Fehler",

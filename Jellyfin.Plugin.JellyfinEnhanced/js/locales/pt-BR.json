@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Progresso total de visualização",
     "file_size_tooltip": "Tamanho Total do Arquivo",
     "audio_language_tooltip": "Idioma(s) do Áudio",
+    "audio_language_no_dialogue": "Sem diálogo",
     "remove_continue_watching_error": "Não foi possível remover o item: ID do usuário ou do item não encontrado.",
     "remove_continue_watching_error_api": "Não foi possível remover o item: {error}",
     "unknown_error": "Erro desconhecido",

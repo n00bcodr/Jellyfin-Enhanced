@@ -257,6 +257,7 @@
     "watch_progress_tooltip": "Samlet seerfremskridt",
     "file_size_tooltip": "Samlet filstørrelse",
     "audio_language_tooltip": "Lydsprog",
+    "audio_language_no_dialogue": "Ingen dialog",
     "remove_continue_watching_error": "Kunne ikke fjerne element: Bruger- eller element-ID ikke fundet.",
     "remove_continue_watching_error_api": "Kunne ikke fjerne element: {error}",
     "unknown_error": "Ukendt fejl",

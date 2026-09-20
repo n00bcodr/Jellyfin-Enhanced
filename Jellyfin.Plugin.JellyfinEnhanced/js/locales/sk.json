@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Celkový postup sledovania",
     "file_size_tooltip": "Celková veľkosť súboru",
     "audio_language_tooltip": "Jazyk(y) zvuku",
+    "audio_language_no_dialogue": "Bez dialógov",
     "remove_continue_watching_error": "Nepodarilo sa odstrániť položku: ID používateľa alebo položky nenájdené.",
     "remove_continue_watching_error_api": "Nepodarilo sa odstrániť položku: {error}",
     "unknown_error": "Neznáma chyba",

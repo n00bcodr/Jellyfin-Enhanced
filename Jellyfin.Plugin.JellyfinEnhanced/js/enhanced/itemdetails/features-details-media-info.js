@@ -609,7 +609,7 @@
                         const langCode = stream.Language;
                         if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
                             try {
-                                const langName = new Intl.DisplayNames(['en'], { type: 'language' }).of(langCode);
+                                const langName = JE.core.mediaLanguage.displayName(langCode);
                                 languages.add(JSON.stringify({ name: langName, code: langCode }));
                             } catch (e) {
                                 languages.add(JSON.stringify({ name: langCode.toUpperCase(), code: langCode }));

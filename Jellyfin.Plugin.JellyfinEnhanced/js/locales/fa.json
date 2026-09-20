@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "پیشرفت کل تماشا",
     "file_size_tooltip": "حجم کل فایل",
     "audio_language_tooltip": "زبان(های) صوتی",
+    "audio_language_no_dialogue": "بدون دیالوگ",
     "remove_continue_watching_error": "حذف آیتم امکان‌پذیر نبود: شناسه کاربر یا آیتم یافت نشد.",
     "remove_continue_watching_error_api": "حذف آیتم امکان‌پذیر نیست: {error}",
     "unknown_error": "خطای ناشناخته",

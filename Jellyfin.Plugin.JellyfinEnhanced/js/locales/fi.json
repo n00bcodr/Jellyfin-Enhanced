@@ -186,6 +186,7 @@
     "downloads_status_downloading": "Ladataan",
     "active_streams_count": "{count} Aktiivinen Suoratoisto|{count} Aktiivisia Suoratoistoja",
     "audio_language_tooltip": "Äänen Kielet",
+    "audio_language_no_dialogue": "Ei dialogia",
     "jellyseerr_existing_issues": "Ongelmat",
     "hidden_content_show_button_library_desc": "Näytä piilotuspainike Jellyfinin omissa kirjastokorteissa",
     "bookmark_no_label": "Ei nimikettä",

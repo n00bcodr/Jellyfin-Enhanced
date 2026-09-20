@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Общий прогресс просмотра",
     "file_size_tooltip": "Общий размер файла",
     "audio_language_tooltip": "Язык(и) аудио",
+    "audio_language_no_dialogue": "Без диалогов",
     "remove_continue_watching_error": "Не удалось удалить элемент: ID пользователя или элемента не найден.",
     "remove_continue_watching_error_api": "Не удалось удалить элемент: {error}",
     "unknown_error": "Неизвестная ошибка",

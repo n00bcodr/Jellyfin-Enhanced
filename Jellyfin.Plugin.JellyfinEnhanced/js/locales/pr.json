@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Total Voyage Progress",
     "file_size_tooltip": "Total Cargo Hold Size",
     "audio_language_tooltip": "Speakin' Tongue(s)",
+    "audio_language_no_dialogue": "No parley",
     "remove_continue_watching_error": "Could not remove treasure: User or Treasure ID not found.",
     "remove_continue_watching_error_api": "Unable to remove treasure: {error}",
     "unknown_error": "Unknown curse",

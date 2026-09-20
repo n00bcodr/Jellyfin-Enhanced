@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Общ напредък на гледане",
     "file_size_tooltip": "Общ размер на файла",
     "audio_language_tooltip": "Езици за аудио",
+    "audio_language_no_dialogue": "Без диалог",
     "remove_continue_watching_error": "Елементът не може да бъде премахнат: Не е намерено ID на потребител или елемент.",
     "remove_continue_watching_error_api": "Неуспешно премахване на елемент: {error}",
     "unknown_error": "Неизвестна грешка",

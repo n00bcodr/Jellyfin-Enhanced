@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "إجمالي تقدم المشاهدة",
     "file_size_tooltip": "إجمالي حجم الملف",
     "audio_language_tooltip": "لغة (لغات) الصوت",
+    "audio_language_no_dialogue": "بدون حوار",
     "remove_continue_watching_error": "تعذر إزالة العنصر: لم يتم العثور على المستخدم أو معرّف العنصر.",
     "remove_continue_watching_error_api": "غير قادر على إزالة العنصر: {error}",
     "unknown_error": "خطأ غير معروف",

@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Progreso total de visualización",
     "file_size_tooltip": "Tamaño total del archivo",
     "audio_language_tooltip": "Idioma(s) de audio",
+    "audio_language_no_dialogue": "Sin diálogo",
     "remove_continue_watching_error": "No se pudo quitar: Usuario o ID no encontrado.",
     "remove_continue_watching_error_api": "No se pudo quitar: {error}",
     "unknown_error": "Error desconocido",

@@ -257,6 +257,7 @@
     "watch_progress_tooltip": "Totale kijkvoortgang",
     "file_size_tooltip": "Totale bestandsgrootte",
     "audio_language_tooltip": "Audiotaal/talen",
+    "audio_language_no_dialogue": "Geen dialoog",
     "remove_continue_watching_error": "Item kon niet worden verwijderd: gebruiker- of item-ID niet gevonden.",
     "remove_continue_watching_error_api": "Item kon niet worden verwijderd: {error}",
     "unknown_error": "Onbekende fout",

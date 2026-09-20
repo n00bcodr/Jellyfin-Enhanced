@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Progrés total de visualització",
     "file_size_tooltip": "Mida total del fitxer",
     "audio_language_tooltip": "Idioma(es) d'àudio",
+    "audio_language_no_dialogue": "Sense diàleg",
     "remove_continue_watching_error": "No s'ha pogut treure: Usuari o ID no trobat.",
     "remove_continue_watching_error_api": "No s'ha pogut treure: {error}",
     "unknown_error": "Error desconegut",
