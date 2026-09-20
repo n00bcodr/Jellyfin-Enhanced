@@ -235,15 +235,28 @@
             }
         };
 
-        JE.helpers.createObserver(
+        // Skip mutations unrelated to action sheets; runInjection reads layout.
+        const SHEET_SELECTOR = '.actionSheet, .actionSheetScroller, .dialogContainer';
+        const touchesActionSheet = (mutations) => {
+            for (const m of mutations) {
+                if (m.target.closest?.(SHEET_SELECTOR)) return true;
+                for (const node of m.addedNodes) {
+                    if (node.nodeType === 1 && (node.matches(SHEET_SELECTOR) || node.querySelector(SHEET_SELECTOR))) return true;
+                }
+            }
+            return false;
+        };
+
+        // Priority keeps this synchronous; deferring to after paint would add the
+        // Remove item after the sheet's first frame.
+        JE.helpers.onBodyMutation(
             'action-sheets',
-            () => {
-                if (scheduled) return;
+            (mutations) => {
+                if (scheduled || !touchesActionSheet(mutations)) return;
                 scheduled = true;
                 requestAnimationFrame(runInjection);
             },
-            document.body,
-            { childList: true, subtree: true }
+            { priority: 1 }
         );
     }
 

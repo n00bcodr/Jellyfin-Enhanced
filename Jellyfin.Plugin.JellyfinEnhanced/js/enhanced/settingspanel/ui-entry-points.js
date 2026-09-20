@@ -62,7 +62,9 @@
             }
         };
 
-        JE.helpers.onBodyMutation('ui-menu-button', () => {
+        // Debounced because getSidebarContainer() reads layout.
+        JE.helpers.onBodyMutation('ui-menu-button', JE.helpers.debounce(() => {
+            if (document.getElementById('jellyfinEnhancedSettingsLink')) return;
             // getSidebarContainer() falls back to the new MUI drawer (mobile only)
             // when the legacy sidebar is hidden under Jellyfin 12's experimental
             // layout. Every other module that looks for `.jellyfinEnhancedSection`
@@ -72,7 +74,7 @@
             if (sidebar && !sidebar.querySelector('#jellyfinEnhancedSettingsLink')) {
                 addMenuButton(sidebar);
             }
-        });
+        }, 300));
     };
 
     /**

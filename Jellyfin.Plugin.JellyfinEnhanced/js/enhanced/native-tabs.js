@@ -115,9 +115,15 @@
                 entry.onMount(panel);
                 console.log('🪼 Jellyfin Enhanced: [native-tabs] added tab panel "' + entry.title + '" at data-index=' + entry.index);
             }
-
-            ensureDiscoverable(entry);
         });
+
+        // Read all visibilities before acting on them, so the reads share one layout
+        // instead of each forcing one right after a panel mount.
+        entries.forEach(function (entry) {
+            var tabBtn = document.getElementById('je-native-tab-btn-' + entry.id);
+            if (tabBtn) isTabButtonVisible(tabBtn, entry.id);
+        });
+        entries.forEach(ensureDiscoverable);
 
         // The tab strip's ScrollerFactory (emby-tabs.js) caches each tab's
         // width/position at init time and never watches for new children --
@@ -176,11 +182,22 @@
      * visible (old/stable layout), so that layout doesn't get a redundant
      * second way to reach the same tab.
      */
+    // offsetParent forces layout; reuse a recent answer across mutation bursts.
+    var visibilityCache = {};
+    function isTabButtonVisible(btn, id) {
+        var cached = visibilityCache[id];
+        var now = Date.now();
+        if (cached && cached.btn === btn && now - cached.ts < 1000) return cached.visible;
+        var visible = btn.offsetParent !== null;
+        visibilityCache[id] = { btn: btn, ts: now, visible: visible };
+        return visible;
+    }
+
     function ensureDiscoverable(entry) {
         var btn = document.getElementById('je-native-tab-btn-' + entry.id);
         var linkId = 'je-native-tab-link-' + entry.id;
 
-        if (btn && btn.offsetParent !== null) {
+        if (btn && isTabButtonVisible(btn, entry.id)) {
             document.getElementById(linkId)?.remove();
             removeGroupIfEmpty();
             return;
@@ -229,7 +246,7 @@
     function scheduleInject() {
         if (injectPending) return;
         injectPending = true;
-        requestAnimationFrame(function () {
+        JE.core.dom.afterNextPaint(function () {
             injectPending = false;
             ensureInjected();
         });
