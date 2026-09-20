@@ -519,7 +519,8 @@
      * @property {Record<string, string>} [headers] - Extra/override headers.
      * @property {*} [body] - Request body. Non-string values are JSON.stringify'd.
      * @property {AbortSignal} [signal] - Caller-supplied abort signal.
-     * @property {string} [cacheKey] - Enables response cache + in-flight dedup (GET only).
+     * @property {string} [cacheKey] - Enables response cache + in-flight dedup (GET only). Plain GETs
+     *   without custom headers still share concurrent identical requests.
      * @property {boolean} [skipCache=false] - Bypass the response cache.
      * @property {boolean} [skipRetry=false] - Limit to a single attempt.
      * @property {boolean} [auth=true] - Include the Jellyfin auth headers.
@@ -636,7 +637,16 @@
             }
             return fetchFn();
         });
-        return (isGet && cacheKey) ? deduplicatedFetch(cacheKey, limitedFetch, signal) : limitedFetch();
+        if (isGet && cacheKey) return deduplicatedFetch(cacheKey, limitedFetch, signal);
+
+        // Plain GETs share concurrent identical requests too, even without a cacheKey
+        // (nothing is cached). Skipped when a caller customises the headers, since the
+        // response could then differ for the same URL. Each caller gets its own copy so
+        // one mutating its result cannot affect the others.
+        if (isGet && auth && Object.keys(headers).length === 0) {
+            return deduplicatedFetch(`GET ${url}`, limitedFetch, signal).then((data) => structuredClone(data));
+        }
+        return limitedFetch();
     }
 
     /**
