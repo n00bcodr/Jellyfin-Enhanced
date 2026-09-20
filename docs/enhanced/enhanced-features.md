@@ -417,6 +417,7 @@ Jellyfin users can write their own reviews for movies, series, seasons, and epis
 - Average user rating chip displayed next to TMDB/RT ratings in the item media info bar
 - Average user rating also shown as a poster tag (`person_heart` icon) on library cards when rating tags are enabled
 - Admin moderation — admins can delete any user's review
+- Optional: star ratings given in a review can also be saved as the user's Jellyfin rating on the item, so scrobblers and Letterboxd/Trakt-style sync tools that read Jellyfin user data pick them up
 
 **How to write a review:**
 
@@ -433,7 +434,8 @@ Jellyfin users can write their own reviews for movies, series, seasons, and epis
 3. Enable **"Show User Reviews"**
 4. Optionally enable **"Show User Rating on Posters"** to display the average rating as a poster tag
 5. Optionally disable **"Show User Rating Dash"** to hide the `—` placeholder on posters when no ratings exist yet
-6. Click **Save**
+6. Optionally enable **"Also save review star ratings as the user's Jellyfin rating"** to mirror each review's 1-5 star rating (scaled to Jellyfin's 0-10) onto the user's Jellyfin rating for that movie or series. Off by default because it overwrites a rating the user may have set elsewhere. Ratings are only written, never cleared, and season/episode reviews are not mirrored
+7. Click **Save**
 
 !!! note
     The poster tag requires the user to also have **Rating Tags** enabled in the Enhanced panel (Settings tab).
