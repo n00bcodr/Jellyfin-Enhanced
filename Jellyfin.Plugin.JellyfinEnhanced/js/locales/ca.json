@@ -675,5 +675,10 @@
     "pi_transcode_reason": "Motiu",
     "pi_container": "Contenidor",
     "pi_audio": "Àudio",
-    "pi_subtitle": "Subtítols"
+    "pi_subtitle": "Subtítols",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }

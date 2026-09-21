@@ -675,5 +675,10 @@
     "pi_transcode_reason": "Raison",
     "pi_container": "Conteneur",
     "pi_audio": "Audio",
-    "pi_subtitle": "Sous-titres"
+    "pi_subtitle": "Sous-titres",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }
