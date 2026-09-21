@@ -52,10 +52,13 @@
     function occupiedWidth(element) {
         const css = getComputedStyle(element);
         const children = [...element.children].filter(child => child.getClientRects().length && getComputedStyle(child).position !== 'absolute');
-        if (number(css.flexGrow) > 0 && css.display.includes('flex') && css.flexDirection.startsWith('row') && children.length) {
-            const content = children.reduce((width, child) => width + outerWidth(child), 0);
+        if (number(css.flexGrow) > 0) {
             const chrome = number(css.paddingLeft) + number(css.paddingRight) + number(css.marginLeft) + number(css.marginRight);
-            return Math.min(outerWidth(element), content + chrome + number(css.columnGap) * (children.length - 1));
+            if (!children.length) return Math.min(outerWidth(element), chrome);
+            if (css.display.includes('flex') && css.flexDirection.startsWith('row')) {
+                const content = children.reduce((width, child) => width + outerWidth(child), 0);
+                return Math.min(outerWidth(element), content + chrome + number(css.columnGap) * (children.length - 1));
+            }
         }
         return outerWidth(element);
     }
@@ -75,7 +78,8 @@
             available -= siblings.reduce((width, sibling) => width + occupiedWidth(sibling), 0);
             available -= number(getComputedStyle(parent).columnGap) * siblings.length;
             const css = getComputedStyle(element);
-            available -= number(css.marginLeft) + number(css.marginRight) + number(css.paddingLeft) + number(css.paddingRight);
+            // Margins skipped: `margin-left: auto` resolves to the free space itself.
+            available -= number(css.paddingLeft) + number(css.paddingRight);
             parent = element;
         }
         const native = [...header.children].filter(child => child !== tray && getComputedStyle(child).position !== 'absolute' && child.getClientRects().length);
@@ -341,11 +345,12 @@
         // without reserving an entire icon's worth of usable header space.
         const expansionSpace = compactMode ? 8 : 0;
         const collapsed = visibleSources.length > 0 && fullWidth + expansionSpace > available;
-        const random = visibleSources.find(source => source.id === 'randomItemButton');
+        const pinned = ['randomItemButton', 'je-active-streams']
+            .map(id => visibleSources.find(source => source.id === id)).filter(Boolean);
         const inline = new Set();
         if (collapsed) {
             let remaining = Math.max(0, available - moreWidth);
-            const priority = random ? [random, ...visibleSources.filter(source => source !== random)] : visibleSources;
+            const priority = [...pinned, ...visibleSources.filter(source => !pinned.includes(source))];
             for (const source of priority) {
                 const width = outerWidth(source);
                 const margin = source.classList.contains('je-header-overflowed') ? 8 : 0;
