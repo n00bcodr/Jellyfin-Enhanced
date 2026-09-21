@@ -124,6 +124,11 @@
             if (mediaType === 'Season') {
                 return item?.IndexNumber != null ? getSeasonReleaseInfo(seriesTmdbId, item.IndexNumber) : [];
             }
+            // Resolve Epiosde release info from the episode's own PremiereDate if present, fallback to TMDB if not.
+            const premiere = typeof item?.PremiereDate === 'string' ? item.PremiereDate.slice(0, 10) : '';
+            if (/^\d{4}-\d{2}-\d{2}$/.test(premiere)) {
+                return [{ date: premiere, icon: 'tv_guide', titleKey: 'calendar_episode', type: 'episode' }];
+            }
             return (item?.ParentIndexNumber != null && item?.IndexNumber != null)
                 ? getEpisodeReleaseInfo(seriesTmdbId, item.ParentIndexNumber, item.IndexNumber)
                 : [];
