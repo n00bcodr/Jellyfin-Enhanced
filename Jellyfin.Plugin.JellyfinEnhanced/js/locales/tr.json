@@ -675,5 +675,10 @@
     "pi_transcode_reason": "Neden",
     "pi_container": "Kapsayıcı",
     "pi_audio": "Ses",
-    "pi_subtitle": "Altyazılar"
+    "pi_subtitle": "Altyazılar",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }
