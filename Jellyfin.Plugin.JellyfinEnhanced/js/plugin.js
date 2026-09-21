@@ -740,6 +740,7 @@
                 // enhanced
                 'enhanced/config.js',
                 'enhanced/helpers.js',
+                'enhanced/header-actions.js',
                 'enhanced/native-tabs.js',
                 'tags/tag-pipeline.js',
                 'enhanced/icons.js',

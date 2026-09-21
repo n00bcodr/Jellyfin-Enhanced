@@ -4,6 +4,20 @@ Jellyfin Enhanced bundles dozens of features into one convenient plugin. This gu
 
 ---
 
+## Header Shortcuts
+
+JE shortcuts share a single header row with Jellyfin's controls. Random gets first priority, and other enabled shortcuts stay visible while there is room. Tap **More (•••)** for the remaining shortcuts. As the window widens, shortcuts return to the header automatically.
+
+The More menu uses labeled buttons. On short screens, previous/next buttons show the remaining actions without scrolling. Close it by choosing an action, clicking outside, or pressing Escape.
+
+![JE shortcuts fitting beside Jellyfin's native controls](../images/header-shortcuts.png)
+
+![Remaining shortcuts in the More menu on a phone](../images/header-shortcuts-more.png)
+
+![Live header resizing from desktop to a small phone](../images/header-desktop-to-phone.gif)
+
+---
+
 ## Content Management
 
 ### Hidden Content System
