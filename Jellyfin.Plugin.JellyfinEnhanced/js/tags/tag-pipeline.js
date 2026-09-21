@@ -137,6 +137,7 @@
                     url: ApiClient.getUrl('/Items', {
                         ParentId: parentId,
                         IncludeItemTypes: 'Episode',
+                        IsVirtualItem: false,
                         Recursive: true,
                         SortBy: 'PremiereDate',
                         SortOrder: 'Ascending',
