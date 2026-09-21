@@ -327,6 +327,7 @@
         JE.injectGlobalStyles();
         JE.addPluginMenuButton();
         JE.addUserMenuLink();
+        JE.addRandomButton();
         JE.applySavedStylesWhenReady();
 
         // Setup persistent listeners and observers

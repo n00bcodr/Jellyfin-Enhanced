@@ -78,14 +78,7 @@
     var all = document.querySelectorAll('.jellyfinenhanced.hidden-content');
     for (var i = all.length - 1; i >= 0; i--) {
       var el = all[i];
-      // 1. Standard Jellyfin page structure
-      var page = el.closest('.page');
-      if (page && !page.classList.contains('hide')) return el;
-      // 2. Custom Tabs wraps content in .tabContent.is-active (no .page ancestor)
-      var tabContent = el.closest('.tabContent');
-      if (tabContent && tabContent.classList.contains('is-active')) return el;
-      // 3. Last resort: element is simply visible in the document
-      if (!page && !tabContent && el.offsetParent !== null) return el;
+      if (window.JellyfinEnhanced.helpers.isActiveTabContainer(el)) return el;
     }
     return null;
   }
@@ -142,16 +135,7 @@
     // .mainAnimatedPages when navigating to the admin dashboard — an observer
     // bound to the old element would become orphaned after returning to home
     // (issue 536). Routes to the shared multiplexed body observer.
-    var mountPending = false;
-    JE.helpers.createObserver('hidden-content-custom-tab', function () {
-      if (!mountPending) {
-        mountPending = true;
-        requestAnimationFrame(function () {
-          mountPending = false;
-          tryMount();
-        });
-      }
-    }, document.body, { childList: true, subtree: true });
+    JE.helpers.observeTabContainers('hidden-content-custom-tab', '.jellyfinenhanced.hidden-content', tryMount);
   }
 
   waitForHiddenContent(function (JE) {

@@ -675,5 +675,10 @@
     "pi_transcode_reason": "Årsag",
     "pi_container": "Beholder",
     "pi_audio": "Lyd",
-    "pi_subtitle": "Undertekster"
+    "pi_subtitle": "Undertekster",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }
