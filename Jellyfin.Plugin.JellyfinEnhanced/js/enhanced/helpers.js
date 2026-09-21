@@ -400,6 +400,80 @@
         return muiDrawerPanel.querySelector('[role="presentation"]') || muiDrawerPanel;
     }
 
+    /** @param {Element} element @returns {Element[]} All page/tab ancestors, innermost first. */
+    function getTabAncestors(element) {
+        const ancestors = [];
+        for (let node = element; node; node = node.parentElement) {
+            if (node.matches('.page, .tabContent')) ancestors.push(node);
+        }
+        return ancestors;
+    }
+
+    /**
+     * A visible page can contain inactive or nested tabs. A placeholder itself
+     * may be hidden until its renderer reveals it; only its page/tab wrappers
+     * determine whether it should mount.
+     * @param {Element} element - The feature's content placeholder.
+     * @returns {boolean} Whether every enclosing page/tab is active.
+     */
+    function isActiveTabContainer(element) {
+        if (!element.isConnected) return false;
+        const ancestors = getTabAncestors(element);
+        for (const ancestor of ancestors) {
+            if (ancestor.hidden || ancestor.classList.contains('hide')) return false;
+            if (ancestor.classList.contains('tabContent') && !ancestor.classList.contains('is-active')) return false;
+        }
+        return ancestors.length > 0 || element.offsetParent !== null;
+    }
+
+    /**
+     * Watch mounts and class-only activation without observing attributes on
+     * the whole document. The background-tab fallback also lets pollers stop
+     * when animation frames are suspended. The returned handle owns cleanup.
+     * @param {string} id - Unique lifecycle/subscriber ID.
+     * @param {string} selector - Selector for this feature's placeholders.
+     * @param {Function} callback - Reconcile the currently active placeholder.
+     * @returns {object} Lifecycle handle with teardown().
+     */
+    function observeTabContainers(id, selector, callback) {
+        const lifecycle = JE.core.lifecycle.register(id);
+        lifecycle.teardown();
+        let pending = false;
+        let disposed = false;
+        const observed = new Set();
+        const flush = () => {
+            if (disposed || !pending) return;
+            pending = false;
+            const ancestors = new Set();
+            document.querySelectorAll(selector).forEach(element => {
+                getTabAncestors(element).forEach(ancestor => ancestors.add(ancestor));
+            });
+            if (ancestors.size !== observed.size || [...ancestors].some(el => !observed.has(el))) {
+                observer.disconnect();
+                observed.clear();
+                ancestors.forEach(el => {
+                    observer.observe(el, { attributes: true, attributeFilter: ['class', 'hidden'] });
+                    observed.add(el);
+                });
+            }
+            callback();
+        };
+        const schedule = () => {
+            if (pending || disposed) return;
+            pending = true;
+            JE.core.dom.afterNextPaint(flush);
+        };
+        const observer = lifecycle.track(new MutationObserver(schedule));
+        lifecycle.track(JE.core.dom.onBodyMutation(id, schedule));
+        lifecycle.track(JE.core.navigation.onNavigate(schedule));
+        lifecycle.track(() => {
+            disposed = true;
+            pending = false;
+        });
+        schedule();
+        return lifecycle;
+    }
+
     /**
      * Wait for a condition to be true
      * @param {Function} condition - Function that returns boolean
@@ -544,6 +618,8 @@
         getHeaderRightContainer,
         getHeaderButtonTray,
         getSidebarContainer,
+        isActiveTabContainer,
+        observeTabContainers,
         waitForElement: (selector, timeout) => JE.core.dom.waitForElement(selector, timeout), // (core)
         waitForCondition,
         debounce,
