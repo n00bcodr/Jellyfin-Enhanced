@@ -71,11 +71,7 @@
    * Returns null if no visible container exists -- never falls back to a
    * stale DOM-cached copy.
    *
-   * Tries three anchors in order so the mount works regardless of how the
-   * host plugin (Custom Tabs, Plugin Pages, etc.) wraps the content:
-   *  1. Nearest `.page` ancestor that doesn't have `.hide`  (standard Jellyfin)
-   *  2. Nearest `.tabContent` ancestor that has `.is-active`  (Custom Tabs fallback)
-   *  3. Element is itself visible (offsetParent !== null)     (last resort)
+   * Requires both the page and its enclosing tab to be active.
    *
    * @returns {HTMLElement|null}
    */
@@ -83,11 +79,7 @@
     var all = document.querySelectorAll('.jellyfinenhanced.activity');
     for (var i = all.length - 1; i >= 0; i--) {
       var el = all[i];
-      var page = el.closest('.page');
-      if (page && !page.classList.contains('hide')) return el;
-      var tabContent = el.closest('.tabContent');
-      if (tabContent && tabContent.classList.contains('is-active')) return el;
-      if (!page && !tabContent && el.offsetParent !== null) return el;
+      if (window.JellyfinEnhanced.helpers.isActiveTabContainer(el)) return el;
     }
     return null;
   }
@@ -159,16 +151,7 @@
 
     window.addEventListener('hashchange', tryMount);
 
-    var mountPending = false;
-    JE.helpers.createObserver('activity-custom-tab', function () {
-      if (!mountPending) {
-        mountPending = true;
-        requestAnimationFrame(function () {
-          mountPending = false;
-          tryMount();
-        });
-      }
-    }, document.body, { childList: true, subtree: true });
+    JE.helpers.observeTabContainers('activity-custom-tab', '.jellyfinenhanced.activity', tryMount);
   }
 
   waitForActivity(function (JE) {
