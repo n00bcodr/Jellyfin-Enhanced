@@ -5,10 +5,10 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Primitives;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
@@ -133,11 +133,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 return;
                             }
 
-                            var provider = new FileExtensionContentTypeProvider();
-                            if (!provider.TryGetContentType(filePath, out var contentType))
-                            {
-                                contentType = "application/octet-stream";
-                            }
+                            var contentType = BrandingImageContentType.Get(filePath);
 
                             var isHead = HttpMethods.IsHead(context.Request.Method);
                             byte[]? bytes = isHead ? null : await File.ReadAllBytesAsync(filePath).ConfigureAwait(false);

@@ -22,7 +22,6 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Querying;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.StaticFiles;
 using Newtonsoft.Json.Linq;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using MediaBrowser.Controller;
@@ -7657,13 +7656,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!System.IO.File.Exists(filePath))
                 return NotFound();
 
-            var provider = new FileExtensionContentTypeProvider();
-            if (!provider.TryGetContentType(filePath, out var contentType))
-            {
-                contentType = "application/octet-stream";
-            }
-
-            return PhysicalFile(filePath, contentType);
+            return PhysicalFile(filePath, BrandingImageContentType.Get(filePath));
         }
 
         [HttpPost("DeleteBrandingImage")]

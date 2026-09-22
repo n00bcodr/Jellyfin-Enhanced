@@ -352,7 +352,7 @@ See [CSS Customization Guide](../advanced/css-customization.md) for complete CSS
 
 **Requirements:**
 
-- [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) installed
+- Branding middleware enabled (the default); File Transformation is not required
 - Admin access to Jellyfin
 
 **Steps:**
@@ -365,9 +365,9 @@ See [CSS Customization Guide](../advanced/css-customization.md) for complete CSS
 
 4. Upload your images:
 
-   - Icon Transparent (header logo)
-   - Banner Light (dark theme splash)
-   - Banner Dark (light theme splash)
+   - Icon Transparent (dashboard and server menu icon)
+   - Banner Light (page header and splash for dark themes)
+   - Banner Dark (page header and splash for light themes)
    - Favicon (browser icon)
 
 5. Click `Save`

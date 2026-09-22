@@ -819,7 +819,7 @@ Upload your own logos, banners, and favicon.
 
 **Features:**
 
-- Custom Jellyfin logo (header)
+- Custom dashboard icon and page header banners
 - Custom splash banners (light/dark themes)
 - Custom favicon (browser tab icon)
 - Files stored in plugin config folder
@@ -831,16 +831,16 @@ Upload your own logos, banners, and favicon.
 2. Navigate to **Other Settings** tab
 3. Find **Custom Branding** section
 4. Upload your custom images:
-   - Icon Transparent (header logo)
-   - Banner Light (dark theme splash)
-   - Banner Dark (light theme splash)
+   - Icon Transparent (dashboard and server menu icon)
+   - Banner Light (page header and splash for dark themes)
+   - Banner Dark (page header and splash for light themes)
    - Favicon (browser icon)
 5. Click **Save**
 6. Force refresh browser ++ctrl+f5++
 
 **Requirements:**
 
-- Requires [file-transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
+- Branding middleware enabled (the default); File Transformation is not required
 - Recommended image formats: PNG, SVG
 - Files stored in: `/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/custom_branding/`
 
