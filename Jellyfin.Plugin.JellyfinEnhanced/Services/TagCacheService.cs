@@ -68,8 +68,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // SeriesId for Spoiler Guard stripping. v3 preserves authoritative
         // Matroska LanguageBCP47/LanguageIETF audio languages instead of the
         // region-less values exposed by Jellyfin/FFmpeg.
+        // v4 picks a real episode with streams as the Series/Season tag source.
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        private const int CurrentCacheSchemaVersion = 3;
+        private const int CurrentCacheSchemaVersion = 4;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -1517,10 +1518,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     ParentId = container.Id,
                     IncludeItemTypes = new[] { BaseItemKind.Episode },
                     Recursive = true,
-                    Limit = 1,
+                    IsVirtualItem = false,
+                    Limit = 20,
                     OrderBy = new[] { (ItemSortBy.PremiereDate, JSortOrder.Ascending) }
                 };
-                return _libraryManager.GetItemList(epQuery).FirstOrDefault();
+                // Prefer a real, non-special episode with streams so the series gets tags.
+                var episodes = _libraryManager.GetItemList(epQuery);
+                return episodes.FirstOrDefault(e => e.GetMediaSources(false).Count > 0 && (e as MediaBrowser.Controller.Entities.TV.Episode)?.ParentIndexNumber != 0)
+                    ?? episodes.FirstOrDefault(e => e.GetMediaSources(false).Count > 0)
+                    ?? episodes.FirstOrDefault();
             }
             catch (Exception ex)
             {
