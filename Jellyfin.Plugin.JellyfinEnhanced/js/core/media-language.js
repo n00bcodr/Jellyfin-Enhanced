@@ -243,8 +243,20 @@
         return baseLanguageFlags[name] || baseLanguageFlags[code] || null;
     }
 
+    /**
+     * Human-readable English name for a language code. `zxx` has no Intl
+     * display name, so it gets a localized "No dialogue" label instead.
+     * @param {string} code
+     * @returns {string}
+     */
+    function displayName(code) {
+        if (parseLanguageTag(code)?.base === 'zxx') return JE.t('audio_language_no_dialogue');
+        return new Intl.DisplayNames(['en'], { type: 'language' }).of(code);
+    }
+
     JE.core.mediaLanguage = {
         parseLanguageTag,
+        displayName,
         resolveFlag,
         flagSrc,
         baseLanguageFlags,

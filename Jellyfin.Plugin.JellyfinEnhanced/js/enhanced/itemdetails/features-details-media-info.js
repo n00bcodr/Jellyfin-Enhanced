@@ -348,13 +348,17 @@
      * Fetches one item through Enhanced's region-aware tag-data projection.
      * @param {string} userId The user ID.
      * @param {string} itemId The item ID.
+     * @param {string|null} [mediaSourceId=null] Optional selected media source.
      * @returns {Promise<object|null>} The projected item or null.
      */
-    async function fetchTagDataItem(userId, itemId) {
+    async function fetchTagDataItem(userId, itemId, mediaSourceId = null) {
         try {
             const response = await ApiClient.ajax({
                 type: 'POST',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`),
+                url: ApiClient.getUrl(
+                    `/JellyfinEnhanced/tag-data/${userId}`,
+                    mediaSourceId ? { mediaSourceId } : {}
+                ),
                 data: JSON.stringify([itemId]),
                 contentType: 'application/json',
                 dataType: 'json'
@@ -387,6 +391,7 @@
                 url: ApiClient.getUrl('/Items', {
                     ParentId: parentId,
                     IncludeItemTypes: 'Episode',
+                    IsVirtualItem: false,
                     Recursive: true,
                     SortBy: 'PremiereDate',
                     SortOrder: 'Ascending',
@@ -570,16 +575,19 @@
             try {
                 const userId = ApiClient.getCurrentUserId();
 
-                // Prefer Enhanced's tag-data projection because it restores
-                // authoritative Matroska BCP-47 stream languages. Fall back to
-                // the native Jellyfin item to preserve existing behaviour if the
-                // Enhanced endpoint is unavailable.
-                const item = mediaSourceId
-                    ? await ApiClient.getItem(userId, itemId)
-                    : (await fetchTagDataItem(userId, itemId)
-                        || (JE.helpers?.getItemCached
-                            ? await JE.helpers.getItemCached(itemId, { userId })
-                            : await ApiClient.getItem(userId, itemId)));
+                // Always prefer Enhanced's region-aware projection, including
+                // when a media version is selected. Native Jellyfin MediaStreams
+                // can reduce Matroska LanguageBCP47 / LanguageIETF values such as
+                // en-US to their base language (eng). The selected source is
+                // therefore filtered server-side before the same resolver used by
+                // language tags projects its streams.
+                //
+                // Keep the native item only as a compatibility fallback if the
+                // Enhanced endpoint itself is unavailable.
+                const item = await fetchTagDataItem(userId, itemId, mediaSourceId)
+                    || (JE.helpers?.getItemCached
+                        ? await JE.helpers.getItemCached(itemId, { userId })
+                        : await ApiClient.getItem(userId, itemId));
 
                 let sourceItem = item;
 
@@ -609,7 +617,7 @@
                         const langCode = stream.Language;
                         if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
                             try {
-                                const langName = new Intl.DisplayNames(['en'], { type: 'language' }).of(langCode);
+                                const langName = JE.core.mediaLanguage.displayName(langCode);
                                 languages.add(JSON.stringify({ name: langName, code: langCode }));
                             } catch (e) {
                                 languages.add(JSON.stringify({ name: langCode.toUpperCase(), code: langCode }));

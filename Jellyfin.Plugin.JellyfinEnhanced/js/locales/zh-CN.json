@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "总观看进度",
     "file_size_tooltip": "总档案大小",
     "audio_language_tooltip": "音讯语言",
+    "audio_language_no_dialogue": "无对白",
     "remove_continue_watching_error": "无法移除项目：找不到用户或项目 ID。",
     "remove_continue_watching_error_api": "无法移除项目：{error}",
     "unknown_error": "未知错误",
@@ -674,5 +675,10 @@
     "pi_transcode_reason": "原因",
     "pi_container": "封装格式",
     "pi_audio": "音频",
-    "pi_subtitle": "字幕"
+    "pi_subtitle": "字幕",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }

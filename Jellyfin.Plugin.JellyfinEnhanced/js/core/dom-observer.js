@@ -33,6 +33,47 @@
     /** @type {MutationObserver|null} */
     let bodyObserver = null;
 
+    // Priority-0 subscribers are batched and run after the next paint. Jellyfin
+    // mutates the DOM from requestAnimationFrame callbacks (blurhash canvases),
+    // so running subscribers in the observer microtask forced a layout pass per
+    // callback whenever they read geometry, freezing the home screen for seconds.
+    /** @type {MutationRecord[]} */
+    let pendingMutations = [];
+    let flushScheduled = false;
+    let flushGeneration = 0;
+
+    /**
+     * Run `fn` after the next paint, when layout is clean. The timer fallback
+     * covers hidden tabs, where animation frames do not fire.
+     * @param {Function} fn
+     */
+    function afterNextPaint(fn) {
+        let done = false;
+        const run = () => {
+            if (done) return;
+            done = true;
+            clearTimeout(fallback);
+            fn();
+        };
+        const fallback = setTimeout(run, 250);
+        requestAnimationFrame(() => setTimeout(run, 0));
+    }
+
+    function flushPendingMutations() {
+        flushScheduled = false;
+        const batch = pendingMutations;
+        pendingMutations = [];
+        if (batch.length === 0) return;
+        for (const [id, sub] of bodySubscribers) {
+            if (sub.priority > 0) continue;
+            try {
+                sub.callback(batch);
+            } catch (err) {
+                console.error(`🪼 Jellyfin Enhanced: Error in body observer subscriber "${id}":`, err);
+            }
+        }
+    }
+
     function ensureBodyObserver() {
         if (bodyObserver) return;
         bodyObserver = new MutationObserver((mutations) => {
@@ -50,12 +91,21 @@
 
             // NOTE: Callbacks may call unsubscribe()/disconnect(), deleting from this Map
             // during iteration. ES spec guarantees Map iteration handles concurrent deletion.
+            // Priority subscribers (sorted first) stay synchronous so they can act before paint.
             for (const [id, sub] of bodySubscribers) {
+                if (sub.priority <= 0) break;
                 try {
                     sub.callback(mutations);
                 } catch (err) {
                     console.error(`🪼 Jellyfin Enhanced: Error in body observer subscriber "${id}":`, err);
                 }
+            }
+
+            for (let i = 0; i < mutations.length; i++) pendingMutations.push(mutations[i]);
+            if (!flushScheduled) {
+                flushScheduled = true;
+                const generation = flushGeneration;
+                afterNextPaint(() => { if (generation === flushGeneration) flushPendingMutations(); });
             }
         });
         bodyObserver.observe(document.body, { childList: true, subtree: true });
@@ -66,6 +116,9 @@
         if (bodyObserver && bodySubscribers.size === 0) {
             bodyObserver.disconnect();
             bodyObserver = null;
+            flushGeneration++;
+            flushScheduled = false;
+            pendingMutations = [];
             console.log('🪼 Jellyfin Enhanced: Shared body observer stopped (no subscribers)');
         }
     }
@@ -211,6 +264,9 @@
             bodyObserver.disconnect();
             bodyObserver = null;
         }
+        flushGeneration++;
+        flushScheduled = false;
+        pendingMutations = [];
         console.log('🪼 Jellyfin Enhanced: All observers and body subscribers disconnected');
     }
 
@@ -311,6 +367,7 @@
         disconnectObserver,
         disconnectAllObservers,
         waitForElement,
+        afterNextPaint,
         /** @returns {number} */
         getObserverCount: () => activeObservers.size,
         /** @returns {number} */

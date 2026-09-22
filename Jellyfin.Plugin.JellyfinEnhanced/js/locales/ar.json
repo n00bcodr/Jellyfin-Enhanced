@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "إجمالي تقدم المشاهدة",
     "file_size_tooltip": "إجمالي حجم الملف",
     "audio_language_tooltip": "لغة (لغات) الصوت",
+    "audio_language_no_dialogue": "بدون حوار",
     "remove_continue_watching_error": "تعذر إزالة العنصر: لم يتم العثور على المستخدم أو معرّف العنصر.",
     "remove_continue_watching_error_api": "غير قادر على إزالة العنصر: {error}",
     "unknown_error": "خطأ غير معروف",
@@ -674,5 +675,10 @@
     "pi_transcode_reason": "السبب",
     "pi_container": "الحاوية",
     "pi_audio": "الصوت",
-    "pi_subtitle": "الترجمات"
+    "pi_subtitle": "الترجمات",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }

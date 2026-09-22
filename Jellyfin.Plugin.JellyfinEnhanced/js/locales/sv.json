@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Total tittarprogress",
     "file_size_tooltip": "Total filstorlek",
     "audio_language_tooltip": "Ljudspråk",
+    "audio_language_no_dialogue": "Ingen dialog",
     "remove_continue_watching_error": "Kunde inte ta bort objekt: Användar- eller objekt-ID hittades inte.",
     "remove_continue_watching_error_api": "Kunde inte ta bort objekt: {error}",
     "unknown_error": "Okänt fel",
@@ -674,5 +675,10 @@
     "pi_transcode_reason": "Orsak",
     "pi_container": "Behållare",
     "pi_audio": "Ljud",
-    "pi_subtitle": "Undertexter"
+    "pi_subtitle": "Undertexter",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }

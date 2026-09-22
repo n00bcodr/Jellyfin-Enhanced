@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Progrés total de visualització",
     "file_size_tooltip": "Mida total del fitxer",
     "audio_language_tooltip": "Idioma(es) d'àudio",
+    "audio_language_no_dialogue": "Sense diàleg",
     "remove_continue_watching_error": "No s'ha pogut treure: Usuari o ID no trobat.",
     "remove_continue_watching_error_api": "No s'ha pogut treure: {error}",
     "unknown_error": "Error desconegut",
@@ -674,5 +675,10 @@
     "pi_transcode_reason": "Motiu",
     "pi_container": "Contenidor",
     "pi_audio": "Àudio",
-    "pi_subtitle": "Subtítols"
+    "pi_subtitle": "Subtítols",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }

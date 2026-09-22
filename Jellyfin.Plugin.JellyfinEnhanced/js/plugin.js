@@ -740,6 +740,7 @@
                 // enhanced
                 'enhanced/config.js',
                 'enhanced/helpers.js',
+                'enhanced/header-actions.js',
                 'enhanced/native-tabs.js',
                 'tags/tag-pipeline.js',
                 'enhanced/icons.js',
@@ -828,6 +829,7 @@
                 'enhanced/bookmarks/bookmarks-library-init.js',
                 'enhanced/player/osd-rating.js',
                 'enhanced/player/pausescreen.js',
+                'enhanced/player/playback-rating-badge.js',
 
                 // elsewhere
                 'elsewhere/elsewhere.js',
@@ -1005,6 +1007,7 @@
             // Initialize the unified tag pipeline AFTER all tag renderers have registered
             if (typeof JE.tagPipeline?.initialize === 'function') JE.tagPipeline.initialize();
             if (typeof JE.initializeOsdRating === 'function') JE.initializeOsdRating();
+            if (typeof JE.initializePlaybackRatingBadge === 'function' && JE.pluginConfig?.ShowPlaybackRatingBadge) JE.initializePlaybackRatingBadge();
             // Skip hidden content initialization when feature is disabled server-wide — JE.hiddenContent stays undefined, safely disabling all downstream consumers
             if (typeof JE.initializeHiddenContent === 'function' && JE.pluginConfig?.HiddenContentEnabled) JE.initializeHiddenContent();
             // Spoiler Guard loads its per-user enabled-series list once at startup. The toggle button on series detail pages reads from that cache.

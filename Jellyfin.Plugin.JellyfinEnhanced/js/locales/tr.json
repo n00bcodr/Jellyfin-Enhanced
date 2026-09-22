@@ -257,6 +257,7 @@
     "watch_progress_tooltip": "Toplam izleme ilerlemesi",
     "file_size_tooltip": "Toplam Dosya Boyutu",
     "audio_language_tooltip": "Ses Dilleri",
+    "audio_language_no_dialogue": "Diyalog yok",
     "remove_continue_watching_error": "Öğe kaldırılamadı: Kullanıcı veya Öğe ID bulunamadı.",
     "remove_continue_watching_error_api": "Öğe kaldırılamadı: {error}",
     "unknown_error": "Bilinmeyen hata",
@@ -674,5 +675,10 @@
     "pi_transcode_reason": "Neden",
     "pi_container": "Kapsayıcı",
     "pi_audio": "Ses",
-    "pi_subtitle": "Altyazılar"
+    "pi_subtitle": "Altyazılar",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }

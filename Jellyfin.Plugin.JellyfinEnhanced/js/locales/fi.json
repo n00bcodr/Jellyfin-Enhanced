@@ -186,6 +186,7 @@
     "downloads_status_downloading": "Ladataan",
     "active_streams_count": "{count} Aktiivinen Suoratoisto|{count} Aktiivisia Suoratoistoja",
     "audio_language_tooltip": "Äänen Kielet",
+    "audio_language_no_dialogue": "Ei dialogia",
     "jellyseerr_existing_issues": "Ongelmat",
     "hidden_content_show_button_library_desc": "Näytä piilotuspainike Jellyfinin omissa kirjastokorteissa",
     "bookmark_no_label": "Ei nimikettä",
@@ -674,5 +675,10 @@
     "pi_transcode_reason": "Syy",
     "pi_container": "Säiliö",
     "pi_audio": "Ääni",
-    "pi_subtitle": "Tekstitykset"
+    "pi_subtitle": "Tekstitykset",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }

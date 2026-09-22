@@ -235,6 +235,7 @@
     "downloads_status_downloading": "Downloading",
     "active_streams_count": "{count} Active Stream|{count} Active Streams",
     "audio_language_tooltip": "Audio Language(s)",
+    "audio_language_no_dialogue": "സംഭാഷണമില്ല",
     "jellyseerr_existing_issues": "Issues",
     "spoiler_blur_enabled_movie_toast": "Spoiler Guard: On",
     "hidden_content_show_button_library_desc": "Show the hide button on native Jellyfin library cards",
@@ -674,5 +675,10 @@
     "jellyseerr_btn_view_status": "View Status",
     "jellyseerr_report_issue_submitting": "Submitting…",
     "jellyseerr_season_status_processing": "Processing",
-    "jellyseerr_toast_collection_requested": "Requested"
+    "jellyseerr_toast_collection_requested": "Requested",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }

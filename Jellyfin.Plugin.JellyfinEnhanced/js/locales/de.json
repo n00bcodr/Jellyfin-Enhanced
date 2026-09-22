@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Gesamtfortschritt",
     "file_size_tooltip": "Gesamtdateigröße",
     "audio_language_tooltip": "Audiosprache(n)",
+    "audio_language_no_dialogue": "Kein Dialog",
     "remove_continue_watching_error": "Element konnte nicht entfernt werden: Benutzer- oder Element-ID nicht gefunden.",
     "remove_continue_watching_error_api": "Element konnte nicht entfernt werden: {error}",
     "unknown_error": "Unbekannter Fehler",
@@ -674,5 +675,10 @@
     "pi_transcode_reason": "Grund",
     "pi_container": "Container",
     "pi_audio": "Audio",
-    "pi_subtitle": "Untertitel"
+    "pi_subtitle": "Untertitel",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }

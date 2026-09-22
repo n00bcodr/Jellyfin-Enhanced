@@ -137,6 +137,7 @@
                     url: ApiClient.getUrl('/Items', {
                         ParentId: parentId,
                         IncludeItemTypes: 'Episode',
+                        IsVirtualItem: false,
                         Recursive: true,
                         SortBy: 'PremiereDate',
                         SortOrder: 'Ascending',
@@ -810,6 +811,36 @@
                    (unwatched count badge, played checkmark). Indicators are always top-right in Jellyfin.
                    Only affects containers configured for the top-right position. */
                 ${buildIndicatorOffsetCSS()}
+            `);
+
+            // Card-width sizing; mobile layout and browsers without container queries keep the per-tag rules.
+            JE.helpers.addCSS('je-tag-card-scale', `
+                @supports (container-type: inline-size) {
+                    .je-tag-host { container-type: inline-size; }
+                    html:not(.layout-mobile) .je-tag-host .quality-overlay-container { gap: clamp(1px, 1.8cqw, 4px); }
+                    html:not(.layout-mobile) .je-tag-host .quality-overlay-label {
+                        font-size: clamp(9px, 6.6cqw, 13.6px);
+                        padding: clamp(0px, 0.6cqw, 2px) clamp(4px, 4.2cqw, 10px);
+                        border-radius: clamp(2px, 2.4cqw, 5px);
+                    }
+                    html:not(.layout-mobile) .je-tag-host .language-overlay-container { gap: clamp(1px, 1.8cqw, 3px); }
+                    html:not(.layout-mobile) .je-tag-host .language-flag { width: clamp(16px, 15cqw, 32px); }
+                    html:not(.layout-mobile) .je-tag-host .rating-overlay-container { gap: clamp(2px, 1.8cqw, 3px); }
+                    html:not(.layout-mobile) .je-tag-host .rating-tag {
+                        font-size: clamp(9px, 6.8cqw, 13px);
+                        padding: clamp(2px, 2cqw, 4px) clamp(4px, 4.5cqw, 8px);
+                        gap: clamp(2px, 2.2cqw, 4px);
+                    }
+                    html:not(.layout-mobile) .je-tag-host .rating-star-icon { font-size: clamp(9px, 7cqw, 14px) !important; }
+                    html:not(.layout-mobile) .je-tag-host .rating-tomato-icon { width: clamp(9px, 7cqw, 14px); height: clamp(9px, 7cqw, 14px); }
+                    html:not(.layout-mobile) .je-tag-host .genre-overlay-container { gap: clamp(2px, 1.8cqw, 4px); }
+                    html:not(.layout-mobile) .je-tag-host .genre-tag {
+                        width: clamp(18px, 15cqw, 30px);
+                        height: clamp(18px, 15cqw, 30px);
+                        min-width: clamp(18px, 15cqw, 30px);
+                    }
+                    html:not(.layout-mobile) .je-tag-host .genre-tag .material-symbols-outlined { font-size: clamp(11px, 9.5cqw, 20px); }
+                }
             `);
 
             // "Hide Tags on Hover" setting: fully hides the tag layer on hover.

@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Progresso total de visualização",
     "file_size_tooltip": "Tamanho Total do Arquivo",
     "audio_language_tooltip": "Idioma(s) do Áudio",
+    "audio_language_no_dialogue": "Sem diálogo",
     "remove_continue_watching_error": "Não foi possível remover o item: ID do usuário ou do item não encontrado.",
     "remove_continue_watching_error_api": "Não foi possível remover o item: {error}",
     "unknown_error": "Erro desconhecido",
@@ -674,5 +675,10 @@
     "pi_transcode_reason": "Motivo",
     "pi_container": "Contentor",
     "pi_audio": "Áudio",
-    "pi_subtitle": "Legendas"
+    "pi_subtitle": "Legendas",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }

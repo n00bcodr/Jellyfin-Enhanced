@@ -3177,6 +3177,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ShowUserRatingOnPosters,
                 config.ShowUserRatingDash,
                 config.PauseScreenEnabled,
+                config.ShowPlaybackRatingBadge,
                 config.QualityTagsEnabled,
                 config.ShowResolutionTag,
                 config.ShowSourceTag,
@@ -7123,7 +7124,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpPost("tag-data/{userId}")]
         [Authorize]
         [Produces("application/json")]
-        public IActionResult GetTagData(Guid userId, [FromBody] string[] ids)
+        public IActionResult GetTagData(
+            Guid userId,
+            [FromBody] string[] ids,
+            [FromQuery] string? mediaSourceId = null)
         {
             var authorizationResult = AuthorizeUserAccess(userId, out var user);
             if (authorizationResult != null)
@@ -7139,6 +7143,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (ids.Length > 200)
             {
                 return BadRequest(new { error = "Maximum 200 items per request" });
+            }
+
+            // A selected version must go through the same projection as the normal
+            // tag-data path. Filtering here prevents details-page callers from
+            // bypassing MediaStreamLanguageResolver and losing Matroska BCP-47
+            // regions (for example en-US -> eng).
+            //
+            // Keeping this selection inside tag-data also means future callers do
+            // not need a second language-resolution implementation.
+            List<MediaSourceInfo> SelectTagDataMediaSources(
+                IEnumerable<MediaSourceInfo> sources)
+            {
+                if (string.IsNullOrWhiteSpace(mediaSourceId))
+                {
+                    return sources.ToList();
+                }
+
+                return sources
+                    .Where(source => string.Equals(
+                        source.Id,
+                        mediaSourceId,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
             }
 
             // Spoiler Guard short-circuit: when the master switch + any tag-relevant
@@ -7231,7 +7258,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         List<object>? stubSources = null;
                         if (!spStripGenres)
                         {
-                            var stubMediaSources = spEp.GetMediaSources(false);
+                            var stubMediaSources =
+                                SelectTagDataMediaSources(spEp.GetMediaSources(false));
                             stubStreams = stubMediaSources
                                 .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spEp.Path))
                                 .Where(resolved =>
@@ -7346,7 +7374,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         List<object>? stubStreams = null;
                         if (!spStripGenres)
                         {
-                            var stubMs = spMovie.GetMediaSources(false);
+                            var stubMs =
+                                SelectTagDataMediaSources(spMovie.GetMediaSources(false));
                             stubStreams = stubMs
                                 .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spMovie.Path))
                                 .Where(resolved =>
@@ -7462,7 +7491,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 List<object>? trimmedSources = null;
                 if (!isContainer)
                 {
-                    var mediaSources = item.GetMediaSources(false);
+                    var mediaSources =
+                        SelectTagDataMediaSources(item.GetMediaSources(false));
                     // OPT-5: Only include fields tag renderers need from MediaStreams
                     trimmedStreams = mediaSources
                         .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, item.Path))

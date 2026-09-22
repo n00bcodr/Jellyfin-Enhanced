@@ -210,6 +210,7 @@
     "downloads_status_downloading": "Завантажується",
     "active_streams_count": "{count} активний потік|{count} активних потоків",
     "audio_language_tooltip": "Мова(и) аудіо",
+    "audio_language_no_dialogue": "Без діалогів",
     "jellyseerr_existing_issues": "Проблеми",
     "spoiler_blur_enabled_movie_toast": "Захист від спойлерів: увімкнено",
     "hidden_content_show_button_library_desc": "Показати кнопку приховування на картках бібліотеки Jellyfin",
@@ -674,5 +675,10 @@
     "pi_transcode_reason": "Причина",
     "pi_container": "Контейнер",
     "pi_audio": "Аудіо",
-    "pi_subtitle": "Субтитри"
+    "pi_subtitle": "Субтитри",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }

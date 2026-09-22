@@ -187,6 +187,7 @@
     "downloads_status_downloading": "מוריד",
     "active_streams_count": "שידור פעיל {count}|{count} שידורים פעילים",
     "audio_language_tooltip": "שפ(ו)ת אודיו",
+    "audio_language_no_dialogue": "ללא דיאלוג",
     "jellyseerr_existing_issues": "תקלות",
     "hidden_content_show_button_library_desc": "הצג את כפתור ההסתרה בכרטיסי הספרייה המקוריים של Jellyfin",
     "bookmark_no_label": "ללא תווית",
@@ -674,5 +675,10 @@
     "pi_transcode_reason": "סיבה",
     "pi_container": "מיכל",
     "pi_audio": "שמע",
-    "pi_subtitle": "כתוביות"
+    "pi_subtitle": "כתוביות",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }

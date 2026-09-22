@@ -257,6 +257,7 @@
     "watch_progress_tooltip": "Samlet seerfremskridt",
     "file_size_tooltip": "Samlet filstørrelse",
     "audio_language_tooltip": "Lydsprog",
+    "audio_language_no_dialogue": "Ingen dialog",
     "remove_continue_watching_error": "Kunne ikke fjerne element: Bruger- eller element-ID ikke fundet.",
     "remove_continue_watching_error_api": "Kunne ikke fjerne element: {error}",
     "unknown_error": "Ukendt fejl",
@@ -674,5 +675,10 @@
     "pi_transcode_reason": "Årsag",
     "pi_container": "Beholder",
     "pi_audio": "Lyd",
-    "pi_subtitle": "Undertekster"
+    "pi_subtitle": "Undertekster",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }

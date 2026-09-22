@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Total Watch Progress",
     "file_size_tooltip": "Total File Size",
     "audio_language_tooltip": "Audio Language(s)",
+    "audio_language_no_dialogue": "No dialogue",
     "remove_continue_watching_error": "Could not remove item: User or Item ID not found.",
     "remove_continue_watching_error_api": "Unable to remove item: {error}",
     "unknown_error": "Unknown error",
@@ -674,5 +675,10 @@
     "pi_transcode_reason": "Reason",
     "pi_container": "Container",
     "pi_audio": "Audio",
-    "pi_subtitle": "Subtitles"
+    "pi_subtitle": "Subtitles",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }

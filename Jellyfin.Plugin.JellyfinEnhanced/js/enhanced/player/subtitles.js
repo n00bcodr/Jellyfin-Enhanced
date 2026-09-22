@@ -7,6 +7,29 @@
     let subtitleObserver = null;
     let currentSubtitleStyle = {};
 
+    // Marks elements this module has styled. Jellyfin's own Custom subtitle mode writes
+    // the same inline properties, so cleanup must only touch marked elements, and puts
+    // back the inline style Jellyfin had set before this module overwrote it.
+    const STYLED_ATTR = 'data-je-subtitle-styled';
+    const ORIGINAL_STYLE_ATTR = 'data-je-original-style';
+
+    // Jellyfin renders a secondary subtitle track in its own sibling element inside .videoSubtitles.
+    const TEXT_SELECTOR = '.videoSubtitlesInner, .videoSecondarySubtitlesInner';
+
+    function markStyled(el) {
+        if (el.hasAttribute(STYLED_ATTR)) return;
+        el.setAttribute(ORIGINAL_STYLE_ATTR, el.getAttribute('style') || '');
+        el.setAttribute(STYLED_ATTR, '');
+    }
+
+    function restoreOriginalStyle(el) {
+        const original = el.getAttribute(ORIGINAL_STYLE_ATTR);
+        el.removeAttribute(STYLED_ATTR);
+        el.removeAttribute(ORIGINAL_STYLE_ATTR);
+        if (original) el.setAttribute('style', original);
+        else el.removeAttribute('style');
+    }
+
     /**
      * Preset styles for subtitles.
      * @type {Array<object>}
@@ -84,16 +107,9 @@
 
         containers.forEach(container => {
             if (disabled) {
-                // Remove JE overrides — let vanilla Jellyfin control position
-                container.style.removeProperty('position');
-                container.style.removeProperty('left');
-                container.style.removeProperty('top');
-                container.style.removeProperty('bottom');
-                container.style.removeProperty('transform');
-                container.style.removeProperty('width');
-                container.style.removeProperty('text-align');
-                container.style.removeProperty('gap');
+                if (container.hasAttribute(STYLED_ATTR)) restoreOriginalStyle(container);
             } else {
+                markStyled(container);
                 const xPct = JE.currentSettings.subtitleHorizontalPosition ?? 50;
                 const yPct = JE.currentSettings.subtitleVerticalPosition ?? 95;
                 container.style.setProperty('position', 'absolute', 'important');
@@ -111,35 +127,13 @@
     }
 
     /**
-     * Removes all JE-injected subtitle styles from existing elements.
-     * Called when the user disables custom subtitle styles.
+     * Removes JE-injected subtitle styles from the elements this module styled.
+     * Called when the user disables custom subtitle styles. Elements it never
+     * styled are left alone so Jellyfin's own subtitle appearance stays intact.
      */
     function removeInjectedStyles() {
-        document.querySelectorAll('.videoSubtitlesInner').forEach(el => {
-            el.style.removeProperty('background-color');
-            el.style.removeProperty('color');
-            el.style.removeProperty('font-size');
-            el.style.removeProperty('font-family');
-            el.style.removeProperty('text-shadow');
-            el.style.removeProperty('border-radius');
-            el.style.removeProperty('padding');
-            el.style.removeProperty('font-weight');
-            el.style.removeProperty('font-style');
-            el.style.removeProperty('font-variant');
-            el.style.removeProperty('margin-top');
-            el.style.removeProperty('margin-bottom');
-        });
-        document.querySelectorAll('.videoSubtitles').forEach(container => {
-            container.style.removeProperty('position');
-            container.style.removeProperty('left');
-            container.style.removeProperty('top');
-            container.style.removeProperty('bottom');
-            container.style.removeProperty('transform');
-            container.style.removeProperty('width');
-            container.style.removeProperty('max-width');
-            container.style.removeProperty('text-align');
-            container.style.removeProperty('gap');
-        });
+        document.querySelectorAll(`.videoSubtitlesInner[${STYLED_ATTR}], .videoSecondarySubtitlesInner[${STYLED_ATTR}], .videoSubtitles[${STYLED_ATTR}]`)
+            .forEach(restoreOriginalStyle);
         // Remove legacy ::cue overrides
         const styleElement = document.getElementById('je-html-videoplayer-cuestyle');
         if (styleElement?.sheet) {
@@ -163,6 +157,7 @@
      */
     function forceApplyInlineStyles(element) {
         if (!element || JE.currentSettings.disableCustomSubtitleStyles) return;
+        markStyled(element);
 
         // Apply all custom styles directly to videoSubtitlesInner
         element.style.setProperty('background-color', currentSubtitleStyle.bgColor, 'important');
@@ -186,6 +181,10 @@
         element.style.setProperty('font-style', 'normal', 'important');
         element.style.setProperty('font-variant', 'normal', 'important');
 
+        // The secondary element keeps Jellyfin's own spacing (margins are set by its
+        // stylesheet), which is what separates it from the primary line.
+        if (element.classList.contains('videoSecondarySubtitlesInner')) return;
+
         // Vanilla Jellyfin's own subtitle-position slider writes its offset as a
         // margin directly on this same element, independent of anything JE sets.
         // Left alone it stacks on top of our container-level positioning, so the
@@ -203,11 +202,10 @@
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
                     if (node.nodeType === 1) {
-                        if (node.classList.contains('videoSubtitlesInner')) {
+                        if (node.matches(TEXT_SELECTOR)) {
                             forceApplyInlineStyles(node);
-                        } else if (node.querySelector) {
-                            const inner = node.querySelector('.videoSubtitlesInner');
-                            if (inner) forceApplyInlineStyles(inner);
+                        } else if (node.querySelectorAll) {
+                            node.querySelectorAll(TEXT_SELECTOR).forEach(forceApplyInlineStyles);
                         }
                         // Also reapply position whenever a subtitle container appears
                         if (node.classList.contains('videoSubtitles') || node.querySelector?.('.videoSubtitles')) {
@@ -227,7 +225,7 @@
         currentSubtitleStyle = { textColor, bgColor, fontSize, fontFamily, textShadow };
 
         // Force-apply to any subtitle elements that might already exist
-        document.querySelectorAll('.videoSubtitlesInner').forEach(forceApplyInlineStyles);
+        document.querySelectorAll(TEXT_SELECTOR).forEach(forceApplyInlineStyles);
 
         // Apply position to the container
         applySubtitlePosition();

@@ -384,6 +384,20 @@ See [CSS Customization Guide](../advanced/css-customization.md) for complete CSS
 
 - [x] Files stored in plugin config folder
 
+### Why aren't my subtitles using the Jellyfin Enhanced styling?
+
+Jellyfin Enhanced can only style subtitles that Jellyfin draws as text.
+
+- **ASS/SSA, PGS and VobSub subtitles** are drawn as images or by Jellyfin's own renderer, so their look comes from the subtitle track and cannot be changed. Choose a text-based track (for example SRT) instead.
+- **Position** only works when Jellyfin's **Subtitle styling** (User Preferences → Subtitles) is set to **Custom**. Chrome uses the browser's native captions in **Auto** mode, which cannot be repositioned.
+- **Burned-in subtitles** (drawn into the video during a transcode) cannot be changed.
+
+See [Customizable Subtitles](../enhanced/enhanced-features.md#customizable-subtitles) for the full list.
+
+### How do I turn off subtitle styling and use Jellyfin's own?
+
+Enable **Disable Custom Subtitle Styles** in the Enhanced panel → Settings and reload the page. Your Jellyfin **User Preferences** → **Subtitles** settings then apply unchanged. To do it for every user, enable **Disable Custom Subtitle Styles by default** in the plugin settings, save, then use **Overwrite everyone's personal settings** in Quick Actions. The default alone only applies to users who have no saved settings yet.
+
 ### Can I change tag positions?
 
 Yes, via Enhanced panel settings:

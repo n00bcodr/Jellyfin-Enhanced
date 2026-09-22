@@ -4,6 +4,20 @@ Jellyfin Enhanced bundles dozens of features into one convenient plugin. This gu
 
 ---
 
+## Header Shortcuts
+
+JE shortcuts share a single header row with Jellyfin's controls. Random gets first priority, and other enabled shortcuts stay visible while there is room. Tap **More (•••)** for the remaining shortcuts. As the window widens, shortcuts return to the header automatically.
+
+The More menu uses labeled buttons. On short screens, previous/next buttons show the remaining actions without scrolling. Close it by choosing an action, clicking outside, or pressing Escape.
+
+![JE shortcuts fitting beside Jellyfin's native controls](../images/header-shortcuts.png)
+
+![Remaining shortcuts in the More menu on a phone](../images/header-shortcuts-more.png)
+
+![Live header resizing from desktop to a small phone](../images/header-desktop-to-phone.gif)
+
+---
+
 ## Content Management
 
 ### Hidden Content System
@@ -291,6 +305,38 @@ Fine-tune subtitle appearance with presets and custom colors.
    - Adjust background alpha
    - Preview changes live
 5. Changes apply immediately
+
+**How it applies**
+
+Jellyfin draws text subtitles in one of two ways, decided by its **Subtitle styling** setting (in Jellyfin **User Preferences** → **Subtitles**). Jellyfin Enhanced styles both.
+
+| Jellyfin **Subtitle styling** | What Jellyfin uses | What Jellyfin Enhanced applies |
+|---|---|---|
+| **Custom** | Its own subtitle element | Text color, background, size, font, shadow and position |
+| **Native** | The browser's built-in captions | Text color, background, size, font and shadow. Position is not available |
+| **Auto** | Custom on Firefox, Safari (including the iOS app), Edge and TV platforms (Tizen 5+, webOS, PS4). Native on Chrome | The same as whichever mode Auto picks |
+
+- The position grid only takes effect in **Custom** mode, because the browser's native captions cannot be repositioned. The Enhanced panel shows a note when **Subtitle styling** is not set to Custom.
+- A **secondary subtitle** track is styled the same way as the primary one. Both share one position and stay stacked without overlapping. Near the top of the screen, two lines take more height, so keep the position below the top edge.
+- Styling behaves the same on Jellyfin 10.11 and 12. The only difference is how VobSub subtitles are handled, described below.
+
+**Subtitle formats that cannot be styled**
+
+Jellyfin Enhanced can only style subtitles that Jellyfin draws as text. These formats are drawn as images or by Jellyfin's own renderer, so their look comes from the subtitle track itself and Jellyfin Enhanced cannot change it. Jellyfin's own **Subtitle Appearance** settings do not apply to them either:
+
+| Format | Why it cannot be styled |
+|---|---|
+| **ASS / SSA** | Jellyfin renders these on a canvas using the fonts, colors, size and position written in the subtitle file |
+| **PGS** (Blu-ray) | Bitmap images. There is no text to restyle |
+| **VobSub / DVD subtitles** | Bitmap images. Jellyfin 12 draws them in the browser; Jellyfin 10.11 has the server burn them into the video |
+| **Burned-in subtitles** | Drawn into the video by the server (for example when a transcode is needed), so they cannot be changed in the browser |
+
+If styling does not apply, check which subtitle track is playing. Choosing a text-based track (for example SRT) restores full styling. The Enhanced panel shows a warning when the current video uses one of these formats.
+
+**Turning it off**
+
+- **For yourself:** in the Enhanced panel → Settings, enable **Disable Custom Subtitle Styles**, then reload the page. Jellyfin Enhanced then leaves subtitles alone and your Jellyfin **User Preferences** → **Subtitles** settings apply unchanged. Jellyfin Enhanced never changes those saved settings. It only styles the subtitles while a video plays.
+- **For all users:** in the plugin settings, enable **Disable Custom Subtitle Styles by default**, save, then use **Overwrite everyone's personal settings** in Quick Actions. The default only applies when a user's settings are first created, so users who already have saved settings keep their own value until you overwrite them.
 
 ---
 

@@ -258,6 +258,7 @@
     "watch_progress_tooltip": "Total Voyage Progress",
     "file_size_tooltip": "Total Cargo Hold Size",
     "audio_language_tooltip": "Speakin' Tongue(s)",
+    "audio_language_no_dialogue": "No parley",
     "remove_continue_watching_error": "Could not remove treasure: User or Treasure ID not found.",
     "remove_continue_watching_error_api": "Unable to remove treasure: {error}",
     "unknown_error": "Unknown curse",
@@ -674,5 +675,10 @@
     "pi_transcode_reason": "Reason",
     "pi_container": "Cargo Crate",
     "pi_audio": "Shanty Track",
-    "pi_subtitle": "Text Scrolls"
+    "pi_subtitle": "Text Scrolls",
+    "header_next_page": "Next page",
+    "header_previous_page": "Previous page",
+    "header_more_title": "More from JE",
+    "header_random_item": "Random item",
+    "header_more_actions": "More from Jellyfin Enhanced"
 }
