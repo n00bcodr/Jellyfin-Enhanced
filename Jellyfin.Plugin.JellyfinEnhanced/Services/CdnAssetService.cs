@@ -118,6 +118,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ["zesty"] = new("https://cdn.jsdelivr.net/gh/stpnwf/ZestyTheme@latest", Types("image/png", "image/jpeg")),
             // JellyPlugins jellyfin-helper favicon (pinned ref)
             ["jelly-helper"] = new("https://cdn.jsdelivr.net/gh/JellyPlugins/jellyfin-helper@2.0.0.2", Types("image/vnd.microsoft.icon", "image/x-icon", "image/png")),
+            // Moonbase (Moonfin server plugin) icon: Moonfin-Client's GitHub avatar (pre-sized, no version to pin)
+            ["moonbase"] = new("https://avatars.githubusercontent.com", Types("image/jpeg", "image/png"),
+                FixedPaths: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["moonfin-client"] = "https://avatars.githubusercontent.com/u/103554043?v=4&size=40"
+                }),
             // flagcdn raster flags (people/country tags)
             ["flagcdn"] = new("https://flagcdn.com", Types("image/png")),
             // cdnjs flag-icons SVG flags (language tags)
@@ -136,12 +142,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ["je-docs-img"] = new("https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/docs/images", Types("image/png", "image/jpeg")),
             // The plugin's own bundled-on-CDN stylesheets (e.g. colored-ratings CSS)
             ["je-css"] = new("https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/css", Types("text/css")),
-            // Dashboard icons for plugins that ship no small icon of their own.
-            // Vendored here, like images/mdblist-logos above, rather than proxied from
-            // each plugin's repo: it keeps one more third-party host out of this list,
-            // and lets the art be sized for the 24px slot it is drawn into instead of
-            // whatever the upstream repo happens to hold.
-            ["je-plugin-icons"] = new("https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/images/plugin-icons", Types("image/png")),
             // Druidblack metadata-provider icon stylesheet (attribute-selector icons; no external url() assets)
             ["icon-metadata"] = new("https://cdn.jsdelivr.net/gh/Druidblack/jellyfin-icon-metadata", Types("text/css")),
             // Jellyfin-Elsewhere region/provider reference lists (fetched as text)
@@ -220,7 +220,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ("dashboard-icons", "svg/javascript.svg"),
             ("zesty", "images/logo/jellyfin-logo-light.png"),
             ("jelly-helper", "media/favicon.ico"),
-            ("je-plugin-icons", "moonbase.png"),
+            ("moonbase", "moonfin-client"),
             ("ibb", "fdbkXQdP/jellyseerr-poster-not-found.png"),
             ("je-css", "ratings.css"),
             ("icon-metadata", "public-icon.css"),

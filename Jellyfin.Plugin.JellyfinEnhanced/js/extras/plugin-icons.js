@@ -255,7 +255,7 @@
                 {
                     selector: 'a[href*="Moonbase"]',
                     type: 'image',
-                    src: window.JellyfinEnhanced.cdn.url('je-plugin-icons', 'moonbase.png'),
+                    src: window.JellyfinEnhanced.cdn.url('moonbase', 'moonfin-client'),
                     alt: 'Moonbase'
                 }
             ];
