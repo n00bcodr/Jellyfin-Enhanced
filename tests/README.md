@@ -21,7 +21,7 @@ virtual-item, container, and user filters.
 
 ## Issue #817 reproduction and verification
 
-Investigation used checkout `d44fa3f`, including the earlier attempted fix
+Investigation used checkout `d44fa3f`, including the episode-selection changes in
 `0d08bef`, and all 18 comments on
 [issue #817](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/817), including
 the screenshots and attached server log. The log confirms a completed full cache
