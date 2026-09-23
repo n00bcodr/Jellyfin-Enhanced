@@ -68,10 +68,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // SeriesId for Spoiler Guard stripping. v3 preserves authoritative
         // Matroska LanguageBCP47/LanguageIETF audio languages instead of the
         // region-less values exposed by Jellyfin/FFmpeg.
-        // v4 picks a real episode with streams as the Series/Season tag source.
-        // v5 requires actual audio/video streams and searches beyond the first page.
+        // v4 picks a real episode with streams as the Series/Season tag source, requires actual audio/video streams and searches beyond the first page.
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        private const int CurrentCacheSchemaVersion = 5;
+        private const int CurrentCacheSchemaVersion = 4;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
