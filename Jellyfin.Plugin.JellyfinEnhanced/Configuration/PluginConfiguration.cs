@@ -165,6 +165,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ShowElsewhereOnJellyseerr = false;
             JellyseerrUseMoreInfoModal = true;
             JellyseerrAvailablePosterLinksToJellyfin = false;
+            JellyseerrSearchExcludeLibraryItems = false;
             JellyseerrUrls = "";
             JellyseerrApiKey = "";
             JellyseerrUrlMappings = "";
@@ -589,6 +590,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Seerr Search Settings
         public bool JellyseerrEnabled { get; set; }
         public bool JellyseerrShowSearchResults { get; set; }
+        public bool JellyseerrSearchExcludeLibraryItems { get; set; } = false;
         public bool JellyseerrShowReportButton { get; set; }
         public bool JellyseerrShowIssueIndicator { get; set; }
         public bool JellyseerrEnable4KRequests { get; set; }

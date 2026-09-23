@@ -3219,6 +3219,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Seerr Search Settings
                 config.JellyseerrEnabled,
                 config.JellyseerrShowSearchResults,
+                config.JellyseerrSearchExcludeLibraryItems,
                 config.JellyseerrShowReportButton,
                 config.JellyseerrShowIssueIndicator,
                 config.JellyseerrEnable4KRequests,

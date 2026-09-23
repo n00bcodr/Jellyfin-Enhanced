@@ -131,6 +131,18 @@
         }
 
         /**
+         * Drops results that are already in the Jellyfin library (the cards
+         * that would show the "available" tick, including partially available
+         * shows) when "Exclude search items already in library" is enabled.
+         * @param {Array} results Seerr search results.
+         * @returns {Array} The results to render.
+         */
+        function filterLibraryItems(results) {
+            if (JE.pluginConfig?.JellyseerrSearchExcludeLibraryItems !== true) return results;
+            return results.filter(item => !JE.jellyseerrUI.isInLibrary(item));
+        }
+
+        /**
          * Warms the request cache with the next `count` result pages so the
          * following load-more is served instantly. Fire-and-forget.
          * @param {string} query
@@ -199,6 +211,7 @@
 
             searchYield.fetched += results.length;
             if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
+            results = filterLibraryItems(results);
             if (searchDeduplicator) results = searchDeduplicator.filter(results);
             searchYield.rendered += results.length;
 
@@ -298,6 +311,7 @@
 
                 searchYield.fetched += results.length;
                 if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
+                results = filterLibraryItems(results);
                 if (searchDeduplicator) results = searchDeduplicator.filter(results);
                 searchYield.rendered += results.length;
 
@@ -428,6 +442,7 @@
                 const data = await search(query, 1, { signal, skipCache: true });
                 let results = await prepareResultsWithCollections(data.results || [], { signal });
                 if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
+                results = filterLibraryItems(results);
 
                 searchCurrentPage = data.page || 1;
                 searchTotalPages = Math.min(data.totalPages || 1, TMDB_MAX_PAGE);

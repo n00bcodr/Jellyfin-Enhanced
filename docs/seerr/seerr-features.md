@@ -40,6 +40,10 @@ Search, request, and discover media directly from Jellyfin using your Seerr inst
 4. Click to request or view details
 5. Scroll the Seerr row sideways; further pages load ahead of you (see [Seamless Scrolling](#seamless-scrolling))
 
+!!! tip
+
+    Enable **Exclude search items already in library** under **Search & Requests** to hide Seerr results you already have in Jellyfin, including shows where only some seasons are in your library, so the Seerr row only shows things you can request.
+
 #### 4K TV Requesting:
 
 1. Enable **4K TV Requests** in plugin settings.
