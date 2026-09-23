@@ -7359,22 +7359,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 object? firstEpisodeData = null;
                 if (isContainer)
                 {
-                    // Inline the first-episode lookup to avoid cache/threading issues
-                    var epQuery = new InternalItemsQuery(user)
-                    {
-                        ParentId = item.Id,
-                        IncludeItemTypes = new[] { BaseItemKind.Episode },
-                        Recursive = true,
-                        Limit = 1,
-                        OrderBy = new[] { (ItemSortBy.PremiereDate, JSortOrder.Ascending) }
-                    };
-                    var epRef = _libraryManager.GetItemList(epQuery).FirstOrDefault();
+                    // Use the same stream-bearing episode as the server cache,
+                    // retaining user access filters for this request-time lookup.
+                    var epRef = TagEpisodeSelector.GetFirstEpisode(_libraryManager, item, user);
                     if (epRef != null)
                     {
-                        // Return the first episode ID so the frontend can fetch streams
-                        // via the native /Items endpoint (which reliably populates MediaStreams).
-                        // Server-side GetMediaSources/DtoService doesn't populate streams for
-                        // episodes obtained through GetItemList on Jellyfin 10.11.x.
+                        // The frontend fetches this episode's region-aware stream
+                        // projection from tag-data and shares it across renderers.
                         firstEpisodeData = new
                         {
                             Id = epRef.Id,

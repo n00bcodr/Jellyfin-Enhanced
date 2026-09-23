@@ -158,7 +158,7 @@ Adding a client module:
 
 ## ✅ CI Checks
 
-Every PR runs a few automated checks (GitHub Actions, `.github/workflows/`). There are no automated tests to run locally - these are all static checks:
+Every PR runs a few automated checks (GitHub Actions, `.github/workflows/`). These CI checks are static checks; local regression tests are described below:
 
 | Check | What it does | Reproduce locally |
 |---|---|---|
@@ -170,6 +170,10 @@ Every PR runs a few automated checks (GitHub Actions, `.github/workflows/`). The
 Two more workflows exist but aren't part of the PR gate: **Check Unused Translation Keys** and **OpenSSF Scorecard** are both maintainer-triggered/scheduled, not run against your PR - a scorecard badge or unused-key report you might see elsewhere in the repo isn't something your PR needs to pass.
 
 ## 🧪 Testing
+
+Run the tag episode selection regression tests with `dotnet test tests/TagEpisodeSelector.Tests`
+using a current .NET 10 SDK/runtime. See [tests/README.md](tests/README.md) for the
+Docker command and the issue #817 reproduction and verification details.
 
 Before submitting a PR, ensure you've tested:
 
