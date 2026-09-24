@@ -7932,31 +7932,195 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             WarnIfArrInstancesCorrupt(config);
             var instances = config.GetEnabledSonarrInstances();
             if (instances.Count == 0)
-            {
-                var errList = new List<object>();
-                if (config.IsSonarrInstancesCorrupt())
-                    errList.Add(new { instanceName = "Sonarr", reason = "config corrupt — see server logs" });
-                else if (config.GetSonarrInstances().Count > 0)
-                    // Distinguish "admin disabled everything" from "never configured" so the
-                    // frontend can toast the right message instead of silently showing no links.
-                    errList.Add(new { instanceName = "Sonarr", reason = "all Sonarr instances are disabled" });
-                return Ok(new { matches = Array.Empty<object>(), errors = errList });
-            }
+                return Ok(BuildNoArrInstancesResult("Sonarr", config.IsSonarrInstancesCorrupt(), config.GetSonarrInstances().Count > 0));
 
             var ct = HttpContext.RequestAborted;
             var outcomes = await Task.WhenAll(instances.Select(i => FetchSeriesInfoFromInstance(i, tvdbId, ct)));
+            return Ok(BuildArrLookupResult(instances, outcomes));
+        }
 
+        /// <summary>
+        /// Response for <c>arr/series-slugs</c> / <c>arr/movie-instances</c> (and each entry of
+        /// <c>arr/links</c>) when no instance of that kind is enabled. Distinguishes "config corrupt"
+        /// and "admin disabled everything" from "never configured" so the frontend can toast the
+        /// right message instead of silently showing no links.
+        /// </summary>
+        private static object BuildNoArrInstancesResult(string serviceName, bool corrupt, bool anyConfigured)
+        {
+            var errList = new List<object>();
+            if (corrupt)
+                errList.Add(new { instanceName = serviceName, reason = "config corrupt — see server logs" });
+            else if (anyConfigured)
+                errList.Add(new { instanceName = serviceName, reason = $"all {serviceName} instances are disabled" });
+            return new { matches = Array.Empty<object>(), errors = errList };
+        }
+
+        /// <summary>
+        /// Folds per-instance lookup outcomes (same order as <paramref name="instances"/>) into
+        /// the <c>{ matches, errors }</c> shape shared by the single and batch arr link endpoints.
+        /// </summary>
+        private static object BuildArrLookupResult(IReadOnlyList<ArrInstance> instances, IReadOnlyList<ArrFetchOutcome> outcomes)
+        {
             var matches = new List<object>();
             var errors = new List<object>();
-            for (int i = 0; i < outcomes.Length; i++)
+            for (int i = 0; i < outcomes.Count; i++)
             {
                 if (outcomes[i].Match != null) matches.Add(outcomes[i].Match!);
                 if (outcomes[i].Error != null)
                     errors.Add(new { instanceName = instances[i].Name, reason = outcomes[i].Error });
             }
 
-            return Ok(new { matches, errors });
+            return new { matches, errors };
         }
+
+        // Batch arr link lookup limits. The Requests page shows 20 cards, so 100 leaves room for
+        // other callers while bounding the upstream fan-out of a single request.
+        private const int ArrLinksBatchMaxIds = 100;
+
+        // Upstream calls in flight per Radarr/Sonarr instance for one batch request.
+        private const int ArrLinksBatchPerInstanceConcurrency = 4;
+
+        /// <summary>
+        /// Batch form of <c>arr/movie-instances</c> + <c>arr/series-slugs</c> for pages that
+        /// show many items at once (the Requests page). Radarr/Sonarr v3 only filter
+        /// <c>/movie</c> and <c>/series</c> by a single tmdbId/tvdbId (the unfiltered lists are
+        /// whole-library dumps), so this still makes one upstream call per id and instance, but
+        /// with bounded per-instance concurrency and one browser round trip.
+        /// Each value is exactly what the matching single endpoint returns for that id.
+        /// </summary>
+        /// <param name="tmdbIds">Comma-separated positive TMDB movie ids (Radarr).</param>
+        /// <param name="tvdbIds">Comma-separated positive TVDB series ids (Sonarr).</param>
+        [HttpGet("arr/links")]
+        [Authorize]
+        public async Task<IActionResult> GetArrLinks([FromQuery] string? tmdbIds, [FromQuery] string? tvdbIds)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            var movieIds = ParsePositiveIdList(tmdbIds);
+            var seriesIds = ParsePositiveIdList(tvdbIds);
+            if (movieIds.Count + seriesIds.Count == 0)
+                return BadRequest(new { error = "tmdbIds or tvdbIds must contain at least one positive integer" });
+            if (movieIds.Count + seriesIds.Count > ArrLinksBatchMaxIds)
+                return BadRequest(new { error = $"At most {ArrLinksBatchMaxIds} ids per request" });
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+                return StatusCode(500, new { error = "Plugin configuration not available" });
+
+            WarnIfArrInstancesCorrupt(config);
+            var ct = HttpContext.RequestAborted;
+
+            var moviesTask = LookupArrLinksBatchAsync(
+                movieIds,
+                movieIds.Count > 0 ? config.GetEnabledRadarrInstances() : new List<ArrInstance>(),
+                () => BuildNoArrInstancesResult("Radarr", config.IsRadarrInstancesCorrupt(), config.GetRadarrInstances().Count > 0),
+                FetchMovieInfoFromInstance,
+                ct);
+            var seriesTask = LookupArrLinksBatchAsync(
+                seriesIds,
+                seriesIds.Count > 0 ? config.GetEnabledSonarrInstances() : new List<ArrInstance>(),
+                () => BuildNoArrInstancesResult("Sonarr", config.IsSonarrInstancesCorrupt(), config.GetSonarrInstances().Count > 0),
+                FetchSeriesInfoFromInstance,
+                ct);
+            await Task.WhenAll(moviesTask, seriesTask).ConfigureAwait(false);
+
+            return Ok(new { movies = await moviesTask.ConfigureAwait(false), series = await seriesTask.ConfigureAwait(false) });
+        }
+
+        /// <summary>
+        /// Parses a comma-separated id list: positive ints only, malformed entries ignored,
+        /// duplicates removed (first-seen order kept).
+        /// </summary>
+        private static List<int> ParsePositiveIdList(string? raw)
+        {
+            var ids = new List<int>();
+            if (string.IsNullOrWhiteSpace(raw)) return ids;
+            var seen = new HashSet<int>();
+            foreach (var part in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (int.TryParse(part, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id)
+                    && id > 0 && seen.Add(id))
+                {
+                    ids.Add(id);
+                }
+            }
+
+            return ids;
+        }
+
+        /// <summary>
+        /// Looks every id up on every instance with at most
+        /// <see cref="ArrLinksBatchPerInstanceConcurrency"/> calls in flight per instance, and
+        /// returns id → <c>{ matches, errors }</c>. Once an instance times out, fails at the
+        /// network level or rejects the API key, its remaining lookups in this batch report the
+        /// same error instead of waiting out the timeout once per id.
+        /// </summary>
+        private static async Task<Dictionary<string, object>> LookupArrLinksBatchAsync(
+            IReadOnlyList<int> ids,
+            IReadOnlyList<ArrInstance> instances,
+            Func<object> noInstancesResult,
+            Func<ArrInstance, int, CancellationToken, Task<ArrFetchOutcome>> fetch,
+            CancellationToken ct)
+        {
+            var result = new Dictionary<string, object>(ids.Count);
+            if (ids.Count == 0) return result;
+
+            if (instances.Count == 0)
+            {
+                var empty = noInstancesResult();
+                foreach (var id in ids)
+                    result[id.ToString(System.Globalization.CultureInfo.InvariantCulture)] = empty;
+                return result;
+            }
+
+            var gates = instances.Select(_ => new SemaphoreSlim(ArrLinksBatchPerInstanceConcurrency)).ToArray();
+            // Per-instance sticky failure (null = healthy); written by whichever lookup hits it first.
+            var failed = new string?[instances.Count];
+            try
+            {
+                async Task<ArrFetchOutcome> LookupOne(int instanceIndex, int id)
+                {
+                    var gate = gates[instanceIndex];
+                    await gate.WaitAsync(ct).ConfigureAwait(false);
+                    try
+                    {
+                        var sticky = Volatile.Read(ref failed[instanceIndex]);
+                        if (sticky != null)
+                            return new ArrFetchOutcome { Error = sticky };
+
+                        var outcome = await fetch(instances[instanceIndex], id, ct).ConfigureAwait(false);
+                        if (outcome.Error != null && IsInstanceWideArrError(outcome.Error))
+                            Volatile.Write(ref failed[instanceIndex], outcome.Error);
+                        return outcome;
+                    }
+                    finally
+                    {
+                        gate.Release();
+                    }
+                }
+
+                var perId = ids
+                    .Select(id => Task.WhenAll(Enumerable.Range(0, instances.Count).Select(i => LookupOne(i, id))))
+                    .ToArray();
+                var outcomes = await Task.WhenAll(perId).ConfigureAwait(false);
+
+                for (int n = 0; n < ids.Count; n++)
+                    result[ids[n].ToString(System.Globalization.CultureInfo.InvariantCulture)] = BuildArrLookupResult(instances, outcomes[n]);
+                return result;
+            }
+            finally
+            {
+                foreach (var gate in gates) gate.Dispose();
+            }
+        }
+
+        // Errors from FetchAndMapAsync that describe the instance rather than the id looked up.
+        private static bool IsInstanceWideArrError(string error)
+            => error == "timeout"
+                || error == "network error"
+                || error == "URL rejected by SSRF guard"
+                || error.StartsWith("authentication failed", StringComparison.Ordinal);
 
         private struct ArrFetchOutcome
         {
@@ -8096,28 +8260,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             WarnIfArrInstancesCorrupt(config);
             var instances = config.GetEnabledRadarrInstances();
             if (instances.Count == 0)
-            {
-                var errList = new List<object>();
-                if (config.IsRadarrInstancesCorrupt())
-                    errList.Add(new { instanceName = "Radarr", reason = "config corrupt — see server logs" });
-                else if (config.GetRadarrInstances().Count > 0)
-                    errList.Add(new { instanceName = "Radarr", reason = "all Radarr instances are disabled" });
-                return Ok(new { matches = Array.Empty<object>(), errors = errList });
-            }
+                return Ok(BuildNoArrInstancesResult("Radarr", config.IsRadarrInstancesCorrupt(), config.GetRadarrInstances().Count > 0));
 
             var ct = HttpContext.RequestAborted;
             var outcomes = await Task.WhenAll(instances.Select(i => FetchMovieInfoFromInstance(i, tmdbId, ct)));
-
-            var matches = new List<object>();
-            var errors = new List<object>();
-            for (int i = 0; i < outcomes.Length; i++)
-            {
-                if (outcomes[i].Match != null) matches.Add(outcomes[i].Match!);
-                if (outcomes[i].Error != null)
-                    errors.Add(new { instanceName = instances[i].Name, reason = outcomes[i].Error });
-            }
-
-            return Ok(new { matches, errors });
+            return Ok(BuildArrLookupResult(instances, outcomes));
         }
 
         private async Task<ArrFetchOutcome> FetchMovieInfoFromInstance(ArrInstance instance, int tmdbId, CancellationToken ct)
