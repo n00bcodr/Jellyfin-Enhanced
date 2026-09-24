@@ -3,8 +3,8 @@
 //
 // NOTE: unlike the poster tag modules, this one is NOT a tag-pipeline
 // renderer — it targets person cards on the item detail page with its own
-// managed observer and per-person backend endpoint, so the tag-renderer
-// factory does not apply here.
+// managed observer and batch backend endpoint (people/info), so the
+// tag-renderer factory does not apply here.
 (function(JE) {
     'use strict';
 
@@ -18,6 +18,10 @@
         const CACHE_KEY = 'JellyfinEnhanced-peopleTagsCache';
         const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-peopleTagsCacheTimestamp';
         const CACHE_TTL = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
+        // Must not exceed the server's people/info cap (MaxPeopleInfoBatchSize).
+        const BATCH_SIZE = 100;
+        // Follow-up batches for cards that mount while a batch is in flight.
+        const MAX_PASSES = 5;
 
         // Country mapping dictionary
         const COUNTRY_MAP = {
@@ -94,6 +98,8 @@
         // Full wipe on user switch; the new owner is stamped immediately so
         // the next boot doesn't wipe the new user's cache a second time.
         JE.session?.onUserChange('people-tags', (change) => {
+            // In-flight batches belong to the previous user.
+            resetBatchController();
             peopleCache = {};
             peopleCacheTimestamp = {};
             Hot.peopleTags.clear();
@@ -111,6 +117,21 @@
         let lastProcessedItemId = null;
         let peopleTagsComplete = false; // Set true after all cast members tagged for current item
         let isProcessing = false;
+
+        // One AbortController per detail item: aborted when the user navigates
+        // to another item or switches account, so a late batch is discarded.
+        // Re-init (settings toggle) aborts the previous instance's batch.
+        const lifecycle = JE.core.lifecycle.register('people-tags');
+        lifecycle.teardown();
+        let batchController = null;
+        function resetBatchController() {
+            if (batchController) {
+                batchController.abort();
+                lifecycle.untrack(batchController);
+            }
+            batchController = lifecycle.track(new AbortController());
+            return batchController;
+        }
 
         // Styles for deceased indicators, overlay positioning, and material-symbols-rounded font
         JE.core.ui.injectCss('je-people-tags-styles', `
@@ -197,15 +218,21 @@
         }
 
         /**
-         * Fetch person info with caching
-         * @param {string} personId
-         * @param {string} itemId (optional, for calculating age at release)
-         * @returns {Promise<object|null>}
+         * Canonical form of a person id (server keys use the 32-hex "N" form).
+         * @param {string} id
+         * @returns {string}
          */
-        async function getPersonInfo(personId, itemId = null) {
-            const cacheKey = itemId ? `${personId}-${itemId}` : personId;
-            const now = Date.now();
+        function normalizeId(id) {
+            return String(id).toLowerCase().replace(/-/g, '');
+        }
 
+        /**
+         * Hot/localStorage cache lookup for one person.
+         * @param {string} cacheKey - `${personId}-${itemId}` (or personId)
+         * @param {number} now
+         * @returns {object|null}
+         */
+        function getCachedPersonInfo(cacheKey, now) {
             // Check in-memory cache first
             if (Hot.peopleTags.has(cacheKey)) {
                 const cached = Hot.peopleTags.get(cacheKey);
@@ -223,38 +250,73 @@
                 }
             }
 
-            // Fetch from backend
-            try {
-                const queryString = itemId ? `?itemId=${itemId}` : '';
-                const url = ApiClient.getUrl(`/JellyfinEnhanced/person/${personId}${queryString}`);
-                // A response resolving after a user switch must not be written
-                // under the NEW user's identity-owner sentinel.
-                const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-                const data = await ApiClient.ajax({
-                    type: 'GET',
-                    url: url,
-                    dataType: 'json'
-                });
-                // Return null (not the data): the caller would render it
-                // onto a card in the NEW user's session.
-                if (JE.session && !JE.session.isCurrent(requestEpoch)) return null;
+            return null;
+        }
 
-                if (data) {
-                    // Cache it
+        /** Persist both cache maps (once per batch, not per person). */
+        function persistPeopleCache() {
+            try {
+                localStorage.setItem(CACHE_KEY, JSON.stringify(peopleCache));
+                localStorage.setItem(CACHE_TIMESTAMP_KEY, JSON.stringify(peopleCacheTimestamp));
+            } catch (e) {
+                console.warn(`${logPrefix} Failed to persist people cache`, e);
+            }
+        }
+
+        /**
+         * Fetch person info for many people in one request per BATCH_SIZE ids.
+         * @param {string[]} personIds - Unique, uncached person ids
+         * @param {string} itemId - Detail item (for age at release)
+         * @param {AbortSignal} signal
+         * @returns {Promise<Map<string, object>>} personId -> person info; ids the
+         *   server did not return are absent. Empty when the response is stale.
+         */
+        async function fetchPeopleInfo(personIds, itemId, signal) {
+            const results = new Map();
+            if (personIds.length === 0) return results;
+
+            // A response resolving after a user switch must not be written
+            // under the NEW user's identity-owner sentinel or rendered.
+            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+            const chunks = [];
+            for (let i = 0; i < personIds.length; i += BATCH_SIZE) {
+                chunks.push(personIds.slice(i, i + BATCH_SIZE));
+            }
+
+            const responses = await Promise.all(chunks.map(async (chunk) => {
+                const query = `ids=${chunk.map(encodeURIComponent).join(',')}&itemId=${encodeURIComponent(itemId)}`;
+                try {
+                    return await JE.core.api.plugin(`/people/info?${query}`, { signal });
+                } catch (error) {
+                    if (!signal.aborted) {
+                        console.warn(`${logPrefix} Failed to fetch person info for ${chunk.length} people:`, error);
+                    }
+                    return null;
+                }
+            }));
+
+            if (signal.aborted || (JE.session && !JE.session.isCurrent(requestEpoch))) {
+                return new Map();
+            }
+
+            const now = Date.now();
+            responses.forEach((response, index) => {
+                const people = response && typeof response.people === 'object' && !Array.isArray(response.people)
+                    ? response.people : null;
+                if (!people) return;
+                for (const personId of chunks[index]) {
+                    const data = people[normalizeId(personId)];
+                    if (!data || typeof data !== 'object' || Array.isArray(data)) continue;
+                    const cacheKey = `${personId}-${itemId}`;
                     peopleCache[cacheKey] = data;
                     peopleCacheTimestamp[cacheKey] = now;
                     Hot.peopleTags.set(cacheKey, { data, timestamp: now });
-
-                    localStorage.setItem(CACHE_KEY, JSON.stringify(peopleCache));
-                    localStorage.setItem(CACHE_TIMESTAMP_KEY, JSON.stringify(peopleCacheTimestamp));
-
-                    return data;
+                    results.set(personId, data);
                 }
-            } catch (error) {
-                console.warn(`${logPrefix} Failed to fetch person info for ${personId}:`, error);
-            }
+            });
 
-            return null;
+            if (results.size > 0) persistPeopleCache();
+            return results;
         }
 
         /**
@@ -379,72 +441,108 @@
         }
 
         /**
-         * Process a single cast/guest cast collapsible section
-         * @param {string} collapsibleSelector - CSS selector for the collapsible (e.g., '#castCollapsible' or '#guestCastCollapsible')
-         * @param {string} currentItemId - Current item ID from URL
+         * Decorate one cast card with the person's tags.
+         * @param {Element} card
+         * @param {string} personId
+         * @param {object} personData
          */
-        async function processSingleCollapsible(collapsibleSelector, currentItemId) {
-            const collapsible = document.querySelector(`#itemDetailPage:not(.hide) ${collapsibleSelector}`);
-            if (!collapsible) return;
-
-            const castCards = collapsible.querySelectorAll('.personCard');
-            if (castCards.length === 0) return;
-
-            console.debug(`${logPrefix} Found ${castCards.length} cast members in ${collapsibleSelector}`);
-
-            for (const card of castCards) {
-                if (processedCastMembers.has(card)) continue;
-                processedCastMembers.add(card);
-
-                const personId = card.getAttribute('data-id');
-                if (!personId) continue;
-
-                // Skip if we've already processed this person ID in this item
-                if (processedPersonIds.has(personId)) continue;
-
-                processedPersonIds.add(personId);
-
-                try {
-                    const personData = await getPersonInfo(personId, currentItemId);
-                    if (!personData) {
-                        continue;
-                    }
-
-                    // Apply deceased styling to poster if applicable
-                    if (personData.isDeceased) {
-                        card.classList.add('je-deceased-poster');
-                        console.debug(`${logPrefix} Marked ${personId} as deceased`);
-                    }
-
-                    // Find the cardScalable element (image container with position: relative)
-                    const cardScalable = card.querySelector('.cardScalable');
-                    if (!cardScalable) {
-                        console.warn(`${logPrefix} No cardScalable found for ${personId}`);
-                        continue;
-                    }
-
-                    // Remove existing tags if any
-                    const existingAgeContainer = cardScalable.querySelector('.je-people-age-container');
-                    if (existingAgeContainer) {
-                        existingAgeContainer.remove();
-                    }
-                    const existingPlaceBanner = cardScalable.querySelector('.je-people-place-banner');
-                    if (existingPlaceBanner) {
-                        existingPlaceBanner.remove();
-                    }
-
-                    // Create and append age chips (top-left) and place banner (bottom)
-                    const tags = createPeopleTag(personData);
-                    if (tags.ageContainer.children.length > 0) {
-                        cardScalable.appendChild(tags.ageContainer);
-                    }
-                    if (tags.placeContainer.children.length > 0) {
-                        cardScalable.appendChild(tags.placeContainer);
-                    }
-
-                } catch (error) {
-                    console.warn(`${logPrefix} Error processing cast member ${personId}:`, error);
+        function renderPersonCard(card, personId, personData) {
+            try {
+                // Apply deceased styling to poster if applicable
+                if (personData.isDeceased) {
+                    card.classList.add('je-deceased-poster');
+                    console.debug(`${logPrefix} Marked ${personId} as deceased`);
                 }
+
+                // Find the cardScalable element (image container with position: relative)
+                const cardScalable = card.querySelector('.cardScalable');
+                if (!cardScalable) {
+                    console.warn(`${logPrefix} No cardScalable found for ${personId}`);
+                    return;
+                }
+
+                // Remove existing tags if any
+                const existingAgeContainer = cardScalable.querySelector('.je-people-age-container');
+                if (existingAgeContainer) {
+                    existingAgeContainer.remove();
+                }
+                const existingPlaceBanner = cardScalable.querySelector('.je-people-place-banner');
+                if (existingPlaceBanner) {
+                    existingPlaceBanner.remove();
+                }
+
+                // Create and append age chips (top-left) and place banner (bottom)
+                const tags = createPeopleTag(personData);
+                if (tags.ageContainer.children.length > 0) {
+                    cardScalable.appendChild(tags.ageContainer);
+                }
+                if (tags.placeContainer.children.length > 0) {
+                    cardScalable.appendChild(tags.placeContainer);
+                }
+            } catch (error) {
+                console.warn(`${logPrefix} Error processing cast member ${personId}:`, error);
+            }
+        }
+
+        /**
+         * Collect not-yet-processed cards from the cast and guest cast
+         * sections in one pass (one card per person id per item, as before).
+         * @returns {Array<{card: Element, personId: string}>}
+         */
+        function collectPendingCards() {
+            const pending = [];
+            for (const collapsibleSelector of ['#castCollapsible', '#guestCastCollapsible']) {
+                const collapsible = document.querySelector(`#itemDetailPage:not(.hide) ${collapsibleSelector}`);
+                if (!collapsible) continue;
+
+                const castCards = collapsible.querySelectorAll('.personCard');
+                if (castCards.length === 0) continue;
+
+                console.debug(`${logPrefix} Found ${castCards.length} cast members in ${collapsibleSelector}`);
+
+                for (const card of castCards) {
+                    if (processedCastMembers.has(card)) continue;
+                    processedCastMembers.add(card);
+
+                    const personId = card.getAttribute('data-id');
+                    if (!personId) continue;
+
+                    // Skip if we've already processed this person ID in this item
+                    if (processedPersonIds.has(personId)) continue;
+
+                    processedPersonIds.add(personId);
+                    pending.push({ card, personId });
+                }
+            }
+            return pending;
+        }
+
+        /**
+         * Render cached cards immediately, fetch every miss in one batch,
+         * then render the rest.
+         * @param {Array<{card: Element, personId: string}>} pending
+         * @param {string} currentItemId
+         * @param {AbortSignal} signal
+         */
+        async function processPendingCards(pending, currentItemId, signal) {
+            const now = Date.now();
+            const misses = [];
+            for (const entry of pending) {
+                const cached = getCachedPersonInfo(`${entry.personId}-${currentItemId}`, now);
+                if (cached) {
+                    renderPersonCard(entry.card, entry.personId, cached);
+                } else {
+                    misses.push(entry);
+                }
+            }
+            if (misses.length === 0) return;
+
+            const fetched = await fetchPeopleInfo(misses.map(entry => entry.personId), currentItemId, signal);
+            if (signal.aborted || lastProcessedItemId !== currentItemId) return;
+
+            for (const entry of misses) {
+                const personData = fetched.get(entry.personId);
+                if (personData) renderPersonCard(entry.card, entry.personId, personData);
             }
         }
 
@@ -466,9 +564,16 @@
                     return;
                 }
 
-                // Process both cast and guest cast sections
-                await processSingleCollapsible('#castCollapsible', currentItemId);
-                await processSingleCollapsible('#guestCastCollapsible', currentItemId);
+                const signal = (batchController || resetBatchController()).signal;
+
+                // Cast and guest cast share one batch; cards that mount while
+                // a batch is in flight are picked up by a small follow-up batch.
+                for (let pass = 0; pass < MAX_PASSES; pass++) {
+                    const pending = collectPendingCards();
+                    if (pending.length === 0) break;
+                    await processPendingCards(pending, currentItemId, signal);
+                    if (signal.aborted || lastProcessedItemId !== currentItemId) break;
+                }
 
             } catch (error) {
                 console.error(`${logPrefix} Error in processCastMembers:`, error);
@@ -497,6 +602,7 @@
                     // Reset cache when navigating to a new item
                     if (lastProcessedItemId !== itemId) {
                         lastProcessedItemId = itemId;
+                        resetBatchController();
                         processedCastMembers = new WeakSet();
                         processedPersonIds = new Set();
                         peopleTagsComplete = false;
@@ -514,6 +620,12 @@
                     // navigations don't mark the wrong item as done.
                     const processingItemId = itemId;
                     processCastMembers().then(() => {
+                        // Another item arrived while this batch was in flight
+                        // (its run was skipped by isProcessing): process it now.
+                        if (lastProcessedItemId !== processingItemId) {
+                            handlePeopleTags();
+                            return;
+                        }
                         setTimeout(() => {
                             if (lastProcessedItemId === processingItemId) {
                                 peopleTagsComplete = true;
