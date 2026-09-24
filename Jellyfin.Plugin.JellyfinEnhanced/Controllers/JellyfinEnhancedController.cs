@@ -67,6 +67,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.UsageEventCounterService _usageEventCounterService;
         private readonly Services.AnalyticsReportingService _analyticsReportingService;
         private readonly Services.HostCompatibilityService _hostCompatibility;
+        private readonly Services.TmdbResponseCache _tmdbResponseCache;
         private readonly IServerConfigurationManager _serverConfigurationManager;
         private readonly INetworkManager _networkManager;
 
@@ -189,6 +190,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.UsageEventCounterService usageEventCounterService,
             Services.AnalyticsReportingService analyticsReportingService,
             Services.HostCompatibilityService hostCompatibility,
+            Services.TmdbResponseCache tmdbResponseCache,
             IServerConfigurationManager serverConfigurationManager,
             INetworkManager networkManager)
         {
@@ -213,6 +215,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _usageEventCounterService = usageEventCounterService;
             _analyticsReportingService = analyticsReportingService;
             _hostCompatibility = hostCompatibility;
+            _tmdbResponseCache = tmdbResponseCache;
             _serverConfigurationManager = serverConfigurationManager;
             _networkManager = networkManager;
         }
@@ -2171,19 +2174,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return null;
                 }
 
-                var httpClient = _httpClientFactory.CreateClient();
-                var tmdbUrl = $"https://api.themoviedb.org/3/person/{tmdbPersonId}?api_key={config.TMDB_API_KEY}";
-
                 // _logger.Debug($"Fetching TMDB person data from: https://api.themoviedb.org/3/person/{tmdbPersonId}");
-                var response = await httpClient.GetAsync(tmdbUrl);
+                var response = await _tmdbResponseCache.GetAsync($"person/{tmdbPersonId}", string.Empty, config.TMDB_API_KEY, HttpContext.RequestAborted);
 
-                if (!response.IsSuccessStatusCode)
+                if (!response.IsSuccess)
                 {
-                    _logger.Warning($"TMDB API request failed with status {response.StatusCode}");
+                    _logger.Warning($"TMDB API request failed with status {(System.Net.HttpStatusCode)response.StatusCode}");
                     return null;
                 }
 
-                var content = await response.Content.ReadAsStringAsync();
+                var content = response.Content;
                 var jsonElement = JsonSerializer.Deserialize<JsonElement>(content);
 
                 DateTime? birthDate = null;
@@ -2224,6 +2224,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     DeathDate = deathDate,
                     BirthPlace = birthPlace
                 };
+            }
+            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                // Browser went away; the shared TMDB call still finishes and is cached.
+                return null;
             }
             catch (Exception ex)
             {
@@ -3376,6 +3381,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // is limited to title-free lookups; single-title lookups are gated on
             // that title and anything else (search, discover, trending, lists) is
             // refused, because it would return titles unfiltered.
+            // Nothing but a successful upstream response may be kept by the browser,
+            // and even that is revalidated (so re-gated) on every use.
+            Response.Headers["Cache-Control"] = "no-store";
+
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
             {
@@ -3420,21 +3429,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 queryString = decodedQuery.Length > 0 ? new QueryString("?" + decodedQuery) : QueryString.Empty;
             }
 
-            var httpClient = _httpClientFactory.CreateClient();
-            var separator = queryString.HasValue ? "&" : "?";
-            var requestUri = $"https://api.themoviedb.org/3/{apiPath}{queryString}{separator}api_key={config.TMDB_API_KEY}";
-
             try
             {
-                var response = await httpClient.GetAsync(requestUri, HttpContext.RequestAborted);
-                var content = await response.Content.ReadAsStringAsync(HttpContext.RequestAborted);
+                // Gating above has already run for this caller; the server cache is
+                // keyed on what goes upstream (see TmdbResponseCache for why that
+                // is account-safe).
+                var response = await _tmdbResponseCache.GetAsync(apiPath, queryString.ToString(), config.TMDB_API_KEY, HttpContext.RequestAborted);
 
-                if (response.IsSuccessStatusCode)
+                if (response.IsSuccess)
                 {
-                    return Content(content, "application/json");
+                    // Browser cache: private + no-cache, so every reuse comes back
+                    // here (parental gating above runs again) and costs only a 304
+                    // when the body is unchanged. Varied on the auth headers so a
+                    // shared browser profile never hands one account's response
+                    // (restricted users get different results) to another.
+                    Response.Headers["Cache-Control"] = "private, no-cache";
+                    Response.Headers["Vary"] = "Authorization, X-Emby-Token, X-Jellyfin-User-Id";
+                    Response.Headers["ETag"] = response.ETag;
+                    if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], response.ETag))
+                    {
+                        return StatusCode(StatusCodes.Status304NotModified);
+                    }
+                    return Content(response.Content, "application/json");
                 }
 
-                return StatusCode((int)response.StatusCode, content);
+                return StatusCode(response.StatusCode, response.Content);
             }
             catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
             {
