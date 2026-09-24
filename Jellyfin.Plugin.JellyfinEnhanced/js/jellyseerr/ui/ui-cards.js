@@ -47,6 +47,41 @@
         // posterUrl is validated/derived in createJellyseerrCard, so the only
         // characters that could upset the url() literal are quotes; escape anyway.
         el.style.backgroundImage = `url("${url.replace(/["\\]/g, '\\$&')}")`;
+        // CSS backgrounds have no load event, so an Image probe for the same URL
+        // (sharing the background's in-flight/cached resource, not a second
+        // network fetch) tells this card's deferred provider-icon lookup when
+        // the main image has loaded or failed.
+        const probe = new Image();
+        probe.onload = probe.onerror = () => settlePoster(el);
+        probe.src = url;
+    }
+
+    // Poster element -> { promise, resolve }; settles once that card's poster
+    // has loaded or failed. WeakMap so detached cards are not retained.
+    const posterReadiness = new WeakMap();
+
+    /**
+     * Returns the readiness record for a card's poster, creating it on demand.
+     * @param {HTMLElement} el - The card's image element
+     * @returns {{promise: Promise<void>, resolve: Function}}
+     */
+    function getPosterReadiness(el) {
+        let record = posterReadiness.get(el);
+        if (!record) {
+            let resolve;
+            const promise = new Promise((r) => { resolve = r; });
+            record = { promise, resolve };
+            posterReadiness.set(el, record);
+        }
+        return record;
+    }
+
+    /**
+     * Marks a card's poster as finished (loaded or failed).
+     * @param {HTMLElement} el - The card's image element
+     */
+    function settlePoster(el) {
+        getPosterReadiness(el).resolve();
     }
 
     /**
@@ -100,15 +135,128 @@
      * @param {HTMLElement} [root]
      */
     function releasePosters(root) {
-        if (!posterObserver) return;
-        for (const el of [...observedPosters]) {
-            if (!el.isConnected || (root && root.contains(el))) {
-                try { posterObserver.unobserve(el); } catch (_) { /* ignore */ }
-                observedPosters.delete(el);
+        const isReleased = (el) => !el.isConnected || (root && root.contains(el));
+        if (posterObserver) {
+            for (const el of [...observedPosters]) {
+                if (isReleased(el)) {
+                    try { posterObserver.unobserve(el); } catch (_) { /* ignore */ }
+                    observedPosters.delete(el);
+                }
+            }
+        }
+        // Cards that never came on screen must never look up provider icons.
+        if (iconObserver) {
+            for (const el of [...pendingIcons.keys()]) {
+                if (isReleased(el)) {
+                    try { iconObserver.unobserve(el); } catch (_) { /* ignore */ }
+                    pendingIcons.delete(el);
+                }
             }
         }
     }
     ui.releasePosters = releasePosters;
+
+    // ---- Deferred streaming-provider icons ----------------------------------
+    // The "Elsewhere" provider icons are decorative, yet fetching them at card
+    // creation fired a watch/providers lookup (plus up to four logo images) for
+    // every pre-rendered off-screen card, competing with the posters and with
+    // Jellyfin's own requests. Instead each card's image element is watched by
+    // a second shared IntersectionObserver with no look-ahead margin. Once the
+    // card is actually on screen, its lookup waits for that card's poster to
+    // load or fail (bounded by ICON_POSTER_WAIT_MS so icons are never starved)
+    // and then runs at the next idle moment, once per card. The image element
+    // is observed rather than the icon container, which is display:none (and
+    // so never intersects) until it has icons.
+    const ICON_POSTER_WAIT_MS = 3000;
+    const ICON_IDLE_TIMEOUT_MS = 1000;
+    let iconObserver = null;
+    // Observed image element -> pending lookup { container, tmdbId, mediaType }.
+    // Strong references, released by releasePosters like observedPosters.
+    const pendingIcons = new Map();
+
+    /**
+     * Runs a callback when the browser is idle (bounded), or on the next task.
+     * @param {Function} fn
+     */
+    function runWhenIdle(fn) {
+        if (typeof requestIdleCallback !== 'undefined') {
+            requestIdleCallback(fn, { timeout: ICON_IDLE_TIMEOUT_MS });
+        } else {
+            setTimeout(fn, 0);
+        }
+    }
+
+    /**
+     * Starts a card's provider-icon lookup once its poster has settled (or the
+     * wait bound elapses). Consumes the pending entry, so it runs at most once.
+     * @param {HTMLElement} el - The observed image element
+     */
+    function startProviderIcons(el) {
+        const pending = pendingIcons.get(el);
+        if (iconObserver) {
+            try { iconObserver.unobserve(el); } catch (_) { /* ignore */ }
+        }
+        pendingIcons.delete(el);
+        if (!pending) return;
+        let timer = null;
+        const bound = new Promise((resolve) => { timer = setTimeout(resolve, ICON_POSTER_WAIT_MS); });
+        Promise.race([getPosterReadiness(el).promise, bound]).then(() => {
+            clearTimeout(timer);
+            runWhenIdle(() => {
+                // Card torn down while waiting: skip the lookup.
+                if (!pending.container.isConnected) return;
+                internal.fetchProviderIcons(pending.container, pending.tmdbId, pending.mediaType);
+            });
+        });
+    }
+
+    /**
+     * The shared on-screen-only IntersectionObserver for provider icons; null
+     * where IntersectionObserver is unavailable.
+     * @returns {IntersectionObserver|null}
+     */
+    function getIconObserver() {
+        if (iconObserver) return iconObserver;
+        if (typeof IntersectionObserver === 'undefined') return null;
+        try {
+            iconObserver = new IntersectionObserver((entries) => {
+                for (const entry of entries) {
+                    if (entry.isIntersecting || entry.intersectionRatio > 0) {
+                        startProviderIcons(entry.target);
+                    }
+                }
+            }, { root: null, rootMargin: '0px', threshold: 0 });
+        } catch (_) {
+            iconObserver = null;
+        }
+        return iconObserver;
+    }
+
+    /**
+     * Defers a card's provider-icon lookup until the card is on screen and its
+     * poster has settled (or fetches at once where IntersectionObserver is
+     * unsupported).
+     * @param {HTMLElement} el - The card's image element (visibility target)
+     * @param {HTMLElement} container - The card's .jellyseerr-elsewhere-icons element
+     * @param {string|number} tmdbId
+     * @param {string} mediaType
+     */
+    function observeProviderIcons(el, container, tmdbId, mediaType) {
+        if (!el || !container) return;
+        const observer = getIconObserver();
+        if (!observer) {
+            // No IntersectionObserver support: behave exactly as before.
+            internal.fetchProviderIcons(container, tmdbId, mediaType);
+            return;
+        }
+        pendingIcons.set(el, { container, tmdbId, mediaType });
+        try {
+            observer.observe(el);
+        } catch (_) {
+            pendingIcons.delete(el);
+            internal.fetchProviderIcons(container, tmdbId, mediaType);
+        }
+    }
 
 
     /**
@@ -439,7 +587,9 @@
         }
 
         if (JE.pluginConfig.ShowElsewhereOnJellyseerr && JE.pluginConfig.TmdbEnabled && item.mediaType !== 'collection') {
-            internal.fetchProviderIcons(card.querySelector('.jellyseerr-elsewhere-icons'), item.id, item.mediaType);
+            // Deferred until the card is on screen and its poster has settled.
+            observeProviderIcons(card.querySelector('.jellyseerr-poster-image'),
+                card.querySelector('.jellyseerr-elsewhere-icons'), item.id, item.mediaType);
         }
 
         // Add hide button for hidden content feature

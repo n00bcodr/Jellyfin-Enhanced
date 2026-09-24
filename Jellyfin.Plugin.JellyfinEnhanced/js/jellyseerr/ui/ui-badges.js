@@ -112,6 +112,15 @@
                 if (providers.length > 0) {
                     providers.slice(0, 4).forEach(provider => { // Limit to max 4 icons to avoid clutter
                         const img = document.createElement('img');
+                        // Decorative, low-priority logos: never compete with posters.
+                        // width/height give the (square) w92 logo's aspect ratio so
+                        // space is reserved before it loads; CSS sets the rendered size.
+                        img.loading = 'lazy';
+                        img.decoding = 'async';
+                        if ('fetchPriority' in img) img.fetchPriority = 'low';
+                        img.width = 92;
+                        img.height = 92;
+                        img.alt = provider.provider_name || '';
                         img.src = `https://image.tmdb.org/t/p/w92${provider.logo_path}`;
                         img.title = provider.provider_name;
                         container.appendChild(img);
