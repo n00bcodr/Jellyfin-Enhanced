@@ -14,6 +14,16 @@
     const logPrefix = '🪼 Jellyfin Enhanced: Seerr UI:';
 
     /**
+     * True for a TMDB image path safe to append to an image.tmdb.org URL (and to
+     * interpolate into a CSS url()): a leading-slash file name of a known image
+     * type, as TMDB always returns (e.g. "/abc.jpg").
+     * @param {*} p
+     * @returns {boolean}
+     */
+    const isSafeTmdbImagePath = (p) => typeof p === 'string'
+        && /^\/[A-Za-z0-9_\-\.]+\.(jpg|jpeg|png|webp|avif)$/i.test(p);
+
+    /**
      * Sets the status badge icon based on the item's media status.
      * @param {HTMLElement} card - The card element.
      * @param {Object} item - The search result item.
@@ -63,9 +73,10 @@
      * @param {HTMLElement} container - The DOM element where the provider icons will be appended.
      * @param {string|number} tmdbId - The The Movie Database (TMDB) ID for the movie or TV show.
      * @param {string} mediaType - The type of media, either 'movie' or 'tv'.
+     * @param {AbortSignal} [signal] - Cancels the lookup (e.g. when the card is torn down).
      * @returns {Promise<void>} A promise that resolves when the icons have been fetched and added, or if the process fails.
      */
-    async function fetchProviderIcons(container, tmdbId, mediaType) {
+    async function fetchProviderIcons(container, tmdbId, mediaType, signal) {
         if (!container || !tmdbId || !mediaType) return;
 
         // Early exit if TMDB is not configured - prevents slow/failing API calls
@@ -86,8 +97,12 @@
             // Non-OK responses throw and land in the catch below.
             const data = await JE.core.api.plugin(
                 `/tmdb/${mediaType}/${tmdbId}/watch/providers`,
-                { cacheKey: `providers:${mediaType}:${tmdbId}` }
+                { cacheKey: `providers:${mediaType}:${tmdbId}`, signal }
             );
+            // A deferred (signalled) lookup only starts for an on-screen card, so a
+            // detached container means the card was torn down meanwhile. Unsignalled
+            // callers may fetch before the card is attached, so skip the check there.
+            if (signal && !container.isConnected) return;
             let providers = data.results?.[DEFAULT_REGION]?.flatrate;
 
             if (providers && providers.length > 0) {
@@ -109,6 +124,9 @@
                     }
                 }
 
+                // Only build image URLs from well-formed logo paths.
+                providers = providers.filter(provider => isSafeTmdbImagePath(provider.logo_path));
+
                 if (providers.length > 0) {
                     providers.slice(0, 4).forEach(provider => { // Limit to max 4 icons to avoid clutter
                         const img = document.createElement('img');
@@ -123,6 +141,11 @@
                         img.alt = provider.provider_name || '';
                         img.src = `https://image.tmdb.org/t/p/w92${provider.logo_path}`;
                         img.title = provider.provider_name;
+                        // Drop logos that fail to load; hide the strip if none remain.
+                        img.onerror = () => {
+                            img.remove();
+                            if (container.childElementCount === 0) container.classList.remove('has-icons');
+                        };
                         container.appendChild(img);
                     });
 
@@ -132,6 +155,8 @@
                 }
             }
         } catch (error) {
+            // Cancelled by the caller (card released): not a failure.
+            if (signal && signal.aborted) return;
             console.warn(`${logPrefix} Could not fetch provider icons for TMDB ID ${tmdbId}:`, error);
         }
     }
@@ -180,6 +205,7 @@
     }
     internal.setStatusBadge = setStatusBadge;
     internal.fetchProviderIcons = fetchProviderIcons;
+    internal.isSafeTmdbImagePath = isSafeTmdbImagePath;
     internal.addMediaTypeBadge = addMediaTypeBadge;
     internal.addCollectionMembershipBadge = addCollectionMembershipBadge;
 

@@ -130,7 +130,8 @@
 
     /**
      * Stops observing posters whose cards have been removed from the document
-     * (or that sit under `root`, when given). Call after tearing down a result
+     * (or that sit under `root`, when given), and cancels their pending or
+     * in-flight provider-icon lookups. Call after tearing down a result
      * row / discovery section so detached cards can be garbage-collected.
      * @param {HTMLElement} [root]
      */
@@ -144,14 +145,10 @@
                 }
             }
         }
-        // Cards that never came on screen must never look up provider icons.
-        if (iconObserver) {
-            for (const el of [...pendingIcons.keys()]) {
-                if (isReleased(el)) {
-                    try { iconObserver.unobserve(el); } catch (_) { /* ignore */ }
-                    pendingIcons.delete(el);
-                }
-            }
+        // Cards that never came on screen must never look up provider icons, and
+        // lookups already waiting or in flight for released cards are cancelled.
+        for (const [el, job] of [...iconJobs]) {
+            if (isReleased(el)) cancelIconJob(el, job);
         }
     }
     ui.releasePosters = releasePosters;
@@ -164,48 +161,79 @@
     // a second shared IntersectionObserver with no look-ahead margin. Once the
     // card is actually on screen, its lookup waits for that card's poster to
     // load or fail (bounded by ICON_POSTER_WAIT_MS so icons are never starved)
-    // and then runs at the next idle moment, once per card. The image element
-    // is observed rather than the icon container, which is display:none (and
-    // so never intersects) until it has icons.
+    // and then runs at the next idle moment, once per card, provided the card
+    // is still on screen by then (otherwise it waits to become visible again).
+    // The image element is observed rather than the icon container, which is
+    // display:none (and so never intersects) until it has icons.
     const ICON_POSTER_WAIT_MS = 3000;
     const ICON_IDLE_TIMEOUT_MS = 1000;
     let iconObserver = null;
-    // Observed image element -> pending lookup { container, tmdbId, mediaType }.
-    // Strong references, released by releasePosters like observedPosters.
-    const pendingIcons = new Map();
+    // Observed image element -> icon job { container, tmdbId, mediaType,
+    // visible, started, cancelled, timer, cancelIdle, controller }. Strong references,
+    // held until the lookup settles or releasePosters cancels the job.
+    const iconJobs = new Map();
 
     /**
      * Runs a callback when the browser is idle (bounded), or on the next task.
      * @param {Function} fn
+     * @returns {Function} Cancels the pending callback.
      */
     function runWhenIdle(fn) {
         if (typeof requestIdleCallback !== 'undefined') {
-            requestIdleCallback(fn, { timeout: ICON_IDLE_TIMEOUT_MS });
-        } else {
-            setTimeout(fn, 0);
+            const id = requestIdleCallback(fn, { timeout: ICON_IDLE_TIMEOUT_MS });
+            return () => cancelIdleCallback(id);
         }
+        const id = setTimeout(fn, 0);
+        return () => clearTimeout(id);
+    }
+
+    /**
+     * Cancels a card's icon job: stops observing it, clears its poster-wait
+     * timer and idle callback, and aborts its lookup if in flight.
+     * @param {HTMLElement} el - The observed image element
+     * @param {Object} job - Its entry in iconJobs
+     */
+    function cancelIconJob(el, job) {
+        job.cancelled = true;
+        clearTimeout(job.timer);
+        if (job.cancelIdle) job.cancelIdle();
+        if (job.controller) job.controller.abort();
+        if (iconObserver) {
+            try { iconObserver.unobserve(el); } catch (_) { /* ignore */ }
+        }
+        iconJobs.delete(el);
     }
 
     /**
      * Starts a card's provider-icon lookup once its poster has settled (or the
-     * wait bound elapses). Consumes the pending entry, so it runs at most once.
+     * wait bound elapses) and the browser is idle. If the card has left the
+     * viewport by then, the job goes back to waiting for visibility; once the
+     * lookup fires the card is unobserved, so it runs at most once.
      * @param {HTMLElement} el - The observed image element
+     * @param {Object} job - Its entry in iconJobs
      */
-    function startProviderIcons(el) {
-        const pending = pendingIcons.get(el);
-        if (iconObserver) {
-            try { iconObserver.unobserve(el); } catch (_) { /* ignore */ }
-        }
-        pendingIcons.delete(el);
-        if (!pending) return;
-        let timer = null;
-        const bound = new Promise((resolve) => { timer = setTimeout(resolve, ICON_POSTER_WAIT_MS); });
+    function startProviderIcons(el, job) {
+        job.started = true;
+        const bound = new Promise((resolve) => { job.timer = setTimeout(resolve, ICON_POSTER_WAIT_MS); });
         Promise.race([getPosterReadiness(el).promise, bound]).then(() => {
-            clearTimeout(timer);
-            runWhenIdle(() => {
-                // Card torn down while waiting: skip the lookup.
-                if (!pending.container.isConnected) return;
-                internal.fetchProviderIcons(pending.container, pending.tmdbId, pending.mediaType);
+            clearTimeout(job.timer);
+            if (job.cancelled) return;
+            job.cancelIdle = runWhenIdle(() => {
+                job.cancelIdle = null;
+                if (job.cancelled) return;
+                if (!job.visible || !job.container.isConnected) {
+                    // Scrolled away while waiting: fire when visible again.
+                    job.started = false;
+                    return;
+                }
+                if (iconObserver) {
+                    try { iconObserver.unobserve(el); } catch (_) { /* ignore */ }
+                }
+                job.controller = new AbortController();
+                internal.fetchProviderIcons(job.container, job.tmdbId, job.mediaType, job.controller.signal)
+                    .finally(() => {
+                        if (iconJobs.get(el) === job) iconJobs.delete(el);
+                    });
             });
         });
     }
@@ -221,9 +249,10 @@
         try {
             iconObserver = new IntersectionObserver((entries) => {
                 for (const entry of entries) {
-                    if (entry.isIntersecting || entry.intersectionRatio > 0) {
-                        startProviderIcons(entry.target);
-                    }
+                    const job = iconJobs.get(entry.target);
+                    if (!job || job.controller) continue;
+                    job.visible = entry.isIntersecting || entry.intersectionRatio > 0;
+                    if (job.visible && !job.started) startProviderIcons(entry.target, job);
                 }
             }, { root: null, rootMargin: '0px', threshold: 0 });
         } catch (_) {
@@ -249,11 +278,12 @@
             internal.fetchProviderIcons(container, tmdbId, mediaType);
             return;
         }
-        pendingIcons.set(el, { container, tmdbId, mediaType });
+        iconJobs.set(el, { container, tmdbId, mediaType, visible: false, started: false,
+            cancelled: false, timer: null, cancelIdle: null, controller: null });
         try {
             observer.observe(el);
         } catch (_) {
-            pendingIcons.delete(el);
+            iconJobs.delete(el);
             internal.fetchProviderIcons(container, tmdbId, mediaType);
         }
     }
@@ -272,9 +302,7 @@
         // url() context. Anything other than a leading-slash relative path
         // (TMDB always returns this shape, e.g. "/abc.jpg") is rejected so a
         // hostile poster path can't break out of the url() literal.
-        const isSafePosterPath = (p) => typeof p === 'string'
-            && /^\/[A-Za-z0-9_\-\.]+\.(jpg|jpeg|png|webp|avif)$/i.test(p);
-        const posterUrl = isSafePosterPath(item.posterPath)
+        const posterUrl = internal.isSafeTmdbImagePath(item.posterPath)
             ? `https://image.tmdb.org/t/p/w400${item.posterPath}`
             : JE.cdn.url('ibb', 'fdbkXQdP/jellyseerr-poster-not-found.png');
         const rating = item.voteAverage ? item.voteAverage.toFixed(1) : 'N/A';
