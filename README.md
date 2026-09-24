@@ -37,28 +37,9 @@
 - **Every person picks what they want.** Press <kbd>?</kbd> anywhere in Jellyfin to open the Enhanced panel and switch features on or off for yourself.
 - **Everything is optional.** Out of the box you get the features that need no setup. Connecting [Seerr](https://github.com/seerr-team/seerr), Sonarr, Radarr, TMDB or MDBList adds even more.
 
-<table>
-<tr>
-<td width="33%" valign="top">
-
-**🍿 For viewers**<br>
-<sub>[Poster tags](#%EF%B8%8F-see-quality-at-a-glance) · [Richer movie pages](#-richer-movie-and-show-pages) · [A better player](#%EF%B8%8F-a-better-player) · [Shortcuts](#%EF%B8%8F-the-enhanced-panel-and-shortcuts) · [Random](#-cant-decide)</sub>
-
-</td>
-<td width="33%" valign="top">
-
-**👨‍👩‍👧 For households**<br>
-<sub>[Spoiler Guard](#-watch-without-spoilers) · [Hide things](#-keep-your-home-screen-tidy) · [Reviews and Activity](#-share-it-with-your-household) · [Phones](#-on-your-phone)</sub>
-
-</td>
-<td width="33%" valign="top">
-
-**🛠️ For whoever runs the server**<br>
-<sub>[Requests](#-request-anything-right-from-search) · [Calendar](#-see-whats-coming) · [Active Streams](#-see-whos-watching-right-now) · [Admin tools](#%EF%B8%8F-tools-for-the-server-admin)</sub>
-
-</td>
-</tr>
-</table>
+**🍿 For viewers:** [Poster tags](#%EF%B8%8F-see-quality-at-a-glance) · [Richer movie pages](#-richer-movie-and-show-pages) · [A better player](#%EF%B8%8F-a-better-player) · [Shortcuts](#%EF%B8%8F-the-enhanced-panel-and-shortcuts) · [Random](#-cant-decide)<br>
+**👨‍👩‍👧 For households:** [Spoiler Guard](#-watch-without-spoilers) · [Hide things](#-keep-your-home-screen-tidy) · [Reviews and Activity](#-share-it-with-your-household) · [Phones](#-on-your-phone)<br>
+**🛠️ For whoever runs the server:** [Requests](#-request-anything-right-from-search) · [Calendar](#-see-whats-coming) · [Active Streams](#-see-whos-watching-right-now) · [Admin tools](#%EF%B8%8F-tools-for-the-server-admin)
 
 ## ⚡ Install in a minute
 
@@ -94,16 +75,9 @@ Search Jellyfin as usual. If what you want isn't on the server yet, it shows up 
 - **Report a problem** (video, audio, subtitles or other) straight to Seerr from the item page.
 - **Parental controls are respected.** Results follow each user's rating limit and blocked tags.
 
-<table>
-<tr>
-<th width="50%">Recommendations page</th>
-<th width="50%">Requests, with approve and decline for admins</th>
-</tr>
-<tr>
-<td><img src="docs/images/readme/recommendations.webp" alt="Seerr Recommendations page with Trending and Popular rows"></td>
-<td><img src="docs/images/readme/requests.webp" alt="Requests page showing pending requests with approve and decline buttons"></td>
-</tr>
-</table>
+<p align="center"><b>Recommendations page</b><br><img src="docs/images/readme/recommendations.webp" alt="Seerr Recommendations page with Trending and Popular rows" width="100%"></p>
+
+<p align="center"><b>Requests, with approve and decline for admins</b><br><img src="docs/images/readme/requests.webp" alt="Requests page showing pending requests with approve and decline buttons" width="100%"></p>
 
 <sub>Needs a [Seerr](https://github.com/seerr-team/seerr) server. · [Seerr docs →](https://n00bcodr.github.io/Jellyfin-Enhanced/seerr/seerr-features/)</sub>
 
@@ -145,12 +119,9 @@ Every poster gets small badges, so you can tell at a glance what you're about to
 
 ### 📄 Richer movie and show pages
 
-<table>
-<tr>
-<td width="50%"><img src="docs/images/readme/details.webp" alt="Movie page with ratings, release dates, file size, audio languages and external links"></td>
-<td width="50%"><img src="docs/images/readme/elsewhere-reviews.webp" alt="Streaming availability and user reviews on a movie page"></td>
-</tr>
-</table>
+<p align="center"><img src="docs/images/readme/details.webp" alt="Movie page with ratings, release dates, file size, audio languages and external links" width="100%"></p>
+
+<p align="center"><img src="docs/images/readme/elsewhere-reviews.webp" alt="Streaming availability and user reviews on a movie page" width="100%"></p>
 
 - **Ratings** from TMDB and Rotten Tomatoes, plus IMDb, Letterboxd, Metacritic, Trakt and more through [MDBList](https://mdblist.com)
 - **Elsewhere:** where the title is streaming, for rent or for sale, in any country
@@ -175,16 +146,9 @@ Every poster gets small badges, so you can tell at a glance what you're about to
 - **Press and hold the video for 2× speed** (mouse or touch)
 - **Ratings in the player** while the controls are showing
 
-<table>
-<tr>
-<th width="50%">Bookmarks on the timeline</th>
-<th width="50%">All your bookmarks in one place</th>
-</tr>
-<tr>
-<td><img src="docs/images/readme/player-bookmarks.webp" alt="Player timeline with bookmark markers"></td>
-<td><img src="docs/images/readme/bookmarks.webp" alt="Bookmarks page listing saved moments with play, edit and delete buttons"></td>
-</tr>
-</table>
+<p align="center"><b>Bookmarks on the timeline</b><br><img src="docs/images/readme/player-bookmarks.webp" alt="Player timeline with bookmark markers" width="100%"></p>
+
+<p align="center"><b>All your bookmarks in one place</b><br><img src="docs/images/readme/bookmarks.webp" alt="Bookmarks page listing saved moments with play, edit and delete buttons" width="100%"></p>
 
 <sub>[Playback docs →](https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/enhanced-features/#playback-controls)</sub>
 
@@ -215,16 +179,9 @@ Press <kbd>?</kbd> anywhere to open your personal settings panel. It's also wher
 
 ### 🙈 Keep your home screen tidy
 
-<table>
-<tr>
-<th width="50%">Remove from Continue Watching</th>
-<th width="50%">Hide a title everywhere</th>
-</tr>
-<tr>
-<td><img src="docs/images/readme/remove-continue-watching.webp" alt="Removing a movie from the Continue Watching row via its menu"></td>
-<td><img src="docs/images/readme/hide-content.webp" alt="Hiding a movie, then finding it on the Hidden Content page"></td>
-</tr>
-</table>
+<p align="center"><b>Remove from Continue Watching</b><br><img src="docs/images/readme/remove-continue-watching.webp" alt="Removing a movie from the Continue Watching row via its menu" width="100%"></p>
+
+<p align="center"><b>Hide a title everywhere</b><br><img src="docs/images/readme/hide-content.webp" alt="Hiding a movie, then finding it on the Hidden Content page" width="100%"></p>
 
 - **Remove** things from **Continue Watching** or **Next Up** without losing your place. Start watching again and the title comes back by itself.
 - **Hide** anything you never want to see, from the library, search, recommendations, the calendar and more.
@@ -244,20 +201,13 @@ The **Requests** page shows every Seerr request and what's downloading right now
 
 ### 👥 Share it with your household
 
-<table>
-<tr>
-<td width="50%"><img src="docs/images/readme/activity.webp" alt="Activity page showing who is watching now and recent watch history"></td>
-<td width="50%" valign="top">
+<p align="center"><img src="docs/images/readme/activity.webp" alt="Activity page showing who is watching now and recent watch history" width="100%"></p>
 
 - **Activity:** see what everyone is watching right now, and what they recently watched, favorited and reviewed. People only see activity for titles they have access to.
 - **Reviews and ratings:** anyone can rate a movie, show, season or episode and write a review. The average appears on detail pages, and optionally on posters.
 - **Login screen avatars:** everyone's profile picture on the sign-in screen.
 
-<img src="docs/images/readme/login-avatars.webp" alt="Login screen with user avatars">
-
-</td>
-</tr>
-</table>
+<p align="center"><img src="docs/images/readme/login-avatars.webp" alt="Login screen with user avatars" width="70%"></p>
 
 ### 📡 See who's watching right now
 
@@ -279,30 +229,21 @@ Everything works in the official Jellyfin apps for Android and iOS, and in Jelly
 
 ### 🛠️ Tools for the server admin
 
-<table>
-<tr>
-<td width="50%"><img src="docs/images/readme/admin-settings.webp" alt="Jellyfin Enhanced settings page in the dashboard"></td>
-<td width="50%" valign="top">
-
 Everything is configured from **Dashboard → Plugins → Jellyfin Enhanced**, with search, descriptions for every option and highlights of the new settings after each update.
+
+<p align="center"><img src="docs/images/readme/admin-settings.webp" alt="Jellyfin Enhanced settings page in the dashboard" width="100%"></p>
 
 - **Set defaults** for everyone, or overwrite everyone's personal settings in one click
 - **Import Jellyfin users into Seerr**, and **audit** who is allowed to request what
 - **Sonarr, Radarr and Bazarr links**, and \*arr tags shown on items
 - **Check which parts are working** with built-in connection tests
-
-</td>
-</tr>
-</table>
-
-- **Maintenance mode:** a banner on the login page, and optionally lock out everyone except admins while you work.
-
-  <img src="docs/images/readme/maintenance-mode.webp" alt="Maintenance banner on the Jellyfin login page" width="70%">
-
+- **Maintenance mode:** a banner on the login page, and optionally lock out everyone except admins while you work
 - **Your own branding:** upload a logo, banners, favicon and loading screen
 - **Themes:** pick a color theme (or a random one each day), plus colored activity and plugin icons
 - **Documented CSS hooks** to restyle any part of the plugin
 - **Translated into 20+ languages** by the community
+
+<p align="center"><img src="docs/images/readme/maintenance-mode.webp" alt="Maintenance banner on the Jellyfin login page" width="100%"></p>
 
 <sub>[Admin & other features →](https://n00bcodr.github.io/Jellyfin-Enhanced/other/other-features/)</sub>
 
