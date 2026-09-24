@@ -3381,7 +3381,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // is limited to title-free lookups; single-title lookups are gated on
             // that title and anything else (search, discover, trending, lists) is
             // refused, because it would return titles unfiltered.
-            // Nothing but a successful upstream response may be cached by the browser.
+            // Nothing but a successful upstream response may be kept by the browser,
+            // and even that is revalidated (so re-gated) on every use.
             Response.Headers["Cache-Control"] = "no-store";
 
             var config = JellyfinEnhanced.Instance?.Configuration;
@@ -3437,11 +3438,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 if (response.IsSuccess)
                 {
-                    // Browser cache: private, and varied on the auth headers so a
+                    // Browser cache: private + no-cache, so every reuse comes back
+                    // here (parental gating above runs again) and costs only a 304
+                    // when the body is unchanged. Varied on the auth headers so a
                     // shared browser profile never hands one account's response
                     // (restricted users get different results) to another.
-                    Response.Headers["Cache-Control"] = $"private, max-age={Services.TmdbResponseCache.GetBrowserMaxAgeSeconds(apiPath)}";
+                    Response.Headers["Cache-Control"] = "private, no-cache";
                     Response.Headers["Vary"] = "Authorization, X-Emby-Token, X-Jellyfin-User-Id";
+                    Response.Headers["ETag"] = response.ETag;
+                    if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], response.ETag))
+                    {
+                        return StatusCode(StatusCodes.Status304NotModified);
+                    }
                     return Content(response.Content, "application/json");
                 }
 
