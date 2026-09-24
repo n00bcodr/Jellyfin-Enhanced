@@ -13,6 +13,13 @@
     const _reviewCache = new Map();
     // In-flight deduplication, same keys
     const _inFlight = new Map();
+    // Keys whose batch failed (not aborted) → time (ms) until which they
+    // resolve to null without a request. Stops a persistently failing server
+    // (e.g. a corrupt reviews.json) from getting a new, transport-retried
+    // batch on every tag-pipeline render; after the window they refetch.
+    /** @type {Map<string, number>} */
+    const _failedUntil = new Map();
+    const FAILURE_BACKOFF_MS = 60 * 1000;
 
     // Ratings are fetched in batches: every key requested within one short
     // window goes out as a single GET /reviews/ratings?keys=… instead of one
@@ -31,8 +38,8 @@
 
     /**
      * Send every queued key in one request and settle each key's promise.
-     * On failure (network, non-OK, abort) the keys resolve to null WITHOUT
-     * being cached so a later render retries them.
+     * On failure the keys resolve to null without being cached; a non-abort
+     * failure also backs them off for FAILURE_BACKOFF_MS before a retry.
      */
     async function flushQueue() {
         if (_flushTimer !== null) {
@@ -60,7 +67,10 @@
          */
         const settle = (cacheKey, entry, value, cacheable) => {
             if (isCurrent()) {
-                if (cacheable) _reviewCache.set(cacheKey, value);
+                if (cacheable) {
+                    _reviewCache.set(cacheKey, value);
+                    _failedUntil.delete(cacheKey);
+                }
                 if (_inFlight.get(cacheKey) === entry.promise) _inFlight.delete(cacheKey);
             }
             entry.resolve(value);
@@ -70,6 +80,8 @@
             const keys = batch.map(([cacheKey]) => cacheKey).join(',');
             const data = await JE.core.api.plugin(`/reviews/ratings?keys=${encodeURIComponent(keys)}`, {
                 signal: controller.signal,
+                // Takes effect with the request-priority change (#865);
+                // ignored by builds without it.
                 priority: 'low'
             });
             const ratings = (data && typeof data.ratings === 'object' && data.ratings) || {};
@@ -83,8 +95,14 @@
                 settle(cacheKey, entry, avg, true);
             }
         } catch (e) {
+            // An abort (user switch) is not a server failure: no backoff, so
+            // the next render refetches immediately.
             if (/** @type {any} */ (e)?.name !== 'AbortError') {
-                console.warn(`${logPrefix} rating batch failed; will retry on next render.`, e);
+                console.warn(`${logPrefix} rating batch failed; retrying these ratings after ${FAILURE_BACKOFF_MS / 1000}s.`, e);
+                if (isCurrent()) {
+                    const until = Date.now() + FAILURE_BACKOFF_MS;
+                    for (const [cacheKey] of batch) _failedUntil.set(cacheKey, until);
+                }
             }
             for (const [cacheKey, entry] of batch) settle(cacheKey, entry, null, false);
         } finally {
@@ -105,6 +123,7 @@
         _queue.clear();
         _reviewCache.clear();
         _inFlight.clear();
+        _failedUntil.clear();
         for (const entry of orphaned) entry.resolve(null);
     });
 
@@ -117,6 +136,11 @@
         const cacheKey = `${mediaType}:${tmdbKey}`;
         if (_reviewCache.has(cacheKey)) return _reviewCache.get(cacheKey);
         if (_inFlight.has(cacheKey)) return _inFlight.get(cacheKey);
+        const failedUntil = _failedUntil.get(cacheKey);
+        if (failedUntil !== undefined) {
+            if (Date.now() < failedUntil) return null;
+            _failedUntil.delete(cacheKey);
+        }
 
         if ((mediaType !== 'movie' && mediaType !== 'tv') || !TMDB_KEY_RE.test(tmdbKey)) {
             _reviewCache.set(cacheKey, null);
@@ -292,10 +316,12 @@
     JE.invalidateUserReviewTagCache = function(tmdbKey, mediaType) {
         if (!tmdbKey) {
             _reviewCache.clear();
+            _failedUntil.clear();
             return;
         }
         for (const type of mediaType ? [mediaType] : ['movie', 'tv']) {
             _reviewCache.delete(`${type}:${tmdbKey}`);
+            _failedUntil.delete(`${type}:${tmdbKey}`);
         }
     };
 
