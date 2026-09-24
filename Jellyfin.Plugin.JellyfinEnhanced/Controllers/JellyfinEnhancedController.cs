@@ -7977,15 +7977,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // other callers while bounding the upstream fan-out of a single request.
         private const int ArrLinksBatchMaxIds = 100;
 
-        // Upstream calls in flight per Radarr/Sonarr instance for one batch request.
-        private const int ArrLinksBatchPerInstanceConcurrency = 4;
+        // Upstream calls in flight per Radarr/Sonarr instance, shared by every concurrent
+        // arr/links request (the page sends a small visible-cards batch next to the rest).
+        // 8 matches what the old per-card path reached: up to 8 browser requests through
+        // JE's request pool, each querying every instance once. Lower values make a slow
+        // instance (e.g. a 4K Radarr at ~1 s per lookup) take several rounds per page.
+        private const int ArrLinksPerInstanceConcurrency = 8;
+
+        // One gate per instance URL, process-wide, so parallel batches (two tabs, visible +
+        // rest chunks) cannot multiply the load on an instance. Entries are tiny and keyed by
+        // configured URLs, so the map stays as small as the instance list.
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> _arrLinksInstanceGates =
+            new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Batch form of <c>arr/movie-instances</c> + <c>arr/series-slugs</c> for pages that
         /// show many items at once (the Requests page). Radarr/Sonarr v3 only filter
         /// <c>/movie</c> and <c>/series</c> by a single tmdbId/tvdbId (the unfiltered lists are
         /// whole-library dumps), so this still makes one upstream call per id and instance, but
-        /// with bounded per-instance concurrency and one browser round trip.
+        /// with bounded per-instance concurrency and a handful of browser requests per page.
         /// Each value is exactly what the matching single endpoint returns for that id.
         /// </summary>
         /// <param name="tmdbIds">Comma-separated positive TMDB movie ids (Radarr).</param>
@@ -8060,10 +8070,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// Looks every id up on every instance with at most
-        /// <see cref="ArrLinksBatchPerInstanceConcurrency"/> calls in flight per instance, and
-        /// returns id → <c>{ matches, errors }</c>. Once an instance times out, fails at the
-        /// network level or rejects the API key, its remaining lookups in this batch report the
-        /// same error instead of waiting out the timeout once per id.
+        /// <see cref="ArrLinksPerInstanceConcurrency"/> calls in flight per instance (across all
+        /// batch requests), and returns id → <c>{ matches, errors }</c>. Once an instance times
+        /// out, fails at the network level or rejects the API key, its remaining lookups in this
+        /// batch report the same error instead of waiting out the timeout once per id. Per-id
+        /// HTTP errors (e.g. a 500 for one movie) are not generalised. FetchAndMapAsync makes a
+        /// single attempt (no retry/backoff), so a failing instance costs one call per id.
         /// </summary>
         private static async Task<Dictionary<string, object>> LookupArrLinksBatchAsync(
             IReadOnlyList<int> ids,
@@ -8083,45 +8095,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return result;
             }
 
-            var gates = instances.Select(_ => new SemaphoreSlim(ArrLinksBatchPerInstanceConcurrency)).ToArray();
+            var gates = instances
+                .Select(i => _arrLinksInstanceGates.GetOrAdd(i.Url.Trim().TrimEnd('/'), _ => new SemaphoreSlim(ArrLinksPerInstanceConcurrency)))
+                .ToArray();
             // Per-instance sticky failure (null = healthy); written by whichever lookup hits it first.
             var failed = new string?[instances.Count];
-            try
+
+            async Task<ArrFetchOutcome> LookupOne(int instanceIndex, int id)
             {
-                async Task<ArrFetchOutcome> LookupOne(int instanceIndex, int id)
+                var gate = gates[instanceIndex];
+                await gate.WaitAsync(ct).ConfigureAwait(false);
+                try
                 {
-                    var gate = gates[instanceIndex];
-                    await gate.WaitAsync(ct).ConfigureAwait(false);
-                    try
-                    {
-                        var sticky = Volatile.Read(ref failed[instanceIndex]);
-                        if (sticky != null)
-                            return new ArrFetchOutcome { Error = sticky };
+                    var sticky = Volatile.Read(ref failed[instanceIndex]);
+                    if (sticky != null)
+                        return new ArrFetchOutcome { Error = sticky };
 
-                        var outcome = await fetch(instances[instanceIndex], id, ct).ConfigureAwait(false);
-                        if (outcome.Error != null && IsInstanceWideArrError(outcome.Error))
-                            Volatile.Write(ref failed[instanceIndex], outcome.Error);
-                        return outcome;
-                    }
-                    finally
-                    {
-                        gate.Release();
-                    }
+                    var outcome = await fetch(instances[instanceIndex], id, ct).ConfigureAwait(false);
+                    if (outcome.Error != null && IsInstanceWideArrError(outcome.Error))
+                        Volatile.Write(ref failed[instanceIndex], outcome.Error);
+                    return outcome;
                 }
-
-                var perId = ids
-                    .Select(id => Task.WhenAll(Enumerable.Range(0, instances.Count).Select(i => LookupOne(i, id))))
-                    .ToArray();
-                var outcomes = await Task.WhenAll(perId).ConfigureAwait(false);
-
-                for (int n = 0; n < ids.Count; n++)
-                    result[ids[n].ToString(System.Globalization.CultureInfo.InvariantCulture)] = BuildArrLookupResult(instances, outcomes[n]);
-                return result;
+                finally
+                {
+                    gate.Release();
+                }
             }
-            finally
-            {
-                foreach (var gate in gates) gate.Dispose();
-            }
+
+            var perId = ids
+                .Select(id => Task.WhenAll(Enumerable.Range(0, instances.Count).Select(i => LookupOne(i, id))))
+                .ToArray();
+            var outcomes = await Task.WhenAll(perId).ConfigureAwait(false);
+
+            for (int n = 0; n < ids.Count; n++)
+                result[ids[n].ToString(System.Globalization.CultureInfo.InvariantCulture)] = BuildArrLookupResult(instances, outcomes[n]);
+            return result;
         }
 
         // Errors from FetchAndMapAsync that describe the instance rather than the id looked up.

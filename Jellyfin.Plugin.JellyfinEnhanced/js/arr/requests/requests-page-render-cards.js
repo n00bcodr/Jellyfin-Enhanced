@@ -429,6 +429,8 @@
 
   // Must match ArrLinksBatchMaxIds in JellyfinEnhancedController (arr/links).
   const ARR_LINKS_BATCH_MAX_IDS = 100;
+  // Ids per service looked up in the first (on-screen cards) request.
+  const ARR_LINKS_FIRST_CHUNK = 6;
 
   /**
    * The arr/links lookup in flight, shared by renders that show the same ids
@@ -457,10 +459,11 @@
    * they're in the DOM. (The Seerr link needs no lookup and is already
    * rendered synchronously by renderRequestCard - this only appends the arr
    * link once its instance lookup resolves, it never overwrites the slot.)
-   * Cards are looked up with one arr/links batch request per service (movies
-   * via Radarr, series via Sonarr; chunked at the server cap) instead of one
-   * request per card; the two run side by side so a slow Radarr does not hold
-   * back the Sonarr links. A newer render showing different ids aborts the
+   * Cards are looked up with arr/links batch requests per service (movies via
+   * Radarr, series via Sonarr) instead of one request per card: a small one
+   * for the first cards and one for the rest (chunked at the server cap), all
+   * side by side and each filling its cards as it arrives, so a slow Radarr
+   * does not hold back the Sonarr links or the first cards' links. A newer render showing different ids aborts the
    * previous lookup; cards detached meanwhile are skipped.
    * Only attempted for admins with ArrLinksEnabled - matching the same gate
    * arr-links.js uses on item-details pages. The backend endpoints also
@@ -489,15 +492,24 @@
     });
     if (!cards.length) return;
 
-    // Unique ids per service, chunked so each request stays within the server cap.
+    // Unique ids per service in page order. The first few (the cards on screen
+    // first) go in their own small request next to the rest, so their links
+    // show as soon as those lookups finish instead of after the whole page;
+    // the rest is chunked so each request stays within the server cap.
     /** @type {Array<{param: string, field: string, query: string}>} */
-    const requests = [];
+    const firstRequests = [];
+    /** @type {Array<{param: string, field: string, query: string}>} */
+    const restRequests = [];
     for (const [mediaType, param, field] of [['movie', 'tmdbIds', 'movies'], ['tv', 'tvdbIds', 'series']]) {
       const ids = [...new Set(cards.filter(c => c.mediaType === mediaType).map(c => c.id))];
-      for (let i = 0; i < ids.length; i += ARR_LINKS_BATCH_MAX_IDS) {
-        requests.push({ param, field, query: `${param}=${ids.slice(i, i + ARR_LINKS_BATCH_MAX_IDS).join(',')}` });
+      const toRequest = (chunk) => ({ param, field, query: `${param}=${chunk.join(',')}` });
+      if (!ids.length) continue;
+      firstRequests.push(toRequest(ids.slice(0, ARR_LINKS_FIRST_CHUNK)));
+      for (let i = ARR_LINKS_FIRST_CHUNK; i < ids.length; i += ARR_LINKS_BATCH_MAX_IDS) {
+        restRequests.push(toRequest(ids.slice(i, i + ARR_LINKS_BATCH_MAX_IDS)));
       }
     }
+    const requests = [...firstRequests, ...restRequests];
     const key = requests.map(r => r.query).join('&');
 
     let lookup = externalLinksLookup;
