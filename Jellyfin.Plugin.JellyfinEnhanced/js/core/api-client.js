@@ -37,13 +37,44 @@
             maxEntries: 200
         },
         concurrency: {
-            maxConcurrent: 8,
-            maxQueueSize: 100
+            // JE's endpoints share a host with Jellyfin's own API and image
+            // requests. Over HTTP/1.1 browsers open at most 6 connections per
+            // host, so staying below 6 leaves sockets free for jellyfin-web.
+            // Over HTTP/2 (common behind reverse proxies) there is no per-host
+            // socket limit; the cap then simply bounds how much JE work competes
+            // with jellyfin-web's own requests.
+            maxConcurrent: 4,
+            maxQueueSize: 100,
+            // Decorative lane (priority: 'low'): at most this many of the
+            // maxConcurrent slots, and only when no normal request is waiting,
+            // so normal requests always find a slot quickly. Its queue is bounded
+            // separately: decorative lookups past the bound are rejected (callers
+            // already treat a failed embellishment as "render nothing").
+            maxLowConcurrent: 2,
+            maxLowQueueSize: 200
         }
     };
 
+    /**
+     * Scheduling options for withConcurrencyLimit. coreFetch keeps the same
+     * object on its dedup entry so a normal caller joining a still-queued low
+     * request can promote it (promoteRequest mutates `priority`).
+     * @typedef {Object} ConcurrencyOptions
+     * @property {'low'|'normal'} [priority='normal'] - 'low' = decorative lane.
+     * @property {AbortSignal|null} [signal] - Leaves the queue and rejects with
+     *   an AbortError as soon as it aborts while waiting for a slot.
+     */
+
+    /**
+     * @typedef {Object} QueuedRequest
+     * @property {ConcurrencyOptions} options
+     * @property {number} enqueuedAt
+     * @property {(lane: 'low'|'normal') => void} start - Hands over an already-acquired slot.
+     * @property {() => void} cancel - Rejects with an AbortError (caller removes it from its queue).
+     */
+
     // In-flight request deduplication
-    /** @type {Map<string, {promise: Promise<any>, signal: AbortSignal|null}>} */
+    /** @type {Map<string, {promise: Promise<any>, signal: AbortSignal|null, limit: ConcurrencyOptions|null}>} */
     const inFlightRequests = new Map();
 
     // Response cache with TTL
@@ -56,8 +87,11 @@
 
     // Concurrency control
     let activeCount = 0;
-    /** @type {Array<Function>} */
+    let activeLowCount = 0;
+    /** @type {Array<QueuedRequest>} */
     const pendingQueue = [];
+    /** @type {Array<QueuedRequest>} */
+    const lowPriorityQueue = [];
 
     // Metrics (debug-gated)
     const metrics = {
@@ -65,7 +99,9 @@
         /** @type {Map<string, any>} */
         sections: new Map(),
         /** @type {Array<any>} */
-        requests: []
+        requests: [],
+        /** @type {Array<{priority: 'low'|'normal', waitMs: number}>} */
+        queueWaits: []
     };
 
     /**
@@ -74,6 +110,16 @@
      */
     function sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    /**
+     * Same AbortError shape fetchWithRetry throws.
+     * @returns {Error}
+     */
+    function createAbortError() {
+        const abortError = new Error('Request aborted');
+        abortError.name = 'AbortError';
+        return abortError;
     }
 
     /**
@@ -203,8 +249,11 @@
      * @param {string} key
      * @param {() => Promise<any>} fetchFn
      * @param {AbortSignal} [signal]
+     * @param {ConcurrencyOptions} [limit] - The scheduling options fetchFn passes to
+     *   withConcurrencyLimit; any joiner not itself low priority (including callers
+     *   that omit this) promotes a queued low request.
      */
-    function deduplicatedFetch(key, fetchFn, signal) {
+    function deduplicatedFetch(key, fetchFn, signal, limit) {
         // Share an in-flight request only with callers on the SAME abort signal
         // (or both unsignalled): a caller must never adopt a request that another
         // caller's controller can abort — or already has. The entry is dropped
@@ -217,11 +266,20 @@
             if (metrics.enabled) {
                 console.debug(`${logPrefix} Reusing in-flight request for ${key}`);
             }
+            // A decorative lookup must not make a primary caller wait in the
+            // low lane for the same data.
+            if (existing.limit && (!limit || limit.priority !== 'low')) {
+                promoteRequest(existing.limit);
+            }
             return existing.promise;
         }
 
-        /** @type {{promise: Promise<any>, signal: AbortSignal|null}} */
-        const entry = { promise: /** @type {Promise<any>} */ (/** @type {unknown} */ (null)), signal: wanted };
+        /** @type {{promise: Promise<any>, signal: AbortSignal|null, limit: ConcurrencyOptions|null}} */
+        const entry = {
+            promise: /** @type {Promise<any>} */ (/** @type {unknown} */ (null)),
+            signal: wanted,
+            limit: limit || null
+        };
         const release = () => {
             // Only remove OUR entry: after a user-switch flush a new
             // request may already occupy this key — deleting it would let
@@ -242,29 +300,130 @@
     }
 
     /**
+     * Start queued requests while slots are free: every waiting normal request
+     * first, then low requests up to the low-lane cap. The slot is counted
+     * here, before the waiter resumes, so a synchronous caller in the same
+     * tick cannot also claim it.
+     */
+    function drainQueues() {
+        while (activeCount < CONFIG.concurrency.maxConcurrent) {
+            /** @type {QueuedRequest|undefined} */
+            let next;
+            /** @type {'low'|'normal'} */
+            let lane;
+            if (pendingQueue.length > 0) {
+                next = pendingQueue.shift();
+                lane = 'normal';
+            } else if (lowPriorityQueue.length > 0 && activeLowCount < CONFIG.concurrency.maxLowConcurrent) {
+                next = lowPriorityQueue.shift();
+                lane = 'low';
+            } else {
+                break;
+            }
+            if (!next) break;
+            activeCount++;
+            if (lane === 'low') activeLowCount++;
+            if (metrics.enabled) {
+                metrics.queueWaits.push({ priority: lane, waitMs: performance.now() - next.enqueuedAt });
+            }
+            next.start(lane);
+        }
+    }
+
+    /**
+     * Move a still-queued low request to the back of the normal queue. A low
+     * request that is already running keeps its low-lane slot until it settles.
+     * Promotion bypasses maxQueueSize: the request is already admitted.
+     * @param {ConcurrencyOptions} options
+     */
+    function promoteRequest(options) {
+        if (options.priority !== 'low') return;
+        options.priority = 'normal';
+        const index = lowPriorityQueue.findIndex(entry => entry.options === options);
+        if (index === -1) return;
+        pendingQueue.push(lowPriorityQueue.splice(index, 1)[0]);
+        drainQueues();
+    }
+
+    /**
+     * Wait in the queue for the request's lane until drainQueues hands over a slot.
+     * @param {ConcurrencyOptions} options
+     * @returns {Promise<'low'|'normal'>} The lane whose slot was acquired.
+     */
+    function enqueue(options) {
+        const low = options.priority === 'low';
+        const queue = low ? lowPriorityQueue : pendingQueue;
+        const maxSize = low ? CONFIG.concurrency.maxLowQueueSize : CONFIG.concurrency.maxQueueSize;
+        if (queue.length >= maxSize) {
+            return Promise.reject(new Error('Request queue full - too many pending requests'));
+        }
+        const signal = options.signal || null;
+        return new Promise((resolve, reject) => {
+            // Aborted while waiting: leave the queue now instead of holding a
+            // place until a slot frees, and never consume that slot later.
+            const onAbort = () => {
+                for (const q of [pendingQueue, lowPriorityQueue]) {
+                    const index = q.indexOf(entry);
+                    if (index !== -1) q.splice(index, 1);
+                }
+                entry.cancel();
+            };
+            /** @type {QueuedRequest} */
+            const entry = {
+                options,
+                enqueuedAt: performance.now(),
+                start: (lane) => {
+                    if (signal) signal.removeEventListener('abort', onAbort);
+                    resolve(lane);
+                },
+                cancel: () => {
+                    if (signal) signal.removeEventListener('abort', onAbort);
+                    reject(createAbortError());
+                }
+            };
+            if (signal) signal.addEventListener('abort', onAbort, { once: true });
+            queue.push(entry);
+        });
+    }
+
+    /**
+     * Reject every request still waiting in the low-priority queue, so a
+     * previous page's decorative lookups never drain ahead of the new page's.
+     * Running requests and the normal queue (which holds any promoted request)
+     * are untouched. The rejection releases their in-flight dedup entries.
+     */
+    function dropLowPriorityQueue() {
+        for (const entry of lowPriorityQueue.splice(0)) entry.cancel();
+    }
+
+    /**
      * Execute function with concurrency limit
      * @param {() => Promise<any>} fn
+     * @param {ConcurrencyOptions} [options] - Optional priority lane and abort signal.
      */
-    async function withConcurrencyLimit(fn) {
-        // Wait if at capacity
-        if (activeCount >= CONFIG.concurrency.maxConcurrent) {
-            // Check queue size limit
-            if (pendingQueue.length >= CONFIG.concurrency.maxQueueSize) {
-                throw new Error('Request queue full - too many pending requests');
-            }
-            await new Promise(resolve => pendingQueue.push(resolve));
+    async function withConcurrencyLimit(fn, options = {}) {
+        if (options.signal && options.signal.aborted) throw createAbortError();
+
+        /** @type {'low'|'normal'} */
+        let lane = options.priority === 'low' ? 'low' : 'normal';
+        const canStart = activeCount < CONFIG.concurrency.maxConcurrent && pendingQueue.length === 0
+            && (lane === 'normal'
+                || (lowPriorityQueue.length === 0 && activeLowCount < CONFIG.concurrency.maxLowConcurrent));
+        if (canStart) {
+            activeCount++;
+            if (lane === 'low') activeLowCount++;
+        } else {
+            // Wait if at capacity (the slot is counted by drainQueues)
+            lane = await enqueue(options);
         }
 
-        activeCount++;
         try {
             return await fn();
         } finally {
             activeCount--;
+            if (lane === 'low') activeLowCount--;
             // Release next queued request
-            if (pendingQueue.length > 0) {
-                const next = pendingQueue.shift();
-                if (next) next();
-            }
+            drainQueues();
         }
     }
 
@@ -441,7 +600,8 @@
         const result = {
             /** @type {Record<string, any>} */
             sections: {},
-            requests: metrics.requests.slice()
+            requests: metrics.requests.slice(),
+            queueWaits: metrics.queueWaits.slice()
         };
         for (const [name, data] of metrics.sections) {
             result.sections[name] = { ...data };
@@ -455,15 +615,18 @@
     function resetMetrics() {
         metrics.sections.clear();
         metrics.requests = [];
+        metrics.queueWaits = [];
     }
 
     // Abort all in-flight requests on SPA navigation so that mid-fetch results
     // from page A don't land on page B with stale state. Modules continue to
     // do their own per-section cleanup; this is a belt-and-braces global
     // handler. Uses the deduplicated navigation pipeline, which covers
-    // popstate, hashchange AND pushState transitions.
+    // popstate, hashchange AND pushState transitions. Queued decorative
+    // (low-priority) lookups are dropped too: they belong to the old page.
     JE.core.navigation.onNavigate(() => {
         try { abortAllRequests(); } catch (_) { /* never propagate */ }
+        try { dropLowPriorityQueue(); } catch (_) { /* never propagate */ }
     });
 
     const manager = {
@@ -525,6 +688,9 @@
      * @property {boolean} [skipRetry=false] - Limit to a single attempt.
      * @property {boolean} [auth=true] - Include the Jellyfin auth headers.
      * @property {number} [timeoutMs] - Per-request timeout; aborts via AbortController.
+     * @property {'low'} [priority] - Decorative lookup (badges, icons, per-card tags): runs in
+     *   a capped lane that yields to every waiting normal request, and is sent with
+     *   fetch priority 'low'. A normal caller sharing the same in-flight request promotes it.
      */
 
     /**
@@ -545,10 +711,16 @@
             skipCache = false,
             skipRetry = false,
             auth = true,
-            timeoutMs
+            timeoutMs,
+            priority
         } = options;
 
         const isGet = method.toUpperCase() === 'GET';
+
+        // One object per request: the limiter reads it while queued, and the
+        // dedup entry keeps it so a normal joiner can promote a queued low request.
+        /** @type {ConcurrencyOptions} */
+        const limit = { priority: priority === 'low' ? 'low' : 'normal', signal: signal || null };
 
         // Check cache first (GET only)
         if (isGet && !skipCache && cacheKey) {
@@ -565,6 +737,9 @@
 
             /** @type {RequestInit} */
             const init = { method, headers: requestHeaders };
+            // Fetch Priority hint; ignored by browsers without support. Read at
+            // start time so a promoted request goes out at normal priority.
+            if (limit.priority === 'low') init.priority = 'low';
 
             if (body !== undefined) {
                 if (typeof body === 'string') {
@@ -630,21 +805,24 @@
         // fetch takes a pool slot (waiters share its promise without holding
         // slots), and re-check the cache once a slot is acquired: a prefetch that
         // completed while this call queued must not be fetched a second time.
+        // The caller's signal goes to the limiter too, so a request aborted while
+        // queued leaves the queue at once; dedup only shares entries between
+        // callers on the same signal, so that abort already applies to every sharer.
         const limitedFetch = () => withConcurrencyLimit(() => {
             if (isGet && !skipCache && cacheKey) {
                 const cached = getCached(cacheKey);
                 if (cached) return Promise.resolve(cached);
             }
             return fetchFn();
-        });
-        if (isGet && cacheKey) return deduplicatedFetch(cacheKey, limitedFetch, signal);
+        }, limit);
+        if (isGet && cacheKey) return deduplicatedFetch(cacheKey, limitedFetch, signal, limit);
 
         // Plain GETs share concurrent identical requests too, even without a cacheKey
         // (nothing is cached). Skipped when a caller customises the headers, since the
         // response could then differ for the same URL. Each caller gets its own copy so
         // one mutating its result cannot affect the others.
         if (isGet && auth && Object.keys(headers).length === 0) {
-            return deduplicatedFetch(`GET ${url}`, limitedFetch, signal).then((data) => structuredClone(data));
+            return deduplicatedFetch(`GET ${url}`, limitedFetch, signal, limit).then((data) => structuredClone(data));
         }
         return limitedFetch();
     }

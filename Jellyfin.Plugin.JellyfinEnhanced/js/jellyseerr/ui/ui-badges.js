@@ -84,9 +84,11 @@
             // after a filter toggle — refetches the same provider list per card.
             // Mirrors the pre-split key so the 30-minute TTL behaviour is unchanged.
             // Non-OK responses throw and land in the catch below.
+            // priority 'low': one lookup per card, purely decorative — it must
+            // not hold connections the search results / rows themselves need.
             const data = await JE.core.api.plugin(
                 `/tmdb/${mediaType}/${tmdbId}/watch/providers`,
-                { cacheKey: `providers:${mediaType}:${tmdbId}` }
+                { cacheKey: `providers:${mediaType}:${tmdbId}`, priority: 'low' }
             );
             let providers = data.results?.[DEFAULT_REGION]?.flatrate;
 
@@ -123,6 +125,8 @@
                 }
             }
         } catch (error) {
+            // Queued lookups are dropped on navigation; that is expected, not a failure.
+            if (error?.name === 'AbortError') return;
             console.warn(`${logPrefix} Could not fetch provider icons for TMDB ID ${tmdbId}:`, error);
         }
     }

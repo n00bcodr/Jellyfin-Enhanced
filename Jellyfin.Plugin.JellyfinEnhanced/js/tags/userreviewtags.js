@@ -26,7 +26,8 @@
             try {
                 // Core throws on non-OK responses, which lands in the catch below —
                 // same "cache null, return null" outcome as the old !response.ok branch.
-                const data = await JE.core.api.plugin(`/reviews/${mediaType}/${tmdbKey}`);
+                // priority 'low': one lookup per poster for a decorative chip.
+                const data = await JE.core.api.plugin(`/reviews/${mediaType}/${tmdbKey}`, { priority: 'low' });
                 const rated = (data.reviews || []).filter(r => r.rating);
                 if (rated.length === 0) {
                     _reviewCache.set(tmdbKey, null);
@@ -37,6 +38,9 @@
                 _reviewCache.set(tmdbKey, avg);
                 return avg;
             } catch (e) {
+                // Dropped on navigation: not a "no rating" answer, so don't
+                // cache it — the next render for this item fetches again.
+                if (e?.name === 'AbortError') return undefined;
                 _reviewCache.set(tmdbKey, null);
                 return null;
             } finally {
@@ -177,6 +181,7 @@
 
         const { tmdbKey, mediaType } = resolved;
         const rating = await fetchUserRating(tmdbKey, mediaType);
+        if (rating === undefined) return; // lookup aborted — render nothing
 
         if (rating === null && JE.pluginConfig?.ShowUserRatingDash === false) return;
 

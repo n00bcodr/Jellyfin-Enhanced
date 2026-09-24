@@ -434,7 +434,8 @@
    * link once its instance lookup resolves, it never overwrites the slot.)
    * Only attempted for admins with ArrLinksEnabled - matching the same gate
    * arr-links.js uses on item-details pages. The backend endpoints also
-   * enforce admin-only regardless.
+   * enforce admin-only regardless. One lookup per card, so they go in the
+   * low-priority request lane behind the page's own list requests.
    * @param {HTMLElement} container
    */
   async function hydrateExternalLinks(container) {
@@ -453,14 +454,14 @@
       let button = null;
       try {
         if (mediaType === 'movie') {
-          const data = await JE.core.api.plugin(`/arr/movie-instances?tmdbId=${encodeURIComponent(tmdbId)}`);
+          const data = await JE.core.api.plugin(`/arr/movie-instances?tmdbId=${encodeURIComponent(tmdbId)}`, { priority: 'low' });
           const match = (data?.matches || [])[0];
           const url = match ? getMappedUrl(parseUrlMappings(match.urlMappings || ''), match.instanceUrl) : null;
           if (url) {
             button = `<a is="emby-linkbutton" class="je-request-external-link" href="${escapeHtml(`${url}/movie/${tmdbId}`)}" target="_blank" rel="noopener noreferrer" title="Open in Radarr" aria-label="Open in Radarr"><img src="${RADARR_ICON_URL}" alt="Radarr"></a>`;
           }
         } else if (tvdbId) {
-          const data = await JE.core.api.plugin(`/arr/series-slugs?tvdbId=${encodeURIComponent(tvdbId)}`);
+          const data = await JE.core.api.plugin(`/arr/series-slugs?tvdbId=${encodeURIComponent(tvdbId)}`, { priority: 'low' });
           const match = (data?.matches || [])[0];
           const url = match ? getMappedUrl(parseUrlMappings(match.urlMappings || ''), match.instanceUrl) : null;
           if (url && match.titleSlug) {
