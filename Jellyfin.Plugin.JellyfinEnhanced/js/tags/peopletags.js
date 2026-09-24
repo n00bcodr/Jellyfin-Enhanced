@@ -20,6 +20,11 @@
         const CACHE_TTL = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
         // Must not exceed the server's people/info cap (MaxPeopleInfoBatchSize).
         const BATCH_SIZE = 100;
+        // The start of the cast row (what is on screen) is requested on its own
+        // so those cards are tagged without waiting for the rest of the cast.
+        const FIRST_CHUNK_SIZE = 8;
+        // Extra attempts for a chunk that failed after the transport's retries.
+        const RETRY_DELAYS_MS = [1000, 3000];
         // Follow-up batches for cards that mount while a batch is in flight.
         const MAX_PASSES = 5;
 
@@ -90,8 +95,44 @@
             console.warn(`${logPrefix} cache ownership check failed`, e);
         }
 
-        let peopleCache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
-        let peopleCacheTimestamp = JSON.parse(localStorage.getItem(CACHE_TIMESTAMP_KEY) || '{}');
+        /**
+         * @param {*} value
+         * @returns {boolean}
+         */
+        function isPlainObject(value) {
+            return !!value && typeof value === 'object' && !Array.isArray(value);
+        }
+
+        /**
+         * Read one persisted cache map. Missing -> {}; corrupt (unparseable or
+         * not a plain object) throws so the caller can start clean.
+         * @param {string} key
+         * @returns {object}
+         */
+        function readPersistedMap(key) {
+            const raw = localStorage.getItem(key);
+            if (!raw) return {};
+            const value = JSON.parse(raw);
+            if (!isPlainObject(value)) throw new TypeError(`${key} is not an object`);
+            return value;
+        }
+
+        let peopleCache = {};
+        let peopleCacheTimestamp = {};
+        try {
+            peopleCache = readPersistedMap(CACHE_KEY);
+            peopleCacheTimestamp = readPersistedMap(CACHE_TIMESTAMP_KEY);
+        } catch (e) {
+            console.warn(`${logPrefix} Discarding unreadable people cache`, e);
+            peopleCache = {};
+            peopleCacheTimestamp = {};
+            try {
+                localStorage.removeItem(CACHE_KEY);
+                localStorage.removeItem(CACHE_TIMESTAMP_KEY);
+            } catch (clearError) {
+                console.warn(`${logPrefix} Failed to clear people cache`, clearError);
+            }
+        }
         const Hot = (JE._hotCache = JE._hotCache || { ttl: CACHE_TTL });
         Hot.peopleTags = Hot.peopleTags || new Map();
 
@@ -112,8 +153,12 @@
             }
         });
 
+        // Cards that are done (rendered, or the server answered without that
+        // person) and cards claimed by an in-flight request.
         let processedCastMembers = new WeakSet();
-        let processedPersonIds = new Set();
+        let pendingCards = new WeakSet();
+        // Cards whose request failed for good: not retried again this visit.
+        let failedCards = new WeakSet();
         let lastProcessedItemId = null;
         let peopleTagsComplete = false; // Set true after all cast members tagged for current item
         let isProcessing = false;
@@ -124,7 +169,10 @@
         const lifecycle = JE.core.lifecycle.register('people-tags');
         lifecycle.teardown();
         let batchController = null;
+        // Retry waits are lifecycle-owned and cancelled with the batch.
+        const retryWaits = new Set();
         function resetBatchController() {
+            cancelRetryWaits();
             if (batchController) {
                 batchController.abort();
                 lifecycle.untrack(batchController);
@@ -242,7 +290,7 @@
             }
 
             // Check localStorage cache
-            if (peopleCache[cacheKey] && peopleCacheTimestamp[cacheKey]) {
+            if (isPlainObject(peopleCache[cacheKey]) && typeof peopleCacheTimestamp[cacheKey] === 'number') {
                 if (now - peopleCacheTimestamp[cacheKey] < CACHE_TTL) {
                     const data = peopleCache[cacheKey];
                     Hot.peopleTags.set(cacheKey, { data, timestamp: now });
@@ -264,59 +312,123 @@
         }
 
         /**
-         * Fetch person info for many people in one request per BATCH_SIZE ids.
-         * @param {string[]} personIds - Unique, uncached person ids
+         * @param {number} epoch
+         * @returns {boolean} True while the identity that started a request is current.
+         */
+        function isCurrentEpoch(epoch) {
+            return !JE.session || JE.session.isCurrent(epoch);
+        }
+
+        /**
+         * Wait before retrying a chunk. Resolves false if the batch is reset
+         * (navigation to another item, user switch) or the feature is torn down.
+         * @param {number} ms
+         * @returns {Promise<boolean>}
+         */
+        function waitForRetry(ms) {
+            return new Promise((resolve) => {
+                const wait = { timeoutId: 0, cancel: () => {} };
+                const finish = (proceed) => {
+                    if (!retryWaits.delete(wait)) return;
+                    lifecycle.untrack(wait.cancel);
+                    resolve(proceed);
+                };
+                wait.cancel = () => {
+                    clearTimeout(wait.timeoutId);
+                    finish(false);
+                };
+                wait.timeoutId = setTimeout(() => finish(true), ms);
+                retryWaits.add(wait);
+                lifecycle.track(wait.cancel);
+            });
+        }
+
+        function cancelRetryWaits() {
+            for (const wait of [...retryWaits]) wait.cancel();
+        }
+
+        /**
+         * Release claimed cards without marking them done, so a later pass or
+         * visit can pick them up again.
+         * @param {Array<[string, Element[]]>} entries
+         * @param {boolean} [failed=false] - Request gave up: skip for the rest of this visit.
+         */
+        function releaseCards(entries, failed = false) {
+            for (const [, cards] of entries) {
+                for (const card of cards) {
+                    pendingCards.delete(card);
+                    if (failed) failedCards.add(card);
+                }
+            }
+        }
+
+        /**
+         * Fetch one chunk of people (retrying a failed request a bounded number
+         * of times), cache the answers and render every card of each person.
+         * @param {Array<[string, Element[]]>} chunk - [personId, cards] pairs
          * @param {string} itemId - Detail item (for age at release)
          * @param {AbortSignal} signal
-         * @returns {Promise<Map<string, object>>} personId -> person info; ids the
-         *   server did not return are absent. Empty when the response is stale.
+         * @param {number} requestEpoch
+         * @returns {Promise<boolean>} True when new data was cached.
          */
-        async function fetchPeopleInfo(personIds, itemId, signal) {
-            const results = new Map();
-            if (personIds.length === 0) return results;
+        async function fetchAndRenderChunk(chunk, itemId, signal, requestEpoch) {
+            const ids = chunk.map(([personId]) => personId);
+            const path = `/people/info?ids=${ids.map(encodeURIComponent).join(',')}&itemId=${encodeURIComponent(itemId)}`;
 
-            // A response resolving after a user switch must not be written
-            // under the NEW user's identity-owner sentinel or rendered.
-            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-            const chunks = [];
-            for (let i = 0; i < personIds.length; i += BATCH_SIZE) {
-                chunks.push(personIds.slice(i, i + BATCH_SIZE));
-            }
-
-            const responses = await Promise.all(chunks.map(async (chunk) => {
-                const query = `ids=${chunk.map(encodeURIComponent).join(',')}&itemId=${encodeURIComponent(itemId)}`;
+            let response = null;
+            for (let attempt = 0; ; attempt++) {
                 try {
-                    return await JE.core.api.plugin(`/people/info?${query}`, { signal });
+                    response = await JE.core.api.plugin(path, { signal });
+                    break;
                 } catch (error) {
-                    if (!signal.aborted) {
-                        console.warn(`${logPrefix} Failed to fetch person info for ${chunk.length} people:`, error);
+                    if (signal.aborted) {
+                        releaseCards(chunk);
+                        return false;
                     }
-                    return null;
+                    // A client error (bad request, auth) would fail the same way again.
+                    const status = Number(error?.status) || 0;
+                    const retryable = !status || status >= 500 || status === 408 || status === 429;
+                    if (!retryable || attempt >= RETRY_DELAYS_MS.length) {
+                        console.warn(`${logPrefix} Failed to fetch person info for ${ids.length} people:`, error);
+                        releaseCards(chunk, true);
+                        return false;
+                    }
+                    console.debug(`${logPrefix} Person info request failed, retrying in ${RETRY_DELAYS_MS[attempt]}ms`, error);
+                    if (!(await waitForRetry(RETRY_DELAYS_MS[attempt])) || signal.aborted) {
+                        releaseCards(chunk);
+                        return false;
+                    }
                 }
-            }));
-
-            if (signal.aborted || (JE.session && !JE.session.isCurrent(requestEpoch))) {
-                return new Map();
             }
 
+            // A response resolving after a user switch or navigation to another
+            // item must not be cached under the new identity or rendered.
+            if (signal.aborted || !isCurrentEpoch(requestEpoch) || lastProcessedItemId !== itemId) {
+                releaseCards(chunk);
+                return false;
+            }
+
+            const people = isPlainObject(response?.people) ? response.people : {};
+            const paint = !!JE.currentSettings?.peopleTagsEnabled;
             const now = Date.now();
-            responses.forEach((response, index) => {
-                const people = response && typeof response.people === 'object' && !Array.isArray(response.people)
-                    ? response.people : null;
-                if (!people) return;
-                for (const personId of chunks[index]) {
-                    const data = people[normalizeId(personId)];
-                    if (!data || typeof data !== 'object' || Array.isArray(data)) continue;
+            let cached = false;
+            for (const [personId, cards] of chunk) {
+                const data = people[normalizeId(personId)];
+                if (isPlainObject(data)) {
                     const cacheKey = `${personId}-${itemId}`;
                     peopleCache[cacheKey] = data;
                     peopleCacheTimestamp[cacheKey] = now;
                     Hot.peopleTags.set(cacheKey, { data, timestamp: now });
-                    results.set(personId, data);
+                    cached = true;
                 }
-            });
-
-            if (results.size > 0) persistPeopleCache();
-            return results;
+                for (const card of cards) {
+                    pendingCards.delete(card);
+                    if (!paint) continue;
+                    if (isPlainObject(data)) renderPersonCard(card, personId, data);
+                    processedCastMembers.add(card);
+                }
+            }
+            return cached;
         }
 
         /**
@@ -485,12 +597,13 @@
         }
 
         /**
-         * Collect not-yet-processed cards from the cast and guest cast
-         * sections in one pass (one card per person id per item, as before).
-         * @returns {Array<{card: Element, personId: string}>}
+         * Claim not-yet-processed cards from the cast and guest cast sections
+         * in one pass, grouped by person (a person can have several cards,
+         * e.g. actor and director, or cast and guest cast). DOM order is kept.
+         * @returns {Map<string, Element[]>}
          */
         function collectPendingCards() {
-            const pending = [];
+            const groups = new Map();
             for (const collapsibleSelector of ['#castCollapsible', '#guestCastCollapsible']) {
                 const collapsible = document.querySelector(`#itemDetailPage:not(.hide) ${collapsibleSelector}`);
                 if (!collapsible) continue;
@@ -501,49 +614,62 @@
                 console.debug(`${logPrefix} Found ${castCards.length} cast members in ${collapsibleSelector}`);
 
                 for (const card of castCards) {
-                    if (processedCastMembers.has(card)) continue;
-                    processedCastMembers.add(card);
+                    if (processedCastMembers.has(card) || pendingCards.has(card) || failedCards.has(card)) continue;
 
                     const personId = card.getAttribute('data-id');
                     if (!personId) continue;
 
-                    // Skip if we've already processed this person ID in this item
-                    if (processedPersonIds.has(personId)) continue;
-
-                    processedPersonIds.add(personId);
-                    pending.push({ card, personId });
+                    pendingCards.add(card);
+                    const cards = groups.get(personId);
+                    if (cards) cards.push(card);
+                    else groups.set(personId, [card]);
                 }
             }
-            return pending;
+            return groups;
         }
 
         /**
-         * Render cached cards immediately, fetch every miss in one batch,
-         * then render the rest.
-         * @param {Array<{card: Element, personId: string}>} pending
+         * Render cached people immediately, then fetch the misses: the first
+         * FIRST_CHUNK_SIZE people (start of the row) and the rest (in
+         * BATCH_SIZE chunks) in parallel, rendering each chunk as it returns.
+         * @param {Map<string, Element[]>} groups
          * @param {string} currentItemId
          * @param {AbortSignal} signal
          */
-        async function processPendingCards(pending, currentItemId, signal) {
+        async function processPendingCards(groups, currentItemId, signal) {
+            const entries = [...groups];
+            // Feature switched off: paint nothing.
+            if (!JE.currentSettings?.peopleTagsEnabled) {
+                releaseCards(entries);
+                return;
+            }
+
             const now = Date.now();
             const misses = [];
-            for (const entry of pending) {
-                const cached = getCachedPersonInfo(`${entry.personId}-${currentItemId}`, now);
-                if (cached) {
-                    renderPersonCard(entry.card, entry.personId, cached);
-                } else {
+            for (const entry of entries) {
+                const [personId, cards] = entry;
+                const cached = getCachedPersonInfo(`${personId}-${currentItemId}`, now);
+                if (!cached) {
                     misses.push(entry);
+                    continue;
+                }
+                for (const card of cards) {
+                    renderPersonCard(card, personId, cached);
+                    pendingCards.delete(card);
+                    processedCastMembers.add(card);
                 }
             }
             if (misses.length === 0) return;
 
-            const fetched = await fetchPeopleInfo(misses.map(entry => entry.personId), currentItemId, signal);
-            if (signal.aborted || lastProcessedItemId !== currentItemId) return;
-
-            for (const entry of misses) {
-                const personData = fetched.get(entry.personId);
-                if (personData) renderPersonCard(entry.card, entry.personId, personData);
+            const chunks = [misses.slice(0, FIRST_CHUNK_SIZE)];
+            for (let i = FIRST_CHUNK_SIZE; i < misses.length; i += BATCH_SIZE) {
+                chunks.push(misses.slice(i, i + BATCH_SIZE));
             }
+
+            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+            const results = await Promise.all(chunks.map(chunk => fetchAndRenderChunk(chunk, currentItemId, signal, requestEpoch)));
+            // One localStorage write per batch, once every chunk has settled.
+            if (results.some(Boolean) && isCurrentEpoch(requestEpoch)) persistPeopleCache();
         }
 
         /**
@@ -568,9 +694,9 @@
 
                 // Cast and guest cast share one batch; cards that mount while
                 // a batch is in flight are picked up by a small follow-up batch.
-                for (let pass = 0; pass < MAX_PASSES; pass++) {
+                for (let pass = 0; pass < MAX_PASSES && JE.currentSettings?.peopleTagsEnabled; pass++) {
                     const pending = collectPendingCards();
-                    if (pending.length === 0) break;
+                    if (pending.size === 0) break;
                     await processPendingCards(pending, currentItemId, signal);
                     if (signal.aborted || lastProcessedItemId !== currentItemId) break;
                 }
@@ -590,6 +716,7 @@
 
             // Handle item details page display with debounced observer (same pattern as features.js)
             const handlePeopleTags = JE.helpers.debounce(() => {
+                if (!JE.currentSettings?.peopleTagsEnabled) return;
                 const castSection = document.querySelector('#itemDetailPage:not(.hide) #castCollapsible');
                 const guestCastSection = document.querySelector('#itemDetailPage:not(.hide) #guestCastCollapsible');
 
@@ -604,7 +731,8 @@
                         lastProcessedItemId = itemId;
                         resetBatchController();
                         processedCastMembers = new WeakSet();
-                        processedPersonIds = new Set();
+                        pendingCards = new WeakSet();
+                        failedCards = new WeakSet();
                         peopleTagsComplete = false;
                         console.debug(`${logPrefix} New item detected: ${itemId}`);
                     }
@@ -681,6 +809,10 @@
                     subtree: true
                 }
             );
+
+            // The cast may already be on screen (feature enabled from the
+            // settings panel, or JE loaded after the detail page rendered).
+            handlePeopleTags();
 
             console.debug(`${logPrefix} Initialization complete`);
         }

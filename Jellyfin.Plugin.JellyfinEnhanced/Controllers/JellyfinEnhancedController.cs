@@ -2062,6 +2062,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private const int MaxPeopleInfoBatchSize = 100;
         private const int PeopleInfoTmdbConcurrency = 5;
+        // One slow TMDB lookup must not hold a whole cast batch (or a single
+        // person request) hostage: past this, fall back to Jellyfin-only data.
+        private static readonly TimeSpan PersonTmdbTimeout = TimeSpan.FromSeconds(6);
 
         /// <summary>
         /// Batch form of <see cref="GetPersonInfo"/> for the People Tags cast
@@ -2206,10 +2209,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Try to enrich with TMDB data if available
             if (!string.IsNullOrEmpty(tmdbId) && int.TryParse(tmdbId, out var tmdbPersonId))
             {
+                using var tmdbTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                tmdbTimeout.CancelAfter(PersonTmdbTimeout);
                 try
                 {
                     // _logger.Info($"Fetching TMDB data for person {person.Id} (TMDB ID: {tmdbPersonId})");
-                    var tmdbPersonData = await GetTmdbPersonData(tmdbPersonId, cancellationToken).ConfigureAwait(false);
+                    var tmdbPersonData = await GetTmdbPersonData(tmdbPersonId, tmdbTimeout.Token).ConfigureAwait(false);
                     if (tmdbPersonData != null)
                     {
                         // _logger.Info($"TMDB data received: BirthPlace={tmdbPersonData.BirthPlace}, BirthDate={tmdbPersonData.BirthDate}, DeathDate={tmdbPersonData.DeathDate}");
@@ -2237,6 +2242,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         _logger.Warning($"No TMDB data returned for person {person.Id} (TMDB ID: {tmdbPersonId})");
                     }
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && tmdbTimeout.IsCancellationRequested)
+                {
+                    _logger.Warning($"TMDB lookup for person {person.Id} (TMDB ID: {tmdbPersonId}) exceeded {PersonTmdbTimeout.TotalSeconds:0}s; using Jellyfin data only");
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
                 {
