@@ -8023,7 +8023,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 () => BuildNoArrInstancesResult("Sonarr", config.IsSonarrInstancesCorrupt(), config.GetSonarrInstances().Count > 0),
                 FetchSeriesInfoFromInstance,
                 ct);
-            await Task.WhenAll(moviesTask, seriesTask).ConfigureAwait(false);
+            try
+            {
+                await Task.WhenAll(moviesTask, seriesTask).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                // Browser went away (navigated off, aborted a superseded lookup) -
+                // expected under normal use, not a failure worth logging.
+                return StatusCode(499);
+            }
 
             return Ok(new { movies = await moviesTask.ConfigureAwait(false), series = await seriesTask.ConfigureAwait(false) });
         }
