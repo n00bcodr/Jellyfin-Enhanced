@@ -242,7 +242,7 @@
                     icon: 'newspaper'
                 },
                 {
-                    selector: 'a[href*="Segment%Editor"]',
+                    selector: 'a[href*="Segment%20Editor"]',
                     type: 'material',
                     icon: 'content_cut'
                 },
@@ -255,7 +255,7 @@
                 {
                     selector: 'a[href*="Moonbase"]',
                     type: 'image',
-                    src: window.JellyfinEnhanced.cdn.url('moonbase', 'Jellyfin/backend/assets/icon.png'),
+                    src: window.JellyfinEnhanced.cdn.url('moonbase', 'moonfin-client'),
                     alt: 'Moonbase'
                 }
             ];
