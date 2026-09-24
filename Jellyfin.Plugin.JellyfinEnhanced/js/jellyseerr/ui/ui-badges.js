@@ -125,7 +125,7 @@
                 }
             }
         } catch (error) {
-            // Queued lookups are dropped on navigation; that is expected, not a failure.
+            // An aborted lookup (e.g. dropped from the queue on a user switch) is expected, not a failure.
             if (error?.name === 'AbortError') return;
             console.warn(`${logPrefix} Could not fetch provider icons for TMDB ID ${tmdbId}:`, error);
         }

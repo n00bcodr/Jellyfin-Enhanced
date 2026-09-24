@@ -38,8 +38,8 @@
                 _reviewCache.set(tmdbKey, avg);
                 return avg;
             } catch (e) {
-                // Dropped on navigation: not a "no rating" answer, so don't
-                // cache it — the next render for this item fetches again.
+                // Aborted (e.g. dropped from the queue on a user switch): not a
+                // "no rating" answer, so don't cache it — the next render fetches again.
                 if (e?.name === 'AbortError') return undefined;
                 _reviewCache.set(tmdbKey, null);
                 return null;

@@ -47,9 +47,12 @@
             maxQueueSize: 100,
             // Decorative lane (priority: 'low'): at most this many of the
             // maxConcurrent slots, and only when no normal request is waiting,
-            // so normal requests always find a slot quickly. Its queue is bounded
-            // separately: decorative lookups past the bound are rejected (callers
-            // already treat a failed embellishment as "render nothing").
+            // so normal requests always find a slot quickly. While no normal
+            // request is queued or running, the lane widens to maxConcurrent - 1,
+            // which still leaves a slot free for the next normal request. Its
+            // queue (current + previous-page entries) is bounded separately: past
+            // the bound the oldest previous-page lookup is dropped, else the new
+            // one is rejected (callers treat a failed embellishment as "render nothing").
             maxLowConcurrent: 2,
             maxLowQueueSize: 200
         }
@@ -92,6 +95,11 @@
     const pendingQueue = [];
     /** @type {Array<QueuedRequest>} */
     const lowPriorityQueue = [];
+    // Low requests queued before the last navigation: Jellyfin keeps earlier
+    // views in the DOM and their cards never re-request decorations, so these
+    // still run — but only once the current page's low queue is empty.
+    /** @type {Array<QueuedRequest>} */
+    const staleLowQueue = [];
 
     // Metrics (debug-gated)
     const metrics = {
@@ -105,11 +113,29 @@
     };
 
     /**
-     * Sleep utility with jitter support
+     * Sleep utility with jitter support. Rejects with an AbortError as soon as
+     * `signal` aborts, so an aborted request frees its slot without waiting out
+     * a retry backoff.
      * @param {number} ms
+     * @param {AbortSignal|null} [signal]
+     * @returns {Promise<void>}
      */
-    function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
+    function sleep(ms, signal) {
+        return new Promise((resolve, reject) => {
+            if (signal && signal.aborted) {
+                reject(createAbortError());
+                return;
+            }
+            const onAbort = () => {
+                clearTimeout(timer);
+                reject(createAbortError());
+            };
+            const timer = setTimeout(() => {
+                if (signal) signal.removeEventListener('abort', onAbort);
+                resolve();
+            }, ms);
+            if (signal) signal.addEventListener('abort', onAbort, { once: true });
+        });
     }
 
     /**
@@ -231,7 +257,7 @@
                 if (metrics.enabled) {
                     console.debug(`${logPrefix} Retry ${attempt}/${retryConfig.maxAttempts} for ${url} in ${delay}ms`);
                 }
-                await sleep(delay);
+                await sleep(delay, options.signal);
             }
         }
 
@@ -300,10 +326,21 @@
     }
 
     /**
+     * Low-lane cap: maxLowConcurrent, widened to maxConcurrent - 1 while no
+     * normal request is queued or running (one slot always stays free for the
+     * next normal arrival).
+     */
+    function lowLaneCap() {
+        const idle = pendingQueue.length === 0 && activeCount === activeLowCount;
+        const { maxConcurrent, maxLowConcurrent } = CONFIG.concurrency;
+        return idle ? Math.max(maxLowConcurrent, maxConcurrent - 1) : maxLowConcurrent;
+    }
+
+    /**
      * Start queued requests while slots are free: every waiting normal request
-     * first, then low requests up to the low-lane cap. The slot is counted
-     * here, before the waiter resumes, so a synchronous caller in the same
-     * tick cannot also claim it.
+     * first, then current-page low requests, then previous-page ones, up to the
+     * low-lane cap. The slot is counted here, before the waiter resumes, so a
+     * synchronous caller in the same tick cannot also claim it.
      */
     function drainQueues() {
         while (activeCount < CONFIG.concurrency.maxConcurrent) {
@@ -314,8 +351,8 @@
             if (pendingQueue.length > 0) {
                 next = pendingQueue.shift();
                 lane = 'normal';
-            } else if (lowPriorityQueue.length > 0 && activeLowCount < CONFIG.concurrency.maxLowConcurrent) {
-                next = lowPriorityQueue.shift();
+            } else if (activeLowCount < lowLaneCap() && (lowPriorityQueue.length > 0 || staleLowQueue.length > 0)) {
+                next = lowPriorityQueue.length > 0 ? lowPriorityQueue.shift() : staleLowQueue.shift();
                 lane = 'low';
             } else {
                 break;
@@ -339,10 +376,24 @@
     function promoteRequest(options) {
         if (options.priority !== 'low') return;
         options.priority = 'normal';
-        const index = lowPriorityQueue.findIndex(entry => entry.options === options);
-        if (index === -1) return;
-        pendingQueue.push(lowPriorityQueue.splice(index, 1)[0]);
-        drainQueues();
+        for (const queue of [lowPriorityQueue, staleLowQueue]) {
+            const index = queue.findIndex(entry => entry.options === options);
+            if (index === -1) continue;
+            pendingQueue.push(queue.splice(index, 1)[0]);
+            drainQueues();
+            return;
+        }
+    }
+
+    /**
+     * Remove a waiting request from whichever queue holds it.
+     * @param {QueuedRequest} entry
+     */
+    function removeQueued(entry) {
+        for (const queue of [pendingQueue, lowPriorityQueue, staleLowQueue]) {
+            const index = queue.indexOf(entry);
+            if (index !== -1) queue.splice(index, 1);
+        }
     }
 
     /**
@@ -354,18 +405,19 @@
         const low = options.priority === 'low';
         const queue = low ? lowPriorityQueue : pendingQueue;
         const maxSize = low ? CONFIG.concurrency.maxLowQueueSize : CONFIG.concurrency.maxQueueSize;
-        if (queue.length >= maxSize) {
-            return Promise.reject(new Error('Request queue full - too many pending requests'));
+        const queued = low ? lowPriorityQueue.length + staleLowQueue.length : pendingQueue.length;
+        if (queued >= maxSize) {
+            // A full low lane makes room by dropping the oldest previous-page lookup.
+            const evicted = low ? staleLowQueue.shift() : undefined;
+            if (!evicted) return Promise.reject(new Error('Request queue full - too many pending requests'));
+            evicted.cancel();
         }
         const signal = options.signal || null;
         return new Promise((resolve, reject) => {
             // Aborted while waiting: leave the queue now instead of holding a
             // place until a slot frees, and never consume that slot later.
             const onAbort = () => {
-                for (const q of [pendingQueue, lowPriorityQueue]) {
-                    const index = q.indexOf(entry);
-                    if (index !== -1) q.splice(index, 1);
-                }
+                removeQueued(entry);
                 entry.cancel();
             };
             /** @type {QueuedRequest} */
@@ -387,13 +439,24 @@
     }
 
     /**
-     * Reject every request still waiting in the low-priority queue, so a
-     * previous page's decorative lookups never drain ahead of the new page's.
-     * Running requests and the normal queue (which holds any promoted request)
-     * are untouched. The rejection releases their in-flight dedup entries.
+     * On navigation, demote waiting low requests behind the new page's: they
+     * still run (earlier views stay in the DOM and their cards never retry),
+     * but only once the current low queue is empty. Running requests and the
+     * normal queue (which holds any promoted request) are untouched.
      */
-    function dropLowPriorityQueue() {
-        for (const entry of lowPriorityQueue.splice(0)) entry.cancel();
+    function demoteLowPriorityQueue() {
+        staleLowQueue.push(...lowPriorityQueue.splice(0));
+    }
+
+    /**
+     * Reject every waiting request in every queue (user switch). Headers and
+     * the identity epoch are captured when a request starts, so a request
+     * queued as user A must never go out — writes included — as user B.
+     */
+    function cancelAllQueued() {
+        for (const queue of [pendingQueue, lowPriorityQueue, staleLowQueue]) {
+            for (const entry of queue.splice(0)) entry.cancel();
+        }
     }
 
     /**
@@ -408,7 +471,7 @@
         let lane = options.priority === 'low' ? 'low' : 'normal';
         const canStart = activeCount < CONFIG.concurrency.maxConcurrent && pendingQueue.length === 0
             && (lane === 'normal'
-                || (lowPriorityQueue.length === 0 && activeLowCount < CONFIG.concurrency.maxLowConcurrent));
+                || (lowPriorityQueue.length === 0 && activeLowCount < lowLaneCap()));
         if (canStart) {
             activeCount++;
             if (lane === 'low') activeLowCount++;
@@ -532,6 +595,7 @@
     JE.session?.onUserChange('core-api', () => {
         responseCache.clear();
         inFlightRequests.clear();
+        cancelAllQueued();
     });
 
     // Metrics API
@@ -623,10 +687,10 @@
     // do their own per-section cleanup; this is a belt-and-braces global
     // handler. Uses the deduplicated navigation pipeline, which covers
     // popstate, hashchange AND pushState transitions. Queued decorative
-    // (low-priority) lookups are dropped too: they belong to the old page.
+    // (low-priority) lookups are demoted behind the new page's, not dropped.
     JE.core.navigation.onNavigate(() => {
         try { abortAllRequests(); } catch (_) { /* never propagate */ }
-        try { dropLowPriorityQueue(); } catch (_) { /* never propagate */ }
+        try { demoteLowPriorityQueue(); } catch (_) { /* never propagate */ }
     });
 
     const manager = {
