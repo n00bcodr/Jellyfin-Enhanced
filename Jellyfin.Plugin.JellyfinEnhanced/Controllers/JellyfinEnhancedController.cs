@@ -3469,6 +3469,122 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
+        /// Batched watch providers for Seerr cards: one request per screenful of
+        /// cards instead of one TMDB passthrough call per card, returning only the
+        /// region's flat-rate providers (what a card renders) rather than every
+        /// region's full list.
+        /// items: comma-separated "movie:{id}" / "tv:{id}" (distinct, max 100).
+        /// region: two-letter code; defaults to the admin DEFAULT_REGION.
+        /// Response: { "region": "US", "results": { "movie:603": [ { provider_id,
+        /// provider_name, logo_path } ] | null } } where null means unavailable
+        /// (upstream error, or refused to this caller by parental gating).
+        /// </summary>
+        [HttpGet("watch-providers")]
+        [Authorize]
+        public async Task<IActionResult> GetWatchProvidersBatch([FromQuery] string? items, [FromQuery] string? region)
+        {
+            Response.Headers["Cache-Control"] = "no-store";
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
+            {
+                return StatusCode(503, "TMDB API key is not configured.");
+            }
+
+            if (!Services.WatchProvidersBatch.TryParseItems(items, out var requested, out var itemsError))
+            {
+                return BadRequest(itemsError);
+            }
+
+            var regionCode = string.IsNullOrEmpty(region) ? Services.WatchProvidersBatch.DefaultRegion(config.DEFAULT_REGION) : region;
+            if (!Services.WatchProvidersBatch.IsValidRegion(regionCode))
+            {
+                return BadRequest("Invalid region.");
+            }
+
+            var apiKey = config.TMDB_API_KEY;
+            var callerId = UserHelper.GetCurrentUserId(User)?.ToString();
+            var restricted = _parentalFilter.TryGetRestrictedPolicy(callerId, out _);
+            var aborted = HttpContext.RequestAborted;
+            var results = new ConcurrentDictionary<string, List<Services.WatchProvidersBatch.Provider>?>(StringComparer.Ordinal);
+            using var slots = new SemaphoreSlim(6);
+            var failures = 0;
+            string? lastError = null;
+
+            async Task LoadAsync(Services.WatchProvidersBatch.Item item)
+            {
+                await slots.WaitAsync(aborted).ConfigureAwait(false);
+                try
+                {
+                    // The same per-caller parental gating the passthrough applies to
+                    // {type}/{id}/watch/providers; anything refused stays null.
+                    if (restricted)
+                    {
+                        switch (Services.SeerrParentalFilter.ClassifyTmdbPassthrough(item.ApiPath, out var gatedType, out var gatedId))
+                        {
+                            case Services.SeerrParentalFilter.TmdbAccess.Deny:
+                                return;
+                            case Services.SeerrParentalFilter.TmdbAccess.GateTitle:
+                                if (await _parentalFilter.IsBlockedAsync(gatedType, gatedId, callerId, aborted).ConfigureAwait(false))
+                                {
+                                    return;
+                                }
+                                break;
+                        }
+                    }
+
+                    var response = await _tmdbResponseCache.GetAsync(item.ApiPath, string.Empty, apiKey, aborted).ConfigureAwait(false);
+                    if (response.IsSuccess)
+                    {
+                        results[item.Key] = Services.WatchProvidersBatch.ExtractFlatrate(response.Content, regionCode);
+                    }
+                }
+                catch (OperationCanceledException) when (aborted.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // One title failing upstream leaves just that entry null; logged
+                    // once per batch below so an outage doesn't log 100 lines.
+                    Interlocked.Increment(ref failures);
+                    lastError = ex.Message;
+                }
+                finally
+                {
+                    slots.Release();
+                }
+            }
+
+            try
+            {
+                await Task.WhenAll(requested.Select(LoadAsync)).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (aborted.IsCancellationRequested)
+            {
+                return StatusCode(499);
+            }
+
+            if (failures > 0)
+            {
+                _logger.Warning($"Watch providers batch: {failures} of {requested.Count} lookups failed ({lastError}).");
+            }
+
+            var body = Services.WatchProvidersBatch.Serialize(regionCode, requested, results);
+            var etag = Services.TmdbResponseCache.ComputeETag(body);
+            // Same browser-cache policy as the passthrough: every reuse revalidates
+            // here (so gating runs again) and costs a 304 when nothing changed.
+            Response.Headers["Cache-Control"] = "private, no-cache";
+            Response.Headers["Vary"] = "Authorization, X-Emby-Token, X-Jellyfin-User-Id";
+            Response.Headers["ETag"] = etag;
+            if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], etag))
+            {
+                return StatusCode(StatusCodes.Status304NotModified);
+            }
+            return Content(body, "application/json");
+        }
+
+        /// <summary>
         /// Award wins/nominations for a title or a person, keyed by TMDB id.
         /// "movie"/"tv" return awards the title itself (or a cast/crew member,
         /// "for" that title) received; "person" returns that person's own

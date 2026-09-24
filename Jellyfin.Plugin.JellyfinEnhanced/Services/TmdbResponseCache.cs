@@ -246,7 +246,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return tags.Any(t => t.Equals(EntityTagHeaderValue.Any) || t.Compare(current, useStrongComparison: false));
         }
 
-        private static string ComputeETag(string content)
+        /// <summary>Strong ETag for a response body (truncated SHA-256 of its UTF-8 bytes).</summary>
+        internal static string ComputeETag(string content)
             => "\"" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)), 0, 16) + "\"";
 
         // Short, non-reversible tag for the API key so a key change misses every
