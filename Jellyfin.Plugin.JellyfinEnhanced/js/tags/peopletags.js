@@ -4,9 +4,180 @@
 // NOTE: unlike the poster tag modules, this one is NOT a tag-pipeline
 // renderer — it targets person cards on the item detail page with its own
 // managed observer and batch backend endpoint (people/info), so the
-// tag-renderer factory does not apply here.
+// tag-renderer factory does not apply here. Facts are cached per person and
+// ages are derived locally, so episodes of a series share their cast.
 (function(JE) {
     'use strict';
+
+    // ── Person facts model (pure; also used by the unit tests) ─────────────
+    // The cache holds item-independent facts per person; every age is
+    // derived at render time with the server's CalculateAge semantics, so a
+    // series' recurring cast is fetched once and shared by all episodes.
+
+    const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/;
+    const PERSON_ID_PATTERN = /^[0-9a-f]{32}$/;
+    const MAX_BIRTHPLACE_LENGTH = 300;
+
+    function isLeapYear(year) {
+        return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    }
+
+    function daysInMonth(year, month) {
+        return month === 2 ? (isLeapYear(year) ? 29 : 28) : [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+    }
+
+    /**
+     * Parse the calendar date of 'yyyy-MM-dd' (optionally followed by a time
+     * part, e.g. a Jellyfin PremiereDate) without any timezone conversion.
+     * @param {*} value
+     * @returns {{y: number, m: number, d: number}|null}
+     */
+    function parseCalendarDate(value) {
+        if (typeof value !== 'string') return null;
+        const match = DATE_PATTERN.exec(value);
+        if (!match) return null;
+        const y = Number(match[1]);
+        const m = Number(match[2]);
+        const d = Number(match[3]);
+        if (y < 1 || m < 1 || m > 12 || d < 1 || d > daysInMonth(y, m)) return null;
+        return { y, m, d };
+    }
+
+    function compareDates(a, b) {
+        return (a.y - b.y) || (a.m - b.m) || (a.d - b.d);
+    }
+
+    /**
+     * Same result as the server's CalculateAge(birthDate, referenceDate):
+     * year difference, minus one if the reference falls before that year's
+     * anniversary (DateTime.AddYears moves Feb 29 to Feb 28 in non-leap
+     * years), never below zero.
+     * @param {{y: number, m: number, d: number}} birth
+     * @param {{y: number, m: number, d: number}} reference
+     * @returns {number}
+     */
+    function calculateAge(birth, reference) {
+        let age = reference.y - birth.y;
+        const anniversary = { y: reference.y, m: birth.m, d: Math.min(birth.d, daysInMonth(reference.y, birth.m)) };
+        if (compareDates(reference, anniversary) < 0) age--;
+        return Math.max(0, age);
+    }
+
+    /**
+     * @param {Date} [now]
+     * @returns {{y: number, m: number, d: number}} Local calendar date.
+     */
+    function todayDate(now = new Date()) {
+        return { y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate() };
+    }
+
+    /**
+     * Item-independent facts from a people/info (or person/{id}) response.
+     * @param {*} data
+     * @returns {{birthDate?: string, deathDate?: string, birthPlace?: string}|null}
+     */
+    function factsFromResponse(data) {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+        const facts = {};
+        if (parseCalendarDate(data.birthDate)) facts.birthDate = data.birthDate.slice(0, 10);
+        if (parseCalendarDate(data.deathDate)) facts.deathDate = data.deathDate.slice(0, 10);
+        if (typeof data.birthPlace === 'string' && data.birthPlace.trim()) {
+            facts.birthPlace = data.birthPlace.trim().slice(0, MAX_BIRTHPLACE_LENGTH);
+        }
+        return facts;
+    }
+
+    /**
+     * Derive what a card shows, mirroring the server's person response.
+     * @param {{birthDate?: string, deathDate?: string, birthPlace?: string}} facts
+     * @param {{y: number, m: number, d: number}|null} premiere - Item premiere date (visible items only)
+     * @param {{y: number, m: number, d: number}} today
+     */
+    function describePerson(facts, premiere, today) {
+        const birth = parseCalendarDate(facts.birthDate);
+        const death = parseCalendarDate(facts.deathDate);
+        // Server: EndDate < DateTime.Now, i.e. the death date is today or earlier.
+        const isDeceased = !!death && compareDates(death, today) <= 0;
+        let currentAge = null;
+        let ageAtDeath = null;
+        let ageAtItemRelease = null;
+        if (birth) {
+            if (isDeceased) ageAtDeath = calculateAge(birth, death);
+            else currentAge = calculateAge(birth, today);
+            if (premiere) ageAtItemRelease = calculateAge(birth, premiere);
+        }
+        return { birthPlace: facts.birthPlace || null, isDeceased, currentAge, ageAtDeath, ageAtItemRelease };
+    }
+
+    /**
+     * Validate one persisted entry { b, d, p, ts }; null if invalid/expired.
+     */
+    function sanitizeEntry(id, entry, now, ttlMs) {
+        if (!PERSON_ID_PATTERN.test(id) || !entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+        const ts = entry.ts;
+        if (typeof ts !== 'number' || !Number.isFinite(ts) || now - ts >= ttlMs || ts > now + 86400000) return null;
+        const clean = { ts };
+        for (const field of ['b', 'd']) {
+            if (entry[field] === undefined) continue;
+            if (typeof entry[field] !== 'string' || entry[field].length !== 10 || !parseCalendarDate(entry[field])) return null;
+            clean[field] = entry[field];
+        }
+        if (entry.p !== undefined) {
+            if (typeof entry.p !== 'string' || !entry.p || entry.p.length > MAX_BIRTHPLACE_LENGTH) return null;
+            clean.p = entry.p;
+        }
+        return clean;
+    }
+
+    /**
+     * Keep at most maxEntries, dropping the oldest (by fetch time).
+     * @param {Map<string, {ts: number}>} people
+     * @returns {boolean} True if anything was evicted.
+     */
+    function evictOldest(people, maxEntries) {
+        if (people.size <= maxEntries) return false;
+        const oldestFirst = [...people].sort((a, b) => a[1].ts - b[1].ts);
+        for (let i = 0; i < oldestFirst.length - maxEntries; i++) people.delete(oldestFirst[i][0]);
+        return true;
+    }
+
+    /**
+     * Parse and validate the persisted v2 store. A payload with another
+     * owner, another version or a corrupt shape yields an empty store;
+     * expired/invalid entries are dropped and the size is capped.
+     * @returns {{people: Map<string, object>, rewrite: boolean}}
+     */
+    function loadPeopleStore(raw, owner, now, ttlMs, maxEntries) {
+        const people = new Map();
+        if (raw === null || raw === undefined) return { people, rewrite: false };
+        let parsed = null;
+        try {
+            parsed = JSON.parse(raw);
+        } catch {
+            parsed = null;
+        }
+        if (!parsed || typeof parsed !== 'object' || parsed.v !== 2 || parsed.owner !== owner
+            || !parsed.people || typeof parsed.people !== 'object' || Array.isArray(parsed.people)) {
+            return { people, rewrite: true };
+        }
+        let rewrite = false;
+        for (const [id, entry] of Object.entries(parsed.people)) {
+            const clean = sanitizeEntry(id, entry, now, ttlMs);
+            if (clean) people.set(id, clean);
+            else rewrite = true;
+        }
+        if (evictOldest(people, maxEntries)) rewrite = true;
+        return { people, rewrite };
+    }
+
+    function serializePeopleStore(owner, people) {
+        return JSON.stringify({ v: 2, owner, people: Object.fromEntries(people) });
+    }
+
+    JE.peopleTagsModel = {
+        parseCalendarDate, calculateAge, todayDate, factsFromResponse, describePerson,
+        sanitizeEntry, evictOldest, loadPeopleStore, serializePeopleStore
+    };
 
     JE.initializePeopleTags = function() {
         if (!JE.currentSettings.peopleTagsEnabled) {
@@ -15,8 +186,15 @@
         }
 
         const logPrefix = '🪼 Jellyfin Enhanced: People Tags:';
-        const CACHE_KEY = 'JellyfinEnhanced-peopleTagsCache';
-        const CACHE_TIMESTAMP_KEY = 'JellyfinEnhanced-peopleTagsCacheTimestamp';
+        // Per-person facts: { v: 2, owner: 'serverId:userId', people: { id: { b, d, p, ts } } }.
+        const CACHE_KEY = 'JellyfinEnhanced-peopleTagsCache-v2';
+        // Item-keyed v1 cache (one entry per person per item): removed on load.
+        const LEGACY_KEYS = [
+            'JellyfinEnhanced-peopleTagsCache',
+            'JellyfinEnhanced-peopleTagsCacheTimestamp',
+            'JellyfinEnhanced-peopleTagsCacheIdentityOwner'
+        ];
+        const MAX_CACHED_PEOPLE = 3000;
         const CACHE_TTL = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
         // Must not exceed the server's people/info cap (MaxPeopleInfoBatchSize).
         const BATCH_SIZE = 100;
@@ -78,22 +256,11 @@
             'Papua New Guinea': 'PG', 'Fiji': 'FJ', 'Samoa': 'WS', 'Tonga': 'TO'
         };
 
-        // People metadata is fetched with the signed-in user's library access.
-        // The cache key names are frozen, so ownership is tracked via a
-        // sibling sentinel (same pattern as core/tag-renderer-base.js): a
-        // payload written by a different server:user — or a legacy payload
-        // with no sentinel — is dropped instead of being served cross-user.
-        const OWNER_KEY = `${CACHE_KEY}IdentityOwner`;
-        try {
-            const owner = `${JE.session?.getServerId() || ''}:${JE.session?.getUserId() || ApiClient.getCurrentUserId() || ''}`;
-            if (localStorage.getItem(OWNER_KEY) !== owner) {
-                localStorage.removeItem(CACHE_KEY);
-                localStorage.removeItem(CACHE_TIMESTAMP_KEY);
-                localStorage.setItem(OWNER_KEY, owner);
-            }
-        } catch (e) {
-            console.warn(`${logPrefix} cache ownership check failed`, e);
-        }
+        // People metadata is fetched with the signed-in user's library access,
+        // so the store is scoped to server:user (owner inside the payload): a
+        // payload written for anyone else is dropped instead of served.
+        const currentOwner = () => `${JE.session?.getServerId() || ''}:${JE.session?.getUserId() || ApiClient.getCurrentUserId() || ''}`;
+        let storeOwner = currentOwner();
 
         /**
          * @param {*} value
@@ -103,54 +270,28 @@
             return !!value && typeof value === 'object' && !Array.isArray(value);
         }
 
-        /**
-         * Read one persisted cache map. Missing -> {}; corrupt (unparseable or
-         * not a plain object) throws so the caller can start clean.
-         * @param {string} key
-         * @returns {object}
-         */
-        function readPersistedMap(key) {
-            const raw = localStorage.getItem(key);
-            if (!raw) return {};
-            const value = JSON.parse(raw);
-            if (!isPlainObject(value)) throw new TypeError(`${key} is not an object`);
-            return value;
-        }
-
-        let peopleCache = {};
-        let peopleCacheTimestamp = {};
+        /** @type {Map<string, {b?: string, d?: string, p?: string, ts: number}>} */
+        let peopleStore = new Map();
         try {
-            peopleCache = readPersistedMap(CACHE_KEY);
-            peopleCacheTimestamp = readPersistedMap(CACHE_TIMESTAMP_KEY);
+            for (const key of LEGACY_KEYS) localStorage.removeItem(key);
+            const loaded = loadPeopleStore(localStorage.getItem(CACHE_KEY), storeOwner, Date.now(), CACHE_TTL, MAX_CACHED_PEOPLE);
+            peopleStore = loaded.people;
+            if (loaded.rewrite) persistPeopleStore();
         } catch (e) {
-            console.warn(`${logPrefix} Discarding unreadable people cache`, e);
-            peopleCache = {};
-            peopleCacheTimestamp = {};
-            try {
-                localStorage.removeItem(CACHE_KEY);
-                localStorage.removeItem(CACHE_TIMESTAMP_KEY);
-            } catch (clearError) {
-                console.warn(`${logPrefix} Failed to clear people cache`, clearError);
-            }
+            console.warn(`${logPrefix} Could not read people cache`, e);
+            peopleStore = new Map();
         }
         const Hot = (JE._hotCache = JE._hotCache || { ttl: CACHE_TTL });
         Hot.peopleTags = Hot.peopleTags || new Map();
 
-        // Full wipe on user switch; the new owner is stamped immediately so
-        // the next boot doesn't wipe the new user's cache a second time.
+        // Full wipe on user switch; the new owner is stamped immediately.
         JE.session?.onUserChange('people-tags', (change) => {
             // In-flight batches belong to the previous user.
             resetBatchController();
-            peopleCache = {};
-            peopleCacheTimestamp = {};
+            peopleStore = new Map();
             Hot.peopleTags.clear();
-            try {
-                localStorage.removeItem(CACHE_KEY);
-                localStorage.removeItem(CACHE_TIMESTAMP_KEY);
-                localStorage.setItem(OWNER_KEY, `${change.serverId || ''}:${change.userId || ''}`);
-            } catch (e) {
-                console.warn(`${logPrefix} cache clear on user switch failed`, e);
-            }
+            storeOwner = `${change.serverId || ''}:${change.userId || ''}`;
+            persistPeopleStore();
         });
 
         // Cards that are done (rendered, or the server answered without that
@@ -275,39 +416,84 @@
         }
 
         /**
-         * Hot/localStorage cache lookup for one person.
-         * @param {string} cacheKey - `${personId}-${itemId}` (or personId)
+         * Cached facts for one person (hot map first, then the persisted store).
+         * @param {string} personKey - Normalized person id
          * @param {number} now
          * @returns {object|null}
          */
-        function getCachedPersonInfo(cacheKey, now) {
-            // Check in-memory cache first
-            if (Hot.peopleTags.has(cacheKey)) {
-                const cached = Hot.peopleTags.get(cacheKey);
-                if (now - cached.timestamp < CACHE_TTL) {
-                    return cached.data;
-                }
-            }
+        function getCachedFacts(personKey, now) {
+            const hot = Hot.peopleTags.get(personKey);
+            if (hot && now - hot.timestamp < CACHE_TTL) return hot.data;
 
-            // Check localStorage cache
-            if (isPlainObject(peopleCache[cacheKey]) && typeof peopleCacheTimestamp[cacheKey] === 'number') {
-                if (now - peopleCacheTimestamp[cacheKey] < CACHE_TTL) {
-                    const data = peopleCache[cacheKey];
-                    Hot.peopleTags.set(cacheKey, { data, timestamp: now });
-                    return data;
-                }
+            const entry = peopleStore.get(personKey);
+            if (entry && now - entry.ts < CACHE_TTL) {
+                const data = { birthDate: entry.b, deathDate: entry.d, birthPlace: entry.p };
+                Hot.peopleTags.set(personKey, { data, timestamp: entry.ts });
+                return data;
             }
-
             return null;
         }
 
-        /** Persist both cache maps (once per batch, not per person). */
-        function persistPeopleCache() {
-            try {
-                localStorage.setItem(CACHE_KEY, JSON.stringify(peopleCache));
-                localStorage.setItem(CACHE_TIMESTAMP_KEY, JSON.stringify(peopleCacheTimestamp));
-            } catch (e) {
-                console.warn(`${logPrefix} Failed to persist people cache`, e);
+        function rememberFacts(personKey, facts, now) {
+            const entry = { ts: now };
+            if (facts.birthDate) entry.b = facts.birthDate;
+            if (facts.deathDate) entry.d = facts.deathDate;
+            if (facts.birthPlace) entry.p = facts.birthPlace;
+            peopleStore.delete(personKey); // re-insert as newest
+            peopleStore.set(personKey, entry);
+            Hot.peopleTags.set(personKey, { data: facts, timestamp: now });
+        }
+
+        /**
+         * Persist the store (once per batch). Bounded; on a quota error the
+         * oldest half is evicted and the write retried once, then given up.
+         */
+        function persistPeopleStore() {
+            evictOldest(peopleStore, MAX_CACHED_PEOPLE);
+            for (let attempt = 0; attempt < 2; attempt++) {
+                try {
+                    localStorage.setItem(CACHE_KEY, serializePeopleStore(storeOwner, peopleStore));
+                    return;
+                } catch (e) {
+                    if (attempt === 0 && peopleStore.size > 0) {
+                        evictOldest(peopleStore, Math.floor(peopleStore.size / 2));
+                        continue;
+                    }
+                    console.debug(`${logPrefix} People cache not persisted`, e);
+                    return;
+                }
+            }
+        }
+
+        /**
+         * Premiere date of the detail item, read through the shared per-user
+         * item cache (Jellyfin only returns items the user can see; others
+         * yield null, so no age-at-release is shown). Never rejects.
+         * @param {string} itemId
+         * @returns {Promise<{y: number, m: number, d: number}|null>}
+         */
+        function getItemPremiereDate(itemId) {
+            const load = typeof JE.helpers?.getItemCached === 'function'
+                ? JE.helpers.getItemCached(itemId)
+                : ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
+            return Promise.resolve(load)
+                .then(item => parseCalendarDate(item?.PremiereDate))
+                .catch(() => null);
+        }
+
+        /**
+         * Paint every card of a person from the cached facts.
+         * @param {Element[]} cards
+         * @param {string} personId
+         * @param {object} facts
+         * @param {{y: number, m: number, d: number}|null} premiere
+         */
+        function paintPerson(cards, personId, facts, premiere) {
+            const view = describePerson(facts, premiere, todayDate());
+            for (const card of cards) {
+                renderPersonCard(card, personId, view);
+                pendingCards.delete(card);
+                processedCastMembers.add(card);
             }
         }
 
@@ -366,14 +552,17 @@
          * Fetch one chunk of people (retrying a failed request a bounded number
          * of times), cache the answers and render every card of each person.
          * @param {Array<[string, Element[]]>} chunk - [personId, cards] pairs
-         * @param {string} itemId - Detail item (for age at release)
+         * @param {string} itemId - Detail item being painted
          * @param {AbortSignal} signal
          * @param {number} requestEpoch
+         * @param {Promise<object|null>} premierePromise - Item premiere date (for age at release)
          * @returns {Promise<boolean>} True when new data was cached.
          */
-        async function fetchAndRenderChunk(chunk, itemId, signal, requestEpoch) {
+        async function fetchAndRenderChunk(chunk, itemId, signal, requestEpoch, premierePromise) {
             const ids = chunk.map(([personId]) => personId);
-            const path = `/people/info?ids=${ids.map(encodeURIComponent).join(',')}&itemId=${encodeURIComponent(itemId)}`;
+            // Person facts are item-independent: no itemId, so the answer is
+            // cached per person and shared by every item (episode) they are in.
+            const path = `/people/info?ids=${ids.map(encodeURIComponent).join(',')}`;
 
             let response = null;
             for (let attempt = 0; ; attempt++) {
@@ -409,23 +598,35 @@
             }
 
             const people = isPlainObject(response?.people) ? response.people : {};
-            const paint = !!JE.currentSettings?.peopleTagsEnabled;
             const now = Date.now();
             let cached = false;
-            for (const [personId, cards] of chunk) {
-                const data = people[normalizeId(personId)];
-                if (isPlainObject(data)) {
-                    const cacheKey = `${personId}-${itemId}`;
-                    peopleCache[cacheKey] = data;
-                    peopleCacheTimestamp[cacheKey] = now;
-                    Hot.peopleTags.set(cacheKey, { data, timestamp: now });
+            const answered = [];
+            for (const entry of chunk) {
+                const facts = factsFromResponse(people[normalizeId(entry[0])]);
+                if (facts) {
+                    rememberFacts(normalizeId(entry[0]), facts, now);
                     cached = true;
                 }
-                for (const card of cards) {
-                    pendingCards.delete(card);
-                    if (!paint) continue;
-                    if (isPlainObject(data)) renderPersonCard(card, personId, data);
-                    processedCastMembers.add(card);
+                answered.push([entry, facts]);
+            }
+
+            const premiere = await premierePromise;
+            if (signal.aborted || !isCurrentEpoch(requestEpoch) || lastProcessedItemId !== itemId) {
+                releaseCards(chunk);
+                return cached;
+            }
+            const paint = !!JE.currentSettings?.peopleTagsEnabled;
+            for (const [[personId, cards], facts] of answered) {
+                if (!paint) {
+                    releaseCards([[personId, cards]]);
+                } else if (facts) {
+                    paintPerson(cards, personId, facts, premiere);
+                } else {
+                    // Answered without this person: nothing to show, done.
+                    for (const card of cards) {
+                        pendingCards.delete(card);
+                        processedCastMembers.add(card);
+                    }
                 }
             }
             return cached;
@@ -645,31 +846,39 @@
             }
 
             const now = Date.now();
+            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+            const premierePromise = getItemPremiereDate(currentItemId);
+            const hits = [];
             const misses = [];
             for (const entry of entries) {
-                const [personId, cards] = entry;
-                const cached = getCachedPersonInfo(`${personId}-${currentItemId}`, now);
-                if (!cached) {
-                    misses.push(entry);
-                    continue;
-                }
-                for (const card of cards) {
-                    renderPersonCard(card, personId, cached);
-                    pendingCards.delete(card);
-                    processedCastMembers.add(card);
-                }
-            }
-            if (misses.length === 0) return;
-
-            const chunks = [misses.slice(0, FIRST_CHUNK_SIZE)];
-            for (let i = FIRST_CHUNK_SIZE; i < misses.length; i += BATCH_SIZE) {
-                chunks.push(misses.slice(i, i + BATCH_SIZE));
+                const facts = getCachedFacts(normalizeId(entry[0]), now);
+                if (facts) hits.push([entry, facts]);
+                else misses.push(entry);
             }
 
-            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-            const results = await Promise.all(chunks.map(chunk => fetchAndRenderChunk(chunk, currentItemId, signal, requestEpoch)));
+            const chunks = [];
+            if (misses.length > 0) {
+                chunks.push(misses.slice(0, FIRST_CHUNK_SIZE));
+                for (let i = FIRST_CHUNK_SIZE; i < misses.length; i += BATCH_SIZE) {
+                    chunks.push(misses.slice(i, i + BATCH_SIZE));
+                }
+            }
+            const pendingChunks = chunks.map(chunk => fetchAndRenderChunk(chunk, currentItemId, signal, requestEpoch, premierePromise));
+
+            // Cached people only need the item's premiere date.
+            if (hits.length > 0) {
+                const premiere = await premierePromise;
+                if (signal.aborted || !isCurrentEpoch(requestEpoch) || lastProcessedItemId !== currentItemId
+                    || !JE.currentSettings?.peopleTagsEnabled) {
+                    releaseCards(hits.map(([entry]) => entry));
+                } else {
+                    for (const [[personId, cards], facts] of hits) paintPerson(cards, personId, facts, premiere);
+                }
+            }
+
+            const results = await Promise.all(pendingChunks);
             // One localStorage write per batch, once every chunk has settled.
-            if (results.some(Boolean) && isCurrentEpoch(requestEpoch)) persistPeopleCache();
+            if (results.some(Boolean) && isCurrentEpoch(requestEpoch)) persistPeopleStore();
         }
 
         /**
