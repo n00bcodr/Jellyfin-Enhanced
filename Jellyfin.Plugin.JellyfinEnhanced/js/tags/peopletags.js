@@ -9,10 +9,13 @@
 (function(JE) {
     'use strict';
 
-    // ── Person facts model (pure; also used by the unit tests) ─────────────
+    // ── Person facts model (pure) ──────────────────────────────────────────
     // The cache holds item-independent facts per person; every age is
     // derived at render time with the server's CalculateAge semantics, so a
     // series' recurring cast is fetched once and shared by all episodes.
+    // "Today" is the browser's local date (the server used its own clock), so
+    // values can differ by a day around midnight across timezones; that is
+    // acceptable, and more current than the previous 30-day cached value.
 
     const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/;
     const PERSON_ID_PATTERN = /^[0-9a-f]{32}$/;
@@ -173,11 +176,6 @@
     function serializePeopleStore(owner, people) {
         return JSON.stringify({ v: 2, owner, people: Object.fromEntries(people) });
     }
-
-    JE.peopleTagsModel = {
-        parseCalendarDate, calculateAge, todayDate, factsFromResponse, describePerson,
-        sanitizeEntry, evictOldest, loadPeopleStore, serializePeopleStore
-    };
 
     JE.initializePeopleTags = function() {
         if (!JE.currentSettings.peopleTagsEnabled) {
