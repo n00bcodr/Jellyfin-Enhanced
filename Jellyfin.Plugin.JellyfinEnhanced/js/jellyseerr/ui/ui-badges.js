@@ -165,8 +165,6 @@
         // switch is still handed to the cards that asked, but not cached.
         const epoch = JE.session?.getEpoch?.();
         const items = lookups.map(l => l.key).join(',');
-        // priority: 'low' takes effect with the core request-priority support
-        // (#865); builds without it ignore the option.
         JE.core.api.plugin(`/watch-providers?items=${items}&region=${region}`, { signal: batch.controller.signal, priority: 'low' })
             .then((data) => {
                 const results = (data && typeof data.results === 'object' && data.results) || {};
@@ -179,8 +177,12 @@
             }, (error) => {
                 // Aborted because every card left: nobody is waiting, nothing to report.
                 if (batch.controller.signal.aborted) return;
-                // One warning per failed batch; the waiting cards just stay without icons.
-                console.warn(`${logPrefix} Could not fetch provider icons for ${lookups.length} title(s):`, error);
+                // Dropped by the transport (user switch, low-priority queue full):
+                // expected, so no warning; the waiting cards just stay without icons.
+                // Anything else is a failure, logged once per batch.
+                if (error?.name !== 'AbortError') {
+                    console.warn(`${logPrefix} Could not fetch provider icons for ${lookups.length} title(s):`, error);
+                }
                 lookups.forEach(lookup => settleLookup(lookup, w => w.resolve(null)));
             });
     }
