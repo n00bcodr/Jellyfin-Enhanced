@@ -313,8 +313,9 @@
                 }
             }
         } catch (error) {
-            // Cancelled by the caller (card released): not a failure.
-            if (signal && signal.aborted) return;
+            // Cancelled by the caller (card released) or dropped from the queue on a
+            // user switch: expected, not a failure.
+            if ((signal && signal.aborted) || error?.name === 'AbortError') return;
             console.warn(`${logPrefix} Could not fetch provider icons for TMDB ID ${tmdbId}:`, error);
         }
     }

@@ -290,6 +290,7 @@
 
         const { tmdbKey, mediaType } = resolved;
         const rating = await fetchUserRating(tmdbKey, mediaType);
+        if (rating === undefined) return; // lookup aborted — render nothing
 
         if (rating === null && JE.pluginConfig?.ShowUserRatingDash === false) return;
 
