@@ -8048,6 +8048,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        /// <summary>
+        /// Which of the fixed branding slots have a custom image uploaded, in one request.
+        /// </summary>
+        [HttpGet("BrandingStatus")]
+        [Authorize]
+        public IActionResult GetBrandingStatus()
+        {
+            var brandingDir = JellyfinEnhanced.BrandingDirectory;
+            var status = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (var name in BrandingFileNames)
+            {
+                status[name] = !string.IsNullOrWhiteSpace(brandingDir)
+                    && System.IO.File.Exists(Path.Combine(brandingDir, name));
+            }
+
+            return Ok(status);
+        }
+
         [HttpGet("BrandingImage")]
         [Authorize]
         public IActionResult GetBrandingImage([FromQuery] string? fileName)

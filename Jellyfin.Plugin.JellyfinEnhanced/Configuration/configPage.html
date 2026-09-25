@@ -22,10 +22,9 @@
         window.jeCdnUrl = function (subpath) {
             return ApiClient.getUrl('/JellyfinEnhanced/cdn/' + subpath);
         };
-        // Inject the Material Symbols Rounded @font-face pointing at the local gfont route
-        // (replaces the former fonts.gstatic.com @font-face).
+        // Inject the Material Symbols Rounded @font-face from the plugin's bundled font route.
         var jeFontStyle = document.createElement('style');
-        jeFontStyle.textContent = "@font-face{font-family:'Material Symbols Rounded';font-style:normal;font-weight:100 700;font-display:block;src:url(" + jeCdnUrl('gfont/s/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2') + ") format('woff2');}";
+        jeFontStyle.textContent = "@font-face{font-family:'Material Symbols Rounded';font-style:normal;font-weight:100 700;font-display:block;src:url(" + ApiClient.getUrl('/JellyfinEnhanced/fonts/materialsymbolsrounded.woff2') + ") format('woff2');}";
         document.head.appendChild(jeFontStyle);
     </script>
     <style>
@@ -6580,7 +6579,7 @@
         }
 
         // Setup branding file uploads and previews
-        function setupBrandingUploads() {
+        async function setupBrandingUploads() {
             const uploadConfigs = [
                 { inputId: 'iconTransparentInput', dropZoneId: 'iconTransparentDropZone', statusId: 'iconTransparentStatus', fileName: 'icon-transparent.png', previewId: 'iconTransparentPreview', placeholderId: 'iconTransparentPlaceholder', deleteId: 'iconTransparentDelete', dimensionsId: 'iconTransparentDimensions' },
                 { inputId: 'faviconInput', dropZoneId: 'faviconDropZone', statusId: 'faviconStatus', fileName: 'favicon.ico', previewId: 'faviconPreview', placeholderId: 'faviconPlaceholder', deleteId: 'faviconDelete', dimensionsId: 'faviconDimensions' },
@@ -6588,6 +6587,21 @@
                 { inputId: 'bannerDarkInput', dropZoneId: 'bannerDarkDropZone', statusId: 'bannerDarkStatus', fileName: 'banner-dark.png', previewId: 'bannerDarkPreview', placeholderId: 'bannerDarkPlaceholder', deleteId: 'bannerDarkDelete', dimensionsId: 'bannerDarkDimensions' },
                 { inputId: 'touchiconInput', dropZoneId: 'touchiconDropZone', statusId: 'touchiconStatus', fileName: 'apple-touch-icon.png', previewId: 'touchiconPreview', placeholderId: 'touchiconPlaceholder', deleteId: 'touchiconDelete', dimensionsId: 'touchiconDimensions' }
             ];
+
+            // Which slots have a custom image, in one request, so we don't probe
+            // all five individually (and 404 on every empty one).
+            let brandingStatus = null;
+            try {
+                const token = ApiClient.accessToken ? ApiClient.accessToken() : '';
+                const statusResponse = await fetch(ApiClient.getUrl('/JellyfinEnhanced/BrandingStatus'), {
+                    headers: { 'Authorization': 'MediaBrowser Token="' + token + '"', 'X-MediaBrowser-Token': token }
+                });
+                if (statusResponse.ok) {
+                    brandingStatus = await statusResponse.json();
+                }
+            } catch (err) {
+                brandingStatus = null;
+            }
 
             uploadConfigs.forEach(config => {
                 const input = document.getElementById(config.inputId);
@@ -6634,8 +6648,16 @@
                     });
                 }
 
-                // Load existing preview if present
-                refreshBrandingPreview(config);
+                // Known-empty slots skip the network probe entirely.
+                if (brandingStatus && brandingStatus[config.fileName] === false) {
+                    const previewImg = document.getElementById(config.previewId);
+                    const placeholder = document.getElementById(config.placeholderId);
+                    if (previewImg) previewImg.style.display = 'none';
+                    if (placeholder) placeholder.style.display = 'block';
+                    if (deleteButton) deleteButton.style.display = 'none';
+                } else {
+                    refreshBrandingPreview(config);
+                }
             });
         }
 
