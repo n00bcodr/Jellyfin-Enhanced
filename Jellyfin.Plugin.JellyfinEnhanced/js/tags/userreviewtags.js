@@ -29,7 +29,7 @@
     // Same shape the server validates (IsValidTmdbKey); anything else could
     // never have a review, so it resolves to null without a request.
     const TMDB_KEY_RE = /^\d+(:s\d+(:e\d+)?)?$/;
-    /** @type {Map<string, {promise: Promise<number|null>|null, resolve: (value: number|null) => void}>} Keyed like _reviewCache. */
+    /** @type {Map<string, {promise: Promise<number|null|undefined>|null, resolve: (value: number|null|undefined) => void}>} Keyed like _reviewCache. */
     const _queue = new Map();
     /** @type {ReturnType<typeof setTimeout>|null} */
     let _flushTimer = null;
@@ -38,8 +38,10 @@
 
     /**
      * Send every queued key in one request and settle each key's promise.
-     * On failure the keys resolve to null without being cached; a non-abort
-     * failure also backs them off for FAILURE_BACKOFF_MS before a retry.
+     * On failure the keys resolve to null (a dash) without being cached and
+     * are backed off for FAILURE_BACKOFF_MS before a retry. An abort (user
+     * switch, or the low-priority queue dropping the request) resolves them
+     * to undefined so nothing is rendered; the next render refetches.
      */
     async function flushQueue() {
         if (_flushTimer !== null) {
@@ -61,8 +63,8 @@
 
         /**
          * @param {string} cacheKey - "mediaType:tmdbKey"
-         * @param {{promise: Promise<number|null>|null, resolve: (value: number|null) => void}} entry
-         * @param {number|null} value
+         * @param {{promise: Promise<number|null|undefined>|null, resolve: (value: number|null|undefined) => void}} entry
+         * @param {number|null|undefined} value
          * @param {boolean} cacheable
          */
         const settle = (cacheKey, entry, value, cacheable) => {
@@ -80,8 +82,6 @@
             const keys = batch.map(([cacheKey]) => cacheKey).join(',');
             const data = await JE.core.api.plugin(`/reviews/ratings?keys=${encodeURIComponent(keys)}`, {
                 signal: controller.signal,
-                // Takes effect with the request-priority change (#865);
-                // ignored by builds without it.
                 priority: 'low'
             });
             const ratings = (data && typeof data.ratings === 'object' && data.ratings) || {};
@@ -95,16 +95,17 @@
                 settle(cacheKey, entry, avg, true);
             }
         } catch (e) {
-            // An abort (user switch) is not a server failure: no backoff, so
+            // An abort is not a server failure: no backoff and no chip, so
             // the next render refetches immediately.
-            if (/** @type {any} */ (e)?.name !== 'AbortError') {
+            const aborted = /** @type {any} */ (e)?.name === 'AbortError';
+            if (!aborted) {
                 console.warn(`${logPrefix} rating batch failed; retrying these ratings after ${FAILURE_BACKOFF_MS / 1000}s.`, e);
                 if (isCurrent()) {
                     const until = Date.now() + FAILURE_BACKOFF_MS;
                     for (const [cacheKey] of batch) _failedUntil.set(cacheKey, until);
                 }
             }
-            for (const [cacheKey, entry] of batch) settle(cacheKey, entry, null, false);
+            for (const [cacheKey, entry] of batch) settle(cacheKey, entry, aborted ? undefined : null, false);
         } finally {
             _batchControllers.delete(controller);
         }
@@ -124,12 +125,15 @@
         _reviewCache.clear();
         _inFlight.clear();
         _failedUntil.clear();
-        for (const entry of orphaned) entry.resolve(null);
+        // Queued for the previous user: nothing to render.
+        for (const entry of orphaned) entry.resolve(undefined);
     });
 
     /**
      * Fetch the average rating across all users for a given tmdbKey.
-     * Returns null if no reviews with ratings exist.
+     * Returns null if no reviews with ratings exist, undefined when the
+     * lookup was aborted (nothing to render).
+     * @returns {Promise<number|null|undefined>}
      */
     async function fetchUserRating(tmdbKey, mediaType) {
         if (!JE.pluginConfig?.ShowUserReviews) return null;
@@ -147,7 +151,7 @@
             return null;
         }
 
-        /** @type {{promise: Promise<number|null>|null, resolve: (value: number|null) => void}} */
+        /** @type {{promise: Promise<number|null|undefined>|null, resolve: (value: number|null|undefined) => void}} */
         const entry = { promise: null, resolve: () => {} };
         entry.promise = new Promise((resolve) => { entry.resolve = resolve; });
         _queue.set(cacheKey, entry);
