@@ -520,8 +520,6 @@
       lifecycle?.track(controller);
       const chunks = requests.map(r => ({
         field: r.field,
-        // priority: 'low' takes effect with the request-priority change (#865);
-        // coreFetch ignores it otherwise.
         promise: JE.core.api.plugin(`/arr/links?${r.query}`, { signal: controller.signal, priority: 'low' })
           // No link is an acceptable fallback - instance unreachable, request
           // aborted by a newer render, etc. Silent, same as arr-links.js's own
