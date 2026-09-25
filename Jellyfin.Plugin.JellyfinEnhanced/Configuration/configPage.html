@@ -8,7 +8,11 @@
     <script>
         var link = document.createElement('link');
         link.rel = 'stylesheet';
-        link.href = ApiClient.getUrl('/JellyfinEnhanced/Configuration/configPage.css');
+        // The stylesheet is served with long-lived immutable caching, so version the URL
+        // (same key as the injected client script) to make each release fetch a fresh copy.
+        var jeScriptTag = document.querySelector('script[plugin="Jellyfin Enhanced"]');
+        var jeCssVersion = jeScriptTag && jeScriptTag.getAttribute('version');
+        link.href = ApiClient.getUrl('/JellyfinEnhanced/Configuration/configPage.css', jeCssVersion ? { v: jeCssVersion } : undefined);
         document.head.appendChild(link);
 
         // Local CDN route helper. Every external CDN asset this admin page used to load
