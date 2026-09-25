@@ -143,6 +143,36 @@
         }
 
         /**
+         * Splits a "Title (YYYY)" query - the same year convention shown on
+         * every result card - into a plain-text title for the search API and
+         * the year to filter results by. The year only takes effect once the
+         * closing paren is typed, so it never mangles the query mid-keystroke.
+         * @param {string} raw The raw search box value.
+         * @returns {{ title: string, year: string|null }}
+         */
+        function parseYearedQuery(raw) {
+            const match = raw.match(/^(.*\S)\s*\((\d{4})\)\s*$/);
+            return match ? { title: match[1], year: match[2] } : { title: raw, year: null };
+        }
+
+        /**
+         * @param {Object} item A Seerr search result.
+         * @returns {string|null} The result's 4-digit release year, matching the one shown on its card.
+         */
+        function getResultYear(item) {
+            return item.releaseDate?.substring(0, 4) || item.firstAirDate?.substring(0, 4) || null;
+        }
+
+        /**
+         * @param {Array} results
+         * @param {string|null} year
+         * @returns {Array} Results narrowed to the given release year, unfiltered when year is null.
+         */
+        function filterResultsByYear(results, year) {
+            return year ? results.filter(item => getResultYear(item) === year) : results;
+        }
+
+        /**
          * Warms the request cache with the next `count` result pages so the
          * following load-more is served instantly. Fire-and-forget.
          * @param {string} query
@@ -151,9 +181,10 @@
          */
         function prefetchSearchPages(query, count, signal) {
             if (!searchHasMore || signal?.aborted) return;
+            const { title: apiQuery } = parseYearedQuery(query);
             const last = Math.min(searchTotalPages, searchCurrentPage + Math.max(1, count));
             for (let p = searchCurrentPage + 1; p <= last; p++) {
-                search(query, p, { signal }).catch(() => {});
+                search(apiQuery, p, { signal }).catch(() => {});
             }
         }
 
@@ -189,6 +220,7 @@
             lastProcessedQuery = query;
             resetSearchPagination();
             searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
+            const { title: apiQuery, year: yearFilter } = parseYearedQuery(query);
 
             // Cancel any still-in-flight search/collection requests from the
             // previous keystroke instead of letting them queue up.
@@ -197,14 +229,14 @@
 
             let data;
             try {
-                data = await search(query, 1, { skipCache, signal });
+                data = await search(apiQuery, 1, { skipCache, signal });
             } catch (error) {
                 if (error.name === 'AbortError') return; // superseded by a newer search
                 throw error;
             }
             if (lastProcessedQuery !== query) return; // superseded by a newer search while this was in flight
 
-            let results = data.results || [];
+            let results = filterResultsByYear(data.results || [], yearFilter);
             searchCurrentPage = data.page || 1;
             searchTotalPages = Math.min(data.totalPages || 1, TMDB_MAX_PAGE);
             searchHasMore = searchCurrentPage < searchTotalPages;
@@ -272,6 +304,7 @@
             searchIsLoading = true;
             const signal = searchSignal || undefined;
             const firstPage = searchCurrentPage + 1;
+            const { title: apiQuery, year: yearFilter } = parseYearedQuery(query);
 
             try {
                 const itemsContainer = document.querySelector('.jellyseerr-section .itemsContainer');
@@ -285,7 +318,7 @@
                 const pages = [];
                 for (let p = firstPage; p < firstPage + count; p++) pages.push(p);
 
-                const settled = await Promise.allSettled(pages.map(p => search(query, p, { signal, throwOnError: true })));
+                const settled = await Promise.allSettled(pages.map(p => search(apiQuery, p, { signal, throwOnError: true })));
                 if (lastProcessedQuery !== query) return; // query changed during fetch
 
                 // Commit pages in order up to the first failure; a flaky page must
@@ -309,6 +342,7 @@
                 if (firstError && committed === 0) throw firstError;
                 searchHasMore = searchCurrentPage < searchTotalPages;
 
+                results = filterResultsByYear(results, yearFilter);
                 searchYield.fetched += results.length;
                 if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
                 results = filterLibraryItems(results);
@@ -439,8 +473,9 @@
 
                 const signal = JE.requestManager?.getAbortSignal('jellyseerr-search') || null;
                 searchSignal = signal;
-                const data = await search(query, 1, { signal, skipCache: true });
-                let results = await prepareResultsWithCollections(data.results || [], { signal });
+                const { title: apiQuery, year: yearFilter } = parseYearedQuery(query);
+                const data = await search(apiQuery, 1, { signal, skipCache: true });
+                let results = await prepareResultsWithCollections(filterResultsByYear(data.results || [], yearFilter), { signal });
                 if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
                 results = filterLibraryItems(results);
 
