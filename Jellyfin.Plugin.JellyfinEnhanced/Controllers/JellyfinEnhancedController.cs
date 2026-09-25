@@ -2049,111 +2049,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return NotFound(new { message = "Person not found" });
                 }
 
-                // Get TMDB ID from provider IDs if available
-                string? tmdbId = null;
-                if (person.ProviderIds != null && person.ProviderIds.TryGetValue("Tmdb", out var id))
-                {
-                    tmdbId = id;
-                }
-
-                // Get person-specific data
-                // Note: PremiereDate on Person items stores birth date, EndDate stores death date
-                var birthDate = person.PremiereDate;
-                var endDate = person.EndDate;
-                var birthPlace = person.ProductionLocations?.FirstOrDefault() ?? null;
-
-                // Try to enrich with TMDB data if available
-                if (!string.IsNullOrEmpty(tmdbId) && int.TryParse(tmdbId, out var tmdbPersonId))
-                {
-                    try
-                    {
-                        // _logger.Info($"Fetching TMDB data for person {personId} (TMDB ID: {tmdbPersonId})");
-                        var tmdbPersonData = await GetTmdbPersonData(tmdbPersonId);
-                        if (tmdbPersonData != null)
-                        {
-                            // _logger.Info($"TMDB data received: BirthPlace={tmdbPersonData.BirthPlace}, BirthDate={tmdbPersonData.BirthDate}, DeathDate={tmdbPersonData.DeathDate}");
-
-                            // Use TMDB death date if Jellyfin doesn't have it
-                            if (!endDate.HasValue && tmdbPersonData.DeathDate.HasValue)
-                            {
-                                endDate = tmdbPersonData.DeathDate;
-                            }
-
-                            // Use TMDB birth date if Jellyfin doesn't have it
-                            if (!birthDate.HasValue && tmdbPersonData.BirthDate.HasValue)
-                            {
-                                birthDate = tmdbPersonData.BirthDate;
-                            }
-
-                            // Always prefer TMDB birthplace
-                            if (!string.IsNullOrEmpty(tmdbPersonData.BirthPlace))
-                            {
-                                birthPlace = tmdbPersonData.BirthPlace;
-                                // _logger.Debug($"Using TMDB birthplace: {birthPlace}");
-                            }
-                        }
-                        else
-                        {
-                            _logger.Warning($"No TMDB data returned for person {personId} (TMDB ID: {tmdbPersonId})");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Warning($"Failed to enrich person {personId} with TMDB data: {ex.Message}");
-                        // Continue with Jellyfin data only
-                    }
-                }
-                else
-                {
-                    // _logger.Debug($"No TMDB ID available for person {personId}");
-                }
-
-
-
-                int? currentAge = null;
-                int? ageAtItemRelease = null;
-                int? ageAtDeath = null;
-                bool isDeceased = endDate.HasValue && endDate.Value < DateTime.Now;
-
-                // Calculate current age or age at death
-                if (birthDate.HasValue)
-                {
-                    if (isDeceased && endDate.HasValue)
-                    {
-                        // If deceased, calculate age at death
-                        ageAtDeath = CalculateAge(birthDate.Value, endDate.Value);
-                    }
-                    else
-                    {
-                        // If alive, calculate current age
-                        currentAge = CalculateAge(birthDate.Value, DateTime.Now);
-                    }
-
-                    // Calculate age at item release if itemId provided
-                    if (itemId.HasValue)
-                    {
-                        var item = _libraryManager.GetItemById(itemId.Value);
-                        if (item?.PremiereDate.HasValue ?? false)
-                        {
-                            ageAtItemRelease = CalculateAge(birthDate.Value, item.PremiereDate.Value);
-                        }
-                    }
-                }
-
-                return Ok(new
-                {
-                    id = person.Id,
-                    name = person.Name,
-                    tmdbId = tmdbId,
-                    type = person.GetType().Name,
-                    birthDate = birthDate?.ToString("yyyy-MM-dd"),
-                    deathDate = endDate?.ToString("yyyy-MM-dd"),
-                    birthPlace = birthPlace,
-                    isDeceased = isDeceased,
-                    currentAge = currentAge,
-                    ageAtDeath = ageAtDeath,
-                    ageAtItemRelease = ageAtItemRelease
-                });
+                var itemPremiereDate = ResolveVisibleItemPremiereDate(itemId);
+                return Ok(await BuildPersonInfoAsync(person, itemPremiereDate, HttpContext.RequestAborted));
+            }
+            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                return StatusCode(499); // browser went away
             }
             catch (Exception ex)
             {
@@ -2162,7 +2063,247 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
-        private async Task<TmdbPersonData?> GetTmdbPersonData(int tmdbPersonId)
+        private const int MaxPeopleInfoBatchSize = 100;
+        private const int PeopleInfoTmdbConcurrency = 5;
+        // One slow TMDB lookup must not hold a whole cast batch (or a single
+        // person request) hostage: past this, fall back to Jellyfin-only data.
+        private static readonly TimeSpan PersonTmdbTimeout = TimeSpan.FromSeconds(6);
+
+        /// <summary>
+        /// Batch form of <see cref="GetPersonInfo"/> for the People Tags cast
+        /// row: one request for every cast card instead of one per actor.
+        /// <c>ids</c> is a comma-separated list of person GUIDs (N or D format,
+        /// malformed entries ignored, duplicates collapsed, at most
+        /// <see cref="MaxPeopleInfoBatchSize"/> distinct ids). Returns
+        /// <c>{ people: { "&lt;personId N&gt;": { ...same shape as person/{id}... } } }</c>;
+        /// ids that are not Person entities are omitted.
+        /// </summary>
+        [HttpGet("people/info")]
+        [Authorize]
+        public async Task<IActionResult> GetPeopleInfo([FromQuery] string? ids, [FromQuery] Guid? itemId = null)
+        {
+            var personIds = new HashSet<Guid>();
+            foreach (var raw in (ids ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (Guid.TryParse(raw, out var parsed) && parsed != Guid.Empty)
+                {
+                    personIds.Add(parsed);
+                    if (personIds.Count > MaxPeopleInfoBatchSize)
+                    {
+                        return BadRequest(new { message = $"At most {MaxPeopleInfoBatchSize} person ids per request." });
+                    }
+                }
+            }
+
+            if (personIds.Count == 0)
+            {
+                return BadRequest(new { message = "No valid person ids supplied." });
+            }
+
+            var ct = HttpContext.RequestAborted;
+            try
+            {
+                var people = _libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    ItemIds = personIds.ToArray(),
+                    IncludeItemTypes = new[] { BaseItemKind.Person }
+                })
+                    .OfType<MediaBrowser.Controller.Entities.Person>()
+                    .GroupBy(p => p.Id)
+                    .Select(g => g.First())
+                    .ToList();
+
+                // Resolved once for the whole batch rather than per person.
+                var itemPremiereDate = ResolveVisibleItemPremiereDate(itemId);
+
+                using var tmdbGate = new SemaphoreSlim(PeopleInfoTmdbConcurrency);
+                var tasks = people.Select(async person =>
+                {
+                    await tmdbGate.WaitAsync(ct).ConfigureAwait(false);
+                    try
+                    {
+                        return (Key: person.Id.ToString("N"), Info: await BuildPersonInfoAsync(person, itemPremiereDate, ct).ConfigureAwait(false));
+                    }
+                    finally
+                    {
+                        tmdbGate.Release();
+                    }
+                }).ToList();
+
+                var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
+
+                var map = new Dictionary<string, object>(results.Length, StringComparer.OrdinalIgnoreCase);
+                foreach (var (key, info) in results)
+                {
+                    map[key] = info;
+                }
+
+                return Ok(new { people = map });
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return StatusCode(499); // browser went away (navigated off / superseded)
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to get batch person info ({personIds.Count} ids): {ex.Message}");
+                return StatusCode(500, new { message = "Failed to get person info" });
+            }
+        }
+
+        /// <summary>
+        /// PremiereDate of the item used for "age at release", honoured only
+        /// when that item is visible to the calling user (library access and
+        /// parental rules); otherwise null so no age-at-release is derived.
+        /// </summary>
+        private DateTime? ResolveVisibleItemPremiereDate(Guid? itemId)
+        {
+            if (!itemId.HasValue || itemId.Value == Guid.Empty)
+            {
+                return null;
+            }
+
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId.Value == Guid.Empty)
+            {
+                return null;
+            }
+
+            try
+            {
+                var user = _userManager.GetUserById(userId.Value);
+                if (user == null)
+                {
+                    return null;
+                }
+
+                // The user overload returns null when the item is not visible
+                // to this user.
+                var item = _libraryManager.GetItemById<BaseItem>(itemId.Value, user);
+                return item?.PremiereDate;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not resolve item {itemId.Value} for person ages: {ex.GetType().Name}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Shared response object for person/{id} and people/info. The shape
+        /// is part of the client contract (peopletags.js, person-discovery.js).
+        /// </summary>
+        private async Task<object> BuildPersonInfoAsync(BaseItem person, DateTime? itemPremiereDate, CancellationToken cancellationToken)
+        {
+            // Get TMDB ID from provider IDs if available
+            string? tmdbId = null;
+            if (person.ProviderIds != null && person.ProviderIds.TryGetValue("Tmdb", out var id))
+            {
+                tmdbId = id;
+            }
+
+            // Get person-specific data
+            // Note: PremiereDate on Person items stores birth date, EndDate stores death date
+            var birthDate = person.PremiereDate;
+            var endDate = person.EndDate;
+            var birthPlace = person.ProductionLocations?.FirstOrDefault() ?? null;
+
+            // Try to enrich with TMDB data if available
+            if (!string.IsNullOrEmpty(tmdbId) && int.TryParse(tmdbId, out var tmdbPersonId))
+            {
+                using var tmdbTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                tmdbTimeout.CancelAfter(PersonTmdbTimeout);
+                try
+                {
+                    // _logger.Info($"Fetching TMDB data for person {person.Id} (TMDB ID: {tmdbPersonId})");
+                    var tmdbPersonData = await GetTmdbPersonData(tmdbPersonId, tmdbTimeout.Token).ConfigureAwait(false);
+                    if (tmdbPersonData != null)
+                    {
+                        // _logger.Info($"TMDB data received: BirthPlace={tmdbPersonData.BirthPlace}, BirthDate={tmdbPersonData.BirthDate}, DeathDate={tmdbPersonData.DeathDate}");
+
+                        // Use TMDB death date if Jellyfin doesn't have it
+                        if (!endDate.HasValue && tmdbPersonData.DeathDate.HasValue)
+                        {
+                            endDate = tmdbPersonData.DeathDate;
+                        }
+
+                        // Use TMDB birth date if Jellyfin doesn't have it
+                        if (!birthDate.HasValue && tmdbPersonData.BirthDate.HasValue)
+                        {
+                            birthDate = tmdbPersonData.BirthDate;
+                        }
+
+                        // Always prefer TMDB birthplace
+                        if (!string.IsNullOrEmpty(tmdbPersonData.BirthPlace))
+                        {
+                            birthPlace = tmdbPersonData.BirthPlace;
+                            // _logger.Debug($"Using TMDB birthplace: {birthPlace}");
+                        }
+                    }
+                    else
+                    {
+                        _logger.Warning($"No TMDB data returned for person {person.Id} (TMDB ID: {tmdbPersonId})");
+                    }
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && tmdbTimeout.IsCancellationRequested)
+                {
+                    _logger.Warning($"TMDB lookup for person {person.Id} (TMDB ID: {tmdbPersonId}) exceeded {PersonTmdbTimeout.TotalSeconds:0}s; using Jellyfin data only");
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                {
+                    _logger.Warning($"Failed to enrich person {person.Id} with TMDB data: {ex.Message}");
+                    // Continue with Jellyfin data only
+                }
+            }
+            else
+            {
+                // _logger.Debug($"No TMDB ID available for person {person.Id}");
+            }
+
+            int? currentAge = null;
+            int? ageAtItemRelease = null;
+            int? ageAtDeath = null;
+            bool isDeceased = endDate.HasValue && endDate.Value < DateTime.Now;
+
+            // Calculate current age or age at death
+            if (birthDate.HasValue)
+            {
+                if (isDeceased && endDate.HasValue)
+                {
+                    // If deceased, calculate age at death
+                    ageAtDeath = CalculateAge(birthDate.Value, endDate.Value);
+                }
+                else
+                {
+                    // If alive, calculate current age
+                    currentAge = CalculateAge(birthDate.Value, DateTime.Now);
+                }
+
+                // Calculate age at item release if a visible item was provided
+                if (itemPremiereDate.HasValue)
+                {
+                    ageAtItemRelease = CalculateAge(birthDate.Value, itemPremiereDate.Value);
+                }
+            }
+
+            return new
+            {
+                id = person.Id,
+                name = person.Name,
+                tmdbId = tmdbId,
+                type = person.GetType().Name,
+                birthDate = birthDate?.ToString("yyyy-MM-dd"),
+                deathDate = endDate?.ToString("yyyy-MM-dd"),
+                birthPlace = birthPlace,
+                isDeceased = isDeceased,
+                currentAge = currentAge,
+                ageAtDeath = ageAtDeath,
+                ageAtItemRelease = ageAtItemRelease
+            };
+        }
+
+        private async Task<TmdbPersonData?> GetTmdbPersonData(int tmdbPersonId, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -2175,7 +2316,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
 
                 // _logger.Debug($"Fetching TMDB person data from: https://api.themoviedb.org/3/person/{tmdbPersonId}");
-                var response = await _tmdbResponseCache.GetAsync($"person/{tmdbPersonId}", string.Empty, config.TMDB_API_KEY, HttpContext.RequestAborted);
+                var response = await _tmdbResponseCache.GetAsync($"person/{tmdbPersonId}", string.Empty, config.TMDB_API_KEY, cancellationToken);
 
                 if (!response.IsSuccess)
                 {
@@ -2225,10 +2366,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     BirthPlace = birthPlace
                 };
             }
-            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 // Browser went away; the shared TMDB call still finishes and is cached.
-                return null;
+                throw;
             }
             catch (Exception ex)
             {
