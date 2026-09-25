@@ -6472,6 +6472,117 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static bool IsValidTmdbKey(string tmdbId) =>
             !string.IsNullOrWhiteSpace(tmdbId) && _tmdbIdExtendedRegex.IsMatch(tmdbId);
 
+        /// <summary>
+        /// Per-request state for deciding which reviews a viewer may see.
+        /// Shared by <see cref="GetItemReviews"/> and <see cref="GetReviewRatings"/>
+        /// so the list and the poster rating chips can never disagree. Authors
+        /// are resolved at most once per request.
+        /// </summary>
+        private sealed class ReviewVisibilityContext
+        {
+            public bool ViewerIsAdmin { get; init; }
+            public string? ViewerUserIdN { get; init; }
+            public bool HideHiddenAuthors { get; init; }
+            public bool HideDisabledAuthors { get; init; }
+            public Dictionary<Guid, Jellyfin.Database.Implementations.Entities.User?> Authors { get; } = new();
+        }
+
+        private ReviewVisibilityContext CreateReviewVisibilityContext(string endpoint, string target)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+
+            // Resolve the current viewer's "N"-format user id so we can
+            // always show their OWN review back to them, even when the
+            // viewer themselves is hidden/disabled in Jellyfin and the
+            // hide filters would otherwise drop their author record.
+            // Without this, a hidden non-admin user posting a review would
+            // immediately lose visibility of their own content (issue 546).
+            var viewerUserIdN = UserHelper.GetCurrentUserId(User)?.ToString("N");
+            if (string.IsNullOrEmpty(viewerUserIdN))
+            {
+                // Anomalous: [Authorize] passed but the Jellyfin-UserId
+                // claim is missing or unparseable. The self-review bypass
+                // below will silently no-op, so warn here to give a
+                // diagnostic trail if a hidden user reports the symptom
+                // again with no obvious cause.
+                _logger.Warning($"{endpoint}: could not resolve viewer user id from claims on {target}; self-review bypass disabled.");
+            }
+
+            return new ReviewVisibilityContext
+            {
+                ViewerIsAdmin = IsAdminUser(),
+                ViewerUserIdN = viewerUserIdN,
+                HideHiddenAuthors = config?.HideReviewsFromHiddenUsers ?? true,
+                HideDisabledAuthors = config?.HideReviewsFromDisabledUsers ?? true,
+            };
+        }
+
+        /// <summary>
+        /// Decides whether <paramref name="review"/> is visible to the viewer
+        /// described by <paramref name="ctx"/> and resolves its author
+        /// (null when the id is unparseable or the user no longer exists).
+        /// May throw on a corrupt record or a failing user lookup — callers
+        /// isolate each review so one bad record cannot fail the request.
+        /// </summary>
+        private bool IsReviewVisibleToViewer(
+            UserReview review,
+            ReviewVisibilityContext ctx,
+            string itemLabel,
+            out Jellyfin.Database.Implementations.Entities.User? jellyfinUser)
+        {
+            jellyfinUser = null;
+            if (Guid.TryParseExact(review.UserId, "N", out var userGuid))
+            {
+                if (!ctx.Authors.TryGetValue(userGuid, out jellyfinUser))
+                {
+                    jellyfinUser = _userManager.GetUserById(userGuid);
+                    ctx.Authors[userGuid] = jellyfinUser;
+                }
+            }
+
+            // The viewer's own review is ALWAYS visible to themselves,
+            // regardless of admin status or hide filters. The hide
+            // filters exist to let admins moderate OTHER users'
+            // content, not to make a user's own writing invisible to
+            // them. Skipping the filter for self also prevents the
+            // confusing "I just posted, where did it go?" symptom
+            // when the viewer's own account has IsHidden set.
+            //
+            // Require jellyfinUser != null on the self-bypass so an
+            // orphaned-self record (auth token still resolves to a
+            // deleted user — Jellyfin doesn't universally invalidate
+            // tokens on user delete) still falls into the orphan
+            // hide path below instead of being served back with a
+            // raw-Guid display name.
+            var isOwnReview = jellyfinUser != null
+                && !string.IsNullOrEmpty(ctx.ViewerUserIdN)
+                && string.Equals(review.UserId, ctx.ViewerUserIdN, StringComparison.OrdinalIgnoreCase);
+
+            // Admin viewers always see every review so they can moderate.
+            if (ctx.ViewerIsAdmin || isOwnReview) return true;
+
+            // Orphaned authors (Jellyfin user was deleted) are
+            // hidden from non-admin viewers IF either hide toggle
+            // is on — fail CLOSED. Otherwise a deleted problem
+            // user's review would resurface for everyone. Admins
+            // still see them so orphans can be cleaned up.
+            if (jellyfinUser == null)
+            {
+                if (ctx.HideHiddenAuthors || ctx.HideDisabledAuthors)
+                {
+                    _logger.Warning($"Hiding orphaned review for unknown userId={review.UserId} on {itemLabel} from non-admin viewer.");
+                    return false;
+                }
+                return true;
+            }
+
+            if (ctx.HideHiddenAuthors && jellyfinUser.HasPermission(PermissionKind.IsHidden))
+                return false;
+            if (ctx.HideDisabledAuthors && jellyfinUser.HasPermission(PermissionKind.IsDisabled))
+                return false;
+            return true;
+        }
+
         [HttpGet("reviews/{mediaType}/{tmdbId}")]
         [Authorize]
         [Produces("application/json")]
@@ -6483,28 +6594,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!IsValidTmdbKey(tmdbId))
                 return BadRequest(new { message = "Invalid TmdbId." });
 
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            var viewerIsAdmin = IsAdminUser();
-            var hideHiddenAuthors = config?.HideReviewsFromHiddenUsers ?? true;
-            var hideDisabledAuthors = config?.HideReviewsFromDisabledUsers ?? true;
-
-            // Resolve the current viewer's "N"-format user id so we can
-            // always show their OWN review back to them, even when the
-            // viewer themselves is hidden/disabled in Jellyfin and the
-            // hide filters would otherwise drop their author record.
-            // Without this, a hidden non-admin user posting a review would
-            // immediately lose visibility of their own content (issue 546).
-            var viewerUserId = UserHelper.GetCurrentUserId(User);
-            var viewerUserIdN = viewerUserId?.ToString("N");
-            if (string.IsNullOrEmpty(viewerUserIdN))
-            {
-                // Anomalous: [Authorize] passed but the Jellyfin-UserId
-                // claim is missing or unparseable. The self-review bypass
-                // below will silently no-op, so warn here to give a
-                // diagnostic trail if a hidden user reports the symptom
-                // again with no obvious cause.
-                _logger.Warning($"GetItemReviews: could not resolve viewer user id from claims on {mediaType}:{tmdbId}; self-review bypass disabled.");
-            }
+            var itemLabel = $"{mediaType}:{tmdbId}";
+            var ctx = CreateReviewVisibilityContext(nameof(GetItemReviews), itemLabel);
 
             var suffix = $":{mediaType}:{tmdbId}";
             var store = _userConfigurationManager.GetAllReviews();
@@ -6522,62 +6613,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 try
                 {
                     var review = kvp.Value;
-
-                    string displayName = review.UserId;
-                    Jellyfin.Database.Implementations.Entities.User? jellyfinUser = null;
-                    if (Guid.TryParseExact(review.UserId, "N", out var userGuid))
-                    {
-                        jellyfinUser = _userManager.GetUserById(userGuid);
-                        if (jellyfinUser != null) displayName = jellyfinUser.Username;
-                    }
-
-                    // The viewer's own review is ALWAYS visible to themselves,
-                    // regardless of admin status or hide filters. The hide
-                    // filters exist to let admins moderate OTHER users'
-                    // content, not to make a user's own writing invisible to
-                    // them. Skipping the filter for self also prevents the
-                    // confusing "I just posted, where did it go?" symptom
-                    // when the viewer's own account has IsHidden set.
-                    //
-                    // Require jellyfinUser != null on the self-bypass so an
-                    // orphaned-self record (auth token still resolves to a
-                    // deleted user — Jellyfin doesn't universally invalidate
-                    // tokens on user delete) still falls into the orphan
-                    // hide path below instead of being served back with a
-                    // raw-Guid display name.
-                    var isOwnReview = jellyfinUser != null
-                        && !string.IsNullOrEmpty(viewerUserIdN)
-                        && string.Equals(review.UserId, viewerUserIdN, StringComparison.OrdinalIgnoreCase);
-
-                    // Admin viewers always see every review so they can moderate.
-                    if (!viewerIsAdmin && !isOwnReview)
-                    {
-                        // Orphaned authors (Jellyfin user was deleted) are
-                        // hidden from non-admin viewers IF either hide toggle
-                        // is on — fail CLOSED. Otherwise a deleted problem
-                        // user's review would resurface for everyone. Admins
-                        // still see them so orphans can be cleaned up.
-                        if (jellyfinUser == null)
-                        {
-                            if (hideHiddenAuthors || hideDisabledAuthors)
-                            {
-                                _logger.Warning($"Hiding orphaned review for unknown userId={review.UserId} on {mediaType}:{tmdbId} from non-admin viewer.");
-                                continue;
-                            }
-                        }
-                        else
-                        {
-                            if (hideHiddenAuthors && jellyfinUser.HasPermission(PermissionKind.IsHidden))
-                                continue;
-                            if (hideDisabledAuthors && jellyfinUser.HasPermission(PermissionKind.IsDisabled))
-                                continue;
-                        }
-                    }
+                    if (!IsReviewVisibleToViewer(review, ctx, itemLabel, out var jellyfinUser)) continue;
 
                     results.Add(new
                     {
                         userId = review.UserId,
-                        userName = displayName,
+                        userName = jellyfinUser != null ? jellyfinUser.Username : review.UserId,
                         tmdbId = review.TmdbId,
                         mediaType = review.MediaType,
                         content = review.Content,
@@ -6593,6 +6634,94 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return Ok(new { reviews = results });
+        }
+
+        /// <summary>Most distinct keys one <see cref="GetReviewRatings"/> call may ask for.</summary>
+        private const int MaxReviewRatingKeys = 200;
+
+        /// <summary>
+        /// Average user rating for many items in one pass over the review
+        /// store (the poster rating chips ask for a whole page at once instead
+        /// of one <see cref="GetItemReviews"/> call per card).
+        /// </summary>
+        /// <param name="keys">Comma-separated "mediaType:tmdbKey" entries, e.g.
+        /// "movie:603,tv:1399:s1". Malformed entries are ignored; at most
+        /// <see cref="MaxReviewRatingKeys"/> distinct valid keys.</param>
+        /// <returns>
+        /// <c>{ "ratings": { "movie:603": { "average": 4.5, "count": 2 }, "tv:1399:s1": null } }</c>
+        /// — one entry per valid requested key; null when no review visible to
+        /// this viewer carries a rating. Computed from exactly the reviews
+        /// <see cref="GetItemReviews"/> would return to the same viewer.
+        /// </returns>
+        [HttpGet("reviews/ratings")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetReviewRatings([FromQuery] string? keys)
+        {
+            // Insertion-ordered so the response lists keys in request order.
+            var requested = new Dictionary<string, (double Sum, int Count)>(StringComparer.Ordinal);
+            var order = new List<string>();
+            foreach (var raw in (keys ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var sep = raw.IndexOf(':');
+                if (sep <= 0) continue;
+                var mediaType = raw.Substring(0, sep);
+                if (mediaType != "movie" && mediaType != "tv") continue;
+                if (!IsValidTmdbKey(raw.Substring(sep + 1))) continue;
+                if (requested.ContainsKey(raw)) continue;
+                if (requested.Count >= MaxReviewRatingKeys)
+                    return BadRequest(new { message = $"At most {MaxReviewRatingKeys} keys per request." });
+                requested[raw] = (0, 0);
+                order.Add(raw);
+            }
+
+            if (requested.Count == 0)
+                return BadRequest(new { message = "No valid keys. Expected comma-separated 'movie:<tmdbId>' or 'tv:<tmdbId>[:s<n>[:e<n>]]' entries." });
+
+            var ctx = CreateReviewVisibilityContext(nameof(GetReviewRatings), $"{requested.Count} keys");
+            var store = _userConfigurationManager.GetAllReviews();
+
+            foreach (var kvp in store.Reviews)
+            {
+                // Store keys are "{userIdN}:{mediaType}:{tmdbKey}". A requested
+                // key K matches exactly when the store key ends with ":" + K —
+                // the same suffix test GetItemReviews applies — so probe the
+                // tail after every ':' (a key holds at most a handful).
+                var storeKey = kvp.Key;
+                for (var i = storeKey.IndexOf(':'); i >= 0; i = storeKey.IndexOf(':', i + 1))
+                {
+                    var itemKey = storeKey.Substring(i + 1);
+                    if (!requested.TryGetValue(itemKey, out var acc)) continue;
+
+                    // Same per-review isolation as GetItemReviews: a corrupt
+                    // record or failing author lookup skips only this review.
+                    try
+                    {
+                        var review = kvp.Value;
+                        if (!IsReviewVisibleToViewer(review, ctx, itemKey, out _)) continue;
+
+                        // Mirror the client's historical `filter(r => r.rating)`:
+                        // only a present, non-zero rating counts toward the average.
+                        var rating = review.Rating;
+                        if (!rating.HasValue || rating.Value == 0 || double.IsNaN(rating.Value)) continue;
+
+                        requested[itemKey] = (acc.Sum + rating.Value, acc.Count + 1);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Warning($"Skipping review key={storeKey} due to filter error: {ex.Message}");
+                    }
+                }
+            }
+
+            var ratings = new Dictionary<string, object?>(StringComparer.Ordinal);
+            foreach (var key in order)
+            {
+                var (sum, count) = requested[key];
+                ratings[key] = count == 0 ? null : new { average = sum / count, count };
+            }
+
+            return Ok(new { ratings });
         }
 
         [HttpPost("reviews/{mediaType}/{tmdbId}")]
