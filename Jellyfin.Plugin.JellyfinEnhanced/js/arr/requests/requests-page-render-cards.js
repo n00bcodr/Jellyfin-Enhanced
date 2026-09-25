@@ -427,11 +427,44 @@
     return defaultUrl.replace(/\/$/, '');
   }
 
+  // Must match ArrLinksBatchMaxIds in JellyfinEnhancedController (arr/links).
+  const ARR_LINKS_BATCH_MAX_IDS = 100;
+  // Ids per service looked up in the first (on-screen cards) request.
+  const ARR_LINKS_FIRST_CHUNK = 6;
+
+  /**
+   * The arr/links lookup in flight, shared by renders that show the same ids
+   * (e.g. a poll refresh) and aborted when a render needs different ids.
+   * @type {{key: string, controller: AbortController, chunks: Array<{field: string, promise: Promise<any>}>}|null}
+   */
+  let externalLinksLookup = null;
+
+  /**
+   * Radarr/Sonarr link markup for one request card from its arr/links entry
+   * (same shape as arr/movie-instances / arr/series-slugs), or null.
+   */
+  function buildArrLinkButton(mediaType, tmdbId, data) {
+    const match = (data?.matches || [])[0];
+    const url = match ? getMappedUrl(parseUrlMappings(match.urlMappings || ''), match.instanceUrl) : null;
+    if (mediaType === 'movie') {
+      if (!url) return null;
+      return `<a is="emby-linkbutton" class="je-request-external-link" href="${escapeHtml(`${url}/movie/${tmdbId}`)}" target="_blank" rel="noopener noreferrer" title="Open in Radarr" aria-label="Open in Radarr"><img src="${RADARR_ICON_URL}" alt="Radarr"></a>`;
+    }
+    if (!url || !match.titleSlug) return null;
+    return `<a is="emby-linkbutton" class="je-request-external-link" href="${escapeHtml(`${url}/series/${match.titleSlug}`)}" target="_blank" rel="noopener noreferrer" title="Open in Sonarr" aria-label="Open in Sonarr"><img src="${SONARR_ICON_URL}" alt="Sonarr"></a>`;
+  }
+
   /**
    * Fills in the "Open in Radarr or Sonarr" link for request cards, once
    * they're in the DOM. (The Seerr link needs no lookup and is already
    * rendered synchronously by renderRequestCard - this only appends the arr
    * link once its instance lookup resolves, it never overwrites the slot.)
+   * Cards are looked up with arr/links batch requests per service (movies via
+   * Radarr, series via Sonarr) instead of one request per card: a small one
+   * for the first cards and one for the rest (chunked at the server cap), all
+   * side by side and each filling its cards as it arrives, so a slow Radarr
+   * does not hold back the Sonarr links or the first cards' links. A newer render showing different ids aborts the
+   * previous lookup; cards detached meanwhile are skipped.
    * Only attempted for admins with ArrLinksEnabled - matching the same gate
    * arr-links.js uses on item-details pages. The backend endpoints also
    * enforce admin-only regardless.
@@ -444,37 +477,79 @@
     const slots = container.querySelectorAll('.je-request-external-links[data-tmdb-id]');
     if (!slots.length) return;
 
-    slots.forEach(async (slot) => {
+    /** @type {Array<{slot: Element, mediaType: string, tmdbId: string, id: string}>} */
+    const cards = [];
+    slots.forEach((slot) => {
       const tmdbId = slot.getAttribute('data-tmdb-id');
       const tvdbId = slot.getAttribute('data-tvdb-id');
       const mediaType = slot.getAttribute('data-media-type') === 'tv' ? 'tv' : 'movie';
       if (!tmdbId) return;
-
-      let button = null;
-      try {
-        if (mediaType === 'movie') {
-          const data = await JE.core.api.plugin(`/arr/movie-instances?tmdbId=${encodeURIComponent(tmdbId)}`);
-          const match = (data?.matches || [])[0];
-          const url = match ? getMappedUrl(parseUrlMappings(match.urlMappings || ''), match.instanceUrl) : null;
-          if (url) {
-            button = `<a is="emby-linkbutton" class="je-request-external-link" href="${escapeHtml(`${url}/movie/${tmdbId}`)}" target="_blank" rel="noopener noreferrer" title="Open in Radarr" aria-label="Open in Radarr"><img src="${RADARR_ICON_URL}" alt="Radarr"></a>`;
-          }
-        } else if (tvdbId) {
-          const data = await JE.core.api.plugin(`/arr/series-slugs?tvdbId=${encodeURIComponent(tvdbId)}`);
-          const match = (data?.matches || [])[0];
-          const url = match ? getMappedUrl(parseUrlMappings(match.urlMappings || ''), match.instanceUrl) : null;
-          if (url && match.titleSlug) {
-            button = `<a is="emby-linkbutton" class="je-request-external-link" href="${escapeHtml(`${url}/series/${match.titleSlug}`)}" target="_blank" rel="noopener noreferrer" title="Open in Sonarr" aria-label="Open in Sonarr"><img src="${SONARR_ICON_URL}" alt="Sonarr"></a>`;
-          }
-        }
-      } catch (e) {
-        // No link is an acceptable fallback - not yet added to arr, instance
-        // unreachable, etc. Silent, same as arr-links.js's own per-item misses.
-      }
-
-      if (!slot.isConnected || !button) return;
-      slot.insertAdjacentHTML('beforeend', button);
+      const rawId = (mediaType === 'movie' ? tmdbId : tvdbId || '').trim();
+      // Only positive integers can match (the server ignores anything else);
+      // normalised so the id matches the server's response key.
+      if (!/^\d+$/.test(rawId) || !(Number(rawId) > 0) || Number(rawId) > 2147483647) return;
+      cards.push({ slot, mediaType, tmdbId, id: String(Number(rawId)) });
     });
+    if (!cards.length) return;
+
+    // Unique ids per service in page order. The first few (the cards on screen
+    // first) go in their own small request next to the rest, so their links
+    // show as soon as those lookups finish instead of after the whole page;
+    // the rest is chunked so each request stays within the server cap.
+    /** @type {Array<{param: string, field: string, query: string}>} */
+    const firstRequests = [];
+    /** @type {Array<{param: string, field: string, query: string}>} */
+    const restRequests = [];
+    for (const [mediaType, param, field] of [['movie', 'tmdbIds', 'movies'], ['tv', 'tvdbIds', 'series']]) {
+      const ids = [...new Set(cards.filter(c => c.mediaType === mediaType).map(c => c.id))];
+      const toRequest = (chunk) => ({ param, field, query: `${param}=${chunk.join(',')}` });
+      if (!ids.length) continue;
+      firstRequests.push(toRequest(ids.slice(0, ARR_LINKS_FIRST_CHUNK)));
+      for (let i = ARR_LINKS_FIRST_CHUNK; i < ids.length; i += ARR_LINKS_BATCH_MAX_IDS) {
+        restRequests.push(toRequest(ids.slice(i, i + ARR_LINKS_BATCH_MAX_IDS)));
+      }
+    }
+    const requests = [...firstRequests, ...restRequests];
+    const key = requests.map(r => r.query).join('&');
+
+    let lookup = externalLinksLookup;
+    if (!lookup || lookup.key !== key || lookup.controller.signal.aborted) {
+      if (lookup) lookup.controller.abort();
+      const controller = new AbortController();
+      const lifecycle = JE.core.lifecycle?.register('arr-requests-page');
+      lifecycle?.track(controller);
+      const chunks = requests.map(r => ({
+        field: r.field,
+        // priority: 'low' takes effect with the request-priority change (#865);
+        // coreFetch ignores it otherwise.
+        promise: JE.core.api.plugin(`/arr/links?${r.query}`, { signal: controller.signal, priority: 'low' })
+          // No link is an acceptable fallback - instance unreachable, request
+          // aborted by a newer render, etc. Silent, same as arr-links.js's own
+          // per-item misses; the other requests still fill their cards.
+          .catch(() => null)
+      }));
+      const current = { key, controller, chunks };
+      Promise.all(chunks.map(c => c.promise)).then(() => {
+        lifecycle?.untrack(controller);
+        if (externalLinksLookup === current) externalLinksLookup = null;
+      });
+      lookup = current;
+      externalLinksLookup = current;
+    }
+
+    const { controller, chunks } = lookup;
+    await Promise.all(chunks.map(async ({ field, promise }) => {
+      const data = await promise;
+      const entries = data?.[field];
+      if (controller.signal.aborted || !entries || typeof entries !== 'object') return;
+      const mediaType = field === 'movies' ? 'movie' : 'tv';
+      for (const card of cards) {
+        if (card.mediaType !== mediaType || !card.slot.isConnected) continue;
+        if (!Object.prototype.hasOwnProperty.call(entries, card.id)) continue;
+        const button = buildArrLinkButton(mediaType, card.tmdbId, entries[card.id]);
+        if (button) card.slot.insertAdjacentHTML('beforeend', button);
+      }
+    }));
   }
 
   P.renderDownloadCard = renderDownloadCard;
