@@ -14,6 +14,16 @@
     const logPrefix = '🪼 Jellyfin Enhanced: Seerr UI:';
 
     /**
+     * True for a TMDB image path safe to append to an image.tmdb.org URL (and to
+     * interpolate into a CSS url()): a leading-slash file name of a known image
+     * type, as TMDB always returns (e.g. "/abc.jpg").
+     * @param {*} p
+     * @returns {boolean}
+     */
+    const isSafeTmdbImagePath = (p) => typeof p === 'string'
+        && /^\/[A-Za-z0-9_\-\.]+\.(jpg|jpeg|png|webp|avif)$/i.test(p);
+
+    /**
      * Sets the status badge icon based on the item's media status.
      * @param {HTMLElement} card - The card element.
      * @param {Object} item - The search result item.
@@ -53,19 +63,186 @@
         }
     }
 
+    // ---- Batched watch-provider lookups ---------------------------------------
+    // Cards used to call /tmdb/{type}/{id}/watch/providers one by one, and each
+    // response carried every region's providers (~5-20 KB). Lookups that fire
+    // close together (a screenful of cards becoming visible) are instead queued
+    // for PROVIDER_BATCH_DELAY_MS and sent as one /watch-providers request that
+    // returns only the region's flat-rate list per title. Each title's list is
+    // kept in the core API cache (providers:{region}:{type}:{id}), so re-renders
+    // don't refetch. Every card waits on its own AbortSignal: a released card
+    // just stops waiting, and a batch request is aborted only once no card is
+    // waiting on any of its titles.
+    const PROVIDER_BATCH_DELAY_MS = 50;
+    const PROVIDER_BATCH_MAX = 100; // server limit per request
+    // "{region}:{type}:{id}" -> { lookupKey, region, key, cacheKey, waiters, batch }
+    const providerLookups = new Map();
+    let queuedLookups = [];
+    let providerFlushTimer = null;
+
+    /**
+     * The admin's DEFAULT_REGION as a two-letter upper-case code (or 'US').
+     * @returns {string}
+     */
+    function providerRegion() {
+        const region = String(JE.pluginConfig?.DEFAULT_REGION || 'US').trim().toUpperCase();
+        return /^[A-Z]{2}$/.test(region) ? region : 'US';
+    }
+
+    /**
+     * @returns {Error} An AbortError, as fetch() would reject with.
+     */
+    function providerAbortError() {
+        const error = new Error('Request aborted');
+        error.name = 'AbortError';
+        return error;
+    }
+
+    /**
+     * Keeps only well-formed provider entries from a batch result.
+     * @param {*} list - One title's entry from the batch response.
+     * @returns {Array<Object>|null} The providers, or null when unavailable.
+     */
+    function sanitizeProviders(list) {
+        if (!Array.isArray(list)) return null;
+        return list.filter(p => p && typeof p.provider_name === 'string' && isSafeTmdbImagePath(p.logo_path));
+    }
+
+    /**
+     * Resolves or rejects every card still waiting on a lookup and forgets it.
+     * @param {Object} lookup
+     * @param {Function} settle - Called with each waiter.
+     */
+    function settleLookup(lookup, settle) {
+        if (providerLookups.get(lookup.lookupKey) === lookup) providerLookups.delete(lookup.lookupKey);
+        for (const waiter of [...lookup.waiters]) {
+            lookup.waiters.delete(waiter);
+            waiter.detach();
+            settle(waiter);
+        }
+    }
+
+    /**
+     * Called when a card stops waiting: drops a queued lookup nobody wants, and
+     * aborts a batch request once none of its titles has a waiting card.
+     * @param {Object} lookup
+     */
+    function releaseLookup(lookup) {
+        if (lookup.waiters.size > 0) return;
+        const batch = lookup.batch;
+        if (!batch) {
+            providerLookups.delete(lookup.lookupKey);
+            queuedLookups = queuedLookups.filter(l => l !== lookup);
+            return;
+        }
+        if (batch.lookups.some(l => l.waiters.size > 0)) return;
+        batch.lookups.forEach(l => {
+            if (providerLookups.get(l.lookupKey) === l) providerLookups.delete(l.lookupKey);
+        });
+        batch.controller.abort();
+    }
+
+    /**
+     * Sends queued lookups (one region, at most PROVIDER_BATCH_MAX titles) as
+     * one request and fans the per-title results out to the waiting cards.
+     */
+    function flushProviderBatch() {
+        clearTimeout(providerFlushTimer);
+        providerFlushTimer = null;
+        if (queuedLookups.length === 0) return;
+        const region = queuedLookups[0].region;
+        const lookups = [];
+        const rest = [];
+        for (const lookup of queuedLookups) {
+            (lookup.region === region && lookups.length < PROVIDER_BATCH_MAX ? lookups : rest).push(lookup);
+        }
+        queuedLookups = rest;
+        if (rest.length > 0) providerFlushTimer = setTimeout(flushProviderBatch, PROVIDER_BATCH_DELAY_MS);
+
+        const batch = { controller: new AbortController(), lookups };
+        lookups.forEach(l => { l.batch = batch; });
+        // Identity epoch at request start: a response that lands after a user
+        // switch is still handed to the cards that asked, but not cached.
+        const epoch = JE.session?.getEpoch?.();
+        const items = lookups.map(l => l.key).join(',');
+        // priority: 'low' takes effect with the core request-priority support
+        // (#865); builds without it ignore the option.
+        JE.core.api.plugin(`/watch-providers?items=${items}&region=${region}`, { signal: batch.controller.signal, priority: 'low' })
+            .then((data) => {
+                const results = (data && typeof data.results === 'object' && data.results) || {};
+                const cacheable = !JE.session?.isCurrent || JE.session.isCurrent(epoch);
+                for (const lookup of lookups) {
+                    const providers = sanitizeProviders(results[lookup.key]);
+                    if (providers && cacheable) JE.core.api.manager?.setCache?.(lookup.cacheKey, providers);
+                    settleLookup(lookup, w => w.resolve(providers));
+                }
+            }, (error) => {
+                // Aborted because every card left: nobody is waiting, nothing to report.
+                if (batch.controller.signal.aborted) return;
+                // One warning per failed batch; the waiting cards just stay without icons.
+                console.warn(`${logPrefix} Could not fetch provider icons for ${lookups.length} title(s):`, error);
+                lookups.forEach(lookup => settleLookup(lookup, w => w.resolve(null)));
+            });
+    }
+
+    /**
+     * One title's flat-rate providers for the admin's region, from the client
+     * cache or the next batch request.
+     * @param {string} mediaType - 'movie' or 'tv'
+     * @param {string|number} tmdbId
+     * @param {AbortSignal} [signal] - Stops this caller waiting (rejects with AbortError).
+     * @returns {Promise<Array<Object>|null>} Providers in TMDB order, or null when unavailable.
+     */
+    function getFlatrateProviders(mediaType, tmdbId, signal) {
+        const region = providerRegion();
+        const key = `${mediaType}:${tmdbId}`;
+        const cacheKey = `providers:${region}:${key}`;
+        const cached = JE.core.api.manager?.getCached?.(cacheKey);
+        if (cached) return Promise.resolve(cached);
+        if (signal?.aborted) return Promise.reject(providerAbortError());
+
+        return new Promise((resolve, reject) => {
+            const lookupKey = `${region}:${key}`;
+            let lookup = providerLookups.get(lookupKey);
+            if (!lookup) {
+                lookup = { lookupKey, region, key, cacheKey, waiters: new Set(), batch: null };
+                providerLookups.set(lookupKey, lookup);
+                queuedLookups.push(lookup);
+                if (queuedLookups.length >= PROVIDER_BATCH_MAX) {
+                    flushProviderBatch();
+                } else if (!providerFlushTimer) {
+                    providerFlushTimer = setTimeout(flushProviderBatch, PROVIDER_BATCH_DELAY_MS);
+                }
+            }
+            const onAbort = () => {
+                lookup.waiters.delete(waiter);
+                reject(providerAbortError());
+                releaseLookup(lookup);
+            };
+            const waiter = {
+                resolve,
+                reject,
+                detach: () => { if (signal) signal.removeEventListener('abort', onAbort); }
+            };
+            lookup.waiters.add(waiter);
+            if (signal) signal.addEventListener('abort', onAbort, { once: true });
+        });
+    }
+
     /**
      * Fetches streaming provider icons from the TMDB API and adds them to a specified container element on a Seerr poster.
      * This function is called only if the "Show Elsewhere on Seerr" setting is enabled and a TMDB API key is present.
-     * It retrieves providers based on the default region and filters configured in the Elsewhere plugin settings.
+     * It retrieves the default region's flat-rate providers (batched across cards) and applies the filters configured in the Elsewhere plugin settings.
      *
      * @async
      * @function fetchProviderIcons
      * @param {HTMLElement} container - The DOM element where the provider icons will be appended.
      * @param {string|number} tmdbId - The The Movie Database (TMDB) ID for the movie or TV show.
      * @param {string} mediaType - The type of media, either 'movie' or 'tv'.
+     * @param {AbortSignal} [signal] - Cancels the lookup (e.g. when the card is torn down).
      * @returns {Promise<void>} A promise that resolves when the icons have been fetched and added, or if the process fails.
      */
-    async function fetchProviderIcons(container, tmdbId, mediaType) {
+    async function fetchProviderIcons(container, tmdbId, mediaType, signal) {
         if (!container || !tmdbId || !mediaType) return;
 
         // Early exit if TMDB is not configured - prevents slow/failing API calls
@@ -73,22 +250,18 @@
             return;
         }
 
-        const DEFAULT_REGION = JE.pluginConfig.DEFAULT_REGION || 'US';
         const DEFAULT_PROVIDERS = JE.pluginConfig.DEFAULT_PROVIDERS ? JE.pluginConfig.DEFAULT_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
         const IGNORE_PROVIDERS = JE.pluginConfig.IGNORE_PROVIDERS ? JE.pluginConfig.IGNORE_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
 
         try {
-            // Routed through the core API client (auth headers, retry, concurrency cap).
-            // cacheKey is required to get the response cache + in-flight dedup: this runs
-            // once per rendered Seerr card, so without it a page of cards — or a re-render
-            // after a filter toggle — refetches the same provider list per card.
-            // Mirrors the pre-split key so the 30-minute TTL behaviour is unchanged.
-            // Non-OK responses throw and land in the catch below.
-            const data = await JE.core.api.plugin(
-                `/tmdb/${mediaType}/${tmdbId}/watch/providers`,
-                { cacheKey: `providers:${mediaType}:${tmdbId}` }
-            );
-            let providers = data.results?.[DEFAULT_REGION]?.flatrate;
+            // Batched with other cards' lookups and cached per title (see
+            // getFlatrateProviders); a failed batch is logged there once and
+            // resolves to null here, so the card just stays without icons.
+            let providers = await getFlatrateProviders(mediaType, tmdbId, signal);
+            // A deferred (signalled) lookup only starts for an on-screen card, so a
+            // detached container means the card was torn down meanwhile. Unsignalled
+            // callers may fetch before the card is attached, so skip the check there.
+            if (signal && !container.isConnected) return;
 
             if (providers && providers.length > 0) {
 
@@ -109,11 +282,28 @@
                     }
                 }
 
+                // Only build image URLs from well-formed logo paths.
+                providers = providers.filter(provider => isSafeTmdbImagePath(provider.logo_path));
+
                 if (providers.length > 0) {
                     providers.slice(0, 4).forEach(provider => { // Limit to max 4 icons to avoid clutter
                         const img = document.createElement('img');
+                        // Decorative, low-priority logos: never compete with posters.
+                        // width/height give the (square) w92 logo's aspect ratio so
+                        // space is reserved before it loads; CSS sets the rendered size.
+                        img.loading = 'lazy';
+                        img.decoding = 'async';
+                        if ('fetchPriority' in img) img.fetchPriority = 'low';
+                        img.width = 92;
+                        img.height = 92;
+                        img.alt = provider.provider_name || '';
                         img.src = `https://image.tmdb.org/t/p/w92${provider.logo_path}`;
                         img.title = provider.provider_name;
+                        // Drop logos that fail to load; hide the strip if none remain.
+                        img.onerror = () => {
+                            img.remove();
+                            if (container.childElementCount === 0) container.classList.remove('has-icons');
+                        };
                         container.appendChild(img);
                     });
 
@@ -123,6 +313,8 @@
                 }
             }
         } catch (error) {
+            // Cancelled by the caller (card released): not a failure.
+            if (signal && signal.aborted) return;
             console.warn(`${logPrefix} Could not fetch provider icons for TMDB ID ${tmdbId}:`, error);
         }
     }
@@ -171,6 +363,7 @@
     }
     internal.setStatusBadge = setStatusBadge;
     internal.fetchProviderIcons = fetchProviderIcons;
+    internal.isSafeTmdbImagePath = isSafeTmdbImagePath;
     internal.addMediaTypeBadge = addMediaTypeBadge;
     internal.addCollectionMembershipBadge = addCollectionMembershipBadge;
 

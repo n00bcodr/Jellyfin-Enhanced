@@ -71,8 +71,14 @@
 
             .jellyseerr-overview .title { font-weight: 600; display: block; margin-bottom: .35em; }
             .jellyseerr-elsewhere-icons { display: none; position: absolute; bottom: 0; left:0; right:0; z-index: 3; justify-content: center; gap: 0.6em; pointer-events: none; background: rgba(0,0,0,0.8); border-top-left-radius: 1.5em; border-top-right-radius: 1.5em; padding: 0.5em 0 0.2em 0; }
-            .jellyseerr-elsewhere-icons.has-icons {display: flex;}
-            .jellyseerr-elsewhere-icons img { width: 1.8em; border-radius: 0.7em; background-color: rgba(255,255,255,0.5); padding: 2px;}
+            .jellyseerr-elsewhere-icons.has-icons {display: flex; animation: jellyseerr-icons-fade-in .25s ease-out;}
+            /* Keyframes rather than a transition: the strip goes from display:none to flex, which a transition cannot animate. */
+            @keyframes jellyseerr-icons-fade-in { from { opacity: 0; } to { opacity: 1; } }
+            @media (prefers-reduced-motion: reduce) {
+                .jellyseerr-elsewhere-icons.has-icons { animation: none; }
+                .jellyseerr-collection-badge { transition: none; }
+            }
+            .jellyseerr-elsewhere-icons img { width: 1.8em; height: auto; border-radius: 0.7em; background-color: rgba(255,255,255,0.5); padding: 2px;}
             .jellyseerr-meta { display: flex; justify-content: center; align-items: center; gap: 1em; padding: 0 .75em; }
             .jellyseerr-rating { display: flex; align-items: center; gap: .3em; color: #bdbdbd; }
             .cardText-first > a.jellyseerr-more-info-link { padding: 0 !important; margin: 0 !important; color: inherit; text-decoration: none; }
