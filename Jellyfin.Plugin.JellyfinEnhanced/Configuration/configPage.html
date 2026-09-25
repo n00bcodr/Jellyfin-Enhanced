@@ -8,7 +8,11 @@
     <script>
         var link = document.createElement('link');
         link.rel = 'stylesheet';
-        link.href = ApiClient.getUrl('/JellyfinEnhanced/Configuration/configPage.css');
+        // The stylesheet is served with long-lived immutable caching, so version the URL
+        // (same key as the injected client script) to make each release fetch a fresh copy.
+        var jeScriptTag = document.querySelector('script[plugin="Jellyfin Enhanced"]');
+        var jeCssVersion = jeScriptTag && jeScriptTag.getAttribute('version');
+        link.href = ApiClient.getUrl('/JellyfinEnhanced/Configuration/configPage.css', jeCssVersion ? { v: jeCssVersion } : undefined);
         document.head.appendChild(link);
 
         // Local CDN route helper. Every external CDN asset this admin page used to load
@@ -1621,6 +1625,17 @@
                             <div class="checkboxContainer"><label><input id="jellyseerrShowSearchResults" is="emby-checkbox" type="checkbox"/><span>Show Seerr Results in Search</span></label></div>
                             <div class="je-setting-description" data-desc-for="jellyseerrShowSearchResults">
                                 <div class="fieldDescription je-field-desc-xl">Enhance Jellyfin search by showing results from Seerr.<br/>This allows users to discover and request missing movies and shows directly from Jellyfin.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="jellyseerrSearchExcludeLibraryItems" is="emby-checkbox" type="checkbox"/><span>Exclude search items already in library</span></label></div>
+                            <div class="je-setting-description" data-desc-for="jellyseerrSearchExcludeLibraryItems">
+                                <div class="fieldDescription je-field-desc-xl">Hide Seerr search results that already exist in your Jellyfin library (the ones marked as available), including shows where only some seasons are in the library.<br/>If disabled, available items are shown and link to the media item in the library.</div>
+                            </div>
+                            <div class="je-note-banner je-banner-stack-mobile" id="je-search-exclude-library-warning" style="display:none;">
+                                <i class="material-icons je-note-icon">warning_amber</i>
+                                <div>
+                                    <strong>Warning:</strong> A movie in the library in a lower quality won't appear to request in higher quality like 4K, and a show with only some seasons won't appear to request the rest.
+                                    Missing seasons can still be requested with the <strong>Request More</strong> button on the show's page, and anything can still be requested directly in Seerr.
+                                </div>
                             </div>
                             <div class="checkboxContainer"><label><input id="showCollectionsInSearch" is="emby-checkbox" type="checkbox"/><span>Show Collections in Seerr Results</span></label></div>
                             <div class="je-setting-description" data-desc-for="showCollectionsInSearch">
@@ -5419,6 +5434,7 @@
                 document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
                 document.querySelector('#showCollectionsInSearch').checked = config.ShowCollectionsInSearch !== false;
                 document.querySelector('#jellyseerrShowSearchResults').checked = config.JellyseerrShowSearchResults !== false;
+                document.querySelector('#jellyseerrSearchExcludeLibraryItems').checked = config.JellyseerrSearchExcludeLibraryItems === true;
                 document.querySelector('#jellyseerrEnable4kRequests').checked = !!config.JellyseerrEnable4KRequests;
                 document.querySelector('#jellyseerrEnable4kTvRequests').checked = !!config.JellyseerrEnable4KTvRequests;
                 document.querySelector('#jellyseerrUseMoreInfoModal').checked = !!config.JellyseerrUseMoreInfoModal;
@@ -5918,6 +5934,7 @@
             config.ShowUserRatingOnPosters = document.querySelector('#showUserRatingOnPosters').checked;
             config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
             config.JellyseerrShowSearchResults = document.querySelector('#jellyseerrShowSearchResults').checked;
+            config.JellyseerrSearchExcludeLibraryItems = document.querySelector('#jellyseerrSearchExcludeLibraryItems').checked;
             config.ShowCollectionsInSearch = document.querySelector('#showCollectionsInSearch').checked;
             config.JellyseerrEnable4KRequests = document.querySelector('#jellyseerrEnable4kRequests').checked;
             config.JellyseerrEnable4KTvRequests = document.querySelector('#jellyseerrEnable4kTvRequests').checked;
@@ -7125,6 +7142,17 @@
         }
 
         /**
+         * Shows the warning under "Exclude search items already in library"
+         * only while that checkbox is checked.
+         */
+        function updateSearchExcludeLibraryWarning() {
+            var checkbox = document.getElementById('jellyseerrSearchExcludeLibraryItems');
+            var banner = document.getElementById('je-search-exclude-library-warning');
+            if (!checkbox || !banner) return;
+            banner.style.display = checkbox.checked ? '' : 'none';
+        }
+
+        /**
          * Adds a dependency tag to an element's comma-separated data-dep-disabled attribute.
          * @param {HTMLElement} el - The element to tag
          * @param {string} tag - The dependency tag to add
@@ -8213,6 +8241,7 @@
             SECTION_DEPS.forEach(updateSectionDep);
             INDIVIDUAL_DEPS.forEach(updateIndividualDep);
             CUSTOM_TABS_V12_HINTS.forEach(updateCustomTabsV12Hint);
+            updateSearchExcludeLibraryWarning();
             PARENT_DEPS.forEach(updateParentDep);
             updateClientTagCacheControlsVisibility();
             // `updateStatusDashboard` and the legacy `renderChecklist` both
@@ -8575,6 +8604,8 @@
                 if (el) el.addEventListener('change', function() { updateCustomTabsV12Hint(dep); });
             });
         });
+        var searchExcludeLibraryCheckbox = document.getElementById('jellyseerrSearchExcludeLibraryItems');
+        if (searchExcludeLibraryCheckbox) searchExcludeLibraryCheckbox.addEventListener('change', updateSearchExcludeLibraryWarning);
 
         var originalTestTmdb = testTmdbConnection;
         testTmdbConnection = async function(event) {

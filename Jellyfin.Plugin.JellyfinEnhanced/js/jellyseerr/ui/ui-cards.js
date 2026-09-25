@@ -110,6 +110,39 @@
     }
     ui.releasePosters = releasePosters;
 
+    /**
+     * Resolves whether a Seerr result is already in the Jellyfin library, i.e.
+     * whether its card shows the "in library" state and links to Jellyfin.
+     * @param {Object} item - Search result item from Seerr API.
+     * @returns {{isAvailable: boolean, jellyfinMediaId: (string|null)}}
+     */
+    function getLibraryAvailability(item) {
+        const jellyfinMediaId = item?.mediaInfo?.jellyfinMediaId || item?.mediaInfo?.jellyfinMediaId4k || null;
+        // For TV shows, derive the card-level availability from the season analysis so that
+        // a stale Seerr jellyfinMediaId on a show where no seasons are confirmed present
+        // does not produce a false "in library" green link.
+        // Only AVAILABLE (all seasons present) or PARTIALLY_AVAILABLE (some present) justify the link.
+        let cardEffectiveStatus;
+        if (item?.mediaType === 'tv' && item.mediaInfo?.seasons?.length) {
+            const sa = internal.analyzeSeasonStatuses(item.mediaInfo.seasons);
+            cardEffectiveStatus = sa ? sa.overallStatus : JE.seerrStatus.effectiveMediaStatus(item.mediaInfo?.status, jellyfinMediaId);
+        } else {
+            cardEffectiveStatus = JE.seerrStatus.effectiveMediaStatus(item?.mediaInfo?.status, jellyfinMediaId);
+        }
+        const isAvailable = Boolean(jellyfinMediaId)
+            && (cardEffectiveStatus === MediaStatus.AVAILABLE || cardEffectiveStatus === MediaStatus.PARTIALLY_AVAILABLE);
+        return { isAvailable, jellyfinMediaId };
+    }
+
+    /**
+     * Returns true when a Seerr result is already in the Jellyfin library,
+     * including TV shows with only some seasons present. Mirrors the card's
+     * "in library" state, so filtering on it hides exactly those cards.
+     * @param {Object} item - Search result item from Seerr API.
+     * @returns {boolean}
+     */
+    ui.isInLibrary = (item) => getLibraryAvailability(item).isAvailable;
+
 
     /**
      * Creates an individual Seerr result card.
@@ -137,20 +170,7 @@
         const jellyseerrUrl = base ? `${base}/${item.mediaType}/${item.id}` : null;
         const useMoreInfoModal = !!(JE.pluginConfig && JE.pluginConfig.JellyseerrUseMoreInfoModal);
 
-        const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId || item.mediaInfo?.jellyfinMediaId4k || null;
-        // For TV shows, derive the card-level availability from the season analysis so that
-        // a stale Seerr jellyfinMediaId on a show where no seasons are confirmed present
-        // does not produce a false "in library" green link.
-        // Only AVAILABLE (all seasons present) or PARTIALLY_AVAILABLE (some present) justify the link.
-        let cardEffectiveStatus;
-        if (item.mediaType === 'tv' && item.mediaInfo?.seasons?.length) {
-            const sa = internal.analyzeSeasonStatuses(item.mediaInfo.seasons);
-            cardEffectiveStatus = sa ? sa.overallStatus : JE.seerrStatus.effectiveMediaStatus(item.mediaInfo?.status, jellyfinMediaId);
-        } else {
-            cardEffectiveStatus = JE.seerrStatus.effectiveMediaStatus(item.mediaInfo?.status, jellyfinMediaId);
-        }
-        const isAvailable = Boolean(jellyfinMediaId)
-            && (cardEffectiveStatus === MediaStatus.AVAILABLE || cardEffectiveStatus === MediaStatus.PARTIALLY_AVAILABLE);
+        const { isAvailable, jellyfinMediaId } = getLibraryAvailability(item);
         const jellyfinHref = isAvailable ? `#!/details?id=${jellyfinMediaId}` : null;
         // Admin opt-in: for an available item, the poster click goes straight to Jellyfin
         // instead of opening the More Info modal / Seerr link — same as the title link already does.

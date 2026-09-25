@@ -131,6 +131,18 @@
         }
 
         /**
+         * Drops results that are already in the Jellyfin library (the cards
+         * that would show the "available" tick, including partially available
+         * shows) when "Exclude search items already in library" is enabled.
+         * @param {Array} results Seerr search results.
+         * @returns {Array} The results to render.
+         */
+        function filterLibraryItems(results) {
+            if (JE.pluginConfig?.JellyseerrSearchExcludeLibraryItems !== true) return results;
+            return results.filter(item => !JE.jellyseerrUI.isInLibrary(item));
+        }
+
+        /**
          * Splits a "Title (YYYY)" query - the same year convention shown on
          * every result card - into a plain-text title for the search API and
          * the year to filter results by. The year only takes effect once the
@@ -231,6 +243,7 @@
 
             searchYield.fetched += results.length;
             if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
+            results = filterLibraryItems(results);
             if (searchDeduplicator) results = searchDeduplicator.filter(results);
             searchYield.rendered += results.length;
 
@@ -332,6 +345,7 @@
                 results = filterResultsByYear(results, yearFilter);
                 searchYield.fetched += results.length;
                 if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
+                results = filterLibraryItems(results);
                 if (searchDeduplicator) results = searchDeduplicator.filter(results);
                 searchYield.rendered += results.length;
 
@@ -463,6 +477,7 @@
                 const data = await search(apiQuery, 1, { signal, skipCache: true });
                 let results = await prepareResultsWithCollections(filterResultsByYear(data.results || [], yearFilter), { signal });
                 if (JE.hiddenContent) results = JE.hiddenContent.filterJellyseerrResults(results, 'search');
+                results = filterLibraryItems(results);
 
                 searchCurrentPage = data.page || 1;
                 searchTotalPages = Math.min(data.totalPages || 1, TMDB_MAX_PAGE);
