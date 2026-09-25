@@ -1,6 +1,11 @@
 /**
  * @file Random-item header button: fetches a random movie/series and navigates to it.
  * Split from features.js (code motion; bodies verbatim).
+ *
+ * Two opt-in per-user behaviours layer on top (see features-random-roulette.js):
+ *   - randomRouletteEnabled: on a page that renders item cards, pick from those
+ *     cards with a visible roulette spin instead of from the whole library.
+ *   - randomAutoplay: start playing the pick instead of opening its details page.
  */
 (function(JE) {
     'use strict';
@@ -99,6 +104,40 @@
     }
 
     /**
+     * Hands the chosen item to the user: plays it in this session when
+     * autoplay is on, otherwise opens its details page. Autoplay falls back to
+     * the details page when the play command is refused (no controllable
+     * session, API error) so the pick is never lost.
+     * @param {object} item An item DTO or anything with an `Id`.
+     */
+    async function deliverItem(item) {
+        if (JE.currentSettings.randomAutoplay && item?.Id) {
+            const played = await JE.internals.randomRoulette.playItem(item);
+            if (played) return;
+        }
+        navigateToItem(item);
+    }
+
+    /**
+     * Picks the item for one press of the button. With roulette enabled and
+     * at least two eligible cards on the current page, spins over those cards;
+     * otherwise draws from the whole library as before.
+     * @returns {Promise<object|null>} The chosen item (`{ Id }` at minimum) or null.
+     */
+    async function pickItem() {
+        if (JE.currentSettings.randomRouletteEnabled) {
+            const roulette = JE.internals.randomRoulette;
+            const cards = await roulette.getPageCandidates();
+            if (cards.length > 1) {
+                const card = await roulette.spin(cards);
+                // null = the user navigated away mid-spin; drop the pick silently.
+                return card ? { Id: card.dataset.id, Type: card.dataset.type } : null;
+            }
+        }
+        return getRandomItem();
+    }
+
+    /**
      * Creates and injects the "Random" button into the page header if enabled.
      */
     JE.addRandomButton = () => {
@@ -140,9 +179,9 @@
             const rollInterval = setInterval(rollDice, 120);
 
             try {
-                const item = await getRandomItem();
+                const item = await pickItem();
                 if (item) {
-                    navigateToItem(item);
+                    await deliverItem(item);
                 }
             } finally {
                 clearInterval(rollInterval);

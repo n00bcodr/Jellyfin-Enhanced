@@ -58,6 +58,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RandomIncludeMovies = true;
             RandomIncludeShows = true;
             RandomUnwatchedOnly = false;
+            RandomRouletteEnabled = false;
+            RandomAutoplay = false;
             ShowWatchProgress = false;
             WatchProgressDefaultMode = "percentage";
             WatchProgressTimeFormat = "hours";
@@ -461,6 +463,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RandomIncludeMovies { get; set; }
         public bool RandomIncludeShows { get; set; }
         public bool RandomUnwatchedOnly { get; set; }
+        public bool RandomRouletteEnabled { get; set; }
+        public bool RandomAutoplay { get; set; }
         public bool ShowWatchProgress { get; set; }
         public string WatchProgressDefaultMode { get; set; }
         public string WatchProgressTimeFormat { get; set; }

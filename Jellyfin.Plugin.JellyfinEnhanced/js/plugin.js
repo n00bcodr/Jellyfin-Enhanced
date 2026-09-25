@@ -766,6 +766,9 @@
                 // -details-page.js consumes via JE.internals.features, and
                 // -remove-home.js publishes the action-sheet/remove helpers
                 // that -remove-multiselect.js consumes.
+                // features-random-roulette.js publishes JE.internals.randomRoulette,
+                // which features-random-button.js reads at click time.
+                'enhanced/features-random-roulette.js',
                 'enhanced/features-random-button.js',
                 'enhanced/itemdetails/features-details-media-info.js',
                 'enhanced/itemdetails/features-release-dates.js',

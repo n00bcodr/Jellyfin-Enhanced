@@ -589,6 +589,16 @@
                             <div class="je-setting-description" data-desc-for="randomIncludeShows">
                                 <div class="fieldDescription">Include TV Shows in the random pool.</div>
                             </div>
+
+                            <div class="checkboxContainer"><label><input id="randomRouletteEnabled" is="emby-checkbox" type="checkbox"/><span>Roulette spin on library pages</span></label></div>
+                            <div class="je-setting-description" data-desc-for="randomRouletteEnabled">
+                                <div class="fieldDescription">On a page that shows item cards (a library, collection, genre…), pick from those cards with a visible spin that cycles a highlight across them before landing. Elsewhere the button draws from the whole library as usual.</div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="randomAutoplay" is="emby-checkbox" type="checkbox"/><span>Autoplay the pick</span></label></div>
+                            <div class="je-setting-description" data-desc-for="randomAutoplay">
+                                <div class="fieldDescription">Start playing the chosen item right away instead of opening its details page.</div>
+                            </div>
                         </div>
                     </fieldset>
 
@@ -5361,6 +5371,8 @@
                 document.querySelector('#randomIncludeMovies').checked = config.RandomIncludeMovies;
                 document.querySelector('#randomIncludeShows').checked = config.RandomIncludeShows;
                 document.querySelector('#randomUnwatchedOnly').checked = config.RandomUnwatchedOnly;
+                document.querySelector('#randomRouletteEnabled').checked = config.RandomRouletteEnabled;
+                document.querySelector('#randomAutoplay').checked = config.RandomAutoplay;
                 document.querySelector('#showWatchProgress').checked = config.ShowWatchProgress;
                 document.querySelector('#watchProgressDefaultMode').value = (config.WatchProgressDefaultMode || 'percentage');
                 document.querySelector('#watchProgressTimeFormat').value = (config.WatchProgressTimeFormat || 'hours');
@@ -5870,6 +5882,8 @@
             config.RandomIncludeMovies = document.querySelector('#randomIncludeMovies').checked;
             config.RandomIncludeShows = document.querySelector('#randomIncludeShows').checked;
             config.RandomUnwatchedOnly = document.querySelector('#randomUnwatchedOnly').checked;
+            config.RandomRouletteEnabled = document.querySelector('#randomRouletteEnabled').checked;
+            config.RandomAutoplay = document.querySelector('#randomAutoplay').checked;
             config.ShowWatchProgress = document.querySelector('#showWatchProgress').checked;
             config.WatchProgressDefaultMode = document.querySelector('#watchProgressDefaultMode').value;
             config.WatchProgressTimeFormat = document.querySelector('#watchProgressTimeFormat').value;
@@ -7324,7 +7338,7 @@
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'showUserRatingDash', 'showUserRatingOnPosters'] },
-            { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows'] },
+            { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows', 'randomRouletteEnabled', 'randomAutoplay'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
             { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag'], noHint: true },
             { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition'], noHint: true },

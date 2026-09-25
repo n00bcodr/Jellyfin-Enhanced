@@ -27,6 +27,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RandomUnwatchedOnly { get; set; }
         public bool RandomIncludeMovies { get; set; }
         public bool RandomIncludeShows { get; set; }
+        public bool RandomRouletteEnabled { get; set; }
+        public bool RandomAutoplay { get; set; }
         public bool ShowWatchProgress { get; set; }
         public string WatchProgressMode { get; set; } = "percentage";
         public string WatchProgressTimeFormat { get; set; } = "hours";
