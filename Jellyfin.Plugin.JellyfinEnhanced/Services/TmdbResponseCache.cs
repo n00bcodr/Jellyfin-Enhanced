@@ -147,44 +147,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task FetchAsync(string key, string requestUri, TimeSpan ttl, TaskCompletionSource<TmdbResponse> owner)
         {
-            try
+            // Awaited through WhenAny, which never throws, so every outcome of the
+            // upstream call (a response, any failure, the upstream timeout) reaches
+            // the one completion below: the key leaves the in-flight map and every
+            // waiter is released. Only a generic catch clause could promise that.
+            var upstream = FetchUpstreamAsync(requestUri);
+            await Task.WhenAny(upstream).ConfigureAwait(false);
+            lock (_lock)
             {
-                using var timeout = new CancellationTokenSource(UpstreamTimeout);
-                var httpClient = _httpClientFactory.CreateClient();
-                httpClient.MaxResponseContentBufferSize = MaxResponseBytes;
-                using var response = await httpClient.GetAsync(requestUri, timeout.Token).ConfigureAwait(false);
-                var content = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
-                var statusCode = (int)response.StatusCode;
-                var result = new TmdbResponse(statusCode, content, ComputeETag(content));
-                var mediaType = response.Content.Headers.ContentType?.MediaType;
-                var isJson = mediaType != null
-                    && (mediaType.Equals("application/json", StringComparison.OrdinalIgnoreCase)
-                        || mediaType.EndsWith("+json", StringComparison.OrdinalIgnoreCase));
-                lock (_lock)
+                _inFlight.Remove(key);
+                if (upstream.IsCompletedSuccessfully)
                 {
-                    _inFlight.Remove(key);
+                    var (result, isJson) = upstream.Result;
                     if (isJson && result.IsSuccess)
                     {
                         Store(key, result, ttl);
                     }
-                    else if (isJson && statusCode == 404)
+                    else if (isJson && result.StatusCode == 404)
                     {
                         Store(key, result, NotFoundTtl);
                     }
                 }
-                owner.TrySetResult(result);
             }
-            catch (Exception ex)
+
+            if (upstream.IsCompletedSuccessfully)
             {
-                lock (_lock)
-                {
-                    _inFlight.Remove(key);
-                }
-                owner.TrySetException(ex);
+                owner.TrySetResult(upstream.Result.Response);
+            }
+            else if (upstream.IsCanceled)
+            {
+                // The upstream timeout: waiters get a TaskCanceledException.
+                owner.TrySetCanceled();
+            }
+            else
+            {
+                owner.TrySetException(upstream.Exception!.InnerExceptions);
                 // Observed here so a failure nobody is still waiting for doesn't
                 // surface later as an UnobservedTaskException.
                 _ = owner.Task.Exception;
             }
+        }
+
+        /// <summary>One upstream call: the response with its ETag, and whether the body is JSON.</summary>
+        private async Task<(TmdbResponse Response, bool IsJson)> FetchUpstreamAsync(string requestUri)
+        {
+            using var timeout = new CancellationTokenSource(UpstreamTimeout);
+            var httpClient = _httpClientFactory.CreateClient();
+            httpClient.MaxResponseContentBufferSize = MaxResponseBytes;
+            using var response = await httpClient.GetAsync(requestUri, timeout.Token).ConfigureAwait(false);
+            var content = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
+            var mediaType = response.Content.Headers.ContentType?.MediaType;
+            var isJson = mediaType != null
+                && (mediaType.Equals("application/json", StringComparison.OrdinalIgnoreCase)
+                    || mediaType.EndsWith("+json", StringComparison.OrdinalIgnoreCase));
+            return (new TmdbResponse((int)response.StatusCode, content, ComputeETag(content)), isJson);
         }
 
         // Caller holds _lock.

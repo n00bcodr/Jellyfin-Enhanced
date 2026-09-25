@@ -2083,15 +2083,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public async Task<IActionResult> GetPeopleInfo([FromQuery] string? ids, [FromQuery] Guid? itemId = null)
         {
             var personIds = new HashSet<Guid>();
-            foreach (var raw in (ids ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            var parsedIds = (ids ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(raw => Guid.TryParse(raw, out var parsed) ? parsed : Guid.Empty)
+                .Where(parsed => parsed != Guid.Empty);
+            foreach (var parsed in parsedIds)
             {
-                if (Guid.TryParse(raw, out var parsed) && parsed != Guid.Empty)
+                personIds.Add(parsed);
+                if (personIds.Count > MaxPeopleInfoBatchSize)
                 {
-                    personIds.Add(parsed);
-                    if (personIds.Count > MaxPeopleInfoBatchSize)
-                    {
-                        return BadRequest(new { message = $"At most {MaxPeopleInfoBatchSize} person ids per request." });
-                    }
+                    return BadRequest(new { message = $"At most {MaxPeopleInfoBatchSize} person ids per request." });
                 }
             }
 
@@ -2145,8 +2145,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 return StatusCode(499); // browser went away (navigated off / superseded)
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is InvalidOperationException or IOException or System.Data.Common.DbException)
             {
+                // What the library/database layer throws.
                 _logger.Error($"Failed to get batch person info ({personIds.Count} ids): {ex.Message}");
                 return StatusCode(500, new { message = "Failed to get person info" });
             }
@@ -2183,8 +2184,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var item = _libraryManager.GetItemById<BaseItem>(itemId.Value, user);
                 return item?.PremiereDate;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is InvalidOperationException or IOException or System.Data.Common.DbException)
             {
+                // What the library/database layer throws.
                 _logger.Warning($"Could not resolve item {itemId.Value} for person ages: {ex.GetType().Name}: {ex.Message}");
                 return null;
             }
@@ -2269,10 +2271,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Calculate current age or age at death
             if (birthDate.HasValue)
             {
-                if (isDeceased && endDate.HasValue)
+                if (isDeceased)
                 {
                     // If deceased, calculate age at death
-                    ageAtDeath = CalculateAge(birthDate.Value, endDate.Value);
+                    ageAtDeath = CalculateAge(birthDate.Value, endDate!.Value); // isDeceased implies a death date
                 }
                 else
                 {
@@ -3685,10 +3687,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     throw;
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or IOException or InvalidOperationException)
                 {
-                    // One title failing upstream leaves just that entry null; logged
-                    // once per batch below so an outage doesn't log 100 lines.
+                    // What TmdbResponseCache surfaces from HttpClient: connection
+                    // failures and the body cap, the upstream timeout, a broken
+                    // stream, an unusable response. One title failing upstream
+                    // leaves just that entry null; logged once per batch below so
+                    // an outage doesn't log 100 lines.
                     Interlocked.Increment(ref failures);
                     lastError = ex.Message;
                 }
@@ -6531,13 +6536,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             out Jellyfin.Database.Implementations.Entities.User? jellyfinUser)
         {
             jellyfinUser = null;
-            if (Guid.TryParseExact(review.UserId, "N", out var userGuid))
+            if (Guid.TryParseExact(review.UserId, "N", out var userGuid) && !ctx.Authors.TryGetValue(userGuid, out jellyfinUser))
             {
-                if (!ctx.Authors.TryGetValue(userGuid, out jellyfinUser))
-                {
-                    jellyfinUser = _userManager.GetUserById(userGuid);
-                    ctx.Authors[userGuid] = jellyfinUser;
-                }
+                jellyfinUser = _userManager.GetUserById(userGuid);
+                ctx.Authors[userGuid] = jellyfinUser;
             }
 
             // The viewer's own review is ALWAYS visible to themselves,
@@ -6695,20 +6697,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                     // Same per-review isolation as GetItemReviews: a corrupt
                     // record or failing author lookup skips only this review.
+                    var review = kvp.Value;
+                    if (review == null)
+                    {
+                        _logger.Warning($"Skipping review key={storeKey}: empty record.");
+                        continue;
+                    }
+
                     try
                     {
-                        var review = kvp.Value;
                         if (!IsReviewVisibleToViewer(review, ctx, itemKey, out _)) continue;
 
-                        // Mirror the client's historical `filter(r => r.rating)`:
-                        // only a present, non-zero rating counts toward the average.
-                        var rating = review.Rating;
-                        if (!rating.HasValue || rating.Value == 0 || double.IsNaN(rating.Value)) continue;
+                        // Mirror the client's historical `filter(r => r.rating)`: only
+                        // a non-zero rating counts (NaN is excluded too).
+                        var rating = review.Rating ?? 0;
+                        if (double.IsNaN(rating) || Math.Abs(rating) <= 0) continue;
 
-                        requested[itemKey] = (acc.Sum + rating.Value, acc.Count + 1);
+                        requested[itemKey] = (acc.Sum + rating, acc.Count + 1);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
+                        // Same per-review isolation as GetItemReviews: one unusable record
+                        // (e.g. an author id the user manager rejects) skips only itself
+                        // instead of failing every chip in the batch.
                         _logger.Warning($"Skipping review key={storeKey} due to filter error: {ex.Message}");
                     }
                 }
@@ -8459,19 +8470,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         private static List<int> ParsePositiveIdList(string? raw)
         {
-            var ids = new List<int>();
-            if (string.IsNullOrWhiteSpace(raw)) return ids;
+            if (string.IsNullOrWhiteSpace(raw)) return new List<int>();
             var seen = new HashSet<int>();
-            foreach (var part in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                if (int.TryParse(part, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id)
-                    && id > 0 && seen.Add(id))
-                {
-                    ids.Add(id);
-                }
-            }
-
-            return ids;
+            return raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(part => int.TryParse(part, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id) ? id : 0)
+                .Where(id => id > 0 && seen.Add(id))
+                .ToList();
         }
 
         /// <summary>

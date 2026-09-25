@@ -66,22 +66,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var seen = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var raw in items.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                var match = ItemPattern.Match(raw);
-                if (!match.Success
-                    || !int.TryParse(match.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var id)
-                    || id <= 0)
-                {
-                    continue;
-                }
-
-                var item = new Item(match.Groups[1].Value, id);
-                if (seen.Add(item.Key))
-                {
-                    parsed.Add(item);
-                }
-            }
+            parsed = items.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(raw => ItemPattern.Match(raw))
+                .Where(match => match.Success)
+                .Select(match => int.TryParse(match.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var id)
+                    ? new Item(match.Groups[1].Value, id)
+                    : default)
+                .Where(item => item.TmdbId > 0 && seen.Add(item.Key))
+                .ToList();
 
             if (parsed.Count == 0)
             {
