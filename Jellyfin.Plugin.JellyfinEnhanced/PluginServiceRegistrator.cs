@@ -67,6 +67,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // for misses — see WikidataAwardsService for details.
             serviceCollection.AddSingleton<WikidataAwardsService>();
             serviceCollection.AddSingleton<MdblistService>();
+            // In-memory, size-bounded cache + single-flight for TMDB passthrough and
+            // person lookups -- see TmdbResponseCache for TTLs and why it is account-safe.
+            serviceCollection.AddSingleton<TmdbResponseCache>();
             serviceCollection.AddSingleton<SeerrParentalFilter>();
             // Opt-in anonymous usage reporting: UsageEventCounterService holds the
             // current period's counters (debounced disk persistence, same pattern
