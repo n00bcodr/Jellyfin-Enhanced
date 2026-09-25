@@ -8,44 +8,161 @@
 
     const logPrefix = '🪼 Jellyfin Enhanced: User Review Tags:';
 
-    // Per-session cache: tmdbKey → rating (1-5 or null)
+    // Per-session cache: "mediaType:tmdbKey" → rating (1-5 or null). The media
+    // type is part of the key because a movie and a series can share a TMDB id.
     const _reviewCache = new Map();
-    // In-flight deduplication
+    // In-flight deduplication, same keys
     const _inFlight = new Map();
+    // Keys whose batch failed (not aborted) → time (ms) until which they
+    // resolve to null without a request. Stops a persistently failing server
+    // (e.g. a corrupt reviews.json) from getting a new, transport-retried
+    // batch on every tag-pipeline render; after the window they refetch.
+    /** @type {Map<string, number>} */
+    const _failedUntil = new Map();
+    const FAILURE_BACKOFF_MS = 60 * 1000;
+
+    // Ratings are fetched in batches: every key requested within one short
+    // window goes out as a single GET /reviews/ratings?keys=… instead of one
+    // GET /reviews/{mediaType}/{tmdbKey} per poster card.
+    const BATCH_MAX_KEYS = 200; // server-side limit per request
+    const BATCH_WINDOW_MS = 30;
+    // Same shape the server validates (IsValidTmdbKey); anything else could
+    // never have a review, so it resolves to null without a request.
+    const TMDB_KEY_RE = /^\d+(:s\d+(:e\d+)?)?$/;
+    /** @type {Map<string, {promise: Promise<number|null|undefined>|null, resolve: (value: number|null|undefined) => void}>} Keyed like _reviewCache. */
+    const _queue = new Map();
+    /** @type {ReturnType<typeof setTimeout>|null} */
+    let _flushTimer = null;
+    /** @type {Set<AbortController>} */
+    const _batchControllers = new Set();
+
+    /**
+     * Send every queued key in one request and settle each key's promise.
+     * On failure the keys resolve to null (a dash) without being cached and
+     * are backed off for FAILURE_BACKOFF_MS before a retry. An abort (user
+     * switch, or the low-priority queue dropping the request) resolves them
+     * to undefined so nothing is rendered; the next render refetches.
+     */
+    async function flushQueue() {
+        if (_flushTimer !== null) {
+            clearTimeout(_flushTimer);
+            _flushTimer = null;
+        }
+        if (_queue.size === 0) return;
+
+        const batch = Array.from(_queue.entries());
+        _queue.clear();
+
+        // Ratings are filtered per viewer (hidden/disabled authors, self
+        // reviews, admin moderation), so a batch that settles after a user
+        // switch must not write into the new user's cache.
+        const epoch = JE.session ? JE.session.getEpoch() : 0;
+        const isCurrent = () => !JE.session || JE.session.isCurrent(epoch);
+        const controller = new AbortController();
+        _batchControllers.add(controller);
+
+        /**
+         * @param {string} cacheKey - "mediaType:tmdbKey"
+         * @param {{promise: Promise<number|null|undefined>|null, resolve: (value: number|null|undefined) => void}} entry
+         * @param {number|null|undefined} value
+         * @param {boolean} cacheable
+         */
+        const settle = (cacheKey, entry, value, cacheable) => {
+            if (isCurrent()) {
+                if (cacheable) {
+                    _reviewCache.set(cacheKey, value);
+                    _failedUntil.delete(cacheKey);
+                }
+                if (_inFlight.get(cacheKey) === entry.promise) _inFlight.delete(cacheKey);
+            }
+            entry.resolve(value);
+        };
+
+        try {
+            const keys = batch.map(([cacheKey]) => cacheKey).join(',');
+            const data = await JE.core.api.plugin(`/reviews/ratings?keys=${encodeURIComponent(keys)}`, {
+                signal: controller.signal,
+                priority: 'low'
+            });
+            const ratings = (data && typeof data.ratings === 'object' && data.ratings) || {};
+            for (const [cacheKey, entry] of batch) {
+                // The response is keyed by the same "mediaType:tmdbKey" strings.
+                const hit = Object.prototype.hasOwnProperty.call(ratings, cacheKey) ? ratings[cacheKey] : null;
+                // Average across all users, stored as a 1-5 float
+                const avg = hit && typeof hit.average === 'number' && Number.isFinite(hit.average)
+                    ? hit.average
+                    : null;
+                settle(cacheKey, entry, avg, true);
+            }
+        } catch (e) {
+            // An abort is not a server failure: no backoff and no chip, so
+            // the next render refetches immediately.
+            const aborted = /** @type {any} */ (e)?.name === 'AbortError';
+            if (!aborted) {
+                console.warn(`${logPrefix} rating batch failed; retrying these ratings after ${FAILURE_BACKOFF_MS / 1000}s.`, e);
+                if (isCurrent()) {
+                    const until = Date.now() + FAILURE_BACKOFF_MS;
+                    for (const [cacheKey] of batch) _failedUntil.set(cacheKey, until);
+                }
+            }
+            for (const [cacheKey, entry] of batch) settle(cacheKey, entry, aborted ? undefined : null, false);
+        } finally {
+            _batchControllers.delete(controller);
+        }
+    }
+
+    // Visibility is per viewer, so nothing cached or queued for the previous
+    // user may be served to the next one.
+    JE.session?.onUserChange('user-review-tags', () => {
+        for (const controller of _batchControllers) controller.abort();
+        _batchControllers.clear();
+        if (_flushTimer !== null) {
+            clearTimeout(_flushTimer);
+            _flushTimer = null;
+        }
+        const orphaned = Array.from(_queue.values());
+        _queue.clear();
+        _reviewCache.clear();
+        _inFlight.clear();
+        _failedUntil.clear();
+        // Queued for the previous user: nothing to render.
+        for (const entry of orphaned) entry.resolve(undefined);
+    });
 
     /**
      * Fetch the average rating across all users for a given tmdbKey.
-     * Returns null if no reviews with ratings exist.
+     * Returns null if no reviews with ratings exist, undefined when the
+     * lookup was aborted (nothing to render).
+     * @returns {Promise<number|null|undefined>}
      */
     async function fetchUserRating(tmdbKey, mediaType) {
         if (!JE.pluginConfig?.ShowUserReviews) return null;
-        if (_reviewCache.has(tmdbKey)) return _reviewCache.get(tmdbKey);
-        if (_inFlight.has(tmdbKey)) return _inFlight.get(tmdbKey);
+        const cacheKey = `${mediaType}:${tmdbKey}`;
+        if (_reviewCache.has(cacheKey)) return _reviewCache.get(cacheKey);
+        if (_inFlight.has(cacheKey)) return _inFlight.get(cacheKey);
+        const failedUntil = _failedUntil.get(cacheKey);
+        if (failedUntil !== undefined) {
+            if (Date.now() < failedUntil) return null;
+            _failedUntil.delete(cacheKey);
+        }
 
-        const promise = (async () => {
-            try {
-                // Core throws on non-OK responses, which lands in the catch below —
-                // same "cache null, return null" outcome as the old !response.ok branch.
-                const data = await JE.core.api.plugin(`/reviews/${mediaType}/${tmdbKey}`);
-                const rated = (data.reviews || []).filter(r => r.rating);
-                if (rated.length === 0) {
-                    _reviewCache.set(tmdbKey, null);
-                    return null;
-                }
-                // Average across all users, stored as a 1-5 float
-                const avg = rated.reduce((sum, r) => sum + r.rating, 0) / rated.length;
-                _reviewCache.set(tmdbKey, avg);
-                return avg;
-            } catch (e) {
-                _reviewCache.set(tmdbKey, null);
-                return null;
-            } finally {
-                _inFlight.delete(tmdbKey);
-            }
-        })();
+        if ((mediaType !== 'movie' && mediaType !== 'tv') || !TMDB_KEY_RE.test(tmdbKey)) {
+            _reviewCache.set(cacheKey, null);
+            return null;
+        }
 
-        _inFlight.set(tmdbKey, promise);
-        return promise;
+        /** @type {{promise: Promise<number|null|undefined>|null, resolve: (value: number|null|undefined) => void}} */
+        const entry = { promise: null, resolve: () => {} };
+        entry.promise = new Promise((resolve) => { entry.resolve = resolve; });
+        _queue.set(cacheKey, entry);
+        _inFlight.set(cacheKey, entry.promise);
+
+        if (_queue.size >= BATCH_MAX_KEYS) {
+            flushQueue(); // never rejects: failures settle the batch to null
+        } else if (_flushTimer === null) {
+            _flushTimer = setTimeout(flushQueue, BATCH_WINDOW_MS);
+        }
+        return entry.promise;
     }
 
     /**
@@ -177,6 +294,7 @@
 
         const { tmdbKey, mediaType } = resolved;
         const rating = await fetchUserRating(tmdbKey, mediaType);
+        if (rating === undefined) return; // lookup aborted — render nothing
 
         if (rating === null && JE.pluginConfig?.ShowUserRatingDash === false) return;
 
@@ -196,10 +314,20 @@
 
     /**
      * Invalidate cache for a specific tmdbKey (called after review save/delete).
+     * Callers pass the bare tmdbKey, so both media types for it are dropped.
+     * @param {string} [tmdbKey]
+     * @param {string} [mediaType] - 'movie' or 'tv' to drop only that entry.
      */
-    JE.invalidateUserReviewTagCache = function(tmdbKey) {
-        if (tmdbKey) _reviewCache.delete(tmdbKey);
-        else _reviewCache.clear();
+    JE.invalidateUserReviewTagCache = function(tmdbKey, mediaType) {
+        if (!tmdbKey) {
+            _reviewCache.clear();
+            _failedUntil.clear();
+            return;
+        }
+        for (const type of mediaType ? [mediaType] : ['movie', 'tv']) {
+            _reviewCache.delete(`${type}:${tmdbKey}`);
+            _failedUntil.delete(`${type}:${tmdbKey}`);
+        }
     };
 
 })(window.JellyfinEnhanced = window.JellyfinEnhanced || {});
