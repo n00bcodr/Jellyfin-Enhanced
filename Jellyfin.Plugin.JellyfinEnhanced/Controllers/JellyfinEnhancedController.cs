@@ -67,6 +67,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.UsageEventCounterService _usageEventCounterService;
         private readonly Services.AnalyticsReportingService _analyticsReportingService;
         private readonly Services.HostCompatibilityService _hostCompatibility;
+        private readonly Services.TmdbResponseCache _tmdbResponseCache;
         private readonly IServerConfigurationManager _serverConfigurationManager;
         private readonly INetworkManager _networkManager;
 
@@ -189,6 +190,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.UsageEventCounterService usageEventCounterService,
             Services.AnalyticsReportingService analyticsReportingService,
             Services.HostCompatibilityService hostCompatibility,
+            Services.TmdbResponseCache tmdbResponseCache,
             IServerConfigurationManager serverConfigurationManager,
             INetworkManager networkManager)
         {
@@ -213,6 +215,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _usageEventCounterService = usageEventCounterService;
             _analyticsReportingService = analyticsReportingService;
             _hostCompatibility = hostCompatibility;
+            _tmdbResponseCache = tmdbResponseCache;
             _serverConfigurationManager = serverConfigurationManager;
             _networkManager = networkManager;
         }
@@ -2046,111 +2049,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return NotFound(new { message = "Person not found" });
                 }
 
-                // Get TMDB ID from provider IDs if available
-                string? tmdbId = null;
-                if (person.ProviderIds != null && person.ProviderIds.TryGetValue("Tmdb", out var id))
-                {
-                    tmdbId = id;
-                }
-
-                // Get person-specific data
-                // Note: PremiereDate on Person items stores birth date, EndDate stores death date
-                var birthDate = person.PremiereDate;
-                var endDate = person.EndDate;
-                var birthPlace = person.ProductionLocations?.FirstOrDefault() ?? null;
-
-                // Try to enrich with TMDB data if available
-                if (!string.IsNullOrEmpty(tmdbId) && int.TryParse(tmdbId, out var tmdbPersonId))
-                {
-                    try
-                    {
-                        // _logger.Info($"Fetching TMDB data for person {personId} (TMDB ID: {tmdbPersonId})");
-                        var tmdbPersonData = await GetTmdbPersonData(tmdbPersonId);
-                        if (tmdbPersonData != null)
-                        {
-                            // _logger.Info($"TMDB data received: BirthPlace={tmdbPersonData.BirthPlace}, BirthDate={tmdbPersonData.BirthDate}, DeathDate={tmdbPersonData.DeathDate}");
-
-                            // Use TMDB death date if Jellyfin doesn't have it
-                            if (!endDate.HasValue && tmdbPersonData.DeathDate.HasValue)
-                            {
-                                endDate = tmdbPersonData.DeathDate;
-                            }
-
-                            // Use TMDB birth date if Jellyfin doesn't have it
-                            if (!birthDate.HasValue && tmdbPersonData.BirthDate.HasValue)
-                            {
-                                birthDate = tmdbPersonData.BirthDate;
-                            }
-
-                            // Always prefer TMDB birthplace
-                            if (!string.IsNullOrEmpty(tmdbPersonData.BirthPlace))
-                            {
-                                birthPlace = tmdbPersonData.BirthPlace;
-                                // _logger.Debug($"Using TMDB birthplace: {birthPlace}");
-                            }
-                        }
-                        else
-                        {
-                            _logger.Warning($"No TMDB data returned for person {personId} (TMDB ID: {tmdbPersonId})");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Warning($"Failed to enrich person {personId} with TMDB data: {ex.Message}");
-                        // Continue with Jellyfin data only
-                    }
-                }
-                else
-                {
-                    // _logger.Debug($"No TMDB ID available for person {personId}");
-                }
-
-
-
-                int? currentAge = null;
-                int? ageAtItemRelease = null;
-                int? ageAtDeath = null;
-                bool isDeceased = endDate.HasValue && endDate.Value < DateTime.Now;
-
-                // Calculate current age or age at death
-                if (birthDate.HasValue)
-                {
-                    if (isDeceased && endDate.HasValue)
-                    {
-                        // If deceased, calculate age at death
-                        ageAtDeath = CalculateAge(birthDate.Value, endDate.Value);
-                    }
-                    else
-                    {
-                        // If alive, calculate current age
-                        currentAge = CalculateAge(birthDate.Value, DateTime.Now);
-                    }
-
-                    // Calculate age at item release if itemId provided
-                    if (itemId.HasValue)
-                    {
-                        var item = _libraryManager.GetItemById(itemId.Value);
-                        if (item?.PremiereDate.HasValue ?? false)
-                        {
-                            ageAtItemRelease = CalculateAge(birthDate.Value, item.PremiereDate.Value);
-                        }
-                    }
-                }
-
-                return Ok(new
-                {
-                    id = person.Id,
-                    name = person.Name,
-                    tmdbId = tmdbId,
-                    type = person.GetType().Name,
-                    birthDate = birthDate?.ToString("yyyy-MM-dd"),
-                    deathDate = endDate?.ToString("yyyy-MM-dd"),
-                    birthPlace = birthPlace,
-                    isDeceased = isDeceased,
-                    currentAge = currentAge,
-                    ageAtDeath = ageAtDeath,
-                    ageAtItemRelease = ageAtItemRelease
-                });
+                var itemPremiereDate = ResolveVisibleItemPremiereDate(itemId);
+                return Ok(await BuildPersonInfoAsync(person, itemPremiereDate, HttpContext.RequestAborted));
+            }
+            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                return StatusCode(499); // browser went away
             }
             catch (Exception ex)
             {
@@ -2159,7 +2063,249 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
-        private async Task<TmdbPersonData?> GetTmdbPersonData(int tmdbPersonId)
+        private const int MaxPeopleInfoBatchSize = 100;
+        private const int PeopleInfoTmdbConcurrency = 5;
+        // One slow TMDB lookup must not hold a whole cast batch (or a single
+        // person request) hostage: past this, fall back to Jellyfin-only data.
+        private static readonly TimeSpan PersonTmdbTimeout = TimeSpan.FromSeconds(6);
+
+        /// <summary>
+        /// Batch form of <see cref="GetPersonInfo"/> for the People Tags cast
+        /// row: one request for every cast card instead of one per actor.
+        /// <c>ids</c> is a comma-separated list of person GUIDs (N or D format,
+        /// malformed entries ignored, duplicates collapsed, at most
+        /// <see cref="MaxPeopleInfoBatchSize"/> distinct ids). Returns
+        /// <c>{ people: { "&lt;personId N&gt;": { ...same shape as person/{id}... } } }</c>;
+        /// ids that are not Person entities are omitted.
+        /// </summary>
+        [HttpGet("people/info")]
+        [Authorize]
+        public async Task<IActionResult> GetPeopleInfo([FromQuery] string? ids, [FromQuery] Guid? itemId = null)
+        {
+            var personIds = new HashSet<Guid>();
+            var parsedIds = (ids ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(raw => Guid.TryParse(raw, out var parsed) ? parsed : Guid.Empty)
+                .Where(parsed => parsed != Guid.Empty);
+            foreach (var parsed in parsedIds)
+            {
+                personIds.Add(parsed);
+                if (personIds.Count > MaxPeopleInfoBatchSize)
+                {
+                    return BadRequest(new { message = $"At most {MaxPeopleInfoBatchSize} person ids per request." });
+                }
+            }
+
+            if (personIds.Count == 0)
+            {
+                return BadRequest(new { message = "No valid person ids supplied." });
+            }
+
+            var ct = HttpContext.RequestAborted;
+            try
+            {
+                var people = _libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    ItemIds = personIds.ToArray(),
+                    IncludeItemTypes = new[] { BaseItemKind.Person }
+                })
+                    .OfType<MediaBrowser.Controller.Entities.Person>()
+                    .GroupBy(p => p.Id)
+                    .Select(g => g.First())
+                    .ToList();
+
+                // Resolved once for the whole batch rather than per person.
+                var itemPremiereDate = ResolveVisibleItemPremiereDate(itemId);
+
+                using var tmdbGate = new SemaphoreSlim(PeopleInfoTmdbConcurrency);
+                var tasks = people.Select(async person =>
+                {
+                    await tmdbGate.WaitAsync(ct).ConfigureAwait(false);
+                    try
+                    {
+                        return (Key: person.Id.ToString("N"), Info: await BuildPersonInfoAsync(person, itemPremiereDate, ct).ConfigureAwait(false));
+                    }
+                    finally
+                    {
+                        tmdbGate.Release();
+                    }
+                }).ToList();
+
+                var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
+
+                var map = new Dictionary<string, object>(results.Length, StringComparer.OrdinalIgnoreCase);
+                foreach (var (key, info) in results)
+                {
+                    map[key] = info;
+                }
+
+                return Ok(new { people = map });
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return StatusCode(499); // browser went away (navigated off / superseded)
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or IOException or System.Data.Common.DbException)
+            {
+                // What the library/database layer throws.
+                _logger.Error($"Failed to get batch person info ({personIds.Count} ids): {ex.Message}");
+                return StatusCode(500, new { message = "Failed to get person info" });
+            }
+        }
+
+        /// <summary>
+        /// PremiereDate of the item used for "age at release", honoured only
+        /// when that item is visible to the calling user (library access and
+        /// parental rules); otherwise null so no age-at-release is derived.
+        /// </summary>
+        private DateTime? ResolveVisibleItemPremiereDate(Guid? itemId)
+        {
+            if (!itemId.HasValue || itemId.Value == Guid.Empty)
+            {
+                return null;
+            }
+
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId.Value == Guid.Empty)
+            {
+                return null;
+            }
+
+            try
+            {
+                var user = _userManager.GetUserById(userId.Value);
+                if (user == null)
+                {
+                    return null;
+                }
+
+                // The user overload returns null when the item is not visible
+                // to this user.
+                var item = _libraryManager.GetItemById<BaseItem>(itemId.Value, user);
+                return item?.PremiereDate;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or IOException or System.Data.Common.DbException)
+            {
+                // What the library/database layer throws.
+                _logger.Warning($"Could not resolve item {itemId.Value} for person ages: {ex.GetType().Name}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Shared response object for person/{id} and people/info. The shape
+        /// is part of the client contract (peopletags.js, person-discovery.js).
+        /// </summary>
+        private async Task<object> BuildPersonInfoAsync(BaseItem person, DateTime? itemPremiereDate, CancellationToken cancellationToken)
+        {
+            // Get TMDB ID from provider IDs if available
+            string? tmdbId = null;
+            if (person.ProviderIds != null && person.ProviderIds.TryGetValue("Tmdb", out var id))
+            {
+                tmdbId = id;
+            }
+
+            // Get person-specific data
+            // Note: PremiereDate on Person items stores birth date, EndDate stores death date
+            var birthDate = person.PremiereDate;
+            var endDate = person.EndDate;
+            var birthPlace = person.ProductionLocations?.FirstOrDefault() ?? null;
+
+            // Try to enrich with TMDB data if available
+            if (!string.IsNullOrEmpty(tmdbId) && int.TryParse(tmdbId, out var tmdbPersonId))
+            {
+                using var tmdbTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                tmdbTimeout.CancelAfter(PersonTmdbTimeout);
+                try
+                {
+                    // _logger.Info($"Fetching TMDB data for person {person.Id} (TMDB ID: {tmdbPersonId})");
+                    var tmdbPersonData = await GetTmdbPersonData(tmdbPersonId, tmdbTimeout.Token).ConfigureAwait(false);
+                    if (tmdbPersonData != null)
+                    {
+                        // _logger.Info($"TMDB data received: BirthPlace={tmdbPersonData.BirthPlace}, BirthDate={tmdbPersonData.BirthDate}, DeathDate={tmdbPersonData.DeathDate}");
+
+                        // Use TMDB death date if Jellyfin doesn't have it
+                        if (!endDate.HasValue && tmdbPersonData.DeathDate.HasValue)
+                        {
+                            endDate = tmdbPersonData.DeathDate;
+                        }
+
+                        // Use TMDB birth date if Jellyfin doesn't have it
+                        if (!birthDate.HasValue && tmdbPersonData.BirthDate.HasValue)
+                        {
+                            birthDate = tmdbPersonData.BirthDate;
+                        }
+
+                        // Always prefer TMDB birthplace
+                        if (!string.IsNullOrEmpty(tmdbPersonData.BirthPlace))
+                        {
+                            birthPlace = tmdbPersonData.BirthPlace;
+                            // _logger.Debug($"Using TMDB birthplace: {birthPlace}");
+                        }
+                    }
+                    else
+                    {
+                        _logger.Warning($"No TMDB data returned for person {person.Id} (TMDB ID: {tmdbPersonId})");
+                    }
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && tmdbTimeout.IsCancellationRequested)
+                {
+                    _logger.Warning($"TMDB lookup for person {person.Id} (TMDB ID: {tmdbPersonId}) exceeded {PersonTmdbTimeout.TotalSeconds:0}s; using Jellyfin data only");
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                {
+                    _logger.Warning($"Failed to enrich person {person.Id} with TMDB data: {ex.Message}");
+                    // Continue with Jellyfin data only
+                }
+            }
+            else
+            {
+                // _logger.Debug($"No TMDB ID available for person {person.Id}");
+            }
+
+            int? currentAge = null;
+            int? ageAtItemRelease = null;
+            int? ageAtDeath = null;
+            bool isDeceased = endDate.HasValue && endDate.Value < DateTime.Now;
+
+            // Calculate current age or age at death
+            if (birthDate.HasValue)
+            {
+                if (isDeceased)
+                {
+                    // If deceased, calculate age at death
+                    ageAtDeath = CalculateAge(birthDate.Value, endDate!.Value); // isDeceased implies a death date
+                }
+                else
+                {
+                    // If alive, calculate current age
+                    currentAge = CalculateAge(birthDate.Value, DateTime.Now);
+                }
+
+                // Calculate age at item release if a visible item was provided
+                if (itemPremiereDate.HasValue)
+                {
+                    ageAtItemRelease = CalculateAge(birthDate.Value, itemPremiereDate.Value);
+                }
+            }
+
+            return new
+            {
+                id = person.Id,
+                name = person.Name,
+                tmdbId = tmdbId,
+                type = person.GetType().Name,
+                birthDate = birthDate?.ToString("yyyy-MM-dd"),
+                deathDate = endDate?.ToString("yyyy-MM-dd"),
+                birthPlace = birthPlace,
+                isDeceased = isDeceased,
+                currentAge = currentAge,
+                ageAtDeath = ageAtDeath,
+                ageAtItemRelease = ageAtItemRelease
+            };
+        }
+
+        private async Task<TmdbPersonData?> GetTmdbPersonData(int tmdbPersonId, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -2171,19 +2317,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return null;
                 }
 
-                var httpClient = _httpClientFactory.CreateClient();
-                var tmdbUrl = $"https://api.themoviedb.org/3/person/{tmdbPersonId}?api_key={config.TMDB_API_KEY}";
-
                 // _logger.Debug($"Fetching TMDB person data from: https://api.themoviedb.org/3/person/{tmdbPersonId}");
-                var response = await httpClient.GetAsync(tmdbUrl);
+                var response = await _tmdbResponseCache.GetAsync($"person/{tmdbPersonId}", string.Empty, config.TMDB_API_KEY, cancellationToken);
 
-                if (!response.IsSuccessStatusCode)
+                if (!response.IsSuccess)
                 {
-                    _logger.Warning($"TMDB API request failed with status {response.StatusCode}");
+                    _logger.Warning($"TMDB API request failed with status {(System.Net.HttpStatusCode)response.StatusCode}");
                     return null;
                 }
 
-                var content = await response.Content.ReadAsStringAsync();
+                var content = response.Content;
                 var jsonElement = JsonSerializer.Deserialize<JsonElement>(content);
 
                 DateTime? birthDate = null;
@@ -2224,6 +2367,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     DeathDate = deathDate,
                     BirthPlace = birthPlace
                 };
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Browser went away; the shared TMDB call still finishes and is cached.
+                throw;
             }
             catch (Exception ex)
             {
@@ -3377,6 +3525,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // is limited to title-free lookups; single-title lookups are gated on
             // that title and anything else (search, discover, trending, lists) is
             // refused, because it would return titles unfiltered.
+            // Nothing but a successful upstream response may be kept by the browser,
+            // and even that is revalidated (so re-gated) on every use.
+            Response.Headers["Cache-Control"] = "no-store";
+
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
             {
@@ -3421,21 +3573,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 queryString = decodedQuery.Length > 0 ? new QueryString("?" + decodedQuery) : QueryString.Empty;
             }
 
-            var httpClient = _httpClientFactory.CreateClient();
-            var separator = queryString.HasValue ? "&" : "?";
-            var requestUri = $"https://api.themoviedb.org/3/{apiPath}{queryString}{separator}api_key={config.TMDB_API_KEY}";
-
             try
             {
-                var response = await httpClient.GetAsync(requestUri, HttpContext.RequestAborted);
-                var content = await response.Content.ReadAsStringAsync(HttpContext.RequestAborted);
+                // Gating above has already run for this caller; the server cache is
+                // keyed on what goes upstream (see TmdbResponseCache for why that
+                // is account-safe).
+                var response = await _tmdbResponseCache.GetAsync(apiPath, queryString.ToString(), config.TMDB_API_KEY, HttpContext.RequestAborted);
 
-                if (response.IsSuccessStatusCode)
+                if (response.IsSuccess)
                 {
-                    return Content(content, "application/json");
+                    // Browser cache: private + no-cache, so every reuse comes back
+                    // here (parental gating above runs again) and costs only a 304
+                    // when the body is unchanged. Varied on the auth headers so a
+                    // shared browser profile never hands one account's response
+                    // (restricted users get different results) to another.
+                    Response.Headers["Cache-Control"] = "private, no-cache";
+                    Response.Headers["Vary"] = "Authorization, X-Emby-Token, X-Jellyfin-User-Id";
+                    Response.Headers["ETag"] = response.ETag;
+                    if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], response.ETag))
+                    {
+                        return StatusCode(StatusCodes.Status304NotModified);
+                    }
+                    return Content(response.Content, "application/json");
                 }
 
-                return StatusCode((int)response.StatusCode, content);
+                return StatusCode(response.StatusCode, response.Content);
             }
             catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
             {
@@ -3448,6 +3610,125 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Error($"Failed to proxy TMDB request for '{apiPath}{queryString}'. Error: {ex}");
                 return StatusCode(500, "Failed to connect to TMDB.");
             }
+        }
+
+        /// <summary>
+        /// Batched watch providers for Seerr cards: one request per screenful of
+        /// cards instead of one TMDB passthrough call per card, returning only the
+        /// region's flat-rate providers (what a card renders) rather than every
+        /// region's full list.
+        /// items: comma-separated "movie:{id}" / "tv:{id}" (distinct, max 100).
+        /// region: two-letter code; defaults to the admin DEFAULT_REGION.
+        /// Response: { "region": "US", "results": { "movie:603": [ { provider_id,
+        /// provider_name, logo_path } ] | null } } where null means unavailable
+        /// (upstream error, or refused to this caller by parental gating).
+        /// </summary>
+        [HttpGet("watch-providers")]
+        [Authorize]
+        public async Task<IActionResult> GetWatchProvidersBatch([FromQuery] string? items, [FromQuery] string? region)
+        {
+            Response.Headers["Cache-Control"] = "no-store";
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
+            {
+                return StatusCode(503, "TMDB API key is not configured.");
+            }
+
+            if (!Services.WatchProvidersBatch.TryParseItems(items, out var requested, out var itemsError))
+            {
+                return BadRequest(itemsError);
+            }
+
+            var regionCode = string.IsNullOrEmpty(region) ? Services.WatchProvidersBatch.DefaultRegion(config.DEFAULT_REGION) : region;
+            if (!Services.WatchProvidersBatch.IsValidRegion(regionCode))
+            {
+                return BadRequest("Invalid region.");
+            }
+
+            var apiKey = config.TMDB_API_KEY;
+            var callerId = UserHelper.GetCurrentUserId(User)?.ToString();
+            var restricted = _parentalFilter.TryGetRestrictedPolicy(callerId, out _);
+            var aborted = HttpContext.RequestAborted;
+            var results = new ConcurrentDictionary<string, List<Services.WatchProvidersBatch.Provider>?>(StringComparer.Ordinal);
+            using var slots = new SemaphoreSlim(6);
+            var failures = 0;
+            string? lastError = null;
+
+            async Task LoadAsync(Services.WatchProvidersBatch.Item item)
+            {
+                await slots.WaitAsync(aborted).ConfigureAwait(false);
+                try
+                {
+                    // The same per-caller parental gating the passthrough applies to
+                    // {type}/{id}/watch/providers; anything refused stays null.
+                    if (restricted)
+                    {
+                        switch (Services.SeerrParentalFilter.ClassifyTmdbPassthrough(item.ApiPath, out var gatedType, out var gatedId))
+                        {
+                            case Services.SeerrParentalFilter.TmdbAccess.Deny:
+                                return;
+                            case Services.SeerrParentalFilter.TmdbAccess.GateTitle:
+                                if (await _parentalFilter.IsBlockedAsync(gatedType, gatedId, callerId, aborted).ConfigureAwait(false))
+                                {
+                                    return;
+                                }
+                                break;
+                        }
+                    }
+
+                    var response = await _tmdbResponseCache.GetAsync(item.ApiPath, string.Empty, apiKey, aborted).ConfigureAwait(false);
+                    if (response.IsSuccess)
+                    {
+                        results[item.Key] = Services.WatchProvidersBatch.ExtractFlatrate(response.Content, regionCode);
+                    }
+                }
+                catch (OperationCanceledException) when (aborted.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or IOException or InvalidOperationException)
+                {
+                    // What TmdbResponseCache surfaces from HttpClient: connection
+                    // failures and the body cap, the upstream timeout, a broken
+                    // stream, an unusable response. One title failing upstream
+                    // leaves just that entry null; logged once per batch below so
+                    // an outage doesn't log 100 lines.
+                    Interlocked.Increment(ref failures);
+                    lastError = ex.Message;
+                }
+                finally
+                {
+                    slots.Release();
+                }
+            }
+
+            try
+            {
+                await Task.WhenAll(requested.Select(LoadAsync)).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (aborted.IsCancellationRequested)
+            {
+                return StatusCode(499);
+            }
+
+            if (failures > 0)
+            {
+                _logger.Warning($"Watch providers batch: {failures} of {requested.Count} lookups failed ({lastError}).");
+            }
+
+            var body = Services.WatchProvidersBatch.Serialize(regionCode, requested, results);
+            var etag = Services.TmdbResponseCache.ComputeETag(body);
+            // Same browser-cache policy as the passthrough: every reuse revalidates
+            // here (so gating runs again) and costs a 304 when nothing changed.
+            Response.Headers["Cache-Control"] = "private, no-cache";
+            Response.Headers["Vary"] = "Authorization, X-Emby-Token, X-Jellyfin-User-Id";
+            Response.Headers["ETag"] = etag;
+            if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], etag))
+            {
+                return StatusCode(StatusCodes.Status304NotModified);
+            }
+            return Content(body, "application/json");
         }
 
         /// <summary>
@@ -6196,6 +6477,114 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static bool IsValidTmdbKey(string tmdbId) =>
             !string.IsNullOrWhiteSpace(tmdbId) && _tmdbIdExtendedRegex.IsMatch(tmdbId);
 
+        /// <summary>
+        /// Per-request state for deciding which reviews a viewer may see.
+        /// Shared by <see cref="GetItemReviews"/> and <see cref="GetReviewRatings"/>
+        /// so the list and the poster rating chips can never disagree. Authors
+        /// are resolved at most once per request.
+        /// </summary>
+        private sealed class ReviewVisibilityContext
+        {
+            public bool ViewerIsAdmin { get; init; }
+            public string? ViewerUserIdN { get; init; }
+            public bool HideHiddenAuthors { get; init; }
+            public bool HideDisabledAuthors { get; init; }
+            public Dictionary<Guid, Jellyfin.Database.Implementations.Entities.User?> Authors { get; } = new();
+        }
+
+        private ReviewVisibilityContext CreateReviewVisibilityContext(string endpoint, string target)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+
+            // Resolve the current viewer's "N"-format user id so we can
+            // always show their OWN review back to them, even when the
+            // viewer themselves is hidden/disabled in Jellyfin and the
+            // hide filters would otherwise drop their author record.
+            // Without this, a hidden non-admin user posting a review would
+            // immediately lose visibility of their own content (issue 546).
+            var viewerUserIdN = UserHelper.GetCurrentUserId(User)?.ToString("N");
+            if (string.IsNullOrEmpty(viewerUserIdN))
+            {
+                // Anomalous: [Authorize] passed but the Jellyfin-UserId
+                // claim is missing or unparseable. The self-review bypass
+                // below will silently no-op, so warn here to give a
+                // diagnostic trail if a hidden user reports the symptom
+                // again with no obvious cause.
+                _logger.Warning($"{endpoint}: could not resolve viewer user id from claims on {target}; self-review bypass disabled.");
+            }
+
+            return new ReviewVisibilityContext
+            {
+                ViewerIsAdmin = IsAdminUser(),
+                ViewerUserIdN = viewerUserIdN,
+                HideHiddenAuthors = config?.HideReviewsFromHiddenUsers ?? true,
+                HideDisabledAuthors = config?.HideReviewsFromDisabledUsers ?? true,
+            };
+        }
+
+        /// <summary>
+        /// Decides whether <paramref name="review"/> is visible to the viewer
+        /// described by <paramref name="ctx"/> and resolves its author
+        /// (null when the id is unparseable or the user no longer exists).
+        /// May throw on a corrupt record or a failing user lookup — callers
+        /// isolate each review so one bad record cannot fail the request.
+        /// </summary>
+        private bool IsReviewVisibleToViewer(
+            UserReview review,
+            ReviewVisibilityContext ctx,
+            string itemLabel,
+            out Jellyfin.Database.Implementations.Entities.User? jellyfinUser)
+        {
+            jellyfinUser = null;
+            if (Guid.TryParseExact(review.UserId, "N", out var userGuid) && !ctx.Authors.TryGetValue(userGuid, out jellyfinUser))
+            {
+                jellyfinUser = _userManager.GetUserById(userGuid);
+                ctx.Authors[userGuid] = jellyfinUser;
+            }
+
+            // The viewer's own review is ALWAYS visible to themselves,
+            // regardless of admin status or hide filters. The hide
+            // filters exist to let admins moderate OTHER users'
+            // content, not to make a user's own writing invisible to
+            // them. Skipping the filter for self also prevents the
+            // confusing "I just posted, where did it go?" symptom
+            // when the viewer's own account has IsHidden set.
+            //
+            // Require jellyfinUser != null on the self-bypass so an
+            // orphaned-self record (auth token still resolves to a
+            // deleted user — Jellyfin doesn't universally invalidate
+            // tokens on user delete) still falls into the orphan
+            // hide path below instead of being served back with a
+            // raw-Guid display name.
+            var isOwnReview = jellyfinUser != null
+                && !string.IsNullOrEmpty(ctx.ViewerUserIdN)
+                && string.Equals(review.UserId, ctx.ViewerUserIdN, StringComparison.OrdinalIgnoreCase);
+
+            // Admin viewers always see every review so they can moderate.
+            if (ctx.ViewerIsAdmin || isOwnReview) return true;
+
+            // Orphaned authors (Jellyfin user was deleted) are
+            // hidden from non-admin viewers IF either hide toggle
+            // is on — fail CLOSED. Otherwise a deleted problem
+            // user's review would resurface for everyone. Admins
+            // still see them so orphans can be cleaned up.
+            if (jellyfinUser == null)
+            {
+                if (ctx.HideHiddenAuthors || ctx.HideDisabledAuthors)
+                {
+                    _logger.Warning($"Hiding orphaned review for unknown userId={review.UserId} on {itemLabel} from non-admin viewer.");
+                    return false;
+                }
+                return true;
+            }
+
+            if (ctx.HideHiddenAuthors && jellyfinUser.HasPermission(PermissionKind.IsHidden))
+                return false;
+            if (ctx.HideDisabledAuthors && jellyfinUser.HasPermission(PermissionKind.IsDisabled))
+                return false;
+            return true;
+        }
+
         [HttpGet("reviews/{mediaType}/{tmdbId}")]
         [Authorize]
         [Produces("application/json")]
@@ -6207,28 +6596,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!IsValidTmdbKey(tmdbId))
                 return BadRequest(new { message = "Invalid TmdbId." });
 
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            var viewerIsAdmin = IsAdminUser();
-            var hideHiddenAuthors = config?.HideReviewsFromHiddenUsers ?? true;
-            var hideDisabledAuthors = config?.HideReviewsFromDisabledUsers ?? true;
-
-            // Resolve the current viewer's "N"-format user id so we can
-            // always show their OWN review back to them, even when the
-            // viewer themselves is hidden/disabled in Jellyfin and the
-            // hide filters would otherwise drop their author record.
-            // Without this, a hidden non-admin user posting a review would
-            // immediately lose visibility of their own content (issue 546).
-            var viewerUserId = UserHelper.GetCurrentUserId(User);
-            var viewerUserIdN = viewerUserId?.ToString("N");
-            if (string.IsNullOrEmpty(viewerUserIdN))
-            {
-                // Anomalous: [Authorize] passed but the Jellyfin-UserId
-                // claim is missing or unparseable. The self-review bypass
-                // below will silently no-op, so warn here to give a
-                // diagnostic trail if a hidden user reports the symptom
-                // again with no obvious cause.
-                _logger.Warning($"GetItemReviews: could not resolve viewer user id from claims on {mediaType}:{tmdbId}; self-review bypass disabled.");
-            }
+            var itemLabel = $"{mediaType}:{tmdbId}";
+            var ctx = CreateReviewVisibilityContext(nameof(GetItemReviews), itemLabel);
 
             var suffix = $":{mediaType}:{tmdbId}";
             var store = _userConfigurationManager.GetAllReviews();
@@ -6246,62 +6615,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 try
                 {
                     var review = kvp.Value;
-
-                    string displayName = review.UserId;
-                    Jellyfin.Database.Implementations.Entities.User? jellyfinUser = null;
-                    if (Guid.TryParseExact(review.UserId, "N", out var userGuid))
-                    {
-                        jellyfinUser = _userManager.GetUserById(userGuid);
-                        if (jellyfinUser != null) displayName = jellyfinUser.Username;
-                    }
-
-                    // The viewer's own review is ALWAYS visible to themselves,
-                    // regardless of admin status or hide filters. The hide
-                    // filters exist to let admins moderate OTHER users'
-                    // content, not to make a user's own writing invisible to
-                    // them. Skipping the filter for self also prevents the
-                    // confusing "I just posted, where did it go?" symptom
-                    // when the viewer's own account has IsHidden set.
-                    //
-                    // Require jellyfinUser != null on the self-bypass so an
-                    // orphaned-self record (auth token still resolves to a
-                    // deleted user — Jellyfin doesn't universally invalidate
-                    // tokens on user delete) still falls into the orphan
-                    // hide path below instead of being served back with a
-                    // raw-Guid display name.
-                    var isOwnReview = jellyfinUser != null
-                        && !string.IsNullOrEmpty(viewerUserIdN)
-                        && string.Equals(review.UserId, viewerUserIdN, StringComparison.OrdinalIgnoreCase);
-
-                    // Admin viewers always see every review so they can moderate.
-                    if (!viewerIsAdmin && !isOwnReview)
-                    {
-                        // Orphaned authors (Jellyfin user was deleted) are
-                        // hidden from non-admin viewers IF either hide toggle
-                        // is on — fail CLOSED. Otherwise a deleted problem
-                        // user's review would resurface for everyone. Admins
-                        // still see them so orphans can be cleaned up.
-                        if (jellyfinUser == null)
-                        {
-                            if (hideHiddenAuthors || hideDisabledAuthors)
-                            {
-                                _logger.Warning($"Hiding orphaned review for unknown userId={review.UserId} on {mediaType}:{tmdbId} from non-admin viewer.");
-                                continue;
-                            }
-                        }
-                        else
-                        {
-                            if (hideHiddenAuthors && jellyfinUser.HasPermission(PermissionKind.IsHidden))
-                                continue;
-                            if (hideDisabledAuthors && jellyfinUser.HasPermission(PermissionKind.IsDisabled))
-                                continue;
-                        }
-                    }
+                    if (!IsReviewVisibleToViewer(review, ctx, itemLabel, out var jellyfinUser)) continue;
 
                     results.Add(new
                     {
                         userId = review.UserId,
-                        userName = displayName,
+                        userName = jellyfinUser != null ? jellyfinUser.Username : review.UserId,
                         tmdbId = review.TmdbId,
                         mediaType = review.MediaType,
                         content = review.Content,
@@ -6317,6 +6636,103 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return Ok(new { reviews = results });
+        }
+
+        /// <summary>Most distinct keys one <see cref="GetReviewRatings"/> call may ask for.</summary>
+        private const int MaxReviewRatingKeys = 200;
+
+        /// <summary>
+        /// Average user rating for many items in one pass over the review
+        /// store (the poster rating chips ask for a whole page at once instead
+        /// of one <see cref="GetItemReviews"/> call per card).
+        /// </summary>
+        /// <param name="keys">Comma-separated "mediaType:tmdbKey" entries, e.g.
+        /// "movie:603,tv:1399:s1". Malformed entries are ignored; at most
+        /// <see cref="MaxReviewRatingKeys"/> distinct valid keys.</param>
+        /// <returns>
+        /// <c>{ "ratings": { "movie:603": { "average": 4.5, "count": 2 }, "tv:1399:s1": null } }</c>
+        /// — one entry per valid requested key; null when no review visible to
+        /// this viewer carries a rating. Computed from exactly the reviews
+        /// <see cref="GetItemReviews"/> would return to the same viewer.
+        /// </returns>
+        [HttpGet("reviews/ratings")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetReviewRatings([FromQuery] string? keys)
+        {
+            // Insertion-ordered so the response lists keys in request order.
+            var requested = new Dictionary<string, (double Sum, int Count)>(StringComparer.Ordinal);
+            var order = new List<string>();
+            foreach (var raw in (keys ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var sep = raw.IndexOf(':');
+                if (sep <= 0) continue;
+                var mediaType = raw.Substring(0, sep);
+                if (mediaType != "movie" && mediaType != "tv") continue;
+                if (!IsValidTmdbKey(raw.Substring(sep + 1))) continue;
+                if (requested.ContainsKey(raw)) continue;
+                if (requested.Count >= MaxReviewRatingKeys)
+                    return BadRequest(new { message = $"At most {MaxReviewRatingKeys} keys per request." });
+                requested[raw] = (0, 0);
+                order.Add(raw);
+            }
+
+            if (requested.Count == 0)
+                return BadRequest(new { message = "No valid keys. Expected comma-separated 'movie:<tmdbId>' or 'tv:<tmdbId>[:s<n>[:e<n>]]' entries." });
+
+            var ctx = CreateReviewVisibilityContext(nameof(GetReviewRatings), $"{requested.Count} keys");
+            var store = _userConfigurationManager.GetAllReviews();
+
+            foreach (var kvp in store.Reviews)
+            {
+                // Store keys are "{userIdN}:{mediaType}:{tmdbKey}". A requested
+                // key K matches exactly when the store key ends with ":" + K —
+                // the same suffix test GetItemReviews applies — so probe the
+                // tail after every ':' (a key holds at most a handful).
+                var storeKey = kvp.Key;
+                for (var i = storeKey.IndexOf(':'); i >= 0; i = storeKey.IndexOf(':', i + 1))
+                {
+                    var itemKey = storeKey.Substring(i + 1);
+                    if (!requested.TryGetValue(itemKey, out var acc)) continue;
+
+                    // Same per-review isolation as GetItemReviews: a corrupt
+                    // record or failing author lookup skips only this review.
+                    var review = kvp.Value;
+                    if (review == null)
+                    {
+                        _logger.Warning($"Skipping review key={storeKey}: empty record.");
+                        continue;
+                    }
+
+                    try
+                    {
+                        if (!IsReviewVisibleToViewer(review, ctx, itemKey, out _)) continue;
+
+                        // Mirror the client's historical `filter(r => r.rating)`: only
+                        // a non-zero rating counts (NaN is excluded too).
+                        var rating = review.Rating ?? 0;
+                        if (double.IsNaN(rating) || Math.Abs(rating) <= 0) continue;
+
+                        requested[itemKey] = (acc.Sum + rating, acc.Count + 1);
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
+                    {
+                        // Same per-review isolation as GetItemReviews: one unusable record
+                        // (e.g. an author id the user manager rejects) skips only itself
+                        // instead of failing every chip in the batch.
+                        _logger.Warning($"Skipping review key={storeKey} due to filter error: {ex.Message}");
+                    }
+                }
+            }
+
+            var ratings = new Dictionary<string, object?>(StringComparer.Ordinal);
+            foreach (var key in order)
+            {
+                var (sum, count) = requested[key];
+                ratings[key] = count == 0 ? null : new { average = sum / count, count };
+            }
+
+            return Ok(new { ratings });
         }
 
         [HttpPost("reviews/{mediaType}/{tmdbId}")]
@@ -7933,31 +8349,205 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             WarnIfArrInstancesCorrupt(config);
             var instances = config.GetEnabledSonarrInstances();
             if (instances.Count == 0)
-            {
-                var errList = new List<object>();
-                if (config.IsSonarrInstancesCorrupt())
-                    errList.Add(new { instanceName = "Sonarr", reason = "config corrupt — see server logs" });
-                else if (config.GetSonarrInstances().Count > 0)
-                    // Distinguish "admin disabled everything" from "never configured" so the
-                    // frontend can toast the right message instead of silently showing no links.
-                    errList.Add(new { instanceName = "Sonarr", reason = "all Sonarr instances are disabled" });
-                return Ok(new { matches = Array.Empty<object>(), errors = errList });
-            }
+                return Ok(BuildNoArrInstancesResult("Sonarr", config.IsSonarrInstancesCorrupt(), config.GetSonarrInstances().Count > 0));
 
             var ct = HttpContext.RequestAborted;
             var outcomes = await Task.WhenAll(instances.Select(i => FetchSeriesInfoFromInstance(i, tvdbId, ct)));
+            return Ok(BuildArrLookupResult(instances, outcomes));
+        }
 
+        /// <summary>
+        /// Response for <c>arr/series-slugs</c> / <c>arr/movie-instances</c> (and each entry of
+        /// <c>arr/links</c>) when no instance of that kind is enabled. Distinguishes "config corrupt"
+        /// and "admin disabled everything" from "never configured" so the frontend can toast the
+        /// right message instead of silently showing no links.
+        /// </summary>
+        private static object BuildNoArrInstancesResult(string serviceName, bool corrupt, bool anyConfigured)
+        {
+            var errList = new List<object>();
+            if (corrupt)
+                errList.Add(new { instanceName = serviceName, reason = "config corrupt — see server logs" });
+            else if (anyConfigured)
+                errList.Add(new { instanceName = serviceName, reason = $"all {serviceName} instances are disabled" });
+            return new { matches = Array.Empty<object>(), errors = errList };
+        }
+
+        /// <summary>
+        /// Folds per-instance lookup outcomes (same order as <paramref name="instances"/>) into
+        /// the <c>{ matches, errors }</c> shape shared by the single and batch arr link endpoints.
+        /// </summary>
+        private static object BuildArrLookupResult(IReadOnlyList<ArrInstance> instances, IReadOnlyList<ArrFetchOutcome> outcomes)
+        {
             var matches = new List<object>();
             var errors = new List<object>();
-            for (int i = 0; i < outcomes.Length; i++)
+            for (int i = 0; i < outcomes.Count; i++)
             {
                 if (outcomes[i].Match != null) matches.Add(outcomes[i].Match!);
                 if (outcomes[i].Error != null)
                     errors.Add(new { instanceName = instances[i].Name, reason = outcomes[i].Error });
             }
 
-            return Ok(new { matches, errors });
+            return new { matches, errors };
         }
+
+        // Batch arr link lookup limits. The Requests page shows 20 cards, so 100 leaves room for
+        // other callers while bounding the upstream fan-out of a single request.
+        private const int ArrLinksBatchMaxIds = 100;
+
+        // Upstream calls in flight per Radarr/Sonarr instance, shared by every concurrent
+        // arr/links request (the page sends a small visible-cards batch next to the rest).
+        // 8 matches what the old per-card path reached: up to 8 browser requests through
+        // JE's request pool, each querying every instance once. Lower values make a slow
+        // instance (e.g. a 4K Radarr at ~1 s per lookup) take several rounds per page.
+        private const int ArrLinksPerInstanceConcurrency = 8;
+
+        // One gate per instance URL, process-wide, so parallel batches (two tabs, visible +
+        // rest chunks) cannot multiply the load on an instance. Entries are tiny and keyed by
+        // configured URLs, so the map stays as small as the instance list.
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> _arrLinksInstanceGates =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Batch form of <c>arr/movie-instances</c> + <c>arr/series-slugs</c> for pages that
+        /// show many items at once (the Requests page). Radarr/Sonarr v3 only filter
+        /// <c>/movie</c> and <c>/series</c> by a single tmdbId/tvdbId (the unfiltered lists are
+        /// whole-library dumps), so this still makes one upstream call per id and instance, but
+        /// with bounded per-instance concurrency and a handful of browser requests per page.
+        /// Each value is exactly what the matching single endpoint returns for that id.
+        /// </summary>
+        /// <param name="tmdbIds">Comma-separated positive TMDB movie ids (Radarr).</param>
+        /// <param name="tvdbIds">Comma-separated positive TVDB series ids (Sonarr).</param>
+        [HttpGet("arr/links")]
+        [Authorize]
+        public async Task<IActionResult> GetArrLinks([FromQuery] string? tmdbIds, [FromQuery] string? tvdbIds)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            var movieIds = ParsePositiveIdList(tmdbIds);
+            var seriesIds = ParsePositiveIdList(tvdbIds);
+            if (movieIds.Count + seriesIds.Count == 0)
+                return BadRequest(new { error = "tmdbIds or tvdbIds must contain at least one positive integer" });
+            if (movieIds.Count + seriesIds.Count > ArrLinksBatchMaxIds)
+                return BadRequest(new { error = $"At most {ArrLinksBatchMaxIds} ids per request" });
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+                return StatusCode(500, new { error = "Plugin configuration not available" });
+
+            WarnIfArrInstancesCorrupt(config);
+            var ct = HttpContext.RequestAborted;
+
+            var moviesTask = LookupArrLinksBatchAsync(
+                movieIds,
+                movieIds.Count > 0 ? config.GetEnabledRadarrInstances() : new List<ArrInstance>(),
+                () => BuildNoArrInstancesResult("Radarr", config.IsRadarrInstancesCorrupt(), config.GetRadarrInstances().Count > 0),
+                FetchMovieInfoFromInstance,
+                ct);
+            var seriesTask = LookupArrLinksBatchAsync(
+                seriesIds,
+                seriesIds.Count > 0 ? config.GetEnabledSonarrInstances() : new List<ArrInstance>(),
+                () => BuildNoArrInstancesResult("Sonarr", config.IsSonarrInstancesCorrupt(), config.GetSonarrInstances().Count > 0),
+                FetchSeriesInfoFromInstance,
+                ct);
+            try
+            {
+                await Task.WhenAll(moviesTask, seriesTask).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                // Browser went away (navigated off, aborted a superseded lookup) -
+                // expected under normal use, not a failure worth logging.
+                return StatusCode(499);
+            }
+
+            return Ok(new { movies = await moviesTask.ConfigureAwait(false), series = await seriesTask.ConfigureAwait(false) });
+        }
+
+        /// <summary>
+        /// Parses a comma-separated id list: positive ints only, malformed entries ignored,
+        /// duplicates removed (first-seen order kept).
+        /// </summary>
+        private static List<int> ParsePositiveIdList(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return new List<int>();
+            var seen = new HashSet<int>();
+            return raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(part => int.TryParse(part, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id) ? id : 0)
+                .Where(id => id > 0 && seen.Add(id))
+                .ToList();
+        }
+
+        /// <summary>
+        /// Looks every id up on every instance with at most
+        /// <see cref="ArrLinksPerInstanceConcurrency"/> calls in flight per instance (across all
+        /// batch requests), and returns id → <c>{ matches, errors }</c>. Once an instance times
+        /// out, fails at the network level or rejects the API key, its remaining lookups in this
+        /// batch report the same error instead of waiting out the timeout once per id. Per-id
+        /// HTTP errors (e.g. a 500 for one movie) are not generalised. FetchAndMapAsync makes a
+        /// single attempt (no retry/backoff), so a failing instance costs one call per id.
+        /// </summary>
+        private static async Task<Dictionary<string, object>> LookupArrLinksBatchAsync(
+            IReadOnlyList<int> ids,
+            IReadOnlyList<ArrInstance> instances,
+            Func<object> noInstancesResult,
+            Func<ArrInstance, int, CancellationToken, Task<ArrFetchOutcome>> fetch,
+            CancellationToken ct)
+        {
+            var result = new Dictionary<string, object>(ids.Count);
+            if (ids.Count == 0) return result;
+
+            if (instances.Count == 0)
+            {
+                var empty = noInstancesResult();
+                foreach (var id in ids)
+                    result[id.ToString(System.Globalization.CultureInfo.InvariantCulture)] = empty;
+                return result;
+            }
+
+            var gates = instances
+                .Select(i => _arrLinksInstanceGates.GetOrAdd(i.Url.Trim().TrimEnd('/'), _ => new SemaphoreSlim(ArrLinksPerInstanceConcurrency)))
+                .ToArray();
+            // Per-instance sticky failure (null = healthy); written by whichever lookup hits it first.
+            var failed = new string?[instances.Count];
+
+            async Task<ArrFetchOutcome> LookupOne(int instanceIndex, int id)
+            {
+                var gate = gates[instanceIndex];
+                await gate.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    var sticky = Volatile.Read(ref failed[instanceIndex]);
+                    if (sticky != null)
+                        return new ArrFetchOutcome { Error = sticky };
+
+                    var outcome = await fetch(instances[instanceIndex], id, ct).ConfigureAwait(false);
+                    if (outcome.Error != null && IsInstanceWideArrError(outcome.Error))
+                        Volatile.Write(ref failed[instanceIndex], outcome.Error);
+                    return outcome;
+                }
+                finally
+                {
+                    gate.Release();
+                }
+            }
+
+            var perId = ids
+                .Select(id => Task.WhenAll(Enumerable.Range(0, instances.Count).Select(i => LookupOne(i, id))))
+                .ToArray();
+            var outcomes = await Task.WhenAll(perId).ConfigureAwait(false);
+
+            for (int n = 0; n < ids.Count; n++)
+                result[ids[n].ToString(System.Globalization.CultureInfo.InvariantCulture)] = BuildArrLookupResult(instances, outcomes[n]);
+            return result;
+        }
+
+        // Errors from FetchAndMapAsync that describe the instance rather than the id looked up.
+        private static bool IsInstanceWideArrError(string error)
+            => error == "timeout"
+                || error == "network error"
+                || error == "URL rejected by SSRF guard"
+                || error.StartsWith("authentication failed", StringComparison.Ordinal);
 
         private struct ArrFetchOutcome
         {
@@ -8097,28 +8687,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             WarnIfArrInstancesCorrupt(config);
             var instances = config.GetEnabledRadarrInstances();
             if (instances.Count == 0)
-            {
-                var errList = new List<object>();
-                if (config.IsRadarrInstancesCorrupt())
-                    errList.Add(new { instanceName = "Radarr", reason = "config corrupt — see server logs" });
-                else if (config.GetRadarrInstances().Count > 0)
-                    errList.Add(new { instanceName = "Radarr", reason = "all Radarr instances are disabled" });
-                return Ok(new { matches = Array.Empty<object>(), errors = errList });
-            }
+                return Ok(BuildNoArrInstancesResult("Radarr", config.IsRadarrInstancesCorrupt(), config.GetRadarrInstances().Count > 0));
 
             var ct = HttpContext.RequestAborted;
             var outcomes = await Task.WhenAll(instances.Select(i => FetchMovieInfoFromInstance(i, tmdbId, ct)));
-
-            var matches = new List<object>();
-            var errors = new List<object>();
-            for (int i = 0; i < outcomes.Length; i++)
-            {
-                if (outcomes[i].Match != null) matches.Add(outcomes[i].Match!);
-                if (outcomes[i].Error != null)
-                    errors.Add(new { instanceName = instances[i].Name, reason = outcomes[i].Error });
-            }
-
-            return Ok(new { matches, errors });
+            return Ok(BuildArrLookupResult(instances, outcomes));
         }
 
         private async Task<ArrFetchOutcome> FetchMovieInfoFromInstance(ArrInstance instance, int tmdbId, CancellationToken ct)
