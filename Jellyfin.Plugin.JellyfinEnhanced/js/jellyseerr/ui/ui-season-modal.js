@@ -369,7 +369,8 @@
         const raw = String(modalEl.querySelector('#jellyseerr-tvdb-id')?.value || '').trim();
         if (!/^\d+$/.test(raw)) return null;
         const id = parseInt(raw, 10);
-        return Number.isSafeInteger(id) && id > 0 ? id : null;
+        // Seerr stores tvdbId in a 32-bit integer column; reject anything larger up front.
+        return id > 0 && id <= 0x7fffffff ? id : null;
     }
 
     /**
@@ -388,20 +389,24 @@
         if (!resultsEl || !input) return;
 
         let candidates = [];
+        // 404 = Seerr has no Sonarr configured, so "no matches" is accurate;
+        // any other failure (Seerr down, no permission) gets its own hint so
+        // the user isn't told a search that never ran found nothing.
+        let hintKey = 'jellyseerr_tvdb_match_none';
         try {
             candidates = (await fetchSonarrLookup(tmdbId))
                 .filter(c => Number.isInteger(c?.tvdbId) && c.tvdbId > 0)
                 .slice(0, 6);
         } catch (error) {
-            // 404 = Seerr has no Sonarr configured; anything else is logged for admins.
             if (error?.status !== 404) {
+                hintKey = 'jellyseerr_tvdb_match_failed';
                 console.warn(`${logPrefix} Sonarr lookup failed for TMDB ID ${tmdbId}:`, error);
             }
         }
         if (!document.body.contains(modalEl)) return;
 
         if (candidates.length === 0) {
-            resultsEl.innerHTML = `<div class="jellyseerr-tvdb-match-hint">${JE.t('jellyseerr_tvdb_match_none')}</div>`;
+            resultsEl.innerHTML = `<div class="jellyseerr-tvdb-match-hint">${JE.t(hintKey)}</div>`;
             return;
         }
 
