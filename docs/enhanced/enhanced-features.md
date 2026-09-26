@@ -282,7 +282,7 @@ Fine-tune subtitle appearance with presets and custom colors.
 - Multiple font families
 - Size options (small, medium, large, extra large)
 - Background opacity
-- Text shadow options
+- Text effect: **Auto**, **None**, **Shadow**, **Outline** or **Outline + Shadow**
 - Position adjustments
 
 **Custom Colors:**
@@ -290,8 +290,13 @@ Fine-tune subtitle appearance with presets and custom colors.
 - User-configurable text color with alpha support
 - User-configurable background color with alpha support
 - Live preview in settings
-- Computed text shadow for transparent/black backgrounds
 - Per-user customization
+
+**Text effect:**
+
+- **Auto** (default) keeps the long-standing behaviour: a soft shadow when the background is transparent, nothing when a background box is shown.
+- **None**, **Shadow**, **Outline** and **Outline + Shadow** apply that effect regardless of background. The outline is a black stroke that scales with the font size.
+- Admins can pick the default for new users with **Default Subtitle Text Effect** in the plugin settings.
 
 **Usage:**
 
@@ -312,8 +317,8 @@ Jellyfin draws text subtitles in one of two ways, decided by its **Subtitle styl
 
 | Jellyfin **Subtitle styling** | What Jellyfin uses | What Jellyfin Enhanced applies |
 |---|---|---|
-| **Custom** | Its own subtitle element | Text color, background, size, font, shadow and position |
-| **Native** | The browser's built-in captions | Text color, background, size, font and shadow. Position is not available |
+| **Custom** | Its own subtitle element | Text color, background, size, font, text effect and position |
+| **Native** | The browser's built-in captions | Text color, background, size, font and text effect. Position is not available |
 | **Auto** | Custom on Firefox, Safari (including the iOS app), Edge and TV platforms (Tizen 5+, webOS, PS4). Native on Chrome | The same as whichever mode Auto picks |
 
 - The position grid only takes effect in **Custom** mode, because the browser's native captions cannot be repositioned. The Enhanced panel shows a note when **Subtitle styling** is not set to Custom.
