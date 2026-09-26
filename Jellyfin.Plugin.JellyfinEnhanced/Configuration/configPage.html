@@ -5302,6 +5302,27 @@
                 });
         }
 
+        /**
+         * Selects `value` in the sound-tag audio language dropdown. A code the
+         * culture list does not offer (a hand-edited pt-BR, or the list has not
+         * loaded / failed to load) is parked as a bare option so it stays
+         * selected and a save cannot silently reset it to "no preference".
+         * @param {HTMLSelectElement|null} select
+         * @param {string} value
+         */
+        function applyQualityAudioLanguage(select, value) {
+            if (!select) return;
+            const saved = value || '';
+            if (saved && !Array.from(select.options).some(o => o.value === saved)) {
+                const option = document.createElement('option');
+                option.value = saved;
+                option.textContent = saved;
+                option.dataset.jePlaceholder = '1';
+                select.appendChild(option);
+            }
+            select.value = saved;
+        }
+
         function loadConfig() {
             Dashboard.showLoadingMsg();
             checkInstalledPlugins();
@@ -5415,9 +5436,9 @@
                 document.querySelector('#languageTagsPriority').value = config.LanguageTagsPriority || '';
                 document.querySelector('#languageTagsPriorityStrict').checked = config.LanguageTagsPriorityStrict === true;
                 const qualityAudioLangSelect = document.querySelector('#qualityTagsPreferredAudioLanguage');
-                // The language list is populated asynchronously; remember the value so it can be re-applied once the options exist.
+                // The culture list loads asynchronously; keep the value so it can be re-applied once the options exist.
                 qualityAudioLangSelect.dataset.savedValue = config.QualityTagsPreferredAudioLanguage || '';
-                qualityAudioLangSelect.value = qualityAudioLangSelect.dataset.savedValue;
+                applyQualityAudioLanguage(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
                 document.querySelector('#qualityTagsAudioLanguageFromUser').checked = config.QualityTagsAudioLanguageFromUser === true;
                 if (rChk) rChk.checked = ratingEnabled;
                 const pChk = document.querySelector('#peopleTagsEnabled');
@@ -6912,6 +6933,8 @@
                 // Preferred audio language for sound tags: every Jellyfin culture, by name.
                 const qualityAudioLangSelect = document.getElementById('qualityTagsPreferredAudioLanguage');
                 if (qualityAudioLangSelect) {
+                    // loadConfig may have run first and parked the saved code as a bare option; the named list replaces it.
+                    qualityAudioLangSelect.querySelectorAll('option[data-je-placeholder]').forEach(o => o.remove());
                     const seen = new Set();
                     cultures
                         .map(c => ({ code: c.TwoLetterISOLanguageName || c.ThreeLetterISOLanguageName, name: c.DisplayName || c.Name }))
@@ -6923,16 +6946,7 @@
                             option.textContent = name;
                             qualityAudioLangSelect.appendChild(option);
                         });
-                    // loadConfig may have run before the list existed; a saved code the
-                    // list doesn't offer (a hand-edited pt-BR) still shows as selected.
-                    const savedValue = qualityAudioLangSelect.dataset.savedValue || '';
-                    if (savedValue && !Array.from(qualityAudioLangSelect.options).some(o => o.value === savedValue)) {
-                        const option = document.createElement('option');
-                        option.value = savedValue;
-                        option.textContent = savedValue;
-                        qualityAudioLangSelect.appendChild(option);
-                    }
-                    qualityAudioLangSelect.value = savedValue;
+                    applyQualityAudioLanguage(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
                 }
             } catch (err) {
                 console.warn('Jellyfin Enhanced: Failed to load language options:', err);

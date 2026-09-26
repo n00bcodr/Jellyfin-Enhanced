@@ -90,6 +90,7 @@
     let jellyfinAudioPreference = null;
     let jellyfinAudioPreferenceUserId = null;
     let jellyfinAudioPreferencePromise = null;
+    let jellyfinAudioPreferencePromiseUserId = null;
 
     /**
      * Effective preferred audio language for the sound tag, or null for
@@ -136,13 +137,18 @@
     function primeJellyfinAudioPreference() {
         const userId = window.ApiClient?.getCurrentUserId?.() || null;
         if (!userId || !usesJellyfinAudioPreference()) return Promise.resolve(false);
-        if (jellyfinAudioPreferencePromise) return jellyfinAudioPreferencePromise;
+        // Reuse a request already in flight for this user; one started for a
+        // previous user (switch mid-flight) resolves as a no-op below.
+        if (jellyfinAudioPreferencePromise && jellyfinAudioPreferencePromiseUserId === userId) {
+            return jellyfinAudioPreferencePromise;
+        }
         const before = resolvePreferredAudioLanguage();
-        jellyfinAudioPreferencePromise = Promise.resolve()
-            .then(() => ApiClient.getCurrentUser())
+        // ApiClient.getCurrentUser() hands back a memoised copy that Jellyfin's
+        // playback-settings page never refreshes, so a preference changed in
+        // this session would stay stale until reload; getUser() always fetches.
+        const request = Promise.resolve()
+            .then(() => ApiClient.getUser(userId))
             .then((user) => {
-                // A user switch while the request was in flight: leave the
-                // incoming user's re-initialization to load its own value.
                 if (window.ApiClient?.getCurrentUserId?.() !== userId) return false;
                 jellyfinAudioPreference = (user?.Configuration?.AudioLanguagePreference || '').trim() || null;
                 jellyfinAudioPreferenceUserId = userId;
@@ -152,8 +158,15 @@
                 console.warn(`${logPrefix} Could not read the Jellyfin audio language preference`, err);
                 return false;
             })
-            .finally(() => { jellyfinAudioPreferencePromise = null; });
-        return jellyfinAudioPreferencePromise;
+            .finally(() => {
+                if (jellyfinAudioPreferencePromise === request) {
+                    jellyfinAudioPreferencePromise = null;
+                    jellyfinAudioPreferencePromiseUserId = null;
+                }
+            });
+        jellyfinAudioPreferencePromise = request;
+        jellyfinAudioPreferencePromiseUserId = userId;
+        return request;
     }
 
     /**
