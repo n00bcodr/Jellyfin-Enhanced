@@ -254,11 +254,85 @@
         return new Intl.DisplayNames(['en'], { type: 'language' }).of(code);
     }
 
+    /**
+     * ISO 639-2 (bibliographic and terminologic) → ISO 639-1 for the
+     * languages in `baseLanguageFlags`, derived from ICU's CLDR aliases.
+     * Consulted before `Intl` so the everyday cases (`eng`/`en`,
+     * `ger`/`deu`/`de`) compare equal even on an engine whose ICU data
+     * predates those aliases.
+     */
+    const iso6392To6391 = {
+        eng: 'en', jpn: 'ja', spa: 'es', fre: 'fr', fra: 'fr', ger: 'de', deu: 'de', ita: 'it', kor: 'ko',
+        chi: 'zh', zho: 'zh', rus: 'ru', por: 'pt', hin: 'hi', dut: 'nl', nld: 'nl', ara: 'ar', ben: 'bn',
+        ces: 'cs', dan: 'da', ell: 'el', fin: 'fi', heb: 'he', hun: 'hu', ind: 'id', nor: 'no', pol: 'pl',
+        per: 'fa', fas: 'fa', ron: 'ro', rum: 'ro', swe: 'sv', tha: 'th', tur: 'tr', ukr: 'uk', vie: 'vi',
+        msa: 'ms', may: 'ms', swa: 'sw', tam: 'ta', tel: 'te', mar: 'mr', pan: 'pa', urd: 'ur', guj: 'gu',
+        kan: 'kn', mal: 'ml', sin: 'si', nep: 'ne', pus: 'ps', kur: 'ku', slk: 'sk', slv: 'sl', srp: 'sr',
+        hrv: 'hr', bul: 'bg', mkd: 'mk', sqi: 'sq', est: 'et', lav: 'lv', lit: 'lt', isl: 'is', kat: 'ka',
+        hye: 'hy', mon: 'mn', kaz: 'kk', uzb: 'uz', aze: 'az', bel: 'be', amh: 'am', zul: 'zu', afr: 'af',
+        hau: 'ha', yor: 'yo', ibo: 'ig', cat: 'ca', glg: 'gl', eus: 'eu', baq: 'eu'
+    };
+
+    /**
+     * Canonical form of a parsed base language: the ISO 639-1 code where one
+     * exists (`eng` → `en`, `deu` → `de`), via the table above and then
+     * ICU's CLDR aliases (`tib` → `bo`, `tl`/`tgl` → `fil`). Unknown codes
+     * come back unchanged so two equal unknowns still match each other.
+     * @param {string} base - Lowercased ISO 639 base from `parseLanguageTag`.
+     * @returns {string}
+     */
+    function canonicalBase(base) {
+        if (iso6392To6391[base]) return iso6392To6391[base];
+        try {
+            const canonical = Intl.getCanonicalLocales(base)[0];
+            if (canonical) return canonical.split('-')[0].toLowerCase();
+        } catch (e) { /* not a well-formed tag — keep the raw base */ }
+        return base;
+    }
+
+    /**
+     * Canonical base language of a tag, for equality checks across ISO
+     * 639-1 / 639-2 spellings and regional variants: `eng`, `en-US` and
+     * `en` all yield `en`; `ger`, `deu` and `de-AT` all yield `de`. Region
+     * and script subtags are dropped — use `parseLanguageTag` when they
+     * matter.
+     * @param {string} raw
+     * @returns {string|null} Canonical base, or null when unparseable.
+     */
+    function canonicalLanguage(raw) {
+        const parsed = parseLanguageTag(raw);
+        return parsed ? canonicalBase(parsed.base) : null;
+    }
+
+    /**
+     * Whether a media stream's language tag denotes the language the user
+     * asked for. Base languages are compared canonically (`deu` matches
+     * `de` and `ger`); a region on the preference (`pt-BR`) only excludes a
+     * stream that carries a *different* region (`pt-PT`) — a bare `pt`
+     * stream still matches, since it may well be Brazilian. Pass
+     * `requireRegion` to demand the region as well, for a strict first pass.
+     * @param {string} streamLanguage - Tag on the media stream.
+     * @param {string} preferred - The user's preferred language tag.
+     * @param {{requireRegion?: boolean}} [options]
+     * @returns {boolean}
+     */
+    function matchesLanguage(streamLanguage, preferred, options = {}) {
+        const stream = parseLanguageTag(streamLanguage);
+        const wanted = parseLanguageTag(preferred);
+        if (!stream || !wanted) return false;
+        if (canonicalBase(stream.base) !== canonicalBase(wanted.base)) return false;
+        if (!wanted.region) return true;
+        if (options.requireRegion) return stream.region === wanted.region;
+        return !stream.region || stream.region === wanted.region;
+    }
+
     JE.core.mediaLanguage = {
         parseLanguageTag,
         displayName,
         resolveFlag,
         flagSrc,
+        canonicalLanguage,
+        matchesLanguage,
         baseLanguageFlags,
         specialFlags
     };

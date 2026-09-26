@@ -51,6 +51,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool PeopleTagsEnabled { get; set; }
         public bool TagsHideOnHover { get; set; }
         public string QualityTagsPosition { get; set; } = "top-left";
+        // Audio language the sound tag is judged by: "" = server default,
+        // "auto" = the user's Jellyfin audio language, "none" = no preference,
+        // otherwise an ISO 639 code.
+        public string QualityTagsPreferredAudioLanguage { get; set; } = string.Empty;
         public string GenreTagsPosition { get; set; } = "top-right";
         public string LanguageTagsPosition { get; set; } = "bottom-left";
         public string RatingTagsPosition { get; set; } = "bottom-right";
