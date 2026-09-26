@@ -1934,6 +1934,76 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/movies?page={page}&studio={studioId}"), HttpMethod.Get);
         }
 
+        /// <summary>
+        /// Series produced by a TMDB company (studio) — the TV half of a
+        /// studio feed. Seerr's /discover/tv filters by network only, so this
+        /// asks TMDB's discover/tv?with_companies directly (through the shared
+        /// TMDB response cache) and answers in Seerr's discover shape; see
+        /// TmdbCompanyTvDiscover for what the rows carry. Same per-user
+        /// parental gate as the Seerr-proxied discover feeds.
+        /// </summary>
+        [HttpGet("jellyseerr/discover/tv/studio/{studioId}")]
+        [Authorize]
+        public async Task<IActionResult> DiscoverTvByStudio(int studioId, [FromQuery] int page = 1, [FromQuery] string? sortBy = null)
+        {
+            // Per-user body (library ids, parental filtering): never kept by the browser.
+            Response.Headers["Cache-Control"] = "no-store";
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.JellyseerrEnabled)
+            {
+                return StatusCode(503, "Seerr integration is not configured or enabled.");
+            }
+            if (string.IsNullOrEmpty(config.TMDB_API_KEY))
+            {
+                return StatusCode(503, "TMDB API key is not configured.");
+            }
+            if (studioId <= 0 || page < 1 || page > 500)
+            {
+                return BadRequest(new { error = true, code = "invalid_parameters", message = "studioId must be positive and page between 1 and 500." });
+            }
+
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null)
+            {
+                return Forbid();
+            }
+
+            var query = $"?with_companies={studioId}&page={page}";
+            if (Services.TmdbCompanyTvDiscover.IsValidSort(sortBy))
+            {
+                query += $"&sort_by={sortBy}";
+            }
+
+            try
+            {
+                var response = await _tmdbResponseCache.GetAsync("discover/tv", query, config.TMDB_API_KEY, HttpContext.RequestAborted);
+                if (!response.IsSuccess)
+                {
+                    _logger.Warning($"TMDB discover/tv for company {studioId} (page {page}) returned {response.StatusCode}.");
+                    return StatusCode(502, new { error = true, code = "tmdb_error", message = "TMDB did not answer the series-by-studio lookup." });
+                }
+
+                // One indexed provider-id lookup per row, scoped to what this user
+                // may see, so in-library series link into Jellyfin and honour the
+                // exclude-library-items setting like the Seerr-fed cards do.
+                var jUser = _userManager.GetUserById(userId.Value);
+                var body = Services.TmdbCompanyTvDiscover.ToSeerrShape(response.Content, tmdbId =>
+                    jUser == null ? null : FindLibraryItemByTmdb(jUser, "tv", tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture))?.Id);
+
+                return await ApplyParentalFilterAsync(body, $"/api/v1/discover/tv?studio={studioId}&page={page}", userId.Value.ToString());
+            }
+            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                return StatusCode(499);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to fetch series for company {studioId} from TMDB. Error: {ex.Message}");
+                return StatusCode(502, new { error = true, code = "tmdb_error", message = "Failed to connect to TMDB." });
+            }
+        }
+
         [HttpGet("jellyseerr/discover/trending")]
         [Authorize]
         public Task<IActionResult> DiscoverTrending([FromQuery] int page = 1)

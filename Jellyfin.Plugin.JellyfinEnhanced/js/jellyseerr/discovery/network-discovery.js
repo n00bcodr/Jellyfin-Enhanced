@@ -4,7 +4,9 @@
 // Seerr API. Dual-feed spec over JE.discoveryBase — the base owns the
 // TV/movie pagination, filter/sort controls, infinite scroll, dedup and
 // lifecycle wiring; this module keeps the studio → TMDB network/company
-// resolution (known-network map + company search scoring).
+// resolution (known-network map + company search scoring) and picks the
+// series feed: Seerr's network feed for a known network, the plugin's
+// TMDB-backed series-by-company feed for any other studio.
 (function(JE) {
     'use strict';
 
@@ -180,8 +182,13 @@
 
     /**
      * Resolves the TMDB TV network / movie company feed ids + section title.
+     * Both media types are offered whenever an id exists for each: a known
+     * network gets its movies from the company of the same name, and a plain
+     * studio gets its series from TMDB's company filter (Seerr only filters
+     * series by network), so the base can show the All / Movies / Series
+     * control. `tvSource` tells buildDiscoverPath how to read tvId.
      * @param {{id: string, signal: AbortSignal}} ctx
-     * @returns {Promise<{tvId: number|null, movieId: number|null, title: string}|null>}
+     * @returns {Promise<{tvId: number|null, movieId: number|null, tvSource: 'network'|'company', title: string}|null>}
      */
     async function resolveFeeds({ id: studioId, signal }) {
         const studioInfoPromise = getStudioInfo(studioId, signal);
@@ -206,9 +213,14 @@
 
         if (!tvNetworkId && !companyId) return null;
 
+        // No network of that name: the series feed is the studio's own
+        // productions, served from TMDB (needs the TMDB key on the server).
+        const tvByCompany = !tvNetworkId && !!companyId && !!JE.pluginConfig?.TmdbEnabled;
+
         return {
-            tvId: tvNetworkId,
+            tvId: tvNetworkId || (tvByCompany ? companyId : null),
             movieId: companyId,
+            tvSource: tvNetworkId ? 'network' : 'company',
             title: JE.t('discovery_more_from_studio', { studio: studioInfo.name })
         };
     }
@@ -224,9 +236,12 @@
         // Historical page-key format: no 'network-' prefix.
         pageKey: (id) => `${id}-${window.location.hash}`,
         resolveFeeds,
-        buildDiscoverPath: (kind, id) => kind === 'tv'
-            ? `/JellyfinEnhanced/jellyseerr/discover/tv/network/${id}`
-            : `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${id}`
+        buildDiscoverPath: (kind, id, feeds) => {
+            if (kind !== 'tv') return `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${id}`;
+            return feeds?.tvSource === 'company'
+                ? `/JellyfinEnhanced/jellyseerr/discover/tv/studio/${id}`
+                : `/JellyfinEnhanced/jellyseerr/discover/tv/network/${id}`;
+        }
     });
 
     discovery.start();
