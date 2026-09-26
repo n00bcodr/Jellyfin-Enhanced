@@ -60,6 +60,9 @@ Most features can be enabled/disabled individually:
 1. Open Enhanced panel → `Enhanced Settings`
 2. Enable and configure tags you want *(Eg: `Quality Tags`)*
 3. Adjust position (top-left, top-right, etc.)
+4. For Quality Tags, optionally pick a **Preferred Audio Language** so the sound tag
+   (Atmos, DTS, ...) reflects that language's track, or let it follow each user's
+   Jellyfin audio language — see [Quality Tags](enhanced-features.md#quality-tags)
 
 !!! tip
 

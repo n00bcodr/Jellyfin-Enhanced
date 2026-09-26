@@ -209,6 +209,51 @@
             });
         }
 
+        // Preferred audio language for the sound tag (#433). The fixed choices
+        // (server default / my Jellyfin audio language / none) are in the
+        // template; the language list comes from Jellyfin's cultures endpoint,
+        // like the display-language dropdown.
+        const audioLangSelect = document.getElementById('qualityTagsAudioLanguageSelect');
+        if (audioLangSelect) {
+            const saved = JE.currentSettings.qualityTagsPreferredAudioLanguage || '';
+            (async () => {
+                try {
+                    const cultures = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' });
+                    const seen = new Set();
+                    cultures
+                        .map(c => ({ code: c.TwoLetterISOLanguageName || c.ThreeLetterISOLanguageName, name: c.DisplayName || c.Name }))
+                        .filter(o => o.code && o.name && !seen.has(o.code) && seen.add(o.code))
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .forEach(({ code, name }) => {
+                            const option = document.createElement('option');
+                            option.value = code;
+                            option.textContent = name;
+                            option.style.background = 'rgba(30,30,30,1)';
+                            option.style.color = '#fff';
+                            audioLangSelect.appendChild(option);
+                        });
+                } catch (err) {
+                    console.warn('🪼 Jellyfin Enhanced: Failed to load audio language options:', err);
+                }
+                // A saved code the list doesn't offer (e.g. a hand-edited pt-BR) still shows as selected.
+                if (saved && !Array.from(audioLangSelect.options).some(o => o.value === saved)) {
+                    const option = document.createElement('option');
+                    option.value = saved;
+                    option.textContent = saved;
+                    audioLangSelect.appendChild(option);
+                }
+                audioLangSelect.value = saved;
+            })();
+            audioLangSelect.addEventListener('change', (e) => {
+                JE.currentSettings.qualityTagsPreferredAudioLanguage = e.target.value;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
+                    JE.reinitializeQualityTags();
+                }
+                resetAutoCloseTimer();
+            });
+        }
+
         /**
          * Updates ↑/↓ button enabled state to reflect each row's position in the list
          * @param {HTMLElement} group - The container holding the category rows

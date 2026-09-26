@@ -84,6 +84,115 @@
     // Computed quality labels derived from server cache entries
     const serverQualityCache = new Map();
 
+    // Jellyfin audio-language preference (user.Configuration.AudioLanguagePreference)
+    // of the signed-in user, loaded by primeJellyfinAudioPreference(). Only
+    // trusted while jellyfinAudioPreferenceUserId is still the current user.
+    let jellyfinAudioPreference = null;
+    let jellyfinAudioPreferenceUserId = null;
+    let jellyfinAudioPreferencePromise = null;
+
+    /**
+     * Effective preferred audio language for the sound tag, or null for
+     * "best track overall" (the pre-existing behaviour). Resolution order:
+     * the user's own choice (a language code, "auto" = their Jellyfin audio
+     * language, "none" = no preference), then the server default — each
+     * user's Jellyfin audio language when the admin enabled that and the
+     * user has one, else the admin's fixed language.
+     * @returns {string|null}
+     */
+    function resolvePreferredAudioLanguage() {
+        const choice = (JE.currentSettings?.qualityTagsPreferredAudioLanguage || '').trim();
+        const lowered = choice.toLowerCase();
+        if (lowered === 'none') return null;
+        const currentUserId = window.ApiClient?.getCurrentUserId?.() || null;
+        const jellyfinPref = (currentUserId && currentUserId === jellyfinAudioPreferenceUserId)
+            ? jellyfinAudioPreference
+            : null;
+        if (lowered === 'auto') return jellyfinPref;
+        if (choice) return choice;
+        if (JE.pluginConfig?.QualityTagsAudioLanguageFromUser && jellyfinPref) return jellyfinPref;
+        return (JE.pluginConfig?.QualityTagsPreferredAudioLanguage || '').trim() || null;
+    }
+
+    /**
+     * Whether the effective preference depends on the user's Jellyfin audio
+     * language: they picked "auto", or they inherit the server default and
+     * the admin turned on "use each user's Jellyfin audio language".
+     * @returns {boolean}
+     */
+    function usesJellyfinAudioPreference() {
+        const choice = (JE.currentSettings?.qualityTagsPreferredAudioLanguage || '').trim().toLowerCase();
+        if (choice === 'auto') return true;
+        return !choice && !!JE.pluginConfig?.QualityTagsAudioLanguageFromUser;
+    }
+
+    /**
+     * Loads the signed-in user's Jellyfin audio language preference when the
+     * effective setting needs it (no request otherwise). Resolves with true
+     * when the loaded value changes the effective preference, so the caller
+     * can recompute tags rendered before it arrived.
+     * @returns {Promise<boolean>}
+     */
+    function primeJellyfinAudioPreference() {
+        const userId = window.ApiClient?.getCurrentUserId?.() || null;
+        if (!userId || !usesJellyfinAudioPreference()) return Promise.resolve(false);
+        if (jellyfinAudioPreferencePromise) return jellyfinAudioPreferencePromise;
+        const before = resolvePreferredAudioLanguage();
+        jellyfinAudioPreferencePromise = Promise.resolve()
+            .then(() => ApiClient.getCurrentUser())
+            .then((user) => {
+                // A user switch while the request was in flight: leave the
+                // incoming user's re-initialization to load its own value.
+                if (window.ApiClient?.getCurrentUserId?.() !== userId) return false;
+                jellyfinAudioPreference = (user?.Configuration?.AudioLanguagePreference || '').trim() || null;
+                jellyfinAudioPreferenceUserId = userId;
+                return resolvePreferredAudioLanguage() !== before;
+            })
+            .catch((err) => {
+                console.warn(`${logPrefix} Could not read the Jellyfin audio language preference`, err);
+                return false;
+            })
+            .finally(() => { jellyfinAudioPreferencePromise = null; });
+        return jellyfinAudioPreferencePromise;
+    }
+
+    /**
+     * Cache stamp for the preference a set of qualities was computed under.
+     * Old entries carry none, which equals "no preference".
+     * @returns {string}
+     */
+    function audioPreferenceKey() {
+        return resolvePreferredAudioLanguage() || '';
+    }
+
+    /**
+     * Whether a cached entry was computed under the current preference; one
+     * computed under another is a miss and gets recomputed.
+     * @param {{audioLang?: string}} entry
+     * @returns {boolean}
+     */
+    function matchesAudioPreference(entry) {
+        return (entry.audioLang || '') === audioPreferenceKey();
+    }
+
+    /**
+     * Narrows the audio streams to the preferred language when one is set.
+     * Tiers: streams matching language and region (when the preference has
+     * one), then streams matching the language, then — when the title has
+     * no audio in that language at all — every stream, exactly as before.
+     * @param {Array} audioStreams - Audio streams in file order.
+     * @param {string|null} preferred - From resolvePreferredAudioLanguage().
+     * @returns {Array}
+     */
+    function selectAudioStreamsForLanguage(audioStreams, preferred) {
+        const match = JE.core.mediaLanguage?.matchesLanguage;
+        if (!preferred || !audioStreams.length || typeof match !== 'function') return audioStreams;
+        const exact = audioStreams.filter((s) => match(s.Language, preferred, { requireRegion: true }));
+        if (exact.length) return exact;
+        const loose = audioStreams.filter((s) => match(s.Language, preferred));
+        return loose.length ? loose : audioStreams;
+    }
+
     /**
      * Creates a single quality tag element.
      * @param {string} label The text for the tag (e.g., "4K", "HDR").
@@ -202,6 +311,11 @@
             audioStreams = audioStreams.concat(sourceStreams.filter(s => s.Type === 'Audio'));
         }
 
+        // Sound tag: judge only the preferred language's tracks when the user
+        // or admin set one (#433) — a film whose English track is Atmos but
+        // whose German dub is plain AC3 reads AC3 for a German-preferring
+        // user. Falls back to every track when the title has no audio in it.
+        audioStreams = selectAudioStreamsForLanguage(audioStreams, resolvePreferredAudioLanguage());
 
         // Get primary video stream for analysis
         const primaryVideoStream = videoStreams[0];
@@ -806,7 +920,7 @@
                 const itemId = item.Id;
                 // Check hot cache first
                 const hot = ctx.hot?.get(itemId);
-                if (hot && (Date.now() - hot.timestamp) < ctx.cacheTtl) {
+                if (hot && (Date.now() - hot.timestamp) < ctx.cacheTtl && matchesAudioPreference(hot)) {
                     insertOverlay(ctx, el, hot.qualities);
                     return;
                 }
@@ -821,8 +935,9 @@
                 }
 
                 if (qualities.length > 0) {
-                    ctx.setPersistent(itemId, { qualities, timestamp: Date.now() });
-                    ctx.hot?.set(itemId, { qualities, timestamp: Date.now() });
+                    const audioLang = audioPreferenceKey();
+                    ctx.setPersistent(itemId, { qualities, timestamp: Date.now(), audioLang });
+                    ctx.hot?.set(itemId, { qualities, timestamp: Date.now(), audioLang });
                     insertOverlay(ctx, el, qualities);
                 }
             },
@@ -832,7 +947,7 @@
                 if (el.closest('.je-hidden')) return true;
                 const hot = ctx.hot?.get(itemId);
                 const cached = hot || ctx.getPersistent(itemId);
-                if (cached && cached.qualities && cached.qualities.length > 0) {
+                if (cached && cached.qualities && cached.qualities.length > 0 && matchesAudioPreference(cached)) {
                     insertOverlay(ctx, el, cached.qualities);
                     return true;
                 }
@@ -843,14 +958,15 @@
                 if (ctx.shouldIgnore(el)) return;
                 // Check local computed cache first (avoids re-running quality detection)
                 const cached = serverQualityCache.get(itemId);
-                if (cached !== undefined) {
-                    if (cached.length > 0) insertOverlay(ctx, el, cached);
+                if (cached && matchesAudioPreference(cached)) {
+                    if (cached.qualities.length > 0) insertOverlay(ctx, el, cached.qualities);
                     return;
                 }
+                const audioLang = audioPreferenceKey();
                 const sd = entry.StreamData;
-                if (!sd || !sd.Streams) { serverQualityCache.set(itemId, []); return; }
+                if (!sd || !sd.Streams) { serverQualityCache.set(itemId, { audioLang, qualities: [] }); return; }
                 const qualities = getEnhancedQuality(sd.Streams, sd.Sources, { Name: sd.ItemName, Path: sd.ItemPath });
-                serverQualityCache.set(itemId, qualities);
+                serverQualityCache.set(itemId, { audioLang, qualities });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {
@@ -861,10 +977,24 @@
     };
 
     /**
+     * Loads the Jellyfin audio preference if the effective setting needs it,
+     * then recomputes the tags rendered before it arrived (cache entries
+     * stamped with the previous preference are misses, so a rescan is enough).
+     */
+    function recomputeWhenJellyfinPreferenceArrives() {
+        primeJellyfinAudioPreference().then((changed) => {
+            if (changed && JE.currentSettings?.qualityTagsEnabled) {
+                JE.core.tagRenderer.reinitialize('quality', spec);
+            }
+        });
+    }
+
+    /**
      * Initializes the Quality Tags feature.
      */
     JE.initializeQualityTags = function() {
         JE.core.tagRenderer.register('quality', spec);
+        recomputeWhenJellyfinPreferenceArrives();
     };
 
     /**
@@ -873,6 +1003,7 @@
      */
     JE.reinitializeQualityTags = function() {
         JE.core.tagRenderer.reinitialize('quality', spec);
+        recomputeWhenJellyfinPreferenceArrives();
     };
 
 })(window.JellyfinEnhanced);
