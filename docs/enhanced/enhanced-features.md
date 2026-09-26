@@ -616,6 +616,21 @@ Show TMDB and Rotten Tomatoes ratings on posters and in player.
 - Color-coded by rating value
 - Choose where they appear, per item type (movies, series, seasons, episodes) and per home row (Continue Watching, Next Up). Untick **Episodes** to keep ratings off every episode card, including Next Up and Continue Watching; untick a row to hide them only in that row (on the home screen, and the Next Up shelf on a series page). Rating chips and your own review chip are hidden together on an excluded card. Admins set the defaults; each user can change them under *Show Rating Tags* in the Enhanced panel.
 
+### Age Rating Tags
+
+Show the item's parental / age rating (PG-13, R, TV-MA, FSK 12, BBFC 15, ...) as a badge on posters.
+
+**Features:**
+
+- Reads the rating Jellyfin already has for the item (no extra lookups)
+- Episodes and seasons fall back to their series' rating
+- Colour-coded per rating board, using the same colour table as [Colored Ratings](#colored-ratings)
+- Customizable position; defaults to the bottom-right corner and stacks with Rating Tags when both share a corner
+- Off by default — enable it per user in the Enhanced panel (Settings tab), or set the admin default under Display → Media Tags
+
+!!! note
+    Age ratings are never hidden by Spoiler Guard — they reveal nothing about the plot, and the details page shows them regardless.
+
 
 ### People Tags
 

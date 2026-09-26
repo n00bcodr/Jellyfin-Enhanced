@@ -148,6 +148,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── peopletags.js
     │   ├── qualitytags.js
     │   ├── ratingtags.js
+    │   ├── ageratingtags.js
     │   ├── userreviewtags.js
     │   └── tag-pipeline.js
     ├── elsewhere/
@@ -204,7 +205,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`media-language.js`**: Shared audio-language → flag resolution (`JE.core.mediaLanguage.resolveFlag`) used by the Language Tags overlay and the details-page audio-language row. Region-aware: an explicit region subtag (`pt-BR`, `es-419`, `zh-Hant`) resolves to that region's flag; bare base languages keep their default flag.
     * **`navigation.js`**: One deduped SPA navigation dispatcher (`onNavigate`, `onViewPage`), replacing the ad-hoc `hashchange`/`viewshow` listeners that previously double-fired on hash navigation and missed `pushState` navigation.
     * **`session.js`**: Identity-epoch tracker for SPA user switches. Logging out and back in as a different user never reloads the page, so this module detects the transition (an `ApiClient.setAuthenticationInfo` hook plus navigation/storage fallbacks), runs every registered per-feature reset handler (`JE.session.onUserChange`), and emits `je:user-changed`; `plugin.js` then re-fetches the incoming user's data and emits `je:user-data-loaded`. Async loaders capture `JE.session.getEpoch()` and drop stale results after a switch.
-    * **`tag-renderer-base.js`**: The shared poster-tag engine — overlay creation, positioning, tagged-card deduplication, caching and reinitialisation. The four poster-overlay renderers (genre, language, quality, rating) supply a spec; `peopletags.js` and `userreviewtags.js` do not use it.
+    * **`tag-renderer-base.js`**: The shared poster-tag engine — overlay creation, positioning, tagged-card deduplication, caching and reinitialisation. The five poster-overlay renderers (genre, language, quality, rating, age rating) supply a spec; `peopletags.js` and `userreviewtags.js` do not use it.
     * **`ui-kit.js`**: `escapeHtml`, `toast`, deduped CSS injection, and scroll-friendly tap detection (`addTouchTapListener`).
 
 * **`/enhanced/`**: Core "Jellyfin Enhanced" functionality.
@@ -246,12 +247,13 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`/calendar/`**: The calendar page — upcoming items from Radarr and Sonarr, available via the sidebar or a tab.
     * **`/requests/`**: The requests page — requests, download queue, issues and import history from the *arrs and Seerr, available via the sidebar or a tab.
 
-* **`/tags/`**: Poster tag renderers. Four of them (genre, language, quality, rating) are built on `core/tag-renderer-base.js`; `peopletags.js` and `userreviewtags.js` render independently.
+* **`/tags/`**: Poster tag renderers. Five of them (genre, language, quality, rating, age rating) are built on `core/tag-renderer-base.js`; `peopletags.js` and `userreviewtags.js` render independently.
     * **`genretags.js`**: Genre information as tags on posters.
     * **`languagetags.js`**: Audio language as flag icons on posters.
     * **`peopletags.js`**: Age and birthplace for cast members, with country flags and deceased indicators.
     * **`qualitytags.js`**: Quality information (4K, HDR, Atmos) as tags on posters.
     * **`ratingtags.js`**: TMDB and Rotten Tomatoes ratings as badges on posters.
+    * **`ageratingtags.js`**: The parental / age rating (PG-13, TV-MA, FSK 12, ...) as a colour-coded badge on posters, reusing the Colored Ratings colour table.
     * **`userreviewtags.js`**: The average user-review rating across all users, composed into the ratings overlay rather than rendered as its own poster tag.
     * **`tag-pipeline.js`**: Shared server-backed tag cache feeding the renderers in bulk.
 

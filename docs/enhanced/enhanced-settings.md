@@ -22,6 +22,7 @@ Access user-configured settings via the Enhanced panel:
 - Genre Tags
 - Language Tags
 - Rating Tags
+- Age Rating Tags
 - People Tags
 - Pause Screen
 - Auto-skip Intros
@@ -54,7 +55,7 @@ Most features can be enabled/disabled individually:
 4. Changes apply immediately *(no restart needed)*
 
 
-## Tags: Quality, Genre, Language, Rating, People
+## Tags: Quality, Genre, Language, Rating, Age Rating, People
 
 ### Configuration
 1. Open Enhanced panel → `Enhanced Settings`
