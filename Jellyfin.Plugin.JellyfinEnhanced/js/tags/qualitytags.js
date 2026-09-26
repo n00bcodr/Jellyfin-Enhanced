@@ -129,34 +129,32 @@
 
     /**
      * Loads the signed-in user's Jellyfin audio language preference when the
-     * effective setting needs it (no request otherwise). Resolves with true
-     * when the loaded value changes the effective preference, so the caller
-     * can recompute tags rendered before it arrived.
-     * @returns {Promise<boolean>}
+     * effective setting needs it (no request otherwise). One request per
+     * user at a time; a failure is logged and keeps whatever was loaded.
+     * @returns {Promise<void>}
      */
     function primeJellyfinAudioPreference() {
         const userId = window.ApiClient?.getCurrentUserId?.() || null;
-        if (!userId || !usesJellyfinAudioPreference()) return Promise.resolve(false);
+        if (!userId || !usesJellyfinAudioPreference()) return Promise.resolve();
         // Reuse a request already in flight for this user; one started for a
         // previous user (switch mid-flight) resolves as a no-op below.
         if (jellyfinAudioPreferencePromise && jellyfinAudioPreferencePromiseUserId === userId) {
             return jellyfinAudioPreferencePromise;
         }
-        const before = resolvePreferredAudioLanguage();
         // ApiClient.getCurrentUser() hands back a memoised copy that Jellyfin's
         // playback-settings page never refreshes, so a preference changed in
         // this session would stay stale until reload; getUser() always fetches.
         const request = Promise.resolve()
             .then(() => ApiClient.getUser(userId))
             .then((user) => {
-                if (window.ApiClient?.getCurrentUserId?.() !== userId) return false;
+                // A user switch while the request was in flight: the incoming
+                // user's own initialization loads its value.
+                if (window.ApiClient?.getCurrentUserId?.() !== userId) return;
                 jellyfinAudioPreference = (user?.Configuration?.AudioLanguagePreference || '').trim() || null;
                 jellyfinAudioPreferenceUserId = userId;
-                return resolvePreferredAudioLanguage() !== before;
             })
             .catch((err) => {
                 console.warn(`${logPrefix} Could not read the Jellyfin audio language preference`, err);
-                return false;
             })
             .finally(() => {
                 if (jellyfinAudioPreferencePromise === request) {
@@ -990,24 +988,22 @@
     };
 
     /**
-     * Loads the Jellyfin audio preference if the effective setting needs it,
-     * then recomputes the tags rendered before it arrived (cache entries
-     * stamped with the previous preference are misses, so a rescan is enough).
+     * Runs `render` once the Jellyfin audio preference is known when the
+     * effective setting depends on it (one request; none otherwise), so the
+     * first pass is not judged under "no preference" and redone when the
+     * value arrives. The request never rejects, so a failure still renders.
+     * @param {Function} render
      */
-    function recomputeWhenJellyfinPreferenceArrives() {
-        primeJellyfinAudioPreference().then((changed) => {
-            if (changed && JE.currentSettings?.qualityTagsEnabled) {
-                JE.core.tagRenderer.reinitialize('quality', spec);
-            }
-        });
+    function withJellyfinAudioPreference(render) {
+        if (!usesJellyfinAudioPreference()) { render(); return; }
+        primeJellyfinAudioPreference().then(render);
     }
 
     /**
      * Initializes the Quality Tags feature.
      */
     JE.initializeQualityTags = function() {
-        JE.core.tagRenderer.register('quality', spec);
-        recomputeWhenJellyfinPreferenceArrives();
+        withJellyfinAudioPreference(() => JE.core.tagRenderer.register('quality', spec));
     };
 
     /**
@@ -1015,8 +1011,7 @@
      * Cleans up existing state and re-applies tags.
      */
     JE.reinitializeQualityTags = function() {
-        JE.core.tagRenderer.reinitialize('quality', spec);
-        recomputeWhenJellyfinPreferenceArrives();
+        withJellyfinAudioPreference(() => JE.core.tagRenderer.reinitialize('quality', spec));
     };
 
 })(window.JellyfinEnhanced);
