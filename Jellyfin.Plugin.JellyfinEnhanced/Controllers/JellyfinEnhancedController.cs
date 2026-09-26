@@ -3347,6 +3347,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DefaultSubtitleStyle,
                 config.DefaultSubtitleSize,
                 config.DefaultSubtitleFont,
+                config.DefaultSubtitleTextEffect,
                 config.DisableCustomSubtitleStyles,
                 config.DefaultLanguage,
                 // Overlay positions
@@ -4283,6 +4284,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         SelectedStylePresetIndex = defaultConfig.DefaultSubtitleStyle,
                         SelectedFontSizePresetIndex = defaultConfig.DefaultSubtitleSize,
                         SelectedFontFamilyPresetIndex = defaultConfig.DefaultSubtitleFont,
+                        SelectedTextEffectPresetIndex = defaultConfig.DefaultSubtitleTextEffect,
                         RandomButtonEnabled = defaultConfig.RandomButtonEnabled,
                         RandomUnwatchedOnly = defaultConfig.RandomUnwatchedOnly,
                         RandomIncludeMovies = defaultConfig.RandomIncludeMovies,
@@ -6922,6 +6924,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 SelectedStylePresetIndex = defaultConfig.DefaultSubtitleStyle,
                 SelectedFontSizePresetIndex = defaultConfig.DefaultSubtitleSize,
                 SelectedFontFamilyPresetIndex = defaultConfig.DefaultSubtitleFont,
+                SelectedTextEffectPresetIndex = defaultConfig.DefaultSubtitleTextEffect,
                 RandomButtonEnabled = defaultConfig.RandomButtonEnabled,
                 RandomUnwatchedOnly = defaultConfig.RandomUnwatchedOnly,
                 RandomIncludeMovies = defaultConfig.RandomIncludeMovies,

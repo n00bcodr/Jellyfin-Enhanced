@@ -337,6 +337,16 @@
             }
         })();
 
+        // Keeps the two panel previews showing the same text effect as the video.
+        const syncPreviewTextShadow = (bgColor) => {
+            const shadow = JE.getSubtitleTextShadow(bgColor);
+            ['subtitleColorPreview', 'subtitlePositionPreview'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.textShadow = shadow;
+            });
+        };
+        internal.syncSubtitlePreviewTextShadow = syncPreviewTextShadow;
+
         // Inline custom subtitle color pickers
         const customTextColorPicker = document.getElementById('customSubtitleTextColorPicker');
         const customTextAlpha = document.getElementById('customSubtitleTextAlpha');
@@ -370,6 +380,7 @@
                 posPreviewEl.style.color = textColor;
                 posPreviewEl.style.backgroundColor = bgColor;
             }
+            syncPreviewTextShadow(bgColor);
 
             JE.saveUserSettings('settings.json', JE.currentSettings);
             JE.applySavedStylesWhenReady();
@@ -583,7 +594,8 @@
                         const fontSize = JE.fontSizePresets[fontSizeIndex].size;
                         const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
                         updatePositionPreviewFont(JE.fontSizePresets[fontSizeIndex], JE.fontFamilyPresets[fontFamilyIndex]);
-                        JE.applySubtitleStyles(selectedPreset.textColor, selectedPreset.bgColor, fontSize, fontFamily, selectedPreset.textShadow);
+                        internal.syncSubtitlePreviewTextShadow?.(selectedPreset.bgColor);
+                        JE.applySubtitleStyles(selectedPreset.textColor, selectedPreset.bgColor, fontSize, fontFamily, JE.getSubtitleTextShadow(selectedPreset.bgColor));
                         JE.toast(JE.t('toast_subtitle_style', { style: selectedPreset.name }));
                     } else if (type === 'font-size') {
                         JE.currentSettings.selectedFontSizePresetIndex = presetIndex;
@@ -593,9 +605,7 @@
                         // Use saved custom colors
                         const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
                         const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
-                        const textShadow = bgColor === 'transparent' || bgColor === '#00000000'
-                            ? '0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000'
-                            : 'none';
+                        const textShadow = JE.getSubtitleTextShadow(bgColor);
 
                         updatePositionPreviewFont(selectedPreset, JE.fontFamilyPresets[fontFamilyIndex]);
                         JE.applySubtitleStyles(textColor, bgColor, selectedPreset.size, fontFamily, textShadow);
@@ -608,13 +618,25 @@
                         // Use saved custom colors
                         const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
                         const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
-                        const textShadow = bgColor === 'transparent' || bgColor === '#00000000'
-                            ? '0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000'
-                            : 'none';
+                        const textShadow = JE.getSubtitleTextShadow(bgColor);
 
                         updatePositionPreviewFont(JE.fontSizePresets[fontSizeIndex], selectedPreset);
                         JE.applySubtitleStyles(textColor, bgColor, fontSize, selectedPreset.family, textShadow);
                         JE.toast(JE.t('toast_subtitle_font', { font: selectedPreset.name }));
+                    } else if (type === 'text-effect') {
+                        JE.currentSettings.selectedTextEffectPresetIndex = presetIndex;
+                        const fontSizeIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
+                        const fontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
+                        const fontSize = JE.fontSizePresets[fontSizeIndex].size;
+                        const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
+
+                        // Use saved custom colors
+                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
+                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
+
+                        internal.syncSubtitlePreviewTextShadow?.(bgColor);
+                        JE.applySubtitleStyles(textColor, bgColor, fontSize, fontFamily, JE.getSubtitleTextShadow(bgColor, presetIndex));
+                        JE.toast(JE.t('toast_subtitle_text_effect', { effect: selectedPreset.name }));
                     }
 
                     JE.saveUserSettings('settings.json', JE.currentSettings);
@@ -648,12 +670,19 @@
                 if (activeBox) {
                     activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
                 }
+            } else if (type === 'text-effect') {
+                currentIndex = JE.currentSettings.selectedTextEffectPresetIndex ?? 0;
+                const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
+                if (activeBox) {
+                    activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
+                }
             }
         };
 
         setupPresetHandlers('subtitle-style-presets-container', JE.subtitlePresets, 'style');
         setupPresetHandlers('font-size-presets-container', JE.fontSizePresets, 'font-size');
         setupPresetHandlers('font-family-presets-container', JE.fontFamilyPresets, 'font-family');
+        setupPresetHandlers('text-effect-presets-container', JE.subtitleTextEffectPresets, 'text-effect');
     };
 
 })(window.JellyfinEnhanced);
