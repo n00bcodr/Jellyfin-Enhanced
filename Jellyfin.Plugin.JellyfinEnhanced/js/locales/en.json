@@ -264,6 +264,7 @@
     "file_size_tooltip": "Total File Size",
     "audio_language_tooltip": "Audio Language(s)",
     "audio_language_no_dialogue": "No dialogue",
+    "language_tags_partial_tooltip": "not on all episodes",
     "remove_continue_watching_error": "Could not remove item: User or Item ID not found.",
     "remove_continue_watching_error_api": "Unable to remove item: {error}",
     "unknown_error": "Unknown error",

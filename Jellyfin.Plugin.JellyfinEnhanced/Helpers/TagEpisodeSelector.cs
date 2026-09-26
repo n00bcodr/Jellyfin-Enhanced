@@ -20,6 +20,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         /// </summary>
         public static BaseItem? GetFirstEpisode(ILibraryManager libraryManager, BaseItem container, User? user = null)
         {
+            return ScanEpisodes(libraryManager, container, user, HasAudioOrVideoStreams, stopAtFirstRegular: true);
+        }
+
+        /// <summary>
+        /// Whether an episode has at least one audio or video stream. A source can
+        /// exist for a disc stub or an unprobed file while containing no streams,
+        /// so source count alone cannot supply tags.
+        /// </summary>
+        public static bool HasAudioOrVideoStreams(BaseItem episode)
+        {
+            return episode.GetMediaSources(false).Any(source => source.MediaStreams?.Any(
+                stream => stream.Type == MediaStreamType.Video || stream.Type == MediaStreamType.Audio) == true);
+        }
+
+        /// <summary>
+        /// Walks the container's non-virtual episodes in PremiereDate/SortName
+        /// order and returns the representative episode: the first regular one
+        /// (or, within a Specials season, the first of any kind) that
+        /// <paramref name="hasUsableStreams"/> accepts, falling back to the first
+        /// accepted special. The callback is where callers do their per-episode
+        /// work — the persisted cache aggregates audio languages across every
+        /// episode in it — and it reports whether the episode had streams so
+        /// the representative pick stays consistent with the aggregate. With
+        /// <paramref name="stopAtFirstRegular"/> the walk ends as soon as the
+        /// representative is known; otherwise every page is read.
+        /// </summary>
+        public static BaseItem? ScanEpisodes(
+            ILibraryManager libraryManager,
+            BaseItem container,
+            User? user,
+            Func<BaseItem, bool> hasUsableStreams,
+            bool stopAtFirstRegular)
+        {
             const int pageSize = 50;
             var query = new InternalItemsQuery(user)
             {
@@ -35,6 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 }
             };
 
+            BaseItem? firstRegular = null;
             BaseItem? firstSpecial = null;
             for (var offset = 0; ; offset += pageSize)
             {
@@ -42,10 +76,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 var episodes = libraryManager.GetItemList(query);
                 foreach (var episode in episodes)
                 {
-                    // A source can exist for a disc stub or an unprobed file while
-                    // containing no streams. Source count alone cannot supply tags.
-                    if (!episode.GetMediaSources(false).Any(source => source.MediaStreams?.Any(
-                        stream => stream.Type == MediaStreamType.Video || stream.Type == MediaStreamType.Audio) == true))
+                    if (!hasUsableStreams(episode))
                     {
                         continue;
                     }
@@ -54,17 +85,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     // particular, a Specials season can stop at its first match.
                     if (episode.ParentIndexNumber != 0 || container is Season)
                     {
-                        return episode;
-                    }
+                        if (stopAtFirstRegular)
+                        {
+                            return episode;
+                        }
 
-                    firstSpecial ??= episode;
+                        firstRegular ??= episode;
+                    }
+                    else
+                    {
+                        firstSpecial ??= episode;
+                    }
                 }
 
                 // Do not stop at a fixed candidate count: missing streams and long
                 // runs of specials can precede the first usable regular episode.
                 if (episodes.Count < pageSize)
                 {
-                    return firstSpecial;
+                    return firstRegular ?? firstSpecial;
                 }
             }
         }
