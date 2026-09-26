@@ -2358,6 +2358,10 @@
                             <div class="je-setting-description" data-desc-for="hideReviewsFromDisabledUsers">
                                 <div class="fieldDescription je-field-desc-sm-font-lg">When enabled, reviews written by Jellyfin users marked as "Disable this user" are hidden from non-admin viewers. Admins always see all reviews.</div>
                             </div>
+                            <div class="checkboxContainer"><label><input id="mirrorReviewRatingsToJellyfin" is="emby-checkbox" type="checkbox"/><span>Also save review star ratings as the user's Jellyfin rating</span></label></div>
+                            <div class="je-setting-description" data-desc-for="mirrorReviewRatingsToJellyfin">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">When a user rates a movie or series in a review, also write that rating (scaled to Jellyfin's 0-10) to their Jellyfin user rating for the item, so scrobblers and rating sync tools that read Jellyfin user data pick it up. Overwrites any rating the user set elsewhere; ratings are never cleared and season/episode reviews are not mirrored.</div>
+                            </div>
                             <div class="checkboxContainer"><label><input id="showUserRatingOnPosters" is="emby-checkbox" type="checkbox"/><span>Show average user rating on poster cards</span></label></div>
                             <div class="je-setting-description" data-desc-for="showUserRatingOnPosters">
                                 <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, overlay a <span class="material-symbols-rounded" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip on poster cards showing the average rating from all user reviews.</div>
@@ -5429,6 +5433,7 @@
                 document.querySelector('#showReleaseDate').checked = !!config.ShowReleaseDates;
                 document.querySelector('#hideReviewsFromHiddenUsers').checked = config.HideReviewsFromHiddenUsers !== false;
                 document.querySelector('#hideReviewsFromDisabledUsers').checked = config.HideReviewsFromDisabledUsers !== false;
+                document.querySelector('#mirrorReviewRatingsToJellyfin').checked = config.MirrorReviewRatingsToJellyfin === true;
                 document.querySelector('#showUserRatingDash').checked = config.ShowUserRatingDash !== false;
                 document.querySelector('#showUserRatingOnPosters').checked = config.ShowUserRatingOnPosters === true;
                 document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
@@ -5930,6 +5935,7 @@
             config.ShowReleaseDates = document.querySelector('#showReleaseDate').checked;
             config.HideReviewsFromHiddenUsers = document.querySelector('#hideReviewsFromHiddenUsers').checked;
             config.HideReviewsFromDisabledUsers = document.querySelector('#hideReviewsFromDisabledUsers').checked;
+            config.MirrorReviewRatingsToJellyfin = document.querySelector('#mirrorReviewRatingsToJellyfin').checked;
             config.ShowUserRatingDash = document.querySelector('#showUserRatingDash').checked;
             config.ShowUserRatingOnPosters = document.querySelector('#showUserRatingOnPosters').checked;
             config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
@@ -7346,7 +7352,7 @@
             { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
-            { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'showUserRatingDash', 'showUserRatingOnPosters'] },
+            { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'mirrorReviewRatingsToJellyfin', 'showUserRatingDash', 'showUserRatingOnPosters'] },
             { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
             { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag'], noHint: true },
