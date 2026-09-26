@@ -318,6 +318,18 @@
                             <div class="je-setting-description" data-desc-for="ratingTagsEnabled">
                                 <div class="fieldDescription">Show TMDB and Rotten Tomatoes ratings on poster cards.</div>
                             </div>
+                            <details id="ratingScopeAdminDetails" class="je-details-section">
+                                <summary>Choose where to show</summary>
+                                <div class="je-details-body">
+                                    <div class="fieldDescription je-field-desc-sm">Pick which item types get rating tags, and whether the home screen's Continue Watching and Next Up rows show them (e.g. untick episodes to keep ratings off Next Up cards). Users can override these in their personal settings.</div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnMovies" is="emby-checkbox" type="checkbox"/><span>Show on movies</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnSeries" is="emby-checkbox" type="checkbox"/><span>Show on series</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnSeasons" is="emby-checkbox" type="checkbox"/><span>Show on seasons</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnEpisodes" is="emby-checkbox" type="checkbox"/><span>Show on episodes</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnContinueWatching" is="emby-checkbox" type="checkbox"/><span>Show in the Continue Watching row</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnNextUp" is="emby-checkbox" type="checkbox"/><span>Show in the Next Up row</span></label></div>
+                                </div>
+                            </details>
 
                             <div class="je-tag-row">
                                 <div class="checkboxContainer"><label><input id="peopleTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable People Tags</span></label></div>
@@ -5407,6 +5419,12 @@
                 if (rPlayerChk) rPlayerChk.checked = showRatingInPlayer;
                 document.querySelector('#disableTagsOnSearchPage').checked = config.DisableTagsOnSearchPage === true;
                 document.querySelector('#tagsHideOnHover').checked = config.TagsHideOnHover === true;
+                document.querySelector('#ratingTagsOnMovies').checked = config.RatingTagsOnMovies !== false;
+                document.querySelector('#ratingTagsOnSeries').checked = config.RatingTagsOnSeries !== false;
+                document.querySelector('#ratingTagsOnSeasons').checked = config.RatingTagsOnSeasons !== false;
+                document.querySelector('#ratingTagsOnEpisodes').checked = config.RatingTagsOnEpisodes !== false;
+                document.querySelector('#ratingTagsOnContinueWatching').checked = config.RatingTagsOnContinueWatching !== false;
+                document.querySelector('#ratingTagsOnNextUp').checked = config.RatingTagsOnNextUp !== false;
                 document.querySelector('#tagCacheServerMode').checked = config.TagCacheServerMode !== false;
                 document.querySelector('#enableTagsLocalStorageFallback').checked = config.EnableTagsLocalStorageFallback === true;
                 document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
@@ -5900,6 +5918,12 @@
             config.PeopleTagsEnabled = document.querySelector('#peopleTagsEnabled').checked;
             config.DisableTagsOnSearchPage = document.querySelector('#disableTagsOnSearchPage').checked;
             config.TagsHideOnHover = document.querySelector('#tagsHideOnHover').checked;
+            config.RatingTagsOnMovies = document.querySelector('#ratingTagsOnMovies').checked;
+            config.RatingTagsOnSeries = document.querySelector('#ratingTagsOnSeries').checked;
+            config.RatingTagsOnSeasons = document.querySelector('#ratingTagsOnSeasons').checked;
+            config.RatingTagsOnEpisodes = document.querySelector('#ratingTagsOnEpisodes').checked;
+            config.RatingTagsOnContinueWatching = document.querySelector('#ratingTagsOnContinueWatching').checked;
+            config.RatingTagsOnNextUp = document.querySelector('#ratingTagsOnNextUp').checked;
             config.TagCacheServerMode = document.querySelector('#tagCacheServerMode').checked;
             config.EnableTagsLocalStorageFallback = config.TagCacheServerMode
                 ? document.querySelector('#enableTagsLocalStorageFallback').checked
@@ -7352,7 +7376,7 @@
             { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag'], noHint: true },
             { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition'], noHint: true },
             { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict'], noHint: true },
-            { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition'], noHint: true },
+            { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp'], noHint: true },
             { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
             { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },
