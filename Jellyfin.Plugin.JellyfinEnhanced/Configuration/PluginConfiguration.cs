@@ -32,6 +32,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             MaintenanceModeNotificationMessage = "Server undergoing maintenance.";
             MaintenanceModeAction = "disable_accounts";
             MaintenanceModeAffectedUsers = "all";
+            MaintenanceModeDurationMinutes = 0;
+            MaintenanceModeRemindOnPlayback = false;
+            MaintenanceScheduleEnabled = false;
+            MaintenanceScheduleStart = "00:00";
+            MaintenanceScheduleEnd = "08:00";
+            MaintenanceScheduleMessage = "The library is updating; slowdowns are normal. Time remaining: {countdown}";
+            MaintenanceScheduleNotificationMessage = "The library is updating; slowdowns are normal.";
+            MaintenanceScheduleAction = "none";
             SplashScreenImageUrl = "/web/assets/img/banner-light.png";
             DevMode = false;
 
@@ -419,6 +427,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// AnalyticsReportingService.GetStringSettings.
         /// </summary>
         public string MaintenanceModeAffectedUsers { get; set; } = "all";
+        /// <summary>Manual mode auto-disables after this many minutes; 0 = until turned off.</summary>
+        public int MaintenanceModeDurationMinutes { get; set; }
+        /// <summary>Re-send the notification (with time remaining) to affected users on every playback start.</summary>
+        public bool MaintenanceModeRemindOnPlayback { get; set; }
+        /// <summary>Daily window that turns maintenance mode on/off automatically (MaintenanceScheduleService).</summary>
+        public bool MaintenanceScheduleEnabled { get; set; }
+        /// <summary>"HH:mm", server local time.</summary>
+        public string MaintenanceScheduleStart { get; set; } = "00:00";
+        /// <summary>"HH:mm", server local time; earlier than the start means the window crosses midnight.</summary>
+        public string MaintenanceScheduleEnd { get; set; } = "08:00";
+        /// <summary>Banner message used while a scheduled window is active.</summary>
+        public string MaintenanceScheduleMessage { get; set; } = string.Empty;
+        /// <summary>Popup sent to active sessions when a scheduled window starts.</summary>
+        public string MaintenanceScheduleNotificationMessage { get; set; } = string.Empty;
+        /// <summary>"none" | "disable_accounts" | "disable_remote" | "both", applied during the scheduled window.</summary>
+        [AnalyticsInclude]
+        public string MaintenanceScheduleAction { get; set; } = "none";
 
         // Jellyfin Enhanced Settings
         public int ToastDuration { get; set; }

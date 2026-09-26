@@ -2670,22 +2670,40 @@
                                 Disabling restores all users automatically.
                             </div>
 
+                            <!-- Duration -->
+                            <div class="inputContainer" style="margin-bottom:1.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="maintenanceModeDurationMinutes">Duration (minutes)</label>
+                                <input id="maintenanceModeDurationMinutes" is="emby-input" type="number" min="0" step="1" style="max-width:200px;"/>
+                                <div class="fieldDescription">0 = stays on until you turn it off. Otherwise maintenance ends itself after this many minutes: the banner shows a live countdown and the toggle above switches off automatically. Changing the number restarts the clock; saving other settings does not.</div>
+                            </div>
+
                             <!-- Banner message -->
                             <div class="inputContainer" style="margin-bottom:1.5em;">
                                 <label class="inputLabel inputLabelUnfocused" for="maintenanceModeMessage">Login Page Banner Message</label>
                                 <textarea id="maintenanceModeMessage" is="emby-textarea" class="emby-textarea" rows="2"
                                     placeholder="This server is currently undergoing maintenance. Please try again later."
                                     style="width:100%;max-width:640px;box-sizing:border-box;resize:vertical;"></textarea>
-                                <div class="fieldDescription">Shown as a red banner at the top of every page (login + home). Plain text only.</div>
+                                <div class="fieldDescription">Shown as a red banner at the top of every page (login + home). Plain text only. Use <code>{countdown}</code> for the time remaining and <code>{ends_at}</code> for the end time; with a duration set and no token, the time remaining is appended automatically.</div>
                             </div>
 
                             <!-- Notification message (broadcast) -->
-                            <div class="inputContainer" style="margin-bottom:1.5em;">
+                            <div class="inputContainer" style="margin-bottom:0.75em;">
                                 <label class="inputLabel inputLabelUnfocused" for="maintenanceModeNotificationMessage">Active Session Notification</label>
                                 <textarea id="maintenanceModeNotificationMessage" is="emby-textarea" class="emby-textarea" rows="2"
                                     placeholder="Server maintenance is starting. Please finish up and try again later."
                                     style="width:100%;max-width:640px;box-sizing:border-box;resize:vertical;"></textarea>
-                                <div class="fieldDescription">Sent as a native Jellyfin popup to anyone currently watching; reaches all clients (web, mobile, TV apps).</div>
+                                <div class="fieldDescription">Sent as a native Jellyfin popup to anyone currently watching; reaches all clients (web, mobile, TV apps). Same <code>{countdown}</code> / <code>{ends_at}</code> tokens as the banner.</div>
+                            </div>
+
+                            <!-- Playback reminder -->
+                            <div class="checkboxContainer">
+                                <label>
+                                    <input id="maintenanceModeRemindOnPlayback" is="emby-checkbox" type="checkbox"/>
+                                    <span>Remind on playback start</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom:1.5em;">
+                                While maintenance is active, re-send the notification above (with the time remaining) to affected non-admin users each time they start playing something, on any client. At most once every 5 minutes per session. Only useful when accounts are <em>not</em> disabled.
                             </div>
 
                             <!-- Action selection -->
@@ -2731,6 +2749,57 @@
                                         <div id="je-mm-users-loading" style="opacity:0.55;font-size:0.875em;">Loading users…</div>
                                     </div>
                                 </div>
+                            </div>
+
+                            <!-- Scheduled window. Fields stay direct children of .configSection so they
+                                 pick up the same card/label layout as the manual fields above. -->
+                            <div style="font-weight:600;margin-top:1.75em;padding-top:1.25em;margin-bottom:0.6em;border-top:1px solid rgba(255,255,255,0.12);">Scheduled Window</div>
+                            <div class="checkboxContainer">
+                                <label>
+                                    <input id="maintenanceScheduleEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable daily maintenance window</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom:1.25em;">
+                                Turns maintenance mode on and off by itself every day between the times below (server local time), with its own message and action, e.g. for nightly library scans. Uses the <strong>Affected Users</strong> selection above. The manual toggle takes precedence while it is on; turning the schedule off ends a running window early.
+                            </div>
+                            <div style="display:flex;gap:1.5em;flex-wrap:wrap;margin-bottom:1.5em;">
+                                <div class="inputContainer" style="margin:0;">
+                                    <label class="inputLabel inputLabelUnfocused" for="maintenanceScheduleStart">Start time</label>
+                                    <input id="maintenanceScheduleStart" is="emby-input" type="time" style="max-width:160px;"/>
+                                </div>
+                                <div class="inputContainer" style="margin:0;">
+                                    <label class="inputLabel inputLabelUnfocused" for="maintenanceScheduleEnd">End time</label>
+                                    <input id="maintenanceScheduleEnd" is="emby-input" type="time" style="max-width:160px;"/>
+                                </div>
+                            </div>
+                            <div class="inputContainer" style="margin-bottom:1.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="maintenanceScheduleMessage">Scheduled Banner Message</label>
+                                <textarea id="maintenanceScheduleMessage" is="emby-textarea" class="emby-textarea" rows="2"
+                                    placeholder="The library is updating; slowdowns are normal. Time remaining: {countdown}"
+                                    style="width:100%;max-width:640px;box-sizing:border-box;resize:vertical;"></textarea>
+                                <div class="fieldDescription">Banner shown while the window is active. Same <code>{countdown}</code> / <code>{ends_at}</code> tokens.</div>
+                            </div>
+                            <div class="inputContainer" style="margin-bottom:1.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="maintenanceScheduleNotificationMessage">Scheduled Session Notification</label>
+                                <textarea id="maintenanceScheduleNotificationMessage" is="emby-textarea" class="emby-textarea" rows="2"
+                                    placeholder="The library is updating; slowdowns are normal."
+                                    style="width:100%;max-width:640px;box-sizing:border-box;resize:vertical;"></textarea>
+                                <div class="fieldDescription">Popup sent to active sessions when the window starts, and on playback start when reminders are on.</div>
+                            </div>
+                            <div>
+                                <div style="font-weight:600;margin-bottom:0.6em;">Scheduled Action</div>
+                                <label style="display:flex;align-items:flex-start;gap:0.6em;margin-bottom:0.6em;cursor:pointer;">
+                                    <input type="checkbox" id="mmSchedAction_accounts" style="margin-top:3px;flex-shrink:0;"/>
+                                    <span>
+                                        <strong>Disable user accounts</strong>
+                                        <span class="fieldDescription" style="display:block;margin:0;">Leave both unchecked for a banner-only window.</span>
+                                    </span>
+                                </label>
+                                <label style="display:flex;align-items:flex-start;gap:0.6em;cursor:pointer;">
+                                    <input type="checkbox" id="mmSchedAction_remote" style="margin-top:3px;flex-shrink:0;"/>
+                                    <span><strong>Disable remote connections</strong></span>
+                                </label>
                             </div>
 
                         </div>
@@ -5310,6 +5379,16 @@
                 document.querySelector('#maintenanceModeEnabled').checked = config.MaintenanceModeEnabled || false;
                 document.querySelector('#maintenanceModeMessage').value = config.MaintenanceModeMessage || '';
                 document.querySelector('#maintenanceModeNotificationMessage').value = config.MaintenanceModeNotificationMessage || '';
+                document.querySelector('#maintenanceModeDurationMinutes').value = config.MaintenanceModeDurationMinutes || 0;
+                document.querySelector('#maintenanceModeRemindOnPlayback').checked = config.MaintenanceModeRemindOnPlayback || false;
+                document.querySelector('#maintenanceScheduleEnabled').checked = config.MaintenanceScheduleEnabled || false;
+                document.querySelector('#maintenanceScheduleStart').value = config.MaintenanceScheduleStart || '00:00';
+                document.querySelector('#maintenanceScheduleEnd').value = config.MaintenanceScheduleEnd || '08:00';
+                document.querySelector('#maintenanceScheduleMessage').value = config.MaintenanceScheduleMessage || '';
+                document.querySelector('#maintenanceScheduleNotificationMessage').value = config.MaintenanceScheduleNotificationMessage || '';
+                const savedSchedAction = config.MaintenanceScheduleAction || 'none';
+                document.getElementById('mmSchedAction_accounts').checked = savedSchedAction === 'disable_accounts' || savedSchedAction === 'both';
+                document.getElementById('mmSchedAction_remote').checked   = savedSchedAction === 'disable_remote'   || savedSchedAction === 'both';
                 // Restore action checkboxes
                 const savedAction = config.MaintenanceModeAction || 'disable_accounts';
                 document.getElementById('mmAction_accounts').checked = savedAction === 'disable_accounts' || savedAction === 'both';
@@ -5835,6 +5914,19 @@
             config.MaintenanceModeEnabled = document.querySelector('#maintenanceModeEnabled').checked;
             config.MaintenanceModeMessage = document.querySelector('#maintenanceModeMessage').value;
             config.MaintenanceModeNotificationMessage = document.querySelector('#maintenanceModeNotificationMessage').value;
+            config.MaintenanceModeDurationMinutes = Math.max(0, parseInt(document.querySelector('#maintenanceModeDurationMinutes').value, 10) || 0);
+            config.MaintenanceModeRemindOnPlayback = document.querySelector('#maintenanceModeRemindOnPlayback').checked;
+            config.MaintenanceScheduleEnabled = document.querySelector('#maintenanceScheduleEnabled').checked;
+            config.MaintenanceScheduleStart = document.querySelector('#maintenanceScheduleStart').value || '00:00';
+            config.MaintenanceScheduleEnd = document.querySelector('#maintenanceScheduleEnd').value || '08:00';
+            config.MaintenanceScheduleMessage = document.querySelector('#maintenanceScheduleMessage').value;
+            config.MaintenanceScheduleNotificationMessage = document.querySelector('#maintenanceScheduleNotificationMessage').value;
+            const mmSchedAccounts = document.getElementById('mmSchedAction_accounts').checked;
+            const mmSchedRemote   = document.getElementById('mmSchedAction_remote').checked;
+            config.MaintenanceScheduleAction = (mmSchedAccounts && mmSchedRemote) ? 'both'
+                                             : mmSchedAccounts                    ? 'disable_accounts'
+                                             : mmSchedRemote                      ? 'disable_remote'
+                                             :                                      'none';
             const mmAccounts = document.getElementById('mmAction_accounts').checked;
             const mmRemote   = document.getElementById('mmAction_remote').checked;
             config.MaintenanceModeAction = (mmAccounts && mmRemote) ? 'both'
@@ -6371,7 +6463,8 @@
                             contentType: 'application/json',
                             data: JSON.stringify({
                                 message: config.MaintenanceModeMessage || '',
-                                durationMinutes: 0,
+                                notificationMessage: config.MaintenanceModeNotificationMessage || '',
+                                durationMinutes: config.MaintenanceModeDurationMinutes || 0,
                                 action: config.MaintenanceModeAction || 'disable_accounts',
                                 affectedUserIds: affectedIds
                             })
