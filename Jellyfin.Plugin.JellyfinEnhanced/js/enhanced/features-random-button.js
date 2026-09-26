@@ -31,6 +31,11 @@
     // Containers the button can be scoped to (see resolveSourceContainer).
     const CONTAINER_TYPES = ['Playlist', 'BoxSet'];
 
+    // Why the current press fell back to the whole library, if it did. Shown
+    // in place of the plain "loaded" toast so the two do not stack on top of
+    // each other (toasts share one fixed position).
+    let fallbackNotice = null;
+
     /**
      * Item types the user opted into, as an IncludeItemTypes value. Inside a
      * container, episodes count as "shows" so an episode playlist is not empty.
@@ -77,7 +82,7 @@
             // folder, and neither is something we should draw from.
             const item = await fetchItem(pinnedId);
             if (item && CONTAINER_TYPES.includes(item.Type)) return item;
-            JE.toast(JE.t('toast_random_source_missing'), 3000);
+            fallbackNotice = JE.t('toast_random_source_missing');
         }
         return null;
     }
@@ -124,10 +129,11 @@
         }
 
         try {
+            fallbackNotice = null;
             const container = await resolveSourceContainer();
             let items = container ? filterUnwatched(await fetchCandidates(userId, container.Id)) : [];
             if (container && items.length === 0) {
-                JE.toast(JE.t('toast_random_source_empty', { name: JE.escapeHtml(container.Name) }), 3000);
+                fallbackNotice = JE.t('toast_random_source_empty', { name: JE.escapeHtml(container.Name) });
             }
             if (items.length === 0) {
                 const libraryItems = await fetchCandidates(userId, null);
@@ -160,7 +166,8 @@
                 const itemUrl = `#!/details?id=${item.Id}${serverId ? `&serverId=${serverId}` : ''}`;
                 window.location.hash = itemUrl;
             }
-            JE.toast(JE.t('toast_random_item_loaded'), 2000);
+            JE.toast(fallbackNotice || JE.t('toast_random_item_loaded'), fallbackNotice ? 3000 : 2000);
+            fallbackNotice = null;
         } else {
             console.error('🪼 Jellyfin Enhanced: Invalid item object or ID:', item);
             JE.toast(JE.t('toast_generic_error'), 2000);
