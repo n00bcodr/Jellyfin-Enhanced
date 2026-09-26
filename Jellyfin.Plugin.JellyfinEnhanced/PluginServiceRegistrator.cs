@@ -132,6 +132,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Promotes pending pre-acquisition Spoiler Guard entries (PendingTmdb)
             // into real Series/Movies entries when matching library items land.
             serviceCollection.AddHostedService<SpoilerSeerrPendingPromoter>();
+            // Auto-enable Spoiler Guard for every user the moment a new
+            // Series/Movie lands in the library (SpoilerAutoEnableOnLibraryAdd);
+            // batches a scan's ItemAdded burst into one write per user.
+            serviceCollection.AddHostedService<SpoilerLibraryAddAutoEnabler>();
 
             serviceCollection.Configure<MvcOptions>(o =>
             {

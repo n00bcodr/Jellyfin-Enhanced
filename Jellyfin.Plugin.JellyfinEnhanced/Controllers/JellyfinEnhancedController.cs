@@ -1685,6 +1685,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (string.IsNullOrEmpty(rawType)) return;
                 var mediaType = rawType.ToLowerInvariant();
                 if (mediaType != "tv" && mediaType != "movie") return;
+                // Shared auto-enable scope (content type only — the title
+                // isn't in a library yet, so the library filter can't apply).
+                if (!Services.SpoilerAutoEnableFilter.AllowsType(JellyfinEnhanced.Instance?.Configuration, mediaType == "tv")) return;
 
                 int tmdbInt;
                 if (miProp.ValueKind == JsonValueKind.Number)

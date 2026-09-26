@@ -365,6 +365,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerBlurArtwork = false;
             SpoilerAutoEnableOnFirstPlay = false;
             SpoilerAutoEnableOnSeerrRequest = false;
+            SpoilerAutoEnableOnLibraryAdd = false;
+            // Auto-enable scope defaults to "everything" so existing installs
+            // keep today's first-play / Seerr-request behaviour unchanged.
+            SpoilerAutoEnableSeries = true;
+            SpoilerAutoEnableMovies = true;
+            SpoilerAutoEnableLibraryIds = "";
             SpoilerBlurStrictRefresh = false;
             SpoilerKeepMoviePosters = true;
             SpoilerOverviewPlaceholder = "Spoiler Guard activated";
@@ -940,6 +946,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // controls only the auto-on-request path — manual opt-in from the Seerr
         // more-info modal stays available (gated only by SpoilerBlurEnabled).
         public bool SpoilerAutoEnableOnSeerrRequest { get; set; } = false;
+        // When true, every new Series/Movie that lands in the library (any
+        // source: scan, Seerr, manual copy) is added to the Spoiler Guard list
+        // of every user who can see its library — before anyone presses play.
+        // SpoilerLibraryAddAutoEnabler batches the ItemAdded burst of a scan
+        // into one file write per user.
+        public bool SpoilerAutoEnableOnLibraryAdd { get; set; } = false;
+        // Scope shared by all three auto-enable modes (first play, Seerr
+        // request, library add): which content types qualify, and an optional
+        // library allow-list (comma-separated library ids; empty = every
+        // library). The library filter can't apply to a Seerr request (the
+        // title isn't in a library yet). Defaults = everything, so existing
+        // installs keep their current auto-enable behaviour.
+        public bool SpoilerAutoEnableSeries { get; set; } = true;
+        public bool SpoilerAutoEnableMovies { get; set; } = true;
+        public string SpoilerAutoEnableLibraryIds { get; set; } = "";
         // True: toggling Spoiler Guard also fires a full page reload so DTO-derived
         // text (Overview, titles, ratings) updates immediately. False (default):
         // only the in-place image-URL refresh runs — image bytes flip at once but
