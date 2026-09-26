@@ -735,6 +735,7 @@
             'quality-overlay-container': JE.currentSettings?.qualityTagsPosition || JE.pluginConfig?.QualityTagsPosition || 'top-left',
             'language-overlay-container': JE.currentSettings?.languageTagsPosition || JE.pluginConfig?.LanguageTagsPosition || 'bottom-left',
             'rating-overlay-container': JE.currentSettings?.ratingTagsPosition || JE.pluginConfig?.RatingTagsPosition || 'bottom-right',
+            'age-rating-overlay-container': JE.currentSettings?.ageRatingTagsPosition || JE.pluginConfig?.AgeRatingTagsPosition || 'bottom-right',
         };
         const topRightContainers = Object.entries(posMap)
             .filter(([, pos]) => pos === 'top-right')
@@ -802,7 +803,8 @@
                 .je-tag-host .genre-overlay-container,
                 .je-tag-host .quality-overlay-container,
                 .je-tag-host .language-overlay-container,
-                .je-tag-host .rating-overlay-container {
+                .je-tag-host .rating-overlay-container,
+                .je-tag-host .age-rating-overlay-container {
                     contain: layout style;
                     pointer-events: none;
                     z-index: auto !important;
@@ -919,16 +921,19 @@
                 try {
                     document.querySelectorAll(
                         '.quality-overlay-container, .rating-overlay-container, '
-                        + '.genre-overlay-container, .language-overlay-container'
+                        + '.genre-overlay-container, .language-overlay-container, '
+                        + '.age-rating-overlay-container'
                     ).forEach(function (el) { el.remove(); });
                     document.querySelectorAll(
                         '[data-je-quality-tagged], [data-je-rating-tagged], '
-                        + '[data-je-genre-tagged], [data-je-language-tagged]'
+                        + '[data-je-genre-tagged], [data-je-language-tagged], '
+                        + '[data-je-age-rating-tagged]'
                     ).forEach(function (el) {
                         delete el.dataset.jeQualityTagged;
                         delete el.dataset.jeRatingTagged;
                         delete el.dataset.jeGenreTagged;
                         delete el.dataset.jeLanguageTagged;
+                        delete el.dataset.jeAgeRatingTagged;
                     });
                 } catch (domErr) {
                     console.warn(`${logPrefix} overlay cleanup during invalidate failed:`, domErr);

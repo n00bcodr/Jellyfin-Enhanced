@@ -26,6 +26,21 @@
     };
 
     /**
+     * Re-measure corner stacking on every card that still has tag overlays.
+     * Called after a tag type's overlays are removed by its panel toggle, so
+     * an overlay that was stacked above them (e.g. the age rating badge over
+     * the rating chip) drops back into its corner instead of keeping a stale
+     * translateY.
+     */
+    const restackTagCorners = () => {
+        const restack = JE.core?.tagRenderer?.applyCornerStacking;
+        if (typeof restack !== 'function') return;
+        const hosts = new Set();
+        document.querySelectorAll('[data-je-corner]').forEach(el => { if (el.parentElement) hosts.add(el.parentElement); });
+        hosts.forEach(host => restack(host));
+    };
+
+    /**
      * Wires the feature toggles, quality-tag category controls and subtitle
      * styling/position controls of the Settings tab.
      * @param {object} ctx Shared panel context assembled in ui-panel.js.
@@ -49,6 +64,7 @@
                     } else {
                         // Remove all tags if disabling
                         document.querySelectorAll('.quality-overlay-container').forEach(el => el.remove());
+                        restackTagCorners();
                     }
                     requiresRefresh = false; // No longer needs refresh
                 } else if (id === 'genreTagsToggle') {
@@ -58,6 +74,7 @@
                         }
                     } else {
                         document.querySelectorAll('.genre-overlay-container').forEach(el => el.remove());
+                        restackTagCorners();
                     }
                     requiresRefresh = false;
                 } else if (id === 'languageTagsToggle') {
@@ -67,6 +84,7 @@
                         }
                     } else {
                         document.querySelectorAll('.language-overlay-container').forEach(el => el.remove());
+                        restackTagCorners();
                     }
                     requiresRefresh = false;
                 } else if (id === 'ratingTagsToggle') {
@@ -76,6 +94,17 @@
                         }
                     } else {
                         document.querySelectorAll('.rating-overlay-container').forEach(el => el.remove());
+                        restackTagCorners();
+                    }
+                    requiresRefresh = false;
+                } else if (id === 'ageRatingTagsToggle') {
+                    if (e.target.checked) {
+                        if (typeof JE.initializeAgeRatingTags === 'function') {
+                            JE.initializeAgeRatingTags();
+                        }
+                    } else {
+                        document.querySelectorAll('.age-rating-overlay-container').forEach(el => el.remove());
+                        restackTagCorners();
                     }
                     requiresRefresh = false;
                 } else if (id === 'peopleTagsToggle') {
@@ -255,6 +284,7 @@
         }
         addSettingToggleListener('languageTagsToggle', 'languageTagsEnabled', 'feature_language_tags', true);
         addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
+        addSettingToggleListener('ageRatingTagsToggle', 'ageRatingTagsEnabled', 'feature_age_rating_tags', true);
         addSettingToggleListener('peopleTagsToggle', 'peopleTagsEnabled', 'feature_people_tags', true);
         addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', false);
         // Live-toggle the body class so hover fade CSS applies immediately (no refresh needed)
@@ -525,6 +555,10 @@
                 } else if (settingKey === 'ratingTagsPosition' && JE.currentSettings.ratingTagsEnabled) {
                     if (typeof JE.reinitializeRatingTags === 'function') {
                         JE.reinitializeRatingTags();
+                    }
+                } else if (settingKey === 'ageRatingTagsPosition' && JE.currentSettings.ageRatingTagsEnabled) {
+                    if (typeof JE.reinitializeAgeRatingTags === 'function') {
+                        JE.reinitializeAgeRatingTags();
                     }
                 }
 

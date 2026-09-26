@@ -3342,6 +3342,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.GenreTagsEnabled,
                 config.LanguageTagsEnabled,
                 config.RatingTagsEnabled,
+                config.AgeRatingTagsEnabled,
                 config.PeopleTagsEnabled,
                 config.DisableAllShortcuts,
                 config.DefaultSubtitleStyle,
@@ -3356,6 +3357,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.LanguageTagsPriority,
                 config.LanguageTagsPriorityStrict,
                 config.RatingTagsPosition,
+                config.AgeRatingTagsPosition,
                 config.ShowRatingInPlayer,
 
                 config.TagsCacheTtlDays,
@@ -4308,11 +4310,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         GenreTagsEnabled = defaultConfig.GenreTagsEnabled,
                         LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
                         RatingTagsEnabled = defaultConfig.RatingTagsEnabled,
+                        AgeRatingTagsEnabled = defaultConfig.AgeRatingTagsEnabled,
                         PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
                         QualityTagsPosition = defaultConfig.QualityTagsPosition,
                         GenreTagsPosition = defaultConfig.GenreTagsPosition,
                         LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
                         RatingTagsPosition = defaultConfig.RatingTagsPosition,
+                        AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
                         ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                         RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                         ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -6945,11 +6949,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 GenreTagsEnabled = defaultConfig.GenreTagsEnabled,
                 LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
                 RatingTagsEnabled = defaultConfig.RatingTagsEnabled,
+                AgeRatingTagsEnabled = defaultConfig.AgeRatingTagsEnabled,
                 PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
                 QualityTagsPosition = defaultConfig.QualityTagsPosition,
                 GenreTagsPosition = defaultConfig.GenreTagsPosition,
                 LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
                 RatingTagsPosition = defaultConfig.RatingTagsPosition,
+                AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
                 ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                 RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                 ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -7412,6 +7418,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     .ToList();
             }
 
+            // Age rating for the Age Rating Tags overlay. Seasons/Episodes rarely
+            // carry their own, so fall back to the Series — resolved here (not on
+            // the client) so batch mode matches the server tag cache, which does
+            // the same in TagCacheService.BuildEntryForItem. Deliberately NOT
+            // spoiler-stripped: an age rating reveals nothing about the plot.
+            // A batch is typically one series' worth of episodes, so the parent
+            // lookup is memoized per request rather than repeated per item.
+            var seriesRatingMemo = new Dictionary<Guid, string?>();
+            string? ResolveTagDataOfficialRating(BaseItem tagItem)
+            {
+                if (!string.IsNullOrWhiteSpace(tagItem.OfficialRating))
+                {
+                    return tagItem.OfficialRating;
+                }
+
+                var parentSeriesId = tagItem switch
+                {
+                    MediaBrowser.Controller.Entities.TV.Episode e => e.SeriesId,
+                    MediaBrowser.Controller.Entities.TV.Season s => s.SeriesId,
+                    _ => Guid.Empty,
+                };
+                if (parentSeriesId == Guid.Empty)
+                {
+                    return null;
+                }
+
+                if (!seriesRatingMemo.TryGetValue(parentSeriesId, out var parentRating))
+                {
+                    parentRating = _libraryManager.GetItemById<BaseItem>(parentSeriesId)?.OfficialRating;
+                    parentRating = string.IsNullOrWhiteSpace(parentRating) ? null : parentRating;
+                    seriesRatingMemo[parentSeriesId] = parentRating;
+                }
+
+                return parentRating;
+            }
+
             // Spoiler Guard short-circuit: when the master switch + any tag-relevant
             // strip toggle are on and the user has entries in their spoiler list, skip
             // tag data for unwatched episodes. Loaded once per request (not per item).
@@ -7546,6 +7588,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             Genres = spStripGenres ? Array.Empty<string>() : (spEp.Genres ?? Array.Empty<string>()),
                             CommunityRating = spStripRatings ? (float?)null : spEp.CommunityRating,
                             CriticRating = spStripRatings ? (float?)null : spEp.CriticRating,
+                            OfficialRating = ResolveTagDataOfficialRating(spEp),
                             // Suppress the parent-series rating fallback only when the
                             // rating strip is requested; leaving SeriesId set under tag-only
                             // strip lets the rating overlay keep rendering.
@@ -7588,6 +7631,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Genres = spStripGenres ? Array.Empty<string>() : (spSeries.Genres ?? Array.Empty<string>()),
                         CommunityRating = spStripRatings ? (float?)null : spSeries.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spSeries.CriticRating,
+                        OfficialRating = ResolveTagDataOfficialRating(spSeries),
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -7652,6 +7696,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             Genres = spStripGenres ? Array.Empty<string>() : (spMovie.Genres ?? Array.Empty<string>()),
                             CommunityRating = spStripRatings ? (float?)null : spMovie.CommunityRating,
                             CriticRating = spStripRatings ? (float?)null : spMovie.CriticRating,
+                            OfficialRating = ResolveTagDataOfficialRating(spMovie),
                             SeriesId = (Guid?)null,
                             ProviderIds = (IDictionary<string, string>?)null,
                             Name = stubName,
@@ -7715,6 +7760,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 Genres = spStripGenres ? Array.Empty<string>() : (spSeason.Genres ?? Array.Empty<string>()),
                                 CommunityRating = spStripRatings ? (float?)null : spSeason.CommunityRating,
                                 CriticRating = spStripRatings ? (float?)null : spSeason.CriticRating,
+                                OfficialRating = ResolveTagDataOfficialRating(spSeason),
                                 SeriesId = spStripRatings ? (Guid?)null : spSeason.SeriesId,
                                 ProviderIds = (IDictionary<string, string>?)null,
                                 Name = stubName,
@@ -7804,6 +7850,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     Genres = item.Genres,
                     CommunityRating = item.CommunityRating,
                     CriticRating = item.CriticRating,
+                    OfficialRating = ResolveTagDataOfficialRating(item),
                     SeriesId = seriesId,
                     ProviderIds = item.ProviderIds,
                     Name = item.Name,

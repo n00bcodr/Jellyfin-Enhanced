@@ -140,6 +140,23 @@ Customize quality tag appearance.
 }
 ```
 
+### Age Rating Tags CSS
+
+**Customize the badge:**
+```css
+.age-rating-tag {
+    border-radius: 999px !important;
+    font-size: 12px !important;
+}
+```
+
+**Override the colour of one rating:**
+```css
+.age-rating-tag[rating='TV-MA'] {
+    background-color: #000 !important;
+}
+```
+
 ### People Tags CSS
 
 **Customize age chips:**

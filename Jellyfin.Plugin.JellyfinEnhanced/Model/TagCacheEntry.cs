@@ -19,6 +19,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public string[]? Genres { get; set; }
         public float? CommunityRating { get; set; }
         public float? CriticRating { get; set; }
+        /// <summary>
+        /// Parental / age rating as stored by Jellyfin (e.g. "PG-13", "TV-MA",
+        /// "DE-12"). Seasons and Episodes fall back to their Series' rating at
+        /// build time, mirroring the CommunityRating fallback.
+        /// </summary>
+        public string? OfficialRating { get; set; }
         public string[]? AudioLanguages { get; set; }
         public TagStreamData? StreamData { get; set; }
         public long LastUpdated { get; set; }
@@ -62,6 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && SequencesEqual(a.Genres, b.Genres)
                 && NullableFloatEquals(a.CommunityRating, b.CommunityRating)
                 && NullableFloatEquals(a.CriticRating, b.CriticRating)
+                && a.OfficialRating == b.OfficialRating
                 && SequencesEqual(a.AudioLanguages, b.AudioLanguages)
                 && TagStreamData.ContentEquals(a.StreamData, b.StreamData)
                 && a.SeriesId == b.SeriesId;
@@ -114,6 +121,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             Genres = Genres,
             CommunityRating = CommunityRating,
             CriticRating = CriticRating,
+            OfficialRating = OfficialRating,
             AudioLanguages = AudioLanguages,
             StreamData = StreamData,
             LastUpdated = LastUpdated,

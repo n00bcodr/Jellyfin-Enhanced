@@ -100,6 +100,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             GenreTagsEnabled = false;
             LanguageTagsEnabled = false;
             RatingTagsEnabled = false;
+            AgeRatingTagsEnabled = false;
             PeopleTagsEnabled = false;
             TagsCacheTtlDays = 30;
             DisableTagsOnSearchPage = false;
@@ -112,6 +113,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             LanguageTagsPriority = string.Empty;
             LanguageTagsPriorityStrict = false;
             RatingTagsPosition = "bottom-right";
+            AgeRatingTagsPosition = "bottom-right";
             ShowRatingInPlayer = true;
             DisableAllShortcuts = false;
             DefaultSubtitleStyle = 0;
@@ -542,6 +544,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int AudioInfoTagOrder { get; set; } = 6;
         public bool LanguageTagsEnabled { get; set; }
         public bool RatingTagsEnabled { get; set; }
+        public bool AgeRatingTagsEnabled { get; set; }
         public bool PeopleTagsEnabled { get; set; }
         public int TagsCacheTtlDays { get; set; }
         public bool DisableTagsOnSearchPage { get; set; }
@@ -583,6 +586,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool LanguageTagsPriorityStrict { get; set; }
         [AnalyticsInclude]
         public string RatingTagsPosition { get; set; } = "bottom-right";
+        [AnalyticsInclude]
+        public string AgeRatingTagsPosition { get; set; } = "bottom-right";
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool GenreTagsEnabled { get; set; }
         public string DefaultLanguage { get; set; }

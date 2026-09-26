@@ -69,8 +69,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Matroska LanguageBCP47/LanguageIETF audio languages instead of the
         // region-less values exposed by Jellyfin/FFmpeg.
         // v4 picks a real episode with streams as the Series/Season tag source, requires actual audio/video streams and searches beyond the first page.
+        // v5 adds OfficialRating (age rating) with the Series fallback for Seasons/Episodes.
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        private const int CurrentCacheSchemaVersion = 4;
+        private const int CurrentCacheSchemaVersion = 5;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -1330,6 +1331,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     Genres = item.Genres,
                     CommunityRating = item.CommunityRating,
                     CriticRating = item.CriticRating,
+                    OfficialRating = string.IsNullOrWhiteSpace(item.OfficialRating) ? null : item.OfficialRating,
                     LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     SeriesId = seriesIdN,
                 };
@@ -1376,6 +1378,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (series?.ProviderIds?.TryGetValue("Tmdb", out var seriesTmdb) == true)
                             entry.SeriesTmdbId = seriesTmdb;
                         entry.SeasonNumber = season.IndexNumber;
+                        // Age rating: a Season rarely carries its own, so fall back to
+                        // the Series (same shape as the CommunityRating fallback above).
+                        if (entry.OfficialRating == null && !string.IsNullOrWhiteSpace(series?.OfficialRating))
+                        {
+                            entry.OfficialRating = series.OfficialRating;
+                        }
                     }
                 }
                 else if (kind == BaseItemKind.BoxSet)
@@ -1414,6 +1422,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             entry.SeriesTmdbId = seriesTmdb;
                         entry.SeasonNumber = ep.ParentIndexNumber;
                         entry.EpisodeNumber = ep.IndexNumber;
+                        // Age rating: Episodes inherit the Series rating when they have none.
+                        if (entry.OfficialRating == null && !string.IsNullOrWhiteSpace(series?.OfficialRating))
+                        {
+                            entry.OfficialRating = series.OfficialRating;
+                        }
                     }
                 }
 

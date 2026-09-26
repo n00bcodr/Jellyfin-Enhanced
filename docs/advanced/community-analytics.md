@@ -52,7 +52,7 @@ specific ones are ever safe to include:
 - Maintenance Mode action (`MaintenanceModeAction`), and whether it applies to all users or a
   selection (`MaintenanceModeAffectedUsers`, sent only as `all`/`selected` — the actual user
   selection never leaves your server)
-- Tag overlay positions (`QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `RatingTagsPosition`)
+- Tag overlay positions (`QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `RatingTagsPosition`, `AgeRatingTagsPosition`)
 - Language tag priority list (`LanguageTagsPriority`) — normalized before sending: only tokens
   shaped like language codes (e.g. `en,ja,fr`) are included, anything else typed into that box is
   dropped

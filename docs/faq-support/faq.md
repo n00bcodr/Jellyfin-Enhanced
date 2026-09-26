@@ -179,6 +179,7 @@ Option B (manual in Seerr):
    - Genre Tags
    - Language Tags
    - Rating Tags
+   - Age Rating Tags
 
 4. Adjust position if needed
 
@@ -199,6 +200,8 @@ Option B (manual in Seerr):
 - Language tags require audio track data
 
 - Rating tags require TMDB/RT ratings
+
+- Age rating tags require a parental rating on the item (or its series)
 
 **Check Console:**
 
