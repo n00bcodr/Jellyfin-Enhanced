@@ -41,7 +41,11 @@
      * stylesheet and re-target them at the poster badge class. The sheet's base
      * `.mediaInfoOfficialRating` rule (sizing, hover transform, !important
      * resets) and its @media blocks are dropped so nothing leaks onto the
-     * details page when Colored Ratings itself is off.
+     * details page when Colored Ratings itself is off. The sheet's `!important`
+     * flags are dropped too: the attribute selector already outranks the
+     * badge's base rule, and this style element lands after Jellyfin's Custom
+     * CSS, so keeping them would make a user's own `.age-rating-tag[rating=…]`
+     * override unreachable.
      * @param {string} cssText - Raw css/ratings.css contents.
      * @returns {string} Scoped colour rules for `.age-rating-tag[rating=...]`.
      */
@@ -56,7 +60,8 @@
                 .filter((s) => s.startsWith('.mediaInfoOfficialRating[rating='))
                 .map((s) => s.replace('.mediaInfoOfficialRating', `.${tagClass}`));
             if (selectors.length === 0) continue;
-            rules.push(`${selectors.join(',\n')} { ${match[2].trim()} }`);
+            const declarations = match[2].replace(/\s*!important/g, '').trim();
+            rules.push(`${selectors.join(',\n')} { ${declarations} }`);
         }
         return rules.join('\n');
     }

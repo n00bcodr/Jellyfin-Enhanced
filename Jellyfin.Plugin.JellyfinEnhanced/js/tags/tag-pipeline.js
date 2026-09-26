@@ -921,16 +921,19 @@
                 try {
                     document.querySelectorAll(
                         '.quality-overlay-container, .rating-overlay-container, '
-                        + '.genre-overlay-container, .language-overlay-container'
+                        + '.genre-overlay-container, .language-overlay-container, '
+                        + '.age-rating-overlay-container'
                     ).forEach(function (el) { el.remove(); });
                     document.querySelectorAll(
                         '[data-je-quality-tagged], [data-je-rating-tagged], '
-                        + '[data-je-genre-tagged], [data-je-language-tagged]'
+                        + '[data-je-genre-tagged], [data-je-language-tagged], '
+                        + '[data-je-age-rating-tagged]'
                     ).forEach(function (el) {
                         delete el.dataset.jeQualityTagged;
                         delete el.dataset.jeRatingTagged;
                         delete el.dataset.jeGenreTagged;
                         delete el.dataset.jeLanguageTagged;
+                        delete el.dataset.jeAgeRatingTagged;
                     });
                 } catch (domErr) {
                     console.warn(`${logPrefix} overlay cleanup during invalidate failed:`, domErr);

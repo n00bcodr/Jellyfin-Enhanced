@@ -196,6 +196,15 @@
         tag.appendChild(icon);
         tag.appendChild(text);
         container.appendChild(tag);
+
+        // This chip lands after the pipeline's one-shot corner-stacking pass
+        // (the review lookup is async) and the bottom-anchored container grows
+        // upward as it does, so re-measure any overlay sharing this corner
+        // (e.g. the age rating badge) before it overlaps the taller stack.
+        const host = container.parentElement;
+        if (host && typeof JE.core?.tagRenderer?.applyCornerStacking === 'function') {
+            JE.core.tagRenderer.applyCornerStacking(host);
+        }
     }
 
     /**
@@ -305,6 +314,10 @@
             if (!container) {
                 container = document.createElement('div');
                 container.className = 'rating-overlay-container';
+                // Same corner marker commitOverlay() sets, so corner stacking
+                // treats a review-only container like any other rating overlay.
+                const pos = JE.core?.tagRenderer?.resolvePosition?.('ratingTagsPosition', 'RatingTagsPosition', 'bottom-right');
+                if (pos) container.dataset.jeCorner = pos.pos;
                 containerOrEl.appendChild(container);
             }
         }

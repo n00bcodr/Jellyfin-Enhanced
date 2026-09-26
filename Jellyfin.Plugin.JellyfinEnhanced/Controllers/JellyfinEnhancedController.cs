@@ -7423,6 +7423,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // the client) so batch mode matches the server tag cache, which does
             // the same in TagCacheService.BuildEntryForItem. Deliberately NOT
             // spoiler-stripped: an age rating reveals nothing about the plot.
+            // A batch is typically one series' worth of episodes, so the parent
+            // lookup is memoized per request rather than repeated per item.
+            var seriesRatingMemo = new Dictionary<Guid, string?>();
             string? ResolveTagDataOfficialRating(BaseItem tagItem)
             {
                 if (!string.IsNullOrWhiteSpace(tagItem.OfficialRating))
@@ -7441,8 +7444,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return null;
                 }
 
-                var parentRating = _libraryManager.GetItemById<BaseItem>(parentSeriesId)?.OfficialRating;
-                return string.IsNullOrWhiteSpace(parentRating) ? null : parentRating;
+                if (!seriesRatingMemo.TryGetValue(parentSeriesId, out var parentRating))
+                {
+                    parentRating = _libraryManager.GetItemById<BaseItem>(parentSeriesId)?.OfficialRating;
+                    parentRating = string.IsNullOrWhiteSpace(parentRating) ? null : parentRating;
+                    seriesRatingMemo[parentSeriesId] = parentRating;
+                }
+
+                return parentRating;
             }
 
             // Spoiler Guard short-circuit: when the master switch + any tag-relevant
