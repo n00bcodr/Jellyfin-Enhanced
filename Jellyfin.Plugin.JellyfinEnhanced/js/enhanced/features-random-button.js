@@ -72,8 +72,9 @@
         }
         const pinnedId = JE.currentSettings.randomSourceId;
         if (pinnedId) {
-            // Jellyfin answers an unknown id with the user's root folder rather
-            // than a 404, so a deleted playlist shows up as the wrong type.
+            // Validate by type rather than by "did the request succeed": a
+            // deleted id 404s, but the all-zero id answers with the user's root
+            // folder, and neither is something we should draw from.
             const item = await fetchItem(pinnedId);
             if (item && CONTAINER_TYPES.includes(item.Type)) return item;
             JE.toast(JE.t('toast_random_source_missing'), 3000);
@@ -126,7 +127,7 @@
             const container = await resolveSourceContainer();
             let items = container ? filterUnwatched(await fetchCandidates(userId, container.Id)) : [];
             if (container && items.length === 0) {
-                JE.toast(JE.t('toast_random_source_empty', { name: container.Name }), 3000);
+                JE.toast(JE.t('toast_random_source_empty', { name: JE.escapeHtml(container.Name) }), 3000);
             }
             if (items.length === 0) {
                 const libraryItems = await fetchCandidates(userId, null);
