@@ -589,12 +589,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool LanguageTagsPriorityStrict { get; set; }
         [AnalyticsInclude]
         public string RatingTagsPosition { get; set; } = "bottom-right";
-        /// <summary>
-        /// Where rating tags are allowed to render. The item-type switches gate
-        /// cards by their Jellyfin type; the two home-row switches additionally
-        /// gate any card shown in the Continue Watching / Next Up rows. All
-        /// default to true so existing installs render exactly as before.
-        /// </summary>
+        // Where rating tags are allowed to render. The item-type switches gate
+        // cards by their Jellyfin type; the two home-row switches additionally
+        // gate any card shown in the Continue Watching / Next Up rows. All
+        // default to true so existing installs render exactly as before.
         public bool RatingTagsOnMovies { get; set; } = true;
         public bool RatingTagsOnSeries { get; set; } = true;
         public bool RatingTagsOnSeasons { get; set; } = true;

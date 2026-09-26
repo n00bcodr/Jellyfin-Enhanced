@@ -38,6 +38,7 @@
         continuewatching: { userKey: 'ratingTagsOnContinueWatching', pluginKey: 'RatingTagsOnContinueWatching' },
         nextup: { userKey: 'ratingTagsOnNextUp', pluginKey: 'RatingTagsOnNextUp' },
     };
+    const HOME_ROW_SCOPE_LIST = Object.values(HOME_ROW_SCOPES);
 
     /**
      * Resolve one scope switch: user override, then admin default, then on.
@@ -66,7 +67,11 @@
         const itemType = el.closest('[data-type]')?.getAttribute('data-type') || type || null;
         const typeScope = itemType ? ITEM_TYPE_SCOPES[itemType] : null;
         if (typeScope && !isScopeEnabled(typeScope)) return true;
-        if (typeof JE.detectCardRowSurface === 'function') {
+        // Row detection classifies the card's home section and, on native
+        // rows, primes the user's home-section preferences with a fetch, so
+        // only pay for it once a row switch is actually off.
+        if (typeof JE.detectCardRowSurface === 'function'
+            && HOME_ROW_SCOPE_LIST.some((scope) => !isScopeEnabled(scope))) {
             const rowScope = HOME_ROW_SCOPES[JE.detectCardRowSurface(el)];
             if (rowScope && !isScopeEnabled(rowScope)) return true;
         }
