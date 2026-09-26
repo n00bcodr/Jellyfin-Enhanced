@@ -7251,6 +7251,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             stripped.Genres = System.Array.Empty<string>();
                             stripped.AudioLanguages = null;
+                            stripped.PartialAudioLanguages = null;
                             stripped.StreamData = null;
                         }
                         if (stripRatingsEnabled)

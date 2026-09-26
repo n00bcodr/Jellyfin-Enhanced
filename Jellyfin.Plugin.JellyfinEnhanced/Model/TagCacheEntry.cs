@@ -20,6 +20,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public float? CommunityRating { get; set; }
         public float? CriticRating { get; set; }
         public string[]? AudioLanguages { get; set; }
+        /// <summary>
+        /// For Series/Season: the subset of <see cref="AudioLanguages"/> that is
+        /// missing from at least one episode. <see cref="AudioLanguages"/> is the
+        /// union across all episodes, so a language absent from this list is on
+        /// every episode ("full-series" language). Null for every other item type.
+        /// </summary>
+        public string[]? PartialAudioLanguages { get; set; }
         public TagStreamData? StreamData { get; set; }
         public long LastUpdated { get; set; }
         // Series ID in N format (lowercase). Set for Episodes and Seasons, null
@@ -63,6 +70,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && NullableFloatEquals(a.CommunityRating, b.CommunityRating)
                 && NullableFloatEquals(a.CriticRating, b.CriticRating)
                 && SequencesEqual(a.AudioLanguages, b.AudioLanguages)
+                && SequencesEqual(a.PartialAudioLanguages, b.PartialAudioLanguages)
                 && TagStreamData.ContentEquals(a.StreamData, b.StreamData)
                 && a.SeriesId == b.SeriesId;
         }
@@ -115,6 +123,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             CommunityRating = CommunityRating,
             CriticRating = CriticRating,
             AudioLanguages = AudioLanguages,
+            PartialAudioLanguages = PartialAudioLanguages,
             StreamData = StreamData,
             LastUpdated = LastUpdated,
             SeriesId = SeriesId,

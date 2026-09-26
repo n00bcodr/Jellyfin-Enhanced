@@ -13,6 +13,7 @@ using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Globalization;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
@@ -25,7 +26,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     {
         private readonly ILibraryManager _libraryManager;
         private readonly IApplicationPaths _applicationPaths;
+        private readonly ILocalizationManager _localization;
         private readonly Logger _logger;
+
+        // Memo for LanguageIdentity: a library uses a few dozen distinct codes,
+        // and the culture lookup behind it is a linear scan.
+        private readonly ConcurrentDictionary<string, string> _languageIdentities = new(StringComparer.Ordinal);
         private volatile ConcurrentDictionary<string, TagCacheEntry> _cache = new();
         private readonly object _saveLock = new();
 
@@ -69,8 +75,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Matroska LanguageBCP47/LanguageIETF audio languages instead of the
         // region-less values exposed by Jellyfin/FFmpeg.
         // v4 picks a real episode with streams as the Series/Season tag source, requires actual audio/video streams and searches beyond the first page.
+        // v5 makes Series/Season AudioLanguages the union across all episodes and adds PartialAudioLanguages for languages missing from some of them.
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        private const int CurrentCacheSchemaVersion = 4;
+        private const int CurrentCacheSchemaVersion = 5;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -96,10 +103,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             BaseItemKind.Video,
         };
 
-        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, Logger logger)
+        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger)
         {
             _libraryManager = libraryManager;
             _applicationPaths = applicationPaths;
+            _localization = localizationManager;
             _logger = logger;
 
             // The service is a DI singleton; expose it so the plugin's
@@ -237,6 +245,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var newCache = new ConcurrentDictionary<string, TagCacheEntry>();
             var processed = 0;
 
+            // Per-episode audio-language memo for the Series/Season scans (see
+            // BuildEntryForItem). Small — an id and a few short strings per
+            // episode — and dropped with this frame when the build ends.
+            var episodeLanguages = new Dictionary<Guid, string[]?>();
+
             foreach (var page in HydrateInPages(allIds, cancellationToken))
             {
                 // Stop promptly if the admin turned the cache off (or the server
@@ -252,7 +265,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var entry = BuildEntryForItem(item);
+                    var entry = BuildEntryForItem(item, episodeLanguages);
                     if (entry != null)
                     {
                         var key = item.Id.ToString("N").ToLowerInvariant();
@@ -1301,9 +1314,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// Build a TagCacheEntry for a single library item.
-        /// For Series/Season, resolves first-episode data server-side.
+        /// For Series/Season, resolves first-episode data server-side and
+        /// aggregates audio languages across all episodes.
+        /// <paramref name="episodeLanguages"/> is an optional per-episode memo
+        /// (id → audio languages, null for an episode without streams) shared
+        /// across one full build: every episode's streams are read once whether
+        /// its own entry or a parent's scan gets there first, instead of once
+        /// for the episode, once for its season and once for its series.
         /// </summary>
-        private TagCacheEntry? BuildEntryForItem(BaseItem item)
+        private TagCacheEntry? BuildEntryForItem(BaseItem item, Dictionary<Guid, string[]?>? episodeLanguages = null)
         {
             try
             {
@@ -1336,7 +1355,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (isContainer)
                 {
-                    var firstEp = GetFirstEpisode(item);
+                    var (firstEp, languages, partialLanguages) = ScanContainerEpisodes(item, episodeLanguages);
                     if (firstEp != null)
                     {
                         if (entry.Genres == null || entry.Genres.Length == 0)
@@ -1344,7 +1363,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             entry.Genres = firstEp.Genres;
                         }
 
-                        var (streams, sources, languages) = ExtractMediaData(firstEp);
+                        // Quality tags still describe one representative episode;
+                        // language tags cover every episode (see ScanContainerEpisodes).
+                        var (streams, sources, _) = ExtractMediaData(firstEp);
                         entry.StreamData = new TagStreamData
                         {
                             Streams = streams,
@@ -1353,6 +1374,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             ItemPath = string.IsNullOrEmpty(firstEp.Path) ? null : Path.GetFileName(firstEp.Path)
                         };
                         entry.AudioLanguages = languages;
+                        entry.PartialAudioLanguages = partialLanguages;
                     }
 
                     if (kind == BaseItemKind.Season && entry.CommunityRating == null)
@@ -1395,6 +1417,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         ItemPath = string.IsNullOrEmpty(item.Path) ? null : Path.GetFileName(item.Path)
                     };
                     entry.AudioLanguages = languages;
+
+                    if (kind == BaseItemKind.Episode && episodeLanguages != null)
+                    {
+                        // Same "has streams" rule as ExtractAudioLanguages: the
+                        // stream list only ever holds audio/video streams.
+                        episodeLanguages[item.Id] = streams.Count > 0 ? languages : null;
+                    }
 
                     if (kind == BaseItemKind.Episode && entry.CommunityRating == null)
                     {
@@ -1465,13 +1494,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             DisplayTitle = s.DisplayTitle
                         });
 
-                        if (s.Type == MediaStreamType.Audio && !string.IsNullOrEmpty(effectiveLanguage))
+                        if (s.Type == MediaStreamType.Audio && NormalizeAudioLanguage(effectiveLanguage) is { } lang)
                         {
-                            var lang = effectiveLanguage.ToLowerInvariant();
-                            if (lang != "und" && lang != "root")
-                            {
-                                languages.Add(lang);
-                            }
+                            languages.Add(lang);
                         }
                     }
                 }
@@ -1482,6 +1507,150 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             return (streams, sources, languages.ToArray());
+        }
+
+        /// <summary>
+        /// Lower-cases a stream language for the tag cache, or returns null when
+        /// the track carries no usable language (empty, "und", "root").
+        /// </summary>
+        private static string? NormalizeAudioLanguage(string? language)
+        {
+            if (string.IsNullOrEmpty(language)) return null;
+            var lang = language.ToLowerInvariant();
+            return lang == "und" || lang == "root" ? null : lang;
+        }
+
+        /// <summary>
+        /// Audio languages of one episode, or null when it has no audio/video
+        /// streams at all (unprobed file, disc stub). Same normalization as
+        /// <see cref="ExtractMediaData"/>, without building the stream/source
+        /// lists the container scan doesn't need.
+        /// </summary>
+        private static string[]? ExtractAudioLanguages(BaseItem item)
+        {
+            var hasStreams = false;
+            var languages = new HashSet<string>();
+            foreach (var source in item.GetMediaSources(false))
+            {
+                foreach (var resolved in MediaStreamLanguageResolver.Resolve(source, item.Path))
+                {
+                    var type = resolved.Stream.Type;
+                    if (type != MediaStreamType.Video && type != MediaStreamType.Audio) continue;
+
+                    hasStreams = true;
+                    if (type == MediaStreamType.Audio && NormalizeAudioLanguage(resolved.Language) is { } lang)
+                    {
+                        languages.Add(lang);
+                    }
+                }
+            }
+
+            return hasStreams ? languages.ToArray() : null;
+        }
+
+        /// <summary>
+        /// One pass over a Series/Season's episodes: picks the representative
+        /// episode (same rule as <see cref="TagEpisodeSelector.GetFirstEpisode"/>)
+        /// and aggregates audio languages across every episode with streams.
+        /// Returns the union as <c>Languages</c> and, as <c>Partial</c>, the
+        /// languages missing from at least one episode — so the card can show a
+        /// dub that only covers part of the show differently from one that covers
+        /// all of it (#557).
+        /// Specials don't count against a Series' full languages (an untranslated
+        /// special shouldn't demote a complete dub) unless the container is the
+        /// Specials season itself or the series has nothing but specials. Episodes
+        /// whose audio has no language tag are neutral: an untagged track says
+        /// nothing about which language it is, so it neither adds to the union nor
+        /// marks every other language as partial.
+        /// The "on every episode" test compares languages by
+        /// <see cref="LanguageIdentity"/>, not by raw code: one season tagged
+        /// "eng" and the next "en" (or "fr-FR" vs "fre") is still one complete
+        /// English/French dub, and that is the question the card answers.
+        /// <paramref name="episodeLanguages"/> is the full build's per-episode
+        /// memo (see <see cref="BuildEntryForItem"/>); without it every episode's
+        /// streams are read here.
+        /// </summary>
+        private (BaseItem? FirstEpisode, string[] Languages, string[] Partial) ScanContainerEpisodes(
+            BaseItem container,
+            Dictionary<Guid, string[]?>? episodeLanguages)
+        {
+            // Union keeps insertion order (deterministic for a stable library), so
+            // the order-sensitive ContentEquals compare stays no-op on re-saves.
+            var union = new HashSet<string>();
+            HashSet<string>? commonRegular = null;
+            HashSet<string>? commonSpecial = null;
+            try
+            {
+                var firstEp = TagEpisodeSelector.ScanEpisodes(_libraryManager, container, null, episode =>
+                {
+                    if (episodeLanguages == null || !episodeLanguages.TryGetValue(episode.Id, out var languages))
+                    {
+                        languages = ExtractAudioLanguages(episode);
+                        if (episodeLanguages != null) episodeLanguages[episode.Id] = languages;
+                    }
+
+                    if (languages == null) return false; // no streams: not a tag source
+                    if (languages.Length == 0) return true; // streams but untagged audio: neutral
+
+                    union.UnionWith(languages);
+                    var identities = new HashSet<string>(languages.Select(LanguageIdentity));
+                    var isSpecial = episode.ParentIndexNumber == 0 && container is not MediaBrowser.Controller.Entities.TV.Season;
+                    if (isSpecial) commonSpecial = Intersect(commonSpecial, identities);
+                    else commonRegular = Intersect(commonRegular, identities);
+                    return true;
+                }, stopAtFirstRegular: false);
+
+                var full = commonRegular ?? commonSpecial;
+                var partial = full == null
+                    ? union.ToArray()
+                    : union.Where(lang => !full.Contains(LanguageIdentity(lang))).ToArray();
+                return (firstEp, union.ToArray(), partial);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[TagCache] Failed to scan episodes for {container.Id}: {ex.Message}");
+                return (null, Array.Empty<string>(), Array.Empty<string>());
+            }
+
+            // Running intersection: the first episode seeds it, later ones narrow it.
+            static HashSet<string> Intersect(HashSet<string>? common, HashSet<string> languages)
+            {
+                if (common == null) return new HashSet<string>(languages);
+                common.IntersectWith(languages);
+                return common;
+            }
+        }
+
+        /// <summary>
+        /// Base-language identity of a stream language code, for deciding whether
+        /// two episodes carry "the same" dub. Files are tagged inconsistently —
+        /// ISO 639-2 from Jellyfin's probe ("eng", "ger"/"deu") next to Matroska
+        /// BCP-47 ("en", "de-DE") — so the base is mapped through Jellyfin's
+        /// culture table to its two-letter code and the region subtag is dropped.
+        /// Unknown codes fall back to their lower-cased base so they still compare
+        /// consistently with themselves.
+        /// </summary>
+        private string LanguageIdentity(string code)
+        {
+            return _languageIdentities.GetOrAdd(code, static (raw, localization) =>
+            {
+                var dash = raw.IndexOf('-');
+                var baseCode = (dash > 0 ? raw[..dash] : raw).ToLowerInvariant();
+                try
+                {
+                    var culture = localization.FindLanguageInfo(baseCode);
+                    if (!string.IsNullOrEmpty(culture?.TwoLetterISOLanguageName))
+                    {
+                        return culture.TwoLetterISOLanguageName.ToLowerInvariant();
+                    }
+                }
+                catch
+                {
+                    // A lookup failure only costs canonicalization for this code.
+                }
+
+                return baseCode;
+            }, _localization);
         }
 
         /// <summary>
@@ -1506,19 +1675,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 yield return _libraryManager.GetItemList(new InternalItemsQuery { ItemIds = pageIds });
-            }
-        }
-
-        private BaseItem? GetFirstEpisode(BaseItem container)
-        {
-            try
-            {
-                return TagEpisodeSelector.GetFirstEpisode(_libraryManager, container);
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"[TagCache] Failed to get first episode for {container.Id}: {ex.Message}");
-                return null;
             }
         }
 
