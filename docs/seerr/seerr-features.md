@@ -90,7 +90,7 @@ Browse and discover content by various criteria.
 #### Available Discovery Types
 
 - **Genre Discovery** - Browse by genre (Action, Comedy, etc.)
-- **Network Discovery** - Browse by network (Netflix, HBO, etc.)
+- **Network Discovery** - Browse by studio or network (Netflix, HBO, Marvel Studios, etc.). A studio's movies are shown beside the series it produced and a network's series beside its own movies, with an All / Movies / Series toggle whenever both exist; the Recommendations page's Studios and Networks tiles open the same kind of page. Series by studio come from TMDB rather than Seerr, so that half needs a TMDB API key and its cards carry no request status
 - **Person Discovery** - Browse by actor, director, crew
 - **Tag Discovery** - Browse by custom tags
 
