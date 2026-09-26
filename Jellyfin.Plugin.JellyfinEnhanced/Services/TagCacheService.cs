@@ -1463,17 +1463,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         }
                     }
 
-                    // Age rating: a Season rarely carries its own, so fall back to
-                    // the Series (same shape as the CommunityRating fallback above).
-                    if (kind == BaseItemKind.Season && entry.OfficialRating == null)
-                    {
-                        var series = GetParentSeries(item);
-                        if (!string.IsNullOrWhiteSpace(series?.OfficialRating))
-                        {
-                            entry.OfficialRating = series.OfficialRating;
-                        }
-                    }
-
                     // For Season: store parent series TMDB ID + season number for user review key
                     if (kind == BaseItemKind.Season && item is MediaBrowser.Controller.Entities.TV.Season season)
                     {
@@ -1481,6 +1470,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (series?.ProviderIds?.TryGetValue("Tmdb", out var seriesTmdb) == true)
                             entry.SeriesTmdbId = seriesTmdb;
                         entry.SeasonNumber = season.IndexNumber;
+                        // Age rating: a Season rarely carries its own, so fall back to
+                        // the Series (same shape as the CommunityRating fallback above).
+                        if (entry.OfficialRating == null && !string.IsNullOrWhiteSpace(series?.OfficialRating))
+                        {
+                            entry.OfficialRating = series.OfficialRating;
+                        }
                     }
                 }
                 else if (kind == BaseItemKind.BoxSet)
@@ -1512,16 +1507,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         }
                     }
 
-                    // Age rating: Episodes inherit the Series rating when they have none.
-                    if (kind == BaseItemKind.Episode && entry.OfficialRating == null)
-                    {
-                        var series = GetParentSeries(item);
-                        if (!string.IsNullOrWhiteSpace(series?.OfficialRating))
-                        {
-                            entry.OfficialRating = series.OfficialRating;
-                        }
-                    }
-
                     // For Episode: store parent series TMDB ID + season/episode numbers for user review key
                     if (kind == BaseItemKind.Episode && item is MediaBrowser.Controller.Entities.TV.Episode ep)
                     {
@@ -1530,6 +1515,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             entry.SeriesTmdbId = seriesTmdb;
                         entry.SeasonNumber = ep.ParentIndexNumber;
                         entry.EpisodeNumber = ep.IndexNumber;
+                        // Age rating: Episodes inherit the Series rating when they have none.
+                        if (entry.OfficialRating == null && !string.IsNullOrWhiteSpace(series?.OfficialRating))
+                        {
+                            entry.OfficialRating = series.OfficialRating;
+                        }
                     }
                 }
 
