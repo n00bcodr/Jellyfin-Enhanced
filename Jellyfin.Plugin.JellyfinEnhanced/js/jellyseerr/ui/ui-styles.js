@@ -371,6 +371,22 @@
             .jellyseerr-modal-button-secondary { background: rgba(71, 85, 105, 0.8); color: #e2e8f0; border: 1px solid rgba(148, 163, 184, 0.2); }
             .jellyseerr-modal-button-secondary:hover { background: rgba(71, 85, 105, 1); border-color: rgba(148, 163, 184, 0.3); }
 
+            /* TVDB match block — shown at the top of the season modal when TMDB has no TVDB id for the show (#653). */
+            .jellyseerr-tvdb-match { display: grid; gap: 12px; margin-bottom: 20px; padding: 16px; background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(251, 191, 36, 0.35); border-radius: 12px; }
+            .jellyseerr-tvdb-match-notice { color: #fcd34d; font-size: 0.9rem; line-height: 1.4; }
+            .jellyseerr-tvdb-match-results { display: grid; gap: 6px; }
+            .jellyseerr-tvdb-match-hint { color: #94a3b8; font-size: 0.85rem; line-height: 1.4; }
+            .jellyseerr-tvdb-match-row { display: grid; grid-template-columns: 46px 1fr; align-items: center; gap: 12px; padding: 10px 12px; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(51, 65, 85, 0.3); border-radius: 8px; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: all 0.2s ease; }
+            .jellyseerr-tvdb-match-row:hover { background: rgba(30, 41, 59, 0.7); border-color: rgba(59, 130, 246, 0.3); }
+            .jellyseerr-tvdb-match-row.selected { background: rgba(79, 70, 229, 0.28); border-color: rgba(129, 140, 248, 0.9); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.35); }
+            .jellyseerr-tvdb-match-row:focus-visible { outline: 2px solid rgba(59, 130, 246, 0.8); outline-offset: 2px; }
+            .jellyseerr-tvdb-match-row img { width: 100%; height: 69px; object-fit: cover; border-radius: 4px; background: rgba(15, 23, 42, 0.6); }
+            .jellyseerr-tvdb-match-row .title { font-weight: 600; color: #e2e8f0; font-size: 0.95rem; }
+            .jellyseerr-tvdb-match-row .meta { font-size: 0.8rem; color: #94a3b8; }
+            .jellyseerr-tvdb-match-row .overview { font-size: 0.8rem; color: #94a3b8; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+            .jellyseerr-tvdb-match .jellyseerr-form-group input[type="number"] { box-sizing: border-box; -moz-appearance: textfield; }
+            .jellyseerr-tvdb-match .jellyseerr-form-group input::-webkit-outer-spin-button, .jellyseerr-tvdb-match .jellyseerr-form-group input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
             /* Quota chip — shown above request modals when a per-user limit applies. */
             .jellyseerr-quota-chip { padding: 12px 16px; margin-bottom: 16px; background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 10px; color: #cbd5e1; font-size: 0.9rem; font-weight: 500; line-height: 1.4; display: flex; flex-direction: column; gap: 4px; }
             .jellyseerr-quota-chip-warning { background: rgba(180, 83, 9, 0.18); border-color: rgba(251, 146, 60, 0.45); color: #fdba74; }

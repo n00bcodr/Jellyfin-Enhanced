@@ -59,6 +59,16 @@ Search, request, and discover media directly from Jellyfin using your Seerr inst
 
     In More Info modal, TV actions use **Request More** as the primary action, with **Request in 4K** in the dropdown when 4K is requestable.
 
+#### Series without a TVDB match:
+
+Some series (often anime and shorts) have no TVDB ID on TMDB, so Seerr cannot hand them to Sonarr. Seerr's own web UI asks you to pick the right match; the plugin does the same inside the season selection modal:
+
+1. A **match series** block appears above the season list, listing the candidates Seerr finds by searching Sonarr for the title.
+2. Click the correct match, or type the series' **TVDB ID** (the number in its thetvdb.com URL) if none of them fit or Seerr has no Sonarr configured.
+3. Request as usual; the request is sent to Seerr with that TVDB ID.
+
+Series that already have a TVDB ID never show this block.
+
 #### Request Status Indicators:
 
 - **Available** - Already in your library
