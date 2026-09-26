@@ -406,6 +406,15 @@
                                             `;
                                         }).join('');
                                     })()}
+                                    <div class="je-quality-audio-lang">
+                                        <label for="qualityTagsAudioLanguageSelect" style="display:block; font-size:12px; color:rgba(255,255,255,0.6); margin:10px 0 4px;">${JE.t('panel_settings_ui_quality_tags_audio_language')}</label>
+                                        <select id="qualityTagsAudioLanguageSelect" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
+                                            <option value="">${JE.t('panel_settings_ui_quality_tags_audio_language_default')}</option>
+                                            <option value="auto">${JE.t('panel_settings_ui_quality_tags_audio_language_auto')}</option>
+                                            <option value="none">${JE.t('panel_settings_ui_quality_tags_audio_language_none')}</option>
+                                        </select>
+                                        <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:4px;">${JE.t('panel_settings_ui_quality_tags_audio_language_desc')}</div>
+                                    </div>
                                 </div>
                             </div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">

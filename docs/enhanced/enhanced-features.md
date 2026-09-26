@@ -553,6 +553,17 @@ Display quality information (4K, HDR, Atmos) directly on posters.
 - **Audio:** ATMOS, DTS-X, TRUEHD, DTS, Dolby Digital+, 7.1, 5.1
 - **Media Stubs:** BluRay, HD DVD, DVD, VHS, HDTV, Physical (for physical media files)
 
+**Preferred audio language:**
+
+By default the sound tag describes the best audio track in the file. Set a
+preferred language (admin default under Media Tags, or per user in the Enhanced
+panel's Quality Tags options) and it describes the best track *in that language*
+instead — a film whose English track is Atmos but whose German dub is plain AC3
+reads AC3 for a German-preferring user. Titles with no audio in the language fall
+back to their best track. Admins can also let the tag follow each user's Jellyfin
+audio language preference, and users can pick "My Jellyfin audio language"
+themselves.
+
 ### Genre Tags
 
 ![Genre tags on posters](../images/genre-tags.png)
