@@ -145,11 +145,18 @@ Found under the **Admin** tab. See [Other Features - Maintenance Mode](other-fea
 | Setting | Default | Description |
 |---|---|---|
 | **Enable Maintenance Mode** | Off | Applies the selected action to affected users immediately on save. Disabling restores everyone automatically |
-| **Login Page Banner Message** | *(empty)* | Plain-text banner shown on the login and home pages |
-| **Active Session Notification** | *(empty)* | Popup sent to anyone currently watching, reaching all client types |
+| **Duration (minutes)** | 0 | 0 = until turned off. Otherwise maintenance ends itself after this long, the banner counts down, and the toggle switches off automatically |
+| **Login Page Banner Message** | *(empty)* | Plain-text banner shown on the login and home pages. Supports `{countdown}` and `{ends_at}` |
+| **Active Session Notification** | *(empty)* | Popup sent to anyone currently watching, reaching all client types. Same tokens |
+| **Remind on playback start** | Off | Re-sends the notification (with time remaining) to affected non-admin users whenever they start playback; at most once per 5 minutes per session |
 | **Disable user accounts** | On | Affected users cannot log in until maintenance ends |
 | **Disable remote connections** | Off | Blocks affected users from outside the local network; LAN access still works |
-| **Affected Users** | All non-admin users | Or select specific users from the list |
+| **Affected Users** | All non-admin users | Or select specific users from the list. Shared with the scheduled window |
+| **Enable daily maintenance window** | Off | Turns maintenance on/off automatically every day between the two times below |
+| **Start time** / **End time** | 00:00 / 08:00 | Server local time; an end earlier than the start crosses midnight |
+| **Scheduled Banner Message** | Library-updating text with `{countdown}` | Banner shown during the window |
+| **Scheduled Session Notification** | Library-updating text | Popup sent when the window starts (and on playback start when reminders are on) |
+| **Scheduled Action** | None (banner only) | Disable accounts / remote connections during the window |
 
 !!! note
     Administrators are never affected by either action, regardless of the Affected Users selection.

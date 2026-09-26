@@ -542,6 +542,9 @@ Puts up a login-page banner and optionally locks non-admin users out while you w
       - **Disable user accounts** - they cannot log in at all until maintenance ends
       - **Disable remote connections** - blocks access from outside the local network; LAN access still works
 4. Scopes the action to **all non-admin users**, or to a specific hand-picked selection.
+5. Optionally ends by itself after a set **Duration**, with a live countdown in the banner.
+6. Optionally **reminds** affected users on every playback start (any client) with the time remaining.
+7. Optionally runs on a **daily schedule** (e.g. 00:00-08:00 while nightly scans run) with its own message and action.
 
 ### Setup
 
@@ -551,10 +554,32 @@ Puts up a login-page banner and optionally locks non-admin users out while you w
 4. Optionally write an **Active Session Notification** (sent as a popup to anyone currently watching)
 5. Choose an **Action**: disable accounts, disable remote connections, both, or neither (banner-only)
 6. Choose **Affected Users**: all non-admin users, or select specific users from the list
-7. Check **"Enable Maintenance Mode"**
-8. Click **Save**
+7. Optionally set a **Duration** in minutes (0 = until you turn it off)
+8. Check **"Enable Maintenance Mode"**
+9. Click **Save**
 
 Turning the toggle back off restores every affected user's account/remote access automatically - there's nothing to manually undo.
+
+### Countdown and message tokens
+
+Both message fields understand two tokens:
+
+- `{countdown}` - time remaining, e.g. `1h 05m` or `12m`
+- `{ends_at}` - the end time (local time of the viewer for the banner, server time in popups)
+
+When maintenance has a known end (a duration or a scheduled window) and a message contains no `{countdown}` token, the time remaining is appended automatically. The banner refreshes every 15 seconds and removes itself when maintenance ends. With a duration set, the **Enable Maintenance Mode** toggle also switches itself off when the time is up. Re-saving the settings page with the same duration keeps the running clock; changing the number restarts it.
+
+### Reminders on playback start
+
+Check **Remind on playback start** to re-send the Active Session Notification (with the time remaining) to an affected non-admin user each time they start playing something, on any client type. Reminders are sent at most once every 5 minutes per session. This is meant for the "warn, don't lock out" setups (action = none or remote only) - a user whose account is disabled never gets as far as playback.
+
+### Scheduled window
+
+Check **Enable daily maintenance window** and set a **Start time** and **End time** (server local time; an end earlier than the start crosses midnight). Every day, inside that window, maintenance mode turns itself on with the **Scheduled Banner Message**, **Scheduled Session Notification** and **Scheduled Action**, and turns itself off again at the end. The **Affected Users** selection is shared with the manual settings. Sessions active when the window opens get the notification as a popup.
+
+- The manual **Enable Maintenance Mode** toggle takes precedence: while it is on, the schedule does nothing, and saving unrelated settings never ends a running scheduled window.
+- To end a scheduled window early, untick **Enable daily maintenance window** and save.
+- Users already browsing see the banner on their next page load; the popup notification reaches them immediately.
 
 ---
 

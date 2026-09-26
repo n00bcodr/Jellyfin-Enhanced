@@ -346,11 +346,50 @@
     }
 
     /**
-     * Injects a maintenance banner at the top of the page.
+     * Formats the time left until maintenance ends as a short string ("1h 05m", "12m").
+     * Minutes are rounded up so the last minute never reads "0m".
+     * @param {number} msRemaining
+     * @returns {string}
      */
-    function injectMaintenanceBanner(message) {
-        if (document.getElementById('je-maintenance-banner')) return;
+    function formatMaintenanceCountdown(msRemaining) {
+        const totalMinutes = Math.max(0, Math.ceil(msRemaining / 60000));
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        return h > 0 ? h + 'h ' + String(m).padStart(2, '0') + 'm' : m + 'm';
+    }
+
+    /**
+     * Resolves the banner text: replaces the {countdown} (time remaining) and {ends_at}
+     * (local end time) tokens, appending the time remaining when an end time is known but
+     * the message carries no {countdown} token. Mirrors MaintenanceModeService.FormatMessage.
+     * Runs pre-login (no translations loaded yet), hence the literal English fallbacks.
+     * @param {string} message
+     * @param {Date|null} endsAt
+     * @returns {string}
+     */
+    function formatMaintenanceText(message, endsAt) {
         const text = (message || '').trim() || 'This server is currently undergoing maintenance. Please try again later.';
+        if (!endsAt) {
+            return text.replace(/\{countdown\}/gi, '').replace(/\{ends_at\}/gi, '').trim();
+        }
+        const countdown = formatMaintenanceCountdown(endsAt.getTime() - Date.now());
+        const endsAtText = endsAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const hasToken = /\{countdown\}/i.test(text);
+        const out = text.replace(/\{countdown\}/gi, countdown).replace(/\{ends_at\}/gi, endsAtText).trim();
+        return hasToken ? out : out + ' Time remaining: ' + countdown + '.';
+    }
+
+    /**
+     * Injects a maintenance banner at the top of the page. With an end time the banner counts
+     * down (refreshed every 15s) and removes itself once maintenance is over.
+     * @param {string} message
+     * @param {string|null} [endsAtIso] UTC ISO timestamp from public-config, or null when open-ended.
+     */
+    function injectMaintenanceBanner(message, endsAtIso) {
+        if (document.getElementById('je-maintenance-banner')) return;
+        const endsAt = endsAtIso && !isNaN(Date.parse(endsAtIso)) ? new Date(endsAtIso) : null;
+        if (endsAt && endsAt.getTime() <= Date.now()) return;
+        const text = formatMaintenanceText(message, endsAt);
         const banner = document.createElement('div');
         banner.id = 'je-maintenance-banner';
         banner.style.cssText = [
@@ -379,6 +418,18 @@
             ].join('\n');
             document.head.appendChild(style);
         });
+        if (!endsAt) return;
+        const tick = setInterval(function() {
+            if (!document.body.contains(banner)) { clearInterval(tick); return; }
+            if (endsAt.getTime() <= Date.now()) {
+                clearInterval(tick);
+                banner.remove();
+                const style = document.getElementById('je-maintenance-banner-style');
+                if (style) style.remove();
+                return;
+            }
+            banner.textContent = formatMaintenanceText(message, endsAt);
+        }, 15000);
     }
 
     /**
@@ -399,7 +450,7 @@
         }).then((config) => {
             // Show maintenance banner for all users (admins can dismiss it mentally)
             if (config?.MaintenanceModeEnabled === true) {
-                injectMaintenanceBanner(config.MaintenanceModeMessage);
+                injectMaintenanceBanner(config.MaintenanceModeMessage, config.MaintenanceModeEndsAt || null);
             }
 
             // Only load login image if enabled (default to false)
