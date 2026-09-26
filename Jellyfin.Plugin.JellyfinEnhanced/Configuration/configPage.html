@@ -588,6 +588,11 @@
                             <div class="je-setting-description" data-desc-for="randomIncludeShows">
                                 <div class="fieldDescription">Include TV Shows in the random pool.</div>
                             </div>
+
+                            <div class="checkboxContainer"><label><input id="randomScopeCurrentContainer" is="emby-checkbox" type="checkbox"/><span>Scope to the current playlist or collection</span></label></div>
+                            <div class="je-setting-description" data-desc-for="randomScopeCurrentContainer">
+                                <div class="fieldDescription">On a playlist or collection page, the Random button picks from that container's items instead of the whole library. Users can also pin a playlist or collection as their permanent source in the Enhanced panel.</div>
+                            </div>
                         </div>
                     </fieldset>
 
@@ -5361,6 +5366,7 @@
                 document.querySelector('#randomIncludeMovies').checked = config.RandomIncludeMovies;
                 document.querySelector('#randomIncludeShows').checked = config.RandomIncludeShows;
                 document.querySelector('#randomUnwatchedOnly').checked = config.RandomUnwatchedOnly;
+                document.querySelector('#randomScopeCurrentContainer').checked = config.RandomScopeCurrentContainer;
                 document.querySelector('#showWatchProgress').checked = config.ShowWatchProgress;
                 document.querySelector('#watchProgressDefaultMode').value = (config.WatchProgressDefaultMode || 'percentage');
                 document.querySelector('#watchProgressTimeFormat').value = (config.WatchProgressTimeFormat || 'hours');
@@ -5870,6 +5876,7 @@
             config.RandomIncludeMovies = document.querySelector('#randomIncludeMovies').checked;
             config.RandomIncludeShows = document.querySelector('#randomIncludeShows').checked;
             config.RandomUnwatchedOnly = document.querySelector('#randomUnwatchedOnly').checked;
+            config.RandomScopeCurrentContainer = document.querySelector('#randomScopeCurrentContainer').checked;
             config.ShowWatchProgress = document.querySelector('#showWatchProgress').checked;
             config.WatchProgressDefaultMode = document.querySelector('#watchProgressDefaultMode').value;
             config.WatchProgressTimeFormat = document.querySelector('#watchProgressTimeFormat').value;
@@ -7347,7 +7354,7 @@
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'showUserRatingDash', 'showUserRatingOnPosters'] },
-            { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows'] },
+            { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows', 'randomScopeCurrentContainer'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
             { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag'], noHint: true },
             { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition'], noHint: true },

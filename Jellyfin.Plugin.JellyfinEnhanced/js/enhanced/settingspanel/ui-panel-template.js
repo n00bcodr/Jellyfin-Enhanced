@@ -302,6 +302,15 @@
                                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="randomIncludeMovies" ${JE.currentSettings.randomIncludeMovies ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><span>${JE.t('panel_settings_random_button_movies')}</span></label>
                                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="randomIncludeShows" ${JE.currentSettings.randomIncludeShows ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><span>${JE.t('panel_settings_random_button_shows')}</span></label>
                             </div>
+                            <div style="font-weight:500; margin:16px 0 8px;">${JE.t('panel_settings_random_button_source')}</div>
+                            <div style="padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid ${toggleAccentColor};">
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;"><input type="checkbox" id="randomScopeCurrentContainer" ${JE.currentSettings.randomScopeCurrentContainer ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><div><div style="font-weight:500;">${JE.t('panel_settings_random_button_scope_current')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_random_button_scope_current_desc')}</div></div></label>
+                                <div style="margin-top:12px;">
+                                    <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-bottom:6px;">${JE.t('panel_settings_random_button_source_desc')}</div>
+                                    <!-- Playlists/collections are appended asynchronously in wireMiscSettingsControls -->
+                                    <select id="randomSourceSelect" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;"><option value="">${JE.t('panel_settings_random_button_source_library')}</option></select>
+                                </div>
+                            </div>
                         </div>
                     </section>
                     <section class="je-pane" data-pane="ui">
