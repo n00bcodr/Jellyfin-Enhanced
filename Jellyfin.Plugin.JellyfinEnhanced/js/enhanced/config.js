@@ -109,6 +109,38 @@
             disableAllShortcuts: false, longPress2xEnabled: false, lastOpenedTab: 'shortcuts'
         };
 
+        // Aliases mapping camelCase client settings keys to potential server plugin default keys
+        const pluginDefaultAliases = {
+            selectedStylePresetIndex: ['DefaultSubtitleStyle', 'SelectedStylePresetIndex'],
+            selectedFontSizePresetIndex: ['DefaultSubtitleSize', 'SelectedFontSizePresetIndex'],
+            selectedFontFamilyPresetIndex: ['DefaultSubtitleFont', 'SelectedFontFamilyPresetIndex'],
+            displayLanguage: ['DefaultLanguage', 'DisplayLanguage'],
+            watchProgressMode: ['WatchProgressDefaultMode', 'WatchProgressMode'],
+            watchProgressTimeFormat: ['WatchProgressTimeFormat'],
+            pauseScreenDelaySeconds: ['PauseScreenDelaySeconds']
+        };
+
+        /**
+         * Resolves a default value from pluginDefaults for a given camelCase key.
+         */
+        const getPluginDefault = (key) => {
+            const aliases = pluginDefaultAliases[key] || [];
+            const candidates = [
+                key,
+                key.charAt(0).toUpperCase() + key.slice(1),
+                ...aliases
+            ];
+
+            for (const candidate of candidates) {
+                const value = pluginDefaults[candidate];
+                if (value !== null && value !== undefined) {
+                    return value;
+                }
+            }
+
+            return undefined;
+        };
+
         const mergedSettings = {};
         // Seed with all keys from the stored user settings so that any field not
         // listed in hardcodedDefaults (e.g. fields added in newer plugin versions,
@@ -118,29 +150,35 @@
             mergedSettings[key] = userSettings[key];
         }
         for (const key in hardcodedDefaults) {
-            if (userSettings.hasOwnProperty(key) && userSettings[key] !== null && userSettings[key] !== undefined) {
+            if (Object.prototype.hasOwnProperty.call(userSettings, key) && userSettings[key] !== null && userSettings[key] !== undefined) {
                 // Detect corrupted values (empty arrays or unexpected objects)
                 if (typeof userSettings[key] === 'object' && Array.isArray(userSettings[key]) && userSettings[key].length === 0) {
-                    mergedSettings[key] = pluginDefaults[key] ?? hardcodedDefaults[key];
+                    const fallback = getPluginDefault(key);
+                    mergedSettings[key] = fallback !== undefined ? fallback : hardcodedDefaults[key];
                 } else if (typeof userSettings[key] === 'object' && userSettings[key] !== null && !Array.isArray(userSettings[key])) {
-                    mergedSettings[key] = pluginDefaults[key] ?? hardcodedDefaults[key];
+                    const fallback = getPluginDefault(key);
+                    mergedSettings[key] = fallback !== undefined ? fallback : hardcodedDefaults[key];
                 } else {
                     mergedSettings[key] = userSettings[key];
                 }
-            } else if (pluginDefaults.hasOwnProperty(key) && pluginDefaults[key] !== null && pluginDefaults[key] !== undefined) {
-                mergedSettings[key] = pluginDefaults[key];
             } else {
-                mergedSettings[key] = hardcodedDefaults[key];
+                const pluginVal = getPluginDefault(key);
+                if (pluginVal !== undefined) {
+                    mergedSettings[key] = pluginVal;
+                } else {
+                    mergedSettings[key] = hardcodedDefaults[key];
+                }
             }
         }
 
-        mergedSettings.displayLanguage = userSettings.hasOwnProperty('displayLanguage')
+        mergedSettings.displayLanguage = Object.prototype.hasOwnProperty.call(userSettings, 'displayLanguage')
+            && userSettings.displayLanguage !== null && userSettings.displayLanguage !== undefined
             ? userSettings.displayLanguage
-            : (pluginDefaults.DefaultLanguage || '');
+            : (getPluginDefault('displayLanguage') || '');
         mergedSettings.lastOpenedTab = userSettings.lastOpenedTab || 'shortcuts';
 
-        // Admin default → per-user default (camelCase merge above misses PascalCase from GetPublicConfig). Sticky once explicitly set.
-        if (!userSettings.hasOwnProperty('removeContinueWatchingEnabled')
+        // Admin default → per-user default (handled by getPluginDefault above; preserved for backwards compatibility)
+        if (!Object.prototype.hasOwnProperty.call(userSettings, 'removeContinueWatchingEnabled')
             && pluginDefaults.RemoveContinueWatchingEnabled === true) {
             mergedSettings.removeContinueWatchingEnabled = true;
         }
