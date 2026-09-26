@@ -78,6 +78,15 @@
                         document.querySelectorAll('.rating-overlay-container').forEach(el => el.remove());
                     }
                     requiresRefresh = false;
+                } else if (id === 'ageRatingTagsToggle') {
+                    if (e.target.checked) {
+                        if (typeof JE.initializeAgeRatingTags === 'function') {
+                            JE.initializeAgeRatingTags();
+                        }
+                    } else {
+                        document.querySelectorAll('.age-rating-overlay-container').forEach(el => el.remove());
+                    }
+                    requiresRefresh = false;
                 } else if (id === 'peopleTagsToggle') {
                     if (e.target.checked) {
                         if (typeof JE.initializePeopleTags === 'function') {
@@ -255,6 +264,7 @@
         }
         addSettingToggleListener('languageTagsToggle', 'languageTagsEnabled', 'feature_language_tags', true);
         addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
+        addSettingToggleListener('ageRatingTagsToggle', 'ageRatingTagsEnabled', 'feature_age_rating_tags', true);
         addSettingToggleListener('peopleTagsToggle', 'peopleTagsEnabled', 'feature_people_tags', true);
         addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', false);
         // Live-toggle the body class so hover fade CSS applies immediately (no refresh needed)
@@ -525,6 +535,10 @@
                 } else if (settingKey === 'ratingTagsPosition' && JE.currentSettings.ratingTagsEnabled) {
                     if (typeof JE.reinitializeRatingTags === 'function') {
                         JE.reinitializeRatingTags();
+                    }
+                } else if (settingKey === 'ageRatingTagsPosition' && JE.currentSettings.ageRatingTagsEnabled) {
+                    if (typeof JE.reinitializeAgeRatingTags === 'function') {
+                        JE.reinitializeAgeRatingTags();
                     }
                 }
 

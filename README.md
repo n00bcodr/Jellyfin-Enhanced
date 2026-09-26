@@ -99,6 +99,7 @@ For detailed installation instructions and troubleshooting, see the [Installatio
 - **Genre Tags** - Themed icons for instant genre identification
 - **Language Tags** - Country flags for available audio languages
 - **Rating Tags** - TMDB and Rotten Tomatoes ratings at a glance
+- **Age Rating Tags** - Colour-coded parental ratings (PG-13, TV-MA, FSK 12, ...) on posters
 - **People Tags** - Age and birthplace info for cast members
 
 ### 🔍 Discovery

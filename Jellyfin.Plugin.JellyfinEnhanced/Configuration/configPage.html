@@ -320,6 +320,19 @@
                             </div>
 
                             <div class="je-tag-row">
+                                <div class="checkboxContainer"><label><input id="ageRatingTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Age Rating Tags</span></label></div>
+                                <div class="inputContainer je-tag-position">
+                                    <label class="inputLabel" for="ageRatingTagsPosition">Position</label>
+                                    <select is="emby-select" id="ageRatingTagsPosition" name="ageRatingTagsPosition" class="emby-select">
+                                        <option value="top-left">Top Left</option><option value="top-right">Top Right</option><option value="bottom-left">Bottom Left</option><option value="bottom-right">Bottom Right</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="ageRatingTagsEnabled">
+                                <div class="fieldDescription">Show the age rating (PG-13, TV-MA, FSK 12, ...) as a colour-coded badge on poster cards. Episodes and seasons use their series' rating. Shares the colour scheme of Colored Ratings.</div>
+                            </div>
+
+                            <div class="je-tag-row">
                                 <div class="checkboxContainer"><label><input id="peopleTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable People Tags</span></label></div>
                             </div>
                             <div class="je-setting-description" data-desc-for="peopleTagsEnabled">
@@ -5383,25 +5396,31 @@
                 const gPos = (config.GenreTagsPosition || 'top-right');
                 const lPos = (config.LanguageTagsPosition || 'bottom-left');
                 const rPos = (config.RatingTagsPosition || 'bottom-right');
+                const arPos = (config.AgeRatingTagsPosition || 'bottom-right');
                 const langEnabled = !!config.LanguageTagsEnabled;
                 const ratingEnabled = !!config.RatingTagsEnabled;
+                const ageRatingEnabled = !!config.AgeRatingTagsEnabled;
                 const peopleEnabled = !!config.PeopleTagsEnabled;
                 const showRatingInPlayer = config.ShowRatingInPlayer !== false;
                 const qSel = document.querySelector('#qualityTagsPosition');
                 const gSel = document.querySelector('#genreTagsPosition');
                 const lSel = document.querySelector('#languageTagsPosition');
                 const rSel = document.querySelector('#ratingTagsPosition');
+                const arSel = document.querySelector('#ageRatingTagsPosition');
                 const lChk = document.querySelector('#languageTagsEnabled');
                 const rChk = document.querySelector('#ratingTagsEnabled');
+                const arChk = document.querySelector('#ageRatingTagsEnabled');
                 const rPlayerChk = document.querySelector('#showRatingInPlayer');
                 if (qSel) qSel.value = qPos;
                 if (gSel) gSel.value = gPos;
                 if (lSel) lSel.value = lPos;
                 if (rSel) rSel.value = rPos;
+                if (arSel) arSel.value = arPos;
                 if (lChk) lChk.checked = langEnabled;
                 document.querySelector('#languageTagsPriority').value = config.LanguageTagsPriority || '';
                 document.querySelector('#languageTagsPriorityStrict').checked = config.LanguageTagsPriorityStrict === true;
                 if (rChk) rChk.checked = ratingEnabled;
+                if (arChk) arChk.checked = ageRatingEnabled;
                 const pChk = document.querySelector('#peopleTagsEnabled');
                 if (pChk) pChk.checked = peopleEnabled;
                 if (rPlayerChk) rPlayerChk.checked = showRatingInPlayer;
@@ -5897,6 +5916,7 @@
             config.GenreTagsEnabled = document.querySelector('#genreTagsEnabled').checked;
             config.LanguageTagsEnabled = document.querySelector('#languageTagsEnabled').checked;
             config.RatingTagsEnabled = document.querySelector('#ratingTagsEnabled').checked;
+            config.AgeRatingTagsEnabled = document.querySelector('#ageRatingTagsEnabled').checked;
             config.PeopleTagsEnabled = document.querySelector('#peopleTagsEnabled').checked;
             config.DisableTagsOnSearchPage = document.querySelector('#disableTagsOnSearchPage').checked;
             config.TagsHideOnHover = document.querySelector('#tagsHideOnHover').checked;
@@ -5910,6 +5930,7 @@
             config.LanguageTagsPriority = document.querySelector('#languageTagsPriority').value.trim();
             config.LanguageTagsPriorityStrict = document.querySelector('#languageTagsPriorityStrict').checked;
             config.RatingTagsPosition = document.querySelector('#ratingTagsPosition').value;
+            config.AgeRatingTagsPosition = document.querySelector('#ageRatingTagsPosition').value;
             config.ShowRatingInPlayer = document.querySelector('#showRatingInPlayer').checked;
             config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
@@ -7353,6 +7374,7 @@
             { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition'], noHint: true },
             { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict'], noHint: true },
             { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition'], noHint: true },
+            { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition'], noHint: true },
             { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
             { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },
@@ -8029,7 +8051,7 @@
 
             // Display
             feat('Remove from Continue Watching', bool('removeContinueWatchingEnabled'), 'display', 'Enabled');
-            var tagCount = ['qualityTagsEnabled','genreTagsEnabled','languageTagsEnabled','ratingTagsEnabled','peopleTagsEnabled'].filter(bool).length;
+            var tagCount = ['qualityTagsEnabled','genreTagsEnabled','languageTagsEnabled','ratingTagsEnabled','ageRatingTagsEnabled','peopleTagsEnabled'].filter(bool).length;
             feat('Media Tags', tagCount > 0, 'display', tagCount + ' tag type(s) enabled');
             feat('Random Button', bool('randomButtonEnabled'), 'display', 'Enabled');
 

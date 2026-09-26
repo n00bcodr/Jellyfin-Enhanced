@@ -450,6 +450,20 @@
                                         </div>
                                     </label>
                                 </div>
+                                <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                    <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                            <input type="checkbox" id="ageRatingTagsToggle" ${JE.currentSettings.ageRatingTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                            <div><div style="font-weight:500;">${JE.t('panel_settings_ui_age_rating_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_age_rating_tags_desc')}</div></div>
+                                        </div>
+                                        <div class="position-selector" data-setting="ageRatingTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
+                                            <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
+                                            <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
+                                            <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
+                                            <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
+                                        </div>
+                                    </label>
+                                </div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="peopleTagsToggle" ${JE.currentSettings.peopleTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">

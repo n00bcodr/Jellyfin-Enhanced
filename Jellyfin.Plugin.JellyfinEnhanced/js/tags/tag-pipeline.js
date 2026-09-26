@@ -735,6 +735,7 @@
             'quality-overlay-container': JE.currentSettings?.qualityTagsPosition || JE.pluginConfig?.QualityTagsPosition || 'top-left',
             'language-overlay-container': JE.currentSettings?.languageTagsPosition || JE.pluginConfig?.LanguageTagsPosition || 'bottom-left',
             'rating-overlay-container': JE.currentSettings?.ratingTagsPosition || JE.pluginConfig?.RatingTagsPosition || 'bottom-right',
+            'age-rating-overlay-container': JE.currentSettings?.ageRatingTagsPosition || JE.pluginConfig?.AgeRatingTagsPosition || 'bottom-right',
         };
         const topRightContainers = Object.entries(posMap)
             .filter(([, pos]) => pos === 'top-right')
@@ -802,7 +803,8 @@
                 .je-tag-host .genre-overlay-container,
                 .je-tag-host .quality-overlay-container,
                 .je-tag-host .language-overlay-container,
-                .je-tag-host .rating-overlay-container {
+                .je-tag-host .rating-overlay-container,
+                .je-tag-host .age-rating-overlay-container {
                     contain: layout style;
                     pointer-events: none;
                     z-index: auto !important;
