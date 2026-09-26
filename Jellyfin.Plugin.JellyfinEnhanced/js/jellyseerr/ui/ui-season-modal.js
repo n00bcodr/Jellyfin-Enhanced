@@ -28,7 +28,7 @@
 
 
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
-        const { fetchTvShowDetails, fetchTvSeasonDetails, fetchTmdbTvDetails, requestTvSeasons, fetchAdvancedRequestData, fetchRequestSettings, requestMedia } = JE.jellyseerrAPI;
+        const { fetchTvShowDetails, fetchTvSeasonDetails, fetchTmdbTvDetails, requestTvSeasons, fetchAdvancedRequestData, fetchRequestSettings, requestMedia, fetchSonarrLookup } = JE.jellyseerrAPI;
 
         // Fetch Seerr request settings (partial requests + special episodes)
         let partialRequestsEnabled = false;
@@ -92,8 +92,14 @@
 
         const showAdvanced = JE.pluginConfig.JellyseerrShowAdvanced;
 
+        // No TVDB id on TMDB (common for anime): Seerr can't hand the show to
+        // Sonarr, and its own web UI asks the user to pick a match (#653).
+        // Mirror that with a match block above the season list; same check
+        // Seerr's TvRequestModal uses (`!data.externalIds.tvdbId`).
+        const needsTvdbMatch = !tvDetails.externalIds?.tvdbId;
+
         // Show season selection UI with Select All checkbox header
-        const bodyHtml = `<div class="jellyseerr-season-list">
+        const bodyHtml = `${needsTvdbMatch ? buildTvdbMatchHTML() : ''}<div class="jellyseerr-season-list">
             ${partialRequestsEnabled ? '<div class="jellyseerr-season-header-row"><input type="checkbox" class="jellyseerr-season-checkbox" id="jellyseerr-select-all-seasons"><label class="jellyseerr-season-header-label" for="jellyseerr-select-all-seasons">' + JE.t('jellyseerr_select_all_seasons') + '</label><div></div><div></div></div>' : ''}
         </div>${showAdvanced ? createAdvancedOptionsHTML('tv') : ''}`;
         const modalInstance = create({
@@ -111,6 +117,22 @@
             onSave: async (modalEl, requestBtn, closeFn) => {
                 requestBtn.disabled = true;
                 requestBtn.innerHTML = `${JE.t('jellyseerr_modal_requesting')}<span class="jellyseerr-button-spinner"></span>`;
+
+                // Manual TVDB match is mandatory when TMDB has none — without it
+                // Seerr accepts the request and then silently drops it when the
+                // Sonarr hand-off fails ("TVDB ID not found"). Checked first,
+                // like Seerr's own match step precedes its request form.
+                let manualTvdbId = null;
+                if (needsTvdbMatch) {
+                    manualTvdbId = readManualTvdbId(modalEl);
+                    if (!manualTvdbId) {
+                        JE.toast(JE.t('jellyseerr_modal_toast_tvdb_required'), 4000);
+                        requestBtn.disabled = false;
+                        requestBtn.textContent = is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : (partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request'));
+                        modalEl.querySelector('#jellyseerr-tvdb-id')?.focus();
+                        return;
+                    }
+                }
 
                 let settings = {};
                 if (showAdvanced) {
@@ -136,7 +158,7 @@
                             requestBtn.textContent = is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : JE.t('jellyseerr_modal_request_selected');
                             return;
                         }
-                        await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k);
+                        await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k, manualTvdbId);
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: resolvedShowTitle }), 4000);
                     } else {
                         // Partial requests disabled: request all non-special seasons to avoid locking specials
@@ -145,9 +167,9 @@
                             .filter(seasonNumber => Number.isFinite(seasonNumber) && seasonNumber > 0);
 
                         if (allSeasons.length > 0) {
-                            await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem, is4k);
+                            await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem, is4k, manualTvdbId);
                         } else {
-                            await requestMedia(tmdbId, 'tv', settings, is4k, searchResultItem);
+                            await requestMedia(tmdbId, 'tv', settings, is4k, searchResultItem, manualTvdbId);
                         }
 
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: resolvedShowTitle }), 4000);
@@ -182,6 +204,11 @@
         const seasonList = modalInstance.modalElement.querySelector('.jellyseerr-season-list');
         updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k, jellyfinSeasonMap);
         modalInstance.show();
+
+        // Sonarr candidates for the match block — async so the modal opens at once.
+        if (needsTvdbMatch) {
+            populateTvdbMatches(modalInstance.modalElement, tmdbId, fetchSonarrLookup);
+        }
 
         // Quota chip — runs async so it doesn't block modal open.
         const tvBodyEl = modalInstance.modalElement.querySelector('.jellyseerr-modal-body');
@@ -313,6 +340,105 @@
             }
         }
     };
+
+    /**
+     * Builds the "match series" block shown when TMDB has no TVDB id for the
+     * show: a notice, a candidate list (filled by populateTvdbMatches) and a
+     * manual TVDB ID input that doubles as the fallback when Seerr has no
+     * Sonarr or finds no candidates.
+     * @returns {string} HTML for the block.
+     */
+    function buildTvdbMatchHTML() {
+        return `
+            <div class="jellyseerr-tvdb-match">
+                <div class="jellyseerr-tvdb-match-notice">${JE.t('jellyseerr_tvdb_match_notice')}</div>
+                <div class="jellyseerr-tvdb-match-results"><div class="jellyseerr-tvdb-match-hint">${JE.t('jellyseerr_tvdb_match_searching')}</div></div>
+                <div class="jellyseerr-form-group">
+                    <label for="jellyseerr-tvdb-id">${JE.t('jellyseerr_tvdb_id_label')}</label>
+                    <input type="number" id="jellyseerr-tvdb-id" inputmode="numeric" min="1" step="1" autocomplete="off" placeholder="${escapeHtml(JE.t('jellyseerr_tvdb_id_placeholder'))}">
+                </div>
+            </div>`;
+    }
+
+    /**
+     * Reads the TVDB id typed or picked in the match block.
+     * @param {HTMLElement} modalEl - The modal root element.
+     * @returns {number|null} A positive integer, or null when empty/invalid.
+     */
+    function readManualTvdbId(modalEl) {
+        const raw = String(modalEl.querySelector('#jellyseerr-tvdb-id')?.value || '').trim();
+        if (!/^\d+$/.test(raw)) return null;
+        const id = parseInt(raw, 10);
+        // Seerr stores tvdbId in a 32-bit integer column; reject anything larger up front.
+        return id > 0 && id <= 0x7fffffff ? id : null;
+    }
+
+    /**
+     * Fills the match block with Sonarr candidates from Seerr's title lookup.
+     * Clicking a candidate writes its TVDB id into the manual input (the single
+     * source of truth read on submit); editing the input clears the highlight
+     * unless the value matches a candidate. Lookup failures (no Sonarr in
+     * Seerr, network error) or an empty result leave just the manual input.
+     * @param {HTMLElement} modalEl - The modal root element.
+     * @param {number} tmdbId - TMDB id of the show.
+     * @param {function(number): Promise<Array>} fetchSonarrLookup - API lookup function.
+     */
+    async function populateTvdbMatches(modalEl, tmdbId, fetchSonarrLookup) {
+        const resultsEl = modalEl.querySelector('.jellyseerr-tvdb-match-results');
+        const input = modalEl.querySelector('#jellyseerr-tvdb-id');
+        if (!resultsEl || !input) return;
+
+        let candidates = [];
+        // 404 = Seerr has no Sonarr configured, so "no matches" is accurate;
+        // any other failure (Seerr down, no permission) gets its own hint so
+        // the user isn't told a search that never ran found nothing.
+        let hintKey = 'jellyseerr_tvdb_match_none';
+        try {
+            candidates = (await fetchSonarrLookup(tmdbId))
+                .filter(c => Number.isInteger(c?.tvdbId) && c.tvdbId > 0)
+                .slice(0, 6);
+        } catch (error) {
+            if (error?.status !== 404) {
+                hintKey = 'jellyseerr_tvdb_match_failed';
+                console.warn(`${logPrefix} Sonarr lookup failed for TMDB ID ${tmdbId}:`, error);
+            }
+        }
+        if (!document.body.contains(modalEl)) return;
+
+        if (candidates.length === 0) {
+            resultsEl.innerHTML = `<div class="jellyseerr-tvdb-match-hint">${JE.t(hintKey)}</div>`;
+            return;
+        }
+
+        const fallbackPoster = JE.cdn.url('ibb', 'fdbkXQdP/jellyseerr-poster-not-found.png');
+        resultsEl.innerHTML = candidates.map(c => {
+            const poster = /^https?:\/\//i.test(c.remotePoster || '') ? c.remotePoster : fallbackPoster;
+            return `
+                <button type="button" class="jellyseerr-tvdb-match-row" data-tvdb-id="${escapeHtml(c.tvdbId)}">
+                    <img src="${escapeHtml(poster)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${escapeHtml(fallbackPoster)}'">
+                    <div>
+                        <div class="title">${escapeHtml(c.title || '')}</div>
+                        <div class="meta">${escapeHtml(c.year || '')}${c.year ? ' · ' : ''}TVDB ${escapeHtml(c.tvdbId)}</div>
+                        ${c.overview ? `<div class="overview">${escapeHtml(c.overview)}</div>` : ''}
+                    </div>
+                </button>`;
+        }).join('');
+
+        const syncSelection = () => {
+            const current = String(input.value || '').trim();
+            resultsEl.querySelectorAll('.jellyseerr-tvdb-match-row').forEach(row => {
+                row.classList.toggle('selected', row.dataset.tvdbId === current);
+            });
+        };
+        resultsEl.addEventListener('click', (e) => {
+            const row = e.target.closest('.jellyseerr-tvdb-match-row');
+            if (!row) return;
+            input.value = row.dataset.tvdbId;
+            syncSelection();
+        });
+        input.addEventListener('input', syncSelection);
+        syncSelection();
+    }
 
     function updateSeasonList(seasonListElement, tvDetails, partialRequestsEnabled = true, enableSpecialEpisodes = false, is4kMode = false, jellyfinSeasonMap = null) {
         if (!seasonListElement || !tvDetails) return;

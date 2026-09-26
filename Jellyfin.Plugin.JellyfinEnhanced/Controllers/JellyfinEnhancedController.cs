@@ -1469,6 +1469,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest("/api/v1/service/radarr", HttpMethod.Get);
         }
 
+        // Sonarr title lookup for series TMDB has no TVDB id for (#653). Seerr
+        // resolves the title through its first Sonarr instance and answers 404
+        // when none is configured; the season modal then falls back to a manual
+        // TVDB id input. Same request-permission gate as the /service/ reads above.
+        [HttpGet("jellyseerr/sonarr/lookup/{tmdbId}")]
+        [Authorize]
+        public Task<IActionResult> GetSonarrLookup(int tmdbId)
+        {
+            return ProxyJellyseerrRequest($"/api/v1/service/sonarr/lookup/{tmdbId}", HttpMethod.Get);
+        }
+
         // Admin-only: proxies Seerr's own Radarr/Sonarr instance CRUD settings
         // (hostname, port, apiKey, useSsl, baseUrl, ...), NOT the read-only
         // /service/{sonarr,radarr} discovery endpoints above. Seerr's
