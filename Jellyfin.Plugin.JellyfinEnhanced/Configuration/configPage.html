@@ -268,6 +268,19 @@
                                     </div>
                                 </div>
                             </details>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="qualityTagsPreferredAudioLanguage">Preferred Audio Language for Sound Tags</label>
+                                <select is="emby-select" id="qualityTagsPreferredAudioLanguage" name="qualityTagsPreferredAudioLanguage" class="emby-select">
+                                    <option value="">No preference (best track overall)</option>
+                                </select>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="qualityTagsPreferredAudioLanguage">
+                                <div class="fieldDescription">The sound tag (Atmos, DTS, 5.1, ...) describes the best audio track in this language rather than the best track in the file — a film whose English track is Atmos but whose German dub is plain AC3 then reads AC3. Titles with no audio in the language fall back to their best track. Users can override this in their own settings.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="qualityTagsAudioLanguageFromUser" is="emby-checkbox" type="checkbox"/><span>Use Each User's Jellyfin Audio Language</span></label></div>
+                            <div class="je-setting-description" data-desc-for="qualityTagsAudioLanguageFromUser">
+                                <div class="fieldDescription">Judge sound tags by each user's own Jellyfin audio language (Settings → Playback → Preferred audio language) instead of the language above. Users who have not set one keep the language above.</div>
+                            </div>
 
                             <div class="je-tag-row">
                                 <div class="checkboxContainer"><label><input id="genreTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Genre Tags</span></label></div>
@@ -5401,6 +5414,11 @@
                 if (lChk) lChk.checked = langEnabled;
                 document.querySelector('#languageTagsPriority').value = config.LanguageTagsPriority || '';
                 document.querySelector('#languageTagsPriorityStrict').checked = config.LanguageTagsPriorityStrict === true;
+                const qualityAudioLangSelect = document.querySelector('#qualityTagsPreferredAudioLanguage');
+                // The language list is populated asynchronously; remember the value so it can be re-applied once the options exist.
+                qualityAudioLangSelect.dataset.savedValue = config.QualityTagsPreferredAudioLanguage || '';
+                qualityAudioLangSelect.value = qualityAudioLangSelect.dataset.savedValue;
+                document.querySelector('#qualityTagsAudioLanguageFromUser').checked = config.QualityTagsAudioLanguageFromUser === true;
                 if (rChk) rChk.checked = ratingEnabled;
                 const pChk = document.querySelector('#peopleTagsEnabled');
                 if (pChk) pChk.checked = peopleEnabled;
@@ -5909,6 +5927,8 @@
             config.LanguageTagsPosition = document.querySelector('#languageTagsPosition').value;
             config.LanguageTagsPriority = document.querySelector('#languageTagsPriority').value.trim();
             config.LanguageTagsPriorityStrict = document.querySelector('#languageTagsPriorityStrict').checked;
+            config.QualityTagsPreferredAudioLanguage = document.querySelector('#qualityTagsPreferredAudioLanguage').value || '';
+            config.QualityTagsAudioLanguageFromUser = document.querySelector('#qualityTagsAudioLanguageFromUser').checked;
             config.RatingTagsPosition = document.querySelector('#ratingTagsPosition').value;
             config.ShowRatingInPlayer = document.querySelector('#showRatingInPlayer').checked;
             config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
@@ -6888,6 +6908,32 @@
                     option.textContent = displayName;
                     defaultLanguageSelect.appendChild(option);
                 });
+
+                // Preferred audio language for sound tags: every Jellyfin culture, by name.
+                const qualityAudioLangSelect = document.getElementById('qualityTagsPreferredAudioLanguage');
+                if (qualityAudioLangSelect) {
+                    const seen = new Set();
+                    cultures
+                        .map(c => ({ code: c.TwoLetterISOLanguageName || c.ThreeLetterISOLanguageName, name: c.DisplayName || c.Name }))
+                        .filter(o => o.code && o.name && !seen.has(o.code) && seen.add(o.code))
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .forEach(({ code, name }) => {
+                            const option = document.createElement('option');
+                            option.value = code;
+                            option.textContent = name;
+                            qualityAudioLangSelect.appendChild(option);
+                        });
+                    // loadConfig may have run before the list existed; a saved code the
+                    // list doesn't offer (a hand-edited pt-BR) still shows as selected.
+                    const savedValue = qualityAudioLangSelect.dataset.savedValue || '';
+                    if (savedValue && !Array.from(qualityAudioLangSelect.options).some(o => o.value === savedValue)) {
+                        const option = document.createElement('option');
+                        option.value = savedValue;
+                        option.textContent = savedValue;
+                        qualityAudioLangSelect.appendChild(option);
+                    }
+                    qualityAudioLangSelect.value = savedValue;
+                }
             } catch (err) {
                 console.warn('Jellyfin Enhanced: Failed to load language options:', err);
             }
@@ -7349,7 +7395,7 @@
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'showUserRatingDash', 'showUserRatingOnPosters'] },
             { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
-            { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag'], noHint: true },
+            { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser'], noHint: true },
             { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition'], noHint: true },
             { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict'], noHint: true },
             { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition'], noHint: true },

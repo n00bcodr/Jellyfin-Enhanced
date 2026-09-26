@@ -111,6 +111,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             LanguageTagsPosition = "bottom-left";
             LanguageTagsPriority = string.Empty;
             LanguageTagsPriorityStrict = false;
+            QualityTagsPreferredAudioLanguage = string.Empty;
+            QualityTagsAudioLanguageFromUser = false;
             RatingTagsPosition = "bottom-right";
             ShowRatingInPlayer = true;
             DisableAllShortcuts = false;
@@ -581,6 +583,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// is empty.
         /// </summary>
         public bool LanguageTagsPriorityStrict { get; set; }
+        /// <summary>
+        /// Language whose audio tracks decide the sound tag (Atmos, DTS, 5.1, ...)
+        /// on poster cards, as an ISO 639 code (de, deu, pt-BR). Empty (default)
+        /// judges every track, i.e. the best track overall. Users can override it
+        /// in their own settings.
+        /// </summary>
+        public string QualityTagsPreferredAudioLanguage { get; set; } = string.Empty;
+        /// <summary>
+        /// When on, a user's own Jellyfin audio language preference (Settings →
+        /// Playback → Preferred audio language) is used instead of
+        /// <see cref="QualityTagsPreferredAudioLanguage"/>; users without one keep
+        /// the fixed language.
+        /// </summary>
+        public bool QualityTagsAudioLanguageFromUser { get; set; }
         [AnalyticsInclude]
         public string RatingTagsPosition { get; set; } = "bottom-right";
         public bool ShowRatingInPlayer { get; set; } = true;
