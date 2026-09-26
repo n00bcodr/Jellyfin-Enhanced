@@ -28,6 +28,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │                                     # SeerrTagSignatureExtractor
 ├── EventHandlers/
 │   ├── ContinueWatchingPlaybackEvents.cs
+│   ├── MaintenancePlaybackReminder.cs
 │   ├── SpoilerAutoEnableEvents.cs
 │   └── UserTopologyEvents.cs
 ├── Model/
@@ -35,9 +36,9 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   ├── Arr/                          # ArrInstance.cs, ArrItem.cs, ArrType.cs
 │   └── Jellyseerr/                   # JellyseerrPermission.cs, JellyseerrUser.cs
 ├── Services/
-│   ├── …                             # 18 root-level services (Radarr, Sonarr,
+│   ├── …                             # root-level services (Radarr, Sonarr,
 │   │                                 # TagCache*, CdnAsset, WatchlistMonitor,
-│   │                                 # SeerrParentalFilter,
+│   │                                 # SeerrParentalFilter, MaintenanceMode*,
 │   │                                 # ScriptInjectionStartupFilter, …)
 │   ├── Identity/
 │   │   └── RequestIdentityService.cs
@@ -286,6 +287,11 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
 * **`/EventHandlers/`** (Spoiler Guard):
     * **`SpoilerAutoEnableEvents.cs`**: Implements "Auto-enable on first play of a new show" — adds a series to the user's Spoiler Guard list on a fresh S1E1 play.
     * **`UserTopologyEvents.cs`**: Invalidates single-user and marker lookup caches when users are created or deleted.
+
+* **Maintenance Mode** (server side):
+    * **`/Services/MaintenanceModeService.cs`**: Owns the maintenance state file (who was disabled, end time, source), applies/restores user policies, resolves the `{countdown}` / `{ends_at}` tokens and sends the session popups.
+    * **`/Services/MaintenanceScheduleService.cs`**: 30-second hosted timer that opens/closes the daily scheduled window and expires timed windows.
+    * **`/EventHandlers/MaintenancePlaybackReminder.cs`**: Re-sends the notification to affected users on playback start while maintenance is active (throttled per session).
 
 * **`/Model/`** (Spoiler Guard):
     * **`TagCacheEntry.cs`**: Pre-computed per-item tag data served to clients in bulk; carries the parent-series ID so the Spoiler Guard filter can strip cache entries for unwatched episodes without per-request library lookups.

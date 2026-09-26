@@ -49,7 +49,8 @@ set of non-boolean fixed-choice settings, since a string *could* be a URL or API
 specific ones are ever safe to include:
 
 - Icon style (`IconStyle`)
-- Maintenance Mode action (`MaintenanceModeAction`), and whether it applies to all users or a
+- Maintenance Mode action (`MaintenanceModeAction`) and scheduled-window action
+  (`MaintenanceScheduleAction`), and whether it applies to all users or a
   selection (`MaintenanceModeAffectedUsers`, sent only as `all`/`selected` — the actual user
   selection never leaves your server)
 - Tag overlay positions (`QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `RatingTagsPosition`)

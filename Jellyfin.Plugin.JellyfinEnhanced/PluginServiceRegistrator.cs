@@ -94,6 +94,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // plugin's own section-content endpoint, which replaces those native lists on an HSS home screen. Same
             // filter handles "Remove from Continue Watching" via HideScope=continuewatching in hidden-content.json.
             serviceCollection.AddSingleton<MaintenanceModeService>();
+            // Maintenance Mode extras: a 30s timer that opens/closes the daily scheduled window
+            // and expires timed manual windows, plus the per-playback-start reminder popup.
+            serviceCollection.AddHostedService<MaintenanceScheduleService>();
+            serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, MaintenancePlaybackReminderConsumer>();
             serviceCollection.AddSingleton<HiddenContentResponseFilter>();
             serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, ContinueWatchingPlaybackConsumer>();
             serviceCollection.AddHostedService<ContinueWatchingLibraryHook>();
