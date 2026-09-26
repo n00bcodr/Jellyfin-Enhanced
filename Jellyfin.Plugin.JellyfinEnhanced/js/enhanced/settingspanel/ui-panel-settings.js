@@ -503,7 +503,7 @@
             sourceSelect.addEventListener('change', (e) => {
                 JE.currentSettings.randomSourceId = e.target.value;
                 JE.saveUserSettings('settings.json', JE.currentSettings);
-                JE.toast(JE.t('toast_random_source_set', { name: e.target.selectedOptions[0]?.textContent || '' }));
+                JE.toast(JE.t('toast_random_source_set', { name: JE.escapeHtml(e.target.selectedOptions[0]?.textContent || '') }));
                 resetAutoCloseTimer();
             });
         }
