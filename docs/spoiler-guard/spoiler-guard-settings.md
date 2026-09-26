@@ -102,6 +102,27 @@ Users can also manually opt in via the **Enable Spoiler Guard** button in the Se
 
 ---
 
+## Auto-enable when new titles are added to the library
+
+**Default: Off.** When on, every new show or movie that lands in the library — from a scan, a Seerr download, a manual copy, anything — is added to the Spoiler Guard list of every user who can see that library. Protection is in place before anyone presses play, which neither of the two modes above guarantees (first play is too late; Seerr only covers titles requested through Seerr).
+
+Details worth knowing:
+
+- Only brand-new titles count. A title is armed once, when Jellyfin first creates it; a user who later switches Spoiler Guard off for it is not re-armed by metadata refreshes. Titles already in the library when you turn this on are not armed retroactively (a rescan doesn't count as new), while adding a whole new library arms every title in it.
+- It applies to every enabled user who has access to the title's library (per the user's library-access policy). There is no per-user opt-out, same as the first-play mode.
+- Library scans are batched: the titles a scan adds are collected and written in a single settings update per user about ten seconds after the first one appears (a long scan flushes every ten seconds), never one write per title.
+
+---
+
+## Auto-enable scope (content type and libraries)
+
+Shared by all three auto-enable options above. **Default: TV shows and movies, all libraries** — an install that never touches the scope keeps its previous auto-enable behaviour.
+
+- **TV shows / Movies** — untick a type to leave it out of every auto-enable mode. The request in [#801](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/801) — on for all shows, off for all movies — is "TV shows" ticked, "Movies" unticked.
+- **Libraries** — tick the libraries auto-enable should cover; leave every library unticked to cover all of them. Applies to the first-play and library-add modes. It cannot apply to a Seerr request, because the title isn't in any library at request time.
+
+---
+
 ## Strict refresh mode
 
 **Default: Off.** Controls what happens visually on the user's screen after they toggle Spoiler Guard for a series / movie:
@@ -234,6 +255,7 @@ This is automatic and doesn't need configuration. The corruption events are expo
 For diagnostics, the plugin logs (rate-limited) to `/config/log/JellyfinEnhanced_{date}.log`:
 
 - Spoiler Guard auto-enable events: `SpoilerAutoEnable: enabled Spoiler Guard for series '<name>' (...) on first-play of S1E1 by user <id>`
+- Library-add auto-enable batches: `SpoilerAutoEnableOnLibraryAdd: enabled Spoiler Guard for <n> new series and <m> new movie(s) for user <id> in one write (batch of <k> library add(s))`
 - Seerr pre-acquisition records: `Spoiler Guard pending recorded tv:<tmdbId> for <user>`
 - Promotion events when a pending entry lands as a real library item: `SpoilerSeerrPromoter: promoted tv:<tmdbId> -> series <id> for user <id>`
 - Per-(user, scope) cache-eviction *failures* when watched-state changes (successful evictions are not logged)
@@ -255,6 +277,9 @@ Most logs are at INFO; corruption + unexpected shapes log at WARNING.
 | Show movie posters even when Spoiler Guard is on | On |
 | Auto-enable on first play | Off |
 | Auto-enable on Seerr request | Off |
+| Auto-enable when new titles are added to the library | Off |
+| Auto-enable applies to: TV shows / Movies | On / On |
+| Auto-enable libraries | All (none ticked) |
 | Strict refresh mode | Off |
 | Hide TV show descriptions | On |
 | Hide episode descriptions | On |
