@@ -69,6 +69,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
                 var series = _libraryManager.GetItemById(seriesId);
                 if (series == null) return Task.CompletedTask;
 
+                // Shared auto-enable scope: the admin may have limited
+                // auto-enable to movies only, or to specific libraries.
+                if (!SpoilerAutoEnableFilter.AllowsType(cfg, isSeries: true)) return Task.CompletedTask;
+                if (!SpoilerAutoEnableFilter.AllowsLibrary(cfg, _libraryManager, series)) return Task.CompletedTask;
+
                 var user = _userManager.GetUserById(userId);
                 if (user == null) return Task.CompletedTask;
 
