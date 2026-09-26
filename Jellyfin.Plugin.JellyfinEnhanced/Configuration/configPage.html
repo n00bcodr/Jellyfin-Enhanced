@@ -5302,17 +5302,26 @@
                 });
         }
 
+        // SpoilerAutoEnableLibraryIds as loaded, and whether the checkbox
+        // list has been rendered from it yet. Until it has (VirtualFolders
+        // still loading, or failed) a save round-trips the stored value
+        // untouched instead of silently resetting it to "every library".
+        var _spoilerAutoEnableLibrariesRaw = '';
+        var _spoilerAutoEnableLibrariesRendered = false;
+
         /**
          * Renders the Spoiler Guard auto-enable library allow-list as one
          * checkbox per movie / TV / mixed library, pre-ticking the ids stored
          * in SpoilerAutoEnableLibraryIds (comma-separated). Ids that no longer
-         * resolve to a library are dropped on the next save.
+         * resolve to a library are flagged and dropped on the next save.
          * @param {string} selectedRaw - Stored comma-separated library ids
          */
         function renderSpoilerAutoEnableLibraries(selectedRaw) {
             var host = document.getElementById('spoilerAutoEnableLibraryList');
             if (!host) return;
-            var selected = String(selectedRaw || '').split(',').map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
+            _spoilerAutoEnableLibrariesRaw = String(selectedRaw || '');
+            _spoilerAutoEnableLibrariesRendered = false;
+            var selected = _spoilerAutoEnableLibrariesRaw.split(',').map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
             ApiClient.getJSON(ApiClient.getUrl('Library/VirtualFolders')).then(function (folders) {
                 host.innerHTML = '';
                 var eligible = (folders || []).filter(function (f) {
@@ -5320,11 +5329,10 @@
                     // Untyped ("mixed") libraries can hold both shows and movies.
                     return f.ItemId && (t === 'tvshows' || t === 'movies' || t === '');
                 });
-                if (!eligible.length) {
-                    host.innerHTML = '<div class="fieldDescription">No movie or TV libraries found.</div>';
-                    return;
-                }
+                var known = {};
                 eligible.forEach(function (f) {
+                    var id = String(f.ItemId).replace(/-/g, '').toLowerCase();
+                    known[id] = true;
                     var wrap = document.createElement('div');
                     wrap.className = 'checkboxContainer';
                     var label = document.createElement('label');
@@ -5333,7 +5341,7 @@
                     input.type = 'checkbox';
                     input.className = 'spoilerAutoEnableLibrary';
                     input.setAttribute('data-library-id', f.ItemId);
-                    input.checked = selected.indexOf(String(f.ItemId).replace(/-/g, '').toLowerCase()) !== -1;
+                    input.checked = selected.indexOf(id) !== -1;
                     var span = document.createElement('span');
                     var type = (f.CollectionType || '').toLowerCase();
                     span.textContent = f.Name + (type === 'tvshows' ? ' (TV shows)' : type === 'movies' ? ' (Movies)' : ' (Mixed)');
@@ -5342,18 +5350,36 @@
                     wrap.appendChild(label);
                     host.appendChild(wrap);
                 });
+                if (!eligible.length) {
+                    host.innerHTML = '<div class="fieldDescription">No movie or TV libraries found.</div>';
+                }
+                // Ids saved earlier whose library has since been deleted: the
+                // server can't match them (so, if they were the only ones,
+                // nothing auto-enables) until the admin saves again.
+                var stale = selected.filter(function (id) { return !known[id]; });
+                if (stale.length) {
+                    var note = document.createElement('div');
+                    note.className = 'fieldDescription';
+                    note.textContent = stale.length === 1
+                        ? '1 previously selected library no longer exists and will be dropped when you save.'
+                        : stale.length + ' previously selected libraries no longer exist and will be dropped when you save.';
+                    host.appendChild(note);
+                }
+                _spoilerAutoEnableLibrariesRendered = true;
             }).catch(function () {
-                host.innerHTML = '<div class="fieldDescription">Could not load the library list.</div>';
+                host.innerHTML = '<div class="fieldDescription">Could not load the library list. Saving keeps the current selection.</div>';
             });
         }
 
         /**
          * Collects the ticked auto-enable libraries back into the stored
          * comma-separated form (dashless lowercase ids, matching Jellyfin's
-         * VirtualFolders ItemId format). Empty string = every library.
+         * VirtualFolders ItemId format). Empty string = every library. If the
+         * list hasn't rendered, returns the stored value unchanged.
          * @returns {string}
          */
         function collectSpoilerAutoEnableLibraries() {
+            if (!_spoilerAutoEnableLibrariesRendered) return _spoilerAutoEnableLibrariesRaw;
             var ids = [];
             document.querySelectorAll('#spoilerAutoEnableLibraryList input.spoilerAutoEnableLibrary').forEach(function (el) {
                 if (el.checked) ids.push(String(el.getAttribute('data-library-id') || '').replace(/-/g, '').toLowerCase());

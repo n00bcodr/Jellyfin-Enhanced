@@ -101,6 +101,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             _stopped = true;
             _libraryManager.ItemAdded -= OnItemAdded;
+            // Cancel the pending timer and drain whatever is queued right
+            // now: ItemAdded never re-fires for these items, so anything
+            // still in the queue at shutdown would otherwise be lost for
+            // good. Hosted services stop before the library/user managers
+            // are disposed, so the flush can still read the library here.
+            _flushTimer.Change(Timeout.Infinite, Timeout.Infinite);
+            RunFlush();
             return Task.CompletedTask;
         }
 
@@ -131,6 +138,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _flushTimer.Change(FlushSettleDelayMs, Timeout.Infinite);
                 }
             }
+            catch (ObjectDisposedException)
+            {
+                // A handler already in flight when the service was disposed
+                // (StopAsync unsubscribes, but can't cancel running calls).
+            }
             catch (Exception ex)
             {
                 _logger.Warning($"SpoilerAutoEnableOnLibraryAdd: handler failed before queueing: {ex.Message}");
@@ -143,6 +155,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // mid-flush re-arms the timer instead of being stranded in the
             // queue until the next unrelated add.
             Interlocked.Exchange(ref _flushScheduled, 0);
+            if (_stopped) return; // StopAsync drained the queue itself
+            RunFlush();
+        }
+
+        // Serialises flushes: a timer callback that fires while a previous
+        // flush (or the StopAsync drain) is still running waits for it and
+        // then finds only what arrived since, so nothing is written twice.
+        private void RunFlush()
+        {
             lock (_flushLock)
             {
                 try
