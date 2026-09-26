@@ -85,7 +85,7 @@
         const hardcodedDefaults = {
             autoPauseEnabled: true, autoResumeEnabled: false, autoPipEnabled: false,
             autoSkipIntro: false, autoSkipOutro: false,
-            selectedStylePresetIndex: 0, selectedFontSizePresetIndex: 2, selectedFontFamilyPresetIndex: 0,
+            selectedStylePresetIndex: 0, selectedFontSizePresetIndex: 2, selectedFontFamilyPresetIndex: 0, selectedTextEffectPresetIndex: 0,
             customSubtitleTextColor: '#FFFFFFFF', customSubtitleBgColor: '#00000000',
             usingCustomColors: false,
             disableCustomSubtitleStyles: false,

@@ -35,7 +35,7 @@
      * @type {Array<object>}
      */
     JE.subtitlePresets = [
-        { name: "Clean White", textColor: "#FFFFFFFF", bgColor: "transparent", textShadow: "0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000", previewText: "Aa" },
+        { name: "Clean White", textColor: "#FFFFFFFF", bgColor: "transparent", previewText: "Aa" },
         { name: "Classic Black Box", textColor: "#FFFFFFFF", bgColor: "#000000FF", previewText: "Aa" },
         { name: "Netflix Style", textColor: "#FFFFFFFF", bgColor: "#000000B2", previewText: "Aa" },
         { name: "Cinema Yellow", textColor: "#FFFF00FF", bgColor: "#000000B2", previewText: "Aa" },
@@ -67,6 +67,63 @@
         { name: "Typewriter", family: "Courier New,Courier,monospace", previewText: "AaBb" },
         { name: "Roboto", family: "Roboto Mono,monospace", previewText: "AaBb" }
     ];
+
+    // The soft glow used since #47 when text sits directly on the video with no
+    // background box. Also what the "Auto" text effect resolves to in that case.
+    const AUTO_SHADOW = '0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000';
+
+    /**
+     * Builds an outline as a ring of hard (zero-blur) text-shadows. A dense ring
+     * reads as a solid stroke; the four-corner version this module used to ship
+     * left visible gaps at the cardinal points (#205). em units keep the stroke
+     * proportional to whatever font size preset is active. Layered text-shadow is
+     * used instead of -webkit-text-stroke because it is honoured by ::cue and
+     * paints behind the glyph rather than eating into it.
+     * @param {number} width Stroke radius in em.
+     * @param {string} color CSS color of the stroke.
+     * @returns {string} A text-shadow value.
+     */
+    function outlineShadow(width, color) {
+        const steps = 16;
+        const parts = [];
+        for (let i = 0; i < steps; i++) {
+            const angle = (Math.PI * 2 * i) / steps;
+            const x = (Math.cos(angle) * width).toFixed(3);
+            const y = (Math.sin(angle) * width).toFixed(3);
+            parts.push(`${x}em ${y}em 0 ${color}`);
+        }
+        return parts.join(', ');
+    }
+
+    /**
+     * Preset text effects for subtitles. `shadow` is the CSS text-shadow to apply;
+     * `null` marks the "Auto" preset, which keeps the historical behaviour (soft
+     * shadow on a transparent background, nothing on a solid one) and is the
+     * default so existing users see no change.
+     * @type {Array<object>}
+     */
+    JE.subtitleTextEffectPresets = [
+        { name: "Auto", shadow: null, previewText: "Aa" },
+        { name: "None", shadow: "none", previewText: "Aa" },
+        { name: "Shadow", shadow: AUTO_SHADOW, previewText: "Aa" },
+        { name: "Outline", shadow: outlineShadow(0.08, '#000'), previewText: "Aa" },
+        { name: "Outline + Shadow", shadow: `${outlineShadow(0.08, '#000')}, 0.12em 0.12em 0.2em rgba(0,0,0,0.85)`, previewText: "Aa" }
+    ];
+
+    /**
+     * Resolves the text-shadow for the user's selected text effect preset.
+     * @param {string} bgColor The subtitle background color in effect; only the
+     *   "Auto" preset looks at it (shadow when transparent, none otherwise).
+     * @param {number} [presetIndex] Text effect preset to resolve; defaults to
+     *   the saved selection.
+     * @returns {string} A CSS text-shadow value.
+     */
+    JE.getSubtitleTextShadow = (bgColor, presetIndex) => {
+        const index = presetIndex ?? JE.currentSettings.selectedTextEffectPresetIndex ?? 0;
+        const preset = JE.subtitleTextEffectPresets[index] || JE.subtitleTextEffectPresets[0];
+        if (preset.shadow !== null) return preset.shadow;
+        return bgColor === 'transparent' || bgColor === '#00000000' ? AUTO_SHADOW : 'none';
+    };
 
     /**
      * Splits a stored subtitle color into a swatch (for <input type="color">)
@@ -287,9 +344,7 @@
 
         const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
         const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
-        const textShadow = bgColor === 'transparent' || bgColor === '#00000000'
-            ? '0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000'
-            : 'none';
+        const textShadow = JE.getSubtitleTextShadow(bgColor);
 
         const fontSizePreset = JE.fontSizePresets[JE.currentSettings.selectedFontSizePresetIndex ?? 2];
         const fontFamilyPreset = JE.fontFamilyPresets[JE.currentSettings.selectedFontFamilyPresetIndex ?? 0];

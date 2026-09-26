@@ -117,6 +117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             DefaultSubtitleStyle = 0;
             DefaultSubtitleSize = 2;
             DefaultSubtitleFont = 0;
+            DefaultSubtitleTextEffect = 0;
             DisableCustomSubtitleStyles = false;
             DefaultLanguage = string.Empty;
             Shortcuts = new List<Shortcut>
@@ -552,6 +553,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int DefaultSubtitleStyle { get; set; }
         public int DefaultSubtitleSize { get; set; }
         public int DefaultSubtitleFont { get; set; }
+        public int DefaultSubtitleTextEffect { get; set; }
         public bool DisableCustomSubtitleStyles { get; set; }
         [AnalyticsInclude]
         public string QualityTagsPosition { get; set; } = "top-left";

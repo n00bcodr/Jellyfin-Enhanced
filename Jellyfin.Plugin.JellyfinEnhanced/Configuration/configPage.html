@@ -806,6 +806,17 @@
                                 <div class="fieldDescription">Default subtitle font applied to new users; users can override in their personal settings.</div>
                             </div>
 
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="DefaultSubtitleTextEffect">Default Subtitle Text Effect</label>
+                                <select is="emby-select" id="DefaultSubtitleTextEffect" name="DefaultSubtitleTextEffect" class="emby-select">
+                                    <option value="0">Auto</option><option value="1">None</option><option value="2">Shadow</option>
+                                    <option value="3">Outline</option><option value="4">Outline + Shadow</option>
+                                </select>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="DefaultSubtitleTextEffect">
+                                <div class="fieldDescription">Default subtitle text effect (outline / drop shadow) applied to new users; users can override in their personal settings. Auto adds a shadow only when the subtitle background is transparent.</div>
+                            </div>
+
                         </div>
                     </fieldset>
 
@@ -5523,6 +5534,7 @@
                 document.querySelector('#DefaultSubtitleStyle').value = config.DefaultSubtitleStyle;
                 document.querySelector('#DefaultSubtitleSize').value = config.DefaultSubtitleSize;
                 document.querySelector('#DefaultSubtitleFont').value = config.DefaultSubtitleFont;
+                document.querySelector('#DefaultSubtitleTextEffect').value = config.DefaultSubtitleTextEffect ?? 0;
                 document.querySelector('#disableCustomSubtitleStyles').checked = config.DisableCustomSubtitleStyles;
                 document.querySelector('#DefaultLanguage').value = config.DefaultLanguage || '';
                 document.querySelector('#letterboxdEnabled').checked = config.LetterboxdEnabled;
@@ -6075,6 +6087,7 @@
             config.DefaultSubtitleStyle = parseInt(document.querySelector('#DefaultSubtitleStyle').value, 10);
             config.DefaultSubtitleSize = parseInt(document.querySelector('#DefaultSubtitleSize').value, 10);
             config.DefaultSubtitleFont = parseInt(document.querySelector('#DefaultSubtitleFont').value, 10);
+            config.DefaultSubtitleTextEffect = parseInt(document.querySelector('#DefaultSubtitleTextEffect').value, 10);
             config.DisableCustomSubtitleStyles = document.querySelector('#disableCustomSubtitleStyles').checked;
             config.DefaultLanguage = document.querySelector('#DefaultLanguage').value || '';
             config.LetterboxdEnabled = document.querySelector('#letterboxdEnabled').checked;

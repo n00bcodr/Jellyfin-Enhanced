@@ -52,6 +52,9 @@
                     previewStyle = `font-size: ${preset.size}em; color: #fff; text-shadow: 0 0 4px rgba(0,0,0,0.8);`;
                 } else if (type === 'font-family') {
                     previewStyle = `font-family: ${preset.family}; color: #fff; text-shadow: 0 0 4px rgba(0,0,0,0.8); font-size: 1.5em;`;
+                } else if (type === 'text-effect') {
+                    // Auto is previewed on a transparent background, i.e. as its shadow.
+                    previewStyle = `color: #fff; font-size: 1.5em; text-shadow: ${JE.getSubtitleTextShadow('transparent', index)};`;
                 }
                 return `
                     <div class="preset-box ${type}-preset" data-preset-index="${index}" title="${escapeHtml(preset.name)}" style="display: flex; justify-content: center; align-items: center; padding: 8px; border: 2px solid transparent; border-radius: 8px; cursor: pointer; transition: all 0.2s; background: ${presetBoxBackground}; min-height: 30px;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='${presetBoxBackground}'">
@@ -69,6 +72,7 @@
         const posPreviewFontPx = Math.max(8, Math.min(22, 13 * (posPreviewFontSizePreset.size / JE.fontSizePresets[2].size)));
         const decodedSubtitleText = JE.decodeSubtitleColor(JE.currentSettings.customSubtitleTextColor, { fallbackSwatch: '#FFFFFF', fallbackAlphaValue: 255 });
         const decodedSubtitleBg = JE.decodeSubtitleColor(JE.currentSettings.customSubtitleBgColor, { fallbackSwatch: '#000000', fallbackAlphaValue: 0 });
+        const previewTextShadow = JE.getSubtitleTextShadow(JE.currentSettings.customSubtitleBgColor || '#00000000');
 
         const userShortcuts = (JE.userConfig.shortcuts.Shortcuts || []).reduce((acc, s) => {
             acc[s.Name] = s;
@@ -263,11 +267,12 @@
                                             </div>
                                         </div>
                                     </div>
-                                    <div id="subtitleColorPreview" style="display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 600; border-radius: 6px; background: rgba(0,0,0,0.3); color: ${JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF'}; background-color: ${JE.currentSettings.customSubtitleBgColor || '#00000000'}; padding: 12px 20px; flex: 0.5; align-self: center;">AaBbCcDd</div>
+                                    <div id="subtitleColorPreview" style="display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 600; border-radius: 6px; background: rgba(0,0,0,0.3); color: ${JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF'}; background-color: ${JE.currentSettings.customSubtitleBgColor || '#00000000'}; text-shadow: ${previewTextShadow}; padding: 12px 20px; flex: 0.5; align-self: center;">AaBbCcDd</div>
                                 </div>
                             </div>
                             <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_size')}</div><div id="font-size-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontSizePresets, 'font-size')}</div></div>
                             <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_font')}</div><div id="font-family-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontFamilyPresets, 'font-family')}</div></div>
+                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_text_effect')}</div><div id="text-effect-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.subtitleTextEffectPresets, 'text-effect')}</div></div>
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                                     <span style="font-weight: 600;">${JE.t('panel_settings_subtitles_position')}</span>
@@ -280,7 +285,7 @@
                                         <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:rgba(255,255,255,0.08);transform:translateY(-50%);"></div>
                                     </div>
                                     <!-- Subtitle preview text -->
-                                    <div id="subtitlePositionPreview" style="position:absolute; transform:translateX(-50%); pointer-events:none; white-space:nowrap; font-size:${posPreviewFontPx}px; font-family:${posPreviewFontFamilyPreset.family}; font-weight:600; color:${JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF'}; background-color:${JE.currentSettings.customSubtitleBgColor || 'transparent'}; padding:2px 6px; border-radius:3px; text-shadow:0 0 4px #000; left:${JE.currentSettings.subtitleHorizontalPosition ?? 50}%; bottom:${100 - (JE.currentSettings.subtitleVerticalPosition ?? 95)}%; top:auto;">AaBbCcDd</div>
+                                    <div id="subtitlePositionPreview" style="position:absolute; transform:translateX(-50%); pointer-events:none; white-space:nowrap; font-size:${posPreviewFontPx}px; font-family:${posPreviewFontFamilyPreset.family}; font-weight:600; color:${JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF'}; background-color:${JE.currentSettings.customSubtitleBgColor || 'transparent'}; padding:2px 6px; border-radius:3px; text-shadow:${previewTextShadow}; left:${JE.currentSettings.subtitleHorizontalPosition ?? 50}%; bottom:${100 - (JE.currentSettings.subtitleVerticalPosition ?? 95)}%; top:auto;">AaBbCcDd</div>
                                 </div>
                                 <div id="je-subtitle-position-note" style="display:none; margin-top:6px; font-size:11px; color:#ffcf5c; text-align:center; align-items:center; justify-content:center; gap:4px;">
                                     <span class="material-icons" style="font-size:13px;">warning</span>
