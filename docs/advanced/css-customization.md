@@ -124,6 +124,15 @@ Customize quality tag appearance.
 }
 ```
 
+**Restyle (or hide) flags for languages not on every episode of a series/season:**
+```css
+.language-flag-partial {
+    opacity: 1 !important;
+    filter: none !important;
+    outline: 2px solid gold !important;
+}
+```
+
 ### Rating Tags CSS
 
 **Customize TMDB rating:**
