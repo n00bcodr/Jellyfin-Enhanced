@@ -34,6 +34,10 @@
      */
     // Per-file cache of the last JSON string successfully sent to the server.
     const _lastSavedJson = {};
+    // Per-file chain of in-flight saves. Every control posts the whole object,
+    // so two quick changes must reach the server in call order or the earlier
+    // (smaller) snapshot can land last and drop the newer change.
+    const _saveChain = {};
 
     JE.saveUserSettings = async (fileName, settings) => {
         if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId) {
@@ -56,20 +60,25 @@
             const serialized = JSON.stringify(dataToSave);
             const cacheKey = `${userId}:${fileName}`;
 
-            // Skip the POST if nothing has changed since the last save this session.
-            if (_lastSavedJson[cacheKey] === serialized) {
-                return; // no-op — identical to last save
-            }
+            const post = async () => {
+                // Skip the POST if nothing has changed since the last save this session.
+                if (_lastSavedJson[cacheKey] === serialized) {
+                    return; // no-op — identical to last save
+                }
 
-            await ApiClient.ajax({
-                type: 'POST',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}`),
-                data: serialized,
-                contentType: 'application/json'
-            });
+                await ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}`),
+                    data: serialized,
+                    contentType: 'application/json'
+                });
 
-            // Update the cache on success so subsequent identical saves are skipped
-            _lastSavedJson[cacheKey] = serialized;
+                // Update the cache on success so subsequent identical saves are skipped
+                _lastSavedJson[cacheKey] = serialized;
+            };
+            const save = (_saveChain[cacheKey] || Promise.resolve()).then(post);
+            _saveChain[cacheKey] = save.catch(() => {});
+            await save;
         } catch (e) {
             console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, e);
         }
@@ -92,6 +101,7 @@
             subtitleVerticalPosition: 95, subtitleHorizontalPosition: 50,
             randomButtonEnabled: true,
             randomIncludeMovies: true, randomIncludeShows: true, randomUnwatchedOnly: false,
+            randomScopeCurrentContainer: false, randomSourceId: '',
             showWatchProgress: false, showFileSizes: false, showAudioLanguages: true, removeContinueWatchingEnabled: false,
             watchProgressMode: 'percentage',
             watchProgressTimeFormat: 'hours',

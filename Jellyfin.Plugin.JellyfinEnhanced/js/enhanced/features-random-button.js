@@ -1,6 +1,12 @@
 /**
  * @file Random-item header button: fetches a random movie/series and navigates to it.
  * Split from features.js (code motion; bodies verbatim).
+ *
+ * Two per-user settings narrow where the pick comes from:
+ *   - randomScopeCurrentContainer: on a Playlist/BoxSet details page, pick
+ *     from that container's items.
+ *   - randomSourceId: a pinned playlist/collection to pick from on every page.
+ * Either falls back to the whole library (with a toast) when it yields nothing.
  */
 (function(JE) {
     'use strict';
@@ -22,8 +28,97 @@
         return face;
     }
 
+    // Containers the button can be scoped to (see resolveSourceContainer).
+    const CONTAINER_TYPES = ['Playlist', 'BoxSet'];
+
+    // Why the current press fell back to the whole library, if it did. Shown
+    // in place of the plain "loaded" toast so the two do not stack on top of
+    // each other (toasts share one fixed position).
+    let fallbackNotice = null;
+
     /**
-     * Fetches a random item (Movie or Series) from the user's library.
+     * Item types the user opted into, as an IncludeItemTypes value. Inside a
+     * container, episodes count as "shows" so an episode playlist is not empty.
+     * @param {boolean} inContainer True when querying a playlist/collection.
+     * @returns {string}
+     */
+    function includeItemTypes(inContainer) {
+        const types = [];
+        if (JE.currentSettings.randomIncludeMovies) types.push('Movie');
+        if (JE.currentSettings.randomIncludeShows) types.push('Series', ...(inContainer ? ['Episode'] : []));
+        return types.join(',');
+    }
+
+    /**
+     * Fetches an item by id, through the shared short-TTL cache when available.
+     * @param {string} itemId
+     * @returns {Promise<object|null>} null when the item cannot be read (deleted, no access).
+     */
+    function fetchItem(itemId) {
+        const userId = ApiClient.getCurrentUserId();
+        const request = JE.helpers?.getItemCached
+            ? JE.helpers.getItemCached(itemId, { userId })
+            : ApiClient.getItem(userId, itemId);
+        return request.catch(() => null);
+    }
+
+    /**
+     * Resolves the playlist or collection the button should draw from: the one
+     * open on screen when "scope to current playlist/collection" is on and a
+     * Playlist/BoxSet details page is showing, else the source pinned in the
+     * settings panel, else null for the whole library.
+     * @returns {Promise<object|null>} The container item, or null.
+     */
+    async function resolveSourceContainer() {
+        if (JE.currentSettings.randomScopeCurrentContainer && /details/.test(window.location.hash)) {
+            const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+            const item = itemId ? await fetchItem(itemId) : null;
+            if (item && CONTAINER_TYPES.includes(item.Type)) return item;
+        }
+        const pinnedId = JE.currentSettings.randomSourceId;
+        if (pinnedId) {
+            // Validate by type rather than by "did the request succeed": a
+            // deleted id 404s, but the all-zero id answers with the user's root
+            // folder, and neither is something we should draw from.
+            const item = await fetchItem(pinnedId);
+            if (item && CONTAINER_TYPES.includes(item.Type)) return item;
+            fallbackNotice = JE.t('toast_random_source_missing');
+        }
+        return null;
+    }
+
+    /**
+     * Fetches up to 100 candidate items in random order: the direct children
+     * of `parentId` when given (a playlist's entries, a collection's titles),
+     * otherwise the whole library recursively.
+     * @param {string} userId
+     * @param {string|null} parentId
+     * @returns {Promise<object[]>}
+     */
+    async function fetchCandidates(userId, parentId) {
+        const scope = parentId ? `ParentId=${parentId}` : 'Recursive=true';
+        const apiUrl = ApiClient.getUrl(`/Users/${userId}/Items?IncludeItemTypes=${includeItemTypes(!!parentId)}&${scope}&SortBy=Random&Limit=100&Fields=ExternalUrls`);
+        const response = await ApiClient.ajax({ type: 'GET', url: apiUrl, dataType: 'json' });
+        return response?.Items || [];
+    }
+
+    /**
+     * Applies the "unwatched only" setting: series need unplayed episodes,
+     * everything else (movies, episodes) must simply not be played.
+     * @param {object[]} items
+     * @returns {object[]}
+     */
+    function filterUnwatched(items) {
+        if (!JE.currentSettings.randomUnwatchedOnly) return items;
+        return items.filter(item => item.Type === 'Series'
+            ? item.UserData?.UnplayedItemCount > 0
+            : !item.UserData?.Played);
+    }
+
+    /**
+     * Fetches a random item (Movie or Series) from the user's library, or from
+     * the playlist/collection the button is scoped to. A scoped container with
+     * nothing eligible falls back to the whole library with a toast.
      * @returns {Promise<object|null>} A promise that resolves to a random item or null.
      */
     async function getRandomItem() {
@@ -33,40 +128,20 @@
             return null;
         }
 
-        const itemTypes = [];
-        if (JE.currentSettings.randomIncludeMovies) itemTypes.push('Movie');
-        if (JE.currentSettings.randomIncludeShows) itemTypes.push('Series');
-        const includeItemTypes = itemTypes.join(',');
-
-        let apiUrl = ApiClient.getUrl(`/Users/${userId}/Items?IncludeItemTypes=${includeItemTypes}&Recursive=true&SortBy=Random&Limit=100&Fields=ExternalUrls`);
-
         try {
-            const response = await ApiClient.ajax({ type: 'GET', url: apiUrl, dataType: 'json' });
-            if (response && response.Items && response.Items.length > 0) {
-                let items = response.Items;
-
-                if (JE.currentSettings.randomUnwatchedOnly) {
-                    items = items.filter(item => {
-                        // For movies: check if not played
-                        if (item.Type === 'Movie') {
-                            return !item.UserData?.Played;
-                        }
-                        // For series: check if there are unplayed episodes
-                        if (item.Type === 'Series') {
-                            return item.UserData?.UnplayedItemCount > 0;
-                        }
-                        return false;
-                    });
-                    // If no unwatched items found, show error
-                    if (items.length === 0) {
-                        throw new Error('No unwatched items found in selected libraries.');
-                    }
-                }
-
-                const randomIndex = Math.floor(Math.random() * items.length);
-                return items[randomIndex];
+            fallbackNotice = null;
+            const container = await resolveSourceContainer();
+            let items = container ? filterUnwatched(await fetchCandidates(userId, container.Id)) : [];
+            if (container && items.length === 0) {
+                fallbackNotice = JE.t('toast_random_source_empty', { name: JE.escapeHtml(container.Name) });
             }
-            throw new Error('No items found in selected libraries.');
+            if (items.length === 0) {
+                const libraryItems = await fetchCandidates(userId, null);
+                if (libraryItems.length === 0) throw new Error('No items found in selected libraries.');
+                items = filterUnwatched(libraryItems);
+                if (items.length === 0) throw new Error('No unwatched items found in selected libraries.');
+            }
+            return items[Math.floor(Math.random() * items.length)];
         } catch (error) {
             console.error('🪼 Jellyfin Enhanced: Error fetching random item:', error);
             JE.toast(`${JE.icon(JE.IconName.ERROR)} ${error.message || 'Unknown error'}`, 2000);
@@ -91,7 +166,8 @@
                 const itemUrl = `#!/details?id=${item.Id}${serverId ? `&serverId=${serverId}` : ''}`;
                 window.location.hash = itemUrl;
             }
-            JE.toast(JE.t('toast_random_item_loaded'), 2000);
+            JE.toast(fallbackNotice || JE.t('toast_random_item_loaded'), fallbackNotice ? 3000 : 2000);
+            fallbackNotice = null;
         } else {
             console.error('🪼 Jellyfin Enhanced: Invalid item object or ID:', item);
             JE.toast(JE.t('toast_generic_error'), 2000);
