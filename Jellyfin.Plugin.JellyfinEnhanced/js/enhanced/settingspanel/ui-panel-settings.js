@@ -264,6 +264,42 @@
                 document.body.classList.toggle('je-tags-hide-on-hover', hideOnHoverCheckbox.checked);
             });
         }
+        // Rating tag scope (item types / home rows): nested under the master
+        // toggle exactly like the quality-tag categories above.
+        const ratingMasterToggle = document.getElementById('ratingTagsToggle');
+        const ratingSubWrap = document.getElementById('ratingTagsSubWrap');
+        const ratingSubGroup = document.getElementById('ratingTagsSubToggles');
+        const ratingSubExpander = document.getElementById('ratingTagsSubToggleExpander');
+        if (ratingMasterToggle && ratingSubWrap) {
+            ratingMasterToggle.addEventListener('change', () => {
+                ratingSubWrap.style.display = ratingMasterToggle.checked ? 'block' : 'none';
+                if (!ratingMasterToggle.checked && ratingSubGroup && ratingSubExpander) {
+                    ratingSubGroup.style.display = 'none';
+                    ratingSubExpander.setAttribute('aria-expanded', 'false');
+                }
+            });
+        }
+        if (ratingSubExpander && ratingSubGroup) {
+            ratingSubExpander.addEventListener('click', () => {
+                const expanded = ratingSubExpander.getAttribute('aria-expanded') === 'true';
+                ratingSubExpander.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+                ratingSubGroup.style.display = expanded ? 'none' : 'block';
+            });
+        }
+        if (ratingSubGroup) {
+            ratingSubGroup.addEventListener('change', (e) => {
+                const target = e.target;
+                if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
+                const settingKey = target.closest('.je-quality-cat-row')?.dataset.catKey;
+                if (!settingKey) return;
+                JE.currentSettings[settingKey] = target.checked;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                if (typeof JE.reinitializeRatingTags === 'function' && JE.currentSettings.ratingTagsEnabled) {
+                    JE.reinitializeRatingTags();
+                }
+                resetAutoCloseTimer();
+            });
+        }
         addSettingToggleListener('disableCustomSubtitleStyles', 'disableCustomSubtitleStyles', 'feature_disable_custom_subtitle_styles', true);
         addSettingToggleListener('longPress2xEnabled', 'longPress2xEnabled', 'feature_long_press_2x_speed');
 

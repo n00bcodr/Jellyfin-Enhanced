@@ -112,6 +112,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             LanguageTagsPriority = string.Empty;
             LanguageTagsPriorityStrict = false;
             RatingTagsPosition = "bottom-right";
+            RatingTagsOnMovies = true;
+            RatingTagsOnSeries = true;
+            RatingTagsOnSeasons = true;
+            RatingTagsOnEpisodes = true;
+            RatingTagsOnContinueWatching = true;
+            RatingTagsOnNextUp = true;
             ShowRatingInPlayer = true;
             DisableAllShortcuts = false;
             DefaultSubtitleStyle = 0;
@@ -583,6 +589,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool LanguageTagsPriorityStrict { get; set; }
         [AnalyticsInclude]
         public string RatingTagsPosition { get; set; } = "bottom-right";
+        // Where rating tags are allowed to render. The item-type switches gate
+        // cards by their Jellyfin type; the two home-row switches additionally
+        // gate any card shown in the Continue Watching / Next Up rows. All
+        // default to true so existing installs render exactly as before.
+        public bool RatingTagsOnMovies { get; set; } = true;
+        public bool RatingTagsOnSeries { get; set; } = true;
+        public bool RatingTagsOnSeasons { get; set; } = true;
+        public bool RatingTagsOnEpisodes { get; set; } = true;
+        public bool RatingTagsOnContinueWatching { get; set; } = true;
+        public bool RatingTagsOnNextUp { get; set; } = true;
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool GenreTagsEnabled { get; set; }
         public string DefaultLanguage { get; set; }
