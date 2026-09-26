@@ -603,6 +603,7 @@ Show TMDB and Rotten Tomatoes ratings on posters and in player.
 - Stacked vertically on posters
 - Optional OSD display during playback
 - Color-coded by rating value
+- Choose where they appear: per item type (movies, series, seasons, episodes) and per home row (Continue Watching, Next Up), so you can keep ratings off episode cards. Admins set the defaults; users can override them in the Enhanced panel.
 
 
 ### People Tags
