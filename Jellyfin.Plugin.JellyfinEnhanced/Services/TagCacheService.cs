@@ -46,6 +46,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private readonly record struct EpisodeScan(string[]? Languages, TagStreamData? StreamData);
 
+        /// <summary>
+        /// Per-pass <see cref="EpisodeScan"/> memo, keyed by episode id.
+        /// <see cref="Pending"/> is set by the incremental passes (flush batch,
+        /// reconcile) to the ids being rebuilt in that pass: every other episode
+        /// already has a current entry in the live cache, so a container scan
+        /// takes its languages from there instead of re-reading its streams (a
+        /// 400-episode series touched by one episode change would otherwise open
+        /// 400 files). Null for the full build, whose live cache is the previous
+        /// generation.
+        /// </summary>
+        private sealed class EpisodeScanMemo : Dictionary<Guid, EpisodeScan>
+        {
+            public IReadOnlySet<Guid>? Pending { get; init; }
+        }
+
         // Guards the {_cacheReleased, _cache, _version, _lastModified} generation
         // as one unit for readers. Publish/release sites mutate all four inside
         // this lock (nested within _saveLock, always in that order), and snapshot
@@ -273,7 +288,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // value only references arrays/objects the episode's cache entry
             // already holds, so the extra cost is one dictionary slot (~50 bytes)
             // per episode, dropped with this frame when the build ends.
-            var episodeScans = new Dictionary<Guid, EpisodeScan>();
+            var episodeScans = new EpisodeScanMemo();
 
             foreach (var page in HydrateInPages(allIds, cancellationToken))
             {
@@ -438,7 +453,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var idsToRebuild = itemsToRebuild.Concat(containersToRebuild).ToList();
-            var episodeScans = new Dictionary<Guid, EpisodeScan>();
+            var episodeScans = new EpisodeScanMemo { Pending = idsToRebuild.ToHashSet() };
             var changed = false;
             var rebuilt = 0;
             foreach (var id in idsToRebuild)
@@ -752,7 +767,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
 
                     Interlocked.Exchange(ref _firstPendingTicks, 0);
-                    if (ApplyBatch(_pending.Drain(), RebuildWithBatchMemo(), RemoveEntry))
+                    var batch = _pending.Drain();
+                    if (ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry))
                     {
                         Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                         ScheduleDebouncedSave();
@@ -808,11 +824,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>
         /// Rebuild callback for one drained batch. An episode change queues the
         /// episode, its Season and its Series together, so one memo per batch
-        /// lets the second container reuse the episode streams the first read.
+        /// lets the second container reuse the episode streams the first read,
+        /// and episodes outside the batch come from their live cache entries.
         /// </summary>
-        private Func<Guid, bool> RebuildWithBatchMemo()
+        private Func<Guid, bool> RebuildWithBatchMemo(IReadOnlyList<(Guid Id, bool Removed)> batch)
         {
-            var episodeScans = new Dictionary<Guid, EpisodeScan>();
+            var episodeScans = new EpisodeScanMemo { Pending = batch.Select(change => change.Id).ToHashSet() };
             return id => RebuildEntry(id, episodeScans);
         }
 
@@ -822,7 +839,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <paramref name="episodeScans"/> is the caller's per-episode memo (see
         /// <see cref="BuildEntryForItem"/>), shared across one batch/reconcile.
         /// </summary>
-        private bool RebuildEntry(Guid id, Dictionary<Guid, EpisodeScan> episodeScans)
+        private bool RebuildEntry(Guid id, EpisodeScanMemo episodeScans)
         {
             var item = _libraryManager.GetItemById<BaseItem>(id);
             if (item == null) return false; // gone before we processed it; ItemRemoved cleans up
@@ -1331,7 +1348,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // or timestamp reconcile.
                 if (ServerModeEnabled && !_cacheReleased)
                 {
-                    if (ApplyBatch(_pending.Drain(), RebuildWithBatchMemo(), RemoveEntry))
+                    var batch = _pending.Drain();
+                    if (ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry))
                     {
                         Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                         _dirty = true;
@@ -1366,7 +1384,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// so every episode's streams are read once instead of once for the
         /// episode, once for its season and once for its series.
         /// </summary>
-        private TagCacheEntry? BuildEntryForItem(BaseItem item, Dictionary<Guid, EpisodeScan>? episodeScans = null)
+        private TagCacheEntry? BuildEntryForItem(BaseItem item, EpisodeScanMemo? episodeScans = null)
         {
             try
             {
@@ -1626,12 +1644,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// complete English/French dub, while an "es-ES" track that sits next to
         /// "es-419" on some episodes stays partial even if "es-419" is on all.
         /// <paramref name="episodeScans"/> is the pass's per-episode memo (see
-        /// <see cref="BuildEntryForItem"/>); episodes missing from it are read
-        /// here and recorded for the next container.
+        /// <see cref="BuildEntryForItem"/>); episodes missing from it are taken
+        /// from their live cache entry when the pass allows it (see
+        /// <see cref="EpisodeScanMemo"/>) or read here, and recorded for the
+        /// next container.
         /// </summary>
         private (BaseItem? FirstEpisode, string[] Languages, string[]? Partial) ScanContainerEpisodes(
             BaseItem container,
-            Dictionary<Guid, EpisodeScan>? episodeScans)
+            EpisodeScanMemo? episodeScans)
         {
             // Union keeps insertion order (deterministic for a stable library), so
             // the order-sensitive ContentEquals compare stays no-op on re-saves.
@@ -1648,6 +1668,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if (episodeScans != null && episodeScans.TryGetValue(episode.Id, out var scan))
                     {
                         languages = scan.Languages;
+                    }
+                    else if (episodeScans?.Pending != null
+                        && !episodeScans.Pending.Contains(episode.Id)
+                        && _cache.TryGetValue(episode.Id.ToString("N"), out var cached)
+                        && string.Equals(cached.Type, "Episode", StringComparison.Ordinal))
+                    {
+                        // Same "has streams" rule as the episode's own build: its
+                        // stream list only ever holds audio/video streams.
+                        languages = cached.StreamData?.Streams?.Count > 0 ? cached.AudioLanguages ?? Array.Empty<string>() : null;
+                        episodeScans[episode.Id] = new EpisodeScan(languages, cached.StreamData);
                     }
                     else
                     {
