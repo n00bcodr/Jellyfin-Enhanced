@@ -119,8 +119,9 @@
      * @returns {string} A CSS text-shadow value.
      */
     JE.getSubtitleTextShadow = (bgColor, presetIndex) => {
-        const index = presetIndex ?? JE.currentSettings.selectedTextEffectPresetIndex ?? 0;
-        const preset = JE.subtitleTextEffectPresets[index] || JE.subtitleTextEffectPresets[0];
+        const index = presetIndex ?? JE.currentSettings.selectedTextEffectPresetIndex;
+        // Anything that isn't a known preset index (stale or hand-edited settings) resolves to Auto.
+        const preset = (Number.isInteger(index) && JE.subtitleTextEffectPresets[index]) || JE.subtitleTextEffectPresets[0];
         if (preset.shadow !== null) return preset.shadow;
         return bgColor === 'transparent' || bgColor === '#00000000' ? AUTO_SHADOW : 'none';
     };

@@ -671,7 +671,9 @@
                     activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
                 }
             } else if (type === 'text-effect') {
-                currentIndex = JE.currentSettings.selectedTextEffectPresetIndex ?? 0;
+                currentIndex = JE.currentSettings.selectedTextEffectPresetIndex;
+                // An unknown index renders as Auto (see JE.getSubtitleTextShadow), so highlight that.
+                if (!Number.isInteger(currentIndex) || !JE.subtitleTextEffectPresets[currentIndex]) currentIndex = 0;
                 const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
                 if (activeBox) {
                     activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');

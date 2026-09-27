@@ -53,8 +53,9 @@
                 } else if (type === 'font-family') {
                     previewStyle = `font-family: ${preset.family}; color: #fff; text-shadow: 0 0 4px rgba(0,0,0,0.8); font-size: 1.5em;`;
                 } else if (type === 'text-effect') {
-                    // Auto is previewed on a transparent background, i.e. as its shadow.
-                    previewStyle = `color: #fff; font-size: 1.5em; text-shadow: ${JE.getSubtitleTextShadow('transparent', index)};`;
+                    // Auto is previewed on a transparent background, i.e. as its shadow. The
+                    // light backdrop stands in for a bright frame so the effects are tellable apart.
+                    previewStyle = `color: #fff; font-size: 1.5em; background-color: #8a8a8a; padding: 0 8px; border-radius: 4px; text-shadow: ${JE.getSubtitleTextShadow('transparent', index)};`;
                 }
                 return `
                     <div class="preset-box ${type}-preset" data-preset-index="${index}" title="${escapeHtml(preset.name)}" style="display: flex; justify-content: center; align-items: center; padding: 8px; border: 2px solid transparent; border-radius: 8px; cursor: pointer; transition: all 0.2s; background: ${presetBoxBackground}; min-height: 30px;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='${presetBoxBackground}'">
