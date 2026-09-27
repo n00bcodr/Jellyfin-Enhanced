@@ -580,11 +580,15 @@ Display available audio languages as country flags on posters.
 - Also displays on item detail pages
 - Series and season cards show every language found across their episodes.
   A language that is missing from some episodes (a dub that only covers part
-  of the show) is drawn dimmed with a dashed outline, and its tooltip reads
-  "not on all episodes"; a plain flag means every episode has that audio.
-  Full-series languages are listed first. Requires the server-side tag cache
-  (on by default); in the legacy per-page mode the card reflects one
-  representative episode as before
+  of the show) is drawn dimmed with a dashed outline, and its flag's title/alt
+  text adds "not on all episodes"; a plain flag means every episode has that
+  audio. Full-series languages are listed first. Specials don't count against
+  a series' full languages, and tracks without a language tag are ignored.
+  Differently tagged copies of one language (`eng` / `en`, `fre` / `fr-FR`)
+  count as the same dub; two regional variants that sit side by side in one
+  episode (`es-419` and `es-ES`) are judged separately. Requires the
+  server-side tag cache (on by default); in the legacy per-page mode the card
+  reflects one representative episode as before
 - Regional variants get their own flag when the audio track is explicitly
   tagged with a region: `pt-BR` shows the Brazilian flag while `pt` / `pt-PT`
   keep the Portuguese one, `es-419` / `es-MX` (Latin-American Spanish) show

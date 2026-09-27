@@ -222,7 +222,7 @@
             const img = document.createElement('img');
             img.src = JE.core.mediaLanguage.flagSrc(flagInfo.countryCode);
             img.className = flagInfo.partial ? `${flagClass} ${partialFlagClass}` : flagClass;
-            img.alt = flagInfo.allLanguages.join(', ');
+            img.alt = flagInfo.labels.join(', ');
             img.title = flagInfo.labels.join(', ');
             img.loading = 'lazy';
             img.dataset.lang = flagInfo.countryCode.toLowerCase();
@@ -274,12 +274,15 @@
                     object-fit: cover;
                 }
                 /* Dub that doesn't cover every episode: dimmed, washed out and
-                   dash-outlined so it reads as "incomplete" next to a full flag. */
+                   dash-outlined so it reads as "incomplete" next to a full flag.
+                   The dark ring keeps the white dashes (and a white flag's edge)
+                   visible on light posters. */
                 .${partialFlagClass} {
                     opacity: 0.55;
                     filter: saturate(0.5);
-                    outline: 1px dashed rgba(255, 255, 255, 0.9);
+                    outline: 1px dashed rgba(255, 255, 255, 0.95);
                     outline-offset: -1px;
+                    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
                 }
                 .layout-mobile .${flagClass} {
                     width: clamp(20px, 5vw, 26px);
