@@ -629,7 +629,7 @@ Show the item's parental / age rating (PG-13, R, TV-MA, FSK 12, BBFC 15, ...) as
 - Off by default — enable it per user in the Enhanced panel (Settings tab), or set the admin default under Display → Media Tags
 
 !!! note
-    Age ratings are never hidden by Spoiler Guard — they reveal nothing about the plot, and the details page shows them regardless.
+    Spoiler Guard keeps the badge: a series' or movie's age rating reveals nothing about the plot, and the details page shows it regardless. While Spoiler Guard is hiding ratings, unwatched episodes (and unstarted seasons) of a guarded series show the series' rating rather than their own, since an episode rated higher than its show can hint at what happens in it.
 
 
 ### People Tags
