@@ -129,7 +129,6 @@
         }
 
         try {
-            fallbackNotice = null;
             const container = await resolveSourceContainer();
             let items = container ? filterUnwatched(await fetchCandidates(userId, container.Id)) : [];
             if (container && items.length === 0) {
@@ -208,6 +207,10 @@
         randomButton.addEventListener('click', async () => {
             randomButton.disabled = true;
             randomButton.classList.add('loading');
+            // Cleared per press, not per draw: a reason left by a draw that
+            // threw (or that another pick path skipped) must not ride on a
+            // later navigation.
+            fallbackNotice = null;
 
             const rollDice = () => {
                 currentFace = randomDiceFace(currentFace);
