@@ -273,7 +273,10 @@
         hau: 'ha', yor: 'yo', ibo: 'ig', cat: 'ca', glg: 'gl', eus: 'eu', baq: 'eu',
         bur: 'my', mya: 'my', wel: 'cy', cym: 'cy', tib: 'bo', bod: 'bo', mao: 'mi', mri: 'mi',
         // CLDR folds Tagalog into Filipino; pinned here so the pair also agrees without ICU aliases.
-        tgl: 'fil', tl: 'fil'
+        tgl: 'fil', tl: 'fil',
+        // Bokmål and Nynorsk are written standards of one spoken language, and
+        // audio is tagged nor, nob or nno interchangeably: fold them into no.
+        nob: 'no', nb: 'no', nno: 'no', nn: 'no'
     };
 
     /** Memo for `canonicalBase`: it runs per audio stream per card. */
@@ -281,7 +284,7 @@
 
     /**
      * Canonical form of a parsed base language: the ISO 639-1 code where one
-     * exists (`eng` → `en`, `deu` → `de`), via the table above and then
+     * exists (`eng` → `en`; `ger`, `deu` and `de` all yield `de`), via the table above and then
      * ICU's CLDR aliases (`tl`/`tgl` → `fil`, `iw` → `he`) where the engine
      * offers `Intl.getCanonicalLocales`. Unknown codes come back unchanged so
      * two equal unknowns still match each other.
@@ -301,20 +304,6 @@
         }
         canonicalBaseCache.set(base, canonical);
         return canonical;
-    }
-
-    /**
-     * Canonical base language of a tag, for equality checks across ISO
-     * 639-1 / 639-2 spellings and regional variants: `eng`, `en-US` and
-     * `en` all yield `en`; `ger`, `deu` and `de-AT` all yield `de`. Region
-     * and script subtags are dropped — use `parseLanguageTag` when they
-     * matter.
-     * @param {string} raw
-     * @returns {string|null} Canonical base, or null when unparseable.
-     */
-    function canonicalLanguage(raw) {
-        const parsed = parseLanguageTag(raw);
-        return parsed ? canonicalBase(parsed.base) : null;
     }
 
     /**
@@ -347,7 +336,6 @@
         displayName,
         resolveFlag,
         flagSrc,
-        canonicalLanguage,
         matchesLanguage,
         baseLanguageFlags,
         specialFlags
