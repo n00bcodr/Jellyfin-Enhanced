@@ -130,7 +130,8 @@
     /**
      * Loads the signed-in user's Jellyfin audio language preference when the
      * effective setting needs it (no request otherwise). One request per
-     * user at a time; a failure is logged and keeps whatever was loaded.
+     * user at a time; a failure is logged and keeps whatever was loaded
+     * (no preference for a user with nothing loaded yet).
      * @returns {Promise<void>}
      */
     function primeJellyfinAudioPreference() {
@@ -155,6 +156,12 @@
             })
             .catch((err) => {
                 console.warn(`${logPrefix} Could not read the Jellyfin audio language preference`, err);
+                // A user with nothing loaded yet counts as having no preference,
+                // so the tags render (and a later refresh is not held up).
+                if (window.ApiClient?.getCurrentUserId?.() === userId && jellyfinAudioPreferenceUserId !== userId) {
+                    jellyfinAudioPreference = null;
+                    jellyfinAudioPreferenceUserId = userId;
+                }
             })
             .finally(() => {
                 if (jellyfinAudioPreferencePromise === request) {
@@ -165,6 +172,47 @@
         jellyfinAudioPreferencePromise = request;
         jellyfinAudioPreferencePromiseUserId = userId;
         return request;
+    }
+
+    /**
+     * Whether the sound tag depends on the signed-in user's Jellyfin audio
+     * language and that value is still being fetched for them (right after a
+     * user switch). Cards stay untagged meanwhile instead of being judged by
+     * no preference: tagged cards are skipped on rescan, so a wrong tag would
+     * otherwise stick. The registration that follows the request rescans them.
+     * @returns {boolean}
+     */
+    function isAudioPreferencePending() {
+        const userId = window.ApiClient?.getCurrentUserId?.() || null;
+        return !!userId
+            && jellyfinAudioPreferencePromiseUserId === userId
+            && jellyfinAudioPreferenceUserId !== userId
+            && usesJellyfinAudioPreference();
+    }
+
+    let playbackPreferencesWatched = false;
+
+    /**
+     * Re-reads the Jellyfin audio language when the user leaves Jellyfin's
+     * playback settings page (where it is changed) and re-renders the tags if
+     * it changed, so a new preference applies without a page reload. Costs one
+     * request per visit, and only when the effective setting follows it.
+     */
+    function watchPlaybackPreferencesPage() {
+        if (playbackPreferencesWatched || typeof JE.core?.navigation?.onNavigate !== 'function') return;
+        playbackPreferencesWatched = true;
+        const isPlaybackPreferences = () => /mypreferencesplayback/i.test(window.location.href);
+        let onPage = isPlaybackPreferences();
+        JE.core.navigation.onNavigate(() => {
+            const wasOnPage = onPage;
+            onPage = isPlaybackPreferences();
+            if (!wasOnPage || onPage) return;
+            if (!JE.currentSettings?.qualityTagsEnabled || !usesJellyfinAudioPreference()) return;
+            const before = resolvePreferredAudioLanguage();
+            primeJellyfinAudioPreference().then(() => {
+                if (resolvePreferredAudioLanguage() !== before) JE.core.tagRenderer.reinitialize('quality', spec);
+            });
+        });
     }
 
     /**
@@ -927,6 +975,7 @@
                 if (ctx.isTagged(el)) return;
                 // Skip cards hidden by hidden-content module
                 if (el.closest('.je-hidden')) return;
+                if (isAudioPreferencePending()) return;
 
                 const itemId = item.Id;
                 // Check hot cache first
@@ -956,6 +1005,8 @@
                 if (ctx.isTagged(el)) return true;
                 if (ctx.shouldIgnore(el)) return true;
                 if (el.closest('.je-hidden')) return true;
+                // No fetch while the preference loads; the rescan after it renders the card.
+                if (isAudioPreferencePending()) return true;
                 const hot = ctx.hot?.get(itemId);
                 const cached = hot || ctx.getPersistent(itemId);
                 if (cached && cached.qualities && cached.qualities.length > 0 && matchesAudioPreference(cached)) {
@@ -967,6 +1018,7 @@
             renderFromServerCache(ctx, el, entry, itemId) {
                 if (ctx.isTagged(el)) return;
                 if (ctx.shouldIgnore(el)) return;
+                if (isAudioPreferencePending()) return;
                 // Check local computed cache first (avoids re-running quality detection)
                 const cached = serverQualityCache.get(itemId);
                 if (cached && matchesAudioPreference(cached)) {
@@ -1003,6 +1055,7 @@
      * Initializes the Quality Tags feature.
      */
     JE.initializeQualityTags = function() {
+        watchPlaybackPreferencesPage();
         withJellyfinAudioPreference(() => JE.core.tagRenderer.register('quality', spec));
     };
 
@@ -1011,6 +1064,7 @@
      * Cleans up existing state and re-applies tags.
      */
     JE.reinitializeQualityTags = function() {
+        watchPlaybackPreferencesPage();
         withJellyfinAudioPreference(() => JE.core.tagRenderer.reinitialize('quality', spec));
     };
 
