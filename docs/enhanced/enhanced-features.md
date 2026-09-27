@@ -297,6 +297,7 @@ Fine-tune subtitle appearance with presets and custom colors.
 - **Auto** (default) keeps the long-standing behaviour: a soft shadow when the background is transparent, nothing when a background box is shown.
 - **None**, **Shadow**, **Outline** and **Outline + Shadow** apply that effect regardless of background. The outline is a black stroke that scales with the font size.
 - Admins can pick the default for new users with **Default Subtitle Text Effect** in the plugin settings.
+- The text effect takes the place of Jellyfin's own **Drop shadow** subtitle setting, so the two never stack. To use Jellyfin's drop shadow instead, turn on **Disable Custom Subtitle Styles**.
 
 **Usage:**
 
