@@ -483,7 +483,7 @@
             const savedId = JE.currentSettings.randomSourceId || '';
             const userId = ApiClient.getCurrentUserId();
             ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/Users/${userId}/Items?IncludeItemTypes=Playlist,BoxSet&Recursive=true&SortBy=SortName`), dataType: 'json' })
-                .then(response => {
+                .then(async response => {
                     if (!sourceSelect.isConnected) return; // panel closed before the list arrived
                     const groups = { Playlist: 'panel_settings_random_button_source_playlists', BoxSet: 'panel_settings_random_button_source_collections' };
                     for (const [type, labelKey] of Object.entries(groups)) {
@@ -494,9 +494,16 @@
                         items.forEach(item => group.appendChild(new Option(item.Name, item.Id, false, item.Id === savedId)));
                         sourceSelect.appendChild(group);
                     }
-                    // Keep a saved-but-gone source visible so the user can see why picks fall back.
+                    // A saved source missing from the list is either gone (show why picks fall back) or
+                    // still readable but filtered out of lists, e.g. hidden with Hidden Content, in which
+                    // case the button still draws from it, so show its real name.
                     if (savedId && sourceSelect.value !== savedId) {
-                        sourceSelect.appendChild(new Option(JE.t('panel_settings_random_button_source_missing'), savedId, false, true));
+                        const saved = await ApiClient.getItem(userId, savedId).catch(() => null);
+                        if (!sourceSelect.isConnected || JE.currentSettings.randomSourceId !== savedId) return;
+                        const label = saved && ['Playlist', 'BoxSet'].includes(saved.Type)
+                            ? saved.Name
+                            : JE.t('panel_settings_random_button_source_missing');
+                        sourceSelect.appendChild(new Option(label, savedId, false, true));
                     }
                 })
                 .catch(err => console.warn('🪼 Jellyfin Enhanced: Could not list playlists for the random source picker', err));
