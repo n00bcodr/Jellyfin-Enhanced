@@ -603,7 +603,7 @@ Show TMDB and Rotten Tomatoes ratings on posters and in player.
 - Stacked vertically on posters
 - Optional OSD display during playback
 - Color-coded by rating value
-- Choose where they appear, per item type (movies, series, seasons, episodes) and per home row (Continue Watching, Next Up). Untick **Episodes** to keep ratings off every episode card, including Next Up and Continue Watching; untick a row to hide them only in that row. Admins set the defaults; each user can change them under *Show Rating Tags* in the Enhanced panel.
+- Choose where they appear, per item type (movies, series, seasons, episodes) and per home row (Continue Watching, Next Up). Untick **Episodes** to keep ratings off every episode card, including Next Up and Continue Watching; untick a row to hide them only in that row (on the home screen, and the Next Up shelf on a series page). Rating chips and your own review chip are hidden together on an excluded card. Admins set the defaults; each user can change them under *Show Rating Tags* in the Enhanced panel.
 
 
 ### People Tags
