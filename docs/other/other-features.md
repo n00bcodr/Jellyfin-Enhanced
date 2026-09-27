@@ -567,7 +567,7 @@ Both message fields understand two tokens:
 - `{countdown}` - time remaining, e.g. `1h 05m` or `12m`
 - `{ends_at}` - the end time (local time of the viewer for the banner, server time in popups)
 
-When maintenance has a known end (a duration or a scheduled window) and a message contains no `{countdown}` token, the time remaining is appended automatically. The banner refreshes every 15 seconds and removes itself when maintenance ends. With a duration set, the **Enable Maintenance Mode** toggle also switches itself off when the time is up. Re-saving the settings page with the same duration keeps the running clock; changing the number restarts it.
+When maintenance has a known end (a duration or a scheduled window) and a message contains no `{countdown}` token, the time remaining is appended automatically (in English, as `Time remaining: 12m.`; on a non-English server put `{countdown}` in the message instead). The banner refreshes every 15 seconds and removes itself when maintenance ends. With a duration set, the **Enable Maintenance Mode** toggle also switches itself off when the time is up. Re-saving the settings page with the same duration keeps the running clock; changing the number restarts it.
 
 ### Reminders on playback start
 

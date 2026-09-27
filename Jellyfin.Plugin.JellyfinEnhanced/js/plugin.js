@@ -373,7 +373,7 @@
             return text.replace(/\{countdown\}/gi, '').replace(/\{ends_at\}/gi, '').trim();
         }
         const countdown = formatMaintenanceCountdown(endsAt.getTime() - Date.now());
-        const endsAtText = endsAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const endsAtText = endsAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         const hasToken = /\{countdown\}/i.test(text);
         const out = text.replace(/\{countdown\}/gi, countdown).replace(/\{ends_at\}/gi, endsAtText).trim();
         return hasToken ? out : out + ' Time remaining: ' + countdown + '.';
@@ -392,8 +392,10 @@
         const text = formatMaintenanceText(message, endsAt);
         const banner = document.createElement('div');
         banner.id = 'je-maintenance-banner';
+        // Above Jellyfin's own chrome (app bar, drawers, dialogs, video player) but below JE's
+        // modals (z-index 9999+), so a full-height modal's close button is never hidden under it.
         banner.style.cssText = [
-            'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:99999',
+            'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:9990',
             'background:#b71c1c', 'color:#fff', 'text-align:center',
             'padding:10px 16px', 'font-size:14px', 'font-weight:600',
             'letter-spacing:0.02em', 'box-shadow:0 2px 8px rgba(0,0,0,0.4)',
@@ -401,31 +403,46 @@
         ].join(';');
         banner.textContent = text;
         document.body.appendChild(banner);
-        // Inject a stylesheet that shifts Jellyfin's fixed header + body down by the banner height.
-        // We use a <style> tag so the rule applies even if Jellyfin re-renders its header.
-        requestAnimationFrame(function() {
-            const h = banner.offsetHeight;
-            if (h <= 0) return;
-            const existing = document.getElementById('je-maintenance-banner-style');
-            if (existing) return;
-            const style = document.createElement('style');
-            style.id = 'je-maintenance-banner-style';
+        // A <style> tag shifts Jellyfin's fixed header, drawers and the body down by the banner
+        // height, so the rules survive Jellyfin re-rendering its header. The height is tracked
+        // rather than measured once: the countdown text, a narrow viewport or a window resize can
+        // change how many lines the banner wraps to.
+        let appliedHeight = -1;
+        const applyOffset = function() {
+            const h = banner.isConnected ? banner.offsetHeight : 0;
+            if (h === appliedHeight) return;
+            appliedHeight = h;
+            let style = document.getElementById('je-maintenance-banner-style');
+            if (h <= 0) {
+                if (style) style.remove();
+                return;
+            }
+            if (!style) {
+                style = document.createElement('style');
+                style.id = 'je-maintenance-banner-style';
+                document.head.appendChild(style);
+            }
             style.textContent = [
                 'body { padding-top: ' + h + 'px !important; }',
                 '.skinHeader { top: ' + h + 'px !important; }',
                 '.mainDrawer { top: ' + h + 'px !important; }',
+                // Jellyfin 12 Modern Layout: MUI app bar and side drawers are fixed at top:0 too.
+                '.MuiAppBar-positionFixed { top: ' + h + 'px !important; }',
+                '.MuiDrawer-paperAnchorLeft, .MuiDrawer-paperAnchorRight { top: ' + h + 'px !important; height: calc(100% - ' + h + 'px) !important; }',
                 '.videoOsdBottom { bottom: 0 !important; }'
             ].join('\n');
-            document.head.appendChild(style);
-        });
+        };
+        requestAnimationFrame(applyOffset);
+        const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(applyOffset) : null;
+        if (resizeObserver) resizeObserver.observe(banner);
         if (!endsAt) return;
         const tick = setInterval(function() {
             if (!document.body.contains(banner)) { clearInterval(tick); return; }
             if (endsAt.getTime() <= Date.now()) {
                 clearInterval(tick);
+                if (resizeObserver) resizeObserver.disconnect();
                 banner.remove();
-                const style = document.getElementById('je-maintenance-banner-style');
-                if (style) style.remove();
+                applyOffset();
                 return;
             }
             banner.textContent = formatMaintenanceText(message, endsAt);
