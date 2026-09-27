@@ -112,8 +112,10 @@
       // Whether the All | Movies | Series control governs this page.
       filtered: false,
       // Per-feed cursor: page is the last page committed (0 = page 1 still
-      // owed), seen counts the raw rows the feed has answered with.
-      feeds: category.feeds.map(f => ({ path: f.path, mediaType: f.mediaType || null, page: 0, totalPages: 0, hasMore: true, seen: 0 }))
+      // owed), seen counts the raw rows the feed has answered with, failing
+      // marks a feed whose last fetch failed (it is re-asked one page at a
+      // time while the other feed keeps paging, e.g. Seerr down beside TMDB).
+      feeds: category.feeds.map(f => ({ path: f.path, mediaType: f.mediaType || null, page: 0, totalPages: 0, hasMore: true, seen: 0, failing: false }))
     };
   }
 
@@ -149,7 +151,7 @@
    */
   function prefetchCategoryPages(st, count) {
     for (const feed of activeFeeds(st)) {
-      if (!feed.hasMore) continue;
+      if (!feed.hasMore || (feed.failing && st.feeds.length > 1)) continue;
       const last = feed.totalPages ? Math.min(feed.totalPages, feed.page + count) : feed.page + count;
       for (let p = feed.page + 1; p <= last; p++) {
         fetchWithManagedRequest(`${feed.path}?page=${p}`).catch(() => {});
@@ -240,7 +242,8 @@
       if (count < 1) return { pages: 0, rendered: 0 }; // out of budget for now; the valve decides, not us
       const plans = feeds.map(feed => {
         const pages = [];
-        const last = feed.totalPages ? Math.min(feed.totalPages, feed.page + count) : feed.page + count;
+        const ahead = feed.failing && st.feeds.length > 1 ? 1 : count;
+        const last = feed.totalPages ? Math.min(feed.totalPages, feed.page + ahead) : feed.page + ahead;
         for (let p = feed.page + 1; p <= last; p++) pages.push(p);
         return { feed, pages };
       });
@@ -262,7 +265,8 @@
         const settled = settledPerFeed[i];
         for (let j = 0; j < settled.length; j++) {
           const s = settled[j];
-          if (s.status !== 'fulfilled') { if (s.reason?.name === 'AbortError') throw s.reason; if (!firstError) firstError = s.reason; break; }
+          if (s.status !== 'fulfilled') { if (s.reason?.name === 'AbortError') throw s.reason; if (!firstError) firstError = s.reason; feed.failing = true; break; }
+          feed.failing = false;
           results.push(...commitPage(feed, pages[j], s.value));
           committed++;
         }
@@ -325,6 +329,7 @@
       // for page 1 again, rather than silently starting at page 2.
       feed.page = 0;
       feed.hasMore = true;
+      feed.failing = true;
       console.error(`${logPrefix} Failed to load category page 1; it will be retried`, s.reason);
       return [];
     });
