@@ -67,7 +67,7 @@ Some series (often anime and shorts) have no TVDB ID on TMDB, so Seerr cannot ha
 2. Click the correct match, or type the series' **TVDB ID** (the number in its thetvdb.com URL) if none of them fit or Seerr has no Sonarr configured.
 3. Request as usual; the request is sent to Seerr with that TVDB ID.
 
-Series that already have a TVDB ID never show this block.
+Series that already have a TVDB ID never show this block, and neither do series Seerr has already matched (for example after an earlier matched request), since Seerr reuses the ID it has stored.
 
 #### Request Status Indicators:
 

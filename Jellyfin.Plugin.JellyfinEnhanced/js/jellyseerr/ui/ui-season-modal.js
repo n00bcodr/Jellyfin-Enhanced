@@ -95,8 +95,15 @@
         // No TVDB id on TMDB (common for anime): Seerr can't hand the show to
         // Sonarr, and its own web UI asks the user to pick a match (#653).
         // Mirror that with a match block above the season list; same check
-        // Seerr's TvRequestModal uses (`!data.externalIds.tvdbId`).
-        const needsTvdbMatch = !tvDetails.externalIds?.tvdbId;
+        // Seerr's TvRequestModal uses (`!data.externalIds.tvdbId`). Skipped when
+        // Seerr already stores a TVDB id on its media row (an earlier matched
+        // request, or its Sonarr sync): Seerr hands that stored id to Sonarr.
+        // The stored id is still sent with the request so it survives a media
+        // row deleted since these (cached) details were fetched.
+        const storedTvdbId = Number.isInteger(tvDetails.mediaInfo?.tvdbId) && tvDetails.mediaInfo.tvdbId > 0
+            ? tvDetails.mediaInfo.tvdbId
+            : null;
+        const needsTvdbMatch = !tvDetails.externalIds?.tvdbId && !storedTvdbId;
 
         // Show season selection UI with Select All checkbox header
         const bodyHtml = `${needsTvdbMatch ? buildTvdbMatchHTML() : ''}<div class="jellyseerr-season-list">
@@ -122,7 +129,7 @@
                 // Seerr accepts the request and then silently drops it when the
                 // Sonarr hand-off fails ("TVDB ID not found"). Checked first,
                 // like Seerr's own match step precedes its request form.
-                let manualTvdbId = null;
+                let manualTvdbId = tvDetails.externalIds?.tvdbId ? null : storedTvdbId;
                 if (needsTvdbMatch) {
                     manualTvdbId = readManualTvdbId(modalEl);
                     if (!manualTvdbId) {
