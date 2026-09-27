@@ -6867,6 +6867,9 @@
         setupBrandingUploads();
         setupMaintenanceModeControls();
 
+        // Jellyfin's culture list feeds both the UI language and the sound-tag audio language dropdowns.
+        const culturesPromise = ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' });
+
         // Populate language options dynamically
         (async () => {
             const defaultLanguageSelect = document.getElementById('DefaultLanguage');
@@ -6884,7 +6887,7 @@
             try {
                 const [localeCodes, cultures] = await Promise.all([
                     ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/locales'), dataType: 'json' }),
-                    ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' })
+                    culturesPromise
                 ]);
 
                 // Check GitHub for any new locale files added since the last plugin release (1 request)
@@ -6929,27 +6932,35 @@
                     option.textContent = displayName;
                     defaultLanguageSelect.appendChild(option);
                 });
-
-                // Preferred audio language for sound tags: every Jellyfin culture, by name.
-                const qualityAudioLangSelect = document.getElementById('qualityTagsPreferredAudioLanguage');
-                if (qualityAudioLangSelect) {
-                    // loadConfig may have run first and parked the saved code as a bare option; the named list replaces it.
-                    qualityAudioLangSelect.querySelectorAll('option[data-je-placeholder]').forEach(o => o.remove());
-                    const seen = new Set();
-                    cultures
-                        .map(c => ({ code: c.TwoLetterISOLanguageName || c.ThreeLetterISOLanguageName, name: c.DisplayName || c.Name }))
-                        .filter(o => o.code && o.name && !seen.has(o.code) && seen.add(o.code))
-                        .sort((a, b) => a.name.localeCompare(b.name))
-                        .forEach(({ code, name }) => {
-                            const option = document.createElement('option');
-                            option.value = code;
-                            option.textContent = name;
-                            qualityAudioLangSelect.appendChild(option);
-                        });
-                    applyQualityAudioLanguage(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
-                }
             } catch (err) {
                 console.warn('Jellyfin Enhanced: Failed to load language options:', err);
+            }
+        })();
+
+        // Preferred audio language for sound tags: every Jellyfin culture, by name. Kept apart from
+        // the UI language list so a slow GitHub probe or a failed locales request cannot hold it up.
+        (async () => {
+            const qualityAudioLangSelect = document.getElementById('qualityTagsPreferredAudioLanguage');
+            if (!qualityAudioLangSelect) return;
+            try {
+                const cultures = await culturesPromise;
+                // loadConfig may have run first and parked the saved code as a bare option; the named list replaces it.
+                qualityAudioLangSelect.querySelectorAll('option[data-je-placeholder]').forEach(o => o.remove());
+                const seen = new Set();
+                cultures
+                    .map(c => ({ code: c.TwoLetterISOLanguageName || c.ThreeLetterISOLanguageName, name: c.DisplayName || c.Name }))
+                    .filter(o => o.code && o.name && !seen.has(o.code) && seen.add(o.code))
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .forEach(({ code, name }) => {
+                        const option = document.createElement('option');
+                        option.value = code;
+                        option.textContent = name;
+                        qualityAudioLangSelect.appendChild(option);
+                    });
+                applyQualityAudioLanguage(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
+            } catch (err) {
+                // loadConfig parks the saved code as a bare option, so a save still keeps it.
+                console.warn('Jellyfin Enhanced: Failed to load audio language options:', err);
             }
         })();
 

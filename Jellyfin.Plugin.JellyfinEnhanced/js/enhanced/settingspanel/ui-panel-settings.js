@@ -215,7 +215,9 @@
         // like the display-language dropdown.
         const audioLangSelect = document.getElementById('qualityTagsAudioLanguageSelect');
         if (audioLangSelect) {
-            const saved = JE.currentSettings.qualityTagsPreferredAudioLanguage || '';
+            // The fixed choices exist already; a language is selected once the list loads.
+            const initial = JE.currentSettings.qualityTagsPreferredAudioLanguage || '';
+            if (Array.from(audioLangSelect.options).some(o => o.value === initial)) audioLangSelect.value = initial;
             (async () => {
                 try {
                     const cultures = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' });
@@ -235,6 +237,9 @@
                 } catch (err) {
                     console.warn('🪼 Jellyfin Enhanced: Failed to load audio language options:', err);
                 }
+                // Read the setting only now: the user may have picked one of the
+                // fixed choices while the list was loading.
+                const saved = JE.currentSettings.qualityTagsPreferredAudioLanguage || '';
                 // A saved code the list doesn't offer (e.g. a hand-edited pt-BR) still shows as selected.
                 if (saved && !Array.from(audioLangSelect.options).some(o => o.value === saved)) {
                     const option = document.createElement('option');
