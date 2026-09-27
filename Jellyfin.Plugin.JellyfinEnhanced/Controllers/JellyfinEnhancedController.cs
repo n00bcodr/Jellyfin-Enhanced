@@ -7124,6 +7124,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     sanitizeTitleStreams =
                         (spCfg?.SpoilerReplaceTitle == true && (spPrefs?.ReplaceEpisodeTitles ?? true))
                         || (spCfg?.SpoilerStripOverview == true && (spPrefs?.HideEpisodeDescriptions ?? true));
+                    // Series age rating per guarded series, looked up once per request.
+                    var ageSeriesRatingMemo = new Dictionary<Guid, string?>();
 
                     foreach (var kvp in items.ToList())
                     {
@@ -7245,6 +7247,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             stripped.CommunityRating = null;
                             stripped.CriticRating = null;
+                            // Age rating: keep the series-level one (not a spoiler) but
+                            // drop an Episode/Season's own, which can differ from the
+                            // series and Jellyfin never shows. Mirrors GetTagData's stubs.
+                            if ((isEpisode || isSeason) && Guid.TryParse(entry.SeriesId, out var ageSeriesGuid))
+                            {
+                                if (!ageSeriesRatingMemo.TryGetValue(ageSeriesGuid, out var ageSeriesRating))
+                                {
+                                    ageSeriesRating = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(ageSeriesGuid)?.OfficialRating;
+                                    ageSeriesRating = string.IsNullOrWhiteSpace(ageSeriesRating) ? null : ageSeriesRating;
+                                    ageSeriesRatingMemo[ageSeriesGuid] = ageSeriesRating;
+                                }
+                                stripped.OfficialRating = ageSeriesRating;
+                            }
                         }
                         // When StreamData wasn't already wiped by tag-strip but title
                         // replacement / overview strip is on, sanitize its title-bearing
@@ -7421,14 +7436,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Age rating for the Age Rating Tags overlay. Seasons/Episodes rarely
             // carry their own, so fall back to the Series — resolved here (not on
             // the client) so batch mode matches the server tag cache, which does
-            // the same in TagCacheService.BuildEntryForItem. Deliberately NOT
-            // spoiler-stripped: an age rating reveals nothing about the plot.
+            // the same in TagCacheService.BuildEntryForItem. The series-level age
+            // rating is never spoiler-stripped (it reveals nothing about the plot
+            // and Jellyfin shows it in the series header), but an Episode/Season's
+            // OWN rating can differ from the series (a TV-MA episode of a TV-14
+            // show) and Jellyfin never displays it — so the Spoiler Guard stubs
+            // below pass seriesOnly when ratings are stripped.
             // A batch is typically one series' worth of episodes, so the parent
             // lookup is memoized per request rather than repeated per item.
             var seriesRatingMemo = new Dictionary<Guid, string?>();
-            string? ResolveTagDataOfficialRating(BaseItem tagItem)
+            string? ResolveTagDataOfficialRating(BaseItem tagItem, bool seriesOnly = false)
             {
-                if (!string.IsNullOrWhiteSpace(tagItem.OfficialRating))
+                if (!seriesOnly && !string.IsNullOrWhiteSpace(tagItem.OfficialRating))
                 {
                     return tagItem.OfficialRating;
                 }
@@ -7588,7 +7607,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             Genres = spStripGenres ? Array.Empty<string>() : (spEp.Genres ?? Array.Empty<string>()),
                             CommunityRating = spStripRatings ? (float?)null : spEp.CommunityRating,
                             CriticRating = spStripRatings ? (float?)null : spEp.CriticRating,
-                            OfficialRating = ResolveTagDataOfficialRating(spEp),
+                            OfficialRating = ResolveTagDataOfficialRating(spEp, seriesOnly: spStripRatings),
                             // Suppress the parent-series rating fallback only when the
                             // rating strip is requested; leaving SeriesId set under tag-only
                             // strip lets the rating overlay keep rendering.
@@ -7760,7 +7779,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 Genres = spStripGenres ? Array.Empty<string>() : (spSeason.Genres ?? Array.Empty<string>()),
                                 CommunityRating = spStripRatings ? (float?)null : spSeason.CommunityRating,
                                 CriticRating = spStripRatings ? (float?)null : spSeason.CriticRating,
-                                OfficialRating = ResolveTagDataOfficialRating(spSeason),
+                                OfficialRating = ResolveTagDataOfficialRating(spSeason, seriesOnly: spStripRatings),
                                 SeriesId = spStripRatings ? (Guid?)null : spSeason.SeriesId,
                                 ProviderIds = (IDictionary<string, string>?)null,
                                 Name = stubName,

@@ -6,8 +6,12 @@
 // supplies only the age-rating-specific parts: reading OfficialRating, the
 // badge markup, and the per-rating colour table shared with Colored Ratings.
 //
-// Not Spoiler-Guarded on purpose: an age rating says nothing about the plot,
-// and Jellyfin already shows it in the details-page header of guarded items.
+// Spoiler Guard: the badge stays on guarded items — a series' / movie's age
+// rating says nothing about the plot and Jellyfin shows it in the details
+// header. An unwatched Episode's (or unstarted Season's) OWN rating can differ
+// from the series and Jellyfin never shows it, so while ratings are stripped
+// the server hands those items the series rating instead; cached entries for
+// guarded series are re-fetched rather than trusted (see isGuardedSeries).
 (function(JE) {
     'use strict';
 
@@ -92,15 +96,41 @@
     }
 
     /**
+     * True when Spoiler Guard may be stripping ratings for this series, so a
+     * cached Episode/Season rating (possibly the item's own, captured before
+     * the guard was switched on) must not be trusted. Mirrors the gating of
+     * ratingtags.js shouldSuppressRatingTag. Returning true only costs a
+     * re-fetch — the server decides what the item may show — so unknown or
+     * not-yet-loaded guard state errs towards true.
+     * @param {string|null|undefined} seriesId - Parent series of the cached item.
+     * @returns {boolean}
+     */
+    function isGuardedSeries(seriesId) {
+        if (!seriesId) return false;
+        try {
+            const cfg = JE.pluginConfig;
+            if (!cfg || cfg.SpoilerBlurEnabled !== true || cfg.SpoilerStripRatings === false) return false;
+            const sg = JE.spoilerBlur;
+            if (!sg || typeof sg.isEnabledFor !== 'function') return false;
+            const prefs = (typeof sg.getUserPrefs === 'function' && sg.getUserPrefs()) || {};
+            if (prefs.HideRatings === false) return false;
+            if (typeof sg.isLoadOk === 'function' && sg.isLoadOk() !== true) return true;
+            return sg.isEnabledFor(seriesId) === true;
+        } catch {
+            return true;
+        }
+    }
+
+    /**
      * Retrieve a cached entry from localStorage or hot cache.
      * @param {Object} ctx - Factory context.
      * @param {string} itemId - Jellyfin item ID.
-     * @returns {{rating: string|null}|null} Cached entry or null when unknown.
+     * @returns {{rating: string|null, seriesId: string|null}|null} Cached entry or null when unknown.
      */
     function getCachedEntry(ctx, itemId) {
         const entry = ctx.getPersistent(itemId) ?? ctx.hot?.get(itemId);
         if (!entry || typeof entry !== 'object') return null;
-        return { rating: entry.rating ?? null };
+        return { rating: entry.rating ?? null, seriesId: entry.s ?? null };
     }
 
     /**
@@ -109,10 +139,11 @@
      * @param {Object} ctx - Factory context.
      * @param {string} itemId - Jellyfin item ID.
      * @param {string|null} rating - Normalized rating.
+     * @param {string|null} seriesId - Parent series for Episodes/Seasons, else null.
      * @returns {void}
      */
-    function setCachedEntry(ctx, itemId, rating) {
-        const entry = { rating };
+    function setCachedEntry(ctx, itemId, rating, seriesId) {
+        const entry = seriesId ? { rating, s: seriesId } : { rating };
         ctx.setPersistent(itemId, entry);
         ctx.hot?.set(itemId, entry);
     }
@@ -228,19 +259,19 @@
                 if (ctx.isTagged(el)) return;
                 if (el.closest('.je-hidden')) return;
 
-                const itemId = item.Id;
-                const cached = getCachedEntry(ctx, itemId);
-                if (cached) {
-                    applyAgeRatingTag(ctx, el, cached.rating);
-                    return;
-                }
-
+                // Always read the item just fetched rather than the cache: it is
+                // fresh and Spoiler-Guard-aware, a cached entry may predate the guard.
                 // /tag-data resolves the Season/Episode → Series fallback server-side;
                 // the parent series handed over by the pipeline (when another renderer
                 // asked for it) only covers the raw /Items fallback path.
                 const rating = normalizeRating(item.OfficialRating)
                     ?? normalizeRating(extras?.parentSeries?.OfficialRating);
-                setCachedEntry(ctx, itemId, rating);
+                const isChild = item.Type === 'Episode' || item.Type === 'Season';
+                // A child with no SeriesId is a Spoiler Guard strip stub carrying the
+                // series rating: show it, but don't persist it as the item's own.
+                if (!isChild || item.SeriesId) {
+                    setCachedEntry(ctx, item.Id, rating, isChild ? String(item.SeriesId) : null);
+                }
                 applyAgeRatingTag(ctx, el, rating);
             },
             renderFromCache(ctx, el, itemId) {
@@ -249,6 +280,9 @@
                 if (el.closest('.je-hidden')) return true;
                 const cached = getCachedEntry(ctx, itemId);
                 if (!cached) return false;
+                // Guarded series: re-fetch so the server can swap an episode's own
+                // rating for the series one.
+                if (isGuardedSeries(cached.seriesId)) return false;
                 applyAgeRatingTag(ctx, el, cached.rating);
                 // A cached "no rating" is still a cache hit — nothing to fetch.
                 return true;
