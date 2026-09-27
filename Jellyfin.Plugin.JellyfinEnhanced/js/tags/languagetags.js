@@ -82,7 +82,10 @@
                     let resolvedName = name;
                     try { if (!resolvedName) resolvedName = new Intl.DisplayNames(['en'], { type: 'language' }).of(code) || code.toUpperCase(); }
                     catch { resolvedName = (name || code.toUpperCase()); }
-                    obj = { name: resolvedName, code, partial: !!entry.partial };
+                    obj = { name: resolvedName, code };
+                    // Only the server cache path sets it, so the localStorage
+                    // cache (legacy per-page mode) never carries the field.
+                    if (entry.partial) obj.partial = true;
                 }
             }
             if (!obj) continue;
