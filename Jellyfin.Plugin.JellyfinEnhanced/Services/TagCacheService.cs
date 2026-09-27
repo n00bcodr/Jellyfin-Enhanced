@@ -819,7 +819,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>
         /// Resolve an id to its live library item and (re)build its cache entry.
         /// Returns true if the cache was modified. Runs on the flush worker only.
-        /// <paramref name=episodeScans/> is the caller's per-episode memo (see
+        /// <paramref name="episodeScans"/> is the caller's per-episode memo (see
         /// <see cref="BuildEntryForItem"/>), shared across one batch/reconcile.
         /// </summary>
         private bool RebuildEntry(Guid id, Dictionary<Guid, EpisodeScan> episodeScans)
