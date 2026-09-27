@@ -130,6 +130,7 @@ Customize quality tag appearance.
     opacity: 1 !important;
     filter: none !important;
     outline: 2px solid gold !important;
+    /* or hide them: display: none !important; */
 }
 ```
 
