@@ -108,8 +108,8 @@ Users can also manually opt in via the **Enable Spoiler Guard** button in the Se
 
 Details worth knowing:
 
-- Only brand-new titles count. A title is armed once, when Jellyfin first creates it; a user who later switches Spoiler Guard off for it is not re-armed by metadata refreshes. Titles already in the library when you turn this on are not armed retroactively (a rescan doesn't count as new), while adding a whole new library arms every title in it.
-- It applies to every enabled user who has access to the title's library (per the user's library-access policy). There is no per-user opt-out, same as the first-play mode.
+- Only brand-new titles count. A title is armed once, when Jellyfin first creates it; a user who later switches Spoiler Guard off for it is not re-armed by metadata refreshes or rescans. (If **Auto-enable on first play** is also on, starting S1E1 of a show you haven't watched any episode of still arms it again, as it always has.) Titles already in the library when you turn this on are not armed retroactively (a rescan doesn't count as new), while adding a whole new library arms every title in it.
+- It applies to every user who has access to the title's library (per the user's library-access policy), including disabled accounts, so titles added while maintenance mode has accounts switched off are still protected when those users come back. Users created after a title was added don't get it. There is no per-user opt-out, same as the first-play mode.
 - Library scans are batched: the titles a scan adds are collected and written in a single settings update per user about ten seconds after the first one appears (a long scan flushes every ten seconds), never one write per title.
 
 ---

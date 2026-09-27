@@ -38,7 +38,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // once, when it is new, so a user who later switches Spoiler Guard off
     // for it is never re-armed by a metadata refresh. There is no per-user
     // opt-out beyond that — like the first-play mode, this applies to every
-    // (non-disabled) user on the instance.
+    // user on the instance. Disabled accounts are included on purpose:
+    // maintenance mode's "disable accounts" action disables every non-admin
+    // user for exactly the window in which an admin tends to import new
+    // media, and skipping them would leave those titles unguarded for good
+    // once the accounts come back.
     //
     // Library access is checked via the user's policy (EnableAllFolders or
     // the EnabledFolders allow-list) rather than a per-(user, item)
@@ -197,9 +201,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var users = new List<Jellyfin.Database.Implementations.Entities.User>();
             var anyRestrictedUser = false;
+            // Disabled users are armed too (see the class comment: a
+            // maintenance-mode window must not leave titles unguarded).
             foreach (var user in _userManager.GetAllUsers())
             {
-                if (user.HasPermission(PermissionKind.IsDisabled)) continue;
                 if (!user.HasPermission(PermissionKind.EnableAllFolders)) anyRestrictedUser = true;
                 users.Add(user);
             }
