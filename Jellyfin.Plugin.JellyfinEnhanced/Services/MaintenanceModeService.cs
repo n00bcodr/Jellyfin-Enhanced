@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -38,6 +39,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// against on a re-enable call so a changed Action/selection while already active is actually
         /// re-applied instead of silently ignored.</summary>
         public List<string>? RequestedAffectedUserIds { get; set; }
+        /// <summary>Set on the inactive state when an admin ended a scheduled window early: the end of
+        /// that occurrence, so the schedule does not reopen it on the next tick.</summary>
+        public DateTime? SkippedScheduledWindowEnd { get; set; }
     }
 
     public class MaintenanceModeService
@@ -49,7 +53,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly ISessionManager _sessionManager;
         private readonly Logger _logger;
         private readonly string _stateFilePath;
-        private readonly object _lock = new();
+        // Serializes every state change (enable, reconcile, disable + restore). The config page save,
+        // the schedule tick and the expiry path can all run at once; without this an overlapping
+        // reconcile/restore could record the wrong disabled-user list and leave accounts locked.
+        private readonly SemaphoreSlim _gate = new(1, 1);
         // In-memory copy of the state file. public-config (every page load, anonymous) and the
         // playback reminder now read the state, so it must not cost a file read per request.
         private MaintenanceState? _cached;
@@ -67,13 +74,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public MaintenanceState GetStatus()
         {
             var state = LoadState();
-            if (state.IsActive && state.EndsAt.HasValue && DateTime.UtcNow >= state.EndsAt.Value)
+            if (IsExpired(state))
             {
-                _ = Task.Run(() => DisableAsync());
+                _ = Task.Run(() => ExpireIfDueAsync());
                 return new MaintenanceState { IsActive = false };
             }
             return state;
         }
+
+        private static bool IsExpired(MaintenanceState state)
+            => state.IsActive && state.EndsAt.HasValue && DateTime.UtcNow >= state.EndsAt.Value;
 
         /// <summary>
         /// Same expiry check as <see cref="GetStatus"/>, but awaits the disable so the caller
@@ -81,14 +91,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public async Task<MaintenanceState> ExpireIfDueAsync()
         {
-            var state = LoadState();
-            if (state.IsActive && state.EndsAt.HasValue && DateTime.UtcNow >= state.EndsAt.Value)
+            if (IsExpired(LoadState()))
             {
-                _logger.Info("[Maintenance] Timed window reached its end - disabling.");
-                await DisableAsync().ConfigureAwait(false);
-                return LoadState();
+                // Re-checked under the gate: an admin may have re-enabled with a new end time meanwhile.
+                await DisableCoreAsync(IsExpired, "Timed window reached its end", false).ConfigureAwait(false);
             }
-            return state;
+            return LoadState();
         }
 
         /// <param name="action">"none" | "disable_accounts" | "disable_remote" | "both"</param>
@@ -100,12 +108,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>
         /// Enable (or keep enabled) on behalf of the daily schedule; the window end is absolute rather
         /// than a duration from now, so a tick that runs mid-window still ends at the configured time.
-        /// Safe to call every tick: when nothing changed it is a no-op.
+        /// Safe to call every tick: when nothing changed it is a no-op. A manual window always wins:
+        /// when one is active (checked under the gate) nothing happens.
         /// </summary>
-        public Task EnableScheduledAsync(string message, string? notificationMessage, string action, List<string>? affectedUserIds, DateTime windowEndUtc)
+        /// <returns>True when this call opened a new window (the caller announces it).</returns>
+        public Task<bool> EnableScheduledAsync(string message, string? notificationMessage, string action, List<string>? affectedUserIds, DateTime windowEndUtc)
             => EnableCoreAsync(message, notificationMessage, action, affectedUserIds, "schedule", 0, windowEndUtc);
 
-        private async Task EnableCoreAsync(string message, string? notificationMessage, string action, List<string>? affectedUserIds,
+        /// <returns>True when maintenance was inactive before this call and is now active.</returns>
+        private async Task<bool> EnableCoreAsync(string message, string? notificationMessage, string action, List<string>? affectedUserIds,
+            string source, int durationMinutes, DateTime? fixedEndsAtUtc)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var current = LoadState();
+                var wasActive = current.IsActive;
+                if (source == "schedule")
+                {
+                    // Manual always wins; an occurrence an admin ended early stays ended.
+                    if (wasActive && current.Source != "schedule") return false;
+                    if (!wasActive && current.SkippedScheduledWindowEnd == fixedEndsAtUtc) return false;
+                }
+                await EnableLockedAsync(message, notificationMessage, action, affectedUserIds, source, durationMinutes, fixedEndsAtUtc).ConfigureAwait(false);
+                return !wasActive;
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        private async Task EnableLockedAsync(string message, string? notificationMessage, string action, List<string>? affectedUserIds,
             string source, int durationMinutes, DateTime? fixedEndsAtUtc)
         {
             message ??= string.Empty;
@@ -247,38 +281,64 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <param name="includeScheduled">
-        /// False when the caller means "manual maintenance off" (the config page toggle): a window
-        /// the schedule started keeps running, otherwise saving any unrelated setting would end it.
-        /// Turning the schedule off, or the window reaching its end, still disables it.
+        /// False when the caller means "manual maintenance off" (the config page toggle while the
+        /// schedule is on): a window the schedule started keeps running, otherwise saving any
+        /// unrelated setting would end it. True ends a scheduled window too, and the schedule then
+        /// skips the rest of that occurrence instead of reopening it on the next tick.
         /// </param>
-        public async Task DisableAsync(bool includeScheduled = true)
-        {
-            MaintenanceState state;
-            lock (_lock)
+        public Task DisableAsync(bool includeScheduled = true)
+            => DisableCoreAsync(state =>
             {
-                state = LoadState();
+                if (includeScheduled || state.Source != "schedule") return true;
+                _logger.Info("[Maintenance] Active window was started by the schedule - leaving it running (turn the schedule off to end it early).");
+                return false;
+            }, null, true);
+
+        /// <summary>
+        /// Ends the active window only if the schedule started it. The schedule tick decides from a
+        /// snapshot, so the source is re-checked under the gate: a manual enable that landed in
+        /// between must not be switched off by the schedule.
+        /// </summary>
+        public Task DisableScheduledWindowAsync(string reason)
+            => DisableCoreAsync(state => state.Source == "schedule", reason, false);
+
+        /// <param name="shouldDisable">Evaluated under the gate against the current active state.</param>
+        /// <param name="reason">Logged when the disable goes ahead; null for none.</param>
+        /// <param name="explicitEnd">An admin ended it (API / config page): a scheduled occurrence ended
+        /// this way is remembered so the schedule does not reopen it until the next day.</param>
+        private async Task DisableCoreAsync(Func<MaintenanceState, bool> shouldDisable, string? reason, bool explicitEnd)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var state = LoadState();
                 if (!state.IsActive)
                 {
                     _logger.Info("[Maintenance] Already inactive - skipping disable.");
                     return;
                 }
-                if (!includeScheduled && state.Source == "schedule")
+                if (!shouldDisable(state)) return;
+                if (reason != null) _logger.Info($"[Maintenance] {reason} - disabling.");
+                SaveState(new MaintenanceState
                 {
-                    _logger.Info("[Maintenance] Active window was started by the schedule - leaving it running (turn the schedule off to end it early).");
-                    return;
+                    IsActive = false,
+                    SkippedScheduledWindowEnd = explicitEnd && state.Source == "schedule" ? state.EndsAt : null
+                });
+
+                // A timed manual window that ran out must also clear the admin toggle, or the config
+                // page would still show it checked and the next save would re-enable it. Cleared before
+                // the restore so public-config stops reporting maintenance as soon as the state flips.
+                if (state.Source == "manual")
+                {
+                    ClearManualConfigFlag();
                 }
-                // Mark inactive immediately so concurrent calls short-circuit
-                SaveState(new MaintenanceState { IsActive = false });
+
+                await RestoreUsersAsync(state).ConfigureAwait(false);
+                _logger.Info($"[Maintenance Mode] Disabled (was {state.Source}).");
             }
-
-            await RestoreUsersAsync(state).ConfigureAwait(false);
-            _logger.Info($"[Maintenance Mode] Disabled (was {state.Source}).");
-
-            // A timed manual window that ran out must also clear the admin toggle, or the config page
-            // would still show it checked and the next save would re-enable it.
-            if (state.Source == "manual")
+            finally
             {
-                ClearManualConfigFlag();
+                _gate.Release();
             }
         }
 
@@ -357,7 +417,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return ReplaceToken(ReplaceToken(text, "{countdown}", string.Empty), "{ends_at}", string.Empty).Trim();
             }
             var countdown = FormatCountdown(endsAtUtc.Value - DateTime.UtcNow);
-            var endsAtLocal = endsAtUtc.Value.ToLocalTime().ToString("HH:mm");
+            var endsAtLocal = endsAtUtc.Value.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture);
             bool hasToken = text.Contains("{countdown}", StringComparison.OrdinalIgnoreCase);
             var result = ReplaceToken(ReplaceToken(text, "{countdown}", countdown), "{ends_at}", endsAtLocal).Trim();
             return hasToken ? result : $"{result} Time remaining: {countdown}.".Trim();

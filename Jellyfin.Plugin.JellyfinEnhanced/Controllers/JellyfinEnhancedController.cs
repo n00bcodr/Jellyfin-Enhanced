@@ -11006,7 +11006,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 state.StartedAt,
                 state.EndsAt,
                 AccountDisabledCount = state.AccountDisabledUserIds.Count,
-                RemoteDisabledCount  = state.RemoteDisabledUserIds.Count
+                RemoteDisabledCount  = state.RemoteDisabledUserIds.Count,
+                // The daily window runs on the server's clock (often UTC in containers); the config
+                // page shows this so admins set the window in the right time zone.
+                ServerLocalTime = DateTime.Now.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+                ServerUtcOffset = FormatUtcOffset(TimeZoneInfo.Local.GetUtcOffset(DateTime.Now))
             });
         }
 
@@ -11024,13 +11028,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(new { success = true });
         }
 
+        /// <summary>"+08:00" / "-05:30" / "+00:00".</summary>
+        private static string FormatUtcOffset(TimeSpan offset)
+            => (offset < TimeSpan.Zero ? "-" : "+") + offset.Duration().ToString(@"hh\:mm", System.Globalization.CultureInfo.InvariantCulture);
+
         /// <param name="includeScheduled">
-        /// Default false = "manual maintenance off" (what the config page toggle means), which leaves
-        /// a window started by the schedule running. Pass true to end a scheduled window too.
+        /// Default true ends whatever window is active. The config page passes false while the daily
+        /// schedule is on, so saving with the manual toggle off leaves a scheduled window running.
         /// </param>
         [Authorize]
         [HttpPost("MaintenanceMode/Disable")]
-        public async Task<IActionResult> DisableMaintenanceMode([FromQuery] bool includeScheduled = false)
+        public async Task<IActionResult> DisableMaintenanceMode([FromQuery] bool includeScheduled = true)
         {
             if (!IsAdminUser()) return Forbid();
             await _maintenanceModeService.DisableAsync(includeScheduled).ConfigureAwait(false);

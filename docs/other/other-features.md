@@ -575,10 +575,10 @@ Check **Remind on playback start** to re-send the Active Session Notification (w
 
 ### Scheduled window
 
-Check **Enable daily maintenance window** and set a **Start time** and **End time** (server local time; an end earlier than the start crosses midnight). Every day, inside that window, maintenance mode turns itself on with the **Scheduled Banner Message**, **Scheduled Session Notification** and **Scheduled Action**, and turns itself off again at the end. The **Affected Users** selection is shared with the manual settings. Sessions active when the window opens get the notification as a popup.
+Check **Enable daily maintenance window** and set a **Start time** and **End time** (server local time, shown under the fields; Docker containers usually run on UTC unless `TZ` is set. An end earlier than the start crosses midnight). Every day, inside that window, maintenance mode turns itself on with the **Scheduled Banner Message**, **Scheduled Session Notification** and **Scheduled Action**, and turns itself off again at the end. The **Affected Users** selection is shared with the manual settings. Sessions active when the window opens get the notification as a popup.
 
 - The manual **Enable Maintenance Mode** toggle takes precedence: while it is on, the schedule does nothing, and saving unrelated settings never ends a running scheduled window.
-- To end a scheduled window early, untick **Enable daily maintenance window** and save.
+- To end a scheduled window early, untick **Enable daily maintenance window** and save; the window ends and users are restored right away.
 - Users already browsing see the banner on their next page load; the popup notification reaches them immediately.
 
 ---

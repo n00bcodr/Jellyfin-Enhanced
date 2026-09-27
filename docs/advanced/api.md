@@ -676,9 +676,9 @@ All admin-only.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `MaintenanceMode/Status` | Current maintenance-mode state (includes `Source`: `manual` or `schedule`, and `EndsAt`) |
+| GET | `MaintenanceMode/Status` | Current maintenance-mode state (includes `Source`: `manual` or `schedule`, `EndsAt`, and the server's local time / UTC offset) |
 | POST | `MaintenanceMode/Enable` | Enable maintenance mode (`message`, `notificationMessage`, `durationMinutes`, `action`, `affectedUserIds`) |
-| POST | `MaintenanceMode/Disable` | Disable manual maintenance mode; add `?includeScheduled=true` to also end a window the schedule started |
+| POST | `MaintenanceMode/Disable` | Disable maintenance mode. A scheduled window ended this way stays off until the next day's window; `?includeScheduled=false` (what the config page sends while the daily schedule is on) leaves it running instead |
 | GET | `MaintenanceMode/Users` | Users affected by the current maintenance-mode config |
 | POST | `MaintenanceMode/Broadcast` | Send the maintenance notification immediately (`{countdown}` / `{ends_at}` are resolved) |
 

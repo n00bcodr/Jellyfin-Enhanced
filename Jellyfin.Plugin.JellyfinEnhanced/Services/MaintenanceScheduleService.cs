@@ -65,8 +65,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     if (state.IsActive && state.Source == "schedule")
                     {
-                        _logger.Info("[Maintenance] Schedule turned off - ending the scheduled window.");
-                        await _maintenance.DisableAsync().ConfigureAwait(false);
+                        await _maintenance.DisableScheduledWindowAsync("Schedule turned off").ConfigureAwait(false);
                     }
                     return;
                 }
@@ -87,8 +86,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     if (state.IsActive && state.Source == "schedule")
                     {
-                        _logger.Info("[Maintenance] Scheduled window ended.");
-                        await _maintenance.DisableAsync().ConfigureAwait(false);
+                        await _maintenance.DisableScheduledWindowAsync("Scheduled window ended").ConfigureAwait(false);
                     }
                     return;
                 }
@@ -97,15 +95,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (state.IsActive && state.Source != "schedule") return;
 
                 var windowEndUtc = window.Value.End.ToUniversalTime();
-                var wasActive = state.IsActive;
-                await _maintenance.EnableScheduledAsync(
+                var started = await _maintenance.EnableScheduledAsync(
                     cfg.MaintenanceScheduleMessage,
                     cfg.MaintenanceScheduleNotificationMessage,
                     string.IsNullOrWhiteSpace(cfg.MaintenanceScheduleAction) ? "none" : cfg.MaintenanceScheduleAction,
                     MaintenanceModeService.ParseAffectedUsersSetting(cfg.MaintenanceModeAffectedUsers),
                     windowEndUtc).ConfigureAwait(false);
 
-                if (!wasActive)
+                if (started)
                 {
                     _logger.Info($"[Maintenance] Scheduled window started ({window.Value.Start:HH:mm} - {window.Value.End:HH:mm} server time).");
                     var text = FirstNonBlank(cfg.MaintenanceScheduleNotificationMessage, cfg.MaintenanceScheduleMessage, MaintenanceModeService.DefaultNotificationText);
