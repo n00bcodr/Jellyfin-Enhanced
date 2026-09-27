@@ -157,6 +157,14 @@
                     r.name.toLowerCase() === networkName.toLowerCase()
                 );
 
+                // TMDB's search drops the '+' of a streaming brand, so without an
+                // exact match "Disney+" would fall back to Disney Junior (and
+                // "Paramount+" to Paramount Pictures): a different company's movies.
+                if (exactMatches.length === 0 && networkName.includes('+')) {
+                    networkIdCache.set(cacheKey, null);
+                    return null;
+                }
+
                 // Score matches: prefer US origin + logo, then US origin, then any logo
                 const scored = (exactMatches.length > 0 ? exactMatches : response.results).map(r => ({
                     ...r,

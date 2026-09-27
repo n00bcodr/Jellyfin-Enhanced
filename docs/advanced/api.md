@@ -544,6 +544,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 | GET | `.../upcoming` | Upcoming releases |
 | GET | `.../trending` | Trending feed |
 | GET | `.../network/{networkId}`, `.../studio/{studioId}` | Discovery filtered by network/studio |
+| GET | `jellyseerr/discover/tv/studio/{studioId}` | Series produced by a TMDB company, from TMDB (needs the TMDB key) in Seerr's discover shape; rows carry no request status |
 | GET | `.../genre/{genreId}`, `.../keyword/{keywordId}` | Discovery filtered by genre/keyword |
 | GET | `jellyseerr/discover/genreslider/movie`, `.../tv` | Genre-slider rows for the discovery UI |
 | GET | `jellyseerr/person/{personId}` | Person detail proxy |

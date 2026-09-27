@@ -1,9 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
@@ -23,11 +23,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Seerr's MediaStatus.AVAILABLE.
         private const int MediaStatusAvailable = 5;
 
-        // TMDB sort keys: "popularity.desc", "first_air_date.asc", ...
-        private static readonly Regex SortPattern = new(@"^[a-z_]{1,32}\.(asc|desc)$", RegexOptions.CultureInvariant);
+        // The sort keys TMDB's discover/tv accepts.
+        private static readonly HashSet<string> Sorts = new(StringComparer.Ordinal)
+        {
+            "popularity.asc", "popularity.desc",
+            "first_air_date.asc", "first_air_date.desc",
+            "vote_average.asc", "vote_average.desc",
+            "vote_count.asc", "vote_count.desc",
+            "name.asc", "name.desc",
+            "original_name.asc", "original_name.desc",
+        };
 
-        /// <summary>Whether a client-supplied sortBy value is a plain TMDB sort key.</summary>
-        public static bool IsValidSort(string? sortBy) => !string.IsNullOrEmpty(sortBy) && SortPattern.IsMatch(sortBy);
+        /// <summary>Whether a client-supplied sortBy value is one of TMDB's discover/tv sort keys.</summary>
+        public static bool IsValidSort(string? sortBy) => !string.IsNullOrEmpty(sortBy) && Sorts.Contains(sortBy);
 
         /// <summary>
         /// Rewrites a TMDB discover/tv body ({ page, total_pages, total_results,

@@ -215,15 +215,20 @@
    * simply calls again for the pages after it, so heavily-owned categories
    * never stall. The pages after this batch are prefetched into the cache
    * while it renders.
+   * @param {ReturnType<typeof newCategoryState>} st - The paging state the calling engine was armed for
    * @param {HTMLElement} container - The category's card container
    * @param {{deficitPx?: number, pageBudget?: number, engaged?: boolean}} [hint] - From the scroll engine
    * @param {() => boolean} [isStale] - True once another category (or Back) took over
    * @returns {Promise<{pages: number, rendered: number}>} Pages consumed and cards appended
    */
-  async function loadMoreCategoryItems(container, hint, isStale) {
-    const st = state.categoryState;
+  async function loadMoreCategoryItems(st, container, hint, isStale) {
     st.isLoading = true;
-    const feeds = activeFeeds(st).filter(f => f.hasMore);
+    const pageBudget = Number.isFinite(hint?.pageBudget) ? Math.max(0, hint.pageBudget) : Infinity;
+    let feeds = activeFeeds(st).filter(f => f.hasMore);
+    // With less empty-page budget left than feeds, read fewer feeds so the
+    // valve is reached exactly instead of this load planning zero pages
+    // (which the engine takes as "no progress" and stops without the button).
+    if (pageBudget >= 1 && pageBudget < feeds.length) feeds = feeds.slice(0, pageBudget);
     const cursors = feeds.map(f => f.page);
     try {
       if (feeds.length === 0) return { pages: 0, rendered: 0 };
@@ -231,7 +236,6 @@
       const yieldRatio = yieldStats.fetched >= 20 ? Math.min(1, Math.max(0.1, yieldStats.rendered / yieldStats.fetched)) : 0.9;
       // Pages per feed: together the feeds should cover the deficit.
       let count = Math.min(MAX_PAGES_PER_LOAD, Math.max(1, Math.ceil(wantCards / (20 * feeds.length * yieldRatio))));
-      const pageBudget = Number.isFinite(hint?.pageBudget) ? Math.max(0, hint.pageBudget) : Infinity;
       count = Math.min(count, Math.floor(pageBudget / feeds.length));
       if (count < 1) return { pages: 0, rendered: 0 }; // out of budget for now; the valve decides, not us
       const plans = feeds.map(feed => {
@@ -287,6 +291,10 @@
       throw error;
     } finally {
       st.isLoading = false;
+      // A filter switch re-arms the engine while a load is in flight; that
+      // engine's first fill found this load running and stood down, so wake
+      // it now (a no-op for the engine that is awaiting this load).
+      if (!isStale?.()) queueMicrotask(() => st.fill?.());
     }
   }
 
@@ -340,7 +348,7 @@
     JE.discoveryFilter.setupInfiniteScroll(
       st,
       SCROLL_ROOT,
-      (hint) => loadMoreCategoryItems(container, hint, stale),
+      (hint) => loadMoreCategoryItems(st, container, hint, stale),
       () => activeFeeds(st).some(f => f.hasMore),
       () => st.isLoading
     );
