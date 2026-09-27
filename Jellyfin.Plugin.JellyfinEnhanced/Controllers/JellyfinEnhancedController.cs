@@ -1986,10 +1986,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 // One indexed provider-id lookup per row, scoped to what this user
                 // may see, so in-library series link into Jellyfin and honour the
-                // exclude-library-items setting like the Seerr-fed cards do.
+                // exclude-library-items setting like the Seerr-fed cards do. Those
+                // rows (usually few) take Seerr's own mediaInfo, the same detail
+                // call the More Info modal makes, so a partly available series
+                // keeps "Request missing" instead of reading as fully available.
                 var jUser = _userManager.GetUserById(userId.Value);
-                var body = Services.TmdbCompanyTvDiscover.ToSeerrShape(response.Content, tmdbId =>
-                    jUser == null ? null : FindLibraryItemByTmdb(jUser, "tv", tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture))?.Id);
+                var mediaInfo = new Dictionary<int, string>();
+                if (jUser != null)
+                {
+                    var inLibrary = new List<(int TmdbId, Guid ItemId)>();
+                    foreach (var tmdbId in Services.TmdbCompanyTvDiscover.ReadRowIds(response.Content))
+                    {
+                        var item = FindLibraryItemByTmdb(jUser, "tv", tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                        if (item != null) inLibrary.Add((tmdbId, item.Id));
+                    }
+                    var seerrInfo = await Task.WhenAll(inLibrary.Select(row => GetSeerrTvMediaInfoAsync(row.TmdbId)));
+                    for (var i = 0; i < inLibrary.Count; i++)
+                    {
+                        mediaInfo[inLibrary[i].TmdbId] = seerrInfo[i] ?? Services.TmdbCompanyTvDiscover.LibraryMediaInfo(inLibrary[i].ItemId);
+                    }
+                }
+                var body = Services.TmdbCompanyTvDiscover.ToSeerrShape(response.Content, mediaInfo);
 
                 return await ApplyParentalFilterAsync(body, $"/api/v1/discover/tv?studio={studioId}&page={page}", userId.Value.ToString());
             }
@@ -2002,6 +2019,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Error($"Failed to fetch series for company {studioId} from TMDB. Error: {ex.Message}");
                 return StatusCode(502, new { error = true, code = "tmdb_error", message = "Failed to connect to TMDB." });
             }
+        }
+
+        /// <summary>
+        /// Seerr's mediaInfo for a series, read through the caller's proxied
+        /// /api/v1/tv/{id} (same response cache and parental gate as the More
+        /// Info modal). Null when Seerr has no record of it or does not answer.
+        /// </summary>
+        private async Task<string?> GetSeerrTvMediaInfoAsync(int tmdbId)
+        {
+            var result = await ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}", HttpMethod.Get);
+            return result is ContentResult { StatusCode: null or 200, Content: { } json }
+                ? Services.TmdbCompanyTvDiscover.ExtractMediaInfo(json)
+                : null;
         }
 
         [HttpGet("jellyseerr/discover/trending")]
