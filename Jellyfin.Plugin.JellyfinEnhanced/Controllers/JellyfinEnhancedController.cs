@@ -70,6 +70,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.TmdbResponseCache _tmdbResponseCache;
         private readonly IServerConfigurationManager _serverConfigurationManager;
         private readonly INetworkManager _networkManager;
+        private readonly Services.SpoilerExistingTitlesApplier _spoilerExistingApplier;
+        private readonly MediaBrowser.Model.Tasks.ITaskManager _taskManager;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
         // upstream Seerr on every request. Entries expire after 1 hour.
@@ -192,7 +194,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.HostCompatibilityService hostCompatibility,
             Services.TmdbResponseCache tmdbResponseCache,
             IServerConfigurationManager serverConfigurationManager,
-            INetworkManager networkManager)
+            INetworkManager networkManager,
+            Services.SpoilerExistingTitlesApplier spoilerExistingApplier,
+            MediaBrowser.Model.Tasks.ITaskManager taskManager)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -218,6 +222,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _tmdbResponseCache = tmdbResponseCache;
             _serverConfigurationManager = serverConfigurationManager;
             _networkManager = networkManager;
+            _spoilerExistingApplier = spoilerExistingApplier;
+            _taskManager = taskManager;
         }
 
         /// <summary>
@@ -5218,6 +5224,83 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!isAdmin && tKey != userKey) return Forbid();
             Services.SpoilerUserResolver.ClearCorruption(tKey);
             return Ok(new { success = true });
+        }
+
+        // ─── Spoiler Guard: apply auto-enable scope to existing titles ───
+        // Admin-only. Library-add auto-enable never re-arms on rescans (so a
+        // user's opt-out sticks); these routes back the config page's explicit
+        // "Apply to existing titles now" action instead. Preview is a dry run
+        // with the SAVED scope; start hands the options to the scheduled task
+        // (so progress/cancel also show in Dashboard > Scheduled Tasks).
+
+        private MediaBrowser.Model.Tasks.IScheduledTaskWorker? GetSpoilerApplyExistingWorker()
+        {
+            return _taskManager.ScheduledTasks.FirstOrDefault(w => w.ScheduledTask is ScheduledTasks.SpoilerApplyExistingTitlesTask);
+        }
+
+        [HttpGet("spoiler-blur/apply-existing/preview")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult PreviewSpoilerApplyExisting([FromQuery] bool skipStarted = false)
+        {
+            if (!IsAdminUser()) return Forbid();
+            if (JellyfinEnhanced.Instance?.Configuration?.SpoilerBlurEnabled != true)
+            {
+                return Conflict(new { success = false, message = "Spoiler Guard is disabled." });
+            }
+            var summary = _spoilerExistingApplier.Preview(new Services.SpoilerExistingTitlesApplier.Options { SkipStarted = skipStarted });
+            if (summary.Error != null) return StatusCode(500, new { success = false, message = summary.Error });
+            return Ok(summary);
+        }
+
+        [HttpPost("spoiler-blur/apply-existing")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult StartSpoilerApplyExisting([FromQuery] bool skipStarted = false)
+        {
+            if (!IsAdminUser()) return Forbid();
+            if (JellyfinEnhanced.Instance?.Configuration?.SpoilerBlurEnabled != true)
+            {
+                return Conflict(new { success = false, message = "Spoiler Guard is disabled." });
+            }
+            var worker = GetSpoilerApplyExistingWorker();
+            if (worker == null) return StatusCode(503, new { success = false, message = "The scheduled task is not registered." });
+            if (worker.State != MediaBrowser.Model.Tasks.TaskState.Idle)
+            {
+                return Conflict(new { success = false, message = "A run is already in progress." });
+            }
+            var completedRuns = _spoilerExistingApplier.CompletedRuns;
+            _spoilerExistingApplier.SetPendingOptions(new Services.SpoilerExistingTitlesApplier.Options { SkipStarted = skipStarted });
+            try
+            {
+                _taskManager.Execute(worker, new MediaBrowser.Model.Tasks.TaskOptions());
+            }
+            catch (InvalidOperationException)
+            {
+                // Started from the dashboard between the state check and here.
+                _spoilerExistingApplier.TakePendingOptions();
+                return Conflict(new { success = false, message = "A run is already in progress." });
+            }
+            _logger.Info($"SpoilerApplyExisting: run started from the config page by {ResolveUserDisplay(UserHelper.GetCurrentUserId(User)?.ToString("N") ?? string.Empty)} (skip started: {skipStarted})");
+            return Accepted(new { success = true, taskId = worker.Id, completedRuns });
+        }
+
+        [HttpGet("spoiler-blur/apply-existing/status")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetSpoilerApplyExistingStatus()
+        {
+            if (!IsAdminUser()) return Forbid();
+            var worker = GetSpoilerApplyExistingWorker();
+            return Ok(new
+            {
+                taskId = worker?.Id,
+                state = worker?.State.ToString() ?? "Unavailable",
+                progress = worker?.CurrentProgress,
+                completedRuns = _spoilerExistingApplier.CompletedRuns,
+                lastRun = _spoilerExistingApplier.LastRun,
+            });
         }
 
         [HttpGet("spoiler-blur/series")]

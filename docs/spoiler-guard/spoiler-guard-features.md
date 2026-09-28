@@ -163,6 +163,8 @@ Three admin toggles can save you from manually opting in for every new show:
 
 All three are admin-level (off by default), and the admin can limit them to TV shows only, movies only, or specific libraries. Ask your admin to turn them on if you want a hands-free experience.
 
+Titles that were already in the library aren't armed by a rescan. An admin can arm them once with **Apply to existing titles now…** (or the matching scheduled task), which skips anything you already guard or have fully watched. See [Guarding titles already in the library](spoiler-guard-settings.md#guarding-titles-already-in-the-library).
+
 ---
 
 ## Disable-confirm dialog

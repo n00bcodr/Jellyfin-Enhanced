@@ -136,6 +136,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Series/Movie lands in the library (SpoilerAutoEnableOnLibraryAdd);
             // batches a scan's ItemAdded burst into one write per user.
             serviceCollection.AddHostedService<SpoilerLibraryAddAutoEnabler>();
+            // Admin-triggered "apply to existing titles": the same scope and
+            // write path for titles that were already in the library. Run by
+            // SpoilerApplyExistingTitlesTask; previewed by the config page.
+            serviceCollection.AddSingleton<SpoilerExistingTitlesApplier>();
 
             serviceCollection.Configure<MvcOptions>(o =>
             {

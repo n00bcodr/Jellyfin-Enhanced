@@ -108,7 +108,7 @@ Users can also manually opt in via the **Enable Spoiler Guard** button in the Se
 
 Details worth knowing:
 
-- Only brand-new titles count. A title is armed once, when Jellyfin first creates it; a user who later switches Spoiler Guard off for it is not re-armed by metadata refreshes or rescans. (If **Auto-enable on first play** is also on, starting S1E1 of a show you haven't watched any episode of still arms it again, as it always has.) Titles already in the library when you turn this on are not armed retroactively (a rescan doesn't count as new), while adding a whole new library arms every title in it.
+- Only brand-new titles count. A title is armed once, when Jellyfin first creates it; a user who later switches Spoiler Guard off for it is not re-armed by metadata refreshes or rescans. (If **Auto-enable on first play** is also on, starting S1E1 of a show you haven't watched any episode of still arms it again, as it always has.) Titles already in the library when you turn this on are not armed by it (a rescan doesn't count as new), while adding a whole new library arms every title in it. To guard what's already there, see [Guarding titles already in the library](#guarding-titles-already-in-the-library).
 - It applies to every user who has access to the title's library (per the user's library-access policy), including disabled accounts, so titles added while maintenance mode has accounts switched off are still protected when those users come back. Users created after a title was added don't get it. There is no per-user opt-out, same as the first-play mode.
 - Library scans are batched: the titles a scan adds are collected and written in a single settings update per user about ten seconds after the first one appears (a long scan flushes every ten seconds), never one write per title.
 
@@ -119,7 +119,21 @@ Details worth knowing:
 Shared by all three auto-enable options above. **Default: TV shows and movies, all libraries** — an install that never touches the scope keeps its previous auto-enable behaviour.
 
 - **TV shows / Movies** — untick a type to leave it out of every auto-enable mode. The request in [#801](https://github.com/n00bcodr/Jellyfin-Enhanced/issues/801) — on for all shows, off for all movies — is "TV shows" ticked, "Movies" unticked.
-- **Libraries** — tick the libraries auto-enable should cover; leave every library unticked to cover all of them. Applies to the first-play and library-add modes. It cannot apply to a Seerr request, because the title isn't in any library at request time.
+- **Libraries** — tick the libraries auto-enable should cover; leave every library unticked to cover all of them. Applies to the first-play and library-add modes, and to the apply-to-existing-titles action below. It cannot apply to a Seerr request, because the title isn't in any library at request time.
+
+---
+
+## Guarding titles already in the library
+
+Auto-enable on library add only arms titles when Jellyfin first creates them. Rescanning an existing library does **not** arm its titles, on purpose: a rescan (or a metadata refresh) looks exactly the same for a title a user deliberately switched Spoiler Guard off for, and re-arming on every scan would undo that choice again and again.
+
+To guard a library that already exists, use **Apply to existing titles now…** under the scope settings (Display tab, Spoiler Guard section), or run the **Spoiler Guard: apply to existing titles** task from Dashboard → Scheduled Tasks. Both do the same thing:
+
+- **Scope** — the *saved* auto-enable scope (TV shows / Movies and the library list above). It works whether or not "Auto-enable when new titles are added" is on, so you can do a one-time pass without ongoing auto-arming. Save any scope changes first.
+- **Who** — every user who can see the title's library, including disabled accounts, exactly like library add. Users without access to that library get nothing.
+- **What is skipped, per user** — titles the user already has in their Spoiler Guard list (so running it twice changes nothing), and titles the user has fully watched (a played movie; a show whose episodes on disk are all played). A show the user is part-way through **is** armed by default, since that is where spoilers matter most; tick **Also skip titles a user has already started watching** to leave shows with any watched or in-progress episode, and in-progress movies, alone.
+- **Preview first** — the button counts everything first and shows how many titles would be armed for which users before you confirm. The scheduled task has no default triggers, reports progress and can be cancelled from the dashboard; a run from the dashboard uses the defaults (started titles are armed). A cancelled run keeps what it finished (each user's list is written in one go) and a re-run picks up the rest.
+- **Re-running** — there is no record of titles a user removed, so running it again later **re-arms** a title a user has since switched off, unless they have watched it (or started it, with the option ticked). Rescans never do.
 
 ---
 
@@ -256,6 +270,7 @@ For diagnostics, the plugin logs (rate-limited) to `/config/log/JellyfinEnhanced
 
 - Spoiler Guard auto-enable events: `SpoilerAutoEnable: enabled Spoiler Guard for series '<name>' (...) on first-play of S1E1 by user <id>`
 - Library-add auto-enable batches: `SpoilerAutoEnableOnLibraryAdd: enabled Spoiler Guard for <n> new series and <m> new movie(s) for user <id> in one write (batch of <k> library add(s))`
+- Apply-to-existing-titles runs: one line per user (`SpoilerApplyExisting: enabled Spoiler Guard for <n> existing series and <m> existing movie(s) for user <id> ('<name>') in one write (...)`) and a summary line with the run time and totals
 - Seerr pre-acquisition records: `Spoiler Guard pending recorded tv:<tmdbId> for <user>`
 - Promotion events when a pending entry lands as a real library item: `SpoilerSeerrPromoter: promoted tv:<tmdbId> -> series <id> for user <id>`
 - Per-(user, scope) cache-eviction *failures* when watched-state changes (successful evictions are not logged)

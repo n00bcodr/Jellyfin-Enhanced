@@ -439,6 +439,13 @@
                                 <div id="spoilerAutoEnableLibraryList"><div class="fieldDescription">Loading libraries…</div></div>
                             </div>
 
+                            <div id="spoilerApplyExistingContainer" class="je-spoiler-apply-existing" data-gated-by="spoilerBlurEnabled" style="margin-left: 20px; margin-top: 12px; margin-bottom: 16px;">
+                                <div class="fieldDescription" style="margin-bottom: 6px;"><strong>Titles already in the library</strong> — auto-enable only arms titles as they arrive, and a rescan doesn't count (so nobody who switched Spoiler Guard off for a title gets it switched back on). To guard what's already there, apply the <em>saved</em> scope above to existing titles, for every user who can see them. Works whether or not "when new titles are added" is on. Titles a user already has, or has fully watched, are skipped. Also available as the "Spoiler Guard: apply to existing titles" scheduled task.</div>
+                                <div class="checkboxContainer"><label><input id="spoilerApplyExistingSkipStarted" is="emby-checkbox" type="checkbox"/><span>Also skip titles a user has already started watching</span></label></div>
+                                <button id="spoilerApplyExistingBtn" is="emby-button" type="button" class="raised"><span>Apply to existing titles now…</span></button>
+                                <div id="spoilerApplyExistingStatus" class="fieldDescription" style="margin-top: 6px;" aria-live="polite"></div>
+                            </div>
+
                             <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerBlurStrictRefresh" is="emby-checkbox" type="checkbox"/><span>Strict refresh mode (full page reload after toggle)</span></label></div>
                             <div class="je-setting-description" data-desc-for="spoilerBlurStrictRefresh" data-gated-by="spoilerBlurEnabled">
                                 <div class="fieldDescription">After a user flips Spoiler Guard on or off, card images update on the page instantly. By default, on-page text (description, episode titles, ratings) only refreshes when they navigate next. Turn this on to also reload the whole page after a toggle so the text updates straight away, at the cost of a brief page flash. Most users prefer it off for the smoother feel.</div>
@@ -3629,6 +3636,7 @@
                 form.querySelectorAll('input, select, textarea').forEach((el, i) => {
                     if (el.type === 'file') return; // can't be read back, and not part of the saved config shape
                     if (el.closest('.je-arr-seerr-import-picker')) return; // transient browsing state, not a form change until actually imported
+                    if (el.closest('.je-spoiler-apply-existing')) return; // per-run option of an action, not a saved setting
                     const key = el.id || el.name || ('#' + i);
                     parts.push(key + '=' + (el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value));
                 });
@@ -5386,6 +5394,143 @@
             });
             return ids.filter(Boolean).join(',');
         }
+
+        /**
+         * Plain-text summary of an "apply to existing titles" run from the
+         * server (SpoilerExistingTitlesApplier.Summary, PascalCase like the
+         * rest of Jellyfin's JSON).
+         * @param {Object} s - Run summary
+         * @returns {string}
+         */
+        function describeSpoilerApplyExistingRun(s) {
+            var armed = (s.SeriesArmed || 0) + (s.MoviesArmed || 0);
+            var parts = [armed + ' Spoiler Guard entr' + (armed === 1 ? 'y' : 'ies') + ' added (' + (s.SeriesArmed || 0) + ' series, ' + (s.MoviesArmed || 0) + ' movies) for ' + (s.UsersAffected || 0) + ' user' + (s.UsersAffected === 1 ? '' : 's')];
+            parts.push((s.AlreadyArmed || 0) + ' already guarded');
+            parts.push((s.SkippedWatched || 0) + ' fully watched');
+            if (s.SkipStarted) parts.push((s.SkippedStarted || 0) + ' started');
+            var text = parts.join(', ') + ' skipped.';
+            if (s.UsersFailed) text += ' ' + s.UsersFailed + ' user' + (s.UsersFailed === 1 ? '' : 's') + ' could not be updated (see the server log).';
+            return text;
+        }
+
+        /**
+         * Joins plain-text lines into the HTML body Jellyfin's alert/confirm
+         * dialogs render (they treat the message as sanitized HTML, so plain
+         * newlines collapse). Each line is escaped; user names come from the server.
+         * @param {string[]} lines - Plain-text lines ('' = blank line)
+         * @returns {string}
+         */
+        function spoilerApplyExistingLinesHtml(lines) {
+            var div = document.createElement('div');
+            return lines.map(function (line) {
+                div.textContent = line;
+                return div.innerHTML;
+            }).join('<br>');
+        }
+
+        /**
+         * Polls the apply-to-existing-titles status until the run started by
+         * this page has finished, mirroring progress and then the result into
+         * the status line under the button.
+         * @param {number} completedRunsBefore - Server's finished-run counter just before this run started
+         */
+        function pollSpoilerApplyExisting(completedRunsBefore) {
+            var statusEl = document.getElementById('spoilerApplyExistingStatus');
+            var btn = document.getElementById('spoilerApplyExistingBtn');
+            var idleTicks = 0;
+            var tick = function () {
+                ApiClient.getJSON(ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/apply-existing/status')).then(function (st) {
+                    var finished = st.completedRuns > completedRunsBefore && st.lastRun;
+                    if (!finished) {
+                        // Idle without a new result for a while: the task
+                        // never ran (or the server restarted); stop polling.
+                        idleTicks = st.state === 'Idle' ? idleTicks + 1 : 0;
+                        if (idleTicks > 10) {
+                            btn.disabled = false;
+                            statusEl.textContent = 'The run did not report back; check Dashboard > Scheduled Tasks and the server log.';
+                            return;
+                        }
+                        statusEl.textContent = 'Applying… ' + (typeof st.progress === 'number' ? Math.round(st.progress) + '%' : '');
+                        setTimeout(tick, 1000);
+                        return;
+                    }
+                    var last = st.lastRun;
+                    btn.disabled = false;
+                    if (last.Error) {
+                        statusEl.textContent = 'Apply failed: ' + last.Error;
+                    } else if (last.Cancelled) {
+                        statusEl.textContent = 'Cancelled. Users processed before the cancel keep their new entries; run it again to finish (nothing is added twice).';
+                    } else {
+                        statusEl.textContent = 'Done in ' + (last.ElapsedMs / 1000).toFixed(1) + ' s. ' + describeSpoilerApplyExistingRun(last);
+                    }
+                }).catch(function () {
+                    btn.disabled = false;
+                    statusEl.textContent = 'Lost track of the run; check Dashboard > Scheduled Tasks and the server log.';
+                });
+            };
+            tick();
+        }
+
+        /**
+         * "Apply to existing titles now…": dry-runs the saved auto-enable
+         * scope, shows what would be armed, and on confirmation starts the
+         * "Spoiler Guard: apply to existing titles" scheduled task.
+         */
+        (function wireSpoilerApplyExisting() {
+            var btn = document.getElementById('spoilerApplyExistingBtn');
+            var statusEl = document.getElementById('spoilerApplyExistingStatus');
+            if (!btn || !statusEl) return;
+            btn.addEventListener('click', function () {
+                if (document.querySelector('.je-save-dock.je-dirty')) {
+                    Dashboard.alert({ title: 'Save first', message: 'This uses the saved auto-enable settings. Save your changes, then try again.' });
+                    return;
+                }
+                var skipStarted = !!(document.getElementById('spoilerApplyExistingSkipStarted') || {}).checked;
+                btn.disabled = true;
+                statusEl.textContent = 'Counting titles…';
+                var previewUrl = ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/apply-existing/preview', { skipStarted: skipStarted });
+                ApiClient.getJSON(previewUrl).then(function (p) {
+                    statusEl.textContent = '';
+                    var armed = (p.SeriesArmed || 0) + (p.MoviesArmed || 0);
+                    var scope = 'In the saved scope: ' + p.SeriesInScope + ' series and ' + p.MoviesInScope + ' movies.';
+                    var skipped = 'Skipped: ' + (p.AlreadyArmed || 0) + ' already guarded, ' + (p.SkippedWatched || 0) + ' fully watched' + (p.SkipStarted ? ', ' + (p.SkippedStarted || 0) + ' started' : '') + '.';
+                    if (armed === 0) {
+                        btn.disabled = false;
+                        Dashboard.alert({ title: 'Nothing to apply', message: spoilerApplyExistingLinesHtml([scope, '', 'Every user who can see them already has them guarded or has watched them.', skipped]) });
+                        return;
+                    }
+                    var lines = [
+                        scope,
+                        '',
+                        'This adds ' + armed + ' Spoiler Guard entr' + (armed === 1 ? 'y' : 'ies') + ', one per title per user (' + p.SeriesArmed + ' series, ' + p.MoviesArmed + ' movies), for ' + p.UsersAffected + ' user' + (p.UsersAffected === 1 ? '' : 's') + ':'
+                    ];
+                    (p.PerUser || []).forEach(function (u) {
+                        var n = u.Series + u.Movies;
+                        if (n > 0) lines.push('• ' + u.UserName + (u.IsDisabled ? ' (disabled)' : '') + ': ' + n + ' (' + u.Series + ' series, ' + u.Movies + ' movies)');
+                    });
+                    lines.push('');
+                    lines.push(skipped);
+                    lines.push('Users can switch it off again per title. Running this again later re-arms titles they switched off, unless they have watched them.');
+                    Dashboard.confirm(spoilerApplyExistingLinesHtml(lines), 'Apply Spoiler Guard to existing titles?', function (confirmed) {
+                        if (!confirmed) { btn.disabled = false; return; }
+                        statusEl.textContent = 'Starting…';
+                        ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/apply-existing', { skipStarted: skipStarted }),
+                            dataType: 'json'
+                        }).then(function (res) {
+                            pollSpoilerApplyExisting(res && typeof res.completedRuns === 'number' ? res.completedRuns : 0);
+                        }).catch(function () {
+                            btn.disabled = false;
+                            statusEl.textContent = 'Could not start the run (it may already be running; see Dashboard > Scheduled Tasks).';
+                        });
+                    });
+                }).catch(function () {
+                    btn.disabled = false;
+                    statusEl.textContent = 'Could not count titles. Check the server log.';
+                });
+            });
+        })();
 
         function loadConfig() {
             Dashboard.showLoadingMsg();
