@@ -40,10 +40,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
         public Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
         {
-            var options = _applier.TakePendingOptions();
-            // Off the caller's thread: Jellyfin starts a task by invoking this
-            // synchronously (e.g. on the request thread of a "run" API call).
-            return Task.Run(() => { _applier.Run(options, progress, cancellationToken); }, CancellationToken.None);
+            // Jellyfin's task worker already runs this on a pool thread.
+            _applier.Run(_applier.TakePendingOptions(), progress, cancellationToken);
+            return Task.CompletedTask;
         }
     }
 }

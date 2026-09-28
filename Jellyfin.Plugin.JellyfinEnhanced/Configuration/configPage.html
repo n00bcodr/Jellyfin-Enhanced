@@ -5429,6 +5429,17 @@
         }
 
         /**
+         * Resolves to the `message` of a failed JellyfinEnhanced API call
+         * (ApiClient rejects with the fetch Response), or null.
+         * @param {*} err - Rejection value from ApiClient.getJSON / ajax
+         * @returns {Promise<string|null>}
+         */
+        function spoilerApplyExistingErrorMessage(err) {
+            if (!err || typeof err.json !== 'function') return Promise.resolve(null);
+            return err.json().then(function (body) { return (body && body.message) || null; }, function () { return null; });
+        }
+
+        /**
          * Polls the apply-to-existing-titles status until the run started by
          * this page has finished, mirroring progress and then the result into
          * the status line under the button.
@@ -5493,7 +5504,8 @@
                     statusEl.textContent = '';
                     var armed = (p.SeriesArmed || 0) + (p.MoviesArmed || 0);
                     var scope = 'In the saved scope: ' + p.SeriesInScope + ' series and ' + p.MoviesInScope + ' movies.';
-                    var skipped = 'Skipped: ' + (p.AlreadyArmed || 0) + ' already guarded, ' + (p.SkippedWatched || 0) + ' fully watched' + (p.SkipStarted ? ', ' + (p.SkippedStarted || 0) + ' started' : '') + '.';
+                    var skipped = 'Skipped: ' + (p.AlreadyArmed || 0) + ' already guarded, ' + (p.SkippedWatched || 0) + ' fully watched' + (p.SkipStarted ? ', ' + (p.SkippedStarted || 0) + ' started' : '') + '.'
+                        + (p.UsersFailed ? ' ' + p.UsersFailed + ' user' + (p.UsersFailed === 1 ? '' : 's') + ' could not be read (see the server log).' : '');
                     if (armed === 0) {
                         btn.disabled = false;
                         Dashboard.alert({ title: 'Nothing to apply', message: spoilerApplyExistingLinesHtml([scope, '', 'Every user who can see them already has them guarded or has watched them.', skipped]) });
@@ -5519,15 +5531,24 @@
                             url: ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/apply-existing', { skipStarted: skipStarted }),
                             dataType: 'json'
                         }).then(function (res) {
-                            pollSpoilerApplyExisting(res && typeof res.completedRuns === 'number' ? res.completedRuns : 0);
-                        }).catch(function () {
-                            btn.disabled = false;
-                            statusEl.textContent = 'Could not start the run (it may already be running; see Dashboard > Scheduled Tasks).';
+                            if (res && typeof res.completedRuns === 'number') {
+                                pollSpoilerApplyExisting(res.completedRuns);
+                            } else {
+                                btn.disabled = false;
+                                statusEl.textContent = 'Started. Follow it in Dashboard > Scheduled Tasks.';
+                            }
+                        }).catch(function (err) {
+                            spoilerApplyExistingErrorMessage(err).then(function (msg) {
+                                btn.disabled = false;
+                                statusEl.textContent = 'Could not start the run: ' + (msg || 'see Dashboard > Scheduled Tasks and the server log.');
+                            });
                         });
                     });
-                }).catch(function () {
-                    btn.disabled = false;
-                    statusEl.textContent = 'Could not count titles. Check the server log.';
+                }).catch(function (err) {
+                    spoilerApplyExistingErrorMessage(err).then(function (msg) {
+                        btn.disabled = false;
+                        statusEl.textContent = 'Could not count titles: ' + (msg || 'check the server log.');
+                    });
                 });
             });
         })();

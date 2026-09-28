@@ -5248,7 +5248,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 return Conflict(new { success = false, message = "Spoiler Guard is disabled." });
             }
-            var summary = _spoilerExistingApplier.Preview(new Services.SpoilerExistingTitlesApplier.Options { SkipStarted = skipStarted });
+            var worker = GetSpoilerApplyExistingWorker();
+            if (worker != null && worker.State != MediaBrowser.Model.Tasks.TaskState.Idle)
+            {
+                return Conflict(new { success = false, message = "A run is already in progress." });
+            }
+            var summary = _spoilerExistingApplier.Preview(new Services.SpoilerExistingTitlesApplier.Options { SkipStarted = skipStarted }, HttpContext.RequestAborted);
             if (summary.Error != null) return StatusCode(500, new { success = false, message = summary.Error });
             return Ok(summary);
         }
@@ -5271,16 +5276,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             var completedRuns = _spoilerExistingApplier.CompletedRuns;
             _spoilerExistingApplier.SetPendingOptions(new Services.SpoilerExistingTitlesApplier.Options { SkipStarted = skipStarted });
-            try
-            {
-                _taskManager.Execute(worker, new MediaBrowser.Model.Tasks.TaskOptions());
-            }
-            catch (InvalidOperationException)
-            {
-                // Started from the dashboard between the state check and here.
-                _spoilerExistingApplier.TakePendingOptions();
-                return Conflict(new { success = false, message = "A run is already in progress." });
-            }
+            // If a dashboard start wins the race between the state check and
+            // here, the worker rejects this start inside its own Task and the
+            // pending options simply expire (TakePendingOptions ignores stale
+            // ones), so the dashboard run keeps the defaults.
+            _taskManager.Execute(worker, new MediaBrowser.Model.Tasks.TaskOptions());
             _logger.Info($"SpoilerApplyExisting: run started from the config page by {ResolveUserDisplay(UserHelper.GetCurrentUserId(User)?.ToString("N") ?? string.Empty)} (skip started: {skipStarted})");
             return Accepted(new { success = true, taskId = worker.Id, completedRuns });
         }
@@ -7205,51 +7205,108 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         (spCfg?.SpoilerReplaceTitle == true && (spPrefs?.ReplaceEpisodeTitles ?? true))
                         || (spCfg?.SpoilerStripOverview == true && (spPrefs?.HideEpisodeDescriptions ?? true));
 
-                    // Loaded on the first guarded entry that needs a played check.
-                    (HashSet<Guid> Items, HashSet<Guid> Seasons)? played = null;
+                    // Which guarded kind (Episode/Season/Movie/Series) an entry is,
+                    // or null when it isn't under this user's Spoiler Guard.
+                    string? GuardedKind(string key, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry? e)
+                    {
+                        if (e == null) return null;
+                        switch (e.Type)
+                        {
+                            case "Movie":
+                                // In scope if directly in Movies dict OR a child of an opted-in collection.
+                                return Guid.TryParse(key, out var mGuid) && _spoilerResolver.IsMovieInSpoilerScope(spState, mGuid) ? "Movie" : null;
+                            case "Series":
+                                // Series-level entry: strip only when Spoiler Guard is on for
+                                // THIS series (key == series ID). Covers home-rail cards bound
+                                // to seriesId when "Use episode images in Next Up/Continue Watching"
+                                // is OFF, so cards use series posters and ask for series-level tag data.
+                                return spState.Series.ContainsKey(key) ? "Series" : null;
+                            case "Episode":
+                            case "Season":
+                                return !string.IsNullOrEmpty(e.SeriesId) && spState.Series.ContainsKey(e.SeriesId) ? e.Type : null;
+                            default:
+                                return null;
+                        }
+                    }
+
+                    // Played state is looked up in ONE bounded query instead of a
+                    // UserData read per entry (with whole libraries guarded that
+                    // was thousands of reads and seconds per cache load): collect
+                    // the guarded episodes/movies, plus the episodes of guarded
+                    // later seasons (S2+, same membership rules as the image and
+                    // field filters via Season.GetEpisodes), then ask which of
+                    // them this user has played.
+                    var playedCandidates = new List<Guid>();
+                    var laterSeasons = new List<MediaBrowser.Controller.Entities.TV.Season>();
+                    foreach (var kvp in items)
+                    {
+                        var kind = GuardedKind(kvp.Key, kvp.Value);
+                        if (kind == null || !Guid.TryParse(kvp.Key, out var cGuid)) continue;
+                        if (kind is "Episode" or "Movie")
+                        {
+                            playedCandidates.Add(cGuid);
+                        }
+                        else if (kind == "Season"
+                            && _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(cGuid) is MediaBrowser.Controller.Entities.TV.Season laterSeason
+                            && laterSeason.IndexNumber.GetValueOrDefault(int.MaxValue) > 1)
+                        {
+                            laterSeasons.Add(laterSeason);
+                        }
+                    }
+
+                    // Season.GetEpisodes is a query per season. A full load can
+                    // carry hundreds of guarded later seasons, so first find which
+                    // shows the user has played anything of (by series presentation
+                    // key, the same key GetEpisodes matches on) and skip seasons of
+                    // untouched shows: they can't contain a watched episode.
+                    HashSet<string>? playedSeriesKeys = laterSeasons.Count > 16 ? LoadPlayedSeriesKeysForTagStrip(user) : null;
+                    var laterSeasonEpisodes = new Dictionary<Guid, List<Guid>?>();
+                    foreach (var laterSeason in laterSeasons)
+                    {
+                        if (playedSeriesKeys != null
+                            && !string.IsNullOrEmpty(laterSeason.SeriesPresentationUniqueKey)
+                            && !playedSeriesKeys.Contains(laterSeason.SeriesPresentationUniqueKey))
+                        {
+                            laterSeasonEpisodes[laterSeason.Id] = null;
+                            continue;
+                        }
+                        List<Guid>? episodeIds = null;
+                        try
+                        {
+                            episodeIds = laterSeason.GetEpisodes(user, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false)
+                                .Where(ep => ep != null)
+                                .Select(ep => ep.Id)
+                                .ToList();
+                            playedCandidates.AddRange(episodeIds);
+                        }
+                        catch (Exception ex)
+                        {
+                            _spoilerResolver.WarnRateLimited(
+                                "tagcache-season-probe:" + ex.GetType().FullName,
+                                $"Spoiler Guard tag-cache strip: season any-watched probe failed for {laterSeason.Id}: {ex.Message}");
+                            // Fail-CLOSED: null = treated as not watched, stripped.
+                        }
+                        laterSeasonEpisodes[laterSeason.Id] = episodeIds;
+                    }
+                    var playedIds = LoadPlayedIdsForTagStrip(user, playedCandidates);
 
                     foreach (var kvp in items.ToList())
                     {
                         var entry = kvp.Value;
-                        if (entry == null) continue;
-                        var isEpisode = string.Equals(entry.Type, "Episode", StringComparison.Ordinal);
-                        var isSeason = string.Equals(entry.Type, "Season", StringComparison.Ordinal);
-                        var isMovie = string.Equals(entry.Type, "Movie", StringComparison.Ordinal);
-                        var isSeries = string.Equals(entry.Type, "Series", StringComparison.Ordinal);
-                        if (!isEpisode && !isSeason && !isMovie && !isSeries) continue;
-                        if (isMovie)
-                        {
-                            // In scope if directly in Movies dict OR a child of an opted-in collection.
-                            if (!Guid.TryParse(kvp.Key, out var mGuid)) continue;
-                            if (!_spoilerResolver.IsMovieInSpoilerScope(spState, mGuid)) continue;
-                        }
-                        else if (isSeries)
-                        {
-                            // Series-level entry: strip only when Spoiler Guard is on for
-                            // THIS series (key == series ID). Covers home-rail cards bound
-                            // to seriesId when "Use episode images in Next Up/Continue Watching"
-                            // is OFF, so cards use series posters and ask for series-level tag data.
-                            if (!spState.Series.ContainsKey(kvp.Key)) continue;
-                        }
-                        else
-                        {
-                            if (string.IsNullOrEmpty(entry.SeriesId)) continue;
-                            if (!spState.Series.ContainsKey(entry.SeriesId)) continue;
-                        }
+                        var kind = GuardedKind(kvp.Key, entry);
+                        if (kind == null) continue;
+                        var isEpisode = kind == "Episode";
+                        var isSeason = kind == "Season";
+                        var isMovie = kind == "Movie";
 
-                        // Played state comes from ONE per-request query of everything
-                        // this user has played (see LoadPlayedForTagStrip), not a
-                        // UserData read per entry: with whole libraries guarded that
-                        // was thousands of reads and seconds per cache load.
                         // Episodes/movies: played skips the strip. Seasons: IndexNumber<=1
                         // OR any-episode-watched skips (mirrors SpoilerBlurImageFilter and
                         // SpoilerFieldStripFilter Season blur logic).
                         if (Guid.TryParse(kvp.Key, out var entryGuid))
                         {
-                            played ??= LoadPlayedForTagStrip(user);
                             if (isEpisode || isMovie)
                             {
-                                if (played.Value.Items.Contains(entryGuid)) continue;
+                                if (playedIds.Contains(entryGuid)) continue;
                             }
                             else if (isSeason
                                 && _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(entryGuid) is MediaBrowser.Controller.Entities.TV.Season seasonItem)
@@ -7257,7 +7314,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 var sNum = seasonItem.IndexNumber.GetValueOrDefault(int.MaxValue);
                                 // S0/S1 posters always pass (their existence isn't a
                                 // spoiler), as do seasons with any watched episode — "exempt".
-                                bool seasonExempt = sNum <= 1 || played.Value.Seasons.Contains(seasonItem.Id);
+                                bool seasonExempt = sNum <= 1
+                                    || (laterSeasonEpisodes.TryGetValue(seasonItem.Id, out var seasonEpisodeIds)
+                                        && seasonEpisodeIds != null
+                                        && seasonEpisodeIds.Exists(playedIds.Contains));
                                 if (seasonExempt)
                                 {
                                     // Exempt seasons keep their poster + non-rating tags,
@@ -8979,32 +9039,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly TimeSpan _pollLogInterval = TimeSpan.FromMinutes(5);
 
         /// <summary>
-        /// Everything <paramref name="user"/> has played (episode and movie ids),
-        /// plus the seasons containing a played episode, from one query. Used by
-        /// the tag-cache Spoiler Guard strip instead of a UserData read per
-        /// guarded entry. Fail-closed: on error both sets are empty, so nothing
-        /// counts as watched and every guarded entry is stripped.
+        /// Which of <paramref name="candidateIds"/> <paramref name="user"/> has
+        /// played, from one id-only query (tag-cache Spoiler Guard strip).
+        /// Fail-closed: on error nothing counts as played, so every guarded
+        /// entry is stripped.
         /// </summary>
-        private (HashSet<Guid> Items, HashSet<Guid> Seasons) LoadPlayedForTagStrip(Jellyfin.Database.Implementations.Entities.User user)
+        private HashSet<Guid> LoadPlayedIdsForTagStrip(Jellyfin.Database.Implementations.Entities.User user, List<Guid> candidateIds)
         {
-            var playedItems = new HashSet<Guid>();
-            var playedSeasons = new HashSet<Guid>();
+            var played = new HashSet<Guid>();
+            if (candidateIds.Count == 0) return played;
             try
             {
-                var query = new InternalItemsQuery(user)
+                foreach (var id in _libraryManager.GetItemIds(new InternalItemsQuery(user)
                 {
-                    IncludeItemTypes = new[] { BaseItemKind.Episode, BaseItemKind.Movie },
+                    ItemIds = candidateIds.ToArray(),
                     IsPlayed = true,
-                    IsVirtualItem = false,
-                    Recursive = true,
-                };
-                foreach (var item in _libraryManager.GetItemList(query))
+                }))
                 {
-                    playedItems.Add(item.Id);
-                    if (item is MediaBrowser.Controller.Entities.TV.Episode ep && ep.SeasonId != Guid.Empty)
-                    {
-                        playedSeasons.Add(ep.SeasonId);
-                    }
+                    played.Add(id);
                 }
             }
             catch (Exception ex)
@@ -9012,10 +9064,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _spoilerResolver.WarnRateLimited(
                     "tagcache-played-probe:" + ex.GetType().FullName,
                     $"Spoiler Guard tag-cache strip: played-state query failed for {user.Id}: {ex.Message}");
-                playedItems.Clear();
-                playedSeasons.Clear();
+                played.Clear();
             }
-            return (playedItems, playedSeasons);
+            return played;
+        }
+
+        /// <summary>
+        /// Series presentation keys of every show <paramref name="user"/> has
+        /// played at least one episode of (tag-cache Spoiler Guard strip: gates
+        /// the per-season watched probe). On error returns null, so every
+        /// season is probed as before.
+        /// </summary>
+        private HashSet<string>? LoadPlayedSeriesKeysForTagStrip(Jellyfin.Database.Implementations.Entities.User user)
+        {
+            try
+            {
+                var keys = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var item in _libraryManager.GetItemList(new InternalItemsQuery(user)
+                {
+                    IncludeItemTypes = new[] { BaseItemKind.Episode },
+                    IsPlayed = true,
+                    Recursive = true,
+                    DtoOptions = new MediaBrowser.Controller.Dto.DtoOptions(false),
+                }))
+                {
+                    if (item is MediaBrowser.Controller.Entities.TV.Episode ep && !string.IsNullOrEmpty(ep.SeriesPresentationUniqueKey))
+                    {
+                        keys.Add(ep.SeriesPresentationUniqueKey);
+                    }
+                }
+                return keys;
+            }
+            catch (Exception ex)
+            {
+                _spoilerResolver.WarnRateLimited(
+                    "tagcache-played-series-probe:" + ex.GetType().FullName,
+                    $"Spoiler Guard tag-cache strip: played-series query failed for {user.Id}: {ex.Message}");
+                return null;
+            }
         }
 
         // Tag-cache + tag-data both load the user's spoiler state. Strict-read so

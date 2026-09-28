@@ -123,8 +123,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// has an entry for are left untouched (never clobbers an EnabledAt,
         /// and the Series/Movies lists are the only record of a user's choice).
         /// <paramref name="skip"/> is consulted only for titles not already armed.
-        /// With <paramref name="dryRun"/> the same counts are produced but
-        /// nothing is written. Throws what RmwUserConfiguration throws (e.g.
+        /// With <paramref name="dryRun"/> the same counts are produced from a
+        /// plain lenient read, with no lock, write or corrupt-file quarantine.
+        /// Otherwise throws what RmwUserConfiguration throws (e.g.
         /// InvalidDataException for a corrupt file); callers handle per user.
         /// </summary>
         public static ArmResult ArmForUser(
@@ -136,7 +137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             string enabledAt)
         {
             int series = 0, movies = 0, already = 0, watched = 0, started = 0;
-            configManager.RmwUserConfiguration<UserSpoilerBlur>(userKey, SpoilerBlurImageFilter.SpoilerBlurFileName, state =>
+            int Apply(UserSpoilerBlur? state)
             {
                 if (state == null) return 0;
                 foreach (var c in visible)
@@ -154,33 +155,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if (c.IsSeries)
                     {
                         series++;
-                        if (!dryRun)
+                        state.Series[c.IdN] = new SpoilerBlurSeriesEntry
                         {
-                            state.Series[c.IdN] = new SpoilerBlurSeriesEntry
-                            {
-                                SeriesId = c.IdN,
-                                SeriesName = c.Name,
-                                EnabledAt = enabledAt,
-                            };
-                        }
+                            SeriesId = c.IdN,
+                            SeriesName = c.Name,
+                            EnabledAt = enabledAt,
+                        };
                     }
                     else
                     {
                         movies++;
-                        if (!dryRun)
+                        state.Movies[c.IdN] = new SpoilerBlurMovieEntry
                         {
-                            state.Movies[c.IdN] = new SpoilerBlurMovieEntry
-                            {
-                                MovieId = c.IdN,
-                                MovieName = c.Name,
-                                EnabledAt = enabledAt,
-                            };
-                        }
+                            MovieId = c.IdN,
+                            MovieName = c.Name,
+                            EnabledAt = enabledAt,
+                        };
                     }
                 }
-                // 0 = no save: a dry run (or nothing new) never touches the file.
-                return dryRun ? 0 : series + movies;
-            });
+                return series + movies;
+            }
+
+            if (dryRun)
+            {
+                // Mutates only this throwaway copy; never saved.
+                Apply(configManager.GetUserConfiguration<UserSpoilerBlur>(userKey, SpoilerBlurImageFilter.SpoilerBlurFileName));
+            }
+            else
+            {
+                configManager.RmwUserConfiguration<UserSpoilerBlur>(userKey, SpoilerBlurImageFilter.SpoilerBlurFileName, Apply);
+            }
             return new ArmResult(series, movies, already, watched, started);
         }
     }

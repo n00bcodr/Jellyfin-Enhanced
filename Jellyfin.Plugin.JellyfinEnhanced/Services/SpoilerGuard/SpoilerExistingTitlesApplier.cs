@@ -54,6 +54,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly SemaphoreSlim _runGate = new(1, 1);
         private readonly object _stateLock = new();
         private Options? _pendingOptions;
+        private DateTime _pendingOptionsAt;
         private Summary? _lastRun;
         private int _completedRuns;
 
@@ -137,30 +138,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public void SetPendingOptions(Options options)
         {
-            lock (_stateLock) _pendingOptions = options;
+            lock (_stateLock)
+            {
+                _pendingOptions = options;
+                _pendingOptionsAt = DateTime.UtcNow;
+            }
         }
 
-        /// <summary>Returns and clears the pending options, or the defaults when none are pending.</summary>
+        /// <summary>
+        /// Returns and clears the pending options, or the defaults when none
+        /// are pending. Options older than a minute are ignored: the task
+        /// they were set for never consumed them (e.g. it lost a race with a
+        /// dashboard start), and a later dashboard run must get the defaults.
+        /// </summary>
         public Options TakePendingOptions()
         {
             lock (_stateLock)
             {
-                var options = _pendingOptions ?? new Options();
+                var options = _pendingOptions != null && DateTime.UtcNow - _pendingOptionsAt < TimeSpan.FromMinutes(1)
+                    ? _pendingOptions
+                    : new Options();
                 _pendingOptions = null;
                 return options;
             }
         }
 
         /// <summary>Counts what a run with <paramref name="options"/> would arm, without writing anything.</summary>
-        public Summary Preview(Options options)
+        public Summary Preview(Options options, CancellationToken cancellationToken)
         {
-            return Execute(options, dryRun: true, progress: null, CancellationToken.None);
+            return Execute(options, dryRun: true, progress: null, cancellationToken);
         }
 
         /// <summary>
         /// Arms every in-scope existing title for every user with access.
-        /// Throws OperationCanceledException when cancelled (after recording
-        /// the partial summary), so Jellyfin marks the task as cancelled.
+        /// Throws OperationCanceledException when cancelled, and rethrows a
+        /// run-level failure, after recording the summary either way, so
+        /// Jellyfin marks the task as cancelled / failed.
         /// </summary>
         public Summary Run(Options options, IProgress<double>? progress, CancellationToken cancellationToken)
         {
@@ -207,15 +220,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 summary.Users = users.Count;
                 progress?.Report(10);
 
-                // Episode totals are user-independent: counted lazily, only
-                // for series someone has played an episode of, and shared
-                // across users for the rest of the run.
+                // Episode totals are user-independent: counted on demand, only
+                // for visible series a user has played an episode of, and
+                // shared across users for the rest of the run.
                 var episodeTotals = new Dictionary<Guid, int>();
 
                 var now = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
                 for (var i = 0; i < users.Count; i++)
                 {
-                    ct.ThrowIfCancellationRequested();                    var user = users[i];
+                    ct.ThrowIfCancellationRequested();
+                    var user = users[i];
                     var userSummary = ApplyForUser(user, candidates, episodeTotals, options, dryRun, now);
                     summary.PerUser.Add(userSummary);
                     summary.SeriesArmed += userSummary.Series;
@@ -228,7 +242,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     progress?.Report(10 + (90.0 * (i + 1) / users.Count));
                 }
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 summary.Cancelled = true;
                 Finish(summary, sw, dryRun);
@@ -237,7 +251,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             catch (Exception ex)
             {
                 summary.Error = ex.Message;
-                _logger.Warning($"SpoilerApplyExisting: run failed: {ex.Message}");
+                _logger.Warning($"SpoilerApplyExisting: {(dryRun ? "preview" : "run")} failed: {ex.Message}");
+                Finish(summary, sw, dryRun);
+                if (!dryRun) throw;
+                return summary;
             }
 
             return Finish(summary, sw, dryRun);
@@ -404,17 +421,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private HashSet<Guid> QueryIds(User user, BaseItemKind kind, bool? isPlayed, bool? isResumable)
         {
-            var ids = new HashSet<Guid>();
-            var items = _libraryManager.GetItemList(new InternalItemsQuery(user)
+            // Ids only; no need to materialise the items.
+            return new HashSet<Guid>(_libraryManager.GetItemIds(new InternalItemsQuery(user)
             {
                 IncludeItemTypes = new[] { kind },
                 IsVirtualItem = false,
                 IsPlayed = isPlayed,
                 IsResumable = isResumable,
                 Recursive = true,
-            });
-            foreach (var item in items) ids.Add(item.Id);
-            return ids;
+            }));
         }
 
         // Non-virtual (i.e. actually present) episodes of one series, as a
