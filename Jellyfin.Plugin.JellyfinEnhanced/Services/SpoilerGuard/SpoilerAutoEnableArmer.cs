@@ -124,9 +124,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// and the Series/Movies lists are the only record of a user's choice).
         /// <paramref name="skip"/> is consulted only for titles not already armed.
         /// With <paramref name="dryRun"/> the same counts are produced from a
-        /// plain lenient read, with no lock, write or corrupt-file quarantine.
-        /// Otherwise throws what RmwUserConfiguration throws (e.g.
-        /// InvalidDataException for a corrupt file); callers handle per user.
+        /// strict read with no lock, no write and no corrupt-file quarantine
+        /// (a corrupt file still throws, so the preview reports that user as
+        /// failed just like the real run would). Throws what
+        /// RmwUserConfiguration throws (e.g. InvalidDataException for a
+        /// corrupt file); callers handle per user.
         /// </summary>
         public static ArmResult ArmForUser(
             UserConfigurationManager configManager,
@@ -179,7 +181,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (dryRun)
             {
                 // Mutates only this throwaway copy; never saved.
-                Apply(configManager.GetUserConfiguration<UserSpoilerBlur>(userKey, SpoilerBlurImageFilter.SpoilerBlurFileName));
+                Apply(configManager.GetUserConfigurationStrict<UserSpoilerBlur>(userKey, SpoilerBlurImageFilter.SpoilerBlurFileName, quarantineCorrupt: false));
             }
             else
             {

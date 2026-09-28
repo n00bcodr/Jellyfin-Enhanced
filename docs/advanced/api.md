@@ -609,7 +609,7 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 | POST / DELETE | `spoiler-blur/movies/{movieId}` | Enable/disable for a movie |
 | POST / DELETE | `spoiler-blur/collections/{collectionId}` | Enable/disable for a collection |
 | POST / DELETE | `spoiler-blur/pending/{mediaType}/{tmdbId}` | Pre-arm Spoiler Guard for a title not yet in the library |
-| GET | `spoiler-blur/apply-existing/preview?skipStarted=false` | Admin: dry run of "apply to existing titles" with the saved auto-enable scope (per-user counts, nothing written; `409` if Spoiler Guard is off or a run is in progress) |
+| GET | `spoiler-blur/apply-existing/preview?skipStarted=false` | Admin: dry run of "apply to existing titles" with the saved auto-enable scope (per-user counts, nothing written; `409` if Spoiler Guard is off or a run is in progress, `500` with the error message if the count fails) |
 | POST | `spoiler-blur/apply-existing?skipStarted=false` | Admin: start the "Spoiler Guard: apply to existing titles" scheduled task with these options (`202` with `completedRuns`; `409` if already running or Spoiler Guard is off; `503` if the task isn't registered) |
 | GET | `spoiler-blur/apply-existing/status` | Admin: task `state` and `progress`, `completedRuns` and the last run's summary (`lastRun`) since server start |
 

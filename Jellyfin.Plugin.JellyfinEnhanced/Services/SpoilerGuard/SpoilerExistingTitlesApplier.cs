@@ -145,6 +145,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
+        /// <summary>Drops <paramref name="options"/> if they are still the pending ones (their start failed).</summary>
+        public void ClearPendingOptions(Options options)
+        {
+            lock (_stateLock)
+            {
+                if (ReferenceEquals(_pendingOptions, options)) _pendingOptions = null;
+            }
+        }
+
         /// <summary>
         /// Returns and clears the pending options, or the defaults when none
         /// are pending. Options older than a minute are ignored: the task
@@ -253,8 +262,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 summary.Error = ex.Message;
                 _logger.Warning($"SpoilerApplyExisting: {(dryRun ? "preview" : "run")} failed: {ex.Message}");
                 Finish(summary, sw, dryRun);
-                if (!dryRun) throw;
-                return summary;
+                if (dryRun) return summary;
+                // An unrequested cancellation (e.g. from the database layer)
+                // is a failure, not a user cancel: Jellyfin would otherwise
+                // show it as "Cancelled".
+                if (ex is OperationCanceledException) throw new InvalidOperationException(ex.Message, ex);
+                throw;
             }
 
             return Finish(summary, sw, dryRun);
@@ -292,11 +305,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (types.Count == 0 || users.Count == 0) return candidates;
 
             var needLibraryIds = allowedLibraries != null || anyRestrictedUser;
+            // Every item, not one per presentation key: the same show in two
+            // libraries is two items, and users may only see one of them.
             var items = _libraryManager.GetItemList(new InternalItemsQuery
             {
                 IncludeItemTypes = types.ToArray(),
                 IsVirtualItem = false,
                 Recursive = true,
+                GroupByPresentationUniqueKey = false,
             });
             foreach (var item in items)
             {
@@ -429,6 +445,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 IsPlayed = isPlayed,
                 IsResumable = isResumable,
                 Recursive = true,
+                GroupByPresentationUniqueKey = false,
             }));
         }
 
@@ -442,6 +459,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 IncludeItemTypes = new[] { BaseItemKind.Episode },
                 IsVirtualItem = false,
                 Recursive = true,
+                GroupByPresentationUniqueKey = false,
                 Limit = 0,
                 EnableTotalRecordCount = true,
             }).TotalRecordCount;
@@ -458,6 +476,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 IsPlayed = isPlayed,
                 IsResumable = isResumable,
                 Recursive = true,
+                GroupByPresentationUniqueKey = false,
             };
 
             var counts = new Dictionary<Guid, int>();
