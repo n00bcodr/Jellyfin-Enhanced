@@ -7205,6 +7205,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         (spCfg?.SpoilerReplaceTitle == true && (spPrefs?.ReplaceEpisodeTitles ?? true))
                         || (spCfg?.SpoilerStripOverview == true && (spPrefs?.HideEpisodeDescriptions ?? true));
 
+                    // Loaded on the first guarded entry that needs a played check.
+                    (HashSet<Guid> Items, HashSet<Guid> Seasons)? played = null;
+
                     foreach (var kvp in items.ToList())
                     {
                         var entry = kvp.Value;
@@ -7234,70 +7237,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             if (!spState.Series.ContainsKey(entry.SeriesId)) continue;
                         }
 
-                        // Played state via IUserDataManager (in-memory, no disk hit;
-                        // works on (user, itemId) directly, no per-entry library lookup).
-                        // Episodes: Played == true skips the strip. Seasons: IndexNumber<=1
+                        // Played state comes from ONE per-request query of everything
+                        // this user has played (see LoadPlayedForTagStrip), not a
+                        // UserData read per entry: with whole libraries guarded that
+                        // was thousands of reads and seconds per cache load.
+                        // Episodes/movies: played skips the strip. Seasons: IndexNumber<=1
                         // OR any-episode-watched skips (mirrors SpoilerBlurImageFilter and
                         // SpoilerFieldStripFilter Season blur logic).
                         if (Guid.TryParse(kvp.Key, out var entryGuid))
                         {
-                            var entryItem = _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(entryGuid);
-                            if (entryItem != null)
+                            played ??= LoadPlayedForTagStrip(user);
+                            if (isEpisode || isMovie)
                             {
-                                if (isEpisode)
+                                if (played.Value.Items.Contains(entryGuid)) continue;
+                            }
+                            else if (isSeason
+                                && _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(entryGuid) is MediaBrowser.Controller.Entities.TV.Season seasonItem)
+                            {
+                                var sNum = seasonItem.IndexNumber.GetValueOrDefault(int.MaxValue);
+                                // S0/S1 posters always pass (their existence isn't a
+                                // spoiler), as do seasons with any watched episode — "exempt".
+                                bool seasonExempt = sNum <= 1 || played.Value.Seasons.Contains(seasonItem.Id);
+                                if (seasonExempt)
                                 {
-                                    var ud = _userDataManager.GetUserData(user, entryItem);
-                                    if (ud?.Played == true) continue;
-                                }
-                                else if (isMovie)
-                                {
-                                    var ud = _userDataManager.GetUserData(user, entryItem);
-                                    if (ud?.Played == true) continue;
-                                }
-                                else if (isSeason
-                                    && entryItem is MediaBrowser.Controller.Entities.TV.Season seasonItem)
-                                {
-                                    var sNum = seasonItem.IndexNumber.GetValueOrDefault(int.MaxValue);
-                                    // S0/S1 posters always pass (their existence isn't a
-                                    // spoiler), as do seasons with any watched episode — "exempt".
-                                    bool seasonExempt = sNum <= 1;
-                                    if (!seasonExempt)
+                                    // Exempt seasons keep their poster + non-rating tags,
+                                    // but a season carries only the series-FALLBACK rating
+                                    // (hidden on the guarded series everywhere else). Strip
+                                    // just the rating so it can't surface via the server tag cache.
+                                    if (stripRatingsEnabled
+                                        && (entry.CommunityRating != null || entry.CriticRating != null))
                                     {
-                                        bool anyWatched = false;
-                                        try
-                                        {
-                                            foreach (var ep in seasonItem.GetEpisodes(user, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false))
-                                            {
-                                                if (ep == null) continue;
-                                                var ud = _userDataManager.GetUserData(user, ep);
-                                                if (ud?.Played == true) { anyWatched = true; break; }
-                                            }
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            _spoilerResolver.WarnRateLimited(
-                                                "tagcache-season-probe:" + ex.GetType().FullName,
-                                                $"Spoiler Guard tag-cache strip: season any-watched probe failed for {seasonItem.Id}: {ex.Message}");
-                                            // Fail-CLOSED: assume not watched, proceed to strip.
-                                        }
-                                        seasonExempt = anyWatched;
+                                        var seasonStripped = entry.Clone();
+                                        seasonStripped.CommunityRating = null;
+                                        seasonStripped.CriticRating = null;
+                                        items[kvp.Key] = seasonStripped;
                                     }
-                                    if (seasonExempt)
-                                    {
-                                        // Exempt seasons keep their poster + non-rating tags,
-                                        // but a season carries only the series-FALLBACK rating
-                                        // (hidden on the guarded series everywhere else). Strip
-                                        // just the rating so it can't surface via the server tag cache.
-                                        if (stripRatingsEnabled
-                                            && (entry.CommunityRating != null || entry.CriticRating != null))
-                                        {
-                                            var seasonStripped = entry.Clone();
-                                            seasonStripped.CommunityRating = null;
-                                            seasonStripped.CriticRating = null;
-                                            items[kvp.Key] = seasonStripped;
-                                        }
-                                        continue;
-                                    }
+                                    continue;
                                 }
                             }
                         }
@@ -9002,6 +8977,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string LastMsg, int Count, DateTime LastLogged)>
             _pollLogDedup = new();
         private static readonly TimeSpan _pollLogInterval = TimeSpan.FromMinutes(5);
+
+        /// <summary>
+        /// Everything <paramref name="user"/> has played (episode and movie ids),
+        /// plus the seasons containing a played episode, from one query. Used by
+        /// the tag-cache Spoiler Guard strip instead of a UserData read per
+        /// guarded entry. Fail-closed: on error both sets are empty, so nothing
+        /// counts as watched and every guarded entry is stripped.
+        /// </summary>
+        private (HashSet<Guid> Items, HashSet<Guid> Seasons) LoadPlayedForTagStrip(Jellyfin.Database.Implementations.Entities.User user)
+        {
+            var playedItems = new HashSet<Guid>();
+            var playedSeasons = new HashSet<Guid>();
+            try
+            {
+                var query = new InternalItemsQuery(user)
+                {
+                    IncludeItemTypes = new[] { BaseItemKind.Episode, BaseItemKind.Movie },
+                    IsPlayed = true,
+                    IsVirtualItem = false,
+                    Recursive = true,
+                };
+                foreach (var item in _libraryManager.GetItemList(query))
+                {
+                    playedItems.Add(item.Id);
+                    if (item is MediaBrowser.Controller.Entities.TV.Episode ep && ep.SeasonId != Guid.Empty)
+                    {
+                        playedSeasons.Add(ep.SeasonId);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _spoilerResolver.WarnRateLimited(
+                    "tagcache-played-probe:" + ex.GetType().FullName,
+                    $"Spoiler Guard tag-cache strip: played-state query failed for {user.Id}: {ex.Message}");
+                playedItems.Clear();
+                playedSeasons.Clear();
+            }
+            return (playedItems, playedSeasons);
+        }
 
         // Tag-cache + tag-data both load the user's spoiler state. Strict-read so
         // corruption is detected (rate-limited warn), then fall back to null so the
