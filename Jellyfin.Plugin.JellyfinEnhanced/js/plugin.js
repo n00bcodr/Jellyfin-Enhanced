@@ -234,49 +234,12 @@
         if (version) JE.pluginVersion = version;
     }
 
-    // Absolute URL of the component bundle, computed once so the preload and
-    // the later <script> insertion request byte-identical URLs (a preload is
-    // only reused for an exact URL match).
-    let componentBundleUrl = null;
-
     /**
      * Returns the component bundle URL (cache-keyed like every other script).
-     * Derived from the injected script tag's own src so it is available before
-     * ApiClient exists; falls back to ApiClient.getUrl when there is no tag.
-     * @returns {string|null} null when no base URL can be determined yet.
+     * @returns {string}
      */
     function getComponentBundleUrl() {
-        if (componentBundleUrl) return componentBundleUrl;
-        const path = `bundle.js?v=${getScriptVersion()}`;
-        const scriptEl = document.querySelector('script[plugin="Jellyfin Enhanced"]');
-        if (scriptEl?.src) {
-            // The tag's src is ".../JellyfinEnhanced/script?v=..." — bundle.js is its sibling.
-            componentBundleUrl = new URL(path, scriptEl.src).href;
-        } else if (typeof ApiClient !== 'undefined') {
-            componentBundleUrl = ApiClient.getUrl(`/JellyfinEnhanced/${path}`);
-        }
-        return componentBundleUrl;
-    }
-
-    let componentBundlePreloaded = false;
-
-    /**
-     * Starts downloading the component bundle immediately (before ApiClient and
-     * the current user exist) via <link rel="preload">, so the download overlaps
-     * the bootstrap request and the translations instead of following them.
-     * The later <script> insertion is served from the preload. No-op in dev mode
-     * (individual files are loaded there) and after the first call.
-     */
-    function preloadComponentBundle() {
-        if (componentBundlePreloaded || isDevMode()) return;
-        const url = getComponentBundleUrl();
-        if (!url) return; // no script tag yet — the plain <script> fetch will do
-        componentBundlePreloaded = true;
-        const link = document.createElement('link');
-        link.rel = 'preload';
-        link.as = 'script';
-        link.href = url;
-        document.head.appendChild(link);
+        return ApiClient.getUrl(`/JellyfinEnhanced/bundle.js?v=${getScriptVersion()}`);
     }
 
     /**
@@ -561,49 +524,134 @@
     }
 
     /**
+     * Yields to the event loop as a macrotask that queues BEHIND everything
+     * already pending (unlike scheduler.yield, whose continuation jumps the
+     * queue), so jellyfin-web's own tasks get their turn between module slices.
+     * @returns {Promise<void>}
+     */
+    function yieldToEventLoop() {
+        return new Promise((resolve) => {
+            if (typeof MessageChannel === 'function') {
+                const channel = new MessageChannel();
+                channel.port1.onmessage = () => resolve();
+                channel.port2.postMessage(null);
+            } else {
+                setTimeout(resolve, 0);
+            }
+        });
+    }
+
+    /**
+     * Waits for the browser's next idle period (requestIdleCallback), so the
+     * caller's work runs only once jellyfin-web has nothing pending — its first
+     * view renders at full speed and JE's evaluation fills the gaps (on a cold
+     * load, the waits for jellyfin-web's own chunks). Capped by `timeoutMs` so a
+     * continuously busy page cannot starve the caller. Resolves with the
+     * IdleDeadline, or null where requestIdleCallback is unavailable (plain
+     * macrotask yield instead).
+     * @param {number} timeoutMs - Longest wait before the callback runs anyway.
+     * @returns {Promise<IdleDeadline|null>}
+     */
+    function waitForIdle(timeoutMs) {
+        if (typeof requestIdleCallback === 'function') {
+            return new Promise((resolve) => requestIdleCallback(resolve, { timeout: timeoutMs }));
+        }
+        return yieldToEventLoop().then(() => null);
+    }
+
+    // Module-runner pacing. Evaluating the 150+ component modules costs ~100 ms
+    // of main thread; done as one task, or even as slices competing on equal
+    // terms, it lands exactly while jellyfin-web renders its first view and
+    // delays it by that much. So each slice runs in idle time (BUNDLE_IDLE_TIMEOUT_MS
+    // caps the wait) and is kept short (BUNDLE_RUN_BUDGET_MS) so a task that
+    // becomes pending mid-slice — a chunk arriving on a cold load — waits only
+    // a few milliseconds.
+    const BUNDLE_RUN_BUDGET_MS = 10;
+    const BUNDLE_IDLE_TIMEOUT_MS = 100;
+
+    /**
+     * Runs the bundle's module functions in manifest order, in short slices
+     * scheduled in the browser's idle time (see the pacing notes above). A
+     * module that throws at its top level is logged and rethrown asynchronously
+     * (so it still surfaces as an uncaught error, exactly like a throwing
+     * <script> did) and the run continues with the next module — nothing after
+     * it is lost, and it is not re-run. window.__JE_BUNDLE_PROGRESS counts the
+     * modules run.
+     * @param {Function[]} modules - `window.__JE_BUNDLE_MODULES` from the bundle.
+     * @param {unknown} fromBootstrap - `ComponentScripts` from the bootstrap payload (for error messages).
+     * @returns {Promise<void>}
+     */
+    async function runBundleModules(modules, fromBootstrap) {
+        const names = filterComponentManifest(fromBootstrap) || [];
+        let deadline = await waitForIdle(BUNDLE_IDLE_TIMEOUT_MS);
+        let sliceStart = performance.now();
+        for (let i = 0; i < modules.length; i++) {
+            try {
+                modules[i]();
+            } catch (e) {
+                console.error(`🪼 Jellyfin Enhanced: Module '${names[i] || `#${i + 1}`}' threw while loading; continuing with the next module.`, e);
+                setTimeout(() => { throw e; }, 0);
+            }
+            window.__JE_BUNDLE_PROGRESS = i + 1;
+            if (i + 1 >= modules.length) break;
+            // End the slice when its budget is spent or the idle period is over.
+            // A callback that ran because the timeout expired reports no idle
+            // time at all; it gets the full budget so progress is guaranteed.
+            const budgetSpent = performance.now() - sliceStart >= BUNDLE_RUN_BUDGET_MS;
+            const idleOver = !!deadline && !deadline.didTimeout && deadline.timeRemaining() < 1;
+            if (budgetSpent || idleOver) {
+                deadline = await waitForIdle(BUNDLE_IDLE_TIMEOUT_MS);
+                sliceStart = performance.now();
+            }
+        }
+    }
+
+    /**
      * Loads every component module from the server-side bundle (one request
-     * instead of one <script> per module) and verifies it ran to completion via
-     * the progress marker the bundle updates after each file. When it did not,
-     * falls back to the per-file loader for whatever did not run:
-     *  - request failed, or nothing executed (a syntax error aborts the whole
-     *    script before any file runs): load every file individually, so only the
-     *    broken file fails, exactly as before the bundle existed;
-     *  - file k threw at its top level (the bundle stops there and the error has
-     *    already been reported): skip k — re-running it could double-register —
-     *    and load k+1..n individually.
+     * instead of one <script> per module): the bundle defines one function per
+     * module in window.__JE_BUNDLE_MODULES, which runBundleModules executes in
+     * order. Falls back to the per-file loader for every module when the
+     * request fails or nothing was defined (a syntax error aborts the whole
+     * script before it defines anything), so only the broken file fails,
+     * exactly as before the bundle existed.
      * @param {unknown} fromBootstrap - `ComponentScripts` from the bootstrap payload, if any.
      * @returns {Promise<void>}
      */
     async function loadComponentBundle(fromBootstrap) {
         const url = getComponentBundleUrl();
-        // -1 = nothing executed; the bundle sets 0 first, then k after file k.
+        // -1 = nothing executed; the bundle's prologue sets 0.
         window.__JE_BUNDLE_PROGRESS = -1;
+        window.__JE_BUNDLE_MODULES = undefined;
+        // Fetch and parse the bundle only once jellyfin-web is idle, and at low
+        // fetch priority. Measured alternatives: an early <link rel="preload">
+        // (even at low priority) made jellyfin-web's first content ~200-300 ms
+        // later on a cold 20 Mbps load because the 800 KB download shares
+        // bandwidth with its own chunks, and inserting the script right away
+        // put its 2.8 MB pre-parse in front of the first view's rendering.
+        await waitForIdle(BUNDLE_IDLE_TIMEOUT_MS);
         const requestOk = await new Promise((resolve) => {
             const script = document.createElement('script');
             script.src = url;
+            script.setAttribute('fetchpriority', 'low');
             script.onload = () => resolve(true);
             script.onerror = () => resolve(false);
             document.head.appendChild(script);
         });
-        const progress = window.__JE_BUNDLE_PROGRESS;
+        const modules = window.__JE_BUNDLE_MODULES;
         const total = window.__JE_BUNDLE_TOTAL;
-        if (requestOk && typeof total === 'number' && total > 0 && progress === total) {
-            return; // every module executed
+        delete window.__JE_BUNDLE_MODULES; // the functions are only needed once
+        if (requestOk && Array.isArray(modules) && modules.length > 0 && modules.length === total) {
+            await runBundleModules(modules, fromBootstrap);
+            return;
         }
 
         const scripts = await getComponentScriptList(fromBootstrap);
         if (!requestOk) {
             console.warn('🪼 Jellyfin Enhanced: Component bundle request failed — loading the component scripts individually.');
-            await loadScripts(scripts, COMPONENT_SCRIPTS_BASE_PATH);
-            return;
+        } else {
+            console.warn('🪼 Jellyfin Enhanced: Component bundle did not define its modules (syntax error?) — loading the component scripts individually.');
         }
-        if (typeof progress !== 'number' || progress < 0 || progress >= scripts.length) {
-            console.warn('🪼 Jellyfin Enhanced: Component bundle did not execute (syntax error?) — loading the component scripts individually.');
-            await loadScripts(scripts, COMPONENT_SCRIPTS_BASE_PATH);
-            return;
-        }
-        console.warn(`🪼 Jellyfin Enhanced: Component bundle stopped after ${progress}/${scripts.length} modules — '${scripts[progress]}' threw while loading (see the error above). Loading the remaining ${scripts.length - progress - 1} modules individually.`);
-        await loadScripts(scripts.slice(progress + 1), COMPONENT_SCRIPTS_BASE_PATH);
+        await loadScripts(scripts, COMPONENT_SCRIPTS_BASE_PATH);
     }
 
     /**
@@ -1030,10 +1078,6 @@
      * Main initialization function.
      */
     async function initialize() {
-        // Start the component-bundle download right away (production only) so
-        // it overlaps everything below instead of following it.
-        preloadComponentBundle();
-
         // Check for server ID mismatch - stop retrying if credentials are stale
         if (hasServerIdMismatch()) {
             mismatchRetryCount++;

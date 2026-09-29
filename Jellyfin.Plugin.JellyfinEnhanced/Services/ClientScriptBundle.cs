@@ -21,14 +21,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// with "//" are notes), which is also what plugin.js uses for dev mode and
     /// for its per-file fallback loader.
     ///
-    /// Bundle format, per file k (1-based):
-    ///   \n;\n/* ---- js/&lt;path&gt; ---- */\n&lt;file content&gt;\nwindow.__JE_BUNDLE_PROGRESS = k;\n
-    /// The leading ";" isolates each file from the previous one (a file ending
-    /// without a semicolon can't turn the next IIFE into a call), and the
-    /// progress marker lets the client tell exactly how far execution got when a
-    /// module throws at its top level, so it can load the remaining files
-    /// individually. The prologue publishes window.__JE_BUNDLE_TOTAL (module
-    /// count) so the client can verify completeness without the manifest.
+    /// Bundle format: a prologue publishing window.__JE_BUNDLE_TOTAL (module
+    /// count) and window.__JE_BUNDLE_PROGRESS = 0, then one array,
+    /// window.__JE_BUNDLE_MODULES, holding one function per file:
+    ///   /* ---- js/&lt;path&gt; ---- */\nfunction () {\n&lt;file content&gt;\n},\n
+    /// The client runs the functions in order, yielding to the event loop every
+    /// few milliseconds, so evaluating 150+ modules never blocks jellyfin-web's
+    /// own rendering for one long task (a single flat script would), and a module
+    /// that throws at its top level is reported and skipped instead of aborting
+    /// everything after it. Wrapping is semantics-preserving because every
+    /// component module is a single IIFE expression statement (no top-level
+    /// declarations, directives, `this` or `arguments`); the file content keeps
+    /// its own lines, so the line-identity source map still applies.
     ///
     /// The source map is an index map ("sections"), one line-identity section per
     /// file pointing at the original /JellyfinEnhanced/js/&lt;path&gt; URL, so stack
@@ -125,10 +129,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             Append("/* Jellyfin Enhanced component bundle — generated from js/component-scripts.json */\n");
             Append($"window.__JE_BUNDLE_TOTAL = {scripts.Count};\n");
             Append("window.__JE_BUNDLE_PROGRESS = 0;\n");
+            Append("window.__JE_BUNDLE_MODULES = [\n");
 
-            for (var i = 0; i < scripts.Count; i++)
+            foreach (var path in scripts)
             {
-                var path = scripts[i];
                 string? content = null;
                 if (SafePath.IsMatch(path))
                 {
@@ -140,29 +144,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                 }
 
-                Append("\n;\n");
                 if (content == null)
                 {
                     // Mirror the per-file loader, which logs a load error for a
                     // missing script and carries on with the next one.
                     logger.Warning($"Component bundle: '{path}' is listed in js/component-scripts.json but is not an embedded resource; skipping.");
                     Append($"/* ---- js/{path} (missing) ---- */\n");
-                    Append($"console.error(\"🪼 Jellyfin Enhanced: Failed to load script '{path}' (not found in bundle)\");\n");
+                    Append($"function () {{ console.error(\"🪼 Jellyfin Enhanced: Failed to load script '{path}' (not found in bundle)\"); }},\n");
+                    continue;
                 }
-                else
+
+                Append($"/* ---- js/{path} ---- */\nfunction () {{\n");
+                var start = line;
+                Append(content);
+                if (!content.EndsWith('\n'))
                 {
-                    Append($"/* ---- js/{path} ---- */\n");
-                    var start = line;
-                    Append(content);
-                    if (!content.EndsWith('\n'))
-                    {
-                        Append("\n");
-                    }
-                    sections.Add(new Section { Path = path, Line = start, LineCount = line - start });
+                    Append("\n");
                 }
-                Append($"window.__JE_BUNDLE_PROGRESS = {i + 1};\n");
+                sections.Add(new Section { Path = path, Line = start, LineCount = line - start });
+                Append("},\n");
             }
 
+            Append("];\n");
             Append($"//# sourceMappingURL=bundle.js.map?v={cacheKey}\n");
 
             var map = new
