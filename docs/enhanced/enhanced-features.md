@@ -568,6 +568,17 @@ Display quality information (4K, HDR, Atmos) directly on posters.
 - **Audio:** ATMOS, DTS-X, TRUEHD, DTS, Dolby Digital+, 7.1, 5.1
 - **Media Stubs:** BluRay, HD DVD, DVD, VHS, HDTV, Physical (for physical media files)
 
+**Preferred audio language:**
+
+By default the sound tag describes the best audio track in the file. Set a
+preferred language (admin default under Media Tags, or per user in the Enhanced
+panel's Quality Tags options) and it describes the best track *in that language*
+instead — a film whose English track is Atmos but whose German dub is plain AC3
+reads AC3 for a German-preferring user. Titles with no audio in the language fall
+back to their best track. Admins can also let the tag follow each user's Jellyfin
+audio language preference, and users can pick "My Jellyfin audio language"
+themselves.
+
 ### Genre Tags
 
 ![Genre tags on posters](../images/genre-tags.png)
@@ -593,6 +604,17 @@ Display available audio languages as country flags on posters.
 - Show up to 3 unique languages
 - Positioned bottom-left by default
 - Also displays on item detail pages
+- Series and season cards show every language found across their episodes.
+  A language that is missing from some episodes (a dub that only covers part
+  of the show) is drawn dimmed with a dashed outline, and its flag's title/alt
+  text adds "not on all episodes"; a plain flag means every episode has that
+  audio. Full-series languages are listed first. Specials don't count against
+  a series' full languages, and tracks without a language tag are ignored.
+  Differently tagged copies of one language (`eng` / `en`, `fre` / `fr-FR`)
+  count as the same dub; two regional variants that sit side by side in one
+  episode (`es-419` and `es-ES`) are judged separately. Requires the
+  server-side tag cache (on by default); in the legacy per-page mode the card
+  reflects one representative episode as before
 - Regional variants get their own flag when the audio track is explicitly
   tagged with a region: `pt-BR` shows the Brazilian flag while `pt` / `pt-PT`
   keep the Portuguese one, `es-419` / `es-MX` (Latin-American Spanish) show
@@ -618,6 +640,22 @@ Show TMDB and Rotten Tomatoes ratings on posters and in player.
 - Stacked vertically on posters
 - Optional OSD display during playback
 - Color-coded by rating value
+- Choose where they appear, per item type (movies, series, seasons, episodes) and per home row (Continue Watching, Next Up). Untick **Episodes** to keep ratings off every episode card, including Next Up and Continue Watching; untick a row to hide them only in that row (on the home screen, and the Next Up shelf on a series page). Rating chips and your own review chip are hidden together on an excluded card. Admins set the defaults; each user can change them under *Show Rating Tags* in the Enhanced panel.
+
+### Age Rating Tags
+
+Show the item's parental / age rating (PG-13, R, TV-MA, FSK 12, BBFC 15, ...) as a badge on posters.
+
+**Features:**
+
+- Reads the rating Jellyfin already has for the item (no extra lookups)
+- Episodes and seasons fall back to their series' rating
+- Colour-coded per rating board, using the same colour table as [Colored Ratings](#colored-ratings)
+- Customizable position; defaults to the bottom-right corner and stacks with Rating Tags when both share a corner
+- Off by default — enable it per user in the Enhanced panel (Settings tab), or set the admin default under Display → Media Tags
+
+!!! note
+    Spoiler Guard keeps the badge: a series' or movie's age rating reveals nothing about the plot, and the details page shows it regardless. While Spoiler Guard is hiding ratings, unwatched episodes (and unstarted seasons) of a guarded series show the series' rating rather than their own, since an episode rated higher than its show can hint at what happens in it.
 
 
 ### People Tags

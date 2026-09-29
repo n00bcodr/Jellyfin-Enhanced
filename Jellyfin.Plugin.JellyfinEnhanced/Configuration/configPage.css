@@ -828,7 +828,8 @@
 }
 #JellyfinEnhancedPage .configSection > .inputContainer,
 #JellyfinEnhancedPage .configSection > .checkboxContainer,
-#JellyfinEnhancedPage .configSection > .selectContainer {
+#JellyfinEnhancedPage .configSection > .selectContainer,
+#JellyfinEnhancedPage .configSection > .je-tag-row {
     background: var(--je-surface-1);
     border: 1px solid var(--je-border);
     border-radius: 8px;
@@ -838,13 +839,15 @@
 }
 #JellyfinEnhancedPage .configSection > .inputContainer:hover,
 #JellyfinEnhancedPage .configSection > .checkboxContainer:hover,
-#JellyfinEnhancedPage .configSection > .selectContainer:hover {
+#JellyfinEnhancedPage .configSection > .selectContainer:hover,
+#JellyfinEnhancedPage .configSection > .je-tag-row:hover {
     border-color: var(--je-border);
     background: var(--je-surface-1);
 }
 #JellyfinEnhancedPage .configSection > .inputContainer:focus-within,
 #JellyfinEnhancedPage .configSection > .checkboxContainer:focus-within,
-#JellyfinEnhancedPage .configSection > .selectContainer:focus-within {
+#JellyfinEnhancedPage .configSection > .selectContainer:focus-within,
+#JellyfinEnhancedPage .configSection > .je-tag-row:focus-within {
     border-color: var(--primary-accent-color, #00a4dc);
     background: var(--je-surface-2);
     box-shadow: 0 0 0 1px var(--primary-accent-color, #00a4dc) inset;
@@ -1378,6 +1381,11 @@
 .emby-checkbox-label > .je-new-badge {
     margin-left: 0;
 }
+/* Expander summaries spread their items apart; keep the badge beside the title. */
+.je-details-section > summary > .je-new-badge {
+    margin-left: 0;
+    margin-right: auto;
+}
 /* Text field and dropdown cards are a flex column, which would stretch the badge into a
    full-width bar under the field; keep it badge-sized at the start of the row. */
 #JellyfinEnhancedPage .inputContainer > .je-new-badge,
@@ -1849,6 +1857,8 @@ body.je-has-introskipper .je-needs-introskipper { display: none !important; }
    matches the rest of the form: a single horizontal row holding a checkbox
    container, plus reorder buttons that stay quiet by default and hint at
    their action on hover. */
+/* Wrapper the reorder code sorts rows within; the rows keep the expander's own spacing. */
+#qualityCategoriesAdmin { display: contents; }
 .je-quality-cat-admin-row {
     display: flex;
     align-items: center;

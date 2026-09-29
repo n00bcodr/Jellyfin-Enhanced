@@ -303,6 +303,9 @@
     window.addEventListener('beforeunload', cleanup);
     if (window.JellyfinEnhanced) {
         window.JellyfinEnhanced.initializeColoredRatings = initialize;
+        // Shared with tags/ageratingtags.js so poster badges pick the same
+        // [rating=...] colour key as the details-page rating box.
+        window.JellyfinEnhanced.normalizeOfficialRating = normalizeRating;
         // Expose pause/resume functions for pausescreen.js to control
         window.JellyfinEnhanced.pauseRatingsPolling = pausePolling;
         window.JellyfinEnhanced.resumeRatingsPolling = resumePolling;

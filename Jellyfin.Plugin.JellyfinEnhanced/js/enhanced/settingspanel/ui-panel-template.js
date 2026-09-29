@@ -421,6 +421,15 @@
                                             `;
                                         }).join('');
                                     })()}
+                                    <div class="je-quality-audio-lang">
+                                        <label for="qualityTagsAudioLanguageSelect" style="display:block; font-size:12px; color:rgba(255,255,255,0.6); margin:10px 0 4px;">${JE.t('panel_settings_ui_quality_tags_audio_language')}</label>
+                                        <select id="qualityTagsAudioLanguageSelect" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
+                                            <option value="">${JE.t('panel_settings_ui_quality_tags_audio_language_default')}</option>
+                                            <option value="auto">${JE.t('panel_settings_ui_quality_tags_audio_language_auto')}</option>
+                                            <option value="none">${JE.t('panel_settings_ui_quality_tags_audio_language_none')}</option>
+                                        </select>
+                                        <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:4px;">${JE.t('panel_settings_ui_quality_tags_audio_language_desc')}</div>
+                                    </div>
                                 </div>
                             </div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
@@ -458,6 +467,49 @@
                                             <div><div style="font-weight:500;">${JE.t('panel_settings_ui_rating_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_rating_tags_desc')}</div></div>
                                         </div>
                                         <div class="position-selector" data-setting="ratingTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
+                                            <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
+                                            <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
+                                            <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
+                                            <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
+                                        </div>
+                                    </label>
+                                    <div id="ratingTagsSubWrap" class="je-quality-cat-wrap" style="display: ${JE.currentSettings.ratingTagsEnabled ? 'block' : 'none'};">
+                                        <button type="button" id="ratingTagsSubToggleExpander" class="je-quality-cat-expander" aria-expanded="false">
+                                            <span class="material-icons je-cat-chevron" aria-hidden="true">chevron_right</span>
+                                            <span>${JE.t('panel_settings_ui_rating_tags_scope_label')}</span>
+                                        </button>
+                                    </div>
+                                    <div id="ratingTagsSubToggles" class="je-quality-cat-list" style="display: none;">
+                                        ${[
+                                            { id: 'ratingTagsOnMoviesToggle',           settingKey: 'ratingTagsOnMovies',           pluginKey: 'RatingTagsOnMovies',           labelKey: 'panel_settings_ui_rating_tags_scope_movies' },
+                                            { id: 'ratingTagsOnSeriesToggle',           settingKey: 'ratingTagsOnSeries',           pluginKey: 'RatingTagsOnSeries',           labelKey: 'panel_settings_ui_rating_tags_scope_series' },
+                                            { id: 'ratingTagsOnSeasonsToggle',          settingKey: 'ratingTagsOnSeasons',          pluginKey: 'RatingTagsOnSeasons',          labelKey: 'panel_settings_ui_rating_tags_scope_seasons' },
+                                            { id: 'ratingTagsOnEpisodesToggle',         settingKey: 'ratingTagsOnEpisodes',         pluginKey: 'RatingTagsOnEpisodes',         labelKey: 'panel_settings_ui_rating_tags_scope_episodes' },
+                                            { id: 'ratingTagsOnContinueWatchingToggle', settingKey: 'ratingTagsOnContinueWatching', pluginKey: 'RatingTagsOnContinueWatching', labelKey: 'panel_settings_ui_rating_tags_scope_continue_watching' },
+                                            { id: 'ratingTagsOnNextUpToggle',           settingKey: 'ratingTagsOnNextUp',           pluginKey: 'RatingTagsOnNextUp',           labelKey: 'panel_settings_ui_rating_tags_scope_next_up' },
+                                        ].map((c) => {
+                                            // Effective value (user override -> admin default -> on), same as the renderer.
+                                            const u = JE.currentSettings[c.settingKey];
+                                            const a = JE.pluginConfig?.[c.pluginKey];
+                                            const on = typeof u === 'boolean' ? u : (typeof a === 'boolean' ? a : true);
+                                            return `
+                                                <div class="je-quality-cat-row" data-cat-key="${c.settingKey}">
+                                                    <label class="je-quality-cat-label-wrap">
+                                                        <input type="checkbox" id="${c.id}" ${on ? 'checked' : ''} style="accent-color:${toggleAccentColor};">
+                                                        <span class="je-quality-cat-label">${JE.t(c.labelKey)}</span>
+                                                    </label>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                                <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                    <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                            <input type="checkbox" id="ageRatingTagsToggle" ${JE.currentSettings.ageRatingTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
+                                            <div><div style="font-weight:500;">${JE.t('panel_settings_ui_age_rating_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_age_rating_tags_desc')}</div></div>
+                                        </div>
+                                        <div class="position-selector" data-setting="ageRatingTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
                                             <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
                                             <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
                                             <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>

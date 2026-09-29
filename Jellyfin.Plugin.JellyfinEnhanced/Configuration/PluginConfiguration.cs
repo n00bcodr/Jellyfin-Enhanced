@@ -109,6 +109,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             GenreTagsEnabled = false;
             LanguageTagsEnabled = false;
             RatingTagsEnabled = false;
+            AgeRatingTagsEnabled = false;
             PeopleTagsEnabled = false;
             TagsCacheTtlDays = 30;
             DisableTagsOnSearchPage = false;
@@ -120,7 +121,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             LanguageTagsPosition = "bottom-left";
             LanguageTagsPriority = string.Empty;
             LanguageTagsPriorityStrict = false;
+            QualityTagsPreferredAudioLanguage = string.Empty;
+            QualityTagsAudioLanguageFromUser = false;
             RatingTagsPosition = "bottom-right";
+            RatingTagsOnMovies = true;
+            RatingTagsOnSeries = true;
+            RatingTagsOnSeasons = true;
+            RatingTagsOnEpisodes = true;
+            RatingTagsOnContinueWatching = true;
+            RatingTagsOnNextUp = true;
+            AgeRatingTagsPosition = "bottom-right";
             ShowRatingInPlayer = true;
             DisableAllShortcuts = false;
             DefaultSubtitleStyle = 0;
@@ -576,6 +586,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int AudioInfoTagOrder { get; set; } = 6;
         public bool LanguageTagsEnabled { get; set; }
         public bool RatingTagsEnabled { get; set; }
+        public bool AgeRatingTagsEnabled { get; set; }
         public bool PeopleTagsEnabled { get; set; }
         public int TagsCacheTtlDays { get; set; }
         public bool DisableTagsOnSearchPage { get; set; }
@@ -616,8 +627,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// is empty.
         /// </summary>
         public bool LanguageTagsPriorityStrict { get; set; }
+        /// <summary>
+        /// Language whose audio tracks decide the sound tag (Atmos, DTS, 5.1, ...)
+        /// on poster cards, as an ISO 639 code (de, deu, pt-BR). Empty (default)
+        /// judges every track, i.e. the best track overall. Users can override it
+        /// in their own settings.
+        /// </summary>
+        public string QualityTagsPreferredAudioLanguage { get; set; } = string.Empty;
+        /// <summary>
+        /// When on, a user's own Jellyfin audio language preference (Settings →
+        /// Playback → Preferred audio language) is used instead of
+        /// <see cref="QualityTagsPreferredAudioLanguage"/>; users without one keep
+        /// the fixed language.
+        /// </summary>
+        public bool QualityTagsAudioLanguageFromUser { get; set; }
         [AnalyticsInclude]
         public string RatingTagsPosition { get; set; } = "bottom-right";
+        // Where rating tags are allowed to render. The item-type switches gate
+        // cards by their Jellyfin type; the two home-row switches additionally
+        // gate any card shown in the Continue Watching / Next Up rows. All
+        // default to true so existing installs render exactly as before.
+        public bool RatingTagsOnMovies { get; set; } = true;
+        public bool RatingTagsOnSeries { get; set; } = true;
+        public bool RatingTagsOnSeasons { get; set; } = true;
+        public bool RatingTagsOnEpisodes { get; set; } = true;
+        public bool RatingTagsOnContinueWatching { get; set; } = true;
+        public bool RatingTagsOnNextUp { get; set; } = true;
+        [AnalyticsInclude]
+        public string AgeRatingTagsPosition { get; set; } = "bottom-right";
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool GenreTagsEnabled { get; set; }
         public string DefaultLanguage { get; set; }

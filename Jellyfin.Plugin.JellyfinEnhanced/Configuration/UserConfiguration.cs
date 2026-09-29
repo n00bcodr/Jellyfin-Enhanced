@@ -51,12 +51,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool GenreTagsEnabled { get; set; }
         public bool LanguageTagsEnabled { get; set; }
         public bool RatingTagsEnabled { get; set; }
+        public bool AgeRatingTagsEnabled { get; set; }
         public bool PeopleTagsEnabled { get; set; }
         public bool TagsHideOnHover { get; set; }
         public string QualityTagsPosition { get; set; } = "top-left";
+        // Audio language the sound tag is judged by: "" = server default,
+        // "auto" = the user's Jellyfin audio language, "none" = no preference,
+        // otherwise an ISO 639 code.
+        public string QualityTagsPreferredAudioLanguage { get; set; } = string.Empty;
         public string GenreTagsPosition { get; set; } = "top-right";
         public string LanguageTagsPosition { get; set; } = "bottom-left";
         public string RatingTagsPosition { get; set; } = "bottom-right";
+        public bool RatingTagsOnMovies { get; set; } = true;
+        public bool RatingTagsOnSeries { get; set; } = true;
+        public bool RatingTagsOnSeasons { get; set; } = true;
+        public bool RatingTagsOnEpisodes { get; set; } = true;
+        public bool RatingTagsOnContinueWatching { get; set; } = true;
+        public bool RatingTagsOnNextUp { get; set; } = true;
+        public string AgeRatingTagsPosition { get; set; } = "bottom-right";
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool RemoveContinueWatchingEnabled { get; set; }
         public string LastOpenedTab { get; set; } = string.Empty;

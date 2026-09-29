@@ -230,41 +230,56 @@
                                 </div>
                             </div>
                             <div class="je-setting-description" data-desc-for="qualityTagsEnabled">
-                                <div class="fieldDescription je-field-desc-sm">This feature is a slightly modified version of the original script by <a class="sectionTitle" href="https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/" target="_blank">BobHasNoSoul</a></div>
+                                <div class="fieldDescription je-field-desc-sm">Resolution, source, HDR, format and sound badges on poster cards. A slightly modified version of the original script by <a class="sectionTitle" href="https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/" target="_blank">BobHasNoSoul</a>.</div>
                             </div>
-                            <details id="qualityCategoriesAdminDetails" class="je-details-section">
-                                <summary>Configure tag categories</summary>
-                                <div id="qualityCategoriesAdmin" class="je-details-body">
-                                    <div class="fieldDescription je-field-desc-sm">Pick which categories of quality tags should appear, and the order they stack within the chosen corner. Use the <i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_upward</i> / <i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_downward</i> buttons to reorder.</div>
-                                    <div class="je-quality-cat-admin-row" data-cat-key="ShowResolutionTag" data-order-key="ResolutionTagOrder" data-default-order="1">
-                                        <div class="checkboxContainer"><label><input id="showResolutionTag" is="emby-checkbox" type="checkbox"/><span>Show resolution (4K, 1080p, ...)</span></label></div>
-                                        <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
-                                        <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                            <details id="qualityCategoriesAdminDetails" class="je-details-section" style="margin-left: 20px;">
+                                <summary>Categories and sound language</summary>
+                                <div class="je-details-body">
+                                    <div id="qualityCategoriesAdmin">
+                                        <div class="fieldDescription je-field-desc-sm">Pick which categories of quality tags should appear, and the order they stack within the chosen corner. Use the <i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_upward</i> / <i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_downward</i> buttons to reorder.</div>
+                                        <div class="je-quality-cat-admin-row" data-cat-key="ShowResolutionTag" data-order-key="ResolutionTagOrder" data-default-order="1">
+                                            <div class="checkboxContainer"><label><input id="showResolutionTag" is="emby-checkbox" type="checkbox"/><span>Show resolution (4K, 1080p, ...)</span></label></div>
+                                            <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
+                                            <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                        </div>
+                                        <div class="je-quality-cat-admin-row" data-cat-key="ShowSourceTag" data-order-key="SourceTagOrder" data-default-order="2">
+                                            <div class="checkboxContainer"><label><input id="showSourceTag" is="emby-checkbox" type="checkbox"/><span>Show source (BluRay, DVD, HDTV, VHS, ...)</span></label></div>
+                                            <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
+                                            <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                        </div>
+                                        <div class="je-quality-cat-admin-row" data-cat-key="ShowDynamicRangeTag" data-order-key="DynamicRangeTagOrder" data-default-order="3">
+                                            <div class="checkboxContainer"><label><input id="showDynamicRangeTag" is="emby-checkbox" type="checkbox"/><span>Show HDR (HDR10+, Dolby Vision)</span></label></div>
+                                            <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
+                                            <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                        </div>
+                                        <div class="je-quality-cat-admin-row" data-cat-key="ShowSpecialFormatTag" data-order-key="SpecialFormatTagOrder" data-default-order="4">
+                                            <div class="checkboxContainer"><label><input id="showSpecialFormatTag" is="emby-checkbox" type="checkbox"/><span>Show special format (IMAX, 3D)</span></label></div>
+                                            <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
+                                            <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                        </div>
+                                        <div class="je-quality-cat-admin-row" data-cat-key="ShowVideoCodecTag" data-order-key="VideoCodecTagOrder" data-default-order="5">
+                                            <div class="checkboxContainer"><label><input id="showVideoCodecTag" is="emby-checkbox" type="checkbox"/><span>Show video format (HEVC, H264, AV1, ...)</span></label></div>
+                                            <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
+                                            <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                        </div>
+                                        <div class="je-quality-cat-admin-row" data-cat-key="ShowAudioInfoTag" data-order-key="AudioInfoTagOrder" data-default-order="6">
+                                            <div class="checkboxContainer"><label><input id="showAudioInfoTag" is="emby-checkbox" type="checkbox"/><span>Show sound (Atmos, DTS, 5.1, 7.1, ...)</span></label></div>
+                                            <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
+                                            <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                        </div>
                                     </div>
-                                    <div class="je-quality-cat-admin-row" data-cat-key="ShowSourceTag" data-order-key="SourceTagOrder" data-default-order="2">
-                                        <div class="checkboxContainer"><label><input id="showSourceTag" is="emby-checkbox" type="checkbox"/><span>Show source (BluRay, DVD, HDTV, VHS, ...)</span></label></div>
-                                        <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
-                                        <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="qualityTagsPreferredAudioLanguage">Preferred Audio Language for Sound Tags</label>
+                                        <select is="emby-select" id="qualityTagsPreferredAudioLanguage" name="qualityTagsPreferredAudioLanguage" class="emby-select">
+                                            <option value="">No preference (best track overall)</option>
+                                        </select>
                                     </div>
-                                    <div class="je-quality-cat-admin-row" data-cat-key="ShowDynamicRangeTag" data-order-key="DynamicRangeTagOrder" data-default-order="3">
-                                        <div class="checkboxContainer"><label><input id="showDynamicRangeTag" is="emby-checkbox" type="checkbox"/><span>Show HDR (HDR10+, Dolby Vision)</span></label></div>
-                                        <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
-                                        <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                    <div class="je-setting-description" data-desc-for="qualityTagsPreferredAudioLanguage">
+                                        <div class="fieldDescription">The sound tag (Atmos, DTS, 5.1, ...) describes the best audio track in this language rather than the best track in the file — a film whose English track is Atmos but whose German dub is plain AC3 then reads AC3. Titles with no audio in the language fall back to their best track. Users can override this in their own settings.</div>
                                     </div>
-                                    <div class="je-quality-cat-admin-row" data-cat-key="ShowSpecialFormatTag" data-order-key="SpecialFormatTagOrder" data-default-order="4">
-                                        <div class="checkboxContainer"><label><input id="showSpecialFormatTag" is="emby-checkbox" type="checkbox"/><span>Show special format (IMAX, 3D)</span></label></div>
-                                        <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
-                                        <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
-                                    </div>
-                                    <div class="je-quality-cat-admin-row" data-cat-key="ShowVideoCodecTag" data-order-key="VideoCodecTagOrder" data-default-order="5">
-                                        <div class="checkboxContainer"><label><input id="showVideoCodecTag" is="emby-checkbox" type="checkbox"/><span>Show video format (HEVC, H264, AV1, ...)</span></label></div>
-                                        <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
-                                        <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
-                                    </div>
-                                    <div class="je-quality-cat-admin-row" data-cat-key="ShowAudioInfoTag" data-order-key="AudioInfoTagOrder" data-default-order="6">
-                                        <div class="checkboxContainer"><label><input id="showAudioInfoTag" is="emby-checkbox" type="checkbox"/><span>Show sound (Atmos, DTS, 5.1, 7.1, ...)</span></label></div>
-                                        <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
-                                        <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                    <div class="checkboxContainer"><label><input id="qualityTagsAudioLanguageFromUser" is="emby-checkbox" type="checkbox"/><span>Use Each User's Jellyfin Audio Language</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="qualityTagsAudioLanguageFromUser">
+                                        <div class="fieldDescription">Judge sound tags by each user's own Jellyfin audio language (Settings → Playback → Preferred audio language) instead of the language above. Users who have not set one keep the language above.</div>
                                     </div>
                                 </div>
                             </details>
@@ -294,17 +309,22 @@
                             <div class="je-setting-description" data-desc-for="languageTagsEnabled">
                                 <div class="fieldDescription">Display available audio languages as country flags on poster cards.</div>
                             </div>
-                            <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="languageTagsPriority">Priority Languages</label>
-                                <input id="languageTagsPriority" is="emby-input" type="text" placeholder="e.g. English, Japanese, fr"/>
-                            </div>
-                            <div class="je-setting-description" data-desc-for="languageTagsPriority">
-                                <div class="fieldDescription">Comma-separated language names or codes, e.g. <code>English, Japanese, fr</code>. A title with audio in one of these gets that flag guaranteed a spot among the ones shown, ahead of anything else it has. Leave blank to just show whichever languages are found first.</div>
-                            </div>
-                            <div class="checkboxContainer"><label><input id="languageTagsPriorityStrict" is="emby-checkbox" type="checkbox"/><span>Only Show Priority Languages</span></label></div>
-                            <div class="je-setting-description" data-desc-for="languageTagsPriorityStrict">
-                                <div class="fieldDescription">Only show flags for the languages listed above, everything else is hidden. A title with none of them will show no flags at all.</div>
-                            </div>
+                            <details id="languagePriorityAdminDetails" class="je-details-section" style="margin-left: 20px;">
+                                <summary>Priority languages</summary>
+                                <div class="je-details-body">
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="languageTagsPriority">Priority Languages</label>
+                                        <input id="languageTagsPriority" is="emby-input" type="text" placeholder="e.g. English, Japanese, fr"/>
+                                    </div>
+                                    <div class="je-setting-description" data-desc-for="languageTagsPriority">
+                                        <div class="fieldDescription">Comma-separated language names or codes, e.g. <code>English, Japanese, fr</code>. A title with audio in one of these gets that flag guaranteed a spot among the ones shown, ahead of anything else it has. Leave blank to just show whichever languages are found first.</div>
+                                    </div>
+                                    <div class="checkboxContainer"><label><input id="languageTagsPriorityStrict" is="emby-checkbox" type="checkbox"/><span>Only Show Priority Languages</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="languageTagsPriorityStrict">
+                                        <div class="fieldDescription">Hide flags for every language not listed above. A title with none of them shows no flags at all.</div>
+                                    </div>
+                                </div>
+                            </details>
 
                             <div class="je-tag-row">
                                 <div class="checkboxContainer"><label><input id="ratingTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Rating Tags</span></label></div>
@@ -318,6 +338,31 @@
                             <div class="je-setting-description" data-desc-for="ratingTagsEnabled">
                                 <div class="fieldDescription">Show TMDB and Rotten Tomatoes ratings on poster cards.</div>
                             </div>
+                            <details id="ratingScopeAdminDetails" class="je-details-section" style="margin-left: 20px;">
+                                <summary>Choose where to show</summary>
+                                <div class="je-details-body">
+                                    <div class="fieldDescription je-field-desc-sm">Pick which item types get rating tags, and whether the Continue Watching and Next Up rows show them (on the home screen, and the Next Up shelf on a series page). Untick episodes to keep ratings off every episode card, including Next Up and Continue Watching; untick a row to hide them for every card in that row only. Users can override these in their personal settings.</div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnMovies" is="emby-checkbox" type="checkbox"/><span>Show on movies</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnSeries" is="emby-checkbox" type="checkbox"/><span>Show on series</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnSeasons" is="emby-checkbox" type="checkbox"/><span>Show on seasons</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnEpisodes" is="emby-checkbox" type="checkbox"/><span>Show on episodes</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnContinueWatching" is="emby-checkbox" type="checkbox"/><span>Show in the Continue Watching row</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnNextUp" is="emby-checkbox" type="checkbox"/><span>Show in the Next Up row</span></label></div>
+                                </div>
+                            </details>
+
+                            <div class="je-tag-row">
+                                <div class="checkboxContainer"><label><input id="ageRatingTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Age Rating Tags</span></label></div>
+                                <div class="inputContainer je-tag-position">
+                                    <label class="inputLabel" for="ageRatingTagsPosition">Position</label>
+                                    <select is="emby-select" id="ageRatingTagsPosition" name="ageRatingTagsPosition" class="emby-select">
+                                        <option value="top-left">Top Left</option><option value="top-right">Top Right</option><option value="bottom-left">Bottom Left</option><option value="bottom-right">Bottom Right</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="ageRatingTagsEnabled">
+                                <div class="fieldDescription">Show the age rating (PG-13, TV-MA, FSK 12, ...) as a colour-coded badge on poster cards. Episodes and seasons use their series' rating. Shares the colour scheme of Colored Ratings.</div>
+                            </div>
 
                             <div class="je-tag-row">
                                 <div class="checkboxContainer"><label><input id="peopleTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable People Tags</span></label></div>
@@ -326,12 +371,14 @@
                                 <div class="fieldDescription">Display age and birthplace information for cast members on item detail pages.</div>
                             </div>
 
+                            <div class="fieldDescription"><strong>General</strong> — shared by every tag type above.</div>
+
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="tagsCacheTtlDays">Tags Cache Duration (days)</label>
                                 <input id="tagsCacheTtlDays" is="emby-input" type="number" min="1" max="365" value="30"/>
                             </div>
                             <div class="je-setting-description" data-desc-for="tagsCacheTtlDays">
-                                <div class="fieldDescription">How long to cache the above tags data (1–365 days, default: 30).</div>
+                                <div class="fieldDescription">How long to cache tag data (1–365 days, default: 30).</div>
                             </div>
 
                             <div class="checkboxContainer"><label><input id="showRatingInPlayer" is="emby-checkbox" type="checkbox"/><span>Show Rating in Video Player</span></label></div>
@@ -358,7 +405,7 @@
                                 <label><input id="enableTagsLocalStorageFallback" is="emby-checkbox" type="checkbox"/><span>Persist Tag Fallback Cache in Browser Storage</span></label>
                             </div>
                             <div class="je-setting-description" data-desc-for="enableTagsLocalStorageFallback">
-                                <div class="fieldDescription je-field-desc-sm-font-xl">Available when Server-Side Tag Cache is disabled. Stores fallback tag cache entries in browser localStorage for faster repeat loads.</div>
+                                <div class="fieldDescription je-field-desc-sm-font-xl">Stores fallback tag cache entries in browser localStorage for faster repeat loads. Only used while Server-Side Tag Cache is off.</div>
                             </div>
 
                             <div id="clientTagCacheControls" style="margin-top:10px;">
@@ -3280,7 +3327,12 @@
                 // Double rAF: lands after activateTab's own scroll-memory restore.
                 requestAnimationFrame(() => {
                     requestAnimationFrame(() => {
+                        // Open any collapsed expander hiding a target so it can be scrolled to and flashed.
+                        const openAncestors = (el) => {
+                            for (let d = el && el.closest('details'); d; d = d.parentElement.closest('details')) d.open = true;
+                        };
                         const rawTarget = document.querySelector(selector);
+                        openAncestors(rawTarget);
                         const target = jeResolveFlashTarget(rawTarget);
                         if (target) {
                             if (target.tagName === 'FIELDSET') {
@@ -3294,7 +3346,9 @@
                         }
                         (extraSelectors || []).forEach((extraSelector) => {
                             if (extraSelector === selector) return;
-                            const extraTarget = jeResolveFlashTarget(document.querySelector(extraSelector));
+                            const rawExtra = document.querySelector(extraSelector);
+                            openAncestors(rawExtra);
+                            const extraTarget = jeResolveFlashTarget(rawExtra);
                             if (extraTarget && extraTarget !== target) jeFlashElement(extraTarget);
                         });
                     });
@@ -5416,6 +5470,27 @@
                 });
         }
 
+        /**
+         * Selects `value` in the sound-tag audio language dropdown. A code the
+         * culture list does not offer (a hand-edited pt-BR, or the list has not
+         * loaded / failed to load) is parked as a bare option so it stays
+         * selected and a save cannot silently reset it to "no preference".
+         * @param {HTMLSelectElement|null} select
+         * @param {string} value
+         */
+        function applyQualityAudioLanguage(select, value) {
+            if (!select) return;
+            const saved = value || '';
+            if (saved && !Array.from(select.options).some(o => o.value === saved)) {
+                const option = document.createElement('option');
+                option.value = saved;
+                option.textContent = saved;
+                option.dataset.jePlaceholder = '1';
+                select.appendChild(option);
+            }
+            select.value = saved;
+        }
+
         // SpoilerAutoEnableLibraryIds as loaded, and whether the checkbox
         // list has been rendered from it yet. Until it has (VirtualFolders
         // still loading, or failed) a save round-trips the stored value
@@ -5767,30 +5842,47 @@
                 const gPos = (config.GenreTagsPosition || 'top-right');
                 const lPos = (config.LanguageTagsPosition || 'bottom-left');
                 const rPos = (config.RatingTagsPosition || 'bottom-right');
+                const arPos = (config.AgeRatingTagsPosition || 'bottom-right');
                 const langEnabled = !!config.LanguageTagsEnabled;
                 const ratingEnabled = !!config.RatingTagsEnabled;
+                const ageRatingEnabled = !!config.AgeRatingTagsEnabled;
                 const peopleEnabled = !!config.PeopleTagsEnabled;
                 const showRatingInPlayer = config.ShowRatingInPlayer !== false;
                 const qSel = document.querySelector('#qualityTagsPosition');
                 const gSel = document.querySelector('#genreTagsPosition');
                 const lSel = document.querySelector('#languageTagsPosition');
                 const rSel = document.querySelector('#ratingTagsPosition');
+                const arSel = document.querySelector('#ageRatingTagsPosition');
                 const lChk = document.querySelector('#languageTagsEnabled');
                 const rChk = document.querySelector('#ratingTagsEnabled');
+                const arChk = document.querySelector('#ageRatingTagsEnabled');
                 const rPlayerChk = document.querySelector('#showRatingInPlayer');
                 if (qSel) qSel.value = qPos;
                 if (gSel) gSel.value = gPos;
                 if (lSel) lSel.value = lPos;
                 if (rSel) rSel.value = rPos;
+                if (arSel) arSel.value = arPos;
                 if (lChk) lChk.checked = langEnabled;
                 document.querySelector('#languageTagsPriority').value = config.LanguageTagsPriority || '';
                 document.querySelector('#languageTagsPriorityStrict').checked = config.LanguageTagsPriorityStrict === true;
+                const qualityAudioLangSelect = document.querySelector('#qualityTagsPreferredAudioLanguage');
+                // The culture list loads asynchronously; keep the value so it can be re-applied once the options exist.
+                qualityAudioLangSelect.dataset.savedValue = config.QualityTagsPreferredAudioLanguage || '';
+                applyQualityAudioLanguage(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
+                document.querySelector('#qualityTagsAudioLanguageFromUser').checked = config.QualityTagsAudioLanguageFromUser === true;
                 if (rChk) rChk.checked = ratingEnabled;
+                if (arChk) arChk.checked = ageRatingEnabled;
                 const pChk = document.querySelector('#peopleTagsEnabled');
                 if (pChk) pChk.checked = peopleEnabled;
                 if (rPlayerChk) rPlayerChk.checked = showRatingInPlayer;
                 document.querySelector('#disableTagsOnSearchPage').checked = config.DisableTagsOnSearchPage === true;
                 document.querySelector('#tagsHideOnHover').checked = config.TagsHideOnHover === true;
+                document.querySelector('#ratingTagsOnMovies').checked = config.RatingTagsOnMovies !== false;
+                document.querySelector('#ratingTagsOnSeries').checked = config.RatingTagsOnSeries !== false;
+                document.querySelector('#ratingTagsOnSeasons').checked = config.RatingTagsOnSeasons !== false;
+                document.querySelector('#ratingTagsOnEpisodes').checked = config.RatingTagsOnEpisodes !== false;
+                document.querySelector('#ratingTagsOnContinueWatching').checked = config.RatingTagsOnContinueWatching !== false;
+                document.querySelector('#ratingTagsOnNextUp').checked = config.RatingTagsOnNextUp !== false;
                 document.querySelector('#tagCacheServerMode').checked = config.TagCacheServerMode !== false;
                 document.querySelector('#enableTagsLocalStorageFallback').checked = config.EnableTagsLocalStorageFallback === true;
                 document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
@@ -6313,9 +6405,16 @@
             config.GenreTagsEnabled = document.querySelector('#genreTagsEnabled').checked;
             config.LanguageTagsEnabled = document.querySelector('#languageTagsEnabled').checked;
             config.RatingTagsEnabled = document.querySelector('#ratingTagsEnabled').checked;
+            config.AgeRatingTagsEnabled = document.querySelector('#ageRatingTagsEnabled').checked;
             config.PeopleTagsEnabled = document.querySelector('#peopleTagsEnabled').checked;
             config.DisableTagsOnSearchPage = document.querySelector('#disableTagsOnSearchPage').checked;
             config.TagsHideOnHover = document.querySelector('#tagsHideOnHover').checked;
+            config.RatingTagsOnMovies = document.querySelector('#ratingTagsOnMovies').checked;
+            config.RatingTagsOnSeries = document.querySelector('#ratingTagsOnSeries').checked;
+            config.RatingTagsOnSeasons = document.querySelector('#ratingTagsOnSeasons').checked;
+            config.RatingTagsOnEpisodes = document.querySelector('#ratingTagsOnEpisodes').checked;
+            config.RatingTagsOnContinueWatching = document.querySelector('#ratingTagsOnContinueWatching').checked;
+            config.RatingTagsOnNextUp = document.querySelector('#ratingTagsOnNextUp').checked;
             config.TagCacheServerMode = document.querySelector('#tagCacheServerMode').checked;
             config.EnableTagsLocalStorageFallback = config.TagCacheServerMode
                 ? document.querySelector('#enableTagsLocalStorageFallback').checked
@@ -6325,7 +6424,10 @@
             config.LanguageTagsPosition = document.querySelector('#languageTagsPosition').value;
             config.LanguageTagsPriority = document.querySelector('#languageTagsPriority').value.trim();
             config.LanguageTagsPriorityStrict = document.querySelector('#languageTagsPriorityStrict').checked;
+            config.QualityTagsPreferredAudioLanguage = document.querySelector('#qualityTagsPreferredAudioLanguage').value || '';
+            config.QualityTagsAudioLanguageFromUser = document.querySelector('#qualityTagsAudioLanguageFromUser').checked;
             config.RatingTagsPosition = document.querySelector('#ratingTagsPosition').value;
+            config.AgeRatingTagsPosition = document.querySelector('#ageRatingTagsPosition').value;
             config.ShowRatingInPlayer = document.querySelector('#showRatingInPlayer').checked;
             config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
@@ -7278,6 +7380,9 @@
         setupBrandingUploads();
         setupMaintenanceModeControls();
 
+        // Jellyfin's culture list feeds both the UI language and the sound-tag audio language dropdowns.
+        const culturesPromise = ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' });
+
         // Populate language options dynamically
         (async () => {
             const defaultLanguageSelect = document.getElementById('DefaultLanguage');
@@ -7295,7 +7400,7 @@
             try {
                 const [localeCodes, cultures] = await Promise.all([
                     ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/locales'), dataType: 'json' }),
-                    ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' })
+                    culturesPromise
                 ]);
 
                 // Check GitHub for any new locale files added since the last plugin release (1 request)
@@ -7342,6 +7447,33 @@
                 });
             } catch (err) {
                 console.warn('Jellyfin Enhanced: Failed to load language options:', err);
+            }
+        })();
+
+        // Preferred audio language for sound tags: every Jellyfin culture, by name. Kept apart from
+        // the UI language list so a slow GitHub probe or a failed locales request cannot hold it up.
+        (async () => {
+            const qualityAudioLangSelect = document.getElementById('qualityTagsPreferredAudioLanguage');
+            if (!qualityAudioLangSelect) return;
+            try {
+                const cultures = await culturesPromise;
+                // loadConfig may have run first and parked the saved code as a bare option; the named list replaces it.
+                qualityAudioLangSelect.querySelectorAll('option[data-je-placeholder]').forEach(o => o.remove());
+                const seen = new Set();
+                cultures
+                    .map(c => ({ code: c.TwoLetterISOLanguageName || c.ThreeLetterISOLanguageName, name: c.DisplayName || c.Name }))
+                    .filter(o => o.code && o.name && !seen.has(o.code) && seen.add(o.code))
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .forEach(({ code, name }) => {
+                        const option = document.createElement('option');
+                        option.value = code;
+                        option.textContent = name;
+                        qualityAudioLangSelect.appendChild(option);
+                    });
+                applyQualityAudioLanguage(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
+            } catch (err) {
+                // loadConfig parks the saved code as a bare option, so a save still keeps it.
+                console.warn('Jellyfin Enhanced: Failed to load audio language options:', err);
             }
         })();
 
@@ -7801,10 +7933,11 @@
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'showUserRatingDash', 'showUserRatingOnPosters'] },
             { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows', 'randomScopeCurrentContainer'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
-            { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag'], noHint: true },
+            { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser'], noHint: true },
             { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition'], noHint: true },
             { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict'], noHint: true },
-            { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition'], noHint: true },
+            { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp'], noHint: true },
+            { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition'], noHint: true },
             { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
             { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },
@@ -8305,7 +8438,7 @@
             container.appendChild(badge);
         }
 
-        /** When a whole fieldset is new, badge just its legend instead of every control inside it. Each badge uses its own setting's first-detected version. */
+        /** When a whole fieldset (or expander) is new, badge just its legend (or summary) instead of every control inside it. Each badge uses its own setting's first-detected version. */
         function renderWhatsNewBadges(perSetting) {
             document.querySelectorAll('.je-new-badge').forEach(function(b) { b.remove(); });
             var newIdSet = new Set(perSetting.map(function(f) { return f.id; }));
@@ -8327,16 +8460,27 @@
             });
 
             byFieldset.forEach(function(newEls, fieldset) {
-                var allIds = Array.from(fieldset.querySelectorAll('input[id], select[id], textarea[id], button[id]')).map(function(el) { return el.id; });
-                var allNew = allIds.length > 0 && allIds.every(function(id) { return newIdSet.has(id); });
-                if (allNew) {
+                if (jeAllControlsNew(fieldset, newIdSet)) {
                     jeAppendNewBadge(fieldset.querySelector(':scope > legend.sectionTitle'), versionById.get(newEls[0].id));
                 } else {
                     newEls.forEach(function(el) {
-                        jeAppendNewBadge(el.closest('label') || el.parentElement, versionById.get(el.id));
+                        // Same rule one level down: an expander whose controls are all new gets
+                        // one badge on its summary, and a tag row (Enable + Position) one on its label.
+                        var details = el.closest('details');
+                        var host = (details && jeAllControlsNew(details, newIdSet))
+                            ? details.querySelector(':scope > summary')
+                            : (el.closest('.je-tag-row') ? el.closest('.je-tag-row').querySelector('label') : (el.closest('label') || el.parentElement));
+                        if (!host || host.querySelector(':scope > .je-new-badge')) return;
+                        jeAppendNewBadge(host, versionById.get(el.id));
                     });
                 }
             });
+        }
+
+        /** True when every control inside container is a newly added setting. */
+        function jeAllControlsNew(container, newIdSet) {
+            var ids = Array.from(container.querySelectorAll('input[id], select[id], textarea[id], button[id]')).map(function(el) { return el.id; });
+            return ids.length > 0 && ids.every(function(id) { return newIdSet.has(id); });
         }
 
         /**
@@ -8481,7 +8625,7 @@
 
             // Display
             feat('Remove from Continue Watching', bool('removeContinueWatchingEnabled'), 'display', 'Enabled');
-            var tagCount = ['qualityTagsEnabled','genreTagsEnabled','languageTagsEnabled','ratingTagsEnabled','peopleTagsEnabled'].filter(bool).length;
+            var tagCount = ['qualityTagsEnabled','genreTagsEnabled','languageTagsEnabled','ratingTagsEnabled','ageRatingTagsEnabled','peopleTagsEnabled'].filter(bool).length;
             feat('Media Tags', tagCount > 0, 'display', tagCount + ' tag type(s) enabled');
             feat('Random Button', bool('randomButtonEnabled'), 'display', 'Enabled');
 
