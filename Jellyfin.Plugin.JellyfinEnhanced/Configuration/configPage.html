@@ -4237,9 +4237,9 @@
         function syncAllManagedCustomTabs(savedConfig) {
             if (!document.body.classList.contains('je-has-customtabs-compat')) {
                 // Bail early. If the admin has auto-create intent stored but we
-                // can't act on it (plugin missing / compat probe failed), return
-                // ok:false so the save-flow alert gate fires — otherwise the
-                // green "Saved!" toast masks the dropped intent.
+                // can't act on it (compat probe failed / detection unknown),
+                // return ok:false so the save-flow alert gate fires — otherwise
+                // the green "Saved!" toast masks the dropped intent.
                 // Mirror `shouldExist`: intent requires all three flags —
                 // master + parent + auto. A disabled-at-master feature with
                 // auto+parent still checked wouldn't have a real sync action
@@ -4250,12 +4250,31 @@
                         && savedConfig[e.parentKey] === true
                         && savedConfig[e.masterKey] === true;
                 });
+                // Custom Tabs definitely absent (not installed, or installed
+                // but disabled): there is nothing to sync and nothing the admin
+                // can fix from here, so skip cleanly. Typical after a 10.11 →
+                // 12 upgrade where Custom Tabs was dropped in favour of the
+                // native home tabs; the stored intent is deliberately kept so
+                // the entries sync again if the plugin is reinstalled. The
+                // auto-create toggles are hidden in this state, so an ok:false
+                // here would re-alert on every save with no way out.
+                if (hasCustomTabs === false) {
+                    return Promise.resolve({
+                        ok: true,
+                        status: 'skipped',
+                        detail: 'Custom Tabs not installed; nothing to sync.',
+                        ownedUpdates: []
+                    });
+                }
                 return Promise.resolve({
                     ok: !anyIntent, // only "skipped cleanly" when there was nothing to do
                     status: 'skipped',
                     detail: anyIntent
-                        ? 'Custom Tabs is not detected (or its config schema is unrecognized). Auto-create was requested but skipped; toggle a Custom Tabs setting to retry the probe.'
-                        : 'Custom Tabs not detected; nothing to sync.',
+                        ? (hasCustomTabs === true
+                            ? 'Custom Tabs is installed, but its config could not be read or has an unrecognized shape, so the auto-create entry was skipped.'
+                            : 'Plugin detection did not complete, so the auto-create entry was skipped.')
+                          + ' Use the Retry button on the "Plugin detection issue" banner at the top of this page (or reload the page), then save again.'
+                        : 'Custom Tabs compat probe not passed; nothing to sync.',
                     ownedUpdates: []
                 });
             }
