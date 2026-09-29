@@ -12,6 +12,27 @@
     // Series/Season flag for a language that only some episodes carry (#557).
     const partialFlagClass = 'language-flag-partial';
     const langDisplayNames = new Intl.DisplayNames(['en'], { type: 'language' });
+    /** @type {Map<string, string>} language code → display name; an Intl lookup per flag per card adds up */
+    const displayNameByCode = new Map();
+
+    /**
+     * English display name of a language code (the code upper-cased when Intl
+     * has no name for it), memoised per code.
+     * @param {string} code
+     * @returns {string}
+     */
+    function displayName(code) {
+        let name = displayNameByCode.get(code);
+        if (name === undefined) {
+            try {
+                name = langDisplayNames.of(code) || code.toUpperCase();
+            } catch (e) {
+                name = code.toUpperCase();
+            }
+            displayNameByCode.set(code, name);
+        }
+        return name;
+    }
     // Flag resolution lives in the shared core module (js/core/media-language.js)
     // so this overlay and the details-page audio-language row can never disagree.
     // It understands region subtags: pt-BR → Brazilian flag, es-419 → Mexican,
@@ -32,12 +53,7 @@
             streams.filter(function(s) { return s.Type === 'Audio'; }).forEach(function(stream) {
                 var langCode = stream.Language;
                 if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
-                    try {
-                        var langName = langDisplayNames.of(langCode);
-                        languages.add(JSON.stringify({ name: langName, code: langCode }));
-                    } catch (e) {
-                        languages.add(JSON.stringify({ name: langCode.toUpperCase(), code: langCode }));
-                    }
+                    languages.add(JSON.stringify({ name: displayName(langCode), code: langCode }));
                 }
             });
         };
@@ -70,19 +86,13 @@
                 // full tag — a region subtag (pt-BR) is meaningful and must
                 // survive normalization so the region flag can render.
                 const code = entry.toLowerCase();
-                let name = null;
-                try { name = new Intl.DisplayNames(['en'], { type: 'language' }).of(code) || code.toUpperCase(); }
-                catch { name = code.toUpperCase(); }
-                obj = { name, code };
+                obj = { name: displayName(code), code };
             } else if (typeof entry === 'object') {
                 // Same here: never strip the region from the code.
                 const code = (entry.code || entry.Code || '').toString();
                 const name = entry.name || entry.Name || null;
                 if (code) {
-                    let resolvedName = name;
-                    try { if (!resolvedName) resolvedName = new Intl.DisplayNames(['en'], { type: 'language' }).of(code) || code.toUpperCase(); }
-                    catch { resolvedName = (name || code.toUpperCase()); }
-                    obj = { name: resolvedName, code };
+                    obj = { name: name || displayName(code), code };
                     // Only the server cache path sets it, so the localStorage
                     // cache (legacy per-page mode) never carries the field.
                     if (entry.partial) obj.partial = true;
@@ -174,7 +184,8 @@
         if (ctx.isTagged(container)) return;
         // Always re-render to handle cache migrations or setting changes
         ctx.removeExistingOverlay(container);
-        container.style.position = 'relative'; // Avoid forced reflow from getComputedStyle
+        // Avoid forced reflow from getComputedStyle (and a style write per card when already set)
+        if (container.style.position !== 'relative') container.style.position = 'relative';
 
         const wrap = document.createElement('div');
         wrap.className = containerClass;
@@ -182,8 +193,7 @@
         wrap.style.position = 'absolute';
         wrap.style.top = pos.topVal; wrap.style.right = pos.rightVal; wrap.style.bottom = pos.bottomVal; wrap.style.left = pos.leftVal;
         // If positioned top-right and the card has indicators, add a top margin to avoid overlap
-        const hasIndicators = !!container.querySelector('.cardIndicators');
-        if (hasIndicators && pos.needsTopRightOffset) {
+        if (pos.needsTopRightOffset && container.querySelector('.cardIndicators')) {
             wrap.style.marginTop = 'clamp(20px, 3vw, 30px)';
         }
 
@@ -365,11 +375,7 @@
                 // PartialAudioLanguages the ones missing from some of them.
                 var partial = new Set(entry.PartialAudioLanguages || []);
                 var languages = codes.map(function(code) {
-                    try {
-                        return { name: langDisplayNames.of(code), code: code, partial: partial.has(code) };
-                    } catch (e) {
-                        return { name: code.toUpperCase(), code: code, partial: partial.has(code) };
-                    }
+                    return { name: displayName(code), code: code, partial: partial.has(code) };
                 });
                 insertLanguageTags(ctx, el, languages);
             },

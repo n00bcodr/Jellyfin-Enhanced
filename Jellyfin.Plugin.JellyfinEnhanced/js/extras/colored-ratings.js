@@ -127,33 +127,32 @@
 
         try {
             const JE = window.JellyfinEnhanced;
+            // Any added element may be (or contain) a rating box, so the
+            // debounced pass — one cheap class query, idempotent — runs for
+            // any of them. Inspecting each added node with its own subtree
+            // query first cost more than the pass itself on pages that add
+            // hundreds of cards (library scroll).
             const callback = (mutations) => {
-                let shouldProcess = false;
-
-                mutations.forEach((mutation) => {
+                for (let i = 0; i < mutations.length; i++) {
+                    const mutation = mutations[i];
                     if (mutation.type === 'childList') {
-                        mutation.addedNodes.forEach((node) => {
-                            if (node.nodeType === Node.ELEMENT_NODE) {
-                                if (node.matches && node.matches(CONFIG.targetSelector)) {
-                                    shouldProcess = true;
-                                } else if (node.querySelector && node.querySelector(CONFIG.targetSelector)) {
-                                    shouldProcess = true;
-                                }
+                        const added = mutation.addedNodes;
+                        for (let j = 0; j < added.length; j++) {
+                            if (added[j].nodeType === Node.ELEMENT_NODE) {
+                                debouncedProcess();
+                                return;
                             }
-                        });
+                        }
                     }
 
                     if (mutation.type === 'characterData' || mutation.type === 'childList') {
                         const target = mutation.target;
                         if (target.nodeType === Node.ELEMENT_NODE &&
                             (target.matches(CONFIG.targetSelector) || target.closest(CONFIG.targetSelector))) {
-                            shouldProcess = true;
+                            debouncedProcess();
+                            return;
                         }
                     }
-                });
-
-                if (shouldProcess) {
-                    debouncedProcess();
                 }
             };
 
