@@ -524,7 +524,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `jellyseerr/status` | Seerr connection/reachability check |
+| GET | `jellyseerr/status` | Seerr connection/reachability check (answer cached for 30 s) |
 | GET | `jellyseerr/validate` | Validate configured Seerr URL(s) + API key |
 | POST | `jellyseerr/trigger-recently-added-scan` | Kick off a Seerr library scan |
 | GET | `jellyseerr/user-status` | Is the calling Jellyfin user linked to a Seerr account |
@@ -572,7 +572,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 | GET | `tmdb/search/person`, `tmdb/search/keyword` | TMDB search proxy |
 | GET | `tmdb/genres/movie`, `tmdb/genres/tv` | TMDB genre lists |
 | GET | `tmdb/validate` | Validate the configured TMDB API key |
-| GET | `tmdb/{**apiPath}` | Generic pass-through TMDB proxy (catch-all) |
+| GET | `tmdb/{**apiPath}` | Generic pass-through TMDB proxy (catch-all). Responses are cached server-side (6 h for single resources, 30 min for lists, persisted across restarts); a cold `movie`/`tv` title and its `release_dates`, `watch/providers` and `reviews` are fetched in one upstream call |
 
 ### Client Bootstrap & Config
 
