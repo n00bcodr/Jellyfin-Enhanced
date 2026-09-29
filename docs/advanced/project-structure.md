@@ -47,6 +47,10 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │       ├── SpoilerIdentityService.cs
 │       ├── SpoilerIdentityTagFilter.cs
 │       ├── SpoilerFieldStripFilter.cs
+│       ├── SpoilerAutoEnableFilter.cs
+│       ├── SpoilerAutoEnableArmer.cs
+│       ├── SpoilerLibraryAddAutoEnabler.cs
+│       ├── SpoilerExistingTitlesApplier.cs
 │       ├── SpoilerSeerrPendingPromoter.cs
 │       └── SpoilerUserResolver.cs
 └── js/
@@ -277,6 +281,10 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`SpoilerIdentityService.cs`**: Mints and resolves stable per-user image identity markers.
     * **`SpoilerIdentityTagFilter.cs`**: Stamps item DTO image tags with per-user identity markers so native image requests can be resolved without relying on IP address.
     * **`SpoilerFieldStripFilter.cs`**: Strips or rewrites metadata (titles, synopses, ratings, chapter names, cast, tags, taglines, air dates) in API responses for unwatched items, honoring per-user overrides.
+    * **`SpoilerAutoEnableFilter.cs`**: The shared auto-enable scope gate (content type + library allow-list) used by the first-play, Seerr-request and library-add modes.
+    * **`SpoilerAutoEnableArmer.cs`**: The shared bulk-arming path (target users incl. disabled accounts, per-user library access, one locked `spoilerblur.json` write per user) used by the library-add batcher and the apply-to-existing-titles run.
+    * **`SpoilerLibraryAddAutoEnabler.cs`**: Implements "Auto-enable when new titles are added to the library" — batches a scan's `ItemAdded` burst and arms every new Series/Movie for every user with access to its library, one file write per user.
+    * **`SpoilerExistingTitlesApplier.cs`**: Applies the saved auto-enable scope to titles already in the library on demand (dry-run preview for the config page, skips titles a user already has or has fully watched). Run by `ScheduledTasks/SpoilerApplyExistingTitlesTask.cs` ("Spoiler Guard: apply to existing titles", no default triggers).
     * **`SpoilerSeerrPendingPromoter.cs`**: Promotes pending pre-acquisition entries (registered from the Seerr More Info modal or auto-enable on request) into real per-item protection when the content lands in the library.
     * **`SpoilerUserResolver.cs`**: Loads per-user Spoiler Guard state for the requesting user identified by `RequestIdentityService`.
 
