@@ -3377,6 +3377,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // unauthenticated visitors hitting the login page.
             bool isAuthed = User?.Identity?.IsAuthenticated == true;
 
+            // Maintenance banner state comes from the runtime state (in-memory), not just the
+            // saved toggle: a scheduled window or a timed manual window is active without the
+            // admin toggle being on, and carries its own message and end time for the countdown.
+            var mmState = _maintenanceModeService.GetStatus();
+            var mmActive = mmState.IsActive || config.MaintenanceModeEnabled;
+            var mmMessage = mmState.IsActive && !string.IsNullOrWhiteSpace(mmState.Message)
+                ? mmState.Message
+                : config.MaintenanceModeMessage;
+
             string jellyseerrBaseUrl = string.Empty;
             string jellyseerrUrlMappings = string.Empty;
             if (isAuthed)
@@ -3609,8 +3618,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.HiddenContentAdmin,
 
                 // Maintenance Mode
-                config.MaintenanceModeEnabled,
-                config.MaintenanceModeMessage,
+                MaintenanceModeEnabled = mmActive,
+                MaintenanceModeMessage = mmMessage,
+                // UTC ISO timestamp (or null when open-ended) so the banner can count down.
+                MaintenanceModeEndsAt = mmState.IsActive ? mmState.EndsAt : null,
                 config.MaintenanceModeAction,
                 // Derived, never the raw value: the stored setting can be a
                 // JSON array of real user GUIDs, and this endpoint is
@@ -11317,11 +11328,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 state.IsActive,
                 state.Message,
+                state.NotificationMessage,
                 state.Action,
+                state.Source,
                 state.StartedAt,
                 state.EndsAt,
                 AccountDisabledCount = state.AccountDisabledUserIds.Count,
-                RemoteDisabledCount  = state.RemoteDisabledUserIds.Count
+                RemoteDisabledCount  = state.RemoteDisabledUserIds.Count,
+                // The daily window runs on the server's clock (often UTC in containers); the config
+                // page shows this so admins set the window in the right time zone.
+                ServerLocalTime = DateTime.Now.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+                ServerUtcOffset = FormatUtcOffset(TimeZoneInfo.Local.GetUtcOffset(DateTime.Now))
             });
         }
 
@@ -11334,16 +11351,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 request.Message ?? string.Empty,
                 request.DurationMinutes,
                 request.Action ?? "disable_accounts",
-                request.AffectedUserIds).ConfigureAwait(false);
+                request.AffectedUserIds,
+                request.NotificationMessage).ConfigureAwait(false);
             return Ok(new { success = true });
         }
 
+        /// <summary>"+08:00" / "-05:30" / "+00:00".</summary>
+        private static string FormatUtcOffset(TimeSpan offset)
+            => (offset < TimeSpan.Zero ? "-" : "+") + offset.Duration().ToString(@"hh\:mm", System.Globalization.CultureInfo.InvariantCulture);
+
+        /// <param name="includeScheduled">
+        /// Default true ends whatever window is active. The config page passes false while the daily
+        /// schedule is on, so saving with the manual toggle off leaves a scheduled window running.
+        /// </param>
         [Authorize]
         [HttpPost("MaintenanceMode/Disable")]
-        public async Task<IActionResult> DisableMaintenanceMode()
+        public async Task<IActionResult> DisableMaintenanceMode([FromQuery] bool includeScheduled = true)
         {
             if (!IsAdminUser()) return Forbid();
-            await _maintenanceModeService.DisableAsync().ConfigureAwait(false);
+            await _maintenanceModeService.DisableAsync(includeScheduled).ConfigureAwait(false);
             return Ok(new { success = true });
         }
 
@@ -11376,30 +11402,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             catch { /* non-fatal */ }
 
-            var command = new MediaBrowser.Model.Session.MessageCommand
-            {
-                Header = request.Header ?? "Server Maintenance",
-                Text = request.Text,
-                TimeoutMs = request.TimeoutMs > 0 ? request.TimeoutMs : 30000
-            };
-
-            var sent = 0; var skipped = 0; var errors = new List<string>();
-            foreach (var session in _sessionManager.Sessions)
-            {
-                if (string.IsNullOrWhiteSpace(session.UserName) ||
-                    string.Equals(session.UserName, "Unknown", StringComparison.OrdinalIgnoreCase))
-                { skipped++; continue; }
-                try
-                {
-                    await _sessionManager.SendMessageCommand(controllingSessionId, session.Id, command, CancellationToken.None).ConfigureAwait(false);
-                    sent++;
-                }
-                catch (Exception ex)
-                {
-                    skipped++;
-                    errors.Add($"{session.UserName}: {ex.Message}");
-                }
-            }
+            var (sent, skipped, errors) = await _maintenanceModeService
+                .BroadcastAsync(request.Header, request.Text, request.TimeoutMs, controllingSessionId)
+                .ConfigureAwait(false);
 
             return Ok(new { sent, skipped, errors });
         }
@@ -11464,8 +11469,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
     public class MaintenanceModeRequest
     {
         public string? Message { get; set; }
+        /// <summary>Popup text for active sessions; kept for the playback reminder. Falls back to Message.</summary>
+        public string? NotificationMessage { get; set; }
+        /// <summary>0 = until disabled; otherwise auto-disables after this many minutes.</summary>
         public int DurationMinutes { get; set; }
-        /// <summary>"disable_accounts" | "disable_remote" | "both"</summary>
+        /// <summary>"none" | "disable_accounts" | "disable_remote" | "both"</summary>
         public string Action { get; set; } = "disable_accounts";
         /// <summary>Specific user IDs to affect. Null or empty = all non-admin users.</summary>
         public List<string>? AffectedUserIds { get; set; }

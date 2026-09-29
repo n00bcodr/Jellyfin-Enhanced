@@ -92,6 +92,7 @@ ID_TO_PROPERTY_OVERRIDES = {
 MANUAL_TAB_GROUP = {
     "MaintenanceModeAction": ("Admin", "Maintenance Mode"),
     "MaintenanceModeAffectedUsers": ("Admin", "Maintenance Mode"),
+    "MaintenanceScheduleAction": ("Admin", "Maintenance Mode"),
 }
 
 

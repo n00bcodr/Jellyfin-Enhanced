@@ -681,11 +681,13 @@ All admin-only.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `MaintenanceMode/Status` | Current maintenance-mode state |
-| POST | `MaintenanceMode/Enable` | Enable maintenance mode |
-| POST | `MaintenanceMode/Disable` | Disable maintenance mode |
+| GET | `MaintenanceMode/Status` | Current maintenance-mode state (includes `Source`: `manual` or `schedule`, `EndsAt`, and the server's local time / UTC offset) |
+| POST | `MaintenanceMode/Enable` | Enable maintenance mode (`message`, `notificationMessage`, `durationMinutes`, `action`, `affectedUserIds`). While a manual window is running, re-sending the same `durationMinutes` keeps its end time; a different value restarts the clock |
+| POST | `MaintenanceMode/Disable` | Disable maintenance mode. A scheduled window ended this way stays off until the next day's window; `?includeScheduled=false` (what the config page sends while the daily schedule is on) leaves it running instead |
 | GET | `MaintenanceMode/Users` | Users affected by the current maintenance-mode config |
-| POST | `MaintenanceMode/Broadcast` | Send the maintenance notification immediately |
+| POST | `MaintenanceMode/Broadcast` | Send the maintenance notification immediately (`{countdown}` / `{ends_at}` are resolved) |
+
+The anonymous `public-config` payload carries `MaintenanceModeEnabled`, `MaintenanceModeMessage` and `MaintenanceModeEndsAt` (UTC, or null when open-ended) for the banner countdown.
 
 ### Misc
 
