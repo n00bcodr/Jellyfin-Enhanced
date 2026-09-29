@@ -18,6 +18,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int SelectedStylePresetIndex { get; set; }
         public int SelectedFontSizePresetIndex { get; set; }
         public int SelectedFontFamilyPresetIndex { get; set; }
+        public int SelectedTextEffectPresetIndex { get; set; }
         public string CustomSubtitleTextColor { get; set; } = "#FFFFFFFF";
         public string CustomSubtitleBgColor { get; set; } = "#00000000";
         public bool UsingCustomColors { get; set; }
@@ -27,6 +28,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RandomUnwatchedOnly { get; set; }
         public bool RandomIncludeMovies { get; set; }
         public bool RandomIncludeShows { get; set; }
+        public bool RandomScopeCurrentContainer { get; set; }
+        public string RandomSourceId { get; set; } = "";
         public bool ShowWatchProgress { get; set; }
         public string WatchProgressMode { get; set; } = "percentage";
         public string WatchProgressTimeFormat { get; set; } = "hours";

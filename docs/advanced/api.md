@@ -531,6 +531,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 | GET | `jellyseerr/permission-audit` | Admin: audit every Jellyfin user's Seerr permission bits |
 | GET | `jellyseerr/search` | Proxy a Seerr search query |
 | GET | `jellyseerr/sonarr` / `jellyseerr/radarr` | List Sonarr/Radarr instances known to Seerr (read-only profile/folder discovery, no credentials) |
+| GET | `jellyseerr/sonarr/lookup/{tmdbId}` | Sonarr title-lookup candidates for a series TMDB has no TVDB ID for; backs the "match series" block in the season modal. 404 when Seerr has no Sonarr configured |
 | GET | `jellyseerr/{type}/{serverId}` | Sonarr/Radarr server details by Seerr service id |
 | GET | `jellyseerr/settings/{type}` | Admin-only: Seerr's own Radarr/Sonarr instance connection settings (hostname, port, **apiKey**, externalUrl, ...). Backs the *arr tab's "Import from Seerr" button; not the same endpoint as `jellyseerr/sonarr`/`jellyseerr/radarr` above |
 | GET | `jellyfin-urls` | Admin-only: Jellyfin's own detected internal LAN URL and "Published server URIs" external/all override from Dashboard → Networking → Advanced, if configured. Backs the Seerr-import URL Mapping pre-fill |
@@ -544,6 +545,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 | GET | `.../upcoming` | Upcoming releases |
 | GET | `.../trending` | Trending feed |
 | GET | `.../network/{networkId}`, `.../studio/{studioId}` | Discovery filtered by network/studio |
+| GET | `jellyseerr/discover/tv/studio/{studioId}` | Series produced by a TMDB company, from TMDB (needs the TMDB key) in Seerr's discover shape; only rows in the caller's library carry a status (Seerr's own) |
 | GET | `.../genre/{genreId}`, `.../keyword/{keywordId}` | Discovery filtered by genre/keyword |
 | GET | `jellyseerr/discover/genreslider/movie`, `.../tv` | Genre-slider rows for the discovery UI |
 | GET | `jellyseerr/person/{personId}` | Person detail proxy |
@@ -609,6 +611,9 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 | POST / DELETE | `spoiler-blur/movies/{movieId}` | Enable/disable for a movie |
 | POST / DELETE | `spoiler-blur/collections/{collectionId}` | Enable/disable for a collection |
 | POST / DELETE | `spoiler-blur/pending/{mediaType}/{tmdbId}` | Pre-arm Spoiler Guard for a title not yet in the library |
+| GET | `spoiler-blur/apply-existing/preview?skipStarted=false` | Admin: dry run of "apply to existing titles" with the saved auto-enable scope (per-user counts, nothing written; `409` if Spoiler Guard is off or a run is in progress, `500` with the error message if the count fails) |
+| POST | `spoiler-blur/apply-existing?skipStarted=false` | Admin: start the "Spoiler Guard: apply to existing titles" scheduled task with these options (`202` with `completedRuns`; `409` if already running or Spoiler Guard is off; `503` if the task isn't registered) |
+| GET | `spoiler-blur/apply-existing/status` | Admin: task `state` and `progress`, `completedRuns` and the last run's summary (`lastRun`) since server start |
 
 ### Continue Watching / Next Up
 
