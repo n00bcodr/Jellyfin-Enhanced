@@ -115,14 +115,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            var statusResult = await GetJellyseerrStatus() as OkObjectResult;
-            bool active = false;
-            if (statusResult?.Value is not null)
-            {
-                var statusJson = System.Text.Json.JsonSerializer.Serialize(statusResult.Value);
-                using var doc = JsonDocument.Parse(statusJson);
-                if (doc.RootElement.TryGetProperty("active", out var a)) active = a.GetBoolean();
-            }
+            bool active = await ProbeJellyseerrStatusAsync();
             lock (_seerrStatusCacheLock)
             {
                 _seerrStatusCache = (active, DateTime.UtcNow);
@@ -1094,14 +1087,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return StatusCode(lastStatusCode, lastErrorBody);
         }
 
+        /// <summary>
+        /// Whether Seerr is configured and reachable. Every details page and the
+        /// search page ask this; the answer comes from the same 30-second probe
+        /// cache the proxy uses, so it costs a Seerr round trip at most twice a
+        /// minute rather than once per page.
+        /// </summary>
         [HttpGet("jellyseerr/status")]
         [Authorize]
         public async Task<IActionResult> GetJellyseerrStatus()
         {
+            return Ok(new { active = await IsSeerrReachableCached() });
+        }
+
+        private async Task<bool> ProbeJellyseerrStatusAsync()
+        {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrApiKey) || string.IsNullOrEmpty(config.JellyseerrUrls))
             {
-                return Ok(new { active = false });
+                return false;
             }
 
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -1119,7 +1123,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
                     if (error == null)
                     {
-                        return Ok(new { active = true });
+                        return true;
                     }
                     _logger.Warning($"Seerr status check failed at {url}: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                 }
@@ -1130,7 +1134,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             _logger.Warning("Could not establish a connection with any configured Seerr URL. Status is inactive.");
-            return Ok(new { active = false });
+            return false;
         }
 
         [HttpGet("jellyseerr/validate")]
@@ -2191,7 +2195,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         private const int MaxPeopleInfoBatchSize = 100;
-        private const int PeopleInfoTmdbConcurrency = 5;
+        // Per request; TmdbResponseCache caps the upstream calls in flight
+        // across all requests (and multiplexes them over one HTTP/2
+        // connection), so a cast row resolves in about one TMDB round trip.
+        private const int PeopleInfoTmdbConcurrency = 16;
         // One slow TMDB lookup must not hold a whole cast batch (or a single
         // person request) hostage: past this, fall back to Jellyfin-only data.
         private static readonly TimeSpan PersonTmdbTimeout = TimeSpan.FromSeconds(6);
@@ -3894,7 +3901,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Gating above has already run for this caller; the server cache is
                 // keyed on what goes upstream (see TmdbResponseCache for why that
                 // is account-safe).
-                var response = await _tmdbResponseCache.GetAsync(apiPath, queryString.ToString(), config.TMDB_API_KEY, HttpContext.RequestAborted);
+                // bundle: a cold title lookup (or one of its release dates /
+                // watch providers / reviews) fetches the whole set in one
+                // TMDB call, which the details page's sibling requests join.
+                var response = await _tmdbResponseCache.GetAsync(apiPath, queryString.ToString(), config.TMDB_API_KEY, HttpContext.RequestAborted, bundle: true);
 
                 if (response.IsSuccess)
                 {
