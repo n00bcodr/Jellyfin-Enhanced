@@ -28,6 +28,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Common.Net;
+using MediaBrowser.Common.Plugins;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
@@ -72,6 +73,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly INetworkManager _networkManager;
         private readonly Services.SpoilerExistingTitlesApplier _spoilerExistingApplier;
         private readonly MediaBrowser.Model.Tasks.ITaskManager _taskManager;
+        private readonly IPluginManager _pluginManager;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
         // upstream Seerr on every request. Entries expire after 1 hour.
@@ -196,7 +198,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             IServerConfigurationManager serverConfigurationManager,
             INetworkManager networkManager,
             Services.SpoilerExistingTitlesApplier spoilerExistingApplier,
-            MediaBrowser.Model.Tasks.ITaskManager taskManager)
+            MediaBrowser.Model.Tasks.ITaskManager taskManager,
+            IPluginManager pluginManager)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -224,6 +227,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _networkManager = networkManager;
             _spoilerExistingApplier = spoilerExistingApplier;
             _taskManager = taskManager;
+            _pluginManager = pluginManager;
         }
 
         /// <summary>
@@ -3318,11 +3322,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return new JsonResult(new { });
             }
 
+            return new JsonResult(BuildPrivateConfig(config));
+        }
+
+        /// <summary>
+        /// The admin-only private config payload. Shared by /private-config and
+        /// /bootstrap so the field list lives in one place; callers MUST gate on
+        /// IsAdminUser() before calling this.
+        /// </summary>
+        private object BuildPrivateConfig(PluginConfiguration config)
+        {
             // Check + log corruption so admins who never hit one of the action endpoints
             // still see a server-side error entry on private-config load.
             WarnIfArrInstancesCorrupt(config);
 
-            return new JsonResult(new
+            return new
             {
                 // For Arr Links (legacy single-instance fields, kept for backward compat)
                 config.SonarrUrl,
@@ -3346,7 +3360,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // action endpoint to round-trip a corruption error envelope.
                 SonarrInstancesCorrupt = config.IsSonarrInstancesCorrupt(),
                 RadarrInstancesCorrupt = config.IsRadarrInstancesCorrupt(),
-            });
+            };
         }
         // [AllowAnonymous]: public-config is loaded by `loadLoginImageEarly` before
         // the user logs in, so we cannot gate the whole endpoint on [Authorize].
@@ -3363,6 +3377,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(503);
             }
 
+            return new JsonResult(BuildPublicConfig(config));
+        }
+
+        /// <summary>
+        /// The public config payload. Shared by /public-config and /bootstrap so the
+        /// field list lives in one place. Redaction of the Seerr URLs is keyed on the
+        /// CURRENT request's authentication state, exactly as /public-config does.
+        /// </summary>
+        private object BuildPublicConfig(PluginConfiguration config)
+        {
             // Expose whether TMDB is configured as a boolean so all users
             // (including non-admin) can use TMDB-dependent features like
             // Reviews and Elsewhere without leaking the actual API key.
@@ -3404,7 +3428,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 jellyseerrUrlMappings = config.JellyseerrUrlMappings ?? string.Empty;
             }
 
-            return new JsonResult(new
+            return new
             {
                 // Jellyfin Enhanced Settings
                 TmdbEnabled = tmdbEnabled,
@@ -3660,7 +3684,150 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // the six per-category strip toggles are server-only strip
                 // policy and are deliberately not exposed.
                 config.SpoilerAdvancedMode,
+            };
+        }
+
+        /// <summary>
+        /// One-request client bootstrap: everything plugin.js used to fetch in its
+        /// first two stages (version, public config, admin-only private config,
+        /// delivery-plugin presence, the five per-user documents) plus the ordered
+        /// component-script list. Every part reuses the builder behind the
+        /// corresponding standalone endpoint, so the shapes are identical and the
+        /// existing endpoints stay as they are for the config page, other callers
+        /// and clients that cached an older plugin.js.
+        ///
+        /// Security: [Authorize] (no anonymous variant — the login screen keeps
+        /// using /public-config); the private config is included only when the
+        /// caller passes the same IsAdminUser() gate as /private-config (null
+        /// otherwise); the user documents are always those of the TOKEN's user —
+        /// there is no userId parameter to point elsewhere.
+        /// </summary>
+        [HttpGet("bootstrap")]
+        [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public ActionResult GetBootstrap()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+            {
+                return StatusCode(503);
+            }
+
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (!userId.HasValue)
+            {
+                return Forbid();
+            }
+
+            // UserConfigurationManager expects folder names in N format (without dashes),
+            // matching AuthorizeUserConfigAccess.
+            var authorizedUserId = userId.Value.ToString("N");
+
+            IReadOnlyList<string>? componentScripts = null;
+            try
+            {
+                componentScripts = Services.ClientScriptBundle.GetComponentScripts();
+            }
+            catch (Exception ex)
+            {
+                // The client falls back to fetching js/component-scripts.json itself.
+                _logger.Error($"Bootstrap: could not read the component-script manifest: {ex.Message}");
+            }
+
+            return new JsonResult(new
+            {
+                Version = JellyfinEnhanced.Instance?.Version.ToString() ?? "unknown",
+                // Lets the client confirm the payload belongs to the user it expects
+                // (a token swap during a user switch must never be applied silently).
+                UserId = authorizedUserId,
+                PublicConfig = BuildPublicConfig(config),
+                PrivateConfig = IsAdminUser() ? BuildPrivateConfig(config) : null,
+                // Same name checks the client used to run against GET /Plugins.
+                HasCustomTabs = IsPluginInstalled("Custom Tabs"),
+                HasPluginPages = IsPluginInstalled("Plugin Pages"),
+                UserSettings = new
+                {
+                    Settings = TryLoadUserDocument("settings.json", authorizedUserId, () => LoadUserSettingsDocument(authorizedUserId)),
+                    Shortcuts = TryLoadUserDocument("shortcuts.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json")),
+                    Bookmark = TryLoadUserDocument("bookmark.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json")),
+                    Elsewhere = TryLoadUserDocument("elsewhere.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json")),
+                    HiddenContent = TryLoadUserDocument("hidden-content.json", authorizedUserId, () => LoadUserHiddenContentDocument(authorizedUserId)),
+                },
+                ComponentScripts = componentScripts,
             });
+        }
+
+        /// <summary>
+        /// Loads one per-user document for the bootstrap payload. A failure yields
+        /// null (the client then applies the same defaults it uses when the
+        /// standalone endpoint fails) instead of failing the whole bootstrap.
+        /// </summary>
+        private object? TryLoadUserDocument(string fileName, string authorizedUserId, Func<object> load)
+        {
+            try
+            {
+                return load();
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Bootstrap: failed to load {fileName} for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Whether a plugin with exactly this name is installed — the same test the
+        /// client used to run against GET /Plugins (which enumerates the same list).
+        /// </summary>
+        private bool IsPluginInstalled(string name)
+        {
+            try
+            {
+                return _pluginManager.Plugins.Any(p => string.Equals(p.Name, name, StringComparison.Ordinal));
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Bootstrap: could not enumerate installed plugins: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// The concatenated component scripts (see Services/ClientScriptBundle).
+        /// Same headers as GetScriptResource: immutable in production (the URL
+        /// carries the cache key), no-store and rebuilt per request in dev mode.
+        /// </summary>
+        [HttpGet("bundle.js")]
+        public ActionResult GetScriptBundle() => GetScriptBundleResource(map: false);
+
+        [HttpGet("bundle.js.map")]
+        public ActionResult GetScriptBundleMap() => GetScriptBundleResource(map: true);
+
+        private ActionResult GetScriptBundleResource(bool map)
+        {
+            var plugin = JellyfinEnhanced.Instance;
+            if (plugin == null)
+            {
+                return StatusCode(503);
+            }
+
+            var devMode = plugin.Configuration?.DevMode == true;
+            byte[] script, sourceMap;
+            try
+            {
+                (script, sourceMap) = Services.ClientScriptBundle.GetBundle(plugin.ScriptCacheKey, rebuild: devMode, _logger);
+            }
+            catch (Exception ex)
+            {
+                // The client falls back to loading the component scripts individually.
+                _logger.Error($"Failed to build the component bundle: {ex.Message}");
+                return StatusCode(500);
+            }
+
+            Response.Headers["Cache-Control"] = devMode ? "no-store" : "public, max-age=31536000, immutable";
+            return map
+                ? File(sourceMap, "application/json")
+                : File(script, "application/javascript");
         }
 
         [HttpGet("tmdb/{**apiPath}")]
@@ -4409,6 +4576,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
+            return Ok(LoadUserSettingsDocument(authorizedUserId));
+        }
+
+        /// <summary>
+        /// Loads (seeding defaults on first access) the user's settings.json document
+        /// with the caller's IsAdmin flag applied. Shared by the settings.json
+        /// endpoint and /bootstrap so both return exactly the same shape.
+        /// </summary>
+        private object LoadUserSettingsDocument(string authorizedUserId)
+        {
             // Populate defaults from plugin configuration if missing
             if (!_userConfigurationManager.UserConfigurationExists(authorizedUserId, "settings.json"))
             {
@@ -4494,10 +4671,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (settingsNode != null)
             {
                 settingsNode["IsAdmin"] = IsAdminUser();
-                return Ok(settingsNode);
+                return settingsNode;
             }
 
-            return Ok(userConfig);
+            return userConfig;
         }
 
         [HttpGet("user-settings/{userId}/shortcuts.json")]
@@ -4788,6 +4965,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
+            return Ok(LoadUserHiddenContentDocument(authorizedUserId));
+        }
+
+        /// <summary>
+        /// Loads (seeding defaults on first access) the user's hidden-content.json
+        /// document. Shared by the hidden-content.json endpoint and /bootstrap.
+        /// </summary>
+        private UserHiddenContent LoadUserHiddenContentDocument(string authorizedUserId)
+        {
             // First-time init: seed Settings from admin defaults under RMW so a parallel CW hide can't clobber it.
             var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
             if (defaultConfig != null
@@ -4811,8 +4997,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json");
-            return Ok(userConfig);
+            return _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json");
         }
 
         private static HiddenContentSettings BuildHcDefaultSettings(PluginConfiguration src)

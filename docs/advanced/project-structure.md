@@ -2,9 +2,13 @@
 
 The plugin architecture uses a single entry point (`plugin.js`) that dynamically loads all other feature components.
 
-`plugin.js` holds an ordered array (`allComponentScripts`) and injects those modules with `script.async = false`, so they download in parallel but **execute in array order**. That ordering is load-bearing: a module placed before one whose exports it reads at load time will bind `undefined`. Add new modules to that array *after* their producers.
+The ordered module list lives in `js/component-scripts.json` (paths relative to `js/`; entries starting with `//` are ordering notes). Modules **execute in manifest order**, and that ordering is load-bearing: a module placed before one whose exports it reads at load time will bind `undefined`. Add new modules to the manifest *after* their producers.
 
-Three client scripts are **not** in that array and are loaded by their own dedicated loaders: `others/splashscreen.js` and `extras/login-image.js` (both injected early, before the component stage, so they can affect the login screen) and `enhanced/translations.js` (loaded at the start of `initialize()`, ahead of the component stage).
+In production the server concatenates the manifest into one script, `GET /JellyfinEnhanced/bundle.js` (`Services/ClientScriptBundle.cs`: built once per process, cache-keyed and immutable like every other script, with a `sections` source map at `bundle.js.map` so DevTools and stack traces still show the original file names and lines). `plugin.js` preloads it as soon as it runs, inserts it once the configuration is applied, and verifies via the bundle's progress marker that every module ran; if the request fails, the bundle has a syntax error, or a module throws at its top level, it falls back to injecting the remaining files individually with `script.async = false` (parallel download, manifest-order execution). Dev mode (`DevMode` config) always uses the individual files.
+
+`plugin.js` also fetches everything it needs before the component stage in one request, `GET /JellyfinEnhanced/bootstrap` (version, public config, admin-only private config, the Custom Tabs / Plugin Pages presence flags, the five per-user documents and the manifest), falling back to the individual endpoints if that fails.
+
+Three client scripts are **not** in the manifest and are loaded by their own dedicated loaders: `others/splashscreen.js` and `extras/login-image.js` (both injected early, before the component stage, so they can affect the login screen) and `enhanced/translations.js` (loaded at the start of `initialize()`, in parallel with the bootstrap request, ahead of the component stage).
 
 The client is delivered by `Services/ScriptInjectionStartupFilter.cs`, which injects `plugin.js` into the web client; all `js/**` files are embedded resources (`JellyfinEnhanced.csproj`) served by `GetScript` in `Controllers/JellyfinEnhancedController.cs`.
 
@@ -40,7 +44,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   │                                 # TagCache*, CdnAsset, WatchlistMonitor,
 │   │                                 # SeerrParentalFilter, MaintenanceMode*,
 │   │                                 # SeerrParentalFilter, TmdbCompanyTvDiscover,
-│   │                                 # ScriptInjectionStartupFilter, …)
+│   │                                 # ScriptInjectionStartupFilter,
+│   │                                 # ClientScriptBundle, …)
 │   ├── Identity/
 │   │   └── RequestIdentityService.cs
 │   └── SpoilerGuard/
@@ -57,6 +62,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │       └── SpoilerUserResolver.cs
 └── js/
     ├── plugin.js
+    ├── component-scripts.json        # ordered module manifest (bundle + loader order)
     ├── locales/                      # 26 translation files (en.json, de.json, …)
     ├── core/
     │   ├── api-client.js
@@ -202,7 +208,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
 
 ### Component Breakdown
 
-* **`plugin.js`**: The main entry point. It loads the plugin configuration and translations, then dynamically injects the `allComponentScripts` modules in dependency order (the three dedicated-loader scripts noted above are injected separately).
+* **`plugin.js`**: The main entry point. It loads the plugin configuration, user settings and translations (one bootstrap request plus the translations module), then loads the `component-scripts.json` modules in dependency order — the server-side bundle in production, individual files in dev mode or as a fallback (the three dedicated-loader scripts noted above are injected separately).
 
 * **`/core/`**: Shared primitives used across every feature. Introduced to remove logic that was previously duplicated per module.
     * **`api-client.js`**: The single HTTP layer — `JE.core.api.{fetch,jf,plugin}` with auth headers, retry/backoff, response caching, request deduplication, concurrency limiting and `AbortController` support.
@@ -291,6 +297,8 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`SpoilerExistingTitlesApplier.cs`**: Applies the saved auto-enable scope to titles already in the library on demand (dry-run preview for the config page, skips titles a user already has or has fully watched). Run by `ScheduledTasks/SpoilerApplyExistingTitlesTask.cs` ("Spoiler Guard: apply to existing titles", no default triggers).
     * **`SpoilerSeerrPendingPromoter.cs`**: Promotes pending pre-acquisition entries (registered from the Seerr More Info modal or auto-enable on request) into real per-item protection when the content lands in the library.
     * **`SpoilerUserResolver.cs`**: Loads per-user Spoiler Guard state for the requesting user identified by `RequestIdentityService`.
+
+* **`/Services/ClientScriptBundle.cs`**: Builds and caches the component bundle (`/JellyfinEnhanced/bundle.js`) and its index source map from the embedded `js/component-scripts.json` manifest; also the source of the ordered list returned by `/bootstrap`.
 
 * **`/Services/Identity/`**: Shared request identity helpers.
     * **`RequestIdentityService.cs`**: Resolves the current request identity using authenticated claims first, then image identity markers, single-user installs, cookies, and shared-IP session candidates.
