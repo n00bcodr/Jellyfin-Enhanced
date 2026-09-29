@@ -422,7 +422,7 @@
                 }
                 return !!(cached.tmdb || cached.critic !== null);
             },
-            renderFromServerCache(ctx, el, entry) {
+            renderFromServerCache(ctx, el, entry, itemId) {
                 if (ctx.isTagged(el)) return;
                 if (ctx.shouldIgnore(el)) return;
                 if (isExcludedByScope(el, entry.Type)) {
@@ -431,10 +431,11 @@
                 }
                 // Server-cache episode entries lack Played state, so only apply
                 // the parent-series suppression where it is authoritative.
+                // (A cache entry carries no Id of its own; the pipeline passes it.)
                 if ((entry.Type === 'Series' || entry.Type === 'Season')
                     && shouldSuppressRatingTag({
                         Type: entry.Type,
-                        Id: entry.Id,
+                        Id: itemId,
                         SeriesId: entry.SeriesId
                     })) {
                     ctx.markTagged(el);
