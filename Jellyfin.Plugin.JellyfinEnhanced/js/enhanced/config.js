@@ -34,6 +34,10 @@
      */
     // Per-file cache of the last JSON string successfully sent to the server.
     const _lastSavedJson = {};
+    // Per-file chain of in-flight saves. Every control posts the whole object,
+    // so two quick changes must reach the server in call order or the earlier
+    // (smaller) snapshot can land last and drop the newer change.
+    const _saveChain = {};
 
     JE.saveUserSettings = async (fileName, settings) => {
         if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId) {
@@ -56,20 +60,25 @@
             const serialized = JSON.stringify(dataToSave);
             const cacheKey = `${userId}:${fileName}`;
 
-            // Skip the POST if nothing has changed since the last save this session.
-            if (_lastSavedJson[cacheKey] === serialized) {
-                return; // no-op — identical to last save
-            }
+            const post = async () => {
+                // Skip the POST if nothing has changed since the last save this session.
+                if (_lastSavedJson[cacheKey] === serialized) {
+                    return; // no-op — identical to last save
+                }
 
-            await ApiClient.ajax({
-                type: 'POST',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}`),
-                data: serialized,
-                contentType: 'application/json'
-            });
+                await ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}`),
+                    data: serialized,
+                    contentType: 'application/json'
+                });
 
-            // Update the cache on success so subsequent identical saves are skipped
-            _lastSavedJson[cacheKey] = serialized;
+                // Update the cache on success so subsequent identical saves are skipped
+                _lastSavedJson[cacheKey] = serialized;
+            };
+            const save = (_saveChain[cacheKey] || Promise.resolve()).then(post);
+            _saveChain[cacheKey] = save.catch(() => {});
+            await save;
         } catch (e) {
             console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, e);
         }
@@ -85,13 +94,14 @@
         const hardcodedDefaults = {
             autoPauseEnabled: true, autoResumeEnabled: false, autoPipEnabled: false,
             autoSkipIntro: false, autoSkipOutro: false,
-            selectedStylePresetIndex: 0, selectedFontSizePresetIndex: 2, selectedFontFamilyPresetIndex: 0,
+            selectedStylePresetIndex: 0, selectedFontSizePresetIndex: 2, selectedFontFamilyPresetIndex: 0, selectedTextEffectPresetIndex: 0,
             customSubtitleTextColor: '#FFFFFFFF', customSubtitleBgColor: '#00000000',
             usingCustomColors: false,
             disableCustomSubtitleStyles: false,
             subtitleVerticalPosition: 95, subtitleHorizontalPosition: 50,
             randomButtonEnabled: true,
             randomIncludeMovies: true, randomIncludeShows: true, randomUnwatchedOnly: false,
+            randomScopeCurrentContainer: false, randomSourceId: '',
             showWatchProgress: false, showFileSizes: false, showAudioLanguages: true, removeContinueWatchingEnabled: false,
             watchProgressMode: 'percentage',
             watchProgressTimeFormat: 'hours',
@@ -111,6 +121,38 @@
             disableAllShortcuts: false, longPress2xEnabled: false, lastOpenedTab: 'shortcuts'
         };
 
+        // Aliases mapping camelCase client settings keys to potential server plugin default keys
+        const pluginDefaultAliases = {
+            selectedStylePresetIndex: ['DefaultSubtitleStyle', 'SelectedStylePresetIndex'],
+            selectedFontSizePresetIndex: ['DefaultSubtitleSize', 'SelectedFontSizePresetIndex'],
+            selectedFontFamilyPresetIndex: ['DefaultSubtitleFont', 'SelectedFontFamilyPresetIndex'],
+            displayLanguage: ['DefaultLanguage', 'DisplayLanguage'],
+            watchProgressMode: ['WatchProgressDefaultMode', 'WatchProgressMode'],
+            watchProgressTimeFormat: ['WatchProgressTimeFormat'],
+            pauseScreenDelaySeconds: ['PauseScreenDelaySeconds']
+        };
+
+        /**
+         * Resolves a default value from pluginDefaults for a given camelCase key.
+         */
+        const getPluginDefault = (key) => {
+            const aliases = pluginDefaultAliases[key] || [];
+            const candidates = [
+                key,
+                key.charAt(0).toUpperCase() + key.slice(1),
+                ...aliases
+            ];
+
+            for (const candidate of candidates) {
+                const value = pluginDefaults[candidate];
+                if (value !== null && value !== undefined) {
+                    return value;
+                }
+            }
+
+            return undefined;
+        };
+
         const mergedSettings = {};
         // Seed with all keys from the stored user settings so that any field not
         // listed in hardcodedDefaults (e.g. fields added in newer plugin versions,
@@ -120,29 +162,35 @@
             mergedSettings[key] = userSettings[key];
         }
         for (const key in hardcodedDefaults) {
-            if (userSettings.hasOwnProperty(key) && userSettings[key] !== null && userSettings[key] !== undefined) {
+            if (Object.prototype.hasOwnProperty.call(userSettings, key) && userSettings[key] !== null && userSettings[key] !== undefined) {
                 // Detect corrupted values (empty arrays or unexpected objects)
                 if (typeof userSettings[key] === 'object' && Array.isArray(userSettings[key]) && userSettings[key].length === 0) {
-                    mergedSettings[key] = pluginDefaults[key] ?? hardcodedDefaults[key];
+                    const fallback = getPluginDefault(key);
+                    mergedSettings[key] = fallback !== undefined ? fallback : hardcodedDefaults[key];
                 } else if (typeof userSettings[key] === 'object' && userSettings[key] !== null && !Array.isArray(userSettings[key])) {
-                    mergedSettings[key] = pluginDefaults[key] ?? hardcodedDefaults[key];
+                    const fallback = getPluginDefault(key);
+                    mergedSettings[key] = fallback !== undefined ? fallback : hardcodedDefaults[key];
                 } else {
                     mergedSettings[key] = userSettings[key];
                 }
-            } else if (pluginDefaults.hasOwnProperty(key) && pluginDefaults[key] !== null && pluginDefaults[key] !== undefined) {
-                mergedSettings[key] = pluginDefaults[key];
             } else {
-                mergedSettings[key] = hardcodedDefaults[key];
+                const pluginVal = getPluginDefault(key);
+                if (pluginVal !== undefined) {
+                    mergedSettings[key] = pluginVal;
+                } else {
+                    mergedSettings[key] = hardcodedDefaults[key];
+                }
             }
         }
 
-        mergedSettings.displayLanguage = userSettings.hasOwnProperty('displayLanguage')
+        mergedSettings.displayLanguage = Object.prototype.hasOwnProperty.call(userSettings, 'displayLanguage')
+            && userSettings.displayLanguage !== null && userSettings.displayLanguage !== undefined
             ? userSettings.displayLanguage
-            : (pluginDefaults.DefaultLanguage || '');
+            : (getPluginDefault('displayLanguage') || '');
         mergedSettings.lastOpenedTab = userSettings.lastOpenedTab || 'shortcuts';
 
-        // Admin default → per-user default (camelCase merge above misses PascalCase from GetPublicConfig). Sticky once explicitly set.
-        if (!userSettings.hasOwnProperty('removeContinueWatchingEnabled')
+        // Admin default → per-user default (handled by getPluginDefault above; preserved for backwards compatibility)
+        if (!Object.prototype.hasOwnProperty.call(userSettings, 'removeContinueWatchingEnabled')
             && pluginDefaults.RemoveContinueWatchingEnabled === true) {
             mergedSettings.removeContinueWatchingEnabled = true;
         }

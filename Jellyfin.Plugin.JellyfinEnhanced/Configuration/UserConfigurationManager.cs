@@ -131,7 +131,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         }
 
         // Strict read for RMW: existing empty/null/garbage is corruption; backs up to .corrupt-{ts} and throws.
-        public T GetUserConfigurationStrict<T>(string userId, string fileName) where T : new()
+        // quarantineCorrupt: false = throw without moving the file aside (read-only callers such as dry runs).
+        public T GetUserConfigurationStrict<T>(string userId, string fileName, bool quarantineCorrupt = true) where T : new()
         {
             var configPath = ResolveUserFile(userId, fileName);
             if (!File.Exists(configPath)) return new T();
@@ -144,7 +145,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             catch (Exception ex)
             {
                 _logger.Error($"Failed to read '{fileName}' for user '{userId}': {ex.Message}");
-                BackupCorruptFile(configPath);
+                if (quarantineCorrupt) BackupCorruptFile(configPath);
                 throw;
             }
 
@@ -152,7 +153,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 || string.Equals(json.Trim(), "null", StringComparison.Ordinal))
             {
                 _logger.Error($"'{fileName}' for user '{userId}' exists but is empty or literal-null; refusing to overwrite.");
-                BackupCorruptFile(configPath);
+                if (quarantineCorrupt) BackupCorruptFile(configPath);
                 throw new InvalidDataException($"'{fileName}' is empty or literal null; refusing to overwrite.");
             }
 
@@ -172,7 +173,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 if (parsed == null)
                 {
                     _logger.Error($"'{fileName}' for user '{userId}' deserialized to null; refusing to overwrite.");
-                    BackupCorruptFile(configPath);
+                    if (quarantineCorrupt) BackupCorruptFile(configPath);
                     throw new InvalidDataException($"'{fileName}' deserialized to null.");
                 }
                 return parsed;
@@ -184,7 +185,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             catch (Exception ex)
             {
                 _logger.Error($"Failed to parse '{fileName}' for user '{userId}': {ex.Message}");
-                BackupCorruptFile(configPath);
+                if (quarantineCorrupt) BackupCorruptFile(configPath);
                 throw;
             }
         }

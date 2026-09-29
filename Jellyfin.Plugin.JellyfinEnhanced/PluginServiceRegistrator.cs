@@ -94,6 +94,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // plugin's own section-content endpoint, which replaces those native lists on an HSS home screen. Same
             // filter handles "Remove from Continue Watching" via HideScope=continuewatching in hidden-content.json.
             serviceCollection.AddSingleton<MaintenanceModeService>();
+            // Maintenance Mode extras: a 30s timer that opens/closes the daily scheduled window
+            // and expires timed manual windows, plus the per-playback-start reminder popup.
+            serviceCollection.AddHostedService<MaintenanceScheduleService>();
+            serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, MaintenancePlaybackReminderConsumer>();
             serviceCollection.AddSingleton<HiddenContentResponseFilter>();
             serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, ContinueWatchingPlaybackConsumer>();
             serviceCollection.AddHostedService<ContinueWatchingLibraryHook>();
@@ -132,6 +136,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Promotes pending pre-acquisition Spoiler Guard entries (PendingTmdb)
             // into real Series/Movies entries when matching library items land.
             serviceCollection.AddHostedService<SpoilerSeerrPendingPromoter>();
+            // Auto-enable Spoiler Guard for every user the moment a new
+            // Series/Movie lands in the library (SpoilerAutoEnableOnLibraryAdd);
+            // batches a scan's ItemAdded burst into one write per user.
+            serviceCollection.AddHostedService<SpoilerLibraryAddAutoEnabler>();
+            // Admin-triggered "apply to existing titles": the same scope and
+            // write path for titles that were already in the library. Run by
+            // SpoilerApplyExistingTitlesTask; previewed by the config page.
+            serviceCollection.AddSingleton<SpoilerExistingTitlesApplier>();
 
             serviceCollection.Configure<MvcOptions>(o =>
             {

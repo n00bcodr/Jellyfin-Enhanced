@@ -32,6 +32,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             MaintenanceModeNotificationMessage = "Server undergoing maintenance.";
             MaintenanceModeAction = "disable_accounts";
             MaintenanceModeAffectedUsers = "all";
+            MaintenanceModeDurationMinutes = 0;
+            MaintenanceModeRemindOnPlayback = false;
+            MaintenanceScheduleEnabled = false;
+            MaintenanceScheduleStart = "00:00";
+            MaintenanceScheduleEnd = "08:00";
+            MaintenanceScheduleMessage = "The library is updating; slowdowns are normal. Time remaining: {countdown}";
+            MaintenanceScheduleNotificationMessage = "The library is updating; slowdowns are normal.";
+            MaintenanceScheduleAction = "none";
             SplashScreenImageUrl = "/web/assets/img/banner-light.png";
             DevMode = false;
 
@@ -58,6 +66,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RandomIncludeMovies = true;
             RandomIncludeShows = true;
             RandomUnwatchedOnly = false;
+            RandomScopeCurrentContainer = false;
             ShowWatchProgress = false;
             WatchProgressDefaultMode = "percentage";
             WatchProgressTimeFormat = "hours";
@@ -127,6 +136,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             DefaultSubtitleStyle = 0;
             DefaultSubtitleSize = 2;
             DefaultSubtitleFont = 0;
+            DefaultSubtitleTextEffect = 0;
             DisableCustomSubtitleStyles = false;
             DefaultLanguage = string.Empty;
             Shortcuts = new List<Shortcut>
@@ -375,6 +385,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerBlurArtwork = false;
             SpoilerAutoEnableOnFirstPlay = false;
             SpoilerAutoEnableOnSeerrRequest = false;
+            SpoilerAutoEnableOnLibraryAdd = false;
+            // Auto-enable scope defaults to "everything" so existing installs
+            // keep today's first-play / Seerr-request behaviour unchanged.
+            SpoilerAutoEnableSeries = true;
+            SpoilerAutoEnableMovies = true;
+            SpoilerAutoEnableLibraryIds = "";
             SpoilerBlurStrictRefresh = false;
             SpoilerKeepMoviePosters = true;
             SpoilerOverviewPlaceholder = "Spoiler Guard activated";
@@ -429,6 +445,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// AnalyticsReportingService.GetStringSettings.
         /// </summary>
         public string MaintenanceModeAffectedUsers { get; set; } = "all";
+        /// <summary>Manual mode auto-disables after this many minutes; 0 = until turned off.</summary>
+        public int MaintenanceModeDurationMinutes { get; set; }
+        /// <summary>Re-send the notification (with time remaining) to affected users on every playback start.</summary>
+        public bool MaintenanceModeRemindOnPlayback { get; set; }
+        /// <summary>Daily window that turns maintenance mode on/off automatically (MaintenanceScheduleService).</summary>
+        public bool MaintenanceScheduleEnabled { get; set; }
+        /// <summary>"HH:mm", server local time.</summary>
+        public string MaintenanceScheduleStart { get; set; } = "00:00";
+        /// <summary>"HH:mm", server local time; earlier than the start means the window crosses midnight.</summary>
+        public string MaintenanceScheduleEnd { get; set; } = "08:00";
+        /// <summary>Banner message used while a scheduled window is active.</summary>
+        public string MaintenanceScheduleMessage { get; set; } = string.Empty;
+        /// <summary>Popup sent to active sessions when a scheduled window starts.</summary>
+        public string MaintenanceScheduleNotificationMessage { get; set; } = string.Empty;
+        /// <summary>"none" | "disable_accounts" | "disable_remote" | "both", applied during the scheduled window.</summary>
+        [AnalyticsInclude]
+        public string MaintenanceScheduleAction { get; set; } = "none";
 
         // Jellyfin Enhanced Settings
         public int ToastDuration { get; set; }
@@ -471,6 +504,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RandomIncludeMovies { get; set; }
         public bool RandomIncludeShows { get; set; }
         public bool RandomUnwatchedOnly { get; set; }
+        public bool RandomScopeCurrentContainer { get; set; }
         public bool ShowWatchProgress { get; set; }
         public string WatchProgressDefaultMode { get; set; }
         public string WatchProgressTimeFormat { get; set; }
@@ -563,6 +597,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int DefaultSubtitleStyle { get; set; }
         public int DefaultSubtitleSize { get; set; }
         public int DefaultSubtitleFont { get; set; }
+        public int DefaultSubtitleTextEffect { get; set; }
         public bool DisableCustomSubtitleStyles { get; set; }
         [AnalyticsInclude]
         public string QualityTagsPosition { get; set; } = "top-left";
@@ -977,6 +1012,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // controls only the auto-on-request path — manual opt-in from the Seerr
         // more-info modal stays available (gated only by SpoilerBlurEnabled).
         public bool SpoilerAutoEnableOnSeerrRequest { get; set; } = false;
+        // When true, every new Series/Movie that lands in the library (any
+        // source: scan, Seerr, manual copy) is added to the Spoiler Guard list
+        // of every user who can see its library — before anyone presses play.
+        // SpoilerLibraryAddAutoEnabler batches the ItemAdded burst of a scan
+        // into one file write per user.
+        public bool SpoilerAutoEnableOnLibraryAdd { get; set; } = false;
+        // Scope shared by all three auto-enable modes (first play, Seerr
+        // request, library add): which content types qualify, and an optional
+        // library allow-list (comma-separated library ids; empty = every
+        // library). The library filter can't apply to a Seerr request (the
+        // title isn't in a library yet). Defaults = everything, so existing
+        // installs keep their current auto-enable behaviour.
+        public bool SpoilerAutoEnableSeries { get; set; } = true;
+        public bool SpoilerAutoEnableMovies { get; set; } = true;
+        public string SpoilerAutoEnableLibraryIds { get; set; } = "";
         // True: toggling Spoiler Guard also fires a full page reload so DTO-derived
         // text (Overview, titles, ratings) updates immediately. False (default):
         // only the in-place image-URL refresh runs — image bytes flip at once but

@@ -45,23 +45,27 @@
 
   // Curated TMDB network IDs. Reuses the same IDs already vetted in
   // discovery/network-discovery.js's TV_NETWORKS map for consistency.
+  // companyId is the TMDB production company whose movies the network's
+  // category page shows beside its series (Seerr filters movies by company
+  // and series by network); left out where TMDB has no clean company for
+  // the service, in which case the page stays series-only.
   const NETWORKS = [
-    { name: 'Netflix', id: 213 },
-    { name: 'HBO', id: 49 },
+    { name: 'Netflix', id: 213, companyId: 178464 },
+    { name: 'HBO', id: 49, companyId: 3268 },
     { name: 'Disney+', id: 2739 },
-    { name: 'Apple TV+', id: 2552 },
-    { name: 'Amazon Prime Video', id: 1024 },
+    { name: 'Apple TV+', id: 2552, companyId: 194232 },
+    { name: 'Amazon Prime Video', id: 1024, companyId: 210099 },
     { name: 'Hulu', id: 453 },
     { name: 'Paramount+', id: 4330 },
-    { name: 'FX', id: 88 },
-    { name: 'BBC', id: 4 },
-    { name: 'Showtime', id: 67 },
-    { name: 'Starz', id: 318 },
-    { name: 'AMC', id: 174 },
-    { name: 'Adult Swim', id: 80 },
-    { name: 'Nickelodeon', id: 13 },
-    { name: 'Crunchyroll', id: 1112 },
-    { name: 'The CW', id: 71 },
+    { name: 'FX', id: 88, companyId: 15990 },
+    { name: 'BBC', id: 4, companyId: 3324 },
+    { name: 'Showtime', id: 67, companyId: 148935 },
+    { name: 'Starz', id: 318, companyId: 8034 },
+    { name: 'AMC', id: 174, companyId: 122304 },
+    { name: 'Adult Swim', id: 80, companyId: 6759 },
+    { name: 'Nickelodeon', id: 13, companyId: 2348 },
+    { name: 'Crunchyroll', id: 1112, companyId: 198847 },
+    { name: 'The CW', id: 71, companyId: 218482 },
   ];
 
   // Populated by renderInto() before the genre tile rows are built, so
@@ -71,21 +75,30 @@
 
   /**
    * Resolves a category key (row key, "studio-<id>", "network-<id>", or
-   * "genre-<movie|tv>-<id>") to its base fetch path and display title.
+   * "genre-<movie|tv>-<id>") to its display title and feeds. Each feed is a
+   * base fetch path paged via ?page=N. Most categories are one feed; a studio
+   * pages its movies beside the series it produced (the plugin's TMDB-backed
+   * feed, so only with a TMDB key configured) and a network pages its series
+   * beside its production company's movies, so the category page can offer
+   * All | Movies | Series.
    * @param {string} categoryKey
-   * @returns {{path: string, title: string}|null}
+   * @returns {{title: string, feeds: Array<{path: string, mediaType?: 'movie'|'tv'}>}|null}
    */
   function resolveCategory(categoryKey) {
     const row = ROWS.find(r => r.key === categoryKey);
     if (row) {
-      return { path: row.path, title: JE.t(row.titleKey) };
+      return { title: JE.t(row.titleKey), feeds: [{ path: row.path }] };
     }
 
     const studioMatch = categoryKey.match(/^studio-(\d+)$/);
     if (studioMatch) {
       const studio = STUDIOS.find(s => String(s.id) === studioMatch[1]);
       if (studio) {
-        return { path: `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${studio.id}`, title: studio.name };
+        const feeds = [{ path: `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${studio.id}`, mediaType: 'movie' }];
+        if (JE.pluginConfig?.TmdbEnabled) {
+          feeds.push({ path: `/JellyfinEnhanced/jellyseerr/discover/tv/studio/${studio.id}`, mediaType: 'tv' });
+        }
+        return { title: studio.name, feeds };
       }
     }
 
@@ -93,7 +106,11 @@
     if (networkMatch) {
       const network = NETWORKS.find(n => String(n.id) === networkMatch[1]);
       if (network) {
-        return { path: `/JellyfinEnhanced/jellyseerr/discover/tv/network/${network.id}`, title: network.name };
+        const feeds = [{ path: `/JellyfinEnhanced/jellyseerr/discover/tv/network/${network.id}`, mediaType: 'tv' }];
+        if (network.companyId) {
+          feeds.push({ path: `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${network.companyId}`, mediaType: 'movie' });
+        }
+        return { title: network.name, feeds };
       }
     }
 
@@ -104,7 +121,7 @@
       const genre = list.find(g => String(g.id) === genreId);
       if (genre) {
         const type = kind === 'movie' ? 'movies' : 'tv';
-        return { path: `/JellyfinEnhanced/jellyseerr/discover/${type}/genre/${genre.id}`, title: genre.name };
+        return { title: genre.name, feeds: [{ path: `/JellyfinEnhanced/jellyseerr/discover/${type}/genre/${genre.id}` }] };
       }
     }
 

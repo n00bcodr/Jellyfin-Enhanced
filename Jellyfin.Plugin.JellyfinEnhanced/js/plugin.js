@@ -346,15 +346,56 @@
     }
 
     /**
-     * Injects a maintenance banner at the top of the page.
+     * Formats the time left until maintenance ends as a short string ("1h 05m", "12m").
+     * Minutes are rounded up so the last minute never reads "0m".
+     * @param {number} msRemaining
+     * @returns {string}
      */
-    function injectMaintenanceBanner(message) {
-        if (document.getElementById('je-maintenance-banner')) return;
+    function formatMaintenanceCountdown(msRemaining) {
+        const totalMinutes = Math.max(0, Math.ceil(msRemaining / 60000));
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        return h > 0 ? h + 'h ' + String(m).padStart(2, '0') + 'm' : m + 'm';
+    }
+
+    /**
+     * Resolves the banner text: replaces the {countdown} (time remaining) and {ends_at}
+     * (local end time) tokens, appending the time remaining when an end time is known but
+     * the message carries no {countdown} token. Mirrors MaintenanceModeService.FormatMessage.
+     * Runs pre-login (no translations loaded yet), hence the literal English fallbacks.
+     * @param {string} message
+     * @param {Date|null} endsAt
+     * @returns {string}
+     */
+    function formatMaintenanceText(message, endsAt) {
         const text = (message || '').trim() || 'This server is currently undergoing maintenance. Please try again later.';
+        if (!endsAt) {
+            return text.replace(/\{countdown\}/gi, '').replace(/\{ends_at\}/gi, '').trim();
+        }
+        const countdown = formatMaintenanceCountdown(endsAt.getTime() - Date.now());
+        const endsAtText = endsAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        const hasToken = /\{countdown\}/i.test(text);
+        const out = text.replace(/\{countdown\}/gi, countdown).replace(/\{ends_at\}/gi, endsAtText).trim();
+        return hasToken ? out : out + ' Time remaining: ' + countdown + '.';
+    }
+
+    /**
+     * Injects a maintenance banner at the top of the page. With an end time the banner counts
+     * down (refreshed every 15s) and removes itself once maintenance is over.
+     * @param {string} message
+     * @param {string|null} [endsAtIso] UTC ISO timestamp from public-config, or null when open-ended.
+     */
+    function injectMaintenanceBanner(message, endsAtIso) {
+        if (document.getElementById('je-maintenance-banner')) return;
+        const endsAt = endsAtIso && !isNaN(Date.parse(endsAtIso)) ? new Date(endsAtIso) : null;
+        if (endsAt && endsAt.getTime() <= Date.now()) return;
+        const text = formatMaintenanceText(message, endsAt);
         const banner = document.createElement('div');
         banner.id = 'je-maintenance-banner';
+        // Above Jellyfin's own chrome (app bar, drawers, dialogs, video player) but below JE's
+        // modals (z-index 9999+), so a full-height modal's close button is never hidden under it.
         banner.style.cssText = [
-            'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:99999',
+            'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:9990',
             'background:#b71c1c', 'color:#fff', 'text-align:center',
             'padding:10px 16px', 'font-size:14px', 'font-weight:600',
             'letter-spacing:0.02em', 'box-shadow:0 2px 8px rgba(0,0,0,0.4)',
@@ -362,23 +403,50 @@
         ].join(';');
         banner.textContent = text;
         document.body.appendChild(banner);
-        // Inject a stylesheet that shifts Jellyfin's fixed header + body down by the banner height.
-        // We use a <style> tag so the rule applies even if Jellyfin re-renders its header.
-        requestAnimationFrame(function() {
-            const h = banner.offsetHeight;
-            if (h <= 0) return;
-            const existing = document.getElementById('je-maintenance-banner-style');
-            if (existing) return;
-            const style = document.createElement('style');
-            style.id = 'je-maintenance-banner-style';
+        // A <style> tag shifts Jellyfin's fixed header, drawers and the body down by the banner
+        // height, so the rules survive Jellyfin re-rendering its header. The height is tracked
+        // rather than measured once: the countdown text, a narrow viewport or a window resize can
+        // change how many lines the banner wraps to.
+        let appliedHeight = -1;
+        const applyOffset = function() {
+            const h = banner.isConnected ? banner.offsetHeight : 0;
+            if (h === appliedHeight) return;
+            appliedHeight = h;
+            let style = document.getElementById('je-maintenance-banner-style');
+            if (h <= 0) {
+                if (style) style.remove();
+                return;
+            }
+            if (!style) {
+                style = document.createElement('style');
+                style.id = 'je-maintenance-banner-style';
+                document.head.appendChild(style);
+            }
             style.textContent = [
                 'body { padding-top: ' + h + 'px !important; }',
                 '.skinHeader { top: ' + h + 'px !important; }',
                 '.mainDrawer { top: ' + h + 'px !important; }',
+                // Jellyfin 12 Modern Layout: MUI app bar and side drawers are fixed at top:0 too.
+                '.MuiAppBar-positionFixed { top: ' + h + 'px !important; }',
+                '.MuiDrawer-paperAnchorLeft, .MuiDrawer-paperAnchorRight { top: ' + h + 'px !important; height: calc(100% - ' + h + 'px) !important; }',
                 '.videoOsdBottom { bottom: 0 !important; }'
             ].join('\n');
-            document.head.appendChild(style);
-        });
+        };
+        requestAnimationFrame(applyOffset);
+        const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(applyOffset) : null;
+        if (resizeObserver) resizeObserver.observe(banner);
+        if (!endsAt) return;
+        const tick = setInterval(function() {
+            if (!document.body.contains(banner)) { clearInterval(tick); return; }
+            if (endsAt.getTime() <= Date.now()) {
+                clearInterval(tick);
+                if (resizeObserver) resizeObserver.disconnect();
+                banner.remove();
+                applyOffset();
+                return;
+            }
+            banner.textContent = formatMaintenanceText(message, endsAt);
+        }, 15000);
     }
 
     /**
@@ -399,7 +467,7 @@
         }).then((config) => {
             // Show maintenance banner for all users (admins can dismiss it mentally)
             if (config?.MaintenanceModeEnabled === true) {
-                injectMaintenanceBanner(config.MaintenanceModeMessage);
+                injectMaintenanceBanner(config.MaintenanceModeMessage, config.MaintenanceModeEndsAt || null);
             }
 
             // Only load login image if enabled (default to false)

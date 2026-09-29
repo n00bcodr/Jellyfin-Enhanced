@@ -16,6 +16,15 @@ The More menu uses labeled buttons. On short screens, previous/next buttons show
 
 ![Live header resizing from desktop to a small phone](../images/header-desktop-to-phone.gif)
 
+### Random Button
+
+The dice button (or `R`) opens a random movie or show from your library. In the Enhanced panel's **Random Button** tab you can limit it to unwatched items, choose whether movies and/or shows are eligible, and narrow the pool under **Random Source**:
+
+- **Use the playlist or collection I'm viewing** - on a playlist or collection page, the pick comes from that container's items (movies, shows or episodes) instead of the whole library.
+- **Everywhere else, pick from** - pin one of your playlists or collections so every press draws from it, whatever page you are on.
+
+If the chosen source has nothing eligible (empty, all watched, or deleted), the button falls back to the whole library and says so in a toast. The admin default for the "current playlist/collection" behaviour is under **Random Button** on the plugin configuration page.
+
 ---
 
 ## Content Management
@@ -282,7 +291,7 @@ Fine-tune subtitle appearance with presets and custom colors.
 - Multiple font families
 - Size options (small, medium, large, extra large)
 - Background opacity
-- Text shadow options
+- Text effect: **Auto**, **None**, **Shadow**, **Outline** or **Outline + Shadow**
 - Position adjustments
 
 **Custom Colors:**
@@ -290,8 +299,14 @@ Fine-tune subtitle appearance with presets and custom colors.
 - User-configurable text color with alpha support
 - User-configurable background color with alpha support
 - Live preview in settings
-- Computed text shadow for transparent/black backgrounds
 - Per-user customization
+
+**Text effect:**
+
+- **Auto** (default) keeps the long-standing behaviour: a soft shadow when the background is transparent, nothing when a background box is shown.
+- **None**, **Shadow**, **Outline** and **Outline + Shadow** apply that effect regardless of background. The outline is a black stroke that scales with the font size.
+- Admins can pick the default for new users with **Default Subtitle Text Effect** in the plugin settings.
+- The text effect takes the place of Jellyfin's own **Drop shadow** subtitle setting, so the two never stack. To use Jellyfin's drop shadow instead, turn on **Disable Custom Subtitle Styles**.
 
 **Usage:**
 
@@ -312,8 +327,8 @@ Jellyfin draws text subtitles in one of two ways, decided by its **Subtitle styl
 
 | Jellyfin **Subtitle styling** | What Jellyfin uses | What Jellyfin Enhanced applies |
 |---|---|---|
-| **Custom** | Its own subtitle element | Text color, background, size, font, shadow and position |
-| **Native** | The browser's built-in captions | Text color, background, size, font and shadow. Position is not available |
+| **Custom** | Its own subtitle element | Text color, background, size, font, text effect and position |
+| **Native** | The browser's built-in captions | Text color, background, size, font and text effect. Position is not available |
 | **Auto** | Custom on Firefox, Safari (including the iOS app), Edge and TV platforms (Tizen 5+, webOS, PS4). Native on Chrome | The same as whichever mode Auto picks |
 
 - The position grid only takes effect in **Custom** mode, because the browser's native captions cannot be repositioned. The Enhanced panel shows a note when **Subtitle styling** is not set to Custom.

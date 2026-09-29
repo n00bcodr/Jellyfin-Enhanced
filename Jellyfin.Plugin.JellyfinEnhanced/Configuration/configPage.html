@@ -473,6 +473,26 @@
                                 <div class="fieldDescription">When on, requesting something through Seerr also pre-arms Spoiler Guard for that title: when the show or movie lands in the library, protection is already on for the user who requested it. Users can also pre-arm titles manually with the "Enable Spoiler Guard" button in the Seerr details popup (always available regardless of this toggle), handy when someone else requested the title first.</div>
                             </div>
 
+                            <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerAutoEnableOnLibraryAdd" is="emby-checkbox" type="checkbox"/><span>Auto-enable Spoiler Guard when new titles are added to the library</span></label></div>
+                            <div class="je-setting-description" data-desc-for="spoilerAutoEnableOnLibraryAdd" data-gated-by="spoilerBlurEnabled">
+                                <div class="fieldDescription">When on, every new show or movie that appears in the library (from a scan, a Seerr download, or a manual copy) is added to the Spoiler Guard list of every user who can see that library, so protection is in place before anyone presses play. Only brand-new titles are affected: a user who later switches Spoiler Guard off for a title isn't re-armed by metadata refreshes. Library scans are batched, so a big scan results in one settings write per user rather than one per title.</div>
+                            </div>
+
+                            <div id="spoilerAutoEnableScopeContainer" data-gated-by="spoilerBlurEnabled" style="margin-left: 20px;">
+                                <div class="fieldDescription" style="margin-bottom: 6px;"><strong>Auto-enable applies to</strong> — shared by all three auto-enable options above.</div>
+                                <div class="checkboxContainer"><label><input id="spoilerAutoEnableSeries" is="emby-checkbox" type="checkbox"/><span>TV shows</span></label></div>
+                                <div class="checkboxContainer"><label><input id="spoilerAutoEnableMovies" is="emby-checkbox" type="checkbox"/><span>Movies</span></label></div>
+                                <div class="fieldDescription" style="margin-top: 8px; margin-bottom: 6px;">Libraries — leave every library unticked to cover all of them. Doesn't apply to Seerr requests (the title isn't in a library yet).</div>
+                                <div id="spoilerAutoEnableLibraryList"><div class="fieldDescription">Loading libraries…</div></div>
+                            </div>
+
+                            <div id="spoilerApplyExistingContainer" class="je-spoiler-apply-existing" data-gated-by="spoilerBlurEnabled" style="margin-left: 20px; margin-top: 12px; margin-bottom: 16px;">
+                                <div class="fieldDescription" style="margin-bottom: 6px;"><strong>Titles already in the library</strong> — auto-enable only arms titles as they arrive, and a rescan doesn't count (so nobody who switched Spoiler Guard off for a title gets it switched back on). To guard what's already there, apply the <em>saved</em> scope above to existing titles, for every user who can see them. Works whether or not "when new titles are added" is on. Titles a user already has, or has fully watched, are skipped. Also available as the "Spoiler Guard: apply to existing titles" scheduled task.</div>
+                                <div class="checkboxContainer"><label><input id="spoilerApplyExistingSkipStarted" is="emby-checkbox" type="checkbox"/><span>Also skip titles a user has already started watching</span></label></div>
+                                <button id="spoilerApplyExistingBtn" is="emby-button" type="button" class="raised"><span>Apply to existing titles now…</span></button>
+                                <div id="spoilerApplyExistingStatus" class="fieldDescription" style="margin-top: 6px;" aria-live="polite"></div>
+                            </div>
+
                             <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerBlurStrictRefresh" is="emby-checkbox" type="checkbox"/><span>Strict refresh mode (full page reload after toggle)</span></label></div>
                             <div class="je-setting-description" data-desc-for="spoilerBlurStrictRefresh" data-gated-by="spoilerBlurEnabled">
                                 <div class="fieldDescription">After a user flips Spoiler Guard on or off, card images update on the page instantly. By default, on-page text (description, episode titles, ratings) only refreshes when they navigate next. Turn this on to also reload the whole page after a toggle so the text updates straight away, at the cost of a brief page flash. Most users prefer it off for the smoother feel.</div>
@@ -634,6 +654,11 @@
                             <div class="checkboxContainer"><label><input id="randomIncludeShows" is="emby-checkbox" type="checkbox"/><span>Include shows</span></label></div>
                             <div class="je-setting-description" data-desc-for="randomIncludeShows">
                                 <div class="fieldDescription">Include TV Shows in the random pool.</div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="randomScopeCurrentContainer" is="emby-checkbox" type="checkbox"/><span>Scope to the current playlist or collection</span></label></div>
+                            <div class="je-setting-description" data-desc-for="randomScopeCurrentContainer">
+                                <div class="fieldDescription">On a playlist or collection page, the Random button picks from that container's items instead of the whole library. Users can also pin a playlist or collection as their permanent source in the Enhanced panel.</div>
                             </div>
                         </div>
                     </fieldset>
@@ -851,6 +876,17 @@
                             </div>
                             <div class="je-setting-description" data-desc-for="DefaultSubtitleFont">
                                 <div class="fieldDescription">Default subtitle font applied to new users; users can override in their personal settings.</div>
+                            </div>
+
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="DefaultSubtitleTextEffect">Default Subtitle Text Effect</label>
+                                <select is="emby-select" id="DefaultSubtitleTextEffect" name="DefaultSubtitleTextEffect" class="emby-select">
+                                    <option value="0">Auto</option><option value="1">None</option><option value="2">Shadow</option>
+                                    <option value="3">Outline</option><option value="4">Outline + Shadow</option>
+                                </select>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="DefaultSubtitleTextEffect">
+                                <div class="fieldDescription">Default subtitle text effect (outline / drop shadow) applied to new users; users can override in their personal settings. Auto adds a shadow only when the subtitle background is transparent.</div>
                             </div>
 
                         </div>
@@ -2717,22 +2753,40 @@
                                 Disabling restores all users automatically.
                             </div>
 
+                            <!-- Duration -->
+                            <div class="inputContainer" style="margin-bottom:1.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="maintenanceModeDurationMinutes">Duration (minutes)</label>
+                                <input id="maintenanceModeDurationMinutes" is="emby-input" type="number" min="0" max="525600" step="1" style="max-width:200px;"/>
+                                <div class="fieldDescription">0 = stays on until you turn it off. Otherwise maintenance ends itself after this many minutes: the banner shows a live countdown and the toggle above switches off automatically. Changing the number restarts the clock; saving other settings does not.</div>
+                            </div>
+
                             <!-- Banner message -->
                             <div class="inputContainer" style="margin-bottom:1.5em;">
                                 <label class="inputLabel inputLabelUnfocused" for="maintenanceModeMessage">Login Page Banner Message</label>
                                 <textarea id="maintenanceModeMessage" is="emby-textarea" class="emby-textarea" rows="2"
                                     placeholder="This server is currently undergoing maintenance. Please try again later."
                                     style="width:100%;max-width:640px;box-sizing:border-box;resize:vertical;"></textarea>
-                                <div class="fieldDescription">Shown as a red banner at the top of every page (login + home). Plain text only.</div>
+                                <div class="fieldDescription">Shown as a red banner at the top of every page (login + home). Plain text only. Use <code>{countdown}</code> for the time remaining and <code>{ends_at}</code> for the end time; with a duration set and no token, the time remaining is appended automatically.</div>
                             </div>
 
                             <!-- Notification message (broadcast) -->
-                            <div class="inputContainer" style="margin-bottom:1.5em;">
+                            <div class="inputContainer" style="margin-bottom:0.75em;">
                                 <label class="inputLabel inputLabelUnfocused" for="maintenanceModeNotificationMessage">Active Session Notification</label>
                                 <textarea id="maintenanceModeNotificationMessage" is="emby-textarea" class="emby-textarea" rows="2"
                                     placeholder="Server maintenance is starting. Please finish up and try again later."
                                     style="width:100%;max-width:640px;box-sizing:border-box;resize:vertical;"></textarea>
-                                <div class="fieldDescription">Sent as a native Jellyfin popup to anyone currently watching; reaches all clients (web, mobile, TV apps).</div>
+                                <div class="fieldDescription">Sent as a native Jellyfin popup to anyone currently watching; reaches all clients (web, mobile, TV apps). Same <code>{countdown}</code> / <code>{ends_at}</code> tokens as the banner.</div>
+                            </div>
+
+                            <!-- Playback reminder -->
+                            <div class="checkboxContainer">
+                                <label>
+                                    <input id="maintenanceModeRemindOnPlayback" is="emby-checkbox" type="checkbox"/>
+                                    <span>Remind on playback start</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom:1.5em;">
+                                While maintenance is active, re-send the notification above (with the time remaining) to affected non-admin users each time they start playing something, on any client. At most once every 5 minutes per session. Only useful when accounts are <em>not</em> disabled.
                             </div>
 
                             <!-- Action selection -->
@@ -2778,6 +2832,59 @@
                                         <div id="je-mm-users-loading" style="opacity:0.55;font-size:0.875em;">Loading users…</div>
                                     </div>
                                 </div>
+                            </div>
+
+                            <!-- Scheduled window. Fields stay direct children of .configSection so they
+                                 pick up the same card/label layout as the manual fields above. -->
+                            <div style="font-weight:600;margin-top:1.75em;padding-top:1.25em;margin-bottom:0.6em;border-top:1px solid rgba(255,255,255,0.12);">Scheduled Window</div>
+                            <div class="checkboxContainer">
+                                <label>
+                                    <input id="maintenanceScheduleEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable daily maintenance window</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom:1.25em;">
+                                Turns maintenance mode on and off by itself every day between the times below (server local time), with its own message and action, e.g. for nightly library scans. Uses the <strong>Affected Users</strong> selection above. The manual toggle takes precedence while it is on; turning the schedule off ends a running window early.
+                            </div>
+                            <div style="display:flex;gap:1.5em;flex-wrap:wrap;margin-bottom:0.5em;">
+                                <div class="inputContainer" style="margin:0;">
+                                    <label class="inputLabel inputLabelUnfocused" for="maintenanceScheduleStart">Start time</label>
+                                    <input id="maintenanceScheduleStart" is="emby-input" type="time" style="max-width:160px;"/>
+                                </div>
+                                <div class="inputContainer" style="margin:0;">
+                                    <label class="inputLabel inputLabelUnfocused" for="maintenanceScheduleEnd">End time</label>
+                                    <input id="maintenanceScheduleEnd" is="emby-input" type="time" style="max-width:160px;"/>
+                                </div>
+                            </div>
+                            <div id="mmScheduleSameTimeWarning" class="fieldDescription" style="display:none;color:#ff8a80;">Start and end time must differ; the schedule is ignored until they do.</div>
+                            <div id="mmServerTimeHint" class="fieldDescription" style="margin-bottom:1.5em;"></div>
+                            <div class="inputContainer" style="margin-bottom:1.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="maintenanceScheduleMessage">Scheduled Banner Message</label>
+                                <textarea id="maintenanceScheduleMessage" is="emby-textarea" class="emby-textarea" rows="2"
+                                    placeholder="The library is updating; slowdowns are normal. Time remaining: {countdown}"
+                                    style="width:100%;max-width:640px;box-sizing:border-box;resize:vertical;"></textarea>
+                                <div class="fieldDescription">Banner shown while the window is active. Same <code>{countdown}</code> / <code>{ends_at}</code> tokens.</div>
+                            </div>
+                            <div class="inputContainer" style="margin-bottom:1.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="maintenanceScheduleNotificationMessage">Scheduled Session Notification</label>
+                                <textarea id="maintenanceScheduleNotificationMessage" is="emby-textarea" class="emby-textarea" rows="2"
+                                    placeholder="The library is updating; slowdowns are normal."
+                                    style="width:100%;max-width:640px;box-sizing:border-box;resize:vertical;"></textarea>
+                                <div class="fieldDescription">Popup sent to active sessions when the window starts, and on playback start when reminders are on.</div>
+                            </div>
+                            <div>
+                                <div style="font-weight:600;margin-bottom:0.6em;">Scheduled Action</div>
+                                <label style="display:flex;align-items:flex-start;gap:0.6em;margin-bottom:0.6em;cursor:pointer;">
+                                    <input type="checkbox" id="mmSchedAction_accounts" style="margin-top:3px;flex-shrink:0;"/>
+                                    <span>
+                                        <strong>Disable user accounts</strong>
+                                        <span class="fieldDescription" style="display:block;margin:0;">Leave both unchecked for a banner-only window.</span>
+                                    </span>
+                                </label>
+                                <label style="display:flex;align-items:flex-start;gap:0.6em;cursor:pointer;">
+                                    <input type="checkbox" id="mmSchedAction_remote" style="margin-top:3px;flex-shrink:0;"/>
+                                    <span><strong>Disable remote connections</strong></span>
+                                </label>
                             </div>
 
                         </div>
@@ -3670,6 +3777,7 @@
                 form.querySelectorAll('input, select, textarea').forEach((el, i) => {
                     if (el.type === 'file') return; // can't be read back, and not part of the saved config shape
                     if (el.closest('.je-arr-seerr-import-picker')) return; // transient browsing state, not a form change until actually imported
+                    if (el.closest('.je-spoiler-apply-existing')) return; // per-run option of an action, not a saved setting
                     const key = el.id || el.name || ('#' + i);
                     parts.push(key + '=' + (el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value));
                 });
@@ -4291,9 +4399,9 @@
         function syncAllManagedCustomTabs(savedConfig) {
             if (!document.body.classList.contains('je-has-customtabs-compat')) {
                 // Bail early. If the admin has auto-create intent stored but we
-                // can't act on it (plugin missing / compat probe failed), return
-                // ok:false so the save-flow alert gate fires — otherwise the
-                // green "Saved!" toast masks the dropped intent.
+                // can't act on it (compat probe failed / detection unknown),
+                // return ok:false so the save-flow alert gate fires — otherwise
+                // the green "Saved!" toast masks the dropped intent.
                 // Mirror `shouldExist`: intent requires all three flags —
                 // master + parent + auto. A disabled-at-master feature with
                 // auto+parent still checked wouldn't have a real sync action
@@ -4304,12 +4412,31 @@
                         && savedConfig[e.parentKey] === true
                         && savedConfig[e.masterKey] === true;
                 });
+                // Custom Tabs definitely absent (not installed, or installed
+                // but disabled): there is nothing to sync and nothing the admin
+                // can fix from here, so skip cleanly. Typical after a 10.11 →
+                // 12 upgrade where Custom Tabs was dropped in favour of the
+                // native home tabs; the stored intent is deliberately kept so
+                // the entries sync again if the plugin is reinstalled. The
+                // auto-create toggles are hidden in this state, so an ok:false
+                // here would re-alert on every save with no way out.
+                if (hasCustomTabs === false) {
+                    return Promise.resolve({
+                        ok: true,
+                        status: 'skipped',
+                        detail: 'Custom Tabs not installed; nothing to sync.',
+                        ownedUpdates: []
+                    });
+                }
                 return Promise.resolve({
                     ok: !anyIntent, // only "skipped cleanly" when there was nothing to do
                     status: 'skipped',
                     detail: anyIntent
-                        ? 'Custom Tabs is not detected (or its config schema is unrecognized). Auto-create was requested but skipped; toggle a Custom Tabs setting to retry the probe.'
-                        : 'Custom Tabs not detected; nothing to sync.',
+                        ? (hasCustomTabs === true
+                            ? 'Custom Tabs is installed, but its config could not be read or has an unrecognized shape, so the auto-create entry was skipped.'
+                            : 'Plugin detection did not complete, so the auto-create entry was skipped.')
+                          + ' Use the Retry button on the "Plugin detection issue" banner at the top of this page (or reload the page), then save again.'
+                        : 'Custom Tabs compat probe not passed; nothing to sync.',
                     ownedUpdates: []
                 });
             }
@@ -5364,6 +5491,249 @@
             select.value = saved;
         }
 
+        // SpoilerAutoEnableLibraryIds as loaded, and whether the checkbox
+        // list has been rendered from it yet. Until it has (VirtualFolders
+        // still loading, or failed) a save round-trips the stored value
+        // untouched instead of silently resetting it to "every library".
+        var _spoilerAutoEnableLibrariesRaw = '';
+        var _spoilerAutoEnableLibrariesRendered = false;
+
+        /**
+         * Renders the Spoiler Guard auto-enable library allow-list as one
+         * checkbox per movie / TV / mixed library, pre-ticking the ids stored
+         * in SpoilerAutoEnableLibraryIds (comma-separated). Ids that no longer
+         * resolve to a library are flagged and dropped on the next save.
+         * @param {string} selectedRaw - Stored comma-separated library ids
+         */
+        function renderSpoilerAutoEnableLibraries(selectedRaw) {
+            var host = document.getElementById('spoilerAutoEnableLibraryList');
+            if (!host) return;
+            _spoilerAutoEnableLibrariesRaw = String(selectedRaw || '');
+            _spoilerAutoEnableLibrariesRendered = false;
+            var selected = _spoilerAutoEnableLibrariesRaw.split(',').map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
+            ApiClient.getJSON(ApiClient.getUrl('Library/VirtualFolders')).then(function (folders) {
+                host.innerHTML = '';
+                var eligible = (folders || []).filter(function (f) {
+                    var t = (f.CollectionType || '').toLowerCase();
+                    // Untyped ("mixed") libraries can hold both shows and movies.
+                    return f.ItemId && (t === 'tvshows' || t === 'movies' || t === '');
+                });
+                var known = {};
+                eligible.forEach(function (f) {
+                    var id = String(f.ItemId).replace(/-/g, '').toLowerCase();
+                    known[id] = true;
+                    var wrap = document.createElement('div');
+                    wrap.className = 'checkboxContainer';
+                    var label = document.createElement('label');
+                    var input = document.createElement('input');
+                    input.setAttribute('is', 'emby-checkbox');
+                    input.type = 'checkbox';
+                    input.className = 'spoilerAutoEnableLibrary';
+                    input.setAttribute('data-library-id', f.ItemId);
+                    input.checked = selected.indexOf(id) !== -1;
+                    var span = document.createElement('span');
+                    var type = (f.CollectionType || '').toLowerCase();
+                    span.textContent = f.Name + (type === 'tvshows' ? ' (TV shows)' : type === 'movies' ? ' (Movies)' : ' (Mixed)');
+                    label.appendChild(input);
+                    label.appendChild(span);
+                    wrap.appendChild(label);
+                    host.appendChild(wrap);
+                });
+                if (!eligible.length) {
+                    host.innerHTML = '<div class="fieldDescription">No movie or TV libraries found.</div>';
+                }
+                // Ids saved earlier whose library has since been deleted: the
+                // server can't match them (so, if they were the only ones,
+                // nothing auto-enables) until the admin saves again.
+                var stale = selected.filter(function (id) { return !known[id]; });
+                if (stale.length) {
+                    var note = document.createElement('div');
+                    note.className = 'fieldDescription';
+                    note.textContent = stale.length === 1
+                        ? '1 previously selected library no longer exists and will be dropped when you save.'
+                        : stale.length + ' previously selected libraries no longer exist and will be dropped when you save.';
+                    host.appendChild(note);
+                }
+                _spoilerAutoEnableLibrariesRendered = true;
+            }).catch(function () {
+                host.innerHTML = '<div class="fieldDescription">Could not load the library list. Saving keeps the current selection.</div>';
+            });
+        }
+
+        /**
+         * Collects the ticked auto-enable libraries back into the stored
+         * comma-separated form (dashless lowercase ids, matching Jellyfin's
+         * VirtualFolders ItemId format). Empty string = every library. If the
+         * list hasn't rendered, returns the stored value unchanged.
+         * @returns {string}
+         */
+        function collectSpoilerAutoEnableLibraries() {
+            if (!_spoilerAutoEnableLibrariesRendered) return _spoilerAutoEnableLibrariesRaw;
+            var ids = [];
+            document.querySelectorAll('#spoilerAutoEnableLibraryList input.spoilerAutoEnableLibrary').forEach(function (el) {
+                if (el.checked) ids.push(String(el.getAttribute('data-library-id') || '').replace(/-/g, '').toLowerCase());
+            });
+            return ids.filter(Boolean).join(',');
+        }
+
+        /**
+         * Plain-text summary of an "apply to existing titles" run from the
+         * server (SpoilerExistingTitlesApplier.Summary, PascalCase like the
+         * rest of Jellyfin's JSON).
+         * @param {Object} s - Run summary
+         * @returns {string}
+         */
+        function describeSpoilerApplyExistingRun(s) {
+            var armed = (s.SeriesArmed || 0) + (s.MoviesArmed || 0);
+            var parts = [armed + ' Spoiler Guard entr' + (armed === 1 ? 'y' : 'ies') + ' added (' + (s.SeriesArmed || 0) + ' series, ' + (s.MoviesArmed || 0) + ' movies) for ' + (s.UsersAffected || 0) + ' user' + (s.UsersAffected === 1 ? '' : 's')];
+            parts.push((s.AlreadyArmed || 0) + ' already guarded');
+            parts.push((s.SkippedWatched || 0) + ' fully watched');
+            if (s.SkipStarted) parts.push((s.SkippedStarted || 0) + ' started');
+            var text = parts.join(', ') + ' skipped.';
+            if (s.UsersFailed) text += ' ' + s.UsersFailed + ' user' + (s.UsersFailed === 1 ? '' : 's') + ' could not be updated (see the server log).';
+            return text;
+        }
+
+        /**
+         * Joins plain-text lines into the HTML body Jellyfin's alert/confirm
+         * dialogs render (they treat the message as sanitized HTML, so plain
+         * newlines collapse). Each line is escaped; user names come from the server.
+         * @param {string[]} lines - Plain-text lines ('' = blank line)
+         * @returns {string}
+         */
+        function spoilerApplyExistingLinesHtml(lines) {
+            var div = document.createElement('div');
+            return lines.map(function (line) {
+                div.textContent = line;
+                return div.innerHTML;
+            }).join('<br>');
+        }
+
+        /**
+         * Resolves to the `message` of a failed JellyfinEnhanced API call
+         * (ApiClient rejects with the fetch Response), or null.
+         * @param {*} err - Rejection value from ApiClient.getJSON / ajax
+         * @returns {Promise<string|null>}
+         */
+        function spoilerApplyExistingErrorMessage(err) {
+            if (!err || typeof err.json !== 'function') return Promise.resolve(null);
+            return err.json().then(function (body) { return (body && body.message) || null; }, function () { return null; });
+        }
+
+        /**
+         * Polls the apply-to-existing-titles status until the run started by
+         * this page has finished, mirroring progress and then the result into
+         * the status line under the button.
+         * @param {number} completedRunsBefore - Server's finished-run counter just before this run started
+         */
+        function pollSpoilerApplyExisting(completedRunsBefore) {
+            var statusEl = document.getElementById('spoilerApplyExistingStatus');
+            var btn = document.getElementById('spoilerApplyExistingBtn');
+            var idleTicks = 0;
+            var tick = function () {
+                ApiClient.getJSON(ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/apply-existing/status')).then(function (st) {
+                    var finished = st.completedRuns > completedRunsBefore && st.lastRun;
+                    if (!finished) {
+                        // Idle without a new result for a while: the task
+                        // never ran (or the server restarted); stop polling.
+                        idleTicks = st.state === 'Idle' ? idleTicks + 1 : 0;
+                        if (idleTicks > 10) {
+                            btn.disabled = false;
+                            statusEl.textContent = 'The run did not report back; check Dashboard > Scheduled Tasks and the server log.';
+                            return;
+                        }
+                        statusEl.textContent = 'Applying… ' + (typeof st.progress === 'number' ? Math.round(st.progress) + '%' : '');
+                        setTimeout(tick, 1000);
+                        return;
+                    }
+                    var last = st.lastRun;
+                    btn.disabled = false;
+                    if (last.Error) {
+                        statusEl.textContent = 'Apply failed: ' + last.Error;
+                    } else if (last.Cancelled) {
+                        statusEl.textContent = 'Cancelled. Users processed before the cancel keep their new entries; run it again to finish (nothing is added twice).';
+                    } else {
+                        statusEl.textContent = 'Done in ' + (last.ElapsedMs / 1000).toFixed(1) + ' s. ' + describeSpoilerApplyExistingRun(last);
+                    }
+                }).catch(function () {
+                    btn.disabled = false;
+                    statusEl.textContent = 'Lost track of the run; check Dashboard > Scheduled Tasks and the server log.';
+                });
+            };
+            tick();
+        }
+
+        /**
+         * "Apply to existing titles now…": dry-runs the saved auto-enable
+         * scope, shows what would be armed, and on confirmation starts the
+         * "Spoiler Guard: apply to existing titles" scheduled task.
+         */
+        (function wireSpoilerApplyExisting() {
+            var btn = document.getElementById('spoilerApplyExistingBtn');
+            var statusEl = document.getElementById('spoilerApplyExistingStatus');
+            if (!btn || !statusEl) return;
+            btn.addEventListener('click', function () {
+                if (document.querySelector('.je-save-dock.je-dirty')) {
+                    Dashboard.alert({ title: 'Save first', message: 'This uses the saved auto-enable settings. Save your changes, then try again.' });
+                    return;
+                }
+                var skipStarted = !!(document.getElementById('spoilerApplyExistingSkipStarted') || {}).checked;
+                btn.disabled = true;
+                statusEl.textContent = 'Counting titles…';
+                var previewUrl = ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/apply-existing/preview', { skipStarted: skipStarted });
+                ApiClient.getJSON(previewUrl).then(function (p) {
+                    statusEl.textContent = '';
+                    var armed = (p.SeriesArmed || 0) + (p.MoviesArmed || 0);
+                    var scope = 'In the saved scope: ' + p.SeriesInScope + ' series and ' + p.MoviesInScope + ' movies.';
+                    var skipped = 'Skipped: ' + (p.AlreadyArmed || 0) + ' already guarded, ' + (p.SkippedWatched || 0) + ' fully watched' + (p.SkipStarted ? ', ' + (p.SkippedStarted || 0) + ' started' : '') + '.'
+                        + (p.UsersFailed ? ' ' + p.UsersFailed + ' user' + (p.UsersFailed === 1 ? '' : 's') + ' could not be read (see the server log).' : '');
+                    if (armed === 0) {
+                        btn.disabled = false;
+                        Dashboard.alert({ title: 'Nothing to apply', message: spoilerApplyExistingLinesHtml([scope, '', 'Every user who can see them already has them guarded or has watched them.', skipped]) });
+                        return;
+                    }
+                    var lines = [
+                        scope,
+                        '',
+                        'This adds ' + armed + ' Spoiler Guard entr' + (armed === 1 ? 'y' : 'ies') + ', one per title per user (' + p.SeriesArmed + ' series, ' + p.MoviesArmed + ' movies), for ' + p.UsersAffected + ' user' + (p.UsersAffected === 1 ? '' : 's') + ':'
+                    ];
+                    (p.PerUser || []).forEach(function (u) {
+                        var n = u.Series + u.Movies;
+                        if (n > 0) lines.push('• ' + u.UserName + (u.IsDisabled ? ' (disabled)' : '') + ': ' + n + ' (' + u.Series + ' series, ' + u.Movies + ' movies)');
+                    });
+                    lines.push('');
+                    lines.push(skipped);
+                    lines.push('Users can switch it off again per title. Running this again later re-arms titles they switched off, unless they have watched them.');
+                    Dashboard.confirm(spoilerApplyExistingLinesHtml(lines), 'Apply Spoiler Guard to existing titles?', function (confirmed) {
+                        if (!confirmed) { btn.disabled = false; return; }
+                        statusEl.textContent = 'Starting…';
+                        ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/apply-existing', { skipStarted: skipStarted }),
+                            dataType: 'json'
+                        }).then(function (res) {
+                            if (res && typeof res.completedRuns === 'number') {
+                                pollSpoilerApplyExisting(res.completedRuns);
+                            } else {
+                                btn.disabled = false;
+                                statusEl.textContent = 'Started. Follow it in Dashboard > Scheduled Tasks.';
+                            }
+                        }).catch(function (err) {
+                            spoilerApplyExistingErrorMessage(err).then(function (msg) {
+                                btn.disabled = false;
+                                statusEl.textContent = 'Could not start the run: ' + (msg || 'see Dashboard > Scheduled Tasks and the server log.');
+                            });
+                        });
+                    });
+                }).catch(function (err) {
+                    spoilerApplyExistingErrorMessage(err).then(function (msg) {
+                        btn.disabled = false;
+                        statusEl.textContent = 'Could not count titles: ' + (msg || 'check the server log.');
+                    });
+                });
+            });
+        })();
+
         function loadConfig() {
             Dashboard.showLoadingMsg();
             checkInstalledPlugins();
@@ -5383,8 +5753,21 @@
                 // Load all other settings
                 document.querySelector('#devMode').checked = config.DevMode;
                 document.querySelector('#maintenanceModeEnabled').checked = config.MaintenanceModeEnabled || false;
+                document.querySelector('#maintenanceModeEnabled').dataset.jeLoaded = String(config.MaintenanceModeEnabled === true);
                 document.querySelector('#maintenanceModeMessage').value = config.MaintenanceModeMessage || '';
                 document.querySelector('#maintenanceModeNotificationMessage').value = config.MaintenanceModeNotificationMessage || '';
+                document.querySelector('#maintenanceModeDurationMinutes').value = config.MaintenanceModeDurationMinutes || 0;
+                document.querySelector('#maintenanceModeRemindOnPlayback').checked = config.MaintenanceModeRemindOnPlayback || false;
+                document.querySelector('#maintenanceScheduleEnabled').checked = config.MaintenanceScheduleEnabled || false;
+                document.querySelector('#maintenanceScheduleStart').value = config.MaintenanceScheduleStart || '00:00';
+                document.querySelector('#maintenanceScheduleEnd').value = config.MaintenanceScheduleEnd || '08:00';
+                updateMaintenanceScheduleWarning();
+                refreshMaintenanceServerTime();
+                document.querySelector('#maintenanceScheduleMessage').value = config.MaintenanceScheduleMessage || '';
+                document.querySelector('#maintenanceScheduleNotificationMessage').value = config.MaintenanceScheduleNotificationMessage || '';
+                const savedSchedAction = config.MaintenanceScheduleAction || 'none';
+                document.getElementById('mmSchedAction_accounts').checked = savedSchedAction === 'disable_accounts' || savedSchedAction === 'both';
+                document.getElementById('mmSchedAction_remote').checked   = savedSchedAction === 'disable_remote'   || savedSchedAction === 'both';
                 // Restore action checkboxes
                 const savedAction = config.MaintenanceModeAction || 'disable_accounts';
                 document.getElementById('mmAction_accounts').checked = savedAction === 'disable_accounts' || savedAction === 'both';
@@ -5436,6 +5819,7 @@
                 document.querySelector('#randomIncludeMovies').checked = config.RandomIncludeMovies;
                 document.querySelector('#randomIncludeShows').checked = config.RandomIncludeShows;
                 document.querySelector('#randomUnwatchedOnly').checked = config.RandomUnwatchedOnly;
+                document.querySelector('#randomScopeCurrentContainer').checked = config.RandomScopeCurrentContainer;
                 document.querySelector('#showWatchProgress').checked = config.ShowWatchProgress;
                 document.querySelector('#watchProgressDefaultMode').value = (config.WatchProgressDefaultMode || 'percentage');
                 document.querySelector('#watchProgressTimeFormat').value = (config.WatchProgressTimeFormat || 'hours');
@@ -5615,6 +5999,7 @@
                 document.querySelector('#DefaultSubtitleStyle').value = config.DefaultSubtitleStyle;
                 document.querySelector('#DefaultSubtitleSize').value = config.DefaultSubtitleSize;
                 document.querySelector('#DefaultSubtitleFont').value = config.DefaultSubtitleFont;
+                document.querySelector('#DefaultSubtitleTextEffect').value = config.DefaultSubtitleTextEffect ?? 0;
                 document.querySelector('#disableCustomSubtitleStyles').checked = config.DisableCustomSubtitleStyles;
                 document.querySelector('#DefaultLanguage').value = config.DefaultLanguage || '';
                 document.querySelector('#letterboxdEnabled').checked = config.LetterboxdEnabled;
@@ -5859,6 +6244,11 @@
                     ['spoilerBlurArtwork',          'SpoilerBlurArtwork',          false],
                     ['spoilerAutoEnableOnFirstPlay','SpoilerAutoEnableOnFirstPlay',false],
                     ['spoilerAutoEnableOnSeerrRequest','SpoilerAutoEnableOnSeerrRequest',false],
+                    ['spoilerAutoEnableOnLibraryAdd','SpoilerAutoEnableOnLibraryAdd',false],
+                    // Auto-enable scope defaults to everything so upgrading
+                    // doesn't narrow the existing first-play / Seerr modes.
+                    ['spoilerAutoEnableSeries',     'SpoilerAutoEnableSeries',     true],
+                    ['spoilerAutoEnableMovies',     'SpoilerAutoEnableMovies',     true],
                     ['spoilerBlurStrictRefresh',    'SpoilerBlurStrictRefresh',    false],
                     ['spoilerKeepMoviePosters',     'SpoilerKeepMoviePosters',     true],
                     // Advanced per-category reveals. The master switch is off
@@ -5883,6 +6273,7 @@
                 if (__sbCastMode) __sbCastMode.value = config.SpoilerStripCastMode === 'All' ? 'All' : 'GuestStars';
                 var __sbPlaceholder = document.querySelector('#spoilerOverviewPlaceholder');
                 if (__sbPlaceholder) __sbPlaceholder.value = config.SpoilerOverviewPlaceholder || 'Spoiler Guard activated';
+                renderSpoilerAutoEnableLibraries(config.SpoilerAutoEnableLibraryIds || '');
 
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
@@ -5924,9 +6315,33 @@
             });
             config.Shortcuts = finalShortcuts;
             config.DevMode = document.querySelector('#devMode').checked;
-            config.MaintenanceModeEnabled = document.querySelector('#maintenanceModeEnabled').checked;
+            // A timed window switches maintenance off by itself (and another admin or the API can
+            // flip it) while this page is open. When the toggle was not touched since it was loaded,
+            // keep the server's current value so saving unrelated settings never quietly starts a
+            // new window or ends someone else's.
+            const mmToggle = document.querySelector('#maintenanceModeEnabled');
+            const mmServerEnabled = String(config.MaintenanceModeEnabled === true);
+            if (String(mmToggle.checked) === mmToggle.dataset.jeLoaded && mmServerEnabled !== mmToggle.dataset.jeLoaded) {
+                mmToggle.checked = config.MaintenanceModeEnabled === true;
+            }
+            mmToggle.dataset.jeLoaded = String(mmToggle.checked);
+            config.MaintenanceModeEnabled = mmToggle.checked;
             config.MaintenanceModeMessage = document.querySelector('#maintenanceModeMessage').value;
             config.MaintenanceModeNotificationMessage = document.querySelector('#maintenanceModeNotificationMessage').value;
+            // Clamped (0 .. one year): a value past int range would fail the whole config save.
+            config.MaintenanceModeDurationMinutes = Math.min(525600, Math.max(0, parseInt(document.querySelector('#maintenanceModeDurationMinutes').value, 10) || 0));
+            config.MaintenanceModeRemindOnPlayback = document.querySelector('#maintenanceModeRemindOnPlayback').checked;
+            config.MaintenanceScheduleEnabled = document.querySelector('#maintenanceScheduleEnabled').checked;
+            config.MaintenanceScheduleStart = document.querySelector('#maintenanceScheduleStart').value || '00:00';
+            config.MaintenanceScheduleEnd = document.querySelector('#maintenanceScheduleEnd').value || '08:00';
+            config.MaintenanceScheduleMessage = document.querySelector('#maintenanceScheduleMessage').value;
+            config.MaintenanceScheduleNotificationMessage = document.querySelector('#maintenanceScheduleNotificationMessage').value;
+            const mmSchedAccounts = document.getElementById('mmSchedAction_accounts').checked;
+            const mmSchedRemote   = document.getElementById('mmSchedAction_remote').checked;
+            config.MaintenanceScheduleAction = (mmSchedAccounts && mmSchedRemote) ? 'both'
+                                             : mmSchedAccounts                    ? 'disable_accounts'
+                                             : mmSchedRemote                      ? 'disable_remote'
+                                             :                                      'none';
             const mmAccounts = document.getElementById('mmAction_accounts').checked;
             const mmRemote   = document.getElementById('mmAction_remote').checked;
             config.MaintenanceModeAction = (mmAccounts && mmRemote) ? 'both'
@@ -5962,6 +6377,7 @@
             config.RandomIncludeMovies = document.querySelector('#randomIncludeMovies').checked;
             config.RandomIncludeShows = document.querySelector('#randomIncludeShows').checked;
             config.RandomUnwatchedOnly = document.querySelector('#randomUnwatchedOnly').checked;
+            config.RandomScopeCurrentContainer = document.querySelector('#randomScopeCurrentContainer').checked;
             config.ShowWatchProgress = document.querySelector('#showWatchProgress').checked;
             config.WatchProgressDefaultMode = document.querySelector('#watchProgressDefaultMode').value;
             config.WatchProgressTimeFormat = document.querySelector('#watchProgressTimeFormat').value;
@@ -6177,6 +6593,7 @@
             config.DefaultSubtitleStyle = parseInt(document.querySelector('#DefaultSubtitleStyle').value, 10);
             config.DefaultSubtitleSize = parseInt(document.querySelector('#DefaultSubtitleSize').value, 10);
             config.DefaultSubtitleFont = parseInt(document.querySelector('#DefaultSubtitleFont').value, 10);
+            config.DefaultSubtitleTextEffect = parseInt(document.querySelector('#DefaultSubtitleTextEffect').value, 10);
             config.DisableCustomSubtitleStyles = document.querySelector('#disableCustomSubtitleStyles').checked;
             config.DefaultLanguage = document.querySelector('#DefaultLanguage').value || '';
             config.LetterboxdEnabled = document.querySelector('#letterboxdEnabled').checked;
@@ -6314,7 +6731,9 @@
                 'spoilerStripPremiereDate',
                 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerStripReviews',
                 'spoilerBlurArtwork', 'spoilerAutoEnableOnFirstPlay',
-                'spoilerAutoEnableOnSeerrRequest', 'spoilerBlurStrictRefresh',
+                'spoilerAutoEnableOnSeerrRequest', 'spoilerAutoEnableOnLibraryAdd',
+                'spoilerAutoEnableSeries', 'spoilerAutoEnableMovies',
+                'spoilerBlurStrictRefresh',
                 'spoilerKeepMoviePosters',
                 'spoilerAdvancedMode',
                 'spoilerNextEpisodeStripTitle', 'spoilerNextEpisodeStripOverview',
@@ -6327,6 +6746,7 @@
                 var pascal = id.charAt(0).toUpperCase() + id.slice(1);
                 config[pascal] = !!el.checked;
             });
+            config.SpoilerAutoEnableLibraryIds = collectSpoilerAutoEnableLibraries();
             var __sbCastModeSave = document.querySelector('#spoilerStripCastMode');
             config.SpoilerStripCastMode = (__sbCastModeSave && __sbCastModeSave.value === 'All') ? 'All' : 'GuestStars';
             var __sbModeSave = document.querySelector('#spoilerBlurMode');
@@ -6473,7 +6893,8 @@
                             contentType: 'application/json',
                             data: JSON.stringify({
                                 message: config.MaintenanceModeMessage || '',
-                                durationMinutes: 0,
+                                notificationMessage: config.MaintenanceModeNotificationMessage || '',
+                                durationMinutes: config.MaintenanceModeDurationMinutes || 0,
                                 action: config.MaintenanceModeAction || 'disable_accounts',
                                 affectedUserIds: affectedIds
                             })
@@ -6498,9 +6919,13 @@
                             console.warn('[JE] Maintenance broadcast failed (no active sessions?):', bcErr);
                         }
                     } else {
+                        // With the daily schedule on, "manual off" must leave a scheduled window running;
+                        // with it off, nothing should be active, so end a scheduled window right away too.
                         await ApiClient.ajax({
                             type: 'POST',
-                            url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Disable')
+                            url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Disable', {
+                                includeScheduled: !config.MaintenanceScheduleEnabled
+                            })
                         });
                     }
                 } catch (mmErr) {
@@ -6658,7 +7083,34 @@
             });
         }
 
+        /** Shows the inline warning when the daily window's start and end time are equal. */
+        function updateMaintenanceScheduleWarning() {
+            const start = document.getElementById('maintenanceScheduleStart').value;
+            const end = document.getElementById('maintenanceScheduleEnd').value;
+            document.getElementById('mmScheduleSameTimeWarning').style.display = start && start === end ? '' : 'none';
+        }
+
+        /**
+         * Shows the server's current time under the daily window: the window runs on the server's
+         * clock, which in containers is often UTC rather than the admin's time zone.
+         */
+        function refreshMaintenanceServerTime() {
+            ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Status'),
+                dataType: 'json'
+            }).then(function(status) {
+                const el = document.getElementById('mmServerTimeHint');
+                if (!el || !status || !status.ServerLocalTime) return;
+                el.textContent = 'Server time is now ' + status.ServerLocalTime + ' (UTC' + status.ServerUtcOffset + '). Set the window in this time zone.';
+            }).catch(function() { /* hint only */ });
+        }
+
         function setupMaintenanceModeControls() {
+            ['maintenanceScheduleStart', 'maintenanceScheduleEnd'].forEach(function(id) {
+                document.getElementById(id).addEventListener('input', updateMaintenanceScheduleWarning);
+            });
+
             // Show/hide user checklist based on radio selection
             document.querySelectorAll('input[name="maintenanceModeUsers"]').forEach(function(radio) {
                 radio.addEventListener('change', function() {
@@ -7479,7 +7931,7 @@
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'showUserRatingDash', 'showUserRatingOnPosters'] },
-            { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows'] },
+            { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows', 'randomScopeCurrentContainer'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
             { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser'], noHint: true },
             { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition'], noHint: true },
@@ -7508,7 +7960,7 @@
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
             { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseNativeTab', 'bookmarksUseCustomTabs'] },
             { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseNativeTab', 'hiddenContentUseCustomTabs'] },
-            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Guard', children: ['spoilerBlurIntensity', 'spoilerBlurArtwork', 'spoilerStripSeriesOverview', 'spoilerStripOverview', 'spoilerOverviewPlaceholder', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripRatings', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerBlurStrictRefresh', 'spoilerKeepMoviePosters', 'spoilerAdvancedMode'] },
+            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Guard', children: ['spoilerBlurIntensity', 'spoilerBlurArtwork', 'spoilerStripSeriesOverview', 'spoilerStripOverview', 'spoilerOverviewPlaceholder', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripRatings', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerAutoEnableOnLibraryAdd', 'spoilerAutoEnableSeries', 'spoilerAutoEnableMovies', 'spoilerBlurStrictRefresh', 'spoilerKeepMoviePosters', 'spoilerAdvancedMode'] },
             { parent: 'spoilerStripCast',     label: 'Hide cast on unwatched episodes', children: ['spoilerStripCastMode'] },
             { parent: 'spoilerAdvancedMode',  label: 'Enable advanced per-category reveals', children: ['spoilerNextEpisodeStripTitle', 'spoilerNextEpisodeStripOverview', 'spoilerNextEpisodeStripRatings', 'spoilerNextEpisodeStripImage', 'spoilerCurrentSeasonStripTitle', 'spoilerCurrentSeasonStripOverview', 'spoilerCurrentSeasonStripRatings'] }
         ];

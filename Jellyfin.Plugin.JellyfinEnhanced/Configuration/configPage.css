@@ -1386,6 +1386,13 @@
     margin-left: 0;
     margin-right: auto;
 }
+/* Text field and dropdown cards are a flex column, which would stretch the badge into a
+   full-width bar under the field; keep it badge-sized at the start of the row. */
+#JellyfinEnhancedPage .inputContainer > .je-new-badge,
+#JellyfinEnhancedPage .selectContainer > .je-new-badge {
+    align-self: flex-start;
+    margin-left: 0;
+}
 .je-note-icon, .je-mobile-icon, .je-dep-banner-icon { color: #ffc107; font-size: 24px; flex-shrink: 0; margin-top: 2px; }
 .je-danger-icon { color: #ff6b6b; font-size: 24px; flex-shrink: 0; margin-top: 2px; }
 .je-purple-icon { color: #9b59b6; font-size: 24px; flex-shrink: 0; margin-top: 2px; }
