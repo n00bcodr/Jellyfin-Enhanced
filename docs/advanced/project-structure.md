@@ -43,8 +43,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   ├── …                             # root-level services (Radarr, Sonarr,
 │   │                                 # TagCache*, CdnAsset, WatchlistMonitor,
 │   │                                 # SeerrParentalFilter, MaintenanceMode*,
-│   │                                 # SeerrParentalFilter, TmdbCompanyTvDiscover,
-│   │                                 # ScriptInjectionStartupFilter,
+│   │                                 # TmdbResponseCache, TmdbCompanyTvDiscover,
+│   │                                 # ItemStatsService, ScriptInjectionStartupFilter,
 │   │                                 # ClientScriptBundle, …)
 │   ├── Identity/
 │   │   └── RequestIdentityService.cs

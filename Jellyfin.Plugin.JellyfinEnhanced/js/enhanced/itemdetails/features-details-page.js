@@ -279,7 +279,7 @@
 
             const selectedSourceId = visiblePage.querySelector('.selectSource')?.value || null;
             if (JE?.currentSettings?.showWatchProgress) {
-                displayWatchProgress(itemId, container);
+                displayWatchProgress(itemId, container, selectedSourceId);
             }
             if (JE?.currentSettings?.showFileSizes) {
                 displayItemSize(itemId, container, selectedSourceId);
