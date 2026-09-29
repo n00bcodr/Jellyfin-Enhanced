@@ -627,7 +627,7 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `tag-cache/rebuild` | Admin: force a full tag-cache rebuild |
-| GET | `tag-cache/{userId}` | This user's tag cache |
+| GET | `tag-cache/{userId}` | This user's tag cache (`?since=<timestamp>` returns only entries changed since, plus any under the user's Spoiler Guard). Includes `reviewRatings`, the average user-review rating per `mediaType:tmdbKey` visible to this user, when user ratings on posters are on |
 | POST | `tag-data/{userId}` | Batch tag lookup by item ids |
 | GET | `file-size/{userId}/{itemId}` | File size for an item |
 | GET | `watch-progress/{userId}/{itemId}` | Watch progress for an item |
