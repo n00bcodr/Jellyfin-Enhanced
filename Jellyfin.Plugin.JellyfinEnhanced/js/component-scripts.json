@@ -26,6 +26,7 @@
     "enhanced/helpers.js",
     "enhanced/header-actions.js",
     "enhanced/native-tabs.js",
+    "tags/tag-cache-store.js",
     "tags/tag-pipeline.js",
     "enhanced/icons.js",
     "// Spoiler Guard modules. Dependency order is maintained by hand —",

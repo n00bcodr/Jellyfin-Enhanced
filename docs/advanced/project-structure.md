@@ -162,6 +162,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── ratingtags.js
     │   ├── ageratingtags.js
     │   ├── userreviewtags.js
+    │   ├── tag-cache-store.js
     │   └── tag-pipeline.js
     ├── elsewhere/
     │   ├── elsewhere.js
@@ -266,8 +267,9 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`qualitytags.js`**: Quality information (4K, HDR, Atmos) as tags on posters.
     * **`ratingtags.js`**: TMDB and Rotten Tomatoes ratings as badges on posters.
     * **`ageratingtags.js`**: The parental / age rating (PG-13, TV-MA, FSK 12, ...) as a colour-coded badge on posters, reusing the Colored Ratings colour table.
-    * **`userreviewtags.js`**: The average user-review rating across all users, composed into the ratings overlay rather than rendered as its own poster tag.
-    * **`tag-pipeline.js`**: Shared server-backed tag cache feeding the renderers in bulk.
+    * **`userreviewtags.js`**: The average user-review rating across all users, composed into the ratings overlay rather than rendered as its own poster tag. Resolves from the averages that ride on the server tag cache; asks `/reviews/ratings` in batches only without it.
+    * **`tag-cache-store.js`**: The browser's copy of the server tag cache in IndexedDB, one per server and user, so a page load renders tags from it and only fetches what changed. Falls back to memory-only when IndexedDB is unavailable.
+    * **`tag-pipeline.js`**: Shared server-backed tag cache feeding the renderers in bulk: restores the stored copy (or downloads the cache), keeps it current with `?since=` deltas, and scans cards in idle slices.
 
 * **`/elsewhere/`**: Discovering media on other streaming services, and reviews.
     * **`elsewhere.js`**: Powers the "Jellyfin Elsewhere" feature.
