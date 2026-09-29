@@ -69,6 +69,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.AnalyticsReportingService _analyticsReportingService;
         private readonly Services.HostCompatibilityService _hostCompatibility;
         private readonly Services.TmdbResponseCache _tmdbResponseCache;
+        private readonly Services.ItemStatsService _itemStats;
         private readonly IServerConfigurationManager _serverConfigurationManager;
         private readonly INetworkManager _networkManager;
         private readonly Services.SpoilerExistingTitlesApplier _spoilerExistingApplier;
@@ -195,6 +196,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.AnalyticsReportingService analyticsReportingService,
             Services.HostCompatibilityService hostCompatibility,
             Services.TmdbResponseCache tmdbResponseCache,
+            Services.ItemStatsService itemStats,
             IServerConfigurationManager serverConfigurationManager,
             INetworkManager networkManager,
             Services.SpoilerExistingTitlesApplier spoilerExistingApplier,
@@ -223,6 +225,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _analyticsReportingService = analyticsReportingService;
             _hostCompatibility = hostCompatibility;
             _tmdbResponseCache = tmdbResponseCache;
+            _itemStats = itemStats;
             _serverConfigurationManager = serverConfigurationManager;
             _networkManager = networkManager;
             _spoilerExistingApplier = spoilerExistingApplier;
@@ -8361,6 +8364,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
 
+        /// <summary>
+        /// Size and watch progress of an item and everything playable under it,
+        /// in one response (see <see cref="Services.ItemStatsService"/>). The
+        /// details page reads both chips from this; the two single-value
+        /// routes below stay for older clients and other callers.
+        /// </summary>
+        [HttpGet("item-stats/{userId}/{itemId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetItemStatsByItemId(Guid userId, Guid itemId, [FromQuery] string? mediaSourceId = null)
+        {
+            var authorizationResult = AuthorizeUserAccess(userId, out var user);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
+            if (item is null)
+            {
+                return NotFound();
+            }
+
+            var stats = _itemStats.Compute(user, item, mediaSourceId);
+            return Ok(new { success = true, size = stats.Size, progress = stats.Progress, totalPlaybackTicks = stats.TotalPlaybackTicks, totalRuntimeTicks = stats.TotalRuntimeTicks });
+        }
+
         [HttpGet("file-size/{userId}/{itemId}")]
         [Authorize]
         [Produces("application/json")]
@@ -8378,14 +8408,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return NotFound();
             }
 
-            var allAffectedItems = GetLeafPlayableItems(user, item);
-
-            long totalSize = allAffectedItems
-                .Sum(affectedItem => affectedItem.GetMediaSources(false)
-                    .Where(source => string.IsNullOrEmpty(mediaSourceId) || string.Equals(source.Id, mediaSourceId, StringComparison.OrdinalIgnoreCase))
-                    .Sum(source => source.Size ?? 0));
-
-            return Ok(new { success = true, size = totalSize });
+            var stats = _itemStats.Compute(user, item, mediaSourceId);
+            return Ok(new { success = true, size = stats.Size });
         }
 
         [HttpGet("watch-progress/{userId}/{itemId}")]
@@ -8405,63 +8429,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return NotFound();
             }
 
-            var allAffectedItems = GetLeafPlayableItems(user, item);
-
-            long totalRuntimeTicks = allAffectedItems.Sum(affectedItem =>
-                // Only one of the MediaSources should count into the watch progress
-                affectedItem.GetMediaSources(false)
-                    .FirstOrDefault()?.RunTimeTicks ?? 0);
-            long totalPlaybackTicks = allAffectedItems.Sum(affectedItem =>
-            {
-                var userData = _userDataManager.GetUserData(user, affectedItem);
-                if (userData is null)
-                    return 0;
-                if (userData.Played)
-                    // PlaybackPositionTicks will be 0 after the episode is marked as watched
-                    return affectedItem.RunTimeTicks ?? 0;
-                return userData.PlaybackPositionTicks;
-            });
-
-            double progress = totalRuntimeTicks == 0 ? 0 : (double)totalPlaybackTicks / totalRuntimeTicks * 100;
-            // Floating point numbers are not needed in the frontend ui
-            int formattedProgress = (int)Math.Clamp(progress, 0, 100);
-
-            return Ok(new { success = true, progress = formattedProgress, totalPlaybackTicks, totalRuntimeTicks });
-        }
-
-        private List<BaseItem> GetLeafPlayableItems(JUser user, BaseItem root)
-        {
-            var result = new List<BaseItem>();
-            var visited = new HashSet<Guid>();
-
-            void Traverse(BaseItem current)
-            {
-                if (!visited.Add(current.Id))
-                {
-                    return;
-                }
-
-                var kind = current.GetBaseItemKind();
-
-                if (current is Folder folder)
-                {
-                    var children = folder.GetChildren(user, true).ToList();
-                    foreach (var child in children)
-                    {
-                        Traverse(child);
-                    }
-                    return;
-                }
-
-                var mediaSources = current.GetMediaSources(false);
-                if (mediaSources != null && mediaSources.Any())
-                {
-                    result.Add(current);
-                }
-            }
-
-            Traverse(root);
-            return result;
+            var stats = _itemStats.Compute(user, item, null);
+            return Ok(new { success = true, progress = stats.Progress, totalPlaybackTicks = stats.TotalPlaybackTicks, totalRuntimeTicks = stats.TotalRuntimeTicks });
         }
 
         [HttpGet("jellyseerr/issue")]

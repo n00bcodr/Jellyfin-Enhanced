@@ -70,6 +70,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // In-memory, size-bounded cache + single-flight for TMDB passthrough and
             // person lookups -- see TmdbResponseCache for TTLs and why it is account-safe.
             serviceCollection.AddSingleton<TmdbResponseCache>();
+            // Size / watch-progress of an item subtree in a handful of queries
+            // (details-page media-info chips) -- see ItemStatsService.
+            serviceCollection.AddSingleton<ItemStatsService>();
             serviceCollection.AddSingleton<SeerrParentalFilter>();
             // Opt-in anonymous usage reporting: UsageEventCounterService holds the
             // current period's counters (debounced disk persistence, same pattern

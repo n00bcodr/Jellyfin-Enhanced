@@ -629,6 +629,7 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 | POST | `tag-cache/rebuild` | Admin: force a full tag-cache rebuild |
 | GET | `tag-cache/{userId}` | This user's tag cache |
 | POST | `tag-data/{userId}` | Batch tag lookup by item ids |
+| GET | `item-stats/{userId}/{itemId}` | File size and watch progress for an item in one response (what the details page uses) |
 | GET | `file-size/{userId}/{itemId}` | File size for an item |
 | GET | `watch-progress/{userId}/{itemId}` | Watch progress for an item |
 | GET | `awards/{mediaType}/{tmdbId}` | Wikidata award wins/nominations |

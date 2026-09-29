@@ -15,6 +15,10 @@
     const watchProgressCache = new Map(); // Map<itemId, { progress: number, totalPlaybackTicks: number, totalRuntimeTicks: number, ts: number }>
     const fileSizeCache = new Map(); // Map<itemId, { size: number|null, unavailable: boolean, ts: number }>
     const audioLanguageCache = new Map(); // Map<itemId, { languages: Array, unavailable: boolean, ts: number }>
+    // The watch-progress and file-size chips of one page share a single
+    // /item-stats request (both values come from the same server-side walk).
+    const ITEMSTATS_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+    const itemStatsRequests = new Map(); // Map<`${itemId}|${mediaSourceId}`, { promise: Promise<object>, ts: number }>
 
     // Watch progress is per-user (and item metadata is fetched with the
     // signed-in user's access) — never carry it across a user switch.
@@ -22,7 +26,39 @@
         watchProgressCache.clear();
         fileSizeCache.clear();
         audioLanguageCache.clear();
+        itemStatsRequests.clear();
     });
+
+    /**
+     * Fetches the size and watch progress of an item (and its children) in one
+     * request. The same in-flight or recent request is handed to every caller
+     * asking for the same item and media source, so the two chips of a details
+     * page cost one round trip instead of two.
+     * @param {string} itemId The ID of the item.
+     * @param {string|null} mediaSourceId Optional selected media source (only affects the size).
+     * @returns {Promise<object>} `{ size, progress, totalPlaybackTicks, totalRuntimeTicks }`; rejects on a failed request.
+     */
+    function fetchItemStats(itemId, mediaSourceId) {
+        const key = `${itemId}|${mediaSourceId || ''}`;
+        const now = Date.now();
+        const existing = itemStatsRequests.get(key);
+        if (existing && (now - existing.ts) < ITEMSTATS_CACHE_TTL) {
+            return existing.promise;
+        }
+
+        const promise = ApiClient.ajax({
+            type: 'GET',
+            url: ApiClient.getUrl(`/JellyfinEnhanced/item-stats/${ApiClient.getCurrentUserId()}/${itemId}${mediaSourceId ? `?mediaSourceId=${encodeURIComponent(mediaSourceId)}` : ''}`),
+            dataType: 'json'
+        });
+        const entry = { promise, ts: now };
+        itemStatsRequests.set(key, entry);
+        // A failed request is not kept: the next visit may try again.
+        promise.catch(() => {
+            if (itemStatsRequests.get(key) === entry) itemStatsRequests.delete(key);
+        });
+        return promise;
+    }
 
     /**
      * Converts bytes into a human-readable format (e.g., KB, MB, GB).
@@ -42,8 +78,10 @@
      * Shows the total watch progress (in %) of an item (and its children) on its details page.
      * @param {string} itemId The ID of the item.
      * @param {HTMLElement} container The DOM element to append the info to.
+     * @param {string|null} [mediaSourceId=null] The page's selected media source, so the
+     *   request is shared with the file-size chip (the progress itself ignores it).
      */
-    async function displayWatchProgress(itemId, container) {
+    async function displayWatchProgress(itemId, container, mediaSourceId = null) {
         // show itemMiscInfo if hidden like on season pages
         if (container.classList.contains('hide')) {
             container.classList.remove('hide')
@@ -225,11 +263,7 @@
             const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
             const isCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
             try {
-                const itemResult = await ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl(`/JellyfinEnhanced/watch-progress/${ApiClient.getCurrentUserId()}/${itemId}`),
-                    dataType: 'json'
-                });
+                const itemResult = await fetchItemStats(itemId, mediaSourceId);
 
                 const watchProgress = {
                     progress: itemResult?.progress ?? 0,
@@ -309,11 +343,7 @@
             }
 
             try {
-                const itemResult = await ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl(`/JellyfinEnhanced/file-size/${ApiClient.getCurrentUserId()}/${itemId}${mediaSourceId ? `?mediaSourceId=${encodeURIComponent(mediaSourceId)}` : ''}`),
-                    dataType: 'json'
-                });
+                const itemResult = await fetchItemStats(itemId, mediaSourceId);
                 const totalSize = itemResult?.size ?? 0;
 
                 if (totalSize > 0) {
