@@ -75,10 +75,12 @@
      *   page's id (or name) when the module applies to the current page.
      * @property {(id: string) => string} [pageKey] - Override the processed-page
      *   key. Default: `${key}-${id}-${location.hash}`.
-     * @property {(ctx: {id: string, signal: AbortSignal}) => Promise<{tvId?: (number|null), movieId?: (number|null), title: string}|null>} [resolveFeeds]
+     * @property {(ctx: {id: string, signal: AbortSignal}) => Promise<{tvId?: (number|null), movieId?: (number|null), title: string, [extra: string]: any}|null>} [resolveFeeds]
      *   dual-feed only: check user status and resolve TMDB feed ids + section
-     *   title. Return null (or no ids) to skip rendering.
-     * @property {(kind: 'tv'|'movie', id: number) => string} [buildDiscoverPath]
+     *   title. Return null (or no ids) to skip rendering. Any extra property
+     *   is kept on the feeds object handed to buildDiscoverPath, so a module
+     *   can record how an id is to be read (e.g. network vs company).
+     * @property {(kind: 'tv'|'movie', id: number, feeds: {tvId: (number|null), movieId: (number|null), [extra: string]: any}) => string} [buildDiscoverPath]
      *   dual-feed only: API path for a feed page, before ?page/&sortBy.
      * @property {(ctx: {id: string, signal: AbortSignal}) => Promise<{items: Array<any>, title: string}|null>} [resolveItems]
      *   client-paged only: check user status and fetch the full (deduped)
@@ -195,7 +197,7 @@
         const clampPages = (totalPages) => Math.min(Number(totalPages) || 1, TMDB_MAX_PAGE);
         let lastBatchPages = 0;
         let lastBatchRendered = -1;
-        /** @type {{tvId: (number|null), movieId: (number|null)}|null} */
+        /** @type {{tvId: (number|null), movieId: (number|null), [extra: string]: any}|null} */
         let currentFeeds = null;
         /** @type {Array<any>} */
         let cachedTvResults = [];
@@ -251,7 +253,7 @@
                 const sortBy = kind === 'tv'
                     ? (JE.discoveryFilter?.getTvSortMode(key) || '')
                     : (JE.discoveryFilter?.getSortMode(key) || '');
-                let path = `${spec.buildDiscoverPath(kind, feedId)}?page=${page}`;
+                let path = `${spec.buildDiscoverPath(kind, feedId, /** @type {NonNullable<typeof currentFeeds>} */ (currentFeeds))}?page=${page}`;
                 if (sortBy) path += `&sortBy=${encodeURIComponent(sortBy)}`;
                 const response = await fetchWithManagedRequest(path, { signal });
                 if (signal?.aborted) {
@@ -956,7 +958,7 @@
             lastBatchPages = 0;
             lastBatchRendered = -1;
             loadGeneration++;
-            currentFeeds = { tvId: resolved.tvId || null, movieId: resolved.movieId || null };
+            currentFeeds = { ...resolved, tvId: resolved.tvId || null, movieId: resolved.movieId || null };
 
             // Clear cached results
             cachedTvResults = [];
