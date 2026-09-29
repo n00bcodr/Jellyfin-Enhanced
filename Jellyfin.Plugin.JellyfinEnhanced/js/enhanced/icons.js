@@ -202,17 +202,17 @@
     };
 
     // Emoji glyphs are not in Jellyfin's web fonts, so the browser has to
-    // resolve a system fallback for them. Jellyfin's body font stack names
-    // five Noto CJK families before the generic family, and on Linux desktops
-    // with the Noto CJK collections installed Chromium opens every one of
-    // them the first time a glyph misses the stack: ~400-550 ms of
-    // synchronous layout per document, repeated for every new weight (~500
-    // ms) and size (~80-100 ms) the glyph is later rendered at. The stall
-    // happens inside whatever layout the glyph first takes part in (a JE
+    // resolve a fallback font for them. Jellyfin's body font stack names five
+    // Noto CJK families (sliced web fonts) before the generic family, and on
+    // Linux Chromium the first glyph that misses that stack costs ~400-550 ms
+    // of synchronous layout per document, repeated for every new weight (~500
+    // ms) and size (~80-100 ms) the glyph is later rendered at (measured on
+    // Jellyfin 12.1; plain text and a short explicit stack cost 1-12 ms). The
+    // stall lands inside whatever layout the glyph first takes part in (a JE
     // forced reflow, the settings panel's first frame...). Pinning a short
     // stack of the platform colour-emoji fonts on the glyph's own span makes
-    // the lookup direct (measured 1-12 ms) and picks the same fonts the
-    // fallback would have chosen, so the icons look identical.
+    // the lookup direct and picks the same fonts the fallback would have
+    // chosen, so the icons look identical.
     const EMOJI_CLASS = 'je-emoji';
     JE.core.ui.injectCss('je-emoji-font', `
         .${EMOJI_CLASS} { font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif; font-style: normal; }
