@@ -63,7 +63,7 @@
         };
 
         // Debounced because getSidebarContainer() reads layout.
-        JE.helpers.onBodyMutation('ui-menu-button', JE.helpers.debounce(() => {
+        const addMenuButtonDebounced = JE.helpers.debounce(() => {
             if (document.getElementById('jellyfinEnhancedSettingsLink')) return;
             // getSidebarContainer() falls back to the new MUI drawer (mobile only)
             // when the legacy sidebar is hidden under Jellyfin 12's experimental
@@ -74,7 +74,17 @@
             if (sidebar && !sidebar.querySelector('#jellyfinEnhancedSettingsLink')) {
                 addMenuButton(sidebar);
             }
-        }, 300));
+        }, 300);
+        /** @type {Element|null} */
+        let menuLink = null;
+        JE.helpers.onBodyMutation('ui-menu-button', () => {
+            // Cheap connected check first, so a mutation batch on a page whose
+            // link is already in place never touches the debounce timer.
+            if (menuLink && menuLink.isConnected) return;
+            menuLink = document.getElementById('jellyfinEnhancedSettingsLink');
+            if (menuLink) return;
+            addMenuButtonDebounced();
+        });
     };
 
     /**
@@ -148,7 +158,7 @@
      * Injects the "Jellyfin Enhanced" link into the user preferences menu (mypreferencesmenu.html).
      * Adds it as the last item in the first vertical section (after Controls).
      */
-    let userPrefsLinkObserver = null;
+    let userPrefsViewHookInstalled = false;
 
     JE.addUserPreferencesLink = () => {
         const addLinkToMenu = () => {
@@ -191,19 +201,17 @@
         // Try to add immediately
         if (addLinkToMenu()) return;
 
-        // If not found, observe for when the menu is loaded and visible.
-        // Keep at most one pending observer: this function is called on every
-        // DOM change (see the dom-observer in events.js), and creating a new
-        // body-wide observer per call leaks observers until the menu is opened.
-        if (userPrefsLinkObserver) return;
-
-        userPrefsLinkObserver = new MutationObserver(() => {
-            if (addLinkToMenu()) {
-                userPrefsLinkObserver.disconnect();
-                userPrefsLinkObserver = null;
-            }
+        // Not visible yet. This function already runs on every body mutation
+        // batch (see the dom-observer in events.js), which covers the menu's
+        // content arriving. The remaining case is a cached menu page being
+        // re-shown by a class toggle alone, which the shared childList observer
+        // does not see: hook the view-show pipeline once for that instead of
+        // the document-wide attribute observer that used to stay attached (and
+        // fire on every class change anywhere) until the menu was first opened.
+        if (userPrefsViewHookInstalled) return;
+        userPrefsViewHookInstalled = true;
+        JE.core.navigation.onViewPage(() => {
+            if (!addLinkToMenu()) JE.core.dom.afterNextPaint(addLinkToMenu);
         });
-
-        userPrefsLinkObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     };
 })(window.JellyfinEnhanced);

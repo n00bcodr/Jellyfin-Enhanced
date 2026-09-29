@@ -322,13 +322,6 @@
 
         // Styles for deceased indicators, overlay positioning, and material-symbols-rounded font
         JE.core.ui.injectCss('je-people-tags-styles', `
-            @font-face {
-                font-family: 'Material Symbols Rounded';
-                font-style: normal;
-                font-weight: 100 700;
-                font-display: block;
-                src: url(${JE.cdn.font('materialsymbolsrounded.woff2')}) format('woff2');
-            }
 
             .material-symbols-rounded {
                 font-family: 'Material Symbols Rounded';
@@ -360,6 +353,10 @@
 
             .je-deceased-poster .cardScalable::after {
                 content: "✝";
+                /* Not in Jellyfin's web fonts: name the generic family directly so
+                   the first cross does not walk the CJK families of the body
+                   stack (a ~500 ms one-off layout stall on Linux, see icons.js). */
+                font-family: sans-serif;
                 position: absolute;
                 top: 8px;
                 right: 8px;

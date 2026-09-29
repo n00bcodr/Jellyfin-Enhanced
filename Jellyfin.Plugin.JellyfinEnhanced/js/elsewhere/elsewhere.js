@@ -1146,7 +1146,7 @@
 
         // Replace polling with MutationObserver for better performance
         let processingElsewhere = false;
-        JE.helpers.createObserver('elsewhere', () => {
+        const scheduleStreamingLookup = () => {
             if (!processingElsewhere) {
                 processingElsewhere = true;
                 if (typeof requestIdleCallback !== 'undefined') {
@@ -1161,11 +1161,17 @@
                     }, 100);
                 }
             }
-        }, document.body, {
+        };
+        // childList-only routes this through the shared body observer (Jellyfin
+        // re-renders the detail page's children on navigation); the previous
+        // `attributeFilter` made it a dedicated document-wide observer that
+        // fired on every hover/focus class change. A cached detail page being
+        // re-shown by a class toggle alone is covered by the view-show hook.
+        JE.helpers.createObserver('elsewhere', scheduleStreamingLookup, document.body, {
             childList: true,
-            subtree: true,
-            attributeFilter: ['class']
+            subtree: true
         });
+        JE.helpers.onViewPage(scheduleStreamingLookup);
 
         // Initial check
         if (typeof requestIdleCallback !== 'undefined') {

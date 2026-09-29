@@ -307,17 +307,12 @@
     if (JE?.pluginConfig?.BookmarksUseCustomTabs) return;
     if (JE?.pluginConfig?.BookmarksUseNativeTab) return;
 
-    const observer = new MutationObserver(() => {
+    // Shared watcher (helpers.onSidebarRebuilt): runs only when the link is
+    // gone and the section exists, instead of a document-wide observer.
+    JE.helpers.onSidebarRebuilt('bookmarks', '.je-nav-bookmarks-item', () => {
       if (isPluginPagesActive()) return;
-      if (!document.querySelector('.je-nav-bookmarks-item') && document.querySelector('.jellyfinEnhancedSection')) {
-        injectNavigation();
-      }
+      injectNavigation();
     });
-
-    const navDrawer = document.querySelector('.mainDrawer, .navDrawer, body');
-    if (navDrawer) {
-      observer.observe(navDrawer, { childList: true, subtree: true });
-    }
   }
 
   Object.assign(internal, {

@@ -90,25 +90,16 @@
     if (config.RecommendationsUseCustomTabs) return;
     if (config.RecommendationsUseNativeTab) return;
 
-    const observer = new MutationObserver(() => {
+    // Shared watcher (helpers.onSidebarRebuilt): runs only when the link is
+    // gone and the section exists, instead of a document-wide observer.
+    JE.helpers.onSidebarRebuilt('recommendations', '.je-nav-recommendations-item', () => {
       const currentConfig = JE.pluginConfig || {};
       if (pluginPagesExists && currentConfig.RecommendationsUsePluginPages) return;
       if (currentConfig.RecommendationsUseCustomTabs) return;
       if (currentConfig.RecommendationsUseNativeTab) return;
-
-      if (!document.querySelector('.je-nav-recommendations-item')) {
-        const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
-        if (jellyfinEnhancedSection) {
-          console.log(`${logPrefix} Sidebar rebuilt, re-injecting navigation`);
-          injectNavigation();
-        }
-      }
+      console.log(`${logPrefix} Sidebar rebuilt, re-injecting navigation`);
+      injectNavigation();
     });
-
-    const navDrawer = document.querySelector('.mainDrawer, .navDrawer, body');
-    if (navDrawer) {
-      observer.observe(navDrawer, { childList: true, subtree: true });
-    }
   }
 
   function init() {

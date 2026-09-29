@@ -254,28 +254,17 @@
     if (config.DownloadsUseCustomTabs) return; // Don't watch if using custom tabs
     if (config.DownloadsUseNativeTab) return; // Don't watch if using the native tab
 
-    // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
-    const observer = new MutationObserver(() => {
+    // Shared watcher (helpers.onSidebarRebuilt): runs only when the link is
+    // gone and the section exists, instead of a document-wide observer.
+    JE.helpers.onSidebarRebuilt('downloads', '.je-nav-downloads-item', () => {
       // Re-check config each time to avoid injecting when settings change
       const currentConfig = JE.pluginConfig || {};
       if (currentConfig.DownloadsUseCustomTabs) return;
       if (currentConfig.DownloadsUseNativeTab) return;
       if (pluginPagesExists && currentConfig.DownloadsUsePluginPages) return;
-
-      if (!document.querySelector('.je-nav-downloads-item')) {
-        const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
-        if (jellyfinEnhancedSection) {
-          console.log(`${logPrefix} Sidebar rebuilt, re-injecting navigation`);
-          injectNavigation();
-        }
-      }
+      console.log(`${logPrefix} Sidebar rebuilt, re-injecting navigation`);
+      injectNavigation();
     });
-
-    // Observe the main drawer
-    const navDrawer = document.querySelector('.mainDrawer, .navDrawer, body');
-    if (navDrawer) {
-      observer.observe(navDrawer, { childList: true, subtree: true });
-    }
   }
 
   /**

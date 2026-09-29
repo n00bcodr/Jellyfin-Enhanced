@@ -544,6 +544,9 @@
                 indicator.style.display = 'inline-block';
                 indicator.style.opacity = '0.7';
                 indicator.style.fontSize = '0.9em';
+                // Glyph is outside Jellyfin's web fonts; a direct generic family
+                // avoids the body stack's CJK fallback walk (see icons.js).
+                indicator.style.fontFamily = 'sans-serif';
                 indicator.textContent = '⇆';
                 placeholder.appendChild(indicator);
             }

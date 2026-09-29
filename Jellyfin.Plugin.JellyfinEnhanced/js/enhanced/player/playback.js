@@ -439,7 +439,7 @@
         } else if (buttonText.includes('Skip Outro')) {
             JE.toast(JE.t('toast_skipped_outro'));
         } else {
-            JE.toast('⏭️ Skipped');
+            JE.toast(`${JE.icons.wrapEmoji('⏭️')} Skipped`);
         }
         return true;
     }
@@ -483,7 +483,7 @@
                     } else if (seg.Type === 'Outro') {
                         JE.toast(JE.t('toast_skipped_outro'));
                     } else {
-                        JE.toast('⏭️ Skipped');
+                        JE.toast(`${JE.icons.wrapEmoji('⏭️')} Skipped`);
                     }
                     return;
                 }

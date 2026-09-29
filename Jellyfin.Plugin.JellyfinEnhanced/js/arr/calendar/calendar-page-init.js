@@ -299,28 +299,17 @@
     if (config.CalendarUseCustomTabs) return; // Don't watch if using custom tabs
     if (config.CalendarUseNativeTab) return; // Don't watch if using the native tab
 
-    // Use MutationObserver to watch for sidebar changes, but disconnect after re-injection
-    const observer = new MutationObserver(() => {
+    // Shared watcher (helpers.onSidebarRebuilt): runs only when the link is
+    // gone and the section exists, instead of a document-wide observer.
+    JE.helpers.onSidebarRebuilt('calendar', '.je-nav-calendar-item', () => {
       // Re-check config each time to avoid injecting when settings change
       const currentConfig = JE.pluginConfig || {};
       if (currentConfig.CalendarUseCustomTabs) return;
       if (currentConfig.CalendarUseNativeTab) return;
       if (pluginPagesExists && currentConfig.CalendarUsePluginPages) return;
-
-      if (!document.querySelector('.je-nav-calendar-item')) {
-        const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
-        if (jellyfinEnhancedSection) {
-          console.log(`${logPrefix} Sidebar rebuilt, re-injecting navigation`);
-          injectNavigation();
-        }
-      }
+      console.log(`${logPrefix} Sidebar rebuilt, re-injecting navigation`);
+      injectNavigation();
     });
-
-    // Observe the main drawer
-    const navDrawer = document.querySelector('.mainDrawer, .navDrawer, body');
-    if (navDrawer) {
-      observer.observe(navDrawer, { childList: true, subtree: true });
-    }
   }
 
   /**

@@ -161,7 +161,7 @@
 
         // Replace polling with MutationObserver for better performance
         let processingLetterboxd = false;
-        const letterboxdObserver = JE.helpers.createObserver('letterboxd-links', () => {
+        const scheduleLetterboxdLinks = () => {
             if (!JE?.pluginConfig?.LetterboxdEnabled) {
                 letterboxdObserver.disconnect();
                 console.log(`${logPrefix} Stopped - feature disabled`);
@@ -182,11 +182,17 @@
                     }, 100);
                 }
             }
-        }, document.body, {
+        };
+        // childList-only routes this through the shared body observer (Jellyfin
+        // re-renders the detail page's children on navigation); the previous
+        // `attributeFilter` made it a dedicated document-wide observer that
+        // fired on every hover/focus class change. A cached detail page being
+        // re-shown by a class toggle alone is covered by the view-show hook.
+        const letterboxdObserver = JE.helpers.createObserver('letterboxd-links', scheduleLetterboxdLinks, document.body, {
             childList: true,
-            subtree: true,
-            attributeFilter: ['class']
+            subtree: true
         });
+        JE.helpers.onViewPage(scheduleLetterboxdLinks);
 
         // Initial check
         if (typeof requestIdleCallback !== 'undefined') {
