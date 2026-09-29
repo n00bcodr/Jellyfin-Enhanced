@@ -16,6 +16,15 @@ The More menu uses labeled buttons. On short screens, previous/next buttons show
 
 ![Live header resizing from desktop to a small phone](../images/header-desktop-to-phone.gif)
 
+### Random Button
+
+The dice button (or `R`) opens a random movie or show from your library. In the Enhanced panel's **Random Button** tab you can limit it to unwatched items, choose whether movies and/or shows are eligible, and narrow the pool under **Random Source**:
+
+- **Use the playlist or collection I'm viewing** - on a playlist or collection page, the pick comes from that container's items (movies, shows or episodes) instead of the whole library.
+- **Everywhere else, pick from** - pin one of your playlists or collections so every press draws from it, whatever page you are on.
+
+If the chosen source has nothing eligible (empty, all watched, or deleted), the button falls back to the whole library and says so in a toast. The admin default for the "current playlist/collection" behaviour is under **Random Button** on the plugin configuration page.
+
 ---
 
 ## Content Management

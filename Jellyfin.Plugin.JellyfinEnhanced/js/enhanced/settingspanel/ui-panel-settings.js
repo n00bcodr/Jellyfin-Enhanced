@@ -110,6 +110,7 @@
         addSettingToggleListener('autoSkipOutroToggle', 'autoSkipOutro', 'feature_auto_skip_outro');
         addSettingToggleListener('randomButtonToggle', 'randomButtonEnabled', 'feature_random_button');
         addSettingToggleListener('randomUnwatchedOnly', 'randomUnwatchedOnly', 'feature_unwatched_only');
+        addSettingToggleListener('randomScopeCurrentContainer', 'randomScopeCurrentContainer', 'feature_random_scope_current');
         addSettingToggleListener('showWatchProgressToggle', 'showWatchProgress', 'feature_watch_progress_display');
                 // Watch progress selects
                 const modeSel = document.getElementById('watchProgressModeSelect');
@@ -486,6 +487,44 @@
 
         document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeMovies = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
         document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
+
+        // Random source picker: lists the user's playlists and collections; '' = whole library.
+        const sourceSelect = document.getElementById('randomSourceSelect');
+        if (sourceSelect) {
+            const savedId = JE.currentSettings.randomSourceId || '';
+            const userId = ApiClient.getCurrentUserId();
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/Users/${userId}/Items?IncludeItemTypes=Playlist,BoxSet&Recursive=true&SortBy=SortName`), dataType: 'json' })
+                .then(async response => {
+                    if (!sourceSelect.isConnected) return; // panel closed before the list arrived
+                    const groups = { Playlist: 'panel_settings_random_button_source_playlists', BoxSet: 'panel_settings_random_button_source_collections' };
+                    for (const [type, labelKey] of Object.entries(groups)) {
+                        const items = (response?.Items || []).filter(item => item.Type === type);
+                        if (items.length === 0) continue;
+                        const group = document.createElement('optgroup');
+                        group.label = JE.t(labelKey);
+                        items.forEach(item => group.appendChild(new Option(item.Name, item.Id, false, item.Id === savedId)));
+                        sourceSelect.appendChild(group);
+                    }
+                    // A saved source missing from the list is either gone (show why picks fall back) or
+                    // still readable but filtered out of lists, e.g. hidden with Hidden Content, in which
+                    // case the button still draws from it, so show its real name.
+                    if (savedId && sourceSelect.value !== savedId) {
+                        const saved = await ApiClient.getItem(userId, savedId).catch(() => null);
+                        if (!sourceSelect.isConnected || JE.currentSettings.randomSourceId !== savedId) return;
+                        const label = saved && ['Playlist', 'BoxSet'].includes(saved.Type)
+                            ? saved.Name
+                            : JE.t('panel_settings_random_button_source_missing');
+                        sourceSelect.appendChild(new Option(label, savedId, false, true));
+                    }
+                })
+                .catch(err => console.warn('🪼 Jellyfin Enhanced: Could not list playlists for the random source picker', err));
+            sourceSelect.addEventListener('change', (e) => {
+                JE.currentSettings.randomSourceId = e.target.value;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.toast(JE.t('toast_random_source_set', { name: JE.escapeHtml(e.target.selectedOptions[0]?.textContent || '') }));
+                resetAutoCloseTimer();
+            });
+        }
 
         document.getElementById('releaseNotesBtn').addEventListener('click', async () => { await showReleaseNotesNotification(); resetAutoCloseTimer(); });
 
