@@ -42,18 +42,42 @@
     let flushScheduled = false;
     let flushGeneration = 0;
 
+    // Callbacks waiting for the next paint. All callers that ask within the
+    // same frame share one animation frame + one timeout pair instead of
+    // scheduling three timers each; on a busy page (observer flush plus the
+    // tab-container watchers) that was ~450 timers per ten navigations.
+    /** @type {Function[]} */
+    let paintQueue = [];
+    let paintScheduled = false;
+
+    function runPaintQueue() {
+        paintScheduled = false;
+        const batch = paintQueue;
+        paintQueue = [];
+        for (const fn of batch) {
+            try {
+                fn();
+            } catch (err) {
+                console.error('🪼 Jellyfin Enhanced: Error in afterNextPaint callback:', err);
+            }
+        }
+    }
+
     /**
      * Run `fn` after the next paint, when layout is clean. The timer fallback
      * covers hidden tabs, where animation frames do not fire.
      * @param {Function} fn
      */
     function afterNextPaint(fn) {
+        paintQueue.push(fn);
+        if (paintScheduled) return;
+        paintScheduled = true;
         let done = false;
         const run = () => {
             if (done) return;
             done = true;
             clearTimeout(fallback);
-            fn();
+            runPaintQueue();
         };
         const fallback = setTimeout(run, 250);
         requestAnimationFrame(() => setTimeout(run, 0));

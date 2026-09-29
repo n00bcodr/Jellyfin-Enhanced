@@ -304,14 +304,9 @@
     };
 
     JE.initializeGenreTags = function() {
-        // Material Symbols Outlined font, bundled with the plugin (#830)
+        // Material Symbols Outlined font, bundled with the plugin (#830); the
+        // @font-face is declared once in enhanced/ui-styles.js.
         JE.core.ui.injectCss('mat-sym', `
-            @font-face {
-                font-family: 'Material Symbols Outlined';
-                font-style: normal;
-                font-weight: 400;
-                src: url(${JE.cdn.font('materialsymbolsoutlined.woff2')}) format('woff2');
-            }
             .material-symbols-outlined {
                 font-family: 'Material Symbols Outlined';
                 font-weight: normal;

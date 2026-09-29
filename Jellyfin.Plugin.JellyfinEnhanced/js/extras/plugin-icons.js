@@ -283,6 +283,9 @@
         if (observer) return;
 
         const callback = (mutations) => {
+            // The plugins list only exists in the dashboard document; skip the
+            // per-record subtree queries below on every other page.
+            if (!document.body.classList.contains('dashboardDocument')) return;
             let shouldProcess = false;
 
             mutations.forEach((mutation) => {

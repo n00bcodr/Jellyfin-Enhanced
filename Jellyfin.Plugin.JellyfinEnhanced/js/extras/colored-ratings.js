@@ -7,7 +7,6 @@
     const CONFIG = {
         targetSelector: '.mediaInfoOfficialRating',
         attributeName: 'rating',
-        fallbackInterval: 1000,
         debounceDelay: 100,
         maxRetries: 3,
         cssUrl: window.JellyfinEnhanced.cdn.url('je-css', 'ratings.css'),
@@ -15,8 +14,7 @@
     };
 
     let observer = null;
-    let urlObserverHandle = null;
-    let fallbackTimer = null;
+    let navigationUnsubscribers = [];
     let debounceTimer = null;
     let processedElements = new WeakSet();
 
@@ -127,52 +125,52 @@
 
         try {
             const JE = window.JellyfinEnhanced;
+            // Only react when a rating element (or a subtree containing one) was
+            // added, or when the text inside an existing one was replaced --
+            // Jellyfin writes the rating via textContent, which is a childList
+            // mutation on the element itself, so characterData is not needed.
             const callback = (mutations) => {
                 let shouldProcess = false;
 
-                mutations.forEach((mutation) => {
-                    if (mutation.type === 'childList') {
-                        mutation.addedNodes.forEach((node) => {
-                            if (node.nodeType === Node.ELEMENT_NODE) {
-                                if (node.matches && node.matches(CONFIG.targetSelector)) {
-                                    shouldProcess = true;
-                                } else if (node.querySelector && node.querySelector(CONFIG.targetSelector)) {
-                                    shouldProcess = true;
-                                }
-                            }
-                        });
+                for (let i = 0; i < mutations.length && !shouldProcess; i++) {
+                    const mutation = mutations[i];
+                    if (mutation.type !== 'childList') continue;
+                    const target = mutation.target;
+                    if (target.nodeType === Node.ELEMENT_NODE &&
+                        (target.matches(CONFIG.targetSelector) || target.closest(CONFIG.targetSelector))) {
+                        shouldProcess = true;
+                        break;
                     }
-
-                    if (mutation.type === 'characterData' || mutation.type === 'childList') {
-                        const target = mutation.target;
-                        if (target.nodeType === Node.ELEMENT_NODE &&
-                            (target.matches(CONFIG.targetSelector) || target.closest(CONFIG.targetSelector))) {
+                    const added = mutation.addedNodes;
+                    for (let j = 0; j < added.length; j++) {
+                        const node = added[j];
+                        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+                        if (node.matches(CONFIG.targetSelector) || node.querySelector(CONFIG.targetSelector)) {
                             shouldProcess = true;
+                            break;
                         }
                     }
-                });
+                }
 
                 if (shouldProcess) {
                     debouncedProcess();
                 }
             };
 
-            // Uses characterData so needs a dedicated observer via createObserver
+            // childList + subtree on body routes through the shared multiplexed
+            // observer (batched after paint). The previous dedicated observer
+            // also watched characterData, which fired for every text change in
+            // the document (the player's clock, progress labels...).
             if (JE?.helpers?.createObserver) {
                 observer = JE.helpers.createObserver(
                     'colored-ratings',
                     callback,
                     document.body,
-                    { childList: true, subtree: true, characterData: true, characterDataOldValue: false }
+                    { childList: true, subtree: true }
                 );
             } else {
                 observer = new MutationObserver(callback);
-                observer.observe(document.body, {
-                    childList: true,
-                    subtree: true,
-                    characterData: true,
-                    characterDataOldValue: false
-                });
+                observer.observe(document.body, { childList: true, subtree: true });
             }
 
             return true;
@@ -183,56 +181,33 @@
         }
     }
 
-    function setupFallbackPolling() {
-        // Don't start polling if we're actively playing video
-        if (isVideoPlaying()) {
-            return;
-        }
-        fallbackTimer = setInterval(processRatingElements, CONFIG.fallbackInterval);
+    /**
+     * Re-check the page after navigation and after a view is shown: a cached
+     * detail page re-shown by a class toggle alone produces no childList
+     * mutation. This replaces the 1 s polling interval that used to run for
+     * the whole session as a safety net.
+     */
+    function setupNavigationTriggers() {
+        const JE = window.JellyfinEnhanced;
+        if (!JE?.helpers?.onNavigate) return;
+        const scheduleProcess = () => {
+            if (!isFeatureEnabled()) return;
+            setTimeout(processRatingElements, 500);
+        };
+        navigationUnsubscribers.push(JE.helpers.onNavigate(scheduleProcess));
+        navigationUnsubscribers.push(JE.helpers.onViewPage(() => {
+            if (isFeatureEnabled()) debouncedProcess();
+        }));
     }
 
-    function isOnVideoPage() {
-        // Check if we're on the video player page
-        if (typeof window.JellyfinEnhanced?.isVideoPage === 'function') {
-            return window.JellyfinEnhanced.isVideoPage();
-        }
-        // Fallback check
-        return window.location.hash.startsWith('#/video') || !!document.querySelector('.videoPlayerContainer');
-    }
-
-    function isVideoPlaying() {
-        // Check if we're on the video player page AND the video is actively playing
-        if (!isOnVideoPage()) {
-            return false;
-        }
-
-        // Check if pause screen is visible (pause screen has osdInfo visible)
-        const pauseScreen = document.querySelector('.videoOsdBottom');
-        if (pauseScreen && getComputedStyle(pauseScreen).display !== 'none' && getComputedStyle(pauseScreen).opacity !== '0') {
-            // Pause screen is visible - allow polling
-            return false;
-        }
-
-        // Check if video element exists and is playing
-        const video = document.querySelector('video');
-        if (!video) {
-            return false;
-        }
-
-        return !video.paused;
-    }
-
-    function pausePolling() {
-        if (fallbackTimer) {
-            clearInterval(fallbackTimer);
-            fallbackTimer = null;
-        }
-    }
+    /**
+     * Kept for pausescreen.js, which pauses the (now removed) polling during
+     * playback and resumes it on pause; a resume simply re-checks the page.
+     */
+    function pausePolling() {}
 
     function resumePolling() {
-        if (!fallbackTimer && isFeatureEnabled() && !isVideoPlaying()) {
-            fallbackTimer = setInterval(processRatingElements, CONFIG.fallbackInterval);
-        }
+        if (isFeatureEnabled()) debouncedProcess();
     }
 
     function cleanup() {
@@ -240,14 +215,10 @@
             observer.disconnect();
             observer = null;
         }
-        if (urlObserverHandle) {
-            urlObserverHandle.unsubscribe();
-            urlObserverHandle = null;
-        }
-        if (fallbackTimer) {
-            clearInterval(fallbackTimer);
-            fallbackTimer = null;
-        }
+        navigationUnsubscribers.forEach((unsubscribe) => {
+            try { unsubscribe(); } catch (_) { /* ignore */ }
+        });
+        navigationUnsubscribers = [];
         if (debounceTimer) {
             clearTimeout(debounceTimer);
             debounceTimer = null;
@@ -264,7 +235,7 @@
         injectCSS();
         processRatingElements();
         setupMutationObserver();
-        setupFallbackPolling();
+        setupNavigationTriggers();
     }
 
     if (typeof document.visibilityState !== 'undefined') {
@@ -273,31 +244,6 @@
                 setTimeout(processRatingElements, 100);
             }
         });
-    }
-
-    let lastUrl = location.href;
-
-    const JE = window.JellyfinEnhanced;
-    if (JE?.helpers?.onBodyMutation) {
-        urlObserverHandle = JE.helpers.onBodyMutation('colored-ratings-url-watcher', () => {
-            const url = location.href;
-            if (url !== lastUrl) {
-                lastUrl = url;
-                if (isFeatureEnabled()) {
-                    setTimeout(initialize, 500);
-                }
-            }
-        });
-    } else {
-        new MutationObserver(() => {
-            const url = location.href;
-            if (url !== lastUrl) {
-                lastUrl = url;
-                if (isFeatureEnabled()) {
-                    setTimeout(initialize, 500);
-                }
-            }
-        }).observe(document, { subtree: true, childList: true });
     }
 
     window.addEventListener('beforeunload', cleanup);

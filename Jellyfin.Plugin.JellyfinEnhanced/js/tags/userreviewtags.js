@@ -255,13 +255,6 @@
         }
 
         JE.core.ui.injectCss('je-userreview-tags-css', `
-            @font-face {
-                font-family: 'Material Symbols Rounded';
-                font-style: normal;
-                font-weight: 100 700;
-                font-display: block;
-                src: url(${JE.cdn.font('materialsymbolsrounded.woff2')}) format('woff2');
-            }
             .je-userreview-tag { color: #e91e8c !important; }
             .je-userreview-icon {
                 font-family: 'Material Symbols Rounded';

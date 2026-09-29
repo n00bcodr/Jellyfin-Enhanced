@@ -295,22 +295,21 @@
     }
     }, 100);
 
-    // Create managed observer for item details
+    // Managed observer for item details. childList-only routes it through the
+    // shared body observer (Jellyfin re-renders the detail page's children on
+    // navigation); the previous class/style attribute filter made it a
+    // dedicated document-wide observer firing on every hover, focus and
+    // lazy-image style change, and it called the handler once per record.
     JE.helpers.createObserver(
         'item-details-info',
-        (mutations) => {
-            for (const mutation of mutations) {
-                if (mutation.type === 'childList' || mutation.type === 'attributes') {
-                    handleItemDetails();
-                }
-            }
-        },
+        () => handleItemDetails(),
         document.body,
         {
             childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class', 'style']
+            subtree: true
         }
     );
+    // A cached detail page re-shown by a class toggle alone produces no
+    // childList mutation, so re-run on view show as well.
+    JE.helpers.onViewPage(() => handleItemDetails());
 })(window.JellyfinEnhanced);
