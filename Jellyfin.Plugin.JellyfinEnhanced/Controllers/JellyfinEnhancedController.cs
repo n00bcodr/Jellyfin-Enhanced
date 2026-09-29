@@ -6973,6 +6973,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// May throw on a corrupt record or a failing user lookup — callers
         /// isolate each review so one bad record cannot fail the request.
         /// </summary>
+        /// <summary>
+        /// Review authors resolved recently, shared across requests. On Jellyfin
+        /// 12 <see cref="IUserManager.GetUserById"/> reads the database (about
+        /// 8 ms per author on the lab server), and the tag-cache delta resolves
+        /// every author in the review store on every navigation — each
+        /// navigation paid that per distinct author. The visibility rule is
+        /// unchanged; a user's hidden/disabled flags or deletion take effect
+        /// within <see cref="ReviewAuthorCacheTtl"/>. Bounded by the number of
+        /// authors.
+        /// </summary>
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, (Jellyfin.Database.Implementations.Entities.User? User, DateTime CachedAt)> _reviewAuthorCache = new();
+        private static readonly TimeSpan ReviewAuthorCacheTtl = TimeSpan.FromSeconds(15);
+
+        /// <summary>
+        /// The Jellyfin user behind a review author id (null when the user no
+        /// longer exists), from <see cref="_reviewAuthorCache"/> while fresh.
+        /// </summary>
+        private Jellyfin.Database.Implementations.Entities.User? ResolveReviewAuthor(Guid userGuid)
+        {
+            var now = DateTime.UtcNow;
+            if (_reviewAuthorCache.TryGetValue(userGuid, out var cached) && now - cached.CachedAt < ReviewAuthorCacheTtl)
+            {
+                return cached.User;
+            }
+
+            var user = _userManager.GetUserById(userGuid);
+            _reviewAuthorCache[userGuid] = (user, now);
+            return user;
+        }
+
         private bool IsReviewVisibleToViewer(
             UserReview review,
             ReviewVisibilityContext ctx,
@@ -6982,7 +7012,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             jellyfinUser = null;
             if (Guid.TryParseExact(review.UserId, "N", out var userGuid) && !ctx.Authors.TryGetValue(userGuid, out jellyfinUser))
             {
-                jellyfinUser = _userManager.GetUserById(userGuid);
+                jellyfinUser = ResolveReviewAuthor(userGuid);
                 ctx.Authors[userGuid] = jellyfinUser;
             }
 
@@ -7125,7 +7155,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { message = "No valid keys. Expected comma-separated 'movie:<tmdbId>' or 'tv:<tmdbId>[:s<n>[:e<n>]]' entries." });
 
             var ctx = CreateReviewVisibilityContext(nameof(GetReviewRatings), $"{requested.Count} keys");
+            foreach (var (key, sum, count) in AggregateVisibleReviewRatings(ctx, requested.ContainsKey))
+            {
+                requested[key] = (sum, count);
+            }
+
+            var ratings = new Dictionary<string, object?>(StringComparer.Ordinal);
+            foreach (var key in order)
+            {
+                var (sum, count) = requested[key];
+                ratings[key] = count == 0 ? null : new { average = sum / count, count };
+            }
+
+            return Ok(new { ratings });
+        }
+
+        /// <summary>
+        /// One pass over the review store: the rating sum and count per
+        /// "mediaType:tmdbKey" over the reviews visible to the viewer described
+        /// by <paramref name="ctx"/>, for the keys <paramref name="wanted"/>
+        /// accepts. Only keys with at least one counted rating are yielded.
+        /// Shared by <see cref="GetReviewRatings"/> and the tag-cache payload so
+        /// a poster chip shows the same average whichever way it was resolved.
+        /// </summary>
+        private IEnumerable<(string Key, double Sum, int Count)> AggregateVisibleReviewRatings(ReviewVisibilityContext ctx, Func<string, bool> wanted)
+        {
             var store = _userConfigurationManager.GetAllReviews();
+            var totals = new Dictionary<string, (double Sum, int Count)>(StringComparer.Ordinal);
 
             foreach (var kvp in store.Reviews)
             {
@@ -7137,7 +7193,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 for (var i = storeKey.IndexOf(':'); i >= 0; i = storeKey.IndexOf(':', i + 1))
                 {
                     var itemKey = storeKey.Substring(i + 1);
-                    if (!requested.TryGetValue(itemKey, out var acc)) continue;
+                    // A store key's item part always starts with its media type, so
+                    // only a "movie:"/"tv:" tail can be an item key; the shorter tails
+                    // ("1399:s1", "s1") are never one.
+                    if (!itemKey.StartsWith("movie:", StringComparison.Ordinal) && !itemKey.StartsWith("tv:", StringComparison.Ordinal)) continue;
+                    if (!wanted(itemKey)) continue;
 
                     // Same per-review isolation as GetItemReviews: a corrupt
                     // record or failing author lookup skips only this review.
@@ -7157,7 +7217,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         var rating = review.Rating ?? 0;
                         if (double.IsNaN(rating) || Math.Abs(rating) <= 0) continue;
 
-                        requested[itemKey] = (acc.Sum + rating, acc.Count + 1);
+                        var acc = totals.TryGetValue(itemKey, out var existing) ? existing : (0d, 0);
+                        totals[itemKey] = (acc.Item1 + rating, acc.Item2 + 1);
                     }
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
@@ -7169,14 +7230,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            var ratings = new Dictionary<string, object?>(StringComparer.Ordinal);
-            foreach (var key in order)
+            foreach (var kvp in totals)
             {
-                var (sum, count) = requested[key];
-                ratings[key] = count == 0 ? null : new { average = sum / count, count };
+                yield return (kvp.Key, kvp.Value.Sum, kvp.Value.Count);
             }
-
-            return Ok(new { ratings });
         }
 
         [HttpPost("reviews/{mediaType}/{tmdbId}")]
@@ -7537,8 +7594,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // returned items would let clients skip updates permanently, and a
             // mixed pre-publish stamp (timestamp 0) would disable their delta
             // refresh entirely.
-            var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, since);
-
             // Spoiler Guard tag-strip: when SpoilerBlur is on with any tag-relevant
             // strip toggle, walk the cache and zero out matching fields for unwatched
             // episodes whose parent series is in the spoiler list. Needed because the
@@ -7554,13 +7609,59 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // title-bearing fields don't leak the episode title via the tag-cache pipeline.
             var sanitizeTitleStreams = spCfg?.SpoilerReplaceTitle == true || spCfg?.SpoilerStripOverview == true;
             var anyStripEnabled = stripGenresEnabled || stripRatingsEnabled || sanitizeTitleStreams;
+
+            // The user's Spoiler Guard state, or null when nothing needs stripping
+            // for them. Strict-read so corruption is observable (rate-limited
+            // warn) rather than silently passing through. Resolved BEFORE the cache
+            // read so a delta request can include the guarded entries (below).
+            UserSpoilerBlur? spState = null;
             if (spCfg?.SpoilerBlurEnabled == true && anyStripEnabled)
             {
-                // Strict-read so corruption is observable (rate-limited
-                // warn) rather than silently passing through.
-                UserSpoilerBlur? spState = LoadSpoilerStateForTagStrip(userId);
+                spState = LoadSpoilerStateForTagStrip(userId);
+                if (spState != null && spState.Series.Count == 0 && spState.Movies.Count == 0 && spState.Collections.Count == 0)
+                {
+                    spState = null;
+                }
+            }
 
-                if (spState != null && (spState.Series.Count > 0 || spState.Movies.Count > 0 || spState.Collections.Count > 0))
+            // Which guarded kind (Episode/Season/Movie/Series) an entry is,
+            // or null when it isn't under this user's Spoiler Guard.
+            string? GuardedKind(string key, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry? e)
+            {
+                if (spState == null || e == null) return null;
+                switch (e.Type)
+                {
+                    case "Movie":
+                        // In scope if directly in Movies dict OR a child of an opted-in collection.
+                        return Guid.TryParse(key, out var mGuid) && _spoilerResolver.IsMovieInSpoilerScope(spState, mGuid) ? "Movie" : null;
+                    case "Series":
+                        // Series-level entry: strip only when Spoiler Guard is on for
+                        // THIS series (key == series ID). Covers home-rail cards bound
+                        // to seriesId when "Use episode images in Next Up/Continue Watching"
+                        // is OFF, so cards use series posters and ask for series-level tag data.
+                        return spState.Series.ContainsKey(key) ? "Series" : null;
+                    case "Episode":
+                    case "Season":
+                        return !string.IsNullOrEmpty(e.SeriesId) && spState.Series.ContainsKey(e.SeriesId) ? e.Type : null;
+                    default:
+                        return null;
+                }
+            }
+
+            // A delta (?since=) only carries entries the library changed, but a
+            // guarded entry is also rewritten by this user's PLAYED state: an
+            // episode watched since their last load is no longer stripped, one
+            // just added to their guard list now is. Clients keep the cache
+            // across page loads (tag-cache-store.js), so every guarded entry
+            // rides along with each delta — a guard list's worth of entries,
+            // stripped below exactly like a full load, instead of the whole cache.
+            Func<string, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry, bool>? guardedRider =
+                since.HasValue && spState != null ? (key, e) => GuardedKind(key, e) != null : null;
+            var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, since, guardedRider);
+
+            if (spCfg?.SpoilerBlurEnabled == true && anyStripEnabled)
+            {
+                if (spState != null)
                 {
                     // Apply per-user override prefs on top of admin policy — the same
                     // "user opt-out wins" contract as SpoilerFieldStripFilter. Prefs is
@@ -7574,30 +7675,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         || (spCfg?.SpoilerStripOverview == true && (spPrefs?.HideEpisodeDescriptions ?? true));
                     // Series age rating per guarded series, looked up once per request.
                     var ageSeriesRatingMemo = new Dictionary<Guid, string?>();
-
-                    // Which guarded kind (Episode/Season/Movie/Series) an entry is,
-                    // or null when it isn't under this user's Spoiler Guard.
-                    string? GuardedKind(string key, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry? e)
-                    {
-                        if (e == null) return null;
-                        switch (e.Type)
-                        {
-                            case "Movie":
-                                // In scope if directly in Movies dict OR a child of an opted-in collection.
-                                return Guid.TryParse(key, out var mGuid) && _spoilerResolver.IsMovieInSpoilerScope(spState, mGuid) ? "Movie" : null;
-                            case "Series":
-                                // Series-level entry: strip only when Spoiler Guard is on for
-                                // THIS series (key == series ID). Covers home-rail cards bound
-                                // to seriesId when "Use episode images in Next Up/Continue Watching"
-                                // is OFF, so cards use series posters and ask for series-level tag data.
-                                return spState.Series.ContainsKey(key) ? "Series" : null;
-                            case "Episode":
-                            case "Season":
-                                return !string.IsNullOrEmpty(e.SeriesId) && spState.Series.ContainsKey(e.SeriesId) ? e.Type : null;
-                            default:
-                                return null;
-                        }
-                    }
 
                     // Played state is looked up in ONE bounded query instead of a
                     // UserData read per entry (with whole libraries guarded that
@@ -7789,12 +7866,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
+            // The poster review chips resolve from this map instead of asking
+            // /reviews/ratings for every page of cards: it holds the average for
+            // every item that has a rated review visible to THIS viewer (same
+            // reviews, same visibility rule and same rating filter as that
+            // endpoint), keyed "mediaType:tmdbKey". A key that is absent has no
+            // visible rated review. Sent with full loads and deltas alike, since
+            // reviews change independently of the tag cache; null (omitted) when
+            // the chips are switched off, which tells the client to skip them.
+            Dictionary<string, object>? reviewRatings = null;
+            if (JellyfinEnhanced.Instance?.Configuration is { ShowUserReviews: true, ShowUserRatingOnPosters: true })
+            {
+                reviewRatings = new Dictionary<string, object>(StringComparer.Ordinal);
+                var ctx = CreateReviewVisibilityContext(nameof(GetTagCache), "review ratings");
+                foreach (var (key, sum, count) in AggregateVisibleReviewRatings(ctx, _ => true))
+                {
+                    reviewRatings[key] = new { average = sum / count, count };
+                }
+            }
+
             var payload = new
             {
                 version = cacheVersion,
                 timestamp = cacheTimestamp,
                 count = items.Count,
-                items
+                items,
+                reviewRatings
             };
 
             // ETag is a hash of the FINAL response body (post Spoiler Guard strip above),

@@ -125,35 +125,30 @@
 
         try {
             const JE = window.JellyfinEnhanced;
-            // Only react when a rating element (or a subtree containing one) was
-            // added, or when the text inside an existing one was replaced --
-            // Jellyfin writes the rating via textContent, which is a childList
-            // mutation on the element itself, so characterData is not needed.
+            // Any added element may be (or contain) a rating box, so the
+            // debounced pass — one cheap class query, idempotent — runs for
+            // any of them. Inspecting each added node with its own subtree
+            // query first cost more than the pass itself on pages that add
+            // hundreds of cards (library scroll). Jellyfin writes the rating
+            // via textContent, which is a childList mutation on the element
+            // itself, so characterData is not needed.
             const callback = (mutations) => {
-                let shouldProcess = false;
-
-                for (let i = 0; i < mutations.length && !shouldProcess; i++) {
+                for (let i = 0; i < mutations.length; i++) {
                     const mutation = mutations[i];
                     if (mutation.type !== 'childList') continue;
+                    const added = mutation.addedNodes;
+                    for (let j = 0; j < added.length; j++) {
+                        if (added[j].nodeType === Node.ELEMENT_NODE) {
+                            debouncedProcess();
+                            return;
+                        }
+                    }
                     const target = mutation.target;
                     if (target.nodeType === Node.ELEMENT_NODE &&
                         (target.matches(CONFIG.targetSelector) || target.closest(CONFIG.targetSelector))) {
-                        shouldProcess = true;
-                        break;
+                        debouncedProcess();
+                        return;
                     }
-                    const added = mutation.addedNodes;
-                    for (let j = 0; j < added.length; j++) {
-                        const node = added[j];
-                        if (node.nodeType !== Node.ELEMENT_NODE) continue;
-                        if (node.matches(CONFIG.targetSelector) || node.querySelector(CONFIG.targetSelector)) {
-                            shouldProcess = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (shouldProcess) {
-                    debouncedProcess();
                 }
             };
 

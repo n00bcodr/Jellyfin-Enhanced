@@ -105,8 +105,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // PartialAudioLanguages for languages missing from some of them, and adds
         // OfficialRating (age rating) with the Series fallback for Seasons/Episodes.
         // (It skips v5 so caches written by builds carrying only one of the two are discarded too.)
+        // v7 stops storing stream data the client derives from another field anyway
+        // (see BuildStreamData / ExtractMediaData): a source Name that is just its
+        // Path without the extension, an ItemPath equal to a source Path, and the
+        // VideoRangeType of audio streams. Every client reads them with an empty
+        // fallback, and the served payload shrinks by roughly a fifth.
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        private const int CurrentCacheSchemaVersion = 6;
+        private const int CurrentCacheSchemaVersion = 7;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -888,14 +893,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// Get cache entries filtered by a user's library access, together with
         /// the version and timestamp belonging to the SAME cache generation.
         /// User access IDs are cached for 60 seconds to avoid expensive DB queries.
-        /// Optionally returns only entries modified after a given timestamp.
+        /// Optionally returns only entries modified after a given timestamp, plus
+        /// any older entry <paramref name="alsoInclude"/> asks for (the controller
+        /// uses it to carry the caller's Spoiler-Guarded entries with every delta,
+        /// since what those serve depends on the user's played state, not on
+        /// <see cref="TagCacheEntry.LastUpdated"/>). Both come from the one
+        /// generation capture, so a delta never mixes two cache generations.
         /// The out values must come from the same _publishLock-guarded capture as
         /// the dictionary reference: pairing a freshly published cache with the
         /// previous generation's version/timestamp would let a client store a
         /// pre-first-publish timestamp of 0 (which disables its delta refresh)
         /// or a version the next poll can't detect a rebuild against.
         /// </summary>
-        public Dictionary<string, TagCacheEntry> GetCacheForUser(JUser user, out long version, out long timestamp, long? since = null)
+        public Dictionary<string, TagCacheEntry> GetCacheForUser(JUser user, out long version, out long timestamp, long? since = null, Func<string, TagCacheEntry, bool>? alsoInclude = null)
         {
             ConcurrentDictionary<string, TagCacheEntry> cache;
             lock (_publishLock)
@@ -955,7 +965,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             foreach (var kvp in cache)
             {
                 if (!accessibleSet.Contains(kvp.Key)) continue;
-                if (since.HasValue && kvp.Value.LastUpdated <= since.Value) continue;
+                if (since.HasValue && kvp.Value.LastUpdated <= since.Value
+                    && (alsoInclude == null || !alsoInclude(kvp.Key, kvp.Value)))
+                {
+                    continue;
+                }
+
                 result[kvp.Key] = kvp.Value;
             }
 
@@ -1534,15 +1549,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// Stream data for an entry, from the given item's extracted streams/sources.
+        /// ItemPath is only kept when it names a file none of the sources already
+        /// name: qualitytags.js reads both into the same signal list, so a
+        /// duplicate adds bytes (a file name per item, on every full download)
+        /// and nothing else.
         /// </summary>
         private static TagStreamData BuildStreamData(BaseItem item, List<TagMediaStream> streams, List<TagMediaSource> sources)
         {
+            var itemPath = string.IsNullOrEmpty(item.Path) ? null : Path.GetFileName(item.Path);
+            if (itemPath != null && sources.Exists(source => string.Equals(source.Path, itemPath, StringComparison.Ordinal)))
+            {
+                itemPath = null;
+            }
+
             return new TagStreamData
             {
                 Streams = streams,
                 Sources = sources,
                 ItemName = item.Name,
-                ItemPath = string.IsNullOrEmpty(item.Path) ? null : Path.GetFileName(item.Path)
+                ItemPath = itemPath
             };
         }
 
@@ -1557,10 +1582,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var mediaSources = item.GetMediaSources(false);
                 foreach (var source in mediaSources)
                 {
+                    // A source's Name is normally its file name without the
+                    // extension. qualitytags.js only ever reads Name and Path
+                    // into the same word-boundary regex signals, so a Name the
+                    // Path already contains is dropped; one that says more
+                    // (a version label) is kept.
+                    var sourceName = source.Name;
+                    if (!string.IsNullOrEmpty(source.Path)
+                        && string.Equals(sourceName, Path.GetFileNameWithoutExtension(source.Path), StringComparison.Ordinal))
+                    {
+                        sourceName = null;
+                    }
+
                     sources.Add(new TagMediaSource
                     {
                         Path = string.IsNullOrEmpty(source.Path) ? null : Path.GetFileName(source.Path),
-                        Name = source.Name
+                        Name = sourceName
                     });
 
                     foreach (var resolved in MediaStreamLanguageResolver.Resolve(source, item.Path))
@@ -1570,6 +1607,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                         if (s.Type != MediaStreamType.Video && s.Type != MediaStreamType.Audio)
                             continue;
+
+                        // Only a video stream's range is read (for the HDR /
+                        // Dolby Vision tag); an audio stream's is always
+                        // "Unknown", which the client treats like no value.
+                        var videoRangeType = s.Type == MediaStreamType.Video ? s.VideoRangeType.ToString() : null;
+                        if (string.Equals(videoRangeType, "Unknown", StringComparison.Ordinal))
+                        {
+                            videoRangeType = null;
+                        }
 
                         streams.Add(new TagMediaStream
                         {
@@ -1581,7 +1627,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             Height = s.Height,
                             Channels = s.Channels,
                             ChannelLayout = s.ChannelLayout,
-                            VideoRangeType = s.VideoRangeType.ToString(),
+                            VideoRangeType = videoRangeType,
                             DisplayTitle = s.DisplayTitle
                         });
 

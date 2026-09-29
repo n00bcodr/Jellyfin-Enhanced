@@ -73,6 +73,8 @@ Most features can be enabled/disabled individually:
 
 By default the server pre-computes tag data for the whole library and serves it to clients in a single request, so tags appear instantly without per-page API calls. The cache is built on first startup, kept up to date by library scan events, and refreshed daily by the **Refresh Tag Cache** scheduled task.
 
+The web client keeps its own copy of the cache in the browser (IndexedDB, one per server and user) and, on every page load after the first, renders tags from that copy while fetching only the entries that changed since. The copy is dropped when the server rebuilds the cache, when the cache is switched off, by **Clear All Client Caches**, and when another user signs in on the same browser (each user's copy is spoiler-stripped for them alone). Browsers without IndexedDB (some private modes) download the cache on every page load as before. The average user-review ratings shown on posters ride on the same cache, so browsing a library sends no review lookups.
+
 Disabling **Server-Side Tag Cache** (Dashboard → Plugins → Jellyfin Enhanced → Display → Media Tags) switches clients to the legacy per-page batch mode (each client picks this up on its next page load) and completely turns off the server-side cache — it is not loaded, built, or maintained while the setting is off, and the in-memory cache is released immediately.
 
 !!! note "Very large libraries"
