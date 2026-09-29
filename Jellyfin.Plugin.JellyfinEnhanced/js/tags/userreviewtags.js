@@ -3,6 +3,14 @@
 // tag overlay on poster cards. Piggybacks on the ratingTagsEnabled setting —
 // no separate toggle needed. Shows X when rated, "—" when not (unless
 // ShowUserRatingDash is false in admin config).
+//
+// Where the ratings come from: with the server-side tag cache on, the average
+// for every item with a visible rated review rides on the tag-cache payload
+// (JE.tagPipeline.getReviewRatings — full loads and deltas alike), so a page
+// of cards needs no request at all; otherwise every key requested within one
+// short window goes out as a single GET /reviews/ratings?keys=… (the batch
+// path below), which also answers for a key the viewer just re-rated until the
+// next refresh of the averages.
 (function(JE) {
     'use strict';
 
@@ -10,6 +18,8 @@
 
     // Per-session cache: "mediaType:tmdbKey" → rating (1-5 or null). The media
     // type is part of the key because a movie and a series can share a TMDB id.
+    // Filled by the batch path only; the server cache's averages are read live
+    // so a refreshed map is used as soon as it lands.
     const _reviewCache = new Map();
     // In-flight deduplication, same keys
     const _inFlight = new Map();
@@ -20,6 +30,13 @@
     /** @type {Map<string, number>} */
     const _failedUntil = new Map();
     const FAILURE_BACKOFF_MS = 60 * 1000;
+    // Keys whose value in the server cache's averages must not be trusted
+    // until those averages are next replaced: the viewer just saved or deleted
+    // their own review. Maps key → the averages generation it was marked
+    // under; the next generation (a navigation's delta) clears the mark.
+    /** @type {Map<string, number>} */
+    const _staleInMap = new Map();
+    let _staleAllGeneration = -1; // generation under which EVERY key is stale (invalidate-all)
 
     // Ratings are fetched in batches: every key requested within one short
     // window goes out as a single GET /reviews/ratings?keys=… instead of one
@@ -125,12 +142,51 @@
         _reviewCache.clear();
         _inFlight.clear();
         _failedUntil.clear();
+        _staleInMap.clear();
+        _staleAllGeneration = -1;
         // Queued for the previous user: nothing to render.
         for (const entry of orphaned) entry.resolve(undefined);
     });
 
     /**
-     * Fetch the average rating across all users for a given tmdbKey.
+     * The server cache's review averages, when they are loaded and may be
+     * used for this key (not marked stale by the viewer's own review edit).
+     * @param {string} cacheKey - "mediaType:tmdbKey"
+     * @returns {Map<string, number>|null}
+     */
+    function usableRatingMap(cacheKey) {
+        const pipeline = JE.tagPipeline;
+        if (!pipeline || typeof pipeline.peekReviewRatings !== 'function') return null;
+        const map = pipeline.peekReviewRatings();
+        if (!map) return null;
+        const generation = pipeline.getReviewRatingsGeneration();
+        if (generation === _staleAllGeneration || _staleInMap.get(cacheKey) === generation) return null;
+        return map;
+    }
+
+    /**
+     * The rating for a key without waiting: from the session cache, or from
+     * the server cache's averages when they are loaded (an absent key there
+     * means no visible rated review). `undefined` when it has to be looked up
+     * (see fetchUserRating).
+     * @param {string} tmdbKey
+     * @param {string} mediaType - 'movie' or 'tv'
+     * @returns {number|null|undefined}
+     */
+    function peekUserRating(tmdbKey, mediaType) {
+        if (!JE.pluginConfig?.ShowUserReviews) return null;
+        const cacheKey = `${mediaType}:${tmdbKey}`;
+        if (_reviewCache.has(cacheKey)) return _reviewCache.get(cacheKey);
+        if ((mediaType !== 'movie' && mediaType !== 'tv') || !TMDB_KEY_RE.test(tmdbKey)) return null;
+        const map = usableRatingMap(cacheKey);
+        if (map) return map.has(cacheKey) ? map.get(cacheKey) : null;
+        return undefined;
+    }
+
+    /**
+     * Fetch the average rating across all users for a given tmdbKey: from
+     * the server cache's averages once the load in flight settles, else via
+     * the batched /reviews/ratings request.
      * Returns null if no reviews with ratings exist, undefined when the
      * lookup was aborted (nothing to render).
      * @returns {Promise<number|null|undefined>}
@@ -149,6 +205,24 @@
         if ((mediaType !== 'movie' && mediaType !== 'tv') || !TMDB_KEY_RE.test(tmdbKey)) {
             _reviewCache.set(cacheKey, null);
             return null;
+        }
+
+        // Server cache path: the averages arrive with the tag cache (a page
+        // load's restore + delta, or the full download). Wait for that rather
+        // than send a request the answer to which is already on its way.
+        if (typeof JE.tagPipeline?.getReviewRatings === 'function') {
+            const epoch = JE.session ? JE.session.getEpoch() : 0;
+            try {
+                await JE.tagPipeline.getReviewRatings();
+            } catch {
+                // Fall through to the batch path.
+            }
+            if (JE.session && !JE.session.isCurrent(epoch)) return undefined;
+            const map = usableRatingMap(cacheKey);
+            if (map) return map.has(cacheKey) ? map.get(cacheKey) : null;
+            // A batch may have settled or started this key while waiting.
+            if (_reviewCache.has(cacheKey)) return _reviewCache.get(cacheKey);
+            if (_inFlight.has(cacheKey)) return _inFlight.get(cacheKey);
         }
 
         /** @type {{promise: Promise<number|null|undefined>|null, resolve: (value: number|null|undefined) => void}} */
@@ -196,14 +270,46 @@
         tag.appendChild(icon);
         tag.appendChild(text);
         container.appendChild(tag);
+    }
 
-        // This chip lands after the pipeline's one-shot corner-stacking pass
-        // (the review lookup is async) and the bottom-anchored container grows
-        // upward as it does, so re-measure any overlay sharing this corner
-        // (e.g. the age rating badge) before it overlaps the taller stack.
-        const host = container.parentElement;
-        if (host && typeof JE.core?.tagRenderer?.applyCornerStacking === 'function') {
-            JE.core.tagRenderer.applyCornerStacking(host);
+    /**
+     * Put the chip for a resolved rating on a card, creating the rating
+     * overlay container when the card has no TMDB/RT rating of its own.
+     * @param {HTMLElement} containerOrEl - .rating-overlay-container or the render target.
+     * @param {number|null} rating
+     * @param {boolean} restack - true when the chip lands after the pipeline's
+     *   corner-stacking pass for this card (an async lookup): the
+     *   bottom-anchored container grows upward as the chip is added, so any
+     *   overlay sharing the corner (e.g. the age rating badge) is re-measured
+     *   — in one batched frame with every other late chip. Not needed when the
+     *   chip is added during the render itself; the pipeline stacks afterwards.
+     */
+    function applyChip(containerOrEl, rating, restack) {
+        if (rating === null && JE.pluginConfig?.ShowUserRatingDash === false) return;
+        if (!containerOrEl.isConnected) return; // card gone while the rating was looked up
+
+        // Accept either the overlay container itself or the cardImageContainer
+        let container = containerOrEl;
+        if (!container.classList.contains('rating-overlay-container')) {
+            container = containerOrEl.querySelector('.rating-overlay-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.className = 'rating-overlay-container';
+                // Same corner marker commitOverlay() sets, so corner stacking
+                // treats a review-only container like any other rating overlay.
+                const pos = JE.core?.tagRenderer?.resolvePosition?.('ratingTagsPosition', 'RatingTagsPosition', 'bottom-right');
+                if (pos) container.dataset.jeCorner = pos.pos;
+                containerOrEl.appendChild(container);
+            }
+        }
+
+        appendUserRatingChip(container, rating);
+
+        if (restack) {
+            const host = container.parentElement;
+            if (host && typeof JE.core?.tagRenderer?.scheduleCornerStacking === 'function') {
+                JE.core.tagRenderer.scheduleCornerStacking(host);
+            }
         }
     }
 
@@ -289,11 +395,15 @@
     /**
      * Called by ratingtags.js after applying a rating overlay, OR directly
      * for items with no TMDB/RT rating. Creates the overlay container if needed.
+     * Adds the chip synchronously when the rating is already known (the
+     * server cache's averages, or the session cache) so it takes part in the
+     * pipeline's corner-stacking pass for the card; otherwise looks it up and
+     * adds it when it arrives.
      * @param {HTMLElement} containerOrEl - .rating-overlay-container or cardImageContainer.
      * @param {object} item - The Jellyfin item object.
      * @param {object} [extras] - Pipeline extras (parentSeries, etc.).
      */
-    JE.appendUserRatingToContainer = async function(containerOrEl, item, extras) {
+    JE.appendUserRatingToContainer = function(containerOrEl, item, extras) {
         if (!JE.pluginConfig?.ShowUserReviews) return;
         if (!JE.pluginConfig?.ShowUserRatingOnPosters) return;
         if (!JE.currentSettings?.ratingTagsEnabled) return;
@@ -302,44 +412,40 @@
         if (!resolved) return;
 
         const { tmdbKey, mediaType } = resolved;
-        const rating = await fetchUserRating(tmdbKey, mediaType);
-        if (rating === undefined) return; // lookup aborted — render nothing
-
-        if (rating === null && JE.pluginConfig?.ShowUserRatingDash === false) return;
-
-        // Accept either the overlay container itself or the cardImageContainer
-        let container = containerOrEl;
-        if (!container.classList.contains('rating-overlay-container')) {
-            container = containerOrEl.querySelector('.rating-overlay-container');
-            if (!container) {
-                container = document.createElement('div');
-                container.className = 'rating-overlay-container';
-                // Same corner marker commitOverlay() sets, so corner stacking
-                // treats a review-only container like any other rating overlay.
-                const pos = JE.core?.tagRenderer?.resolvePosition?.('ratingTagsPosition', 'RatingTagsPosition', 'bottom-right');
-                if (pos) container.dataset.jeCorner = pos.pos;
-                containerOrEl.appendChild(container);
-            }
+        const known = peekUserRating(tmdbKey, mediaType);
+        if (known !== undefined) {
+            applyChip(containerOrEl, known, false);
+            return;
         }
 
-        appendUserRatingChip(container, rating);
+        fetchUserRating(tmdbKey, mediaType).then((rating) => {
+            if (rating === undefined) return; // lookup aborted — render nothing
+            applyChip(containerOrEl, rating, true);
+        });
     };
 
     /**
      * Invalidate cache for a specific tmdbKey (called after review save/delete).
      * Callers pass the bare tmdbKey, so both media types for it are dropped.
+     * The server cache's averages still hold the old value for the key until
+     * their next refresh, so the key is answered by the batch path meanwhile.
      * @param {string} [tmdbKey]
      * @param {string} [mediaType] - 'movie' or 'tv' to drop only that entry.
      */
     JE.invalidateUserReviewTagCache = function(tmdbKey, mediaType) {
+        const generation = typeof JE.tagPipeline?.getReviewRatingsGeneration === 'function'
+            ? JE.tagPipeline.getReviewRatingsGeneration()
+            : -1;
         if (!tmdbKey) {
             _reviewCache.clear();
             _failedUntil.clear();
+            _staleAllGeneration = generation;
             return;
         }
         for (const type of mediaType ? [mediaType] : ['movie', 'tv']) {
             _reviewCache.delete(`${type}:${tmdbKey}`);
             _failedUntil.delete(`${type}:${tmdbKey}`);
+            _staleInMap.set(`${type}:${tmdbKey}`, generation);
         }
     };
 
