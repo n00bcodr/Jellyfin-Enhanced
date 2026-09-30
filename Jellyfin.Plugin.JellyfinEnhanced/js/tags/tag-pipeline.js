@@ -479,7 +479,7 @@
      * Download the whole cache for the current user and make it the live copy:
      * memory holds every entry, and the stored copy is rewritten in the
      * background. Resolves once memory is ready.
-     * @param {{fresh?: boolean}} [options] - fresh bypasses HTTP revalidation (a replacement needs a current servedAt).
+     * @param {{fresh?: boolean}} [options] - fresh bypasses HTTP revalidation (always done when IndexedDB is available).
      * @returns {Promise<boolean>} true when the server had entries
      */
     async function downloadFullCache(options) {
@@ -491,11 +491,14 @@
         // signed-in user changed while the request was in flight.
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const requestedAt = performance.now();
-        // A replacement must carry a fresh capture time (servedAt): revalidating
-        // the browser's HTTP-cached body (304) would hand back the capture time
-        // of an identical older response, and the stored copy it replaces could
-        // look newer and refuse it. Ordinary loads keep the revalidation.
-        const fresh = options?.fresh ? `?fresh=${Date.now()}` : '';
+        // A download that will be persisted must carry a current capture time
+        // (servedAt): revalidating the browser's HTTP-cached body (304) hands
+        // back the capture time of an identical older response, and a stored
+        // copy (complete or an interrupted write) could look newer and refuse
+        // it on every reload. With IndexedDB, full downloads are rare (first
+        // load, replacements), so they always bypass revalidation; without it
+        // the cache downloads on every page load and revalidation still pays.
+        const fresh = (options?.fresh || JE.tagCacheStore?.available()) ? `?fresh=${Date.now()}` : '';
         const resp = await ApiClient.ajax({
             type: 'GET',
             url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}${fresh}`),
