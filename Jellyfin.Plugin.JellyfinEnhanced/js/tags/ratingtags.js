@@ -437,23 +437,26 @@
                 // Server-cache episode entries lack Played state, so only apply
                 // the parent-series suppression where it is authoritative.
                 // (A cache entry carries no Id of its own; the pipeline passes it.)
-                if ((entry.Type === 'Series' || entry.Type === 'Season')
+                // Suppression hides the community/critic rating only: the
+                // user-review chip still goes on, as in the batch render path.
+                const suppressed = (entry.Type === 'Series' || entry.Type === 'Season')
                     && shouldSuppressRatingTag({
                         Type: entry.Type,
                         Id: itemId,
                         SeriesId: entry.SeriesId
-                    })) {
+                    });
+                if (suppressed) {
                     ctx.markTagged(el);
-                    return;
-                }
-                const tmdb = entry.CommunityRating != null
-                    ? parseFloat(entry.CommunityRating).toFixed(1)
-                    : null;
-                const critic = entry.CriticRating != null
-                    ? normalizeCriticPercent(entry.CriticRating)
-                    : null;
-                if (tmdb || critic !== null) {
-                    applyRatingTag(ctx, el, { tmdb, critic });
+                } else {
+                    const tmdb = entry.CommunityRating != null
+                        ? parseFloat(entry.CommunityRating).toFixed(1)
+                        : null;
+                    const critic = entry.CriticRating != null
+                        ? normalizeCriticPercent(entry.CriticRating)
+                        : null;
+                    if (tmdb || critic !== null) {
+                        applyRatingTag(ctx, el, { tmdb, critic });
+                    }
                 }
                 if (typeof JE.appendUserRatingToContainer === 'function') {
                     // Build a synthetic item so resolveTmdbKey can derive the correct key
