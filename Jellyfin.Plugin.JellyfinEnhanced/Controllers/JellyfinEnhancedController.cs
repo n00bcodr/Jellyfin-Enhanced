@@ -7637,6 +7637,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 since.HasValue && spState != null ? (key, e) => GuardedKind(key, e) != null : null;
             var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, since, guardedRider);
 
+            // Fingerprint of how this user's entries are stripped: the effective
+            // strip flags and the set of guarded entries. A full load and a delta
+            // compute the same value (every guarded entry rides on a delta), and
+            // it changes exactly when a delta could not correct a stored copy —
+            // an item leaving the guard set, or the strip policy changing — so
+            // the client replaces its copy instead (tags/tag-pipeline.js).
+            var stripRevision = "none";
+
             if (spCfg?.SpoilerBlurEnabled == true && anyStripEnabled)
             {
                 if (spState != null)
@@ -7721,6 +7729,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         laterSeasonEpisodes[laterSeason.Id] = episodeIds;
                     }
                     var playedIds = LoadPlayedIdsForTagStrip(user, playedCandidates);
+
+                    var revisionKeys = guardedKinds.Keys.ToList();
+                    revisionKeys.Sort(StringComparer.Ordinal);
+                    var revisionSource = $"g{(stripGenresEnabled ? 1 : 0)}r{(stripRatingsEnabled ? 1 : 0)}t{(sanitizeTitleStreams ? 1 : 0)}|{string.Join(',', revisionKeys)}";
+                    stripRevision = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(revisionSource)), 0, 12);
 
                     foreach (var kvp in items.ToList())
                     {
@@ -7867,6 +7880,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 version = cacheVersion,
                 timestamp = cacheTimestamp,
+                stripRevision,
                 count = items.Count,
                 items,
                 reviewRatings

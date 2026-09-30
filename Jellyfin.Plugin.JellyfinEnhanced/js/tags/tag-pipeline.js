@@ -25,7 +25,11 @@
     // stored copy instead: memory starts empty and fills from IndexedDB as
     // cards ask for entries, while a `?since=` request fetches only what
     // changed. The stored copy is scoped to server + user because the payload
-    // is spoiler-stripped for the user who fetched it. Without IndexedDB
+    // is spoiler-stripped for the user who fetched it, and it records the
+    // strip revision it was stripped under: a restored copy renders nothing
+    // until that first `?since=` answer confirms the revision (and version)
+    // still match — Spoiler Guard changed elsewhere means a full download
+    // instead, so a stale strip never reaches a card. Without IndexedDB
     // (private mode, quota, errors) this is exactly the old behaviour: one full
     // download per page load, memory only.
 
@@ -33,6 +37,12 @@
     let serverCacheComplete = false; // memory holds every entry the server has for this user
     let serverCacheVersion = 0;
     let serverCacheTimestamp = 0;
+    let serverStripRevision = null;  // strip revision memory was stripped under (from the server)
+    let cacheGeneration = 0;         // bumped whenever memory is replaced or dropped
+    let storeGate = null;            // Promise while a restored copy awaits confirmation; lookups wait on it
+    let openStoreGate = null;        // resolves storeGate
+    const deltaIds = new Set();      // ids memory holds from a delta (newer than the stored copy until persisted)
+    let deltaInFlight = null;        // Promise of the running fetchDelta(), shared by load and refresh
     let storeScope = null;           // `${serverId}:${userId}` while the stored copy backs lookups/writes
     let persistGeneration = 0;       // bumped whenever queued stored-copy writes must stop
     let persistChain = Promise.resolve(); // stored-copy writes run one after another
@@ -272,9 +282,24 @@
         serverCacheComplete = false;
         serverCacheVersion = 0;
         serverCacheTimestamp = 0;
+        serverStripRevision = null;
+        cacheGeneration++;
         storeScope = null;
         storeMisses.clear();
+        deltaIds.clear();
         persistGeneration++;
+        releaseStoreGate();
+    }
+
+    /**
+     * Let lookups waiting on a restored copy proceed (it was confirmed,
+     * replaced or dropped).
+     */
+    function releaseStoreGate() {
+        const open = openStoreGate;
+        storeGate = null;
+        openStoreGate = null;
+        if (open) open();
     }
 
     /**
@@ -305,6 +330,7 @@
         const meta = {
             version: resp.version,
             timestamp: resp.timestamp,
+            stripRevision: typeof resp.stripRevision === 'string' ? resp.stripRevision : '',
             count: entries.length,
             clearStamp: JE.pluginConfig?.ClearLocalStorageTimestamp || 0,
             savedAt: Date.now(),
@@ -316,36 +342,40 @@
             // A page closed before this runs simply downloads in full next time.
             await new Promise((resolve) => setTimeout(resolve, PERSIST_START_DELAY_MS));
             if (generation !== persistGeneration) return;
-            await store.clearScope(scope);
+            // Claim the scope; another tab rewriting it later takes it over and
+            // this write stops (every slice and the final meta check the claim).
+            const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+            await store.beginFullWrite(scope, token);
             for (let i = 0; i < entries.length; i += PERSIST_SLICE) {
                 await idleYield();
                 if (generation !== persistGeneration) return;
-                await store.putMany(scope, entries.slice(i, i + PERSIST_SLICE));
+                if (!await store.putManyIfOwner(scope, token, entries.slice(i, i + PERSIST_SLICE))) return;
             }
             if (generation !== persistGeneration) return;
-            await store.setMeta(scope, meta);
-            console.log(`${logPrefix} Server cache persisted: ${entries.length} items`);
+            if (await store.commitFullWrite(scope, token, meta)) {
+                console.log(`${logPrefix} Server cache persisted: ${entries.length} items`);
+            }
         });
     }
 
     /**
-     * Write delta entries to the stored copy and advance its timestamp. Runs
-     * after any full persist still in progress; skipped when that persist was
-     * abandoned (no meta record) — the next page load downloads in full again.
+     * Write delta entries to the stored copy and advance its cursor. Runs after
+     * any full persist still queued, and applies only on top of exactly the
+     * copy the delta was fetched against (see tagCacheStore.applyDelta): if
+     * another tab moved the copy on, or a rewrite is in progress, nothing is
+     * written and memory alone carries this delta.
      * @param {Array<[string, object]>} entries - [itemId, entry] pairs
+     * @param {{timestamp: number, version: number, stripRevision: string}} base - What the delta was requested against.
      * @param {number} timestamp - The delta response's timestamp.
      */
-    function persistDelta(entries, timestamp) {
+    function persistDelta(entries, base, timestamp) {
         const scope = storeScope;
         if (!scope || !JE.tagCacheStore?.available()) return;
         const store = JE.tagCacheStore;
         const generation = persistGeneration;
         queuePersist(async () => {
             if (generation !== persistGeneration) return;
-            const meta = await store.getMeta(scope);
-            if (!meta || generation !== persistGeneration) return;
-            await store.putMany(scope, entries);
-            await store.setMeta(scope, { ...meta, timestamp: Math.max(meta.timestamp || 0, timestamp) });
+            await store.applyDelta(scope, base, entries, timestamp);
         });
     }
 
@@ -369,7 +399,9 @@
             // full download can start.
             queuePersist(() => store.clearOtherScopes(scope));
             if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
-            if (!meta || !(meta.count > 0) || !meta.timestamp) return false;
+            // Complete copies only (a pending record is a rewrite in progress),
+            // written with a strip revision (older copies predate it).
+            if (!meta || meta.pending || !(meta.count > 0) || !meta.timestamp || typeof meta.stripRevision !== 'string') return false;
             // The admin's "Clear All Client Caches" applies to this copy too.
             const clearStamp = JE.pluginConfig?.ClearLocalStorageTimestamp || 0;
             if (clearStamp > (meta.clearStamp || 0)) {
@@ -381,9 +413,16 @@
             serverCacheComplete = false;
             serverCacheVersion = meta.version;
             serverCacheTimestamp = meta.timestamp;
+            serverStripRevision = meta.stripRevision;
+            cacheGeneration++;
             storeScope = scope;
             storeMisses.clear();
-            console.log(`${logPrefix} Server cache restored from IndexedDB: ${meta.count} items (v${meta.version})`);
+            deltaIds.clear();
+            // Nothing renders from the copy until the first delta confirms its
+            // strip revision and version (fetchDelta releases the gate).
+            releaseStoreGate();
+            storeGate = new Promise((resolve) => { openStoreGate = resolve; });
+            console.log(`${logPrefix} Server cache restored from IndexedDB: ${meta.count} items (v${meta.version}), awaiting confirmation`);
             return true;
         } catch (err) {
             console.warn(`${logPrefix} Could not read the stored server cache:`, err);
@@ -425,8 +464,13 @@
         serverCacheComplete = true;
         serverCacheVersion = resp.version;
         serverCacheTimestamp = resp.timestamp;
+        serverStripRevision = typeof resp.stripRevision === 'string' ? resp.stripRevision : '';
+        cacheGeneration++;
         storeMisses.clear();
+        deltaIds.clear();
         skipStoreThisSession = false;
+        // Memory is complete and current: nothing needs the stored copy now.
+        releaseStoreGate();
         console.log(`${logPrefix} Server cache loaded: ${serverCache.size} items (v${serverCacheVersion})`);
         if (scope) persistFullCache(scope, resp);
         return true;
@@ -459,13 +503,17 @@
             try {
                 if (!ApiClient.getCurrentUserId()) return;
                 if (!options?.forceDownload && await restoreStoredCache()) {
-                    // Cards render from the stored copy right away; what changed
-                    // since (and the review ratings) arrives in the background.
-                    await refreshServerCache();
+                    // Cards render from the stored copy once the delta confirms
+                    // it (what changed since, and the review ratings, come with
+                    // it). The delta is fetched directly, never through
+                    // refreshServerCache: a refresh may itself be waiting for
+                    // this load.
+                    await fetchDelta();
                     return;
                 }
                 await downloadFullCache();
             } catch (err) {
+                releaseStoreGate();
                 console.warn(`${logPrefix} Failed to load server cache, using batch fallback:`, err);
                 if (!serverCache) skipStoreThisSession = true;
                 // Server-side cache switched off (404): the stored copy has
@@ -483,7 +531,7 @@
     }
 
     /**
-     * Fetch incremental server cache updates since last load.
+     * Fetch incremental server cache updates since last load (navigation).
      * @returns {Promise<void>}
      */
     function refreshServerCache() {
@@ -496,11 +544,10 @@
 
     async function refreshServerCacheCore() {
         // If server cache was never loaded (e.g. cache was empty at startup),
-        // retry the full load — the scheduled task may have built it since then
+        // retry the full load — the scheduled task may have built it since then.
         if (!serverCache) {
             // A load already in flight (boot, user switch) brings the cache and
-            // its own delta; waiting for it here would deadlock, since that
-            // load's restore path waits for the refresh in flight.
+            // its own delta.
             if (loadInFlight) return;
             await loadServerCache();
             if (serverCache) {
@@ -510,34 +557,83 @@
             }
             return;
         }
-        if (!serverCacheTimestamp) return;
+        await fetchDelta();
+    }
+
+    /**
+     * Fetch what changed since the cursor and apply it; shared by concurrent
+     * callers. Never waits for a load or a refresh (both wait for this), so
+     * they can't deadlock. Also the confirmation step for a restored copy:
+     * whatever the outcome, the store gate is released at the end.
+     * @returns {Promise<void>}
+     */
+    function fetchDelta() {
+        if (deltaInFlight) return deltaInFlight;
+        const delta = fetchDeltaCore();
+        deltaInFlight = delta;
+        delta.finally(() => { if (deltaInFlight === delta) deltaInFlight = null; });
+        return delta;
+    }
+
+    async function fetchDeltaCore() {
+        const confirming = !!storeGate;
+        const startGeneration = cacheGeneration;
+        // Set once the restored copy is confirmed current or replaced; any
+        // other exit drops the unconfirmed copy from memory (finally below).
+        let settled = false;
         try {
+            if (!serverCache || !serverCacheTimestamp) return;
             const userId = ApiClient.getCurrentUserId();
             if (!userId) return;
 
             // Same identity guard as loadServerCache: incremental entries are
             // spoiler-stripped for the user that requested them.
             const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+            const generation = cacheGeneration;
+            const base = { timestamp: serverCacheTimestamp, version: serverCacheVersion, stripRevision: serverStripRevision };
             const resp = await ApiClient.ajax({
                 type: 'GET',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}?since=${serverCacheTimestamp}`),
+                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}?since=${base.timestamp}`),
                 dataType: 'json'
             });
             if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
-            if (!resp || !resp.items || !serverCache) return;
+            // Memory was replaced while this was in flight (full download,
+            // invalidation): the answer is relative to a cursor that's gone.
+            if (!resp || !resp.items || !serverCache || generation !== cacheGeneration) return;
 
             applyReviewRatings(resp);
 
-            // Full rebuild detected (or the server lost its cache): entries may
-            // have been removed, which a delta can't express — reload everything
-            // and rewrite the stored copy.
-            if (resp.version !== serverCacheVersion) {
-                console.log(`${logPrefix} Cache version changed, reloading full cache`);
-                await downloadFullCache();
-                // Clear all derived caches on full rebuild
-                for (const [, renderer] of renderers) {
-                    if (renderer.onServerCacheRefresh) {
-                        try { renderer.onServerCacheRefresh(null); } catch {}
+            // Full rebuild (entries may have been removed, which a delta can't
+            // express), or this user's Spoiler Guard strip changed since memory
+            // was stripped (guard list or policy changed, possibly on another
+            // device): the copy can't be patched — replace it.
+            const revision = typeof resp.stripRevision === 'string' ? resp.stripRevision : '';
+            if (resp.version !== serverCacheVersion || revision !== serverStripRevision) {
+                const why = resp.version !== serverCacheVersion ? 'Cache version changed' : 'Spoiler Guard strip changed';
+                if (confirming) {
+                    // A restored copy that never rendered: download instead.
+                    console.log(`${logPrefix} ${why}; replacing the stored copy with a full download`);
+                    await downloadFullCache();
+                    settled = true;
+                    for (const [, renderer] of renderers) {
+                        if (renderer.onServerCacheRefresh) {
+                            try { renderer.onServerCacheRefresh(null); } catch {}
+                        }
+                    }
+                } else if (revision !== serverStripRevision) {
+                    // Cards already show entries stripped the old way: the full
+                    // invalidation also removes their overlays. Not awaited — it
+                    // runs its own load, which may wait for this delta.
+                    console.log(`${logPrefix} ${why}; reloading the full cache`);
+                    setTimeout(() => { JE.tagPipeline.invalidateServerCache().catch(() => {}); }, 0);
+                } else {
+                    console.log(`${logPrefix} ${why}, reloading full cache`);
+                    await downloadFullCache();
+                    // Clear all derived caches on full rebuild
+                    for (const [, renderer] of renderers) {
+                        if (renderer.onServerCacheRefresh) {
+                            try { renderer.onServerCacheRefresh(null); } catch {}
+                        }
                     }
                 }
                 return;
@@ -548,9 +644,10 @@
                 for (const [id, entry] of newEntries) {
                     serverCache.set(id, entry);
                     storeMisses.delete(id);
+                    deltaIds.add(id);
                 }
                 serverCacheTimestamp = resp.timestamp;
-                persistDelta(newEntries, resp.timestamp);
+                persistDelta(newEntries, base, resp.timestamp);
                 // Notify renderers to invalidate derived caches for updated items
                 for (const [, renderer] of renderers) {
                     if (renderer.onServerCacheRefresh) {
@@ -559,8 +656,19 @@
                 }
                 console.log(`${logPrefix} Server cache updated: +${newEntries.length} items`);
             }
+            settled = true;
+            if (confirming) console.log(`${logPrefix} Stored copy confirmed current`);
         } catch (err) {
             console.warn(`${logPrefix} Failed to refresh server cache:`, err);
+        } finally {
+            if (confirming) {
+                // Unconfirmed (request failed, empty answer, signed out): its
+                // strip may be stale, so drop it from memory and let cards use
+                // the batch path. The copy itself stays for the next page load
+                // to confirm. Memory someone else replaced meanwhile is theirs.
+                if (!settled && cacheGeneration === startGeneration) dropServerCache();
+                releaseStoreGate();
+            }
         }
     }
 
@@ -574,6 +682,8 @@
      * @returns {Map<string, object>|Promise<Map<string, object>>}
      */
     function lookupServerEntries(ids) {
+        // A restored copy renders nothing until the delta confirms it.
+        if (storeGate) return storeGate.then(() => lookupServerEntries(ids));
         const found = new Map();
         if (!serverCache) return found;
         let missing = null;
@@ -588,12 +698,32 @@
         if (!missing) return found;
 
         const scope = storeScope;
+        const generation = cacheGeneration;
         return JE.tagCacheStore.getMany(scope, missing).then((stored) => {
-            // The user switched or the cache was dropped while reading: the
-            // entries belong to the old scope, so hand back only what memory had.
-            if (storeScope !== scope || !serverCache) return found;
-            if (serverCache.size + stored.size > MEMORY_SOFT_CAP) serverCache.clear();
+            // Memory was replaced (user switch, full download, invalidation)
+            // while reading: what was read may predate it. Answer again from
+            // the current state instead.
+            if (storeScope !== scope || !serverCache || generation !== cacheGeneration) {
+                return lookupServerEntries(ids);
+            }
+            if (serverCache.size + stored.size > MEMORY_SOFT_CAP) {
+                // Reset, but keep what deltas installed: the stored copy may
+                // not have those yet (its write is queued, or another tab owns it).
+                const keep = [];
+                for (const id of deltaIds) {
+                    const entry = serverCache.get(id);
+                    if (entry) keep.push([id, entry]);
+                }
+                serverCache.clear();
+                for (const [id, entry] of keep) serverCache.set(id, entry);
+            }
             for (const id of missing) {
+                // A delta that landed while reading is newer than the copy.
+                const current = serverCache.get(id);
+                if (current) {
+                    found.set(id, current);
+                    continue;
+                }
                 const entry = stored.get(id);
                 if (entry) {
                     found.set(id, entry);

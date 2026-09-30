@@ -8,21 +8,31 @@
 // other scopes are deleted when a scope opens so a shared browser doesn't keep
 // another account's data around.
 //
+// Several tabs can share one copy. Every write that depends on what is stored
+// checks it inside the same transaction: a full rewrite claims the scope with a
+// token (a "pending" meta record) and each of its slices and its final meta
+// only land while that token still owns the scope, and a delta only applies on
+// top of exactly the cursor, version and strip revision it was fetched against.
+// A tab holding older data therefore can never roll the copy back.
+//
 // Every operation resolves to "nothing stored" or rejects on failure, and the
 // first failure (no IndexedDB, private mode, quota, corrupt database) marks the
 // store unavailable for the rest of the session — the pipeline then behaves
 // exactly as it did before this module existed: one full download per page
 // load, held in memory only.
 //
-// Public surface: JE.tagCacheStore { available, getMeta, setMeta, getMany,
-// putMany, clearScope, clearOtherScopes }.
+// Public surface: JE.tagCacheStore { available, getMeta, getMany,
+// beginFullWrite, putManyIfOwner, commitFullWrite, applyDelta, clearScope,
+// clearOtherScopes }.
 (function(JE) {
     'use strict';
 
     const logPrefix = '🪼 Jellyfin Enhanced [TagCacheStore]:';
     const DB_NAME = 'JellyfinEnhanced';
     const DB_VERSION = 1;
-    // One record per scope: { scope, version, timestamp, count, clearStamp, savedAt }.
+    // One record per scope: { scope, version, timestamp, stripRevision, count,
+    // clearStamp, savedAt } once complete, or { scope, pending } while a full
+    // rewrite owns it (never restored).
     const META_STORE = 'tagCacheMeta';
     // One record per entry, keyed `${scope}|${itemId}` so a scope is one key range.
     const ITEM_STORE = 'tagCacheItems';
@@ -149,20 +159,6 @@
     }
 
     /**
-     * Write the scope's meta record. Written last by a full persist, so its
-     * presence means the entries are complete.
-     * @param {string} scope
-     * @param {object} meta - version, timestamp, count, clearStamp, savedAt
-     * @returns {Promise<void>}
-     */
-    async function setMeta(scope, meta) {
-        const db = await openDb();
-        const tx = db.transaction(META_STORE, 'readwrite');
-        tx.objectStore(META_STORE).put({ ...meta, scope });
-        await committed(tx);
-    }
-
-    /**
      * Read the entries for the given item ids in one transaction. Ids with no
      * stored entry are simply absent from the result.
      * @param {string} scope
@@ -187,21 +183,102 @@
     }
 
     /**
-     * Write (insert or replace) entries in one transaction. Each put clones its
-     * entry on the calling thread, so the pipeline writes a full cache in idle
-     * slices rather than in one call.
+     * Start a full rewrite of a scope: in one transaction, delete its entries
+     * and claim it with `token` (a pending meta record, which restore ignores).
+     * A later claim by another writer (tab) takes the scope over.
      * @param {string} scope
-     * @param {Array<[string, object]>} entries - [itemId, entry] pairs
+     * @param {string} token - Unique to this writer.
      * @returns {Promise<void>}
      */
-    async function putMany(scope, entries) {
-        if (entries.length === 0) return;
+    async function beginFullWrite(scope, token) {
         const db = await openDb();
-        const tx = db.transaction(ITEM_STORE, 'readwrite');
-        const store = tx.objectStore(ITEM_STORE);
-        const prefix = scope + KEY_SEP;
-        for (const [id, entry] of entries) store.put(entry, prefix + id);
+        const tx = db.transaction([META_STORE, ITEM_STORE], 'readwrite');
+        tx.objectStore(ITEM_STORE).delete(scopeRange(scope));
+        tx.objectStore(META_STORE).put({ scope, pending: token });
         await committed(tx);
+    }
+
+    /**
+     * Write one slice of a full rewrite, only while `token` still owns the
+     * scope (checked in the same transaction). Each put clones its entry on
+     * the calling thread, so the pipeline writes a full cache in idle slices.
+     * @param {string} scope
+     * @param {string} token
+     * @param {Array<[string, object]>} entries - [itemId, entry] pairs
+     * @returns {Promise<boolean>} false when another writer took the scope over
+     */
+    async function putManyIfOwner(scope, token, entries) {
+        const db = await openDb();
+        const tx = db.transaction([META_STORE, ITEM_STORE], 'readwrite');
+        const request = tx.objectStore(META_STORE).get(scope);
+        let owned = false;
+        request.onsuccess = () => {
+            owned = !!request.result && request.result.pending === token;
+            if (!owned) return;
+            const items = tx.objectStore(ITEM_STORE);
+            const prefix = scope + KEY_SEP;
+            for (const [id, entry] of entries) items.put(entry, prefix + id);
+        };
+        await committed(tx);
+        return owned;
+    }
+
+    /**
+     * Finish a full rewrite: replace the pending record with the complete meta
+     * record, only while `token` still owns the scope. Its presence is what
+     * marks the stored copy restorable.
+     * @param {string} scope
+     * @param {string} token
+     * @param {object} meta - version, timestamp, stripRevision, count, clearStamp, savedAt
+     * @returns {Promise<boolean>} false when another writer took the scope over
+     */
+    async function commitFullWrite(scope, token, meta) {
+        const db = await openDb();
+        const tx = db.transaction(META_STORE, 'readwrite');
+        const store = tx.objectStore(META_STORE);
+        const request = store.get(scope);
+        let owned = false;
+        request.onsuccess = () => {
+            owned = !!request.result && request.result.pending === token;
+            if (owned) store.put({ ...meta, scope });
+        };
+        await committed(tx);
+        return owned;
+    }
+
+    /**
+     * Apply delta entries and advance the cursor, in one transaction and only
+     * when the complete stored copy is exactly the one the delta was fetched
+     * against (same cursor, version and strip revision). Otherwise nothing is
+     * written: another tab moved the copy on, or a rewrite is in progress.
+     * @param {string} scope
+     * @param {{timestamp: number, version: number, stripRevision: string}} base - What the delta was requested against.
+     * @param {Array<[string, object]>} entries - [itemId, entry] pairs
+     * @param {number} timestamp - The delta response's timestamp (the new cursor).
+     * @returns {Promise<boolean>} whether the delta was applied
+     */
+    async function applyDelta(scope, base, entries, timestamp) {
+        const db = await openDb();
+        const tx = db.transaction([META_STORE, ITEM_STORE], 'readwrite');
+        const metaStore = tx.objectStore(META_STORE);
+        const request = metaStore.get(scope);
+        let applied = false;
+        request.onsuccess = () => {
+            const meta = request.result;
+            if (!meta || meta.pending
+                || meta.timestamp !== base.timestamp
+                || meta.version !== base.version
+                || meta.stripRevision !== base.stripRevision) {
+                return;
+            }
+            applied = true;
+            const items = tx.objectStore(ITEM_STORE);
+            const prefix = scope + KEY_SEP;
+            for (const [id, entry] of entries) items.put(entry, prefix + id);
+            metaStore.put({ ...meta, timestamp, savedAt: Date.now() });
+        };
+        await committed(tx);
+        return applied;
     }
 
     /**
@@ -242,9 +319,11 @@
     JE.tagCacheStore = {
         available,
         getMeta,
-        setMeta,
         getMany,
-        putMany,
+        beginFullWrite,
+        putManyIfOwner,
+        commitFullWrite,
+        applyDelta,
         clearScope,
         clearOtherScopes,
     };
