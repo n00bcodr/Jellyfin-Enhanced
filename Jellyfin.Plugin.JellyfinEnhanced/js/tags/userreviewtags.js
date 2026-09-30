@@ -21,6 +21,10 @@
     // Filled by the batch path only; the server cache's averages are read live
     // so a refreshed map is used as soon as it lands.
     const _reviewCache = new Map();
+    // performance.now() when the request behind each _reviewCache value
+    // started: a server-cache averages map requested later supersedes it (see
+    // hasFreshCached), whether or not the key's card is on screen.
+    const _reviewCacheAt = new Map();
     // In-flight deduplication, same keys
     const _inFlight = new Map();
     // Keys whose batch failed (not aborted) → time (ms) until which they
@@ -77,6 +81,7 @@
         const isCurrent = () => !JE.session || JE.session.isCurrent(epoch);
         const controller = new AbortController();
         _batchControllers.add(controller);
+        const requestedAt = performance.now();
 
         /**
          * @param {string} cacheKey - "mediaType:tmdbKey"
@@ -88,6 +93,7 @@
             if (isCurrent()) {
                 if (cacheable) {
                     _reviewCache.set(cacheKey, value);
+                    _reviewCacheAt.set(cacheKey, requestedAt);
                     _failedUntil.delete(cacheKey);
                 }
                 if (_inFlight.get(cacheKey) === entry.promise) _inFlight.delete(cacheKey);
@@ -140,6 +146,7 @@
         const orphaned = Array.from(_queue.values());
         _queue.clear();
         _reviewCache.clear();
+        _reviewCacheAt.clear();
         _inFlight.clear();
         _failedUntil.clear();
         _staleInMap.clear();
@@ -156,6 +163,26 @@
      * @param {string} cacheKey - "mediaType:tmdbKey"
      * @returns {Map<string, number>|null}
      */
+    /**
+     * Whether this session's looked-up value for a key may be used: it exists
+     * and no usable server-cache averages map was requested after it (the map
+     * would then be the fresher answer, so the value is dropped).
+     * @param {string} cacheKey - "mediaType:tmdbKey"
+     * @returns {boolean}
+     */
+    function hasFreshCached(cacheKey) {
+        if (!_reviewCache.has(cacheKey)) return false;
+        const pipeline = JE.tagPipeline;
+        if (usableRatingMap(cacheKey)
+            && typeof pipeline?.getReviewRatingsRequestedAt === 'function'
+            && pipeline.getReviewRatingsRequestedAt() > (_reviewCacheAt.get(cacheKey) ?? 0)) {
+            _reviewCache.delete(cacheKey);
+            _reviewCacheAt.delete(cacheKey);
+            return false;
+        }
+        return true;
+    }
+
     function usableRatingMap(cacheKey) {
         const pipeline = JE.tagPipeline;
         if (!pipeline || typeof pipeline.peekReviewRatings !== 'function') return null;
@@ -179,7 +206,7 @@
     function peekUserRating(tmdbKey, mediaType) {
         if (!JE.pluginConfig?.ShowUserReviews) return null;
         const cacheKey = `${mediaType}:${tmdbKey}`;
-        if (_reviewCache.has(cacheKey)) return _reviewCache.get(cacheKey);
+        if (hasFreshCached(cacheKey)) return _reviewCache.get(cacheKey);
         if ((mediaType !== 'movie' && mediaType !== 'tv') || !TMDB_KEY_RE.test(tmdbKey)) return null;
         const map = usableRatingMap(cacheKey);
         if (map) return map.has(cacheKey) ? map.get(cacheKey) : null;
@@ -197,7 +224,7 @@
     async function fetchUserRating(tmdbKey, mediaType) {
         if (!JE.pluginConfig?.ShowUserReviews) return null;
         const cacheKey = `${mediaType}:${tmdbKey}`;
-        if (_reviewCache.has(cacheKey)) return _reviewCache.get(cacheKey);
+        if (hasFreshCached(cacheKey)) return _reviewCache.get(cacheKey);
         if (_inFlight.has(cacheKey)) return _inFlight.get(cacheKey);
         const failedUntil = _failedUntil.get(cacheKey);
         if (failedUntil !== undefined) {
@@ -207,6 +234,7 @@
 
         if ((mediaType !== 'movie' && mediaType !== 'tv') || !TMDB_KEY_RE.test(tmdbKey)) {
             _reviewCache.set(cacheKey, null);
+            _reviewCacheAt.set(cacheKey, Infinity); // never in the averages map
             return null;
         }
 
@@ -224,7 +252,7 @@
             const map = usableRatingMap(cacheKey);
             if (map) return map.has(cacheKey) ? map.get(cacheKey) : null;
             // A batch may have settled or started this key while waiting.
-            if (_reviewCache.has(cacheKey)) return _reviewCache.get(cacheKey);
+            if (hasFreshCached(cacheKey)) return _reviewCache.get(cacheKey);
             if (_inFlight.has(cacheKey)) return _inFlight.get(cacheKey);
         }
 
@@ -411,14 +439,13 @@
      * @param {Set<string>|null} changed - Changed "mediaType:tmdbKey" keys, or null for all.
      */
     function refreshChangedChips(changed) {
+        // Same gates as rendering: with the chips (or rating tags) switched
+        // off there is nothing to update, and nothing may be re-created.
+        if (!JE.pluginConfig?.ShowUserReviews || !JE.pluginConfig?.ShowUserRatingOnPosters || !JE.currentSettings?.ratingTagsEnabled) return;
         const hosts = document.querySelectorAll('[data-je-review-key]');
         for (const host of hosts) {
             const key = host.dataset.jeReviewKey;
             if (changed && !changed.has(key)) continue;
-            // The new averages supersede a value this session looked up
-            // before them — unless the viewer's own edit still marks the key
-            // stale, in which case the looked-up value is the fresher one.
-            if (usableRatingMap(key)) _reviewCache.delete(key);
             const sep = key.indexOf(':');
             const rating = peekUserRating(key.slice(sep + 1), key.slice(0, sep));
             if (rating === undefined) continue;
@@ -473,12 +500,14 @@
         const now = performance.now();
         if (!tmdbKey) {
             _reviewCache.clear();
+            _reviewCacheAt.clear();
             _failedUntil.clear();
             _staleAllAt = now;
             return;
         }
         for (const type of mediaType ? [mediaType] : ['movie', 'tv']) {
             _reviewCache.delete(`${type}:${tmdbKey}`);
+            _reviewCacheAt.delete(`${type}:${tmdbKey}`);
             _failedUntil.delete(`${type}:${tmdbKey}`);
             _staleInMap.set(`${type}:${tmdbKey}`, now);
         }

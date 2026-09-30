@@ -479,9 +479,10 @@
      * Download the whole cache for the current user and make it the live copy:
      * memory holds every entry, and the stored copy is rewritten in the
      * background. Resolves once memory is ready.
+     * @param {{fresh?: boolean}} [options] - fresh bypasses HTTP revalidation (a replacement needs a current servedAt).
      * @returns {Promise<boolean>} true when the server had entries
      */
-    async function downloadFullCache() {
+    async function downloadFullCache(options) {
         const userId = ApiClient.getCurrentUserId();
         if (!userId) return false;
         const scope = cacheScope();
@@ -490,9 +491,14 @@
         // signed-in user changed while the request was in flight.
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const requestedAt = performance.now();
+        // A replacement must carry a fresh capture time (servedAt): revalidating
+        // the browser's HTTP-cached body (304) would hand back the capture time
+        // of an identical older response, and the stored copy it replaces could
+        // look newer and refuse it. Ordinary loads keep the revalidation.
+        const fresh = options?.fresh ? `?fresh=${Date.now()}` : '';
         const resp = await ApiClient.ajax({
             type: 'GET',
-            url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}`),
+            url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}${fresh}`),
             dataType: 'json'
         });
         if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
@@ -673,7 +679,7 @@
                 if (confirming) {
                     // A restored copy that never rendered: download instead.
                     console.log(`${logPrefix} ${why}; replacing the stored copy with a full download`);
-                    await downloadFullCache();
+                    await downloadFullCache({ fresh: true });
                     settled = true;
                     for (const [, renderer] of renderers) {
                         if (renderer.onServerCacheRefresh) {
@@ -688,7 +694,7 @@
                     setTimeout(() => { JE.tagPipeline.invalidateServerCache().catch(() => {}); }, 0);
                 } else {
                     console.log(`${logPrefix} ${why}, reloading full cache`);
-                    await downloadFullCache();
+                    await downloadFullCache({ fresh: true });
                     // Clear all derived caches on full rebuild
                     for (const [, renderer] of renderers) {
                         if (renderer.onServerCacheRefresh) {
