@@ -57,15 +57,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public ItemStats Compute(JUser user, BaseItem root, string? mediaSourceId)
         {
             var leaves = CollectLeaves(user, root);
-            var size = SumSize(leaves, mediaSourceId);
+            var multiVersionSources = GetMultiVersionSources(leaves);
+            var size = SumSize(leaves, multiVersionSources, mediaSourceId);
 
             long totalRuntimeTicks = 0;
             foreach (var leaf in leaves)
             {
-                // The first media source of any item is the item itself
-                // (GetMediaSources orders the item's own id first), whose
-                // RunTimeTicks is the item's; virtual leaves are excluded.
-                totalRuntimeTicks += leaf.RunTimeTicks ?? 0;
+                // The runtime of the leaf's first media source, as before. A
+                // single-version item's only source is the item itself; a
+                // multi-version item keeps Jellyfin's own source order (10.11
+                // sorts versions, so the first is not necessarily this item).
+                totalRuntimeTicks += multiVersionSources.TryGetValue(leaf.Id, out var sources)
+                    ? sources.FirstOrDefault()?.RunTimeTicks ?? 0
+                    : leaf.RunTimeTicks ?? 0;
             }
 
             long totalPlaybackTicks = 0;
@@ -103,8 +107,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
-        /// Every playable, non-virtual item under <paramref name="root"/>
-        /// (including the root itself when it is playable), deduplicated by id.
+        /// Every playable item under <paramref name="root"/> (including the
+        /// root itself when it is playable), deduplicated by id. Membership
+        /// matches the previous user-scoped GetChildren walk exactly: a series'
+        /// seasons as Jellyfin lists them for the user, and every episode of
+        /// each season including missing (virtual) ones, which contribute their
+        /// metadata runtime and no size.
         /// </summary>
         private List<BaseItem> CollectLeaves(JUser user, BaseItem root)
         {
@@ -128,12 +136,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         return;
                     }
 
-                    // Jellyfin's own series listing: one query for the seasons
-                    // and episodes visible to this user, then per-season
-                    // filtering in memory (specials-in-seasons, missing
-                    // episodes). Seasons hidden from the user drop their
-                    // episodes, as in the previous seasons-then-episodes walk.
-                    AddLeaves(series.GetEpisodes(user, options, shouldIncludeMissingEpisodes: false), leaves, seen);
+                    // The series' seasons exactly as Series.GetChildren lists
+                    // them for this user (missing seasons only when the user
+                    // displays missing episodes), then each season below: one
+                    // query per season instead of the old per-episode lookups.
+                    foreach (var child in ((Folder)series).GetChildren(user, true))
+                    {
+                        Collect(user, child, leaves, seen, visitedFolders);
+                    }
+
                     return;
 
                 case Season season:
@@ -142,7 +153,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         return;
                     }
 
-                    AddLeaves(season.GetEpisodes(user, options, shouldIncludeMissingEpisodes: false), leaves, seen);
+                    // What Season.GetChildren returns: every episode the user
+                    // can see, missing ones included.
+                    AddLeaves(season.GetEpisodes(user, options, shouldIncludeMissingEpisodes: true), leaves, seen);
                     return;
 
                 case Folder folder:
@@ -184,10 +197,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static void AddLeaf(BaseItem item, List<BaseItem> leaves, HashSet<Guid> seen)
         {
-            // Videos and audio are the item kinds that expose media sources.
-            // Virtual (missing/unaired) episodes have no file: they contribute
-            // neither size nor runtime.
-            if ((item is Video || item is Audio) && !item.IsVirtualItem && seen.Add(item.Id))
+            // Videos and audio are the item kinds that expose media sources
+            // (the previous walk kept exactly the leaves with a source).
+            // Missing (virtual) episodes are kept, as before: no file, so no
+            // size, but their metadata runtime counts towards progress.
+            if ((item is Video || item is Audio) && seen.Add(item.Id))
             {
                 leaves.Add(item);
             }
@@ -201,15 +215,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// versions (linked or local, or being one themselves) still resolve
         /// their media sources so every version counts, exactly as before.
         /// </summary>
-        private long SumSize(List<BaseItem> leaves, string? mediaSourceId)
+        private static long SumSize(List<BaseItem> leaves, Dictionary<Guid, List<MediaBrowser.Model.Dto.MediaSourceInfo>> multiVersionSources, string? mediaSourceId)
         {
-            var multiVersion = FindMultiVersionIds(leaves);
             long total = 0;
             foreach (var leaf in leaves)
             {
-                if (multiVersion.Contains(leaf.Id))
+                if (multiVersionSources.TryGetValue(leaf.Id, out var sources))
                 {
-                    foreach (var source in leaf.GetMediaSources(false))
+                    foreach (var source in sources)
                     {
                         if (string.IsNullOrEmpty(mediaSourceId)
                             || string.Equals(source.Id, mediaSourceId, StringComparison.OrdinalIgnoreCase))
@@ -229,6 +242,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             return total;
+        }
+
+        /// <summary>
+        /// Media sources of the leaves that have more than the item itself
+        /// (alternate versions), resolved once and shared by the size and
+        /// runtime sums. Every other leaf's only source is the item.
+        /// </summary>
+        private Dictionary<Guid, List<MediaBrowser.Model.Dto.MediaSourceInfo>> GetMultiVersionSources(List<BaseItem> leaves)
+        {
+            var result = new Dictionary<Guid, List<MediaBrowser.Model.Dto.MediaSourceInfo>>();
+            var ids = FindMultiVersionIds(leaves);
+            if (ids.Count == 0)
+            {
+                return result;
+            }
+
+            foreach (var leaf in leaves)
+            {
+                if (ids.Contains(leaf.Id))
+                {
+                    result[leaf.Id] = leaf.GetMediaSources(false).ToList();
+                }
+            }
+
+            return result;
         }
 
         /// <summary>Ids of the leaves whose media sources are more than the item itself.</summary>
