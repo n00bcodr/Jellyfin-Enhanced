@@ -9,13 +9,14 @@
 // another account's data around.
 //
 // Several tabs can share one copy. Every write that depends on what is stored
-// checks it inside the same transaction: each snapshot records when its data
-// was fetched (fetchedAt), a full rewrite only replaces an older snapshot and
-// claims the scope with a token (a "pending" meta record) that each of its
-// slices and its final meta check, and a delta only applies on top of exactly
-// the cursor, version and filter revision it was fetched against. A tab
-// holding older data therefore can never roll the copy back, and readers get
-// the meta record with their entries to check they match what they confirmed.
+// checks it inside the same transaction: snapshots are ordered by the server's
+// cache version, then its cursor (timestamp), then when the data was fetched
+// (fetchedAt, only a tie-break); a full rewrite only replaces a snapshot that
+// isn't newer and claims the scope with a token (a "pending" meta record) that
+// each of its slices and its final meta check, and a delta only applies on top
+// of exactly the cursor, version and filter revision it was fetched against. A
+// tab holding older data therefore can never roll the copy back, and readers
+// get the meta record with their entries to check they match what they confirmed.
 //
 // Every operation resolves to "nothing stored" or rejects on failure, and the
 // first failure (no IndexedDB, private mode, quota, corrupt database) marks the
@@ -34,7 +35,7 @@
     const DB_VERSION = 1;
     // One record per scope: { scope, version, timestamp, filterRevision, count,
     // clearStamp, fetchedAt, savedAt } once complete, or { scope, pending,
-    // fetchedAt } while a full rewrite owns it (never restored).
+    // version, timestamp, fetchedAt } while a full rewrite owns it (never restored).
     const META_STORE = 'tagCacheMeta';
     // One record per entry, keyed `${scope}|${itemId}` so a scope is one key range.
     const ITEM_STORE = 'tagCacheItems';
@@ -186,17 +187,31 @@
     }
 
     /**
-     * Start a full rewrite of a scope with data fetched at `fetchedAt`: in one
-     * transaction, unless the stored snapshot (complete or being written) was
-     * fetched later, delete its entries and claim the scope with `token` (a
-     * pending meta record, which restore ignores). A later claim by a writer
-     * with newer data takes the scope over.
+     * Whether snapshot `a` is strictly newer than snapshot `b`: by server cache
+     * version, then cursor, then fetch time. Arrival time alone can't order
+     * them — a slow response can carry older server data.
+     * @param {{version?: number, timestamp?: number, fetchedAt?: number}} a
+     * @param {{version?: number, timestamp?: number, fetchedAt?: number}} b
+     * @returns {boolean}
+     */
+    function isNewer(a, b) {
+        if ((a.version || 0) !== (b.version || 0)) return (a.version || 0) > (b.version || 0);
+        if ((a.timestamp || 0) !== (b.timestamp || 0)) return (a.timestamp || 0) > (b.timestamp || 0);
+        return (a.fetchedAt || 0) > (b.fetchedAt || 0);
+    }
+
+    /**
+     * Start a full rewrite of a scope with the given snapshot: in one
+     * transaction, unless the stored snapshot (complete or being written) is
+     * newer, delete its entries and claim the scope with `token` (a pending
+     * meta record, which restore ignores). A later claim by a writer with
+     * newer data takes the scope over.
      * @param {string} scope
      * @param {string} token - Unique to this writer.
-     * @param {number} fetchedAt - When this writer's data was fetched (ms).
+     * @param {{version: number, timestamp: number, fetchedAt: number}} snapshot - What this writer holds.
      * @returns {Promise<boolean>} false when a newer snapshot is already stored
      */
-    async function beginFullWrite(scope, token, fetchedAt) {
+    async function beginFullWrite(scope, token, snapshot) {
         const db = await openDb();
         const tx = db.transaction([META_STORE, ITEM_STORE], 'readwrite');
         const metaStore = tx.objectStore(META_STORE);
@@ -204,10 +219,10 @@
         let claimed = false;
         request.onsuccess = () => {
             const meta = request.result;
-            if (meta && (meta.fetchedAt || 0) > fetchedAt) return;
+            if (meta && isNewer(meta, snapshot)) return;
             claimed = true;
             tx.objectStore(ITEM_STORE).delete(scopeRange(scope));
-            metaStore.put({ scope, pending: token, fetchedAt });
+            metaStore.put({ scope, pending: token, version: snapshot.version, timestamp: snapshot.timestamp, fetchedAt: snapshot.fetchedAt });
         };
         await committed(tx);
         return claimed;

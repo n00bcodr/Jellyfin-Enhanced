@@ -124,11 +124,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private const int HydrationPageSize = 500;
 
         // User access cache: avoids expensive GetItemIds query on every request
-        private readonly ConcurrentDictionary<string, (HashSet<string> Ids, DateTime CachedAt)> _userAccessCache = new();
+        private readonly ConcurrentDictionary<string, (HashSet<string> Ids, DateTime CachedAt, long Generation)> _userAccessCache = new();
         private static readonly TimeSpan UserAccessCacheTtl = TimeSpan.FromSeconds(60);
-        // Bumped by InvalidateUserAccess: an access set computed before a bump
-        // (user policy or library changed meanwhile) is used for its own request
-        // but never stored.
+        // Bumped by InvalidateUserAccess. Each cached access set records the
+        // generation it was computed under and is only used while that is still
+        // current, so a set computed before a bump (user policy or library
+        // changed meanwhile) can serve its own request but never a later one —
+        // even if it lands in the dictionary after the clear.
         private long _userAccessGeneration;
 
         /// <summary>
@@ -967,7 +969,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // Check user access cache
             HashSet<string> accessibleSet;
-            if (_userAccessCache.TryGetValue(userKey, out var cached) && DateTime.UtcNow - cached.CachedAt < UserAccessCacheTtl)
+            if (_userAccessCache.TryGetValue(userKey, out var cached)
+                && cached.Generation == Interlocked.Read(ref _userAccessGeneration)
+                && DateTime.UtcNow - cached.CachedAt < UserAccessCacheTtl)
             {
                 accessibleSet = cached.Ids;
             }
@@ -994,7 +998,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     if (ServerModeEnabled && !_cacheReleased && Interlocked.Read(ref _userAccessGeneration) == accessGeneration)
                     {
-                        _userAccessCache[userKey] = (accessibleSet, DateTime.UtcNow);
+                        _userAccessCache[userKey] = (accessibleSet, DateTime.UtcNow, accessGeneration);
                     }
                 }
             }

@@ -44,6 +44,7 @@
     let openStoreGate = null;        // resolves storeGate
     const deltaIds = new Set();      // ids memory holds from a delta (newer than the stored copy until persisted)
     let deltaInFlight = null;        // { promise, epoch, generation } of the running fetchDelta(), shared by load and refresh
+    let storeBaseTimestamp = 0;      // cursor of the stored snapshot this page restored and confirmed
     let storeScope = null;           // `${serverId}:${userId}` while the stored copy backs lookups/writes
     let persistGeneration = 0;       // bumped whenever queued stored-copy writes must stop
     let persistChain = Promise.resolve(); // stored-copy writes run one after another
@@ -285,6 +286,7 @@
         serverCacheTimestamp = 0;
         serverFilterRevision = null;
         cacheGeneration++;
+        storeBaseTimestamp = 0;
         storeScope = null;
         storeMisses.clear();
         deltaIds.clear();
@@ -351,7 +353,7 @@
             // this write stops (every slice and the final meta check the claim).
             const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
             // Another tab already stored newer data: keep it.
-            if (!await store.beginFullWrite(scope, token, fetchedAt)) return;
+            if (!await store.beginFullWrite(scope, token, { version: meta.version, timestamp: meta.timestamp, fetchedAt })) return;
             for (let i = 0; i < entries.length; i += PERSIST_SLICE) {
                 await idleYield();
                 if (generation !== persistGeneration) return;
@@ -420,6 +422,7 @@
             serverCacheComplete = false;
             serverCacheVersion = meta.version;
             serverCacheTimestamp = meta.timestamp;
+            storeBaseTimestamp = meta.timestamp;
             serverFilterRevision = meta.filterRevision;
             cacheGeneration++;
             storeScope = scope;
@@ -725,9 +728,12 @@
             // this page confirmed (same version and filter revision, complete):
             // another tab may be rewriting it or may have replaced it with data
             // filtered differently. Anything else counts as not stored.
+            // Never older than the snapshot this page restored (entries from
+            // before its cursor could miss updates its deltas already skipped).
             const usable = !!meta && !meta.pending
                 && meta.version === serverCacheVersion
-                && meta.filterRevision === serverFilterRevision;
+                && meta.filterRevision === serverFilterRevision
+                && (meta.timestamp || 0) >= storeBaseTimestamp;
             const stored = usable ? read : new Map();
             if (serverCache.size + stored.size > MEMORY_SOFT_CAP) {
                 // Reset, but keep what deltas installed: the stored copy may
