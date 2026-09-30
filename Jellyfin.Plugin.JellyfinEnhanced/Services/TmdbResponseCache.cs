@@ -234,7 +234,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         bundleMembers.Add(new BundleMember(member ?? string.Empty, memberKey, memberOwner));
                     }
 
-                    shared = _inFlight[key];
+                    if (!_inFlight.TryGetValue(key, out var bundled))
+                    {
+                        // Unreachable while ResolveBundleTarget only accepts
+                        // members of the type; never leave the registrations
+                        // above orphaned if that ever changes.
+                        foreach (var registered in bundleMembers)
+                        {
+                            _inFlight.Remove(registered.Key);
+                            registered.Owner.TrySetCanceled();
+                        }
+
+                        bundleMembers = null;
+                        owner = new TaskCompletionSource<TmdbResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+                        bundled = owner.Task;
+                        _inFlight[key] = bundled;
+                    }
+
+                    shared = bundled;
                 }
                 else
                 {
@@ -306,7 +323,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            return new BundleTarget(match.Groups[1].Value, match.Groups[2].Value, member);
+            // Only a member bundled for this media type (TV has no release_dates
+            // member): anything else must take the plain single-resource path,
+            // or GetAsync would register the siblings without the requested key.
+            var mediaType = match.Groups[1].Value;
+            if (member != null && Array.IndexOf(mediaType == "movie" ? MovieBundleMembers : TvBundleMembers, member) < 0)
+            {
+                return null;
+            }
+
+            return new BundleTarget(mediaType, match.Groups[2].Value, member);
         }
 
         // Caller holds _lock.
@@ -384,10 +410,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     split = SplitBundle(target, upstream.Result.Response.Content);
                 }
-                catch (JsonException)
+                catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException or OverflowException)
                 {
                     // Not the shape we expected: fall through, every member is
-                    // fetched on its own below.
+                    // fetched on its own below. Anything escaping here would
+                    // leave every registered member's waiters hanging.
                     split = null;
                 }
             }
