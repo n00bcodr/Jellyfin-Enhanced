@@ -55,6 +55,7 @@
     let refreshInFlight = null;      // Promise of the running refreshServerCache()
     let reviewRatings = null;        // Map<"mediaType:tmdbKey", average> from the payload; null = unavailable
     let reviewRatingsRequestedAt = 0; // performance.now() when the request behind reviewRatings started
+    const reviewRatingsListeners = new Set(); // called with the changed keys (Set, or null = all) when averages change
     const PERSIST_SLICE = 250;       // entries per idle-slice write (each put clones its entry on this thread)
     const PERSIST_START_DELAY_MS = 1500; // let the page's first tag scans have the idle time before persisting
     const MEMORY_SOFT_CAP = 20000;   // entries kept in memory on the stored-copy path before it is reset
@@ -265,6 +266,7 @@
     function applyReviewRatings(resp, requestedAt) {
         if (requestedAt < reviewRatingsRequestedAt) return;
         reviewRatingsRequestedAt = requestedAt;
+        const previous = reviewRatings;
         const raw = resp && resp.reviewRatings;
         if (!raw || typeof raw !== 'object') {
             reviewRatings = null;
@@ -277,6 +279,32 @@
                 }
             }
             reviewRatings = map;
+        }
+        notifyReviewRatingsChanged(previous, reviewRatings);
+    }
+
+    /**
+     * Tell the review tags which averages changed, so chips already on cards
+     * (rendered from the previous averages) are updated in place. Nothing is
+     * called when nothing changed — the common case for a navigation delta.
+     * @param {Map<string, number>|null} previous
+     * @param {Map<string, number>|null} next
+     */
+    function notifyReviewRatingsChanged(previous, next) {
+        if (reviewRatingsListeners.size === 0 || (!previous && !next)) return;
+        let changed = null; // null = every key (one side unavailable)
+        if (previous && next) {
+            changed = new Set();
+            for (const [key, value] of next) {
+                if (previous.get(key) !== value) changed.add(key);
+            }
+            for (const key of previous.keys()) {
+                if (!next.has(key)) changed.add(key);
+            }
+            if (changed.size === 0) return;
+        }
+        for (const listener of reviewRatingsListeners) {
+            try { listener(changed); } catch (err) { console.warn(`${logPrefix} review ratings listener failed:`, err); }
         }
     }
 
@@ -635,8 +663,13 @@
             // (library access revoked, Spoiler Guard list or policy changed,
             // possibly on another device): the copy can't be patched — replace it.
             const revision = typeof resp.filterRevision === 'string' ? resp.filterRevision : '';
-            if (resp.version !== serverCacheVersion || revision !== serverFilterRevision) {
-                const why = resp.version !== serverCacheVersion ? 'Cache version changed' : 'Access or Spoiler Guard filter changed';
+            // A cursor older than the one asked about means the server's cache
+            // went back (restored from an older save or backup): entries this
+            // copy got since may disagree with it, and a delta can't say which.
+            const rolledBack = typeof resp.timestamp === 'number' && resp.timestamp < base.timestamp;
+            if (resp.version !== serverCacheVersion || revision !== serverFilterRevision || rolledBack) {
+                const why = resp.version !== serverCacheVersion ? 'Cache version changed'
+                    : rolledBack ? 'Server cache went back in time' : 'Access or Spoiler Guard filter changed';
                 if (confirming) {
                     // A restored copy that never rendered: download instead.
                     console.log(`${logPrefix} ${why}; replacing the stored copy with a full download`);
@@ -1475,6 +1508,11 @@
         /** @returns {number} Bumped each time the review rating averages are replaced. */
         /** @returns {number} performance.now() when the request behind the current review averages started (0 = none). */
         getReviewRatingsRequestedAt() { return reviewRatingsRequestedAt; },
+        /**
+         * Subscribe to changes of the review averages.
+         * @param {(changed: Set<string>|null) => void} listener - Receives the changed "mediaType:tmdbKey" keys, or null for all.
+         */
+        onReviewRatingsChanged(listener) { reviewRatingsListeners.add(listener); },
         // For reinitialize support
         clearProcessed() {
             processedCards = new WeakSet(); // Create fresh WeakSet so all cards get re-scanned

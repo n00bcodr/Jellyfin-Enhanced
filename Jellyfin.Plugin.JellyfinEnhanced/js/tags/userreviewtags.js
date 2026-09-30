@@ -288,8 +288,15 @@
      *   chip is added during the render itself; the pipeline stacks afterwards.
      */
     function applyChip(containerOrEl, rating, restack) {
-        if (rating === null && JE.pluginConfig?.ShowUserRatingDash === false) return;
         if (!containerOrEl.isConnected) return; // card gone while the rating was looked up
+        if (rating === null && JE.pluginConfig?.ShowUserRatingDash === false) {
+            // No chip for "no rating"; drop one an earlier value left behind.
+            const stale = containerOrEl.classList.contains('je-userreview-tag')
+                ? containerOrEl
+                : containerOrEl.querySelector('.je-userreview-tag');
+            stale?.remove();
+            return;
+        }
 
         // Accept either the overlay container itself or the cardImageContainer
         let container = containerOrEl;
@@ -385,8 +392,39 @@
             }
         `);
 
+        if (!_listening && typeof JE.tagPipeline?.onReviewRatingsChanged === 'function') {
+            _listening = true;
+            JE.tagPipeline.onReviewRatingsChanged(refreshChangedChips);
+        }
+
         console.log(`${logPrefix} Initialized.`);
     };
+
+    let _listening = false;
+
+    /**
+     * Update chips already on cards when the server cache's averages change
+     * (a navigation's delta, another viewer's review): cards rendered before
+     * the change would otherwise keep the old value until they are rebuilt.
+     * Only cards whose key changed are touched, and their corners re-stack in
+     * one batched frame.
+     * @param {Set<string>|null} changed - Changed "mediaType:tmdbKey" keys, or null for all.
+     */
+    function refreshChangedChips(changed) {
+        const hosts = document.querySelectorAll('[data-je-review-key]');
+        for (const host of hosts) {
+            const key = host.dataset.jeReviewKey;
+            if (changed && !changed.has(key)) continue;
+            // The new averages supersede a value this session looked up
+            // before them — unless the viewer's own edit still marks the key
+            // stale, in which case the looked-up value is the fresher one.
+            if (usableRatingMap(key)) _reviewCache.delete(key);
+            const sep = key.indexOf(':');
+            const rating = peekUserRating(key.slice(sep + 1), key.slice(0, sep));
+            if (rating === undefined) continue;
+            applyChip(host, rating, true);
+        }
+    }
 
     /**
      * Called by ratingtags.js after applying a rating overlay, OR directly
@@ -408,6 +446,9 @@
         if (!resolved) return;
 
         const { tmdbKey, mediaType } = resolved;
+        // Remember the key on the card so a later change to the averages can
+        // update this chip in place (see refreshChangedChips).
+        containerOrEl.dataset.jeReviewKey = `${mediaType}:${tmdbKey}`;
         const known = peekUserRating(tmdbKey, mediaType);
         if (known !== undefined) {
             applyChip(containerOrEl, known, false);
