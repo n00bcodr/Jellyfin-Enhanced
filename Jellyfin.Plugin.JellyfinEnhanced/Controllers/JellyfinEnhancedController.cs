@@ -7897,12 +7897,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 items,
                 reviewRatings
             };
+            // The validator covers everything but servedAt, which changes on
+            // every request and would otherwise defeat revalidation of an
+            // unchanged body (a 304 hands back the stored body with its own,
+            // earlier servedAt — the same data, captured then).
+            var validatorPayload = new
+            {
+                version = cacheVersion,
+                timestamp = cacheTimestamp,
+                filterRevision,
+                count = items.Count,
+                items,
+                reviewRatings
+            };
 
             // ETag is a hash of the FINAL response body (post Spoiler Guard strip above),
             // not of cacheVersion. Two users at the same version can legitimately receive
             // different stripped bodies, and an ETag keyed on version alone would let one
             // user's stripped body satisfy another user's conditional request.
-            var payloadBytes = JsonSerializer.SerializeToUtf8Bytes(payload);
+            var payloadBytes = JsonSerializer.SerializeToUtf8Bytes(validatorPayload);
             var hash = SHA256.HashData(payloadBytes);
             var etag = $"\"{Convert.ToHexString(hash)}\"";
 

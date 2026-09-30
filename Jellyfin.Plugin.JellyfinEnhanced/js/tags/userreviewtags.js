@@ -31,12 +31,12 @@
     const _failedUntil = new Map();
     const FAILURE_BACKOFF_MS = 60 * 1000;
     // Keys whose value in the server cache's averages must not be trusted
-    // until those averages are next replaced: the viewer just saved or deleted
-    // their own review. Maps key → the averages generation it was marked
-    // under; the next generation (a navigation's delta) clears the mark.
+    // until averages requested after the edit arrive: the viewer just saved or
+    // deleted their own review. Maps key → performance.now() of the edit; a map
+    // whose request started later (a navigation's delta) is trusted again.
     /** @type {Map<string, number>} */
     const _staleInMap = new Map();
-    let _staleAllGeneration = -1; // generation under which EVERY key is stale (invalidate-all)
+    let _staleAllAt = -1;           // performance.now() of an invalidate-all: maps requested before it are stale for every key
 
     // Ratings are fetched in batches: every key requested within one short
     // window goes out as a single GET /reviews/ratings?keys=… instead of one
@@ -143,14 +143,16 @@
         _inFlight.clear();
         _failedUntil.clear();
         _staleInMap.clear();
-        _staleAllGeneration = -1;
+        _staleAllAt = -1;
         // Queued for the previous user: nothing to render.
         for (const entry of orphaned) entry.resolve(undefined);
     });
 
     /**
      * The server cache's review averages, when they are loaded and may be
-     * used for this key (not marked stale by the viewer's own review edit).
+     * used for this key: not for a key the viewer edited a review of until a
+     * map whose request STARTED after the edit arrives (an older request can
+     * still land after the edit, carrying the old average).
      * @param {string} cacheKey - "mediaType:tmdbKey"
      * @returns {Map<string, number>|null}
      */
@@ -159,8 +161,9 @@
         if (!pipeline || typeof pipeline.peekReviewRatings !== 'function') return null;
         const map = pipeline.peekReviewRatings();
         if (!map) return null;
-        const generation = pipeline.getReviewRatingsGeneration();
-        if (generation === _staleAllGeneration || _staleInMap.get(cacheKey) === generation) return null;
+        const requestedAt = pipeline.getReviewRatingsRequestedAt();
+        const staleAt = _staleInMap.get(cacheKey);
+        if (requestedAt <= _staleAllAt || (staleAt !== undefined && requestedAt <= staleAt)) return null;
         return map;
     }
 
@@ -426,19 +429,17 @@
      * @param {string} [mediaType] - 'movie' or 'tv' to drop only that entry.
      */
     JE.invalidateUserReviewTagCache = function(tmdbKey, mediaType) {
-        const generation = typeof JE.tagPipeline?.getReviewRatingsGeneration === 'function'
-            ? JE.tagPipeline.getReviewRatingsGeneration()
-            : -1;
+        const now = performance.now();
         if (!tmdbKey) {
             _reviewCache.clear();
             _failedUntil.clear();
-            _staleAllGeneration = generation;
+            _staleAllAt = now;
             return;
         }
         for (const type of mediaType ? [mediaType] : ['movie', 'tv']) {
             _reviewCache.delete(`${type}:${tmdbKey}`);
             _failedUntil.delete(`${type}:${tmdbKey}`);
-            _staleInMap.set(`${type}:${tmdbKey}`, generation);
+            _staleInMap.set(`${type}:${tmdbKey}`, now);
         }
     };
 

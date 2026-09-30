@@ -54,7 +54,7 @@
     let loadInFlightEpoch = 0;       // session epoch that load was started for
     let refreshInFlight = null;      // Promise of the running refreshServerCache()
     let reviewRatings = null;        // Map<"mediaType:tmdbKey", average> from the payload; null = unavailable
-    let reviewRatingsGeneration = 0; // bumped when reviewRatings is replaced
+    let reviewRatingsRequestedAt = 0; // performance.now() when the request behind reviewRatings started
     const PERSIST_SLICE = 250;       // entries per idle-slice write (each put clones its entry on this thread)
     const PERSIST_START_DELAY_MS = 1500; // let the page's first tag scans have the idle time before persisting
     const MEMORY_SOFT_CAP = 20000;   // entries kept in memory on the stored-copy path before it is reset
@@ -255,10 +255,16 @@
     /**
      * Take the review rating averages that ride on a tag-cache response
      * (full or delta). Absent (chips off, or an older server) means the user
-     * review tags ask /reviews/ratings themselves.
+     * review tags ask /reviews/ratings themselves. A response whose request
+     * started before the one behind the current map is older data and is
+     * ignored; the start time also tells the review tags whether the map can
+     * reflect a review the viewer just edited (see getReviewRatingsRequestedAt).
      * @param {object} resp - Tag-cache response body.
+     * @param {number} requestedAt - performance.now() when its request started.
      */
-    function applyReviewRatings(resp) {
+    function applyReviewRatings(resp, requestedAt) {
+        if (requestedAt < reviewRatingsRequestedAt) return;
+        reviewRatingsRequestedAt = requestedAt;
         const raw = resp && resp.reviewRatings;
         if (!raw || typeof raw !== 'object') {
             reviewRatings = null;
@@ -272,7 +278,6 @@
             }
             reviewRatings = map;
         }
-        reviewRatingsGeneration++;
     }
 
     /**
@@ -456,6 +461,7 @@
         // The response is spoiler-stripped for THIS user — drop it if the
         // signed-in user changed while the request was in flight.
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const requestedAt = performance.now();
         const resp = await ApiClient.ajax({
             type: 'GET',
             url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}`),
@@ -463,7 +469,7 @@
         });
         if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
 
-        applyReviewRatings(resp);
+        applyReviewRatings(resp, requestedAt);
         if (!(resp && resp.items && resp.count > 0)) {
             console.log(`${logPrefix} Server cache empty, using batch fallback`);
             dropServerCache();
@@ -611,6 +617,7 @@
             const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
             const generation = cacheGeneration;
             const base = { timestamp: serverCacheTimestamp, version: serverCacheVersion, filterRevision: serverFilterRevision };
+            const requestedAt = performance.now();
             const resp = await ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}?since=${base.timestamp}`),
@@ -621,7 +628,7 @@
             // invalidation): the answer is relative to a cursor that's gone.
             if (!resp || !resp.items || !serverCache || generation !== cacheGeneration) return;
 
-            applyReviewRatings(resp);
+            applyReviewRatings(resp, requestedAt);
 
             // Full rebuild (entries may have been removed, which a delta can't
             // express), or this user's filter changed since memory was made
@@ -1466,7 +1473,8 @@
          */
         peekReviewRatings() { return reviewRatings; },
         /** @returns {number} Bumped each time the review rating averages are replaced. */
-        getReviewRatingsGeneration() { return reviewRatingsGeneration; },
+        /** @returns {number} performance.now() when the request behind the current review averages started (0 = none). */
+        getReviewRatingsRequestedAt() { return reviewRatingsRequestedAt; },
         // For reinitialize support
         clearProcessed() {
             processedCards = new WeakSet(); // Create fresh WeakSet so all cards get re-scanned
@@ -1557,7 +1565,7 @@
     JE.session?.onUserChange('tag-pipeline', () => {
         dropServerCache();
         reviewRatings = null;
-        reviewRatingsGeneration++;
+        reviewRatingsRequestedAt = 0;
         skipStoreThisSession = false;
         JE.tagPipeline.clearProcessed();
     });
