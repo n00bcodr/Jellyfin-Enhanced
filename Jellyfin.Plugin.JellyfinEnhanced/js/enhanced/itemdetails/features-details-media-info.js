@@ -46,11 +46,13 @@
             return existing.promise;
         }
 
-        const promise = ApiClient.ajax({
-            type: 'GET',
-            url: ApiClient.getUrl(`/JellyfinEnhanced/item-stats/${ApiClient.getCurrentUserId()}/${itemId}${mediaSourceId ? `?mediaSourceId=${encodeURIComponent(mediaSourceId)}` : ''}`),
-            dataType: 'json'
-        });
+        const path = `/item-stats/${ApiClient.getCurrentUserId()}/${itemId}${mediaSourceId ? `?mediaSourceId=${encodeURIComponent(mediaSourceId)}` : ''}`;
+        // Through JE's request limiter, which keeps sockets free for
+        // jellyfin-web's own requests (the chips start fetching as soon as
+        // they are placed, while the page is still loading).
+        const promise = JE.core?.api?.plugin
+            ? JE.core.api.plugin(path, { skipRetry: true })
+            : ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced${path}`), dataType: 'json' });
         const entry = { promise, ts: now };
         itemStatsRequests.set(key, entry);
         // A failed request is not kept: the next visit may try again.
@@ -58,6 +60,17 @@
             if (itemStatsRequests.get(key) === entry) itemStatsRequests.delete(key);
         });
         return promise;
+    }
+
+    /**
+     * Resolves in the next animation frame, so a chip's DOM write lands with
+     * the frame's own style/layout pass instead of forcing an extra one (the
+     * write itself is a few characters). In a hidden tab frames pause, and
+     * the write waits until the tab is shown.
+     * @returns {Promise<void>}
+     */
+    function nextFrame() {
+        return new Promise((resolve) => requestAnimationFrame(() => resolve()));
     }
 
     /**
@@ -246,9 +259,19 @@
             placeholder.appendChild(getWatchProgressValue({ progress: 0, totalPlaybackTicks: 0, totalRuntimeTicks: 0 }));
         };
 
-        // Use requestIdleCallback to defer the work and not block page rendering
+        // The request starts right away (it costs the main thread nothing
+        // while in flight); only the tiny DOM write waits for a frame. Waiting
+        // for an idle period before even asking left the chip blank for up
+        // to ~1.2 s on a busy details page.
+        const useCached = !!(cached && (now - cached.ts) < WATCHPROGRESS_CACHE_TTL);
+        const statsPromise = useCached ? null : fetchItemStats(itemId, mediaSourceId);
+        // Handled below; this only keeps an early failure from being reported
+        // as unhandled before the await is reached.
+        statsPromise?.catch(() => {});
         const performFetch = async () => {
-            if (cached && (now - cached.ts) < WATCHPROGRESS_CACHE_TTL) {
+            if (useCached) {
+                // Known value: fill it in straight away, so a chip re-placed
+                // after Jellyfin re-renders the row never flashes "...".
                 if (!cached.progress) {
                     renderUnavailable();
                     return;
@@ -263,7 +286,8 @@
             const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
             const isCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
             try {
-                const itemResult = await fetchItemStats(itemId, mediaSourceId);
+                const itemResult = await statsPromise;
+                await nextFrame();
 
                 const watchProgress = {
                     progress: itemResult?.progress ?? 0,
@@ -287,12 +311,7 @@
             }
         };
 
-        // Defer to allow page to render first
-        if (typeof requestIdleCallback !== 'undefined') {
-            requestIdleCallback(() => performFetch(), { timeout: 2000 });
-        } else {
-            setTimeout(() => performFetch(), 0);
-        }
+        performFetch();
     }
 
     /**
@@ -330,9 +349,14 @@
             placeholder.innerHTML = `<span class="material-icons" style="font-size: inherit; margin-right: 0.3em;">save</span> -`;
         };
 
-        // Use requestIdleCallback to defer the work and not block page rendering
+        // The request starts right away (shared with the watch-progress chip);
+        // only the tiny DOM write waits for a frame (see displayWatchProgress).
+        const useCached = !!(cached && (now - cached.ts) < FILESIZE_CACHE_TTL);
+        const statsPromise = useCached ? null : fetchItemStats(itemId, mediaSourceId);
+        statsPromise?.catch(() => {});
         const performFetch = async () => {
-            if (cached && (now - cached.ts) < FILESIZE_CACHE_TTL) {
+            if (useCached) {
+                // Known value: fill it in straight away (see displayWatchProgress).
                 if (cached.unavailable || !cached.size) {
                     renderUnavailable();
                     return;
@@ -343,7 +367,8 @@
             }
 
             try {
-                const itemResult = await fetchItemStats(itemId, mediaSourceId);
+                const itemResult = await statsPromise;
+                await nextFrame();
                 const totalSize = itemResult?.size ?? 0;
 
                 if (totalSize > 0) {
@@ -362,12 +387,7 @@
             }
         };
 
-        // Defer to allow page to render first
-        if (typeof requestIdleCallback !== 'undefined') {
-            requestIdleCallback(() => performFetch(), { timeout: 2000 });
-        } else {
-            setTimeout(() => performFetch(), 0);
-        }
+        performFetch();
     }
 
     // Flag resolution is shared with the Language Tags overlay via
@@ -590,12 +610,17 @@
             placeholder.appendChild(scrollContainer);
         };
 
-        // Use requestIdleCallback to defer the work and not block page rendering
+        // The lookups start right away (they cost the main thread nothing
+        // while in flight); the chip is built in the next animation frame so
+        // its small DOM write lands with that frame's own layout pass.
+        const renderUnavailableInFrame = () => nextFrame().then(() => { if (placeholder.isConnected) renderUnavailable(); });
+        const renderLanguagesInFrame = (languages) => nextFrame().then(() => { if (placeholder.isConnected) renderLanguages(languages); });
         const performFetch = async () => {
             // Check cache first
             const now = Date.now();
             const cached = audioLanguageCache.get(cacheKey);
             if (cached && (now - cached.ts) < LANGUAGE_CACHE_TTL) {
+                // Known value: fill it in straight away (see displayWatchProgress).
                 if (cached.unavailable || !cached.languages || cached.languages.length === 0) {
                     renderUnavailable();
                     return;
@@ -637,7 +662,7 @@
                         sourceItem = episode;
                     } else {
                         // No episodes found
-                        renderUnavailable();
+                        await renderUnavailableInFrame();
                         audioLanguageCache.set(cacheKey, { languages: [], unavailable: true, ts: Date.now() });
                         return;
                     }
@@ -677,26 +702,21 @@
 
                 const uniqueLanguages = Array.from(languages).map(JSON.parse);
                 if (uniqueLanguages.length > 0) {
-                    renderLanguages(uniqueLanguages);
+                    await renderLanguagesInFrame(uniqueLanguages);
                     // Cache the successful result
                     audioLanguageCache.set(cacheKey, { languages: uniqueLanguages, unavailable: false, ts: Date.now() });
                 } else {
-                    renderUnavailable();
+                    await renderUnavailableInFrame();
                     audioLanguageCache.set(cacheKey, { languages: [], unavailable: true, ts: Date.now() });
                 }
             } catch (error) {
                 console.error('🪼 Jellyfin Enhanced: Error fetching audio languages for %s:', itemId, error);
-                renderUnavailable();
+                await renderUnavailableInFrame();
                 audioLanguageCache.set(cacheKey, { languages: [], unavailable: true, ts: Date.now() });
             }
         };
 
-        // Defer to allow page to render first
-        if (typeof requestIdleCallback !== 'undefined') {
-            requestIdleCallback(() => performFetch(), { timeout: 2000 });
-        } else {
-            setTimeout(() => performFetch(), 0);
-        }
+        performFetch();
     }
 
     // Shared with the details-page dispatcher (features-details-page.js).

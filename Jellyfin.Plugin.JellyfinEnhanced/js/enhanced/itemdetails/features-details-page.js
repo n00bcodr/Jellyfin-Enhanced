@@ -224,7 +224,33 @@
         }
     }
 
-    const handleItemDetails = JE.helpers.debounce(() => {
+    // The chips JE adds to Jellyfin's primary info row.
+    const JE_INFO_CHIP = /\bmediaInfoItem-(watchProgress|fileSize|audioLanguage|releaseDate)\b/;
+
+    /**
+     * Whether Jellyfin has rendered its own items into the info row. Jellyfin
+     * (re)builds that row while the page loads; chips added before it has
+     * would be wiped by that render and re-added — a visible flicker.
+     * @param {HTMLElement} container - The .itemMiscInfo-primary row.
+     * @returns {boolean}
+     */
+    function hasJellyfinInfo(container) {
+        for (const child of container.children) {
+            if (!JE_INFO_CHIP.test(child.className)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Places the details-page features (hide/Spoiler Guard buttons, the media
+     * info chips) for the visible item. Idempotent: every feature skips an
+     * item it has already placed.
+     * @param {boolean} settled - The page's mutations have gone quiet. Early
+     *   (unsettled) runs place the chips only once Jellyfin's own info items
+     *   are in the row; the settled run places them regardless (some pages,
+     *   e.g. seasons, leave the row empty).
+     */
+    function runItemDetails(settled) {
         const visiblePage = document.querySelector('#itemDetailPage:not(.hide)');
         if (!visiblePage) return;
 
@@ -251,8 +277,9 @@
                         .then(item => {
                             lastDetailsItemType = item?.Type || null;
                             itemTypeFetchInProgress = null;
-                            // Re-run once type is known to render features
-                            handleItemDetails();
+                            // Re-run once the type is known, without waiting for
+                            // the page's mutations to go quiet again.
+                            runItemDetails(false);
                         })
                         .catch(() => { itemTypeFetchInProgress = null; });
                 }
@@ -277,6 +304,8 @@
                 return;
             }
 
+            if (!settled && !hasJellyfinInfo(container)) return;
+
             const selectedSourceId = visiblePage.querySelector('.selectSource')?.value || null;
             if (JE?.currentSettings?.showWatchProgress) {
                 displayWatchProgress(itemId, container, selectedSourceId);
@@ -293,7 +322,19 @@
         } catch (e) {
         console.warn('🪼 Jellyfin Enhanced: Error in item details handler', e);
     }
-    }, 100);
+    }
+
+    // Two schedules over the page's mutation bursts. The settled one waits
+    // for 100 ms of quiet, as before. The early one runs within ~100 ms even
+    // while Jellyfin is still building the page (mutations never go quiet
+    // then, which postponed the chips by up to ~0.8 s); it places the chips
+    // as soon as Jellyfin's info row is filled.
+    const settledItemDetails = JE.helpers.debounce(() => runItemDetails(true), 100);
+    const earlyItemDetails = JE.helpers.debounce(() => runItemDetails(false), 16, { maxWait: 100 });
+    const handleItemDetails = () => {
+        earlyItemDetails();
+        settledItemDetails();
+    };
 
     // Managed observer for item details. childList-only routes it through the
     // shared body observer (Jellyfin re-renders the detail page's children on

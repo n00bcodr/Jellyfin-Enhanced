@@ -170,6 +170,9 @@
                     : await ApiClient.getItem(userId, itemId);
                 const infos = await resolveReleaseInfo(item, userId);
                 releaseDateCache.set(itemId, { infos, ts: now });
+                // The chips' small DOM write lands with the next frame's own
+                // layout pass instead of forcing an extra one.
+                await new Promise((resolve) => requestAnimationFrame(() => resolve()));
                 if (!placeholder.isConnected) return; // navigated away while fetching
                 if (infos.length > 0) {
                     fillReleaseDateChips(placeholder, infos);
@@ -183,11 +186,10 @@
             }
         };
 
-        if (typeof requestIdleCallback !== 'undefined') {
-            requestIdleCallback(() => performFetch(), { timeout: 2000 });
-        } else {
-            setTimeout(() => performFetch(), 0);
-        }
+        // The lookups start right away (they cost the main thread nothing
+        // while in flight); waiting for an idle period first only delayed the
+        // chip on a busy details page.
+        performFetch();
     }
 
     let releaseDateIconFontInjected = false;

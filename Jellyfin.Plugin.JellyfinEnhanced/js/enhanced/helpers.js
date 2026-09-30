@@ -204,9 +204,12 @@
      * Debounce a function call
      * @param {Function} func - The function to debounce
      * @param {number} wait - Wait time in ms
+     * @param {{maxWait?: number}} [options] - maxWait caps how long a burst of
+     *   calls can keep postponing the call (ms since the burst's first call).
      * @returns {Function}
      */
-    function debounce(func, wait) {
+    function debounce(func, wait, options) {
+        const maxWait = options && options.maxWait > 0 ? options.maxWait : Infinity;
         // Trailing-edge debounce that keeps one timer alive per burst instead of
         // clearing and re-arming a timer on every call: the observer-driven
         // callers are invoked hundreds of times per navigation, and the
@@ -215,9 +218,11 @@
         // time when it fires and re-arms only for the remaining wait.
         let timeout = null;
         let lastCall = 0;
+        let firstCall = 0;
         let lastArgs = [];
         const fire = () => {
-            const remaining = wait - (Date.now() - lastCall);
+            const now = Date.now();
+            const remaining = Math.min(wait - (now - lastCall), maxWait - (now - firstCall));
             if (remaining > 0) {
                 timeout = setTimeout(fire, remaining);
                 return;
@@ -228,7 +233,10 @@
         return function executedFunction(...args) {
             lastArgs = args;
             lastCall = Date.now();
-            if (timeout === null) timeout = setTimeout(fire, wait);
+            if (timeout === null) {
+                firstCall = lastCall;
+                timeout = setTimeout(fire, Math.min(wait, maxWait));
+            }
         };
     }
 
