@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
@@ -138,11 +139,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     // The series' seasons exactly as Series.GetChildren lists
                     // them for this user (missing seasons only when the user
-                    // displays missing episodes), then each season below: one
-                    // query per season instead of the old per-episode lookups.
-                    foreach (var child in ((Folder)series).GetChildren(user, true))
+                    // displays missing episodes), and each season's episodes as
+                    // Season.GetChildren returns them (missing included). The
+                    // series' episodes are read in ONE query and Jellyfin's own
+                    // GetSeasonEpisodes assigns them to seasons in memory: left
+                    // to itself, each season re-queries the whole series (with
+                    // specials shown within seasons), seasons x episodes rows.
+                    var seasons = ((Folder)series).GetChildren(user, true);
+                    var seriesEpisodes = _libraryManager.GetItemList(new InternalItemsQuery(user)
                     {
-                        Collect(user, child, leaves, seen, visitedFolders);
+                        AncestorWithPresentationUniqueKey = null,
+                        SeriesPresentationUniqueKey = series.GetPresentationUniqueKey(),
+                        IncludeItemTypes = new[] { BaseItemKind.Episode },
+                        DtoOptions = options,
+                    });
+                    foreach (var child in seasons)
+                    {
+                        if (child is Season childSeason)
+                        {
+                            if (visitedFolders.Add(childSeason.Id))
+                            {
+                                AddLeaves(series.GetSeasonEpisodes(childSeason, user, seriesEpisodes, options, true), leaves, seen);
+                            }
+                        }
+                        else
+                        {
+                            Collect(user, child, leaves, seen, visitedFolders);
+                        }
                     }
 
                     return;
