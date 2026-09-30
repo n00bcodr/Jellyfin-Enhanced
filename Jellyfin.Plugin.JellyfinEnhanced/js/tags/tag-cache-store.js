@@ -9,10 +9,11 @@
 // another account's data around.
 //
 // Several tabs can share one copy. Every write that depends on what is stored
-// checks it inside the same transaction: snapshots are ordered by the server's
-// cache version, then its cursor (timestamp), then when the data was fetched
-// (fetchedAt, only a tie-break); a full rewrite only replaces a snapshot that
-// isn't newer and claims the scope with a token (a "pending" meta record) that
+// checks it inside the same transaction: snapshots are ordered by when the
+// server captured them (servedAt, the server's clock — the cache version can
+// go back after a restart restores an older on-disk cache, the capture time
+// doesn't); a full rewrite only replaces a snapshot that isn't newer and
+// claims the scope with a token (a "pending" meta record) that
 // each of its slices and its final meta check, and a delta only applies on top
 // of exactly the cursor, version and filter revision it was fetched against. A
 // tab holding older data therefore can never roll the copy back, and readers
@@ -34,8 +35,8 @@
     const DB_NAME = 'JellyfinEnhanced';
     const DB_VERSION = 1;
     // One record per scope: { scope, version, timestamp, filterRevision, count,
-    // clearStamp, fetchedAt, savedAt } once complete, or { scope, pending,
-    // version, timestamp, fetchedAt } while a full rewrite owns it (never restored).
+    // clearStamp, servedAt, savedAt } once complete, or { scope, pending,
+    // servedAt } while a full rewrite owns it (never restored).
     const META_STORE = 'tagCacheMeta';
     // One record per entry, keyed `${scope}|${itemId}` so a scope is one key range.
     const ITEM_STORE = 'tagCacheItems';
@@ -187,17 +188,15 @@
     }
 
     /**
-     * Whether snapshot `a` is strictly newer than snapshot `b`: by server cache
-     * version, then cursor, then fetch time. Arrival time alone can't order
-     * them — a slow response can carry older server data.
-     * @param {{version?: number, timestamp?: number, fetchedAt?: number}} a
-     * @param {{version?: number, timestamp?: number, fetchedAt?: number}} b
+     * Whether snapshot `a` was captured by the server strictly after `b`.
+     * Neither arrival time (a slow response carries older data) nor the cache
+     * version (it can go back after a server restart) can order them.
+     * @param {{servedAt?: number}} a
+     * @param {{servedAt?: number}} b
      * @returns {boolean}
      */
     function isNewer(a, b) {
-        if ((a.version || 0) !== (b.version || 0)) return (a.version || 0) > (b.version || 0);
-        if ((a.timestamp || 0) !== (b.timestamp || 0)) return (a.timestamp || 0) > (b.timestamp || 0);
-        return (a.fetchedAt || 0) > (b.fetchedAt || 0);
+        return (a.servedAt || 0) > (b.servedAt || 0);
     }
 
     /**
@@ -208,7 +207,7 @@
      * newer data takes the scope over.
      * @param {string} scope
      * @param {string} token - Unique to this writer.
-     * @param {{version: number, timestamp: number, fetchedAt: number}} snapshot - What this writer holds.
+     * @param {{servedAt: number}} snapshot - When the server captured this writer's data.
      * @returns {Promise<boolean>} false when a newer snapshot is already stored
      */
     async function beginFullWrite(scope, token, snapshot) {
@@ -222,7 +221,7 @@
             if (meta && isNewer(meta, snapshot)) return;
             claimed = true;
             tx.objectStore(ITEM_STORE).delete(scopeRange(scope));
-            metaStore.put({ scope, pending: token, version: snapshot.version, timestamp: snapshot.timestamp, fetchedAt: snapshot.fetchedAt });
+            metaStore.put({ scope, pending: token, servedAt: snapshot.servedAt });
         };
         await committed(tx);
         return claimed;
@@ -285,10 +284,10 @@
      * @param {{timestamp: number, version: number, filterRevision: string}} base - What the delta was requested against.
      * @param {Array<[string, object]>} entries - [itemId, entry] pairs
      * @param {number} timestamp - The delta response's timestamp (the new cursor).
-     * @param {number} fetchedAt - When the delta was fetched (ms).
+     * @param {number} servedAt - When the server captured the delta (ms, server clock).
      * @returns {Promise<boolean>} whether the delta was applied
      */
-    async function applyDelta(scope, base, entries, timestamp, fetchedAt) {
+    async function applyDelta(scope, base, entries, timestamp, servedAt) {
         const db = await openDb();
         const tx = db.transaction([META_STORE, ITEM_STORE], 'readwrite');
         const metaStore = tx.objectStore(META_STORE);
@@ -306,7 +305,7 @@
             const items = tx.objectStore(ITEM_STORE);
             const prefix = scope + KEY_SEP;
             for (const [id, entry] of entries) items.put(entry, prefix + id);
-            metaStore.put({ ...meta, timestamp, fetchedAt: Math.max(meta.fetchedAt || 0, fetchedAt), savedAt: Date.now() });
+            metaStore.put({ ...meta, timestamp, servedAt: Math.max(meta.servedAt || 0, servedAt || 0), savedAt: Date.now() });
         };
         await committed(tx);
         return applied;

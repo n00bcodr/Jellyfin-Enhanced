@@ -7635,6 +7635,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // stripped below exactly like a full load, instead of the whole cache.
             Func<string, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry, bool>? guardedRider =
                 since.HasValue && spState != null ? (key, e) => GuardedKind(key, e) != null : null;
+            // Server clock at capture (taken before reading the cache, so it never
+            // post-dates the data): clients order stored snapshots by it. Unlike
+            // the cache version, it keeps moving forward across a restart that
+            // restores an older on-disk cache.
+            var servedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, out var accessRevision, since, guardedRider);
 
             // Fingerprint of how this user's entries are filtered and stripped:
@@ -7886,6 +7891,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 version = cacheVersion,
                 timestamp = cacheTimestamp,
+                servedAt,
                 filterRevision,
                 count = items.Count,
                 items,
