@@ -318,11 +318,20 @@
     function applyChip(containerOrEl, rating, restack) {
         if (!containerOrEl.isConnected) return; // card gone while the rating was looked up
         if (rating === null && JE.pluginConfig?.ShowUserRatingDash === false) {
-            // No chip for "no rating"; drop one an earlier value left behind.
+            // No chip for "no rating"; drop one an earlier value left behind,
+            // and the rating container with it when that was its only chip.
             const stale = containerOrEl.classList.contains('je-userreview-tag')
                 ? containerOrEl
                 : containerOrEl.querySelector('.je-userreview-tag');
-            stale?.remove();
+            if (!stale) return;
+            const staleContainer = stale.closest('.rating-overlay-container');
+            const host = staleContainer?.parentElement || null;
+            stale.remove();
+            if (staleContainer && staleContainer.childElementCount === 0) staleContainer.remove();
+            // The corner shrank: re-measure whatever shares it (e.g. the age badge).
+            if (restack && host && typeof JE.core?.tagRenderer?.scheduleCornerStacking === 'function') {
+                JE.core.tagRenderer.scheduleCornerStacking(host);
+            }
             return;
         }
 
