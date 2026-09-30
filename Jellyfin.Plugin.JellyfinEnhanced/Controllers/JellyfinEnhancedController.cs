@@ -6974,34 +6974,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// isolate each review so one bad record cannot fail the request.
         /// </summary>
         /// <summary>
-        /// Review authors resolved recently, shared across requests. On Jellyfin
-        /// 12 <see cref="IUserManager.GetUserById"/> reads the database (about
-        /// 8 ms per author on the lab server), and the tag-cache delta resolves
-        /// every author in the review store on every navigation — each
-        /// navigation paid that per distinct author. The visibility rule is
-        /// unchanged; a user's hidden/disabled flags or deletion take effect
-        /// within <see cref="ReviewAuthorCacheTtl"/>. Bounded by the number of
-        /// authors.
-        /// </summary>
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, (Jellyfin.Database.Implementations.Entities.User? User, DateTime CachedAt)> _reviewAuthorCache = new();
-        private static readonly TimeSpan ReviewAuthorCacheTtl = TimeSpan.FromSeconds(15);
-
-        /// <summary>
         /// The Jellyfin user behind a review author id (null when the user no
-        /// longer exists), from <see cref="_reviewAuthorCache"/> while fresh.
+        /// longer exists), through <see cref="Services.ReviewAuthorCache"/>, which the
+        /// user update/delete events invalidate.
         /// </summary>
         private Jellyfin.Database.Implementations.Entities.User? ResolveReviewAuthor(Guid userGuid)
-        {
-            var now = DateTime.UtcNow;
-            if (_reviewAuthorCache.TryGetValue(userGuid, out var cached) && now - cached.CachedAt < ReviewAuthorCacheTtl)
-            {
-                return cached.User;
-            }
-
-            var user = _userManager.GetUserById(userGuid);
-            _reviewAuthorCache[userGuid] = (user, now);
-            return user;
-        }
+            => Services.ReviewAuthorCache.Resolve(userGuid, _userManager.GetUserById);
 
         private bool IsReviewVisibleToViewer(
             UserReview review,
