@@ -72,6 +72,8 @@
 
     internal.isStateLoaded = function() { return loaded; };
     internal.isLoadOk = function() { return loadOk; };
+    // True once the initial state request has settled (successfully or not).
+    internal.isLoaded = function() { return loaded; };
     internal.isEnabledFor = function(id) { return enabledSeries.has(internal.normalizeId(id)); };
     internal.isMovieEnabledFor = function(id) { return enabledMovies.has(internal.normalizeId(id)); };
     internal.isCollectionEnabledFor = function(id) { return enabledCollections.has(internal.normalizeId(id)); };

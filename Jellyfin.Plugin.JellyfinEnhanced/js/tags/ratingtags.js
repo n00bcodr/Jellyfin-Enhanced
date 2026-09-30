@@ -84,6 +84,27 @@
     JE.isRatingTagExcludedByScope = isExcludedByScope;
 
     /**
+     * True while rating suppression is only the fail-closed default because
+     * Spoiler Guard's per-user state request is still in flight (see
+     * shouldSuppressRatingTag). Such cards get NOTHING yet — not even the
+     * user-review chip, whose overlay would make the card look finished — so
+     * the rescan Spoiler Guard runs once its state loads renders them
+     * properly. After a FAILED load nothing rescans, so suppression is final
+     * then and the chip goes on as before.
+     * @returns {boolean}
+     */
+    function isSuppressionPending() {
+        try {
+            const sg = JE.spoilerBlur;
+            if (!sg || JE.pluginConfig?.SpoilerBlurEnabled !== true) return false;
+            if (typeof sg.isLoaded === 'function') return sg.isLoaded() !== true;
+            return typeof sg.isLoadOk === 'function' && sg.isLoadOk() !== true;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
      * True when the community/critic rating tag must be SUPPRESSED because the
      * item is (or belongs to) a Spoiler-Guarded series and ratings are being
      * hidden for this user. Series suppress their own card; Seasons and unwatched
@@ -323,7 +344,9 @@
                 // Spoiler Guard was enabled must never flash back onto a card.
                 if (shouldSuppressRatingTag(item)) {
                     ctx.markTagged(el);
-                    if (typeof JE.appendUserRatingToContainer === 'function') {
+                    // Guarded: hide the rating, keep the user-review chip. Still
+                    // loading: add nothing, the post-load rescan decides.
+                    if (!isSuppressionPending() && typeof JE.appendUserRatingToContainer === 'function') {
                         JE.appendUserRatingToContainer(el, item, extras);
                     }
                     return;
@@ -447,6 +470,10 @@
                     });
                 if (suppressed) {
                     ctx.markTagged(el);
+                    // Still loading Spoiler Guard state: add nothing, not even
+                    // the review chip (its overlay would mark the card finished
+                    // and keep the rating off after the post-load rescan).
+                    if (isSuppressionPending()) return;
                 } else {
                     const tmdb = entry.CommunityRating != null
                         ? parseFloat(entry.CommunityRating).toFixed(1)
