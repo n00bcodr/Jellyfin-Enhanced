@@ -78,6 +78,11 @@
         return false;
     }
 
+    // The review chips (userreviewtags.js) update cards outside this renderer
+    // when the review averages change; they use the same scope rule so a card
+    // this renderer leaves bare never gets a chip.
+    JE.isRatingTagExcludedByScope = isExcludedByScope;
+
     /**
      * True when the community/critic rating tag must be SUPPRESSED because the
      * item is (or belongs to) a Spoiler-Guarded series and ratings are being

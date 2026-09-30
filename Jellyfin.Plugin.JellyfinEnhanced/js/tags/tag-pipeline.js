@@ -284,9 +284,10 @@
     }
 
     /**
-     * Tell the review tags which averages changed, so chips already on cards
-     * (rendered from the previous averages) are updated in place. Nothing is
-     * called when nothing changed — the common case for a navigation delta.
+     * Tell the review tags a newer averages map was accepted and which of its
+     * values changed, so chips already on cards are updated in place. Called
+     * even when no value changed: the newer map can still supersede values the
+     * review tags looked up on their own (they decide; usually nothing to do).
      * @param {Map<string, number>|null} previous
      * @param {Map<string, number>|null} next
      */
@@ -301,7 +302,6 @@
             for (const key of previous.keys()) {
                 if (!next.has(key)) changed.add(key);
             }
-            if (changed.size === 0) return;
         }
         for (const listener of reviewRatingsListeners) {
             try { listener(changed); } catch (err) { console.warn(`${logPrefix} review ratings listener failed:`, err); }
@@ -1517,8 +1517,8 @@
         /** @returns {number} performance.now() when the request behind the current review averages started (0 = none). */
         getReviewRatingsRequestedAt() { return reviewRatingsRequestedAt; },
         /**
-         * Subscribe to changes of the review averages.
-         * @param {(changed: Set<string>|null) => void} listener - Receives the changed "mediaType:tmdbKey" keys, or null for all.
+         * Subscribe to accepted review averages maps.
+         * @param {(changed: Set<string>|null) => void} listener - Receives the "mediaType:tmdbKey" keys whose value changed (possibly none), or null for all.
          */
         onReviewRatingsChanged(listener) { reviewRatingsListeners.add(listener); },
         // For reinitialize support

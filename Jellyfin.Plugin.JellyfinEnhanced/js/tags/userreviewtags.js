@@ -442,10 +442,23 @@
         // Same gates as rendering: with the chips (or rating tags) switched
         // off there is nothing to update, and nothing may be re-created.
         if (!JE.pluginConfig?.ShowUserReviews || !JE.pluginConfig?.ShowUserRatingOnPosters || !JE.currentSettings?.ratingTagsEnabled) return;
+        // Keys to refresh: those whose average changed, plus any this session
+        // looked up on its own that the newer map now supersedes (its value can
+        // be on a chip even when the map's own value didn't change).
+        let keys = changed;
+        if (keys) {
+            for (const key of Array.from(_reviewCache.keys())) {
+                if (!hasFreshCached(key)) keys.add(key);
+            }
+            if (keys.size === 0) return;
+        }
         const hosts = document.querySelectorAll('[data-je-review-key]');
         for (const host of hosts) {
             const key = host.dataset.jeReviewKey;
-            if (changed && !changed.has(key)) continue;
+            if (keys && !keys.has(key)) continue;
+            // Per-type / home-row scope: a card the rating renderer leaves
+            // bare never gets a chip from here either.
+            if (typeof JE.isRatingTagExcludedByScope === 'function' && JE.isRatingTagExcludedByScope(host, null)) continue;
             const sep = key.indexOf(':');
             const rating = peekUserRating(key.slice(sep + 1), key.slice(0, sep));
             if (rating === undefined) continue;
