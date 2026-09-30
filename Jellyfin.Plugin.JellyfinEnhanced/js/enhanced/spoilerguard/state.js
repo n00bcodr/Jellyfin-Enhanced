@@ -60,6 +60,16 @@
                 console.error(`${logPrefix} state load failed; downstream consumers will fail closed:`, err);
                 loaded = true;
                 loadOk = false;
+                // Tag renderers held back on cards while this was in flight
+                // (e.g. user-review chips, see ratingtags.js): with the state
+                // settled — failed, so ratings stay suppressed — give them
+                // their final pass too.
+                try {
+                    JE.tagPipeline?.clearProcessed?.();
+                    JE.tagPipeline?.scheduleScan?.();
+                } catch (e) {
+                    console.warn(`${logPrefix} post-failure tag rescan failed:`, e);
+                }
             });
         return statePromise;
     };
