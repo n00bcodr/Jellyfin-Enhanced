@@ -484,7 +484,10 @@
 
         fetchUserRating(tmdbKey, mediaType).then((rating) => {
             if (rating === undefined) return; // lookup aborted — render nothing
-            applyChip(containerOrEl, rating, true);
+            // Averages that arrived while this lookup was out are newer than
+            // its answer (and may already be on the chip): resolve again.
+            const current = peekUserRating(tmdbKey, mediaType);
+            applyChip(containerOrEl, current !== undefined ? current : rating, true);
         });
     };
 

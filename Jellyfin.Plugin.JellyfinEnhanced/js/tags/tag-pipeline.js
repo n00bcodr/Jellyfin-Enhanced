@@ -563,7 +563,9 @@
                     await fetchDelta();
                     return;
                 }
-                await downloadFullCache();
+                // A forced download replaces a copy (a Spoiler Guard toggle, a
+                // filter change noticed mid-session): it needs a current servedAt.
+                await downloadFullCache({ fresh: !!options?.forceDownload });
             } catch (err) {
                 releaseStoreGate();
                 console.warn(`${logPrefix} Failed to load server cache, using batch fallback:`, err);
