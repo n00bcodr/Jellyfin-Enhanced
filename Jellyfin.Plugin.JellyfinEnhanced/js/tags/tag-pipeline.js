@@ -325,8 +325,9 @@
      * waits for this.
      * @param {string} scope
      * @param {object} resp - Full tag-cache response body.
+     * @param {number} fetchedAt - When the response arrived (ms).
      */
-    function persistFullCache(scope, resp) {
+    function persistFullCache(scope, resp, fetchedAt) {
         if (!JE.tagCacheStore?.available()) return;
         const store = JE.tagCacheStore;
         const entries = Object.entries(resp.items);
@@ -336,6 +337,7 @@
             filterRevision: typeof resp.filterRevision === 'string' ? resp.filterRevision : '',
             count: entries.length,
             clearStamp: JE.pluginConfig?.ClearLocalStorageTimestamp || 0,
+            fetchedAt,
             savedAt: Date.now(),
         };
         storeScope = scope;
@@ -348,7 +350,8 @@
             // Claim the scope; another tab rewriting it later takes it over and
             // this write stops (every slice and the final meta check the claim).
             const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-            await store.beginFullWrite(scope, token);
+            // Another tab already stored newer data: keep it.
+            if (!await store.beginFullWrite(scope, token, fetchedAt)) return;
             for (let i = 0; i < entries.length; i += PERSIST_SLICE) {
                 await idleYield();
                 if (generation !== persistGeneration) return;
@@ -370,15 +373,16 @@
      * @param {Array<[string, object]>} entries - [itemId, entry] pairs
      * @param {{timestamp: number, version: number, filterRevision: string}} base - What the delta was requested against.
      * @param {number} timestamp - The delta response's timestamp.
+     * @param {number} fetchedAt - When the delta arrived (ms).
      */
-    function persistDelta(entries, base, timestamp) {
+    function persistDelta(entries, base, timestamp, fetchedAt) {
         const scope = storeScope;
         if (!scope || !JE.tagCacheStore?.available()) return;
         const store = JE.tagCacheStore;
         const generation = persistGeneration;
         queuePersist(async () => {
             if (generation !== persistGeneration) return;
-            await store.applyDelta(scope, base, entries, timestamp);
+            await store.applyDelta(scope, base, entries, timestamp, fetchedAt);
         });
     }
 
@@ -475,7 +479,7 @@
         // Memory is complete and current: nothing needs the stored copy now.
         releaseStoreGate();
         console.log(`${logPrefix} Server cache loaded: ${serverCache.size} items (v${serverCacheVersion})`);
-        if (scope) persistFullCache(scope, resp);
+        if (scope) persistFullCache(scope, resp, Date.now());
         return true;
     }
 
@@ -658,7 +662,7 @@
                     deltaIds.add(id);
                 }
                 serverCacheTimestamp = resp.timestamp;
-                persistDelta(newEntries, base, resp.timestamp);
+                persistDelta(newEntries, base, resp.timestamp, Date.now());
                 // Notify renderers to invalidate derived caches for updated items
                 for (const [, renderer] of renderers) {
                     if (renderer.onServerCacheRefresh) {
@@ -710,13 +714,21 @@
 
         const scope = storeScope;
         const generation = cacheGeneration;
-        return JE.tagCacheStore.getMany(scope, missing).then((stored) => {
+        return JE.tagCacheStore.getMany(scope, missing).then(({ entries: read, meta }) => {
             // Memory was replaced (user switch, full download, invalidation)
             // while reading: what was read may predate it. Answer again from
             // the current state instead.
             if (storeScope !== scope || !serverCache || generation !== cacheGeneration) {
                 return lookupServerEntries(ids);
             }
+            // Only use the stored entries while the stored snapshot is the one
+            // this page confirmed (same version and filter revision, complete):
+            // another tab may be rewriting it or may have replaced it with data
+            // filtered differently. Anything else counts as not stored.
+            const usable = !!meta && !meta.pending
+                && meta.version === serverCacheVersion
+                && meta.filterRevision === serverFilterRevision;
+            const stored = usable ? read : new Map();
             if (serverCache.size + stored.size > MEMORY_SOFT_CAP) {
                 // Reset, but keep what deltas installed: the stored copy may
                 // not have those yet (its write is queued, or another tab owns it).

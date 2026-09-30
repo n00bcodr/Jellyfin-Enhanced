@@ -146,6 +146,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // to itself, each season re-queries the whole series (with
                     // specials shown within seasons), seasons x episodes rows.
                     var seasons = ((Folder)series).GetChildren(user, true);
+                    if (series.SourceType == SourceType.Channel)
+                    {
+                        // Channel series load their episodes through the channel
+                        // (Season.GetEpisodes does), not from the library: keep
+                        // Jellyfin's own per-season path for them.
+                        foreach (var child in seasons)
+                        {
+                            Collect(user, child, leaves, seen, visitedFolders);
+                        }
+
+                        return;
+                    }
+
                     var seriesEpisodes = _libraryManager.GetItemList(new InternalItemsQuery(user)
                     {
                         AncestorWithPresentationUniqueKey = null,

@@ -126,6 +126,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // User access cache: avoids expensive GetItemIds query on every request
         private readonly ConcurrentDictionary<string, (HashSet<string> Ids, DateTime CachedAt)> _userAccessCache = new();
         private static readonly TimeSpan UserAccessCacheTtl = TimeSpan.FromSeconds(60);
+        // Bumped by InvalidateUserAccess: an access set computed before a bump
+        // (user policy or library changed meanwhile) is used for its own request
+        // but never stored.
+        private long _userAccessGeneration;
+
+        /// <summary>
+        /// Drop every cached per-user access set, so the next request filters
+        /// with the user's current access. Called when a user's policy changes
+        /// and when library changes are applied to the cache: tag-cache deltas
+        /// are filtered by this set and clients keep their copy across page
+        /// loads, so a stale set would either skip a newly added item for good
+        /// (its update is behind the cursor by the time the set refreshes) or
+        /// hide an access change from the filterRevision.
+        /// </summary>
+        public void InvalidateUserAccess()
+        {
+            Interlocked.Increment(ref _userAccessGeneration);
+            _userAccessCache.Clear();
+        }
 
         public static readonly HashSet<BaseItemKind> TaggableTypes = new()
         {
@@ -359,7 +378,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciliationStartedUtc.Ticks);
             // Invalidate user access cache since items may have changed
-            _userAccessCache.Clear();
+            InvalidateUserAccess();
             progress?.Report(100);
 
             sw.Stop();
@@ -606,7 +625,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                 }
 
-                _userAccessCache.Clear();
+                InvalidateUserAccess();
             }
 
             Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciliationStartedUtc.Ticks);
@@ -776,7 +795,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     Interlocked.Exchange(ref _firstPendingTicks, 0);
                     var batch = _pending.Drain();
-                    if (ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry))
+                    var changed = ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry);
+                    // Any library change may alter who can see an item (added,
+                    // removed, moved, re-rated, re-tagged) even when its tag entry
+                    // is unchanged: access sets computed before it are stale.
+                    InvalidateUserAccess();
+                    if (changed)
                     {
                         Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                         ScheduleDebouncedSave();
@@ -906,7 +930,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// or a version the next poll can't detect a rebuild against.
         /// </summary>
         public Dictionary<string, TagCacheEntry> GetCacheForUser(JUser user, out long version, out long timestamp, long? since = null, Func<string, TagCacheEntry, bool>? alsoInclude = null)
+            => GetCacheForUser(user, out version, out timestamp, out _, since, alsoInclude);
+
+        /// <summary>
+        /// As <see cref="GetCacheForUser(JUser, out long, out long, long?, Func{string, TagCacheEntry, bool}?)"/>,
+        /// also returning <paramref name="accessRevision"/>: a fingerprint of the
+        /// cache entries this user can NOT see, computed from the very access set
+        /// used to filter the result. It changes whenever an entry stops being
+        /// visible to the user (library access, parental limits or tags changed
+        /// on the user or on the item), which a filtered delta cannot express,
+        /// and not when visible items are added.
+        /// </summary>
+        public Dictionary<string, TagCacheEntry> GetCacheForUser(JUser user, out long version, out long timestamp, out string accessRevision, long? since = null, Func<string, TagCacheEntry, bool>? alsoInclude = null)
         {
+            accessRevision = "none";
             ConcurrentDictionary<string, TagCacheEntry> cache;
             lock (_publishLock)
             {
@@ -936,6 +973,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             else
             {
+                var accessGeneration = Interlocked.Read(ref _userAccessGeneration);
                 var accessibleIds = _libraryManager.GetItemIds(new InternalItemsQuery(user)
                 {
                     IncludeItemTypes = TaggableTypes.ToArray(),
@@ -954,7 +992,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // cache for the off window.
                 lock (_publishLock)
                 {
-                    if (ServerModeEnabled && !_cacheReleased)
+                    if (ServerModeEnabled && !_cacheReleased && Interlocked.Read(ref _userAccessGeneration) == accessGeneration)
                     {
                         _userAccessCache[userKey] = (accessibleSet, DateTime.UtcNow);
                     }
@@ -962,9 +1000,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var result = new Dictionary<string, TagCacheEntry>();
+            // Order-independent digest of the excluded keys (sum of a stable
+            // 64-bit hash per key, plus the count), so no sort or list is needed.
+            ulong excludedSum = 0;
+            var excludedCount = 0;
             foreach (var kvp in cache)
             {
-                if (!accessibleSet.Contains(kvp.Key)) continue;
+                if (!accessibleSet.Contains(kvp.Key))
+                {
+                    excludedSum = unchecked(excludedSum + StableKeyHash(kvp.Key));
+                    excludedCount++;
+                    continue;
+                }
                 if (since.HasValue && kvp.Value.LastUpdated <= since.Value
                     && (alsoInclude == null || !alsoInclude(kvp.Key, kvp.Value)))
                 {
@@ -974,7 +1021,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 result[kvp.Key] = kvp.Value;
             }
 
+            accessRevision = excludedCount == 0
+                ? "all"
+                : excludedCount.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + excludedSum.ToString("x16", System.Globalization.CultureInfo.InvariantCulture);
             return result;
+        }
+
+        /// <summary>A hash of a cache key that is stable across processes (string.GetHashCode is randomized).</summary>
+        private static ulong StableKeyHash(string key)
+        {
+            // FNV-1a, 64-bit.
+            ulong hash = 14695981039346656037UL;
+            foreach (var c in key)
+            {
+                hash = unchecked((hash ^ c) * 1099511628211UL);
+            }
+
+            return hash;
         }
 
         /// <summary>
@@ -1061,7 +1124,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         _cacheReleased = true;
                         _cache = new ConcurrentDictionary<string, TagCacheEntry>();
-                        _userAccessCache.Clear();
+                        InvalidateUserAccess();
                     }
                 }
             }

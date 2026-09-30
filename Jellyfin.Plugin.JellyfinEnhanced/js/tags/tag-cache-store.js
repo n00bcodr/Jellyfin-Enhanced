@@ -9,11 +9,13 @@
 // another account's data around.
 //
 // Several tabs can share one copy. Every write that depends on what is stored
-// checks it inside the same transaction: a full rewrite claims the scope with a
-// token (a "pending" meta record) and each of its slices and its final meta
-// only land while that token still owns the scope, and a delta only applies on
-// top of exactly the cursor, version and strip revision it was fetched against.
-// A tab holding older data therefore can never roll the copy back.
+// checks it inside the same transaction: each snapshot records when its data
+// was fetched (fetchedAt), a full rewrite only replaces an older snapshot and
+// claims the scope with a token (a "pending" meta record) that each of its
+// slices and its final meta check, and a delta only applies on top of exactly
+// the cursor, version and filter revision it was fetched against. A tab
+// holding older data therefore can never roll the copy back, and readers get
+// the meta record with their entries to check they match what they confirmed.
 //
 // Every operation resolves to "nothing stored" or rejects on failure, and the
 // first failure (no IndexedDB, private mode, quota, corrupt database) marks the
@@ -31,8 +33,8 @@
     const DB_NAME = 'JellyfinEnhanced';
     const DB_VERSION = 1;
     // One record per scope: { scope, version, timestamp, filterRevision, count,
-    // clearStamp, savedAt } once complete, or { scope, pending } while a full
-    // rewrite owns it (never restored).
+    // clearStamp, fetchedAt, savedAt } once complete, or { scope, pending,
+    // fetchedAt } while a full rewrite owns it (never restored).
     const META_STORE = 'tagCacheMeta';
     // One record per entry, keyed `${scope}|${itemId}` so a scope is one key range.
     const ITEM_STORE = 'tagCacheItems';
@@ -159,17 +161,18 @@
     }
 
     /**
-     * Read the entries for the given item ids in one transaction. Ids with no
-     * stored entry are simply absent from the result.
+     * Read the entries for the given item ids, and the scope's meta record, in
+     * one transaction (so the caller can check the entries belong to the
+     * snapshot it confirmed). Ids with no stored entry are simply absent.
      * @param {string} scope
      * @param {string[]} ids
-     * @returns {Promise<Map<string, object>>}
+     * @returns {Promise<{entries: Map<string, object>, meta: object|null}>}
      */
     async function getMany(scope, ids) {
         const found = new Map();
-        if (ids.length === 0) return found;
         const db = await openDb();
-        const tx = db.transaction(ITEM_STORE, 'readonly');
+        const tx = db.transaction([META_STORE, ITEM_STORE], 'readonly');
+        const metaRequest = tx.objectStore(META_STORE).get(scope);
         const store = tx.objectStore(ITEM_STORE);
         const prefix = scope + KEY_SEP;
         for (const id of ids) {
@@ -179,23 +182,35 @@
             };
         }
         await committed(tx);
-        return found;
+        return { entries: found, meta: metaRequest.result || null };
     }
 
     /**
-     * Start a full rewrite of a scope: in one transaction, delete its entries
-     * and claim it with `token` (a pending meta record, which restore ignores).
-     * A later claim by another writer (tab) takes the scope over.
+     * Start a full rewrite of a scope with data fetched at `fetchedAt`: in one
+     * transaction, unless the stored snapshot (complete or being written) was
+     * fetched later, delete its entries and claim the scope with `token` (a
+     * pending meta record, which restore ignores). A later claim by a writer
+     * with newer data takes the scope over.
      * @param {string} scope
      * @param {string} token - Unique to this writer.
-     * @returns {Promise<void>}
+     * @param {number} fetchedAt - When this writer's data was fetched (ms).
+     * @returns {Promise<boolean>} false when a newer snapshot is already stored
      */
-    async function beginFullWrite(scope, token) {
+    async function beginFullWrite(scope, token, fetchedAt) {
         const db = await openDb();
         const tx = db.transaction([META_STORE, ITEM_STORE], 'readwrite');
-        tx.objectStore(ITEM_STORE).delete(scopeRange(scope));
-        tx.objectStore(META_STORE).put({ scope, pending: token });
+        const metaStore = tx.objectStore(META_STORE);
+        const request = metaStore.get(scope);
+        let claimed = false;
+        request.onsuccess = () => {
+            const meta = request.result;
+            if (meta && (meta.fetchedAt || 0) > fetchedAt) return;
+            claimed = true;
+            tx.objectStore(ITEM_STORE).delete(scopeRange(scope));
+            metaStore.put({ scope, pending: token, fetchedAt });
+        };
         await committed(tx);
+        return claimed;
     }
 
     /**
@@ -255,9 +270,10 @@
      * @param {{timestamp: number, version: number, filterRevision: string}} base - What the delta was requested against.
      * @param {Array<[string, object]>} entries - [itemId, entry] pairs
      * @param {number} timestamp - The delta response's timestamp (the new cursor).
+     * @param {number} fetchedAt - When the delta was fetched (ms).
      * @returns {Promise<boolean>} whether the delta was applied
      */
-    async function applyDelta(scope, base, entries, timestamp) {
+    async function applyDelta(scope, base, entries, timestamp, fetchedAt) {
         const db = await openDb();
         const tx = db.transaction([META_STORE, ITEM_STORE], 'readwrite');
         const metaStore = tx.objectStore(META_STORE);
@@ -275,7 +291,7 @@
             const items = tx.objectStore(ITEM_STORE);
             const prefix = scope + KEY_SEP;
             for (const [id, entry] of entries) items.put(entry, prefix + id);
-            metaStore.put({ ...meta, timestamp, savedAt: Date.now() });
+            metaStore.put({ ...meta, timestamp, fetchedAt: Math.max(meta.fetchedAt || 0, fetchedAt), savedAt: Date.now() });
         };
         await committed(tx);
         return applied;
