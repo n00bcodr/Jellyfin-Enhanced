@@ -30,7 +30,7 @@
     const logPrefix = '🪼 Jellyfin Enhanced [TagCacheStore]:';
     const DB_NAME = 'JellyfinEnhanced';
     const DB_VERSION = 1;
-    // One record per scope: { scope, version, timestamp, stripRevision, count,
+    // One record per scope: { scope, version, timestamp, filterRevision, count,
     // clearStamp, savedAt } once complete, or { scope, pending } while a full
     // rewrite owns it (never restored).
     const META_STORE = 'tagCacheMeta';
@@ -229,7 +229,7 @@
      * marks the stored copy restorable.
      * @param {string} scope
      * @param {string} token
-     * @param {object} meta - version, timestamp, stripRevision, count, clearStamp, savedAt
+     * @param {object} meta - version, timestamp, filterRevision, count, clearStamp, savedAt
      * @returns {Promise<boolean>} false when another writer took the scope over
      */
     async function commitFullWrite(scope, token, meta) {
@@ -252,7 +252,7 @@
      * against (same cursor, version and strip revision). Otherwise nothing is
      * written: another tab moved the copy on, or a rewrite is in progress.
      * @param {string} scope
-     * @param {{timestamp: number, version: number, stripRevision: string}} base - What the delta was requested against.
+     * @param {{timestamp: number, version: number, filterRevision: string}} base - What the delta was requested against.
      * @param {Array<[string, object]>} entries - [itemId, entry] pairs
      * @param {number} timestamp - The delta response's timestamp (the new cursor).
      * @returns {Promise<boolean>} whether the delta was applied
@@ -268,7 +268,7 @@
             if (!meta || meta.pending
                 || meta.timestamp !== base.timestamp
                 || meta.version !== base.version
-                || meta.stripRevision !== base.stripRevision) {
+                || meta.filterRevision !== base.filterRevision) {
                 return;
             }
             applied = true;

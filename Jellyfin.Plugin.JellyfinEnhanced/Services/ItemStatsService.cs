@@ -292,7 +292,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return result;
         }
 
-        /// <summary>Ids of the leaves whose media sources are more than the item itself.</summary>
+        /// <summary>
+        /// Ids of the leaves whose media sources are not simply the item itself:
+        /// videos with alternate versions, and channel items (their sources come
+        /// from the channel, with their own ids, sizes and runtimes).
+        /// </summary>
         private HashSet<Guid> FindMultiVersionIds(List<BaseItem> leaves)
         {
             var result = new HashSet<Guid>();
@@ -301,6 +305,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 #endif
             foreach (var leaf in leaves)
             {
+                if (leaf.SourceType == SourceType.Channel)
+                {
+                    result.Add(leaf.Id);
+                    continue;
+                }
+
                 if (leaf is not Video video)
                 {
                     continue;

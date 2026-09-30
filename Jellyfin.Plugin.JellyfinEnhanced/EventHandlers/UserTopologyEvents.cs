@@ -56,8 +56,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
     // Review visibility depends on the author's hidden/disabled flags and on
     // the author still existing, and ReviewAuthorCache keeps resolved authors
     // across requests: drop them the moment any user is updated (policy,
-    // rename) or deleted, so a moderation change applies to the next request.
-    public sealed class ReviewAuthorCacheInvalidator : IEventConsumer<UserUpdatedEventArgs>, IEventConsumer<UserDeletedEventArgs>
+    // rename), locked out (failed logins disable the account) or deleted, so
+    // the change applies to the next request.
+    public sealed class ReviewAuthorCacheInvalidator : IEventConsumer<UserUpdatedEventArgs>, IEventConsumer<UserDeletedEventArgs>, IEventConsumer<UserLockedOutEventArgs>
     {
         public Task OnEvent(UserUpdatedEventArgs eventArgs)
         {
@@ -66,6 +67,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
         }
 
         public Task OnEvent(UserDeletedEventArgs eventArgs)
+        {
+            ReviewAuthorCache.Invalidate();
+            return Task.CompletedTask;
+        }
+
+        public Task OnEvent(UserLockedOutEventArgs eventArgs)
         {
             ReviewAuthorCache.Invalidate();
             return Task.CompletedTask;

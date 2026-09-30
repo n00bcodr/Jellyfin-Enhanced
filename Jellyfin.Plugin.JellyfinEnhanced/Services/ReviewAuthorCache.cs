@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     ///
     /// The cached user decides review visibility (hidden, disabled and deleted
     /// authors), so it must never outlive a change to that user: the user
-    /// update and delete event consumers (<c>ReviewAuthorCacheInvalidator</c>)
+    /// update, lockout and delete event consumers (<c>ReviewAuthorCacheInvalidator</c>)
     /// clear the whole cache, and a generation counter stops a lookup that
     /// raced an invalidation from storing the pre-change user. The TTL only
     /// bounds anything the events could miss.

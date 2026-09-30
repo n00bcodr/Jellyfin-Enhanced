@@ -25,11 +25,12 @@
     // stored copy instead: memory starts empty and fills from IndexedDB as
     // cards ask for entries, while a `?since=` request fetches only what
     // changed. The stored copy is scoped to server + user because the payload
-    // is spoiler-stripped for the user who fetched it, and it records the
-    // strip revision it was stripped under: a restored copy renders nothing
-    // until that first `?since=` answer confirms the revision (and version)
-    // still match — Spoiler Guard changed elsewhere means a full download
-    // instead, so a stale strip never reaches a card. Without IndexedDB
+    // is filtered (library access) and spoiler-stripped for the user who
+    // fetched it, and it records the filter revision it was made under: a
+    // restored copy renders nothing until that first `?since=` answer confirms
+    // the revision (and version) still match — access or Spoiler Guard changed
+    // (possibly elsewhere) means a full download instead, so a stale filter or
+    // strip never reaches a card. Without IndexedDB
     // (private mode, quota, errors) this is exactly the old behaviour: one full
     // download per page load, memory only.
 
@@ -37,12 +38,12 @@
     let serverCacheComplete = false; // memory holds every entry the server has for this user
     let serverCacheVersion = 0;
     let serverCacheTimestamp = 0;
-    let serverStripRevision = null;  // strip revision memory was stripped under (from the server)
+    let serverFilterRevision = null; // filter revision memory was made under (access + Spoiler Guard, from the server)
     let cacheGeneration = 0;         // bumped whenever memory is replaced or dropped
     let storeGate = null;            // Promise while a restored copy awaits confirmation; lookups wait on it
     let openStoreGate = null;        // resolves storeGate
     const deltaIds = new Set();      // ids memory holds from a delta (newer than the stored copy until persisted)
-    let deltaInFlight = null;        // Promise of the running fetchDelta(), shared by load and refresh
+    let deltaInFlight = null;        // { promise, epoch, generation } of the running fetchDelta(), shared by load and refresh
     let storeScope = null;           // `${serverId}:${userId}` while the stored copy backs lookups/writes
     let persistGeneration = 0;       // bumped whenever queued stored-copy writes must stop
     let persistChain = Promise.resolve(); // stored-copy writes run one after another
@@ -282,7 +283,7 @@
         serverCacheComplete = false;
         serverCacheVersion = 0;
         serverCacheTimestamp = 0;
-        serverStripRevision = null;
+        serverFilterRevision = null;
         cacheGeneration++;
         storeScope = null;
         storeMisses.clear();
@@ -295,7 +296,9 @@
      * Let lookups waiting on a restored copy proceed (it was confirmed,
      * replaced or dropped).
      */
-    function releaseStoreGate() {
+    function releaseStoreGate(gate) {
+        // A confirmation only ever releases the gate it was confirming.
+        if (gate !== undefined && gate !== storeGate) return;
         const open = openStoreGate;
         storeGate = null;
         openStoreGate = null;
@@ -330,7 +333,7 @@
         const meta = {
             version: resp.version,
             timestamp: resp.timestamp,
-            stripRevision: typeof resp.stripRevision === 'string' ? resp.stripRevision : '',
+            filterRevision: typeof resp.filterRevision === 'string' ? resp.filterRevision : '',
             count: entries.length,
             clearStamp: JE.pluginConfig?.ClearLocalStorageTimestamp || 0,
             savedAt: Date.now(),
@@ -365,7 +368,7 @@
      * another tab moved the copy on, or a rewrite is in progress, nothing is
      * written and memory alone carries this delta.
      * @param {Array<[string, object]>} entries - [itemId, entry] pairs
-     * @param {{timestamp: number, version: number, stripRevision: string}} base - What the delta was requested against.
+     * @param {{timestamp: number, version: number, filterRevision: string}} base - What the delta was requested against.
      * @param {number} timestamp - The delta response's timestamp.
      */
     function persistDelta(entries, base, timestamp) {
@@ -401,7 +404,7 @@
             if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
             // Complete copies only (a pending record is a rewrite in progress),
             // written with a strip revision (older copies predate it).
-            if (!meta || meta.pending || !(meta.count > 0) || !meta.timestamp || typeof meta.stripRevision !== 'string') return false;
+            if (!meta || meta.pending || !(meta.count > 0) || !meta.timestamp || typeof meta.filterRevision !== 'string') return false;
             // The admin's "Clear All Client Caches" applies to this copy too.
             const clearStamp = JE.pluginConfig?.ClearLocalStorageTimestamp || 0;
             if (clearStamp > (meta.clearStamp || 0)) {
@@ -413,7 +416,7 @@
             serverCacheComplete = false;
             serverCacheVersion = meta.version;
             serverCacheTimestamp = meta.timestamp;
-            serverStripRevision = meta.stripRevision;
+            serverFilterRevision = meta.filterRevision;
             cacheGeneration++;
             storeScope = scope;
             storeMisses.clear();
@@ -464,7 +467,7 @@
         serverCacheComplete = true;
         serverCacheVersion = resp.version;
         serverCacheTimestamp = resp.timestamp;
-        serverStripRevision = typeof resp.stripRevision === 'string' ? resp.stripRevision : '';
+        serverFilterRevision = typeof resp.filterRevision === 'string' ? resp.filterRevision : '';
         cacheGeneration++;
         storeMisses.clear();
         deltaIds.clear();
@@ -568,15 +571,23 @@
      * @returns {Promise<void>}
      */
     function fetchDelta() {
-        if (deltaInFlight) return deltaInFlight;
-        const delta = fetchDeltaCore();
-        deltaInFlight = delta;
-        delta.finally(() => { if (deltaInFlight === delta) deltaInFlight = null; });
-        return delta;
+        // Only share a fetch made for this session and this memory: one from
+        // before a sign-out or a restore answers for a cursor that's gone (and
+        // can't confirm the new copy), so it's left to discard its own result.
+        const epoch = JE.session ? JE.session.getEpoch() : 0;
+        if (deltaInFlight && deltaInFlight.epoch === epoch && deltaInFlight.generation === cacheGeneration) {
+            return deltaInFlight.promise;
+        }
+        const entry = { promise: null, epoch, generation: cacheGeneration };
+        entry.promise = fetchDeltaCore();
+        deltaInFlight = entry;
+        entry.promise.finally(() => { if (deltaInFlight === entry) deltaInFlight = null; });
+        return entry.promise;
     }
 
     async function fetchDeltaCore() {
-        const confirming = !!storeGate;
+        const gate = storeGate;
+        const confirming = !!gate;
         const startGeneration = cacheGeneration;
         // Set once the restored copy is confirmed current or replaced; any
         // other exit drops the unconfirmed copy from memory (finally below).
@@ -590,7 +601,7 @@
             // spoiler-stripped for the user that requested them.
             const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
             const generation = cacheGeneration;
-            const base = { timestamp: serverCacheTimestamp, version: serverCacheVersion, stripRevision: serverStripRevision };
+            const base = { timestamp: serverCacheTimestamp, version: serverCacheVersion, filterRevision: serverFilterRevision };
             const resp = await ApiClient.ajax({
                 type: 'GET',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}?since=${base.timestamp}`),
@@ -604,12 +615,12 @@
             applyReviewRatings(resp);
 
             // Full rebuild (entries may have been removed, which a delta can't
-            // express), or this user's Spoiler Guard strip changed since memory
-            // was stripped (guard list or policy changed, possibly on another
-            // device): the copy can't be patched — replace it.
-            const revision = typeof resp.stripRevision === 'string' ? resp.stripRevision : '';
-            if (resp.version !== serverCacheVersion || revision !== serverStripRevision) {
-                const why = resp.version !== serverCacheVersion ? 'Cache version changed' : 'Spoiler Guard strip changed';
+            // express), or this user's filter changed since memory was made
+            // (library access revoked, Spoiler Guard list or policy changed,
+            // possibly on another device): the copy can't be patched — replace it.
+            const revision = typeof resp.filterRevision === 'string' ? resp.filterRevision : '';
+            if (resp.version !== serverCacheVersion || revision !== serverFilterRevision) {
+                const why = resp.version !== serverCacheVersion ? 'Cache version changed' : 'Access or Spoiler Guard filter changed';
                 if (confirming) {
                     // A restored copy that never rendered: download instead.
                     console.log(`${logPrefix} ${why}; replacing the stored copy with a full download`);
@@ -620,7 +631,7 @@
                             try { renderer.onServerCacheRefresh(null); } catch {}
                         }
                     }
-                } else if (revision !== serverStripRevision) {
+                } else if (revision !== serverFilterRevision) {
                     // Cards already show entries stripped the old way: the full
                     // invalidation also removes their overlays. Not awaited — it
                     // runs its own load, which may wait for this delta.
@@ -667,7 +678,7 @@
                 // the batch path. The copy itself stays for the next page load
                 // to confirm. Memory someone else replaced meanwhile is theirs.
                 if (!settled && cacheGeneration === startGeneration) dropServerCache();
-                releaseStoreGate();
+                releaseStoreGate(gate);
             }
         }
     }
@@ -966,8 +977,11 @@
             }
             lookup.then((entries) => {
                 if (myGeneration !== scanGeneration) {
-                    // Superseded while waiting: hand the cards back to the newer scan.
+                    // Superseded while waiting: release the cards and scan again.
+                    // The newer scan took its snapshot while these were still
+                    // marked processed, so it won't pick them up by itself.
                     for (const card of chunk) processedCards.delete(card.el);
+                    scheduleScan();
                     return;
                 }
                 renderChunk(chunk, entries);

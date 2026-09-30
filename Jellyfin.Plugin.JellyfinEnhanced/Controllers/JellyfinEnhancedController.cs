@@ -7551,6 +7551,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(new { success = true, message = "Tag cache rebuild started in the background." });
         }
 
+        /// <summary>
+        /// The parts of a user's policy that decide which items (and so which
+        /// tag-cache entries) they can see: library folders, channels, parental
+        /// rating limits, and blocked/allowed tags and unrated types. Part of the
+        /// tag cache's filterRevision, so a stored copy made under wider access
+        /// is replaced rather than confirmed by a (filtered) delta.
+        /// </summary>
+        private static string TagCacheAccessFingerprint(JUser user)
+        {
+            static string Sorted<T>(IEnumerable<T>? values) =>
+                string.Join(',', (values ?? Enumerable.Empty<T>()).Select(v => v?.ToString() ?? string.Empty).OrderBy(v => v, StringComparer.Ordinal));
+
+            return string.Join('|',
+                "f" + (user.HasPermission(PermissionKind.EnableAllFolders) ? "*" : Sorted(user.GetPreferenceValues<Guid>(PreferenceKind.EnabledFolders))),
+                "c" + (user.HasPermission(PermissionKind.EnableAllChannels) ? "*" : Sorted(user.GetPreferenceValues<Guid>(PreferenceKind.EnabledChannels))),
+                "p" + user.MaxParentalRatingScore?.ToString(System.Globalization.CultureInfo.InvariantCulture) + "." + user.MaxParentalRatingSubScore?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                "b" + Sorted(user.GetPreference(PreferenceKind.BlockedTags)),
+                "a" + Sorted(user.GetPreference(PreferenceKind.AllowedTags)),
+                "u" + Sorted(user.GetPreferenceValues<UnratedItem>(PreferenceKind.BlockUnratedItems)));
+        }
+
         [HttpGet("tag-cache/{userId}")]
         [Authorize]
         [Produces("application/json")]
@@ -7637,13 +7658,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 since.HasValue && spState != null ? (key, e) => GuardedKind(key, e) != null : null;
             var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, since, guardedRider);
 
-            // Fingerprint of how this user's entries are stripped: the effective
-            // strip flags and the set of guarded entries. A full load and a delta
-            // compute the same value (every guarded entry rides on a delta), and
-            // it changes exactly when a delta could not correct a stored copy —
-            // an item leaving the guard set, or the strip policy changing — so
-            // the client replaces its copy instead (tags/tag-pipeline.js).
-            var stripRevision = "none";
+            // Fingerprint of how this user's entries are filtered and stripped:
+            // their library access (folders, channels, parental limits, tags)
+            // and, under Spoiler Guard, the effective strip flags and the set of
+            // guarded entries. A full load and a delta compute the same value
+            // (every guarded entry rides on a delta), and it changes exactly when
+            // a delta could not correct a stored copy — access revoked, an item
+            // leaving the guard set, or the strip policy changing — so the client
+            // replaces its copy instead (tags/tag-pipeline.js).
+            var stripFingerprint = "none";
 
             if (spCfg?.SpoilerBlurEnabled == true && anyStripEnabled)
             {
@@ -7733,7 +7756,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var revisionKeys = guardedKinds.Keys.ToList();
                     revisionKeys.Sort(StringComparer.Ordinal);
                     var revisionSource = $"g{(stripGenresEnabled ? 1 : 0)}r{(stripRatingsEnabled ? 1 : 0)}t{(sanitizeTitleStreams ? 1 : 0)}|{string.Join(',', revisionKeys)}";
-                    stripRevision = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(revisionSource)), 0, 12);
+                    stripFingerprint = revisionSource;
 
                     foreach (var kvp in items.ToList())
                     {
@@ -7876,11 +7899,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
+            var filterRevision = Convert.ToHexString(
+                SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(TagCacheAccessFingerprint(user) + "#" + stripFingerprint)), 0, 12);
+
             var payload = new
             {
                 version = cacheVersion,
                 timestamp = cacheTimestamp,
-                stripRevision,
+                filterRevision,
                 count = items.Count,
                 items,
                 reviewRatings
