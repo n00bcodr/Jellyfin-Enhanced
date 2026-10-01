@@ -414,6 +414,21 @@
                                 </button>
                                 <div class="fieldDescription">Forces clients to clear caches on next load. May cause initial slowness.</div>
                             </div>
+
+                            <div class="fieldDescription" style="margin-top: 20px;"><strong>Native Poster Tags</strong> — the tags above, drawn into poster images for apps that can't show the web overlays.</div>
+
+                            <div class="checkboxContainer"><label><input id="nativePosterTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Native Poster Tags (Experimental)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="nativePosterTagsEnabled">
+                                <div class="fieldDescription">Experimental. Draws each user's Media Tags into poster images for native apps such as Android TV that don't run Jellyfin Enhanced's web overlays, using that user's tag choices, corners and order. Every user gets them unless they switch off Show Tags in Native Clients in the Enhanced panel under UI Settings. Jellyfin Web, Jellyfin Media Player, Jellyfin Desktop, Jellyfin for WebOS and Jellyfin for Android already show the overlays, so they keep the original posters. Each poster is drawn the first time it is viewed, which costs some server CPU, and is then cached. Apps may need to reopen the library or be restarted to show changes. Original artwork files are never modified.</div>
+                            </div>
+
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="nativePosterTagsWebClientNames">Additional Web Client Names</label>
+                                <textarea class="emby-textarea emby-input je-textarea-medium" id="nativePosterTagsWebClientNames" name="nativePosterTagsWebClientNames" placeholder="One per line"></textarea>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="nativePosterTagsWebClientNames">
+                                <div class="fieldDescription">Other apps that already run Jellyfin Enhanced's web overlays and should keep the original posters, such as a custom web wrapper. Enter the app name as shown under Dashboard → Devices, one per line or comma separated. The clients listed above are always excluded.</div>
+                            </div>
                         </div>
                     </fieldset>
 
@@ -5827,6 +5842,8 @@
                 document.querySelector('#showAudioLanguages').checked = config.ShowAudioLanguages;
                 document.querySelector('#removeContinueWatchingEnabled').checked = config.RemoveContinueWatchingEnabled;
                 document.querySelector('#qualityTagsEnabled').checked = config.QualityTagsEnabled;
+                document.querySelector('#nativePosterTagsEnabled').checked = config.NativePosterTagsEnabled === true;
+                document.querySelector('#nativePosterTagsWebClientNames').value = config.NativePosterTagsWebClientNames || '';
                 document.querySelector('#showResolutionTag').checked = config.ShowResolutionTag !== false;
                 document.querySelector('#showSourceTag').checked = config.ShowSourceTag !== false;
                 document.querySelector('#showDynamicRangeTag').checked = config.ShowDynamicRangeTag !== false;
@@ -6385,6 +6402,8 @@
             config.ShowAudioLanguages = document.querySelector('#showAudioLanguages').checked;
             config.RemoveContinueWatchingEnabled = document.querySelector('#removeContinueWatchingEnabled').checked;
             config.QualityTagsEnabled = document.querySelector('#qualityTagsEnabled').checked;
+            config.NativePosterTagsEnabled = document.querySelector('#nativePosterTagsEnabled').checked;
+            config.NativePosterTagsWebClientNames = document.querySelector('#nativePosterTagsWebClientNames').value.trim();
             config.ShowResolutionTag = document.querySelector('#showResolutionTag').checked;
             config.ShowSourceTag = document.querySelector('#showSourceTag').checked;
             config.ShowDynamicRangeTag = document.querySelector('#showDynamicRangeTag').checked;
@@ -7927,6 +7946,7 @@
         }
 
         var PARENT_DEPS = [
+            { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['nativePosterTagsWebClientNames'] },
             { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },

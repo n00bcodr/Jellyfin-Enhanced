@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Unit-style checks for the Native Poster Tags pipeline (module D): tag
+    decoration parse/compose (incl. Spoiler Guard's expectations), variant
+    token mint/verify and secret persistence, native client policy, composite
+    cache eviction/coalescing/disk tier (passthrough stays memory-only, files
+    are charged per block), base-image completeness check.
+    Not part of the plugin build. It runs against a built plugin DLL; see
+    README.txt in this folder for the two commands. Exit code 0 = all passed.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PluginDir Condition="'$(PluginDir)' == ''">/tmp/pt-pipeline-jf12</PluginDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="12.0.0" />
+    <PackageReference Include="SkiaSharp" Version="3.116.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.116.1" />
+    <!-- Host-provided at run time in Jellyfin; PosterTagSettings reads settings.json with it. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <Reference Include="Jellyfin.Plugin.JellyfinEnhanced">
+      <HintPath>$(PluginDir)/Jellyfin.Plugin.JellyfinEnhanced.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>
