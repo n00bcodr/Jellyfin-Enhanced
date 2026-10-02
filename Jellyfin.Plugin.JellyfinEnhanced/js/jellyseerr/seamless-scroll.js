@@ -414,11 +414,18 @@
          * Keeps loading until the content buffer ahead of the viewer is full,
          * the feed is exhausted, or a load fails permanently.
          */
+        // A More Info modal covers the page: nobody is reading the row behind
+        // it, and its own requests should not queue behind the row's pages.
+        // The row's poll (horizontal) or the next scroll (vertical) resumes
+        // the fill once the modal is gone.
+        const modalOpen = () => !!document.querySelector('.je-more-info-modal');
+
         const fill = async () => {
             if (filling || destroyed || paused) return;
             filling = true;
             try {
                 while (!destroyed && !paused && sentinel.isConnected && hasMoreCheck() && !isLoadingCheck()) {
+                    if (modalOpen()) break;
                     const g = measure();
                     if (!g.inRange) break;
                     const deficit = g.target - g.ahead;
@@ -495,8 +502,15 @@
             fill();
         }, 100);
         // Interaction with a horizontal row switches it from the idle buffer to
-        // the full read-ahead buffer.
-        const onEngage = () => {
+        // the full read-ahead buffer. A press, tap or focus landing on a card is
+        // the viewer picking a title (opening its More Info modal), not reading
+        // along the row: it must not switch the buffer and fetch pages (plus
+        // prefetch) behind the modal. Scrolling, wheeling, swiping and keyboard
+        // navigation of the row still do, as does pressing the row's own
+        // scroll buttons.
+        const CARD_EVENT_TYPES = new Set(['pointerdown', 'touchstart', 'focusin']);
+        const onEngage = (event) => {
+            if (CARD_EVENT_TYPES.has(event.type) && event.target?.closest?.('.card')) return;
             if (!engaged) { engaged = true; fill(); }
         };
 
@@ -516,7 +530,8 @@
             listen(section, 'touchmove', onUserScroll, { passive: true });
             listen(section, 'keydown', onUserScroll, { passive: true });
             listen(section, 'focusin', onUserScroll, { passive: true });
-            ['scroll', 'wheel', 'touchstart', 'keydown', 'focusin', 'pointerdown'].forEach(type =>
+            // touchmove: a swipe that starts on a card is still reading the row.
+            ['scroll', 'wheel', 'touchstart', 'touchmove', 'keydown', 'focusin', 'pointerdown'].forEach(type =>
                 listen(section, type, onEngage, { passive: true, capture: true }));
             pollTimer = setInterval(() => {
                 if (!sentinel.isConnected) { teardown(); return; }

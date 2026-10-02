@@ -478,11 +478,17 @@
                     // Awards (Emmys etc.) are recorded against the series as a whole,
                     // not per season/episode, so Season/Episode pages resolve to and
                     // show the parent series' award history — same TMDB id resolution
-                    // reviews.js uses for Season/Episode.
-                    tmdbId = item?.ProviderIds?.Tmdb || item?.SeriesProviderIds?.Tmdb;
-                    if (!tmdbId && item?.SeriesId) {
+                    // reviews.js uses for Season/Episode. A Season's or Episode's own
+                    // ProviderIds.Tmdb is the TMDB *season/episode* id (a different id
+                    // space), so the show id has to come from the parent Series; the
+                    // shared item cache hands every module on the page the same fetch.
+                    if (mediaType === 'Series') {
+                        tmdbId = item?.ProviderIds?.Tmdb;
+                    } else if (item?.SeriesId) {
                         try {
-                            const series = await ApiClient.getItem(userId, item.SeriesId);
+                            const series = JE.helpers?.getItemCached
+                                ? await JE.helpers.getItemCached(item.SeriesId, { userId })
+                                : await ApiClient.getItem(userId, item.SeriesId);
                             tmdbId = series?.ProviderIds?.Tmdb;
                         } catch (_) { /* fall through to the not-found path below */ }
                     }

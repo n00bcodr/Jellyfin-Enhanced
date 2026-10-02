@@ -324,11 +324,17 @@
                     apiMediaType = 'movie';
                 } else if (mediaType === 'Series' || mediaType === 'Season' || mediaType === 'Episode') {
                     // Ratings are recorded against the series, not per episode/season
-                    // (same TMDB id resolution as reviews.js/awards.js).
-                    tmdbId = item?.ProviderIds?.Tmdb || item?.SeriesProviderIds?.Tmdb;
-                    if (!tmdbId && item?.SeriesId) {
+                    // (same TMDB id resolution as reviews.js/awards.js). A Season's or
+                    // Episode's own ProviderIds.Tmdb is the TMDB season/episode id, so
+                    // the show id comes from the parent Series, through the shared item
+                    // cache every module on the page uses.
+                    if (mediaType === 'Series') {
+                        tmdbId = item?.ProviderIds?.Tmdb;
+                    } else if (item?.SeriesId) {
                         try {
-                            const series = await ApiClient.getItem(userId, item.SeriesId);
+                            const series = JE.helpers?.getItemCached
+                                ? await JE.helpers.getItemCached(item.SeriesId, { userId })
+                                : await ApiClient.getItem(userId, item.SeriesId);
                             tmdbId = series?.ProviderIds?.Tmdb;
                         } catch (_) { /* fall through to the not-found path below */ }
                     }

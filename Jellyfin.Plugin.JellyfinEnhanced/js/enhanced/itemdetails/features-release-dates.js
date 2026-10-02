@@ -112,10 +112,15 @@
         }
 
         if (mediaType === 'Season' || mediaType === 'Episode') {
-            let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
-            if (!seriesTmdbId && item?.SeriesId) {
+            // The show's TMDB id lives on the parent Series (the DTO has no
+            // SeriesProviderIds); the shared item cache hands every module on
+            // the page the same fetch.
+            let seriesTmdbId = null;
+            if (item?.SeriesId) {
                 try {
-                    const series = await ApiClient.getItem(userId, item.SeriesId);
+                    const series = JE.helpers?.getItemCached
+                        ? await JE.helpers.getItemCached(item.SeriesId, { userId })
+                        : await ApiClient.getItem(userId, item.SeriesId);
                     seriesTmdbId = series?.ProviderIds?.Tmdb;
                 } catch (_) { /* fall through to empty below */ }
             }

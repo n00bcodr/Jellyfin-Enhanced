@@ -88,6 +88,19 @@
         }
 
         /**
+         * The parent Series of a Season/Episode, through the shared item cache
+         * so the other details-page modules asking for it get the same fetch.
+         * @param {string} userId
+         * @param {string} seriesId
+         * @returns {Promise<object|null>}
+         */
+        function getSeriesItem(userId, seriesId) {
+            return JE.helpers?.getItemCached
+                ? JE.helpers.getItemCached(seriesId, { userId })
+                : ApiClient.getItem(userId, seriesId);
+        }
+
+        /**
          * Fetches all user-written reviews for a TMDB item (aggregated across all users).
          */
         function fetchUserReviews(tmdbId, mediaType) {
@@ -1148,10 +1161,13 @@
                         tmdbKey = String(tmdbId);
                         apiMediaType = 'tv';
                     } else if (mediaType === 'Season') {
-                        let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
-                        if (!seriesTmdbId && item?.SeriesId) {
+                        // The show's TMDB id lives on the parent Series (the DTO has
+                        // no SeriesProviderIds); the shared item cache hands every
+                        // module on the page the same fetch.
+                        let seriesTmdbId = null;
+                        if (item?.SeriesId) {
                             try {
-                                const series = await ApiClient.getItem(userId, item.SeriesId);
+                                const series = await getSeriesItem(userId, item.SeriesId);
                                 seriesTmdbId = series?.ProviderIds?.Tmdb;
                             } catch (_) {}
                         }
@@ -1159,10 +1175,10 @@
                         tmdbKey = `${seriesTmdbId}:s${item.IndexNumber}`;
                         apiMediaType = 'tv';
                     } else if (mediaType === 'Episode') {
-                        let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
-                        if (!seriesTmdbId && item?.SeriesId) {
+                        let seriesTmdbId = null;
+                        if (item?.SeriesId) {
                             try {
-                                const series = await ApiClient.getItem(userId, item.SeriesId);
+                                const series = await getSeriesItem(userId, item.SeriesId);
                                 seriesTmdbId = series?.ProviderIds?.Tmdb;
                             } catch (_) {}
                         }

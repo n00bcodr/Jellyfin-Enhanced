@@ -25,6 +25,10 @@
         // STATE MANAGEMENT VARIABLES
         // ================================
         let lastProcessedQuery = null;
+        // Query whose page-1 fetch is in flight (null once it has rendered or
+        // been dropped): the navigation-settle rebuild must not start a second
+        // search for a query the input handler is already fetching.
+        let fetchingQuery = null;
         let debounceTimeout = null;
         let isJellyseerrActive = false;
         let jellyseerrUserFound = false;
@@ -53,6 +57,12 @@
         const MAX_SEARCH_PAGES_PER_LOAD = 4;
         // TMDB refuses search pages beyond 500; never ask for them.
         const TMDB_MAX_PAGE = 500;
+        // How long a rendered query must stand before its collection lookups
+        // (one or two requests per movie) start. While the viewer is still
+        // typing, every prefix is replaced within this time and its lookups
+        // would only be aborted half-way; a settled query loses this much on
+        // its collection cards, which take seconds to arrive anyway.
+        const COLLECTION_SETTLE_MS = 300;
 
 
         // Destructure modules for easy access
@@ -218,6 +228,7 @@
         async function fetchAndRenderResults(query, options = {}) {
             const { skipCache = false } = options;
             lastProcessedQuery = query;
+            fetchingQuery = query;
             resetSearchPagination();
             searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
             const { title: apiQuery, year: yearFilter } = parseYearedQuery(query);
@@ -233,6 +244,9 @@
             } catch (error) {
                 if (error.name === 'AbortError') return; // superseded by a newer search
                 throw error;
+            } finally {
+                // Rendering below is synchronous, so nothing can slip in between.
+                if (fetchingQuery === query) fetchingQuery = null;
             }
             if (lastProcessedQuery !== query) return; // superseded by a newer search while this was in flight
 
@@ -256,15 +270,20 @@
             }
 
             if (results.length > 0) {
-                // Enrich with collections in the background, then slot the
-                // collection cards into the existing row.
-                prepareResultsWithCollections(results, { signal }).then(enrichedResults => {
-                    if (lastProcessedQuery !== query) return;
-                    if (JE.hiddenContent) enrichedResults = JE.hiddenContent.filterJellyseerrResults(enrichedResults, 'search');
-                    if (enrichedResults.length > results.length) {
-                        insertCollectionCards(enrichedResults);
-                    }
-                }).catch(() => {});
+                // Enrich with collections in the background once the query has
+                // stood for COLLECTION_SETTLE_MS (a prefix the viewer types past
+                // never starts its lookups), then slot the collection cards into
+                // the existing row.
+                setTimeout(() => {
+                    if (lastProcessedQuery !== query || signal?.aborted) return;
+                    prepareResultsWithCollections(results, { signal }).then(enrichedResults => {
+                        if (lastProcessedQuery !== query) return;
+                        if (JE.hiddenContent) enrichedResults = JE.hiddenContent.filterJellyseerrResults(enrichedResults, 'search');
+                        if (enrichedResults.length > results.length) {
+                            insertCollectionCards(enrichedResults);
+                        }
+                    }).catch(() => {});
+                }, COLLECTION_SETTLE_MS);
             }
 
             // Start the engine whenever pages remain, even if this page rendered
@@ -591,8 +610,13 @@
                 tryAttachSearchListener();
                 // The row itself was removed (e.g. by a view re-render) while the
                 // query is unchanged: handleSearch would skip it as already
-                // processed, so rebuild it here.
+                // processed, so rebuild it here. Not while the input handler's
+                // own fetch for this query is still in flight — jellyfin-web
+                // rewrites the URL on each keystroke, so this settle timer and
+                // the input debounce fire together, and the row simply isn't
+                // rendered yet.
                 if (isJellyseerrActive && searchInput.value.trim() && searchInput.value === lastProcessedQuery
+                    && fetchingQuery !== searchInput.value
                     && !document.querySelector('.jellyseerr-section')) {
                     resetSearchPagination();
                     fetchAndRenderResults(searchInput.value);

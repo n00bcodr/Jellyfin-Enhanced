@@ -13,6 +13,14 @@
 
     const MEDIA_TYPES = new Set(['Movie', 'Episode', 'Series', 'Season', 'BoxSet', 'Video']);
     const FETCH_DEBOUNCE_MS = 150; // Debounce only the batch API call, not the scan
+    // Minimum spacing between the `?since=` deltas that navigations trigger.
+    // Each delta is a full walk of the server's cache for this user, and a
+    // browsing burst (a few pages in quick succession) can't have new library
+    // items on every step: one delta per 20 s picks them up within a page or
+    // two of being added, while rapid navigation collapses to a single
+    // request. Explicit refreshes (invalidation, user switch, a cache that was
+    // empty at startup) are not spaced out — see the navigation handler.
+    const NAV_REFRESH_MIN_INTERVAL_MS = 20000;
     const logPrefix = '🪼 Jellyfin Enhanced [TagPipeline]:';
 
     // ── Server cache state ─────────────────────────────────────────────
@@ -53,6 +61,9 @@
     let loadInFlight = null;         // Promise of the running loadServerCache(), shared by concurrent callers
     let loadInFlightEpoch = 0;       // session epoch that load was started for
     let refreshInFlight = null;      // Promise of the running refreshServerCache()
+    let lastNavigationRoute = null;  // route key of the last navigation the pipeline acted on (see navigationRoute)
+    let lastNavRefreshAt = 0;        // Date.now() of the last navigation-triggered delta
+    let navRefreshTimer = null;      // trailing delta for navigations that fell inside the minimum interval
     let reviewRatings = null;        // Map<"mediaType:tmdbKey", average> from the payload; null = unavailable
     let reviewRatingsRequestedAt = 0; // performance.now() when the request behind reviewRatings started
     const reviewRatingsListeners = new Set(); // called with the changed keys (Set, or null = all) when averages change
@@ -85,6 +96,7 @@
         '#devicesPage .cardImageContainer',
         '#mediaLibraryPage .cardImageContainer',
         '.listItemImage:not(.listItemImage-large)', // Small list rows (Playlists, Albums); listItemImage-large (e.g. episode lists) is big enough for overlays
+        '.jellyseerr-card .cardImageContainer',  // Seerr cards (search, discovery, recommendations): TMDB posters, no Jellyfin item id, so they can never get tags — mark them processed instead of re-walking them on every scan
     ];
     // One ancestor walk per card: closest() with a selector list matches the
     // element itself or any ancestor against every selector in one pass, which
@@ -597,6 +609,50 @@
         refreshInFlight = refresh;
         refresh.finally(() => { if (refreshInFlight === refresh) refreshInFlight = null; });
         return refresh;
+    }
+
+    /**
+     * Key identifying the page the current URL shows, for telling a page
+     * change from the search page rewriting its `query` parameter: path and
+     * hash route plus every query parameter except `query`, which only the
+     * search box uses (a details page's identity lives in `id`, a list's in
+     * `parentId`/`genreId`/..., so those still count as a change).
+     * @returns {string}
+     */
+    function navigationRoute() {
+        const url = new URL(window.location.href);
+        const [hashPath, hashQuery = ''] = url.hash.split('?');
+        const params = new URLSearchParams(hashQuery);
+        for (const [name, value] of url.searchParams) params.append(name, value);
+        params.delete('query');
+        params.sort();
+        return `${url.pathname}${hashPath}?${params}`;
+    }
+
+    /**
+     * The navigation-triggered delta, at most once per
+     * NAV_REFRESH_MIN_INTERVAL_MS: a navigation inside the interval arms one
+     * trailing delta for when it ends, so every navigation is still followed
+     * by a delta within the interval. Not spaced out while the server cache
+     * is not loaded (empty at startup): that path retries the full load, and
+     * each navigation is its chance to do so.
+     * @returns {void}
+     */
+    function scheduleNavigationRefresh() {
+        const now = Date.now();
+        const elapsed = now - lastNavRefreshAt;
+        if (!serverCache || elapsed >= NAV_REFRESH_MIN_INTERVAL_MS) {
+            if (navRefreshTimer) { clearTimeout(navRefreshTimer); navRefreshTimer = null; }
+            lastNavRefreshAt = now;
+            refreshServerCache();
+            return;
+        }
+        if (navRefreshTimer) return;
+        navRefreshTimer = setTimeout(() => {
+            navRefreshTimer = null;
+            lastNavRefreshAt = Date.now();
+            refreshServerCache();
+        }, NAV_REFRESH_MIN_INTERVAL_MS - elapsed);
     }
 
     async function refreshServerCacheCore() {
@@ -1394,7 +1450,19 @@
 
         // Also trigger on navigation
         if (JE.helpers.onNavigate) {
+            lastNavigationRoute = navigationRoute();
             JE.helpers.onNavigate(() => {
+                // jellyfin-web rewrites the URL's `query` parameter on every
+                // keystroke in the search box (#/search?query=a → ?query=ab),
+                // which the navigation layer reports like any other navigation.
+                // Nothing below is needed for that: the page is the same, its
+                // new result cards reach the scan through the body observer,
+                // and the batch in flight for cards still on screen may as well
+                // finish. Anything else (another path, another item id) is a
+                // real page change.
+                const route = navigationRoute();
+                if (route === lastNavigationRoute) return;
+                lastNavigationRoute = route;
                 // Invalidate any in-flight batch processing (don't reset isProcessing
                 // directly — let stale batches finish naturally and discard results)
                 batchGeneration++;
@@ -1402,7 +1470,7 @@
                 parentSeriesCache.clear();
                 requestQueue = [];
                 // Pick up any new items added since last load
-                refreshServerCache();
+                scheduleNavigationRefresh();
                 scheduleScan();
             });
         }

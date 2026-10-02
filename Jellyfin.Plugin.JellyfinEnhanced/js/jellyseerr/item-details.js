@@ -11,6 +11,11 @@
     // Track processed items to avoid duplicate renders
     const processedItems = new Set();
     const processedRequestMoreItems = new Set();
+    // Request More checks in flight, by item id. onNavigate and onViewPage
+    // both start one for the same page; the second joins the first instead
+    // of aborting it and re-issuing its lookups.
+    /** @type {Map<string, Promise<void>>} */
+    const requestMoreInFlight = new Map();
 
     // CSS class used to mark and dedupe the injected Request More button
     const REQUEST_MORE_BTN_CLASS = 'je-series-request-more-btn';
@@ -577,10 +582,26 @@
      * Reuses checkForUnrequestedSeasons from moreinfo/more-info-modal-init.js so the
      * detection logic stays in one place.
      * @param {string} itemId - Jellyfin item ID
+     * @returns {Promise<void>}
      */
-    async function renderSeriesRequestMoreButton(itemId) {
-        if (processedRequestMoreItems.has(itemId)) return;
+    function renderSeriesRequestMoreButton(itemId) {
+        if (processedRequestMoreItems.has(itemId)) return Promise.resolve();
+        // Already being checked for this page (onNavigate started it, this is
+        // the viewshow run): share it rather than abort and repeat its lookups.
+        const inFlight = requestMoreInFlight.get(itemId);
+        if (inFlight) return inFlight;
+        const run = runSeriesRequestMoreCheck(itemId).finally(() => {
+            if (requestMoreInFlight.get(itemId) === run) requestMoreInFlight.delete(itemId);
+        });
+        requestMoreInFlight.set(itemId, run);
+        return run;
+    }
 
+    /**
+     * The Request More check itself; see renderSeriesRequestMoreButton.
+     * @param {string} itemId - Jellyfin item ID
+     */
+    async function runSeriesRequestMoreCheck(itemId) {
         // Cancel any in-flight Request More check from a previous navigation.
         if (requestMoreAbortController) {
             requestMoreAbortController.abort();
@@ -616,7 +637,7 @@
                 console.warn(`${requestMoreLogPrefix} checkForUnrequestedSeasons unavailable after 3s, skipping`);
                 return;
             }
-            const hasUnrequested = await checker(tvDetails);
+            const hasUnrequested = await checker(tvDetails, signal);
             if (signal.aborted) return;
             if (!hasUnrequested) {
                 // Dedupe negative results too. Each call to checker() runs an
@@ -702,6 +723,9 @@
         // Clear processed items caches
         processedItems.clear();
         processedRequestMoreItems.clear();
+        // The aborted check above would otherwise be joined by a run for the
+        // same item started before it has unwound.
+        requestMoreInFlight.clear();
     }
 
     /**

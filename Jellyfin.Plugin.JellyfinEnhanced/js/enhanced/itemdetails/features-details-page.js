@@ -17,6 +17,11 @@
     // Cache the last item id and type to avoid repeated ApiClient calls
     let lastDetailsItemId = null;
     let lastDetailsItemType = null;
+    // A single-version item's only media source: the id Jellyfin's
+    // `.selectSource` will hold once it fills it, used as the chips' source
+    // until it has. Multi-version items keep waiting for the select (an
+    // unplayable one never fills it and shows the all-versions total).
+    let lastDetailsDefaultSourceId = null;
     let itemTypeFetchInProgress = null;
 
     // Types that support file size and watch progress
@@ -265,6 +270,7 @@
             if (lastDetailsItemId !== itemId) {
                 lastDetailsItemId = itemId;
                 lastDetailsItemType = null;
+                lastDetailsDefaultSourceId = null;
             }
 
             // Fetch item type once per item to decide applicability
@@ -276,6 +282,7 @@
                         : ApiClient.getItem(userId, itemId))
                         .then(item => {
                             lastDetailsItemType = item?.Type || null;
+                            lastDetailsDefaultSourceId = item?.MediaSources?.length === 1 ? (item.MediaSources[0].Id || null) : null;
                             itemTypeFetchInProgress = null;
                             // Re-run once the type is known, without waiting for
                             // the page's mutations to go quiet again.
@@ -306,7 +313,14 @@
 
             if (!settled && !hasJellyfinInfo(container)) return;
 
-            const selectedSourceId = visiblePage.querySelector('.selectSource')?.value || null;
+            // Jellyfin fills the version <select> after the info row (and the
+            // settled run may come before either): for a single-version item
+            // an empty select will hold its only source, so use that id now —
+            // otherwise the chips fetch once for "no source" and again, with
+            // the same answer, once the select holds the id.
+            const sourceSelect = visiblePage.querySelector('.selectSource');
+            const selectedSourceId = sourceSelect?.value
+                || (sourceSelect && sourceSelect.options.length === 0 ? lastDetailsDefaultSourceId : null);
             if (JE?.currentSettings?.showWatchProgress) {
                 displayWatchProgress(itemId, container, selectedSourceId);
             }
