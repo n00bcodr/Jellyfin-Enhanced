@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Querying;
@@ -36,17 +37,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // any work (master switch, authenticated user), and the stamp
     // itself is a handful of string appends + dictionary re-keys per item —
     // no I/O, no DB, no allocation beyond the new tag strings.
+    //
+    // Native poster tags (NativePosterTagsEnabled) reuse this filter as their
+    // metadata-time hook: for native clients of users with the feature on,
+    // NativePosterTagStamper inserts a "-jet" variant token (plus this user's
+    // "-jeu" marker) into the Primary image tags a poster can be drawn from,
+    // BEFORE the Spoiler Guard stamping below, giving
+    // "sb-{8hex}-{tag}-jet{token}-jeu{12hex}" (ImageTagDecoration). With Spoiler
+    // Guard on, every other field is stamped exactly as before; with it off,
+    // only those eligible fields change, so no other image URL churns.
     public sealed class SpoilerIdentityTagFilter : IAsyncActionFilter
     {
         private readonly SpoilerIdentityService _identity;
         private readonly SpoilerUserResolver _resolver;
+        private readonly NativePosterTagStamper _posterTags;
 
         public SpoilerIdentityTagFilter(
             SpoilerIdentityService identity,
-            SpoilerUserResolver resolver)
+            SpoilerUserResolver resolver,
+            NativePosterTagStamper posterTags)
         {
             _identity = identity;
             _resolver = resolver;
+            _posterTags = posterTags;
         }
 
         // Non-async on purpose: this filter is registered globally (no route
@@ -57,7 +70,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
             var cfg = JellyfinEnhanced.Instance?.Configuration;
-            if (cfg?.SpoilerBlurEnabled != true)
+            var spoilerGuard = cfg?.SpoilerBlurEnabled == true;
+            if (!spoilerGuard && cfg?.NativePosterTagsEnabled != true)
             {
                 return next();
             }
@@ -71,17 +85,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return next();
             }
 
-            return StampAfterActionAsync(next, userId.Value);
+            // Native poster tags alone: web clients (and everyone while the
+            // master switch is off) keep the synchronous fast path.
+            var posterTags = _posterTags.IsCandidate(context.HttpContext);
+            if (!spoilerGuard && !posterTags)
+            {
+                return next();
+            }
+
+            return StampAfterActionAsync(context, next, userId.Value, spoilerGuard, posterTags);
         }
 
-        private async Task StampAfterActionAsync(ActionExecutionDelegate next, Guid userId)
+        private async Task StampAfterActionAsync(ActionExecutingContext context, ActionExecutionDelegate next, Guid userId, bool spoilerGuard, bool posterTags)
         {
             var executed = await next().ConfigureAwait(false);
             if (executed.Exception != null || executed.Canceled) return;
+            if (executed.Result is not ObjectResult { Value: not null }) return;
+
+            NativePosterTagStampSession? session = null;
+            if (posterTags)
+            {
+                try
+                {
+                    session = _posterTags.Begin(context.HttpContext, userId);
+                }
+                catch (Exception ex)
+                {
+                    _resolver.WarnRateLimited(
+                        "postertags-session:" + ex.GetType().FullName,
+                        $"Native poster tags: could not prepare tag stamping — posters for this response stay original. {ex.Message}");
+                }
+            }
+
+            if (!spoilerGuard && session == null) return;
 
             try
             {
-                StampIfApplicable(executed.Result, _identity.MintMarker(userId));
+                StampIfApplicable(executed.Result, spoilerGuard ? _identity.MintMarker(userId) : null, session);
             }
             catch (Exception ex)
             {
@@ -91,7 +131,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private static void StampIfApplicable(IActionResult? result, string marker)
+        // marker: stamp every field with Spoiler Guard's identity (null when
+        // Spoiler Guard is off). session: native poster tags for this response
+        // (null when not applicable). Native stamping runs first per item so
+        // its "-jet" lands in front of the trailing "-jeu".
+        private void StampIfApplicable(IActionResult? result, string? marker, NativePosterTagStampSession? session)
         {
             // Opportunistic: only ObjectResult shapes we recognize are
             // stamped. Anything else (file results, unknown wrappers) is
@@ -101,12 +145,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             switch (objectResult.Value)
             {
                 case BaseItemDto single:
-                    StampItem(single, marker);
+                    Stamp(single, marker, session);
                     break;
                 case QueryResult<BaseItemDto> qr:
                     if (qr.Items != null)
                     {
-                        foreach (var item in qr.Items) StampItem(item, marker);
+                        foreach (var item in qr.Items) Stamp(item, marker, session);
                     }
                     break;
                 case IEnumerable<BaseItemDto> seq:
@@ -115,7 +159,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // enumeration, so mutate a materialized list and write it
                     // back — otherwise MVC serializes unstamped copies.
                     var list = seq is List<BaseItemDto> alreadyList ? alreadyList : seq.ToList();
-                    foreach (var item in list) StampItem(item, marker);
+                    foreach (var item in list) Stamp(item, marker, session);
                     if (!ReferenceEquals(list, seq))
                     {
                         objectResult.Value = list;
@@ -127,6 +171,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         foreach (var hint in shr.SearchHints)
                         {
                             if (hint == null) continue;
+                            if (session != null) StampNative(() => _posterTags.StampSearchHint(hint, session));
+                            if (marker == null) continue;
                             if (!string.IsNullOrEmpty(hint.PrimaryImageTag))
                                 hint.PrimaryImageTag = SpoilerIdentityService.AppendMarker(hint.PrimaryImageTag, marker);
                             if (!string.IsNullOrEmpty(hint.ThumbImageTag))
@@ -140,9 +186,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     foreach (var rec in recs)
                     {
                         if (rec?.Items == null) continue;
-                        foreach (var item in rec.Items) StampItem(item, marker);
+                        foreach (var item in rec.Items) Stamp(item, marker, session);
                     }
                     break;
+            }
+        }
+
+        private void Stamp(BaseItemDto item, string? marker, NativePosterTagStampSession? session)
+        {
+            if (item == null) return;
+            if (session != null) StampNative(() => _posterTags.StampItem(item, session));
+            if (marker != null) StampItem(item, marker);
+        }
+
+        // A native stamping failure skips that one item's posters (they stay
+        // original) and never blocks Spoiler Guard's identity stamping.
+        private void StampNative(Action stamp)
+        {
+            try
+            {
+                stamp();
+            }
+            catch (Exception ex)
+            {
+                _resolver.WarnRateLimited(
+                    "postertags-stamp:" + ex.GetType().FullName,
+                    $"Native poster tags: stamping an item failed — its posters stay original. {ex.Message}");
             }
         }
 

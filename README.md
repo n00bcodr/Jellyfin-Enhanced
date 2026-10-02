@@ -116,6 +116,8 @@ Every poster gets small badges, so you can tell at a glance what you're about to
 
 <p align="center"><img src="docs/images/readme/cast-tags.webp" alt="Cast row with each actor's age, age at release and birthplace" width="100%"></p>
 
+On TV apps such as Android TV, which can't show these badges themselves, an admin can turn on the experimental **Native Poster Tags** setting so the server draws each person's badges into the posters.
+
 <sub>You can move, restyle or hide every badge. · [Tag docs →](https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/enhanced-features/#visual-enhancements)</sub>
 
 ### 📄 Richer movie and show pages
@@ -257,7 +259,7 @@ Everything is configured from **Dashboard → Plugins → Jellyfin Enhanced**, w
 | Jellyfin web, in any browser | ✅ Everything |
 | Official Android and iOS apps | ✅ Everything (they use the web interface) |
 | Jellyfin Desktop v3.0.0+ (currently unreleased) | ✅ Everything |
-| Android TV, Roku, Swiftfin, Findroid, Streamyfin and other apps | ⚠️ Only the features that run on the server: **Spoiler Guard**, **hidden content** (including Continue Watching / Next Up removals), **automatic Seerr requests**, watchlist sync, MDBList ratings and \*arr tags saved into Jellyfin, and **maintenance mode** lockouts. Admin messages and maintenance reminders appear if the app shows server messages. Turning these on for a title is done from the web interface or the official phone apps |
+| Android TV, Roku, Swiftfin, Findroid, Streamyfin and other apps | ⚠️ Only the features that run on the server: **Spoiler Guard**, **hidden content** (including Continue Watching / Next Up removals), **automatic Seerr requests**, experimental **Native Poster Tags** (your tags drawn into the posters), watchlist sync, MDBList ratings and \*arr tags saved into Jellyfin, and **maintenance mode** lockouts. Admin messages and maintenance reminders appear if the app shows server messages. Turning these on for a title is done from the web interface or the official phone apps |
 
 ## 🧩 Works great with
 
@@ -276,7 +278,7 @@ Everything is configured from **Dashboard → Plugins → Jellyfin Enhanced**, w
 <details>
 <summary><b>Does it work on my TV?</b></summary>
 
-Partly. Most features live in Jellyfin's web interface, so you get all of them in browsers, the official Android and iOS apps, and Jellyfin Desktop v3.0.0+. Native TV apps and other apps like Swiftfin, Findroid and Streamyfin don't use that interface. They still get the features that run on the server: Spoiler Guard, hidden content (including Continue Watching / Next Up removals), automatic Seerr requests, watchlist sync, MDBList ratings and \*arr tags saved into Jellyfin, and maintenance-mode lockouts. Admin messages and maintenance reminders show up if the app displays server messages. You switch these on from the web interface or a phone, and your TV follows.
+Partly. Most features live in Jellyfin's web interface, so you get all of them in browsers, the official Android and iOS apps, and Jellyfin Desktop v3.0.0+. Native TV apps and other apps like Swiftfin, Findroid and Streamyfin don't use that interface. They still get the features that run on the server: Spoiler Guard, hidden content (including Continue Watching / Next Up removals), automatic Seerr requests, experimental Native Poster Tags (your quality, genre, language and rating badges drawn into the posters), watchlist sync, MDBList ratings and \*arr tags saved into Jellyfin, and maintenance-mode lockouts. Admin messages and maintenance reminders show up if the app displays server messages. You switch these on from the web interface or a phone, and your TV follows.
 
 </details>
 
@@ -342,7 +344,6 @@ More answers are in the [full FAQ](https://n00bcodr.github.io/Jellyfin-Enhanced/
 - [Jellyfish](https://github.com/n00bcodr/Jellyfish/): a custom Jellyfin theme
 - [Jellyfin Tweaks](https://github.com/n00bcodr/JellyfinTweaks): a plugin with extra tweaks
 - [Jellyfin JavaScript Injector](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector): adds your own scripts to Jellyfin
-- [Kefin Tweaks](https://github.com/ranaldsgift/KefinTweaks) (by ranaldsgift): watchlist and more
 
 </details>
 

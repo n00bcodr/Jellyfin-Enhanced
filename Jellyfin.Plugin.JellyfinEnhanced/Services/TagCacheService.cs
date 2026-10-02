@@ -1045,6 +1045,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
+        /// The live shared entry for one item (native poster tags). False when the
+        /// server tag cache is off, not yet published or has no entry for the item.
+        /// The entry is shared across users and must be treated as immutable
+        /// (<see cref="TagCacheEntry.Clone"/> before changing it).
+        /// </summary>
+        public bool TryGetEntry(Guid itemId, out TagCacheEntry entry)
+        {
+            entry = null!;
+            if (!ServerModeEnabled || _cacheReleased) return false;
+            var cache = _cache; // one volatile read of the current generation
+            if (!cache.TryGetValue(itemId.ToString("N"), out var found) || found == null) return false;
+            entry = found;
+            return true;
+        }
+
+        /// <summary>
+        /// Builds the entry an item would have in the server tag cache, without
+        /// touching the cache (native poster tags when the cache is off or has no
+        /// entry yet). Same derivation as the cache, including the Series/Season
+        /// episode scan, so it can be expensive for containers: callers memoize.
+        /// Null for non-taggable items or when the build fails.
+        /// </summary>
+        public TagCacheEntry? BuildEntryOnDemand(BaseItem item)
+        {
+            if (item == null || !TaggableTypes.Contains(item.GetBaseItemKind())) return null;
+            return BuildEntryForItem(item);
+        }
+
+        /// <summary>
         /// Queue a server-mode transition after the admin saved a config where
         /// the "Server-Side Tag Cache" setting flipped. Runs on a background
         /// continuation — the config save must never block behind cache work —
