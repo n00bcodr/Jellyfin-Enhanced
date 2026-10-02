@@ -96,12 +96,22 @@
                 font-family: inherit;
                 box-shadow: 0 1px 1px rgba(0,0,0,0.2);
             }
+            /* The two bundled Material Symbols faces (subsets built by
+               scripts/material-symbols/subset.py), declared once here for every
+               module that uses them; a declaration costs nothing until a rule
+               references the family. */
             @font-face {
               font-family: 'Material Symbols Rounded';
               font-style: normal;
               font-weight: 100 700;
               font-display: block;
               src: url(${JE.cdn.font('materialsymbolsrounded.woff2')}) format('woff2');
+            }
+            @font-face {
+              font-family: 'Material Symbols Outlined';
+              font-style: normal;
+              font-weight: 400;
+              src: url(${JE.cdn.font('materialsymbolsoutlined.woff2')}) format('woff2');
             }
             .mediaInfoItem-fileSize .material-icons,
             .mediaInfoItem-watchProgress .material-icons,

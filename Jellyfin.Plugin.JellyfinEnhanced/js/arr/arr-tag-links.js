@@ -14,7 +14,6 @@
 
         let isAddingLinks = false;
         let processedItems = new Set(); // Track items that have been processed
-        let debounceTimer = null;
 
         function slugifyTagName(name) {
             try {
@@ -189,32 +188,29 @@
             }
         }
 
-        JE.helpers.createObserver('arr-tag-links', (mutations) => {
+        // One trailing-edge debounce shared by the observer and the navigation
+        // hook (the clear+set per mutation batch used to create ~90 timers per
+        // navigation). Not `attributes: true` any more: that made this a
+        // dedicated document-wide observer firing on every class change, while
+        // Jellyfin re-renders the detail page's children on navigation anyway.
+        const scheduleCheck = JE.helpers.debounce(checkAndAddLinks, 100);
+        JE.helpers.createObserver('arr-tag-links', () => {
             if (!JE?.pluginConfig?.ArrTagsShowAsLinks) {
                 return;
             }
-
-            // Debounce to avoid excessive processing on rapid DOM changes
-            if (debounceTimer) {
-                clearTimeout(debounceTimer);
-            }
-
-            debounceTimer = setTimeout(checkAndAddLinks, 100);
+            scheduleCheck();
         }, document.body, {
             childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class']
+            subtree: true
         });
 
-        // Also check immediately on navigation — the shared deduplicated
+        // Also check on navigation and view show — the shared deduplicated
         // pipeline covers hashchange, popstate and pushState transitions the
-        // old raw hashchange listener missed. Lifecycle-tracked for teardown.
+        // old raw hashchange listener missed, and view show covers a cached
+        // detail page re-shown by a class toggle. Lifecycle-tracked for teardown.
         const lifecycle = JE.core.lifecycle.register('arr-tag-links');
-        lifecycle.track(JE.core.navigation.onNavigate(() => {
-            if (debounceTimer) clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(checkAndAddLinks, 200);
-        }));
+        lifecycle.track(JE.core.navigation.onNavigate(scheduleCheck));
+        lifecycle.track(JE.core.navigation.onViewPage(scheduleCheck));
 
         // Run once immediately in case were already on an item detail page
         setTimeout(checkAndAddLinks, 500);

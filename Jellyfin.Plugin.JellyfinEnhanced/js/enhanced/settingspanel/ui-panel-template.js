@@ -165,7 +165,7 @@
                                         </div>
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             ${userShortcuts.hasOwnProperty(action) ? `<span class="modified-indicator" title="Modified by user" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
-                                            <span>${escapeHtml(tWithFallback('shortcut_' + action, fallbackLabel))}${action === 'OpenEpisodePreview' ? ' <span style="font-size: 11px; opacity: 0.7;" title="Requires InPlayerEpisodePreview plugin from https://github.com/Namo2/InPlayerEpisodePreview/">ⓘ</span>' : ''}</span>
+                                            <span>${escapeHtml(tWithFallback('shortcut_' + action, fallbackLabel))}${action === 'OpenEpisodePreview' ? ' <span style="font-size: 11px; opacity: 0.7;" title="Requires InPlayerEpisodePreview plugin from https://github.com/Namo2/InPlayerEpisodePreview/">' + JE.icons.wrapEmoji('ⓘ') + '</span>' : ''}</span>
                                         </div>
                                     </div>
                                 `;

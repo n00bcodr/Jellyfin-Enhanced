@@ -29,8 +29,10 @@
             flagPng(code, size = 'w20') { return this.url('flagcdn', `${size}/${String(code).toLowerCase()}.png`); },
             // Country flag as an SVG (cdnjs flag-icons, 4x3)
             flagSvg(code) { return this.url('flag-icons', `flags/4x3/${String(code).toLowerCase()}.svg`); },
-            // Material Symbols glyph font, bundled with the plugin (not Google Fonts)
-            font(name) { return ApiClient.getUrl(`/JellyfinEnhanced/fonts/${name}`); }
+            // Material Symbols glyph font, bundled with the plugin (not Google Fonts).
+            // Served immutable, so the plugin version keys the cache: the files are
+            // subsets (scripts/material-symbols/subset.py) that change with releases.
+            font(name) { return ApiClient.getUrl(`/JellyfinEnhanced/fonts/${name}?v=${getScriptVersion()}`); }
         },
         // Stub functions that will be overwritten by modules
         icon: (name) => {
@@ -208,6 +210,41 @@
     }
 
     /**
+     * Whether the server injected the script tag in dev mode (DevMode config).
+     * In dev mode the component scripts are loaded as individual files so they
+     * stay debuggable one by one; production loads the server-side bundle.
+     * @returns {boolean}
+     */
+    function isDevMode() {
+        const scriptEl = document.querySelector('script[plugin="Jellyfin Enhanced"]');
+        return scriptEl?.getAttribute('dev') === 'true';
+    }
+
+    /**
+     * Seeds JE.pluginVersion from the injected script tag before anything is
+     * fetched. The tag's version attribute is the server's cache key,
+     * `{version}-{dllTimestamp}` (or the bare version when the timestamp is
+     * unavailable), and the version part is exactly what /version returns —
+     * so translations.js can key its cache without its own /version request.
+     * The bootstrap response re-applies the authoritative value afterwards.
+     */
+    function seedPluginVersionFromScriptTag() {
+        if (JE.pluginVersion && JE.pluginVersion !== 'unknown') return;
+        const scriptEl = document.querySelector('script[plugin="Jellyfin Enhanced"]');
+        const cacheKey = scriptEl?.getAttribute('version') || '';
+        const version = cacheKey.split('-')[0];
+        if (version) JE.pluginVersion = version;
+    }
+
+    /**
+     * Returns the component bundle URL (cache-keyed like every other script).
+     * @returns {string}
+     */
+    function getComponentBundleUrl() {
+        return ApiClient.getUrl(`/JellyfinEnhanced/bundle.js?v=${getScriptVersion()}`);
+    }
+
+    /**
      * Loads the translation module and exposes JE.loadTranslations.
      * @returns {Promise<void>}
      */
@@ -264,11 +301,130 @@
         return Promise.all([configPromise, versionPromise]);
     }
 
+    /**
+     * Fetches the one-request bootstrap payload for the signed-in user:
+     * { Version, UserId, PublicConfig, PrivateConfig (admins only, else null),
+     *   HasCustomTabs, HasPluginPages, UserSettings: { Settings, Shortcuts,
+     *   Bookmark, Elsewhere, HiddenContent }, ComponentScripts }.
+     * Each part has exactly the shape of the standalone endpoint it replaces.
+     * Rejects on transport failure or an unexpected shape so callers can fall
+     * back to the per-endpoint path.
+     * @returns {Promise<object>}
+     */
+    async function fetchBootstrap() {
+        const payload = await ApiClient.ajax({
+            type: 'GET',
+            url: ApiClient.getUrl(`/JellyfinEnhanced/bootstrap?_=${Date.now()}`),
+            dataType: 'json'
+        });
+        if (!payload || typeof payload !== 'object' || !payload.PublicConfig || typeof payload.PublicConfig !== 'object') {
+            throw new Error('Unexpected bootstrap response');
+        }
+        return payload;
+    }
+
+    /**
+     * Whether a bootstrap payload belongs to the given user. Jellyfin user ids
+     * appear both dashed and undashed depending on the source, so compare the
+     * hex digits only.
+     * @param {object} bootstrap
+     * @param {string} userId
+     * @returns {boolean}
+     */
+    function bootstrapMatchesUser(bootstrap, userId) {
+        const normalize = (id) => String(id || '').replace(/-/g, '').toLowerCase();
+        const payloadUser = normalize(bootstrap?.UserId);
+        return !!payloadUser && payloadUser === normalize(userId);
+    }
+
+    // The in-flight/settled bootstrap request and the user it was started for.
+    // Shared between the early login-image/maintenance-banner check and
+    // initialize() so a page load that is already signed in issues one request.
+    let bootstrapPromise = null;
+    let bootstrapUserId = null;
+
+    /**
+     * Returns the shared bootstrap promise for `userId`, starting the request
+     * when none is in flight for that user. A failed request is not retained,
+     * so the next caller retries once before falling back.
+     * @param {string} userId - The user the request is being made for.
+     * @returns {Promise<object>}
+     */
+    function getBootstrap(userId) {
+        if (bootstrapPromise && bootstrapUserId === userId) return bootstrapPromise;
+        bootstrapUserId = userId;
+        const promise = fetchBootstrap().then((payload) => {
+            if (!bootstrapMatchesUser(payload, userId)) throw new Error('Bootstrap response is for a different user');
+            return payload;
+        }).catch((e) => {
+            if (bootstrapPromise === promise) bootstrapPromise = null;
+            throw e;
+        });
+        bootstrapPromise = promise;
+        return promise;
+    }
+
     // Keys merged into JE.pluginConfig from /private-config. Tracked so the
     // user-switch reset can strip them again: the endpoint is admin-gated, so
     // an admin's private config (arr instance URLs etc.) must not survive
     // into a non-admin's session.
     let privateConfigKeys = [];
+
+    /**
+     * Merges the admin-only private config (from the bootstrap payload) into
+     * JE.pluginConfig, replacing whatever private keys were merged before.
+     * null/undefined (non-admin callers) leaves no private keys behind.
+     * @param {object|null|undefined} privateConfig
+     */
+    function applyPrivateConfig(privateConfig) {
+        for (const key of privateConfigKeys) delete JE.pluginConfig[key];
+        const value = privateConfig && typeof privateConfig === 'object' ? privateConfig : {};
+        privateConfigKeys = Object.keys(value);
+        Object.assign(JE.pluginConfig, value);
+    }
+
+    /**
+     * Clears the UseCustomTabs / UsePluginPages config flags when the delivery
+     * plugin they depend on is not installed. Settings persist after uninstall,
+     * which would otherwise make sidebar injection skip even though the
+     * delivery plugin is no longer present.
+     * @param {boolean} hasCustomTabs - Whether the "Custom Tabs" plugin is installed.
+     * @param {boolean} hasPluginPages - Whether the "Plugin Pages" plugin is installed.
+     */
+    function applyDeliveryPluginFlags(hasCustomTabs, hasPluginPages) {
+        if (!hasCustomTabs) {
+            JE.pluginConfig.BookmarksUseCustomTabs = false;
+            JE.pluginConfig.CalendarUseCustomTabs = false;
+            JE.pluginConfig.HiddenContentUseCustomTabs = false;
+            JE.pluginConfig.DownloadsUseCustomTabs = false;
+        }
+        if (!hasPluginPages) {
+            JE.pluginConfig.BookmarksUsePluginPages = false;
+            JE.pluginConfig.HiddenContentUsePluginPages = false;
+            JE.pluginConfig.DownloadsUsePluginPages = false;
+            JE.pluginConfig.CalendarUsePluginPages = false;
+        }
+    }
+
+    /**
+     * Fallback for a failed bootstrap: checks the installed plugins via
+     * GET /Plugins and clears the stale delivery-plugin flags.
+     * @returns {Promise<void>}
+     */
+    async function loadDeliveryPluginFlags() {
+        try {
+            const installedPlugins = await ApiClient.ajax({
+                type: 'GET', url: ApiClient.getUrl('/Plugins'), dataType: 'json'
+            });
+            if (!Array.isArray(installedPlugins)) throw new Error('Unexpected /Plugins response');
+            applyDeliveryPluginFlags(
+                installedPlugins.some(p => p.Name === 'Custom Tabs'),
+                installedPlugins.some(p => p.Name === 'Plugin Pages')
+            );
+        } catch (e) {
+            console.warn('🪼 Jellyfin Enhanced: Could not verify installed plugins:', e);
+        }
+    }
 
     /**
      * Fetches sensitive configuration from the authenticated endpoint.
@@ -324,6 +480,196 @@
         });
         // Wait for all promises to settle (either fulfilled or rejected)
         return Promise.allSettled(promises);
+    }
+
+    const COMPONENT_SCRIPTS_BASE_PATH = '/JellyfinEnhanced/js';
+
+    /**
+     * Drops the "//" note entries from the component-script manifest
+     * (js/component-scripts.json), leaving the ordered script paths.
+     * @param {unknown} manifest - The raw manifest array.
+     * @returns {string[]|null} The paths, or null when the input is not a manifest.
+     */
+    function filterComponentManifest(manifest) {
+        if (!Array.isArray(manifest)) return null;
+        const scripts = manifest
+            .filter(entry => typeof entry === 'string')
+            .map(entry => entry.trim())
+            .filter(entry => entry && !entry.startsWith('//'));
+        return scripts.length ? scripts : null;
+    }
+
+    /**
+     * Returns the ordered component-script list: the copy carried by the
+     * bootstrap payload when available, otherwise the embedded manifest fetched
+     * from the server. Only needed for dev mode and the per-file fallback — the
+     * bundle itself does not depend on it.
+     * @param {unknown} fromBootstrap - `ComponentScripts` from the bootstrap payload, if any.
+     * @returns {Promise<string[]>} Empty when neither source is available.
+     */
+    async function getComponentScriptList(fromBootstrap) {
+        const fromPayload = filterComponentManifest(fromBootstrap);
+        if (fromPayload) return fromPayload;
+        try {
+            const manifest = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl(`${COMPONENT_SCRIPTS_BASE_PATH}/component-scripts.json?v=${getScriptVersion()}`),
+                dataType: 'json'
+            });
+            const scripts = filterComponentManifest(manifest);
+            if (scripts) return scripts;
+            throw new Error('Manifest is empty or malformed');
+        } catch (e) {
+            console.error('🪼 Jellyfin Enhanced: Could not load the component-script manifest', e);
+            return [];
+        }
+    }
+
+    /**
+     * Yields to the event loop as a macrotask that queues BEHIND everything
+     * already pending (unlike scheduler.yield, whose continuation jumps the
+     * queue), so jellyfin-web's own tasks get their turn between module slices.
+     * @returns {Promise<void>}
+     */
+    function yieldToEventLoop() {
+        return new Promise((resolve) => {
+            if (typeof MessageChannel === 'function') {
+                const channel = new MessageChannel();
+                channel.port1.onmessage = () => resolve();
+                channel.port2.postMessage(null);
+            } else {
+                setTimeout(resolve, 0);
+            }
+        });
+    }
+
+    /**
+     * Waits for the browser's next idle period (requestIdleCallback), so the
+     * caller's work runs only once jellyfin-web has nothing pending — its first
+     * view renders at full speed and JE's evaluation fills the gaps (on a cold
+     * load, the waits for jellyfin-web's own chunks). Capped by `timeoutMs` so a
+     * continuously busy page cannot starve the caller. Resolves with the
+     * IdleDeadline, or null where requestIdleCallback is unavailable (plain
+     * macrotask yield instead).
+     * @param {number} timeoutMs - Longest wait before the callback runs anyway.
+     * @returns {Promise<IdleDeadline|null>}
+     */
+    function waitForIdle(timeoutMs) {
+        if (typeof requestIdleCallback === 'function') {
+            return new Promise((resolve) => requestIdleCallback(resolve, { timeout: timeoutMs }));
+        }
+        return yieldToEventLoop().then(() => null);
+    }
+
+    // Module-runner pacing. Evaluating the 150+ component modules costs ~100 ms
+    // of main thread; done as one task, or even as slices competing on equal
+    // terms, it lands exactly while jellyfin-web renders its first view and
+    // delays it by that much. So each slice runs in idle time (BUNDLE_IDLE_TIMEOUT_MS
+    // caps the wait) and is kept short (BUNDLE_RUN_BUDGET_MS) so a task that
+    // becomes pending mid-slice — a chunk arriving on a cold load — waits only
+    // a few milliseconds.
+    const BUNDLE_RUN_BUDGET_MS = 10;
+    const BUNDLE_IDLE_TIMEOUT_MS = 100;
+
+    /**
+     * Runs the bundle's module functions in manifest order, in short slices
+     * scheduled in the browser's idle time (see the pacing notes above). A
+     * module that throws at its top level is logged and rethrown asynchronously
+     * (so it still surfaces as an uncaught error, exactly like a throwing
+     * <script> did) and the run continues with the next module — nothing after
+     * it is lost, and it is not re-run. window.__JE_BUNDLE_PROGRESS counts the
+     * modules run.
+     * @param {Function[]} modules - `window.__JE_BUNDLE_MODULES` from the bundle.
+     * @param {unknown} fromBootstrap - `ComponentScripts` from the bootstrap payload (for error messages).
+     * @returns {Promise<void>}
+     */
+    async function runBundleModules(modules, fromBootstrap) {
+        const names = filterComponentManifest(fromBootstrap) || [];
+        let deadline = await waitForIdle(BUNDLE_IDLE_TIMEOUT_MS);
+        let sliceStart = performance.now();
+        for (let i = 0; i < modules.length; i++) {
+            try {
+                modules[i]();
+            } catch (e) {
+                console.error(`🪼 Jellyfin Enhanced: Module '${names[i] || `#${i + 1}`}' threw while loading; continuing with the next module.`, e);
+                setTimeout(() => { throw e; }, 0);
+            }
+            window.__JE_BUNDLE_PROGRESS = i + 1;
+            if (i + 1 >= modules.length) break;
+            // End the slice when its budget is spent or the idle period is over.
+            // A callback that ran because the timeout expired reports no idle
+            // time at all; it gets the full budget so progress is guaranteed.
+            const budgetSpent = performance.now() - sliceStart >= BUNDLE_RUN_BUDGET_MS;
+            const idleOver = !!deadline && !deadline.didTimeout && deadline.timeRemaining() < 1;
+            if (budgetSpent || idleOver) {
+                deadline = await waitForIdle(BUNDLE_IDLE_TIMEOUT_MS);
+                sliceStart = performance.now();
+            }
+        }
+    }
+
+    /**
+     * Loads every component module from the server-side bundle (one request
+     * instead of one <script> per module): the bundle defines one function per
+     * module in window.__JE_BUNDLE_MODULES, which runBundleModules executes in
+     * order. Falls back to the per-file loader for every module when the
+     * request fails or nothing was defined (a syntax error aborts the whole
+     * script before it defines anything), so only the broken file fails,
+     * exactly as before the bundle existed.
+     * @param {unknown} fromBootstrap - `ComponentScripts` from the bootstrap payload, if any.
+     * @returns {Promise<void>}
+     */
+    async function loadComponentBundle(fromBootstrap) {
+        const url = getComponentBundleUrl();
+        // -1 = nothing executed; the bundle's prologue sets 0.
+        window.__JE_BUNDLE_PROGRESS = -1;
+        window.__JE_BUNDLE_MODULES = undefined;
+        // Fetch and parse the bundle only once jellyfin-web is idle, and at low
+        // fetch priority. Measured alternatives: an early <link rel="preload">
+        // (even at low priority) made jellyfin-web's first content ~200-300 ms
+        // later on a cold 20 Mbps load because the 800 KB download shares
+        // bandwidth with its own chunks, and inserting the script right away
+        // put its 2.8 MB pre-parse in front of the first view's rendering.
+        await waitForIdle(BUNDLE_IDLE_TIMEOUT_MS);
+        const requestOk = await new Promise((resolve) => {
+            const script = document.createElement('script');
+            script.src = url;
+            script.setAttribute('fetchpriority', 'low');
+            script.onload = () => resolve(true);
+            script.onerror = () => resolve(false);
+            document.head.appendChild(script);
+        });
+        const modules = window.__JE_BUNDLE_MODULES;
+        const total = window.__JE_BUNDLE_TOTAL;
+        delete window.__JE_BUNDLE_MODULES; // the functions are only needed once
+        if (requestOk && Array.isArray(modules) && modules.length > 0 && modules.length === total) {
+            await runBundleModules(modules, fromBootstrap);
+            return;
+        }
+
+        const scripts = await getComponentScriptList(fromBootstrap);
+        if (!requestOk) {
+            console.warn('🪼 Jellyfin Enhanced: Component bundle request failed — loading the component scripts individually.');
+        } else {
+            console.warn('🪼 Jellyfin Enhanced: Component bundle did not define its modules (syntax error?) — loading the component scripts individually.');
+        }
+        await loadScripts(scripts, COMPONENT_SCRIPTS_BASE_PATH);
+    }
+
+    /**
+     * Stage-3 entry point: loads all component modules, in manifest order.
+     * Dev mode loads the individual files (debuggable one by one, no-store);
+     * production loads the bundle with per-file fallback.
+     * @param {unknown} fromBootstrap - `ComponentScripts` from the bootstrap payload, if any.
+     * @returns {Promise<void>}
+     */
+    async function loadComponentScripts(fromBootstrap) {
+        if (isDevMode()) {
+            const scripts = await getComponentScriptList(fromBootstrap);
+            await loadScripts(scripts, COMPONENT_SCRIPTS_BASE_PATH);
+            return;
+        }
+        await loadComponentBundle(fromBootstrap);
     }
 
      /**
@@ -459,12 +805,21 @@
             return;
         }
 
-        // Fetch the public config to check if login image / maintenance banner is needed
-        ApiClient.ajax({
+        // Fetch the public config to check if login image / maintenance banner is needed.
+        // When the page is already signed in, the bootstrap request (which
+        // initialize() is about to need anyway) carries the same public config
+        // for the same user, so share it instead of issuing a second request.
+        // Pre-login there is no token, so the anonymous endpoint is used as before.
+        const fetchPublicConfig = () => ApiClient.ajax({
             type: 'GET',
             url: ApiClient.getUrl('/JellyfinEnhanced/public-config'),
             dataType: 'json'
-        }).then((config) => {
+        });
+        const userId = ApiClient.getCurrentUserId?.();
+        const configPromise = userId && !hasServerIdMismatch()
+            ? getBootstrap(userId).then(bootstrap => bootstrap.PublicConfig).catch(() => fetchPublicConfig())
+            : fetchPublicConfig();
+        configPromise.then((config) => {
             // Show maintenance banner for all users (admins can dismiss it mentally)
             if (config?.MaintenanceModeEnabled === true) {
                 injectMaintenanceBanner(config.MaintenanceModeMessage, config.MaintenanceModeEndsAt || null);
@@ -509,71 +864,106 @@
     }
 
     let mismatchRetryCount = 0;
-    const MAX_MISMATCH_RETRIES = 100; // ~30s at 300ms intervals
+    const INIT_POLL_INTERVAL_MS = 50;
+    const MAX_MISMATCH_RETRIES = 600; // ~30s at 50ms intervals
+
+    // Per-user document name → server file name. Object order is the
+    // userConfig key order.
+    const USER_CONFIG_DOCUMENTS = {
+        settings: 'settings.json',
+        shortcuts: 'shortcuts.json',
+        bookmark: 'bookmark.json',
+        elsewhere: 'elsewhere.json',
+        hiddenContent: 'hidden-content.json'
+    };
+
+    /**
+     * Assembles a fresh userConfig object from the five per-user documents.
+     * A document that is missing or failed to load (null/undefined/non-object)
+     * keeps its default; settings, bookmark and hidden-content are converted
+     * from PascalCase to camelCase. Shared by the per-endpoint loader and the
+     * bootstrap payload so both build the object identically.
+     * @param {object} documents - Map of document name (settings, shortcuts,
+     *   bookmark, elsewhere, hiddenContent) to its parsed JSON, or null.
+     * @returns {object} A freshly-built userConfig object.
+     */
+    function buildUserConfig(documents) {
+        const userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
+        for (const name of Object.keys(USER_CONFIG_DOCUMENTS)) {
+            const value = documents ? documents[name] : null;
+            if (!value || typeof value !== 'object') continue; // keep the default
+            // *** CONVERT PASCALCASE TO CAMELCASE ***
+            if (name === 'settings' || name === 'bookmark' || name === 'hiddenContent') {
+                userConfig[name] = toCamelCase(value);
+            } else {
+                userConfig[name] = value;
+            }
+        }
+        return userConfig;
+    }
+
+    /**
+     * Builds the userConfig object from the bootstrap payload's UserSettings
+     * block (the same five documents the standalone endpoints return).
+     * @param {object} userSettings - `UserSettings` from the bootstrap payload.
+     * @returns {object} A freshly-built userConfig object.
+     */
+    function buildUserConfigFromBootstrap(userSettings) {
+        const docs = userSettings && typeof userSettings === 'object' ? userSettings : {};
+        return buildUserConfig({
+            settings: docs.Settings,
+            shortcuts: docs.Shortcuts,
+            bookmark: docs.Bookmark,
+            elsewhere: docs.Elsewhere,
+            hiddenContent: docs.HiddenContent
+        });
+    }
 
     /**
      * Fetches the five per-user config files (settings, shortcuts, bookmark,
-     * elsewhere, hidden-content) and assembles a fresh userConfig object.
-     * Shared by first boot and by the user-switch re-bootstrap so both paths
-     * build the object identically.
+     * elsewhere, hidden-content) individually and assembles a fresh userConfig
+     * object. The fallback when the bootstrap request is unavailable.
      * @param {string} userId - The user to load config for.
      * @returns {Promise<object>} A freshly-built userConfig object.
      */
     async function fetchUserScopedConfig(userId) {
-        const fetchPromises = [
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/settings.json?_=${Date.now()}`), dataType: 'json' })
-                     .then(data => ({ name: 'settings', status: 'fulfilled', value: data }))
-                     .catch(e => ({ name: 'settings', status: 'rejected', reason: e })),
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/shortcuts.json?_=${Date.now()}`), dataType: 'json' })
-                     .then(data => ({ name: 'shortcuts', status: 'fulfilled', value: data }))
-                     .catch(e => ({ name: 'shortcuts', status: 'rejected', reason: e })),
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/bookmark.json?_=${Date.now()}`), dataType: 'json' })
-                     .then(data => ({ name: 'bookmark', status: 'fulfilled', value: data }))
-                     .catch(e => ({ name: 'bookmark', status: 'rejected', reason: e })),
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/elsewhere.json?_=${Date.now()}`), dataType: 'json' })
-                     .then(data => ({ name: 'elsewhere', status: 'fulfilled', value: data }))
-                     .catch(e => ({ name: 'elsewhere', status: 'rejected', reason: e })),
-            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`), dataType: 'json' })
-                     .then(data => ({ name: 'hiddenContent', status: 'fulfilled', value: data }))
-                     .catch(e => ({ name: 'hiddenContent', status: 'rejected', reason: e }))
-        ];
-        // Use allSettled to get results even if some fetches fail
-        const results = await Promise.allSettled(fetchPromises);
+        const documents = {};
+        // Every fetch settles (a failure just leaves that document at its default)
+        await Promise.all(Object.entries(USER_CONFIG_DOCUMENTS).map(([name, fileName]) =>
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}?_=${Date.now()}`), dataType: 'json' })
+                     .then(data => { documents[name] = data; })
+                     .catch(() => { documents[name] = null; })
+        ));
+        return buildUserConfig(documents);
+    }
 
-        const userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
-        results.forEach(result => {
-            if (result.status === 'fulfilled' && result.value) {
-                const data = result.value;
-                if (data.status === 'fulfilled' && data.value && typeof data.value === 'object') {
-                    // *** CONVERT PASCALCASE TO CAMELCASE ***
-                    if (data.name === 'settings' || data.name === 'bookmark' || data.name === 'hiddenContent') {
-                        userConfig[data.name] = toCamelCase(data.value);
-                    } else {
-                        userConfig[data.name] = data.value;
-                    }
-                } else if (data.status === 'rejected') {
-                    if (data.name === 'shortcuts') userConfig.shortcuts = { Shortcuts: [] };
-                    else if (data.name === 'bookmark') userConfig.bookmark = { bookmarks: {} };
-                    else if (data.name === 'elsewhere') userConfig.elsewhere = {};
-                    else if (data.name === 'hiddenContent') userConfig.hiddenContent = { items: {}, settings: {} };
-                    else userConfig[data.name] = {};
-                } else {
-                    if (data.name === 'shortcuts') userConfig.shortcuts = { Shortcuts: [] };
-                    else if (data.name === 'bookmark') userConfig.bookmark = { bookmarks: {} };
-                    else if (data.name === 'elsewhere') userConfig.elsewhere = {};
-                    else if (data.name === 'hiddenContent') userConfig.hiddenContent = { items: {}, settings: {} };
-                    else userConfig[data.name] = {};
-                }
-            } else {
-                const name = result.value?.name || result.reason?.name || '';
-                if (name === 'shortcuts') userConfig.shortcuts = { Shortcuts: [] };
-                else if (name === 'bookmark') userConfig.bookmark = { bookmarks: {} };
-                else if (name === 'elsewhere') userConfig.elsewhere = {};
-                else if (name === 'hiddenContent') userConfig.hiddenContent = { items: {}, settings: {} };
-                else if (name) userConfig[name] = {};
-            }
+    /**
+     * Loads the signed-in user's scoped data — the userConfig documents and the
+     * admin-only private config — and applies both to the globals. One bootstrap
+     * request when possible, otherwise the per-endpoint path. Used by the
+     * user-switch re-bootstrap and the boot-time "user changed during boot"
+     * recovery; the caller's epoch guard is consulted before every write so a
+     * result that arrives after yet another switch is dropped.
+     * @param {string} userId - The user to load data for.
+     * @param {() => boolean} isCurrent - Epoch guard; false means the result is stale.
+     * @returns {Promise<boolean>} true when the globals were updated.
+     */
+    async function reloadUserScopedData(userId, isCurrent) {
+        const bootstrap = await fetchBootstrap().catch((e) => {
+            console.warn('🪼 Jellyfin Enhanced: Bootstrap request failed, reloading user data per endpoint.', e);
+            return null;
         });
-        return userConfig;
+        if (!isCurrent()) return false;
+        if (bootstrap && bootstrapMatchesUser(bootstrap, userId)) {
+            JE.userConfig = buildUserConfigFromBootstrap(bootstrap.UserSettings);
+            applyPrivateConfig(bootstrap.PrivateConfig);
+            return true;
+        }
+        const userConfig = await fetchUserScopedConfig(userId);
+        if (!isCurrent()) return false;
+        JE.userConfig = userConfig;
+        await loadPrivateConfig(); // internally epoch-guarded
+        return isCurrent();
     }
 
     /**
@@ -643,15 +1033,12 @@
             setTimeout(async () => {
                 if (!JE.session.isCurrent(epoch)) return; // switched again already
                 try {
-                    const userConfig = await fetchUserScopedConfig(userId);
-                    if (!JE.session.isCurrent(epoch)) return; // stale result, drop it
-                    JE.userConfig = userConfig;
-
-                    // Re-fetch the admin-only private config for the incoming
-                    // user (the reset stripped the previous user's copy; the
-                    // server rejects non-admins, leaving the keys absent).
-                    await loadPrivateConfig();
-                    if (!JE.session.isCurrent(epoch)) return;
+                    // Reload the user documents and re-fetch the admin-only
+                    // private config for the incoming user (the reset stripped
+                    // the previous user's copy; the server omits it for
+                    // non-admins, leaving the keys absent). Stale results
+                    // (another switch meanwhile) are dropped.
+                    if (!await reloadUserScopedData(userId, () => JE.session.isCurrent(epoch))) return;
 
                     JE.currentSettings = JE.loadSettings();
                     JE.initializeShortcuts();
@@ -701,13 +1088,13 @@
                 window.JE?.hideSplashScreen?.();
                 return;
             }
-            setTimeout(initialize, 300);
+            setTimeout(initialize, INIT_POLL_INTERVAL_MS);
             return;
         }
 
         // Normal retry logic (no mismatch)
         if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId?.()) {
-            setTimeout(initialize, 300);
+            setTimeout(initialize, INIT_POLL_INTERVAL_MS);
             return;
         }
 
@@ -715,44 +1102,44 @@
         mismatchRetryCount = 0;
 
         try {
-            // Stage 1: Load base configs and translations
-            await loadTranslationsModule();
-            const [[config, version], translations] = await Promise.all([
-                loadPluginData(),
-                loadTranslations() // Load translations first
+            // Stage 1+2: one bootstrap request (version, public + private config,
+            // delivery-plugin flags, the five per-user documents, script list)
+            // in parallel with the translations module + locale load. Per-endpoint
+            // fallback when the bootstrap fails, so nothing regresses.
+            let userId = ApiClient.getCurrentUserId();
+            seedPluginVersionFromScriptTag(); // lets translations.js skip its /version fetch
+            const [bootstrap, translations] = await Promise.all([
+                getBootstrap(userId).catch((e) => {
+                    console.warn('🪼 Jellyfin Enhanced: Bootstrap request failed, falling back to individual requests.', e);
+                    return null;
+                }),
+                loadTranslationsModule().then(() => loadTranslations())
             ]);
 
-            JE.pluginConfig = config && typeof config === 'object' ? config : {};
-            JE.pluginVersion = version || 'unknown';
+            if (bootstrap) {
+                JE.pluginConfig = bootstrap.PublicConfig;
+                JE.pluginVersion = bootstrap.Version || 'unknown';
+            } else {
+                const [config, version] = await loadPluginData();
+                JE.pluginConfig = config && typeof config === 'object' ? config : {};
+                JE.pluginVersion = version || 'unknown';
+            }
             JE.translations = translations || {};
             JE.t = window.JellyfinEnhanced.t; // Ensure the real function is assigned
-            await loadPrivateConfig();
+            if (bootstrap) {
+                applyPrivateConfig(bootstrap.PrivateConfig); // null for non-admins
+            } else {
+                await loadPrivateConfig();
+            }
 
             // Clear stale UseCustomTabs / UsePluginPages config flags when those
             // plugins are not installed.  Settings persist after uninstall, which
             // causes sidebar injection to be skipped even though the delivery
             // plugin is no longer present.
-            try {
-                const installedPlugins = await ApiClient.ajax({
-                    type: 'GET', url: ApiClient.getUrl('/Plugins'), dataType: 'json'
-                });
-                if (!Array.isArray(installedPlugins)) throw new Error('Unexpected /Plugins response');
-                const hasCustomTabs = installedPlugins.some(p => p.Name === 'Custom Tabs');
-                const hasPluginPages = installedPlugins.some(p => p.Name === 'Plugin Pages');
-                if (!hasCustomTabs) {
-                    JE.pluginConfig.BookmarksUseCustomTabs = false;
-                    JE.pluginConfig.CalendarUseCustomTabs = false;
-                    JE.pluginConfig.HiddenContentUseCustomTabs = false;
-                    JE.pluginConfig.DownloadsUseCustomTabs = false;
-                }
-                if (!hasPluginPages) {
-                    JE.pluginConfig.BookmarksUsePluginPages = false;
-                    JE.pluginConfig.HiddenContentUsePluginPages = false;
-                    JE.pluginConfig.DownloadsUsePluginPages = false;
-                    JE.pluginConfig.CalendarUsePluginPages = false;
-                }
-            } catch (e) {
-                console.warn('🪼 Jellyfin Enhanced: Could not verify installed plugins:', e);
+            if (bootstrap) {
+                applyDeliveryPluginFlags(bootstrap.HasCustomTabs === true, bootstrap.HasPluginPages === true);
+            } else {
+                await loadDeliveryPluginFlags();
             }
 
             // Check if server has triggered a translation cache clear
@@ -760,16 +1147,26 @@
             const localTranslationClearTs = parseInt(localStorage.getItem('JE_translation_clear_ts') || '0', 10);
             if (serverTranslationClearTs > localTranslationClearTs) {
                 console.log(`🪼 Jellyfin Enhanced: Server-triggered translation cache clear (${new Date(serverTranslationClearTs).toISOString()})`);
+                // Only entries cached BEFORE the server's clear are stale. Entries
+                // written after it — e.g. the locale a fresh browser profile (no
+                // local marker yet) fetched moments ago — are already current, so
+                // they are kept and no second locale fetch is needed.
+                let removedAny = false;
                 for (let i = localStorage.length - 1; i >= 0; i--) {
                     const key = localStorage.key(i);
-                    if (key && (key.startsWith('JE_translation_') || key.startsWith('JE_translation_ts_'))) {
-                        localStorage.removeItem(key);
-                    }
+                    if (!key || !key.startsWith('JE_translation_')) continue;
+                    const tsKey = key.startsWith('JE_translation_ts_') ? key : `JE_translation_ts_${key.slice('JE_translation_'.length)}`;
+                    const cachedAt = parseInt(localStorage.getItem(tsKey) || '0', 10);
+                    if (cachedAt > serverTranslationClearTs) continue;
+                    localStorage.removeItem(key);
+                    removedAny = true;
                 }
                 localStorage.setItem('JE_translation_clear_ts', serverTranslationClearTs.toString());
-                // Reload translations with fresh data
-                JE.translations = await loadTranslations() || {};
-                JE.t = window.JellyfinEnhanced.t;
+                if (removedAny) {
+                    // Reload translations with fresh data
+                    JE.translations = await loadTranslations() || {};
+                    JE.t = window.JellyfinEnhanced.t;
+                }
             }
 
             // Inject metadata icons CSS if enabled
@@ -779,228 +1176,26 @@
                 console.warn('🪼 Jellyfin Enhanced: Failed to inject Metadata icons CSS', e);
             }
 
-            // Stage 2: Fetch user-specific settings
-            let userId = ApiClient.getCurrentUserId();
-
-            JE.userConfig = await fetchUserScopedConfig(userId);
+            // User-specific settings (from the bootstrap, else fetched per file)
+            JE.userConfig = bootstrap
+                ? buildUserConfigFromBootstrap(bootstrap.UserSettings)
+                : await fetchUserScopedConfig(userId);
 
             // Initialize splash screen
             if (typeof JE.initializeSplashScreen === 'function') {
                 JE.initializeSplashScreen();
             }
 
-            // Stage 3: Load ALL component scripts
-            const basePath = '/JellyfinEnhanced/js';
-            const allComponentScripts = [
-                // core — MUST load first: owns navigation detection, the
-                // lifecycle registry, the shared body observer, the fetch
-                // layer and base UI primitives that everything else builds on.
-                'core/navigation.js',
-                // session.js must load before every module that registers a
-                // per-user reset handler (JE.session.onUserChange) at eval time.
-                'core/session.js',
-                'core/lifecycle.js',
-                'core/dom-observer.js',
-                'core/ui-kit.js',
-                'core/media-language.js',
-                'core/api-client.js',
-                'core/tag-renderer-base.js',
-
-                // enhanced
-                'enhanced/config.js',
-                'enhanced/helpers.js',
-                'enhanced/header-actions.js',
-                'enhanced/native-tabs.js',
-                'tags/tag-pipeline.js',
-                'enhanced/icons.js',
-                // Spoiler Guard modules. Dependency order is maintained by hand —
-                // nothing validates this array, and a module placed before one
-                // whose exports it reads at load time binds `undefined` silently.
-                // index.js publishes the public JE.spoilerBlur facade only after
-                // every implementation piece.
-                'enhanced/spoilerguard/ids.js',
-                'enhanced/spoilerguard/state.js',
-                'enhanced/spoilerguard/image-refresh.js',
-                'enhanced/spoilerguard/snooze.js',
-                'enhanced/spoilerguard/dialog.js',
-                'enhanced/spoilerguard/identity.js',
-                'enhanced/spoilerguard/styles.js',
-                'enhanced/spoilerguard/settings-tab.js',
-                'enhanced/spoilerguard/seerr-toggle.js',
-                'enhanced/spoilerguard/detail-button.js',
-                'enhanced/spoilerguard/watched-refresh.js',
-                'enhanced/spoilerguard/index.js',
-                // features modules — order matters: -details-media-info.js and
-                // -release-dates.js publish the chip renderers that
-                // -details-page.js consumes via JE.internals.features, and
-                // -remove-home.js publishes the action-sheet/remove helpers
-                // that -remove-multiselect.js consumes.
-                'enhanced/features-random-button.js',
-                'enhanced/itemdetails/features-details-media-info.js',
-                'enhanced/itemdetails/features-release-dates.js',
-                'enhanced/itemdetails/features-details-page.js',
-                'enhanced/homeremoval/features-remove-home.js',
-                'enhanced/homeremoval/features-remove-multiselect.js',
-                'enhanced/events.js',
-                'enhanced/player/playback.js',
-                // auto-skip.js consumes JE.internals.player (exported by playback.js)
-                'enhanced/player/auto-skip.js',
-                // hidden-content modules — order matters: -data.js owns the
-                // store + lookup sets that the later files consume via
-                // JE.internals.hiddenContent; -init.js exposes the frozen
-                // JE.initializeHiddenContent / JE.hiddenContent surface last.
-                'enhanced/hiddencontent/hidden-content-data.js',
-                'enhanced/hiddencontent/hidden-content-save.js',
-                'enhanced/hiddencontent/hidden-content-styles.js',
-                'enhanced/hiddencontent/hidden-content-dialogs.js',
-                'enhanced/hiddencontent/hidden-content-panel.js',
-                'enhanced/hiddencontent/hidden-content-filter.js',
-                'enhanced/hiddencontent/hidden-content-buttons.js',
-                'enhanced/hiddencontent/hidden-content-init.js',
-                // hidden-content-page modules — order matters: -state.js owns
-                // the shared page state read by the later files via
-                // JE.internals.hiddenContentPage; -init.js exposes the frozen
-                // JE.hiddenContentPage / JE.initializeHiddenContentPage last.
-                'enhanced/hiddencontent/hidden-content-page-state.js',
-                'enhanced/hiddencontent/hidden-content-page-styles.js',
-                'enhanced/hiddencontent/hidden-content-page-admin.js',
-                'enhanced/hiddencontent/hidden-content-page-cards.js',
-                'enhanced/hiddencontent/hidden-content-page-render.js',
-                'enhanced/hiddencontent/hidden-content-page-nav.js',
-                'enhanced/hiddencontent/hidden-content-page-init.js',
-                'enhanced/hiddencontent/hidden-content-custom-tab.js',
-                'enhanced/player/subtitles.js',
-                'enhanced/themer.js',
-                // ui modules — order matters: -release-notes.js publishes
-                // GITHUB_REPO + the release-notes panel that the template and
-                // settings wiring consume via JE.internals.enhancedUi;
-                // ui-panel.js hosts JE.showEnhancedPanel and orchestrates the
-                // buildPanelHtml/wire* pieces last.
-                'enhanced/ui-styles.js',
-                'enhanced/settingspanel/ui-entry-points.js',
-                'enhanced/settingspanel/ui-release-notes.js',
-                'enhanced/settingspanel/ui-panel-template.js',
-                'enhanced/settingspanel/ui-panel-shortcut-editor.js',
-                'enhanced/settingspanel/ui-panel-settings.js',
-                'enhanced/settingspanel/ui-panel-hidden-content.js',
-                'enhanced/settingspanel/ui-panel-language.js',
-                'enhanced/settingspanel/ui-panel.js',
-                'enhanced/bookmarks/bookmarks.js',
-                // bookmarks-library modules — order matters: styles/page/render
-                // publish JE.internals.bookmarksLibrary pieces that the later
-                // files consume; -init.js boots last.
-                'enhanced/bookmarks/bookmarks-library-styles.js',
-                'enhanced/bookmarks/bookmarks-library-page.js',
-                'enhanced/bookmarks/bookmarks-library-render.js',
-                'enhanced/bookmarks/bookmarks-library-items.js',
-                'enhanced/bookmarks/bookmarks-library-modals.js',
-                'enhanced/bookmarks/bookmarks-library-replacements.js',
-                'enhanced/bookmarks/bookmarks-library-init.js',
-                'enhanced/player/osd-rating.js',
-                'enhanced/player/pausescreen.js',
-                'enhanced/player/playback-rating-badge.js',
-
-                // elsewhere
-                'elsewhere/elsewhere.js',
-                'elsewhere/reviews.js',
-
-                // awards
-                'awards/awards.js',
-
-                // ratings
-                'others/mdblist-ratings.js',
-
-                // jellyseerr
-                'jellyseerr/seerr-status.js',
-                'jellyseerr/request-manager.js',
-                'jellyseerr/api.js',
-                'jellyseerr/jellyseerr.js',
-                'jellyseerr/ui/ui-icons.js',
-                'jellyseerr/ui/ui-styles.js',
-                'jellyseerr/ui/ui-popover.js',
-                'jellyseerr/ui/ui-badges.js',
-                'jellyseerr/ui/ui-cards.js',
-                'jellyseerr/ui/ui-buttons.js',
-                'jellyseerr/ui/ui-quota.js',
-                'jellyseerr/ui/ui-results.js',
-                'jellyseerr/ui/ui-request-modals.js',
-                'jellyseerr/ui/ui-season-modal.js',
-                'jellyseerr/modal.js',
-                'jellyseerr/moreinfo/more-info-modal-styles.js',
-                'jellyseerr/moreinfo/more-info-modal-data.js',
-                'jellyseerr/moreinfo/more-info-modal-seasons.js',
-                'jellyseerr/moreinfo/more-info-modal-badges.js',
-                'jellyseerr/moreinfo/more-info-modal-render.js',
-                'jellyseerr/moreinfo/more-info-modal-actions-tv.js',
-                'jellyseerr/moreinfo/more-info-modal-actions.js',
-                'jellyseerr/moreinfo/more-info-modal-init.js',
-                'jellyseerr/seerr-detail-link.js',
-                'jellyseerr/hss-discovery-handler.js',
-                'jellyseerr/item-details.js',
-                'jellyseerr/issue-reporter.js',
-                'jellyseerr/seamless-scroll.js',
-                'jellyseerr/discovery/discovery-filter-utils.js',
-                'jellyseerr/discovery/discovery-base.js',
-                'jellyseerr/discovery/network-discovery.js',
-                'jellyseerr/discovery/person-discovery.js',
-                'jellyseerr/discovery/genre-discovery.js',
-                'jellyseerr/discovery/tag-discovery.js',
-                'jellyseerr/discovery/collection-discovery.js',
-                'jellyseerr/recommendations/recommendations-styles.js',
-                'jellyseerr/recommendations/recommendations-catalog.js',
-                'jellyseerr/recommendations/recommendations-data.js',
-                'jellyseerr/recommendations/recommendations-render.js',
-                'jellyseerr/recommendations/recommendations-page.js',
-                'jellyseerr/recommendations/recommendations-category.js',
-                'jellyseerr/recommendations/recommendations-init.js',
-                'jellyseerr/recommendations/recommendations-custom-tab.js',
-
-                // tags
-                'tags/genretags.js',
-                'tags/languagetags.js',
-                'tags/peopletags.js',
-                'tags/qualitytags.js',
-                'tags/ratingtags.js',
-                'tags/ageratingtags.js',
-                'tags/userreviewtags.js',
-
-                // arr
-                'arr/arr-links.js',
-                'arr/arr-tag-links.js',
-                'arr/requests/requests-page-styles.js',
-                'arr/requests/requests-page-data.js',
-                'arr/requests/requests-page-render-helpers.js',
-                'arr/requests/requests-page-render-cards.js',
-                'arr/requests/requests-page-render.js',
-                'arr/requests/requests-page-actions.js',
-                'arr/requests/requests-page-init.js',
-                'arr/calendar/calendar-page-styles.js',
-                'arr/calendar/calendar-page-data.js',
-                'arr/calendar/calendar-page-render-events.js',
-                'arr/calendar/calendar-page-render-views.js',
-                'arr/calendar/calendar-page-actions.js',
-                'arr/calendar/calendar-page-init.js',
-                'arr/requests/requests-custom-tab.js',
-                'arr/calendar/calendar-custom-tab.js',
-
-                // extras
-                'extras/colored-activity-icons.js',
-                'extras/colored-ratings.js',
-                'extras/plugin-icons.js',
-                'extras/plugin-revisions.js',
-                'extras/theme-selector.js',
-                'extras/active-streams.js',
-                'extras/activity-page.js',
-                'extras/activity-custom-tab.js',
-
-                // others
-                'others/letterboxd-links.js',
-            ];
-            await loadScripts(allComponentScripts, basePath);
+            // Stage 3: Load ALL component scripts. The ordered list lives in
+            // js/component-scripts.json (see CONTRIBUTING.md); production loads
+            // them as one server-side bundle, dev mode as individual files.
+            // Modules read JE.pluginConfig / JE.userConfig at eval time, so this
+            // must stay after the config is applied.
+            await loadComponentScripts(bootstrap ? bootstrap.ComponentScripts : null);
             console.log('🪼 Jellyfin Enhanced: All component scripts loaded.');
 
             // Wire user-switch detection → global reset → re-bootstrap.
-            // Must happen after loadScripts so JE.session exists.
+            // Must happen after the component scripts so JE.session exists.
             registerSessionIntegration();
 
             // A user switch during the stage-1/2 fetches happens BEFORE the
@@ -1017,14 +1212,11 @@
                 // user's data over the next user's reset.
                 const recoveryEpoch = JE.session ? JE.session.getEpoch() : 0;
                 const recoveryCurrent = () => !JE.session || JE.session.isCurrent(recoveryEpoch);
-                const recoveredConfig = await fetchUserScopedConfig(liveUserId);
-                if (recoveryCurrent()) {
-                    JE.userConfig = recoveredConfig;
-                    // Same for the admin-only private config fetched in stage 1.
-                    for (const key of privateConfigKeys) delete JE.pluginConfig[key];
-                    privateConfigKeys = [];
-                    await loadPrivateConfig(); // internally epoch-guarded
-                }
+                // Strip the admin-only private config fetched in stage 1 before
+                // the reload merges the live user's copy (if any).
+                for (const key of privateConfigKeys) delete JE.pluginConfig[key];
+                privateConfigKeys = [];
+                await reloadUserScopedData(liveUserId, recoveryCurrent);
                 // If ANOTHER switch happened during this recovery, the
                 // je:user-changed re-bootstrap owns the repair — this stale
                 // recovery must not touch the globals further.

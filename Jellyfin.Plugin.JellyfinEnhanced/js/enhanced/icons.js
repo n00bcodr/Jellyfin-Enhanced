@@ -201,6 +201,35 @@
         rewind: '<span class="material-icons" style="font-size:1em;vertical-align:middle;">skip_previous</span>'
     };
 
+    // Emoji glyphs are not in Jellyfin's web fonts, so the browser has to
+    // resolve a fallback font for them. Jellyfin's body font stack names five
+    // Noto CJK families (sliced web fonts) before the generic family, and on
+    // Linux Chromium the first glyph that misses that stack costs ~400-550 ms
+    // of synchronous layout per document, repeated for every new weight (~500
+    // ms) and size (~80-100 ms) the glyph is later rendered at (measured on
+    // Jellyfin 12.1; plain text and a short explicit stack cost 1-12 ms). The
+    // stall lands inside whatever layout the glyph first takes part in (a JE
+    // forced reflow, the settings panel's first frame...). Pinning a short
+    // stack of the platform colour-emoji fonts on the glyph's own span makes
+    // the lookup direct and picks the same fonts the fallback would have
+    // chosen, so the icons look identical.
+    const EMOJI_CLASS = 'je-emoji';
+    JE.core.ui.injectCss('je-emoji-font', `
+        .${EMOJI_CLASS} { font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif; font-style: normal; }
+    `);
+
+    /**
+     * Wraps an emoji glyph in the span that carries the direct emoji font
+     * stack (see EMOJI_CLASS above). Icon markup is only ever used in HTML
+     * contexts (innerHTML, template literals, JE.toast), like the Lucide and
+     * Material variants, which are already markup.
+     * @param {string} glyph - The raw emoji character(s).
+     * @returns {string} The glyph wrapped in a span, or '' for an empty glyph.
+     */
+    function wrapEmoji(glyph) {
+        return glyph ? `<span class="${EMOJI_CLASS}">${glyph}</span>` : '';
+    }
+
     JE.icon = function (name) {
         if (!validIconNames.has(name)) console.warn(`[JE-ICONS] Unknown icon name "${name}". Use JE.IconName constants.`);
 
@@ -213,24 +242,24 @@
         let icon = '';
         switch (iconStyle) {
             case 'lucide':
-                icon = LUCIDE[name] || EMOJI[name] || '';
+                icon = LUCIDE[name] || wrapEmoji(EMOJI[name]);
                 // Wrap Lucide SVGs in a span for vertical alignment
                 if (icon.startsWith('<svg')) icon = `<span style="display:inline-flex;vertical-align:middle;">${icon}</span>`;
 
                 break;
             case 'mui':
-                icon = MUI[name] || EMOJI[name] || '';
+                icon = MUI[name] || wrapEmoji(EMOJI[name]);
                 break;
             case 'emoji':
             default:
-                icon = EMOJI[name] || '';
+                icon = wrapEmoji(EMOJI[name]);
                 break;
         }
         return icon;
     };
 
     JE.IconName = IconName;
-    JE.icons = { EMOJI, LUCIDE, MUI };
+    JE.icons = { EMOJI, LUCIDE, MUI, EMOJI_CLASS, wrapEmoji };
 
     console.log('🪼 Jellyfin Enhanced: Icons: Module loaded successfully. JE.icon is now available.');
 

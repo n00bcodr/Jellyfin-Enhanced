@@ -28,6 +28,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Common.Net;
+using MediaBrowser.Common.Plugins;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
@@ -68,10 +69,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.AnalyticsReportingService _analyticsReportingService;
         private readonly Services.HostCompatibilityService _hostCompatibility;
         private readonly Services.TmdbResponseCache _tmdbResponseCache;
+        private readonly Services.ItemStatsService _itemStats;
         private readonly IServerConfigurationManager _serverConfigurationManager;
         private readonly INetworkManager _networkManager;
         private readonly Services.SpoilerExistingTitlesApplier _spoilerExistingApplier;
         private readonly MediaBrowser.Model.Tasks.ITaskManager _taskManager;
+        private readonly IPluginManager _pluginManager;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
         // upstream Seerr on every request. Entries expire after 1 hour.
@@ -112,14 +115,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            var statusResult = await GetJellyseerrStatus() as OkObjectResult;
-            bool active = false;
-            if (statusResult?.Value is not null)
-            {
-                var statusJson = System.Text.Json.JsonSerializer.Serialize(statusResult.Value);
-                using var doc = JsonDocument.Parse(statusJson);
-                if (doc.RootElement.TryGetProperty("active", out var a)) active = a.GetBoolean();
-            }
+            bool active = await ProbeJellyseerrStatusAsync();
             lock (_seerrStatusCacheLock)
             {
                 _seerrStatusCache = (active, DateTime.UtcNow);
@@ -193,10 +189,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.AnalyticsReportingService analyticsReportingService,
             Services.HostCompatibilityService hostCompatibility,
             Services.TmdbResponseCache tmdbResponseCache,
+            Services.ItemStatsService itemStats,
             IServerConfigurationManager serverConfigurationManager,
             INetworkManager networkManager,
             Services.SpoilerExistingTitlesApplier spoilerExistingApplier,
-            MediaBrowser.Model.Tasks.ITaskManager taskManager)
+            MediaBrowser.Model.Tasks.ITaskManager taskManager,
+            IPluginManager pluginManager)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -220,10 +218,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _analyticsReportingService = analyticsReportingService;
             _hostCompatibility = hostCompatibility;
             _tmdbResponseCache = tmdbResponseCache;
+            _itemStats = itemStats;
             _serverConfigurationManager = serverConfigurationManager;
             _networkManager = networkManager;
             _spoilerExistingApplier = spoilerExistingApplier;
             _taskManager = taskManager;
+            _pluginManager = pluginManager;
         }
 
         /// <summary>
@@ -1087,14 +1087,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return StatusCode(lastStatusCode, lastErrorBody);
         }
 
+        /// <summary>
+        /// Whether Seerr is configured and reachable. Every details page and the
+        /// search page ask this; the answer comes from the same 30-second probe
+        /// cache the proxy uses, so it costs a Seerr round trip at most twice a
+        /// minute rather than once per page.
+        /// </summary>
         [HttpGet("jellyseerr/status")]
         [Authorize]
         public async Task<IActionResult> GetJellyseerrStatus()
         {
+            return Ok(new { active = await IsSeerrReachableCached() });
+        }
+
+        private async Task<bool> ProbeJellyseerrStatusAsync()
+        {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrApiKey) || string.IsNullOrEmpty(config.JellyseerrUrls))
             {
-                return Ok(new { active = false });
+                return false;
             }
 
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -1112,7 +1123,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
                     if (error == null)
                     {
-                        return Ok(new { active = true });
+                        return true;
                     }
                     _logger.Warning($"Seerr status check failed at {url}: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                 }
@@ -1123,7 +1134,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             _logger.Warning("Could not establish a connection with any configured Seerr URL. Status is inactive.");
-            return Ok(new { active = false });
+            return false;
         }
 
         [HttpGet("jellyseerr/validate")]
@@ -2184,7 +2195,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         private const int MaxPeopleInfoBatchSize = 100;
-        private const int PeopleInfoTmdbConcurrency = 5;
+        // Per request; TmdbResponseCache caps the upstream calls in flight
+        // across all requests (and multiplexes them over one HTTP/2
+        // connection), so a cast row resolves in about one TMDB round trip.
+        private const int PeopleInfoTmdbConcurrency = 16;
         // One slow TMDB lookup must not hold a whole cast batch (or a single
         // person request) hostage: past this, fall back to Jellyfin-only data.
         private static readonly TimeSpan PersonTmdbTimeout = TimeSpan.FromSeconds(6);
@@ -3318,11 +3332,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return new JsonResult(new { });
             }
 
+            return new JsonResult(BuildPrivateConfig(config));
+        }
+
+        /// <summary>
+        /// The admin-only private config payload. Shared by /private-config and
+        /// /bootstrap so the field list lives in one place; callers MUST gate on
+        /// IsAdminUser() before calling this.
+        /// </summary>
+        private object BuildPrivateConfig(PluginConfiguration config)
+        {
             // Check + log corruption so admins who never hit one of the action endpoints
             // still see a server-side error entry on private-config load.
             WarnIfArrInstancesCorrupt(config);
 
-            return new JsonResult(new
+            return new
             {
                 // For Arr Links (legacy single-instance fields, kept for backward compat)
                 config.SonarrUrl,
@@ -3346,7 +3370,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // action endpoint to round-trip a corruption error envelope.
                 SonarrInstancesCorrupt = config.IsSonarrInstancesCorrupt(),
                 RadarrInstancesCorrupt = config.IsRadarrInstancesCorrupt(),
-            });
+            };
         }
         // [AllowAnonymous]: public-config is loaded by `loadLoginImageEarly` before
         // the user logs in, so we cannot gate the whole endpoint on [Authorize].
@@ -3363,6 +3387,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(503);
             }
 
+            return new JsonResult(BuildPublicConfig(config));
+        }
+
+        /// <summary>
+        /// The public config payload. Shared by /public-config and /bootstrap so the
+        /// field list lives in one place. Redaction of the Seerr URLs is keyed on the
+        /// CURRENT request's authentication state, exactly as /public-config does.
+        /// </summary>
+        private object BuildPublicConfig(PluginConfiguration config)
+        {
             // Expose whether TMDB is configured as a boolean so all users
             // (including non-admin) can use TMDB-dependent features like
             // Reviews and Elsewhere without leaking the actual API key.
@@ -3404,7 +3438,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 jellyseerrUrlMappings = config.JellyseerrUrlMappings ?? string.Empty;
             }
 
-            return new JsonResult(new
+            return new
             {
                 // Jellyfin Enhanced Settings
                 TmdbEnabled = tmdbEnabled,
@@ -3660,7 +3694,150 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // the six per-category strip toggles are server-only strip
                 // policy and are deliberately not exposed.
                 config.SpoilerAdvancedMode,
+            };
+        }
+
+        /// <summary>
+        /// One-request client bootstrap: everything plugin.js used to fetch in its
+        /// first two stages (version, public config, admin-only private config,
+        /// delivery-plugin presence, the five per-user documents) plus the ordered
+        /// component-script list. Every part reuses the builder behind the
+        /// corresponding standalone endpoint, so the shapes are identical and the
+        /// existing endpoints stay as they are for the config page, other callers
+        /// and clients that cached an older plugin.js.
+        ///
+        /// Security: [Authorize] (no anonymous variant — the login screen keeps
+        /// using /public-config); the private config is included only when the
+        /// caller passes the same IsAdminUser() gate as /private-config (null
+        /// otherwise); the user documents are always those of the TOKEN's user —
+        /// there is no userId parameter to point elsewhere.
+        /// </summary>
+        [HttpGet("bootstrap")]
+        [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public ActionResult GetBootstrap()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+            {
+                return StatusCode(503);
+            }
+
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (!userId.HasValue)
+            {
+                return Forbid();
+            }
+
+            // UserConfigurationManager expects folder names in N format (without dashes),
+            // matching AuthorizeUserConfigAccess.
+            var authorizedUserId = userId.Value.ToString("N");
+
+            IReadOnlyList<string>? componentScripts = null;
+            try
+            {
+                componentScripts = Services.ClientScriptBundle.GetComponentScripts();
+            }
+            catch (Exception ex)
+            {
+                // The client falls back to fetching js/component-scripts.json itself.
+                _logger.Error($"Bootstrap: could not read the component-script manifest: {ex.Message}");
+            }
+
+            return new JsonResult(new
+            {
+                Version = JellyfinEnhanced.Instance?.Version.ToString() ?? "unknown",
+                // Lets the client confirm the payload belongs to the user it expects
+                // (a token swap during a user switch must never be applied silently).
+                UserId = authorizedUserId,
+                PublicConfig = BuildPublicConfig(config),
+                PrivateConfig = IsAdminUser() ? BuildPrivateConfig(config) : null,
+                // Same name checks the client used to run against GET /Plugins.
+                HasCustomTabs = IsPluginInstalled("Custom Tabs"),
+                HasPluginPages = IsPluginInstalled("Plugin Pages"),
+                UserSettings = new
+                {
+                    Settings = TryLoadUserDocument("settings.json", authorizedUserId, () => LoadUserSettingsDocument(authorizedUserId)),
+                    Shortcuts = TryLoadUserDocument("shortcuts.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json")),
+                    Bookmark = TryLoadUserDocument("bookmark.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json")),
+                    Elsewhere = TryLoadUserDocument("elsewhere.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json")),
+                    HiddenContent = TryLoadUserDocument("hidden-content.json", authorizedUserId, () => LoadUserHiddenContentDocument(authorizedUserId)),
+                },
+                ComponentScripts = componentScripts,
             });
+        }
+
+        /// <summary>
+        /// Loads one per-user document for the bootstrap payload. A failure yields
+        /// null (the client then applies the same defaults it uses when the
+        /// standalone endpoint fails) instead of failing the whole bootstrap.
+        /// </summary>
+        private object? TryLoadUserDocument(string fileName, string authorizedUserId, Func<object> load)
+        {
+            try
+            {
+                return load();
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Bootstrap: failed to load {fileName} for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Whether a plugin with exactly this name is installed — the same test the
+        /// client used to run against GET /Plugins (which enumerates the same list).
+        /// </summary>
+        private bool IsPluginInstalled(string name)
+        {
+            try
+            {
+                return _pluginManager.Plugins.Any(p => string.Equals(p.Name, name, StringComparison.Ordinal));
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Bootstrap: could not enumerate installed plugins: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// The concatenated component scripts (see Services/ClientScriptBundle).
+        /// Same headers as GetScriptResource: immutable in production (the URL
+        /// carries the cache key), no-store and rebuilt per request in dev mode.
+        /// </summary>
+        [HttpGet("bundle.js")]
+        public ActionResult GetScriptBundle() => GetScriptBundleResource(map: false);
+
+        [HttpGet("bundle.js.map")]
+        public ActionResult GetScriptBundleMap() => GetScriptBundleResource(map: true);
+
+        private ActionResult GetScriptBundleResource(bool map)
+        {
+            var plugin = JellyfinEnhanced.Instance;
+            if (plugin == null)
+            {
+                return StatusCode(503);
+            }
+
+            var devMode = plugin.Configuration?.DevMode == true;
+            byte[] script, sourceMap;
+            try
+            {
+                (script, sourceMap) = Services.ClientScriptBundle.GetBundle(plugin.ScriptCacheKey, rebuild: devMode, _logger);
+            }
+            catch (Exception ex)
+            {
+                // The client falls back to loading the component scripts individually.
+                _logger.Error($"Failed to build the component bundle: {ex.Message}");
+                return StatusCode(500);
+            }
+
+            Response.Headers["Cache-Control"] = devMode ? "no-store" : "public, max-age=31536000, immutable";
+            return map
+                ? File(sourceMap, "application/json")
+                : File(script, "application/javascript");
         }
 
         [HttpGet("tmdb/{**apiPath}")]
@@ -3724,7 +3901,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Gating above has already run for this caller; the server cache is
                 // keyed on what goes upstream (see TmdbResponseCache for why that
                 // is account-safe).
-                var response = await _tmdbResponseCache.GetAsync(apiPath, queryString.ToString(), config.TMDB_API_KEY, HttpContext.RequestAborted);
+                // bundle: a cold title lookup (or one of its release dates /
+                // watch providers / reviews) fetches the whole set in one
+                // TMDB call, which the details page's sibling requests join.
+                var response = await _tmdbResponseCache.GetAsync(apiPath, queryString.ToString(), config.TMDB_API_KEY, HttpContext.RequestAborted, bundle: true);
 
                 if (response.IsSuccess)
                 {
@@ -4409,6 +4589,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
+            return Ok(LoadUserSettingsDocument(authorizedUserId));
+        }
+
+        /// <summary>
+        /// Loads (seeding defaults on first access) the user's settings.json document
+        /// with the caller's IsAdmin flag applied. Shared by the settings.json
+        /// endpoint and /bootstrap so both return exactly the same shape.
+        /// </summary>
+        private object LoadUserSettingsDocument(string authorizedUserId)
+        {
             // Populate defaults from plugin configuration if missing
             if (!_userConfigurationManager.UserConfigurationExists(authorizedUserId, "settings.json"))
             {
@@ -4494,10 +4684,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (settingsNode != null)
             {
                 settingsNode["IsAdmin"] = IsAdminUser();
-                return Ok(settingsNode);
+                return settingsNode;
             }
 
-            return Ok(userConfig);
+            return userConfig;
         }
 
         [HttpGet("user-settings/{userId}/shortcuts.json")]
@@ -4788,6 +4978,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
+            return Ok(LoadUserHiddenContentDocument(authorizedUserId));
+        }
+
+        /// <summary>
+        /// Loads (seeding defaults on first access) the user's hidden-content.json
+        /// document. Shared by the hidden-content.json endpoint and /bootstrap.
+        /// </summary>
+        private UserHiddenContent LoadUserHiddenContentDocument(string authorizedUserId)
+        {
             // First-time init: seed Settings from admin defaults under RMW so a parallel CW hide can't clobber it.
             var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
             if (defaultConfig != null
@@ -4811,8 +5010,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json");
-            return Ok(userConfig);
+            return _userConfigurationManager.GetUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json");
         }
 
         private static HiddenContentSettings BuildHcDefaultSettings(PluginConfiguration src)
@@ -6775,6 +6973,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// May throw on a corrupt record or a failing user lookup — callers
         /// isolate each review so one bad record cannot fail the request.
         /// </summary>
+        /// <summary>
+        /// The Jellyfin user behind a review author id (null when the user no
+        /// longer exists), through <see cref="Services.ReviewAuthorCache"/>, which the
+        /// user update/delete events invalidate.
+        /// </summary>
+        private Jellyfin.Database.Implementations.Entities.User? ResolveReviewAuthor(Guid userGuid)
+            => Services.ReviewAuthorCache.Resolve(userGuid, _userManager.GetUserById);
+
         private bool IsReviewVisibleToViewer(
             UserReview review,
             ReviewVisibilityContext ctx,
@@ -6784,7 +6990,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             jellyfinUser = null;
             if (Guid.TryParseExact(review.UserId, "N", out var userGuid) && !ctx.Authors.TryGetValue(userGuid, out jellyfinUser))
             {
-                jellyfinUser = _userManager.GetUserById(userGuid);
+                jellyfinUser = ResolveReviewAuthor(userGuid);
                 ctx.Authors[userGuid] = jellyfinUser;
             }
 
@@ -6927,7 +7133,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { message = "No valid keys. Expected comma-separated 'movie:<tmdbId>' or 'tv:<tmdbId>[:s<n>[:e<n>]]' entries." });
 
             var ctx = CreateReviewVisibilityContext(nameof(GetReviewRatings), $"{requested.Count} keys");
+            foreach (var (key, sum, count) in AggregateVisibleReviewRatings(ctx, requested.ContainsKey))
+            {
+                requested[key] = (sum, count);
+            }
+
+            var ratings = new Dictionary<string, object?>(StringComparer.Ordinal);
+            foreach (var key in order)
+            {
+                var (sum, count) = requested[key];
+                ratings[key] = count == 0 ? null : new { average = sum / count, count };
+            }
+
+            return Ok(new { ratings });
+        }
+
+        /// <summary>
+        /// One pass over the review store: the rating sum and count per
+        /// "mediaType:tmdbKey" over the reviews visible to the viewer described
+        /// by <paramref name="ctx"/>, for the keys <paramref name="wanted"/>
+        /// accepts. Only keys with at least one counted rating are yielded.
+        /// Shared by <see cref="GetReviewRatings"/> and the tag-cache payload so
+        /// a poster chip shows the same average whichever way it was resolved.
+        /// </summary>
+        private IEnumerable<(string Key, double Sum, int Count)> AggregateVisibleReviewRatings(ReviewVisibilityContext ctx, Func<string, bool> wanted)
+        {
             var store = _userConfigurationManager.GetAllReviews();
+            var totals = new Dictionary<string, (double Sum, int Count)>(StringComparer.Ordinal);
 
             foreach (var kvp in store.Reviews)
             {
@@ -6939,7 +7171,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 for (var i = storeKey.IndexOf(':'); i >= 0; i = storeKey.IndexOf(':', i + 1))
                 {
                     var itemKey = storeKey.Substring(i + 1);
-                    if (!requested.TryGetValue(itemKey, out var acc)) continue;
+                    // A store key's item part always starts with its media type, so
+                    // only a "movie:"/"tv:" tail can be an item key; the shorter tails
+                    // ("1399:s1", "s1") are never one.
+                    if (!itemKey.StartsWith("movie:", StringComparison.Ordinal) && !itemKey.StartsWith("tv:", StringComparison.Ordinal)) continue;
+                    if (!wanted(itemKey)) continue;
 
                     // Same per-review isolation as GetItemReviews: a corrupt
                     // record or failing author lookup skips only this review.
@@ -6959,7 +7195,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         var rating = review.Rating ?? 0;
                         if (double.IsNaN(rating) || Math.Abs(rating) <= 0) continue;
 
-                        requested[itemKey] = (acc.Sum + rating, acc.Count + 1);
+                        var acc = totals.TryGetValue(itemKey, out var existing) ? existing : (0d, 0);
+                        totals[itemKey] = (acc.Item1 + rating, acc.Item2 + 1);
                     }
                     catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
@@ -6971,14 +7208,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            var ratings = new Dictionary<string, object?>(StringComparer.Ordinal);
-            foreach (var key in order)
+            foreach (var kvp in totals)
             {
-                var (sum, count) = requested[key];
-                ratings[key] = count == 0 ? null : new { average = sum / count, count };
+                yield return (kvp.Key, kvp.Value.Sum, kvp.Value.Count);
             }
-
-            return Ok(new { ratings });
         }
 
         [HttpPost("reviews/{mediaType}/{tmdbId}")]
@@ -7339,8 +7572,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // returned items would let clients skip updates permanently, and a
             // mixed pre-publish stamp (timestamp 0) would disable their delta
             // refresh entirely.
-            var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, since);
-
             // Spoiler Guard tag-strip: when SpoilerBlur is on with any tag-relevant
             // strip toggle, walk the cache and zero out matching fields for unwatched
             // episodes whose parent series is in the spoiler list. Needed because the
@@ -7356,13 +7587,75 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // title-bearing fields don't leak the episode title via the tag-cache pipeline.
             var sanitizeTitleStreams = spCfg?.SpoilerReplaceTitle == true || spCfg?.SpoilerStripOverview == true;
             var anyStripEnabled = stripGenresEnabled || stripRatingsEnabled || sanitizeTitleStreams;
+
+            // The user's Spoiler Guard state, or null when nothing needs stripping
+            // for them. Strict-read so corruption is observable (rate-limited
+            // warn) rather than silently passing through. Resolved BEFORE the cache
+            // read so a delta request can include the guarded entries (below).
+            UserSpoilerBlur? spState = null;
             if (spCfg?.SpoilerBlurEnabled == true && anyStripEnabled)
             {
-                // Strict-read so corruption is observable (rate-limited
-                // warn) rather than silently passing through.
-                UserSpoilerBlur? spState = LoadSpoilerStateForTagStrip(userId);
+                spState = LoadSpoilerStateForTagStrip(userId);
+                if (spState != null && spState.Series.Count == 0 && spState.Movies.Count == 0 && spState.Collections.Count == 0)
+                {
+                    spState = null;
+                }
+            }
 
-                if (spState != null && (spState.Series.Count > 0 || spState.Movies.Count > 0 || spState.Collections.Count > 0))
+            // Which guarded kind (Episode/Season/Movie/Series) an entry is,
+            // or null when it isn't under this user's Spoiler Guard.
+            string? GuardedKind(string key, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry? e)
+            {
+                if (spState == null || e == null) return null;
+                switch (e.Type)
+                {
+                    case "Movie":
+                        // In scope if directly in Movies dict OR a child of an opted-in collection.
+                        return Guid.TryParse(key, out var mGuid) && _spoilerResolver.IsMovieInSpoilerScope(spState, mGuid) ? "Movie" : null;
+                    case "Series":
+                        // Series-level entry: strip only when Spoiler Guard is on for
+                        // THIS series (key == series ID). Covers home-rail cards bound
+                        // to seriesId when "Use episode images in Next Up/Continue Watching"
+                        // is OFF, so cards use series posters and ask for series-level tag data.
+                        return spState.Series.ContainsKey(key) ? "Series" : null;
+                    case "Episode":
+                    case "Season":
+                        return !string.IsNullOrEmpty(e.SeriesId) && spState.Series.ContainsKey(e.SeriesId) ? e.Type : null;
+                    default:
+                        return null;
+                }
+            }
+
+            // A delta (?since=) only carries entries the library changed, but a
+            // guarded entry is also rewritten by this user's PLAYED state: an
+            // episode watched since their last load is no longer stripped, one
+            // just added to their guard list now is. Clients keep the cache
+            // across page loads (tag-cache-store.js), so every guarded entry
+            // rides along with each delta — a guard list's worth of entries,
+            // stripped below exactly like a full load, instead of the whole cache.
+            Func<string, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry, bool>? guardedRider =
+                since.HasValue && spState != null ? (key, e) => GuardedKind(key, e) != null : null;
+            // Server clock at capture (taken before reading the cache, so it never
+            // post-dates the data): clients order stored snapshots by it. Unlike
+            // the cache version, it keeps moving forward across a restart that
+            // restores an older on-disk cache.
+            var servedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, out var accessRevision, since, guardedRider);
+
+            // Fingerprint of how this user's entries are filtered and stripped:
+            // which cache entries their access excludes (from the same access
+            // set that filtered `items`, see GetCacheForUser) and, under Spoiler
+            // Guard, the effective strip flags and the set of guarded entries. A
+            // full load and a delta compute the same value (every guarded entry
+            // rides on a delta), and it changes exactly when a delta could not
+            // correct a stored copy — an entry no longer visible to the user, an
+            // item leaving the guard set, or the strip policy changing — so the
+            // client replaces its copy instead (tags/tag-pipeline.js).
+            var stripFingerprint = "none";
+
+            if (spCfg?.SpoilerBlurEnabled == true && anyStripEnabled)
+            {
+                if (spState != null)
                 {
                     // Apply per-user override prefs on top of admin policy — the same
                     // "user opt-out wins" contract as SpoilerFieldStripFilter. Prefs is
@@ -7376,30 +7669,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         || (spCfg?.SpoilerStripOverview == true && (spPrefs?.HideEpisodeDescriptions ?? true));
                     // Series age rating per guarded series, looked up once per request.
                     var ageSeriesRatingMemo = new Dictionary<Guid, string?>();
-
-                    // Which guarded kind (Episode/Season/Movie/Series) an entry is,
-                    // or null when it isn't under this user's Spoiler Guard.
-                    string? GuardedKind(string key, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry? e)
-                    {
-                        if (e == null) return null;
-                        switch (e.Type)
-                        {
-                            case "Movie":
-                                // In scope if directly in Movies dict OR a child of an opted-in collection.
-                                return Guid.TryParse(key, out var mGuid) && _spoilerResolver.IsMovieInSpoilerScope(spState, mGuid) ? "Movie" : null;
-                            case "Series":
-                                // Series-level entry: strip only when Spoiler Guard is on for
-                                // THIS series (key == series ID). Covers home-rail cards bound
-                                // to seriesId when "Use episode images in Next Up/Continue Watching"
-                                // is OFF, so cards use series posters and ask for series-level tag data.
-                                return spState.Series.ContainsKey(key) ? "Series" : null;
-                            case "Episode":
-                            case "Season":
-                                return !string.IsNullOrEmpty(e.SeriesId) && spState.Series.ContainsKey(e.SeriesId) ? e.Type : null;
-                            default:
-                                return null;
-                        }
-                    }
 
                     // Played state is looked up in ONE bounded query instead of a
                     // UserData read per entry (with whole libraries guarded that
@@ -7468,6 +7737,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         laterSeasonEpisodes[laterSeason.Id] = episodeIds;
                     }
                     var playedIds = LoadPlayedIdsForTagStrip(user, playedCandidates);
+
+                    var revisionKeys = guardedKinds.Keys.ToList();
+                    revisionKeys.Sort(StringComparer.Ordinal);
+                    var revisionSource = $"g{(stripGenresEnabled ? 1 : 0)}r{(stripRatingsEnabled ? 1 : 0)}t{(sanitizeTitleStreams ? 1 : 0)}|{string.Join(',', revisionKeys)}";
+                    stripFingerprint = revisionSource;
 
                     foreach (var kvp in items.ToList())
                     {
@@ -7591,19 +7865,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
+            // The poster review chips resolve from this map instead of asking
+            // /reviews/ratings for every page of cards: it holds the average for
+            // every item that has a rated review visible to THIS viewer (same
+            // reviews, same visibility rule and same rating filter as that
+            // endpoint), keyed "mediaType:tmdbKey". A key that is absent has no
+            // visible rated review. Sent with full loads and deltas alike, since
+            // reviews change independently of the tag cache; null (omitted) when
+            // the chips are switched off, which tells the client to skip them.
+            Dictionary<string, object>? reviewRatings = null;
+            if (JellyfinEnhanced.Instance?.Configuration is { ShowUserReviews: true, ShowUserRatingOnPosters: true })
+            {
+                reviewRatings = new Dictionary<string, object>(StringComparer.Ordinal);
+                var ctx = CreateReviewVisibilityContext(nameof(GetTagCache), "review ratings");
+                foreach (var (key, sum, count) in AggregateVisibleReviewRatings(ctx, _ => true))
+                {
+                    reviewRatings[key] = new { average = sum / count, count };
+                }
+            }
+
+            var filterRevision = Convert.ToHexString(
+                SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(accessRevision + "#" + stripFingerprint)), 0, 12);
+
             var payload = new
             {
                 version = cacheVersion,
                 timestamp = cacheTimestamp,
+                servedAt,
+                filterRevision,
                 count = items.Count,
-                items
+                items,
+                reviewRatings
+            };
+            // The validator covers everything but servedAt, which changes on
+            // every request and would otherwise defeat revalidation of an
+            // unchanged body (a 304 hands back the stored body with its own,
+            // earlier servedAt — the same data, captured then).
+            var validatorPayload = new
+            {
+                version = cacheVersion,
+                timestamp = cacheTimestamp,
+                filterRevision,
+                count = items.Count,
+                items,
+                reviewRatings
             };
 
             // ETag is a hash of the FINAL response body (post Spoiler Guard strip above),
             // not of cacheVersion. Two users at the same version can legitimately receive
             // different stripped bodies, and an ETag keyed on version alone would let one
             // user's stripped body satisfy another user's conditional request.
-            var payloadBytes = JsonSerializer.SerializeToUtf8Bytes(payload);
+            var payloadBytes = JsonSerializer.SerializeToUtf8Bytes(validatorPayload);
             var hash = SHA256.HashData(payloadBytes);
             var etag = $"\"{Convert.ToHexString(hash)}\"";
 
@@ -8176,6 +8488,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
 
+        /// <summary>
+        /// Size and watch progress of an item and everything playable under it,
+        /// in one response (see <see cref="Services.ItemStatsService"/>). The
+        /// details page reads both chips from this; the two single-value
+        /// routes below stay for older clients and other callers.
+        /// </summary>
+        [HttpGet("item-stats/{userId}/{itemId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetItemStatsByItemId(Guid userId, Guid itemId, [FromQuery] string? mediaSourceId = null)
+        {
+            var authorizationResult = AuthorizeUserAccess(userId, out var user);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
+            if (item is null)
+            {
+                return NotFound();
+            }
+
+            var stats = _itemStats.Compute(user, item, mediaSourceId);
+            return Ok(new { success = true, size = stats.Size, progress = stats.Progress, totalPlaybackTicks = stats.TotalPlaybackTicks, totalRuntimeTicks = stats.TotalRuntimeTicks });
+        }
+
         [HttpGet("file-size/{userId}/{itemId}")]
         [Authorize]
         [Produces("application/json")]
@@ -8193,14 +8532,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return NotFound();
             }
 
-            var allAffectedItems = GetLeafPlayableItems(user, item);
-
-            long totalSize = allAffectedItems
-                .Sum(affectedItem => affectedItem.GetMediaSources(false)
-                    .Where(source => string.IsNullOrEmpty(mediaSourceId) || string.Equals(source.Id, mediaSourceId, StringComparison.OrdinalIgnoreCase))
-                    .Sum(source => source.Size ?? 0));
-
-            return Ok(new { success = true, size = totalSize });
+            var stats = _itemStats.Compute(user, item, mediaSourceId);
+            return Ok(new { success = true, size = stats.Size });
         }
 
         [HttpGet("watch-progress/{userId}/{itemId}")]
@@ -8220,63 +8553,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return NotFound();
             }
 
-            var allAffectedItems = GetLeafPlayableItems(user, item);
-
-            long totalRuntimeTicks = allAffectedItems.Sum(affectedItem =>
-                // Only one of the MediaSources should count into the watch progress
-                affectedItem.GetMediaSources(false)
-                    .FirstOrDefault()?.RunTimeTicks ?? 0);
-            long totalPlaybackTicks = allAffectedItems.Sum(affectedItem =>
-            {
-                var userData = _userDataManager.GetUserData(user, affectedItem);
-                if (userData is null)
-                    return 0;
-                if (userData.Played)
-                    // PlaybackPositionTicks will be 0 after the episode is marked as watched
-                    return affectedItem.RunTimeTicks ?? 0;
-                return userData.PlaybackPositionTicks;
-            });
-
-            double progress = totalRuntimeTicks == 0 ? 0 : (double)totalPlaybackTicks / totalRuntimeTicks * 100;
-            // Floating point numbers are not needed in the frontend ui
-            int formattedProgress = (int)Math.Clamp(progress, 0, 100);
-
-            return Ok(new { success = true, progress = formattedProgress, totalPlaybackTicks, totalRuntimeTicks });
-        }
-
-        private List<BaseItem> GetLeafPlayableItems(JUser user, BaseItem root)
-        {
-            var result = new List<BaseItem>();
-            var visited = new HashSet<Guid>();
-
-            void Traverse(BaseItem current)
-            {
-                if (!visited.Add(current.Id))
-                {
-                    return;
-                }
-
-                var kind = current.GetBaseItemKind();
-
-                if (current is Folder folder)
-                {
-                    var children = folder.GetChildren(user, true).ToList();
-                    foreach (var child in children)
-                    {
-                        Traverse(child);
-                    }
-                    return;
-                }
-
-                var mediaSources = current.GetMediaSources(false);
-                if (mediaSources != null && mediaSources.Any())
-                {
-                    result.Add(current);
-                }
-            }
-
-            Traverse(root);
-            return result;
+            var stats = _itemStats.Compute(user, item, null);
+            return Ok(new { success = true, progress = stats.Progress, totalPlaybackTicks = stats.TotalPlaybackTicks, totalRuntimeTicks = stats.TotalRuntimeTicks });
         }
 
         [HttpGet("jellyseerr/issue")]

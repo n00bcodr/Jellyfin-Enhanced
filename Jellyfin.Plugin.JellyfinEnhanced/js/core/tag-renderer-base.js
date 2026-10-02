@@ -130,32 +130,48 @@
      * rendered edges via getBoundingClientRect so it still works with the
      * top-right corner's indicator-avoidance margin. No-op when a corner
      * has only one occupant, which is the common case.
-     * @param {HTMLElement} host - The .je-tag-host element.
+     * Takes one host or a whole slice of them: every transform reset comes
+     * first, then every measurement, then the new transforms, so a slice of
+     * freshly rendered cards costs one layout instead of one per card (a
+     * rect read right after a style write forces layout each time).
+     * @param {HTMLElement|HTMLElement[]} hostOrHosts - The .je-tag-host element(s).
      */
-    function applyCornerStacking(host) {
-        const groups = {};
-        for (const child of host.children) {
-            const corner = /** @type {HTMLElement} */ (child).dataset?.jeCorner;
-            if (!corner) continue;
-            (groups[corner] = groups[corner] || []).push(child);
-        }
-        for (const corner in groups) {
-            const items = groups[corner];
-            if (items.length <= 1) {
-                if (items[0]) items[0].style.transform = '';
-                continue;
+    function applyCornerStacking(hostOrHosts) {
+        const hosts = Array.isArray(hostOrHosts) ? hostOrHosts : [hostOrHosts];
+        /** @type {Array<{isTop: boolean, items: HTMLElement[]}>} corners with more than one occupant */
+        const stacks = [];
+        for (const host of hosts) {
+            if (!host) continue;
+            const groups = {};
+            for (const child of host.children) {
+                const corner = /** @type {HTMLElement} */ (child).dataset?.jeCorner;
+                if (!corner) continue;
+                (groups[corner] = groups[corner] || []).push(child);
             }
-            const isTop = corner.indexOf('top') === 0;
-            // Clear first so the rects read below reflect each item's natural
-            // (untransformed) CSS position, not a stale offset from a prior pass.
-            for (const el of items) el.style.transform = '';
+            for (const corner in groups) {
+                const items = groups[corner];
+                if (items.length <= 1) {
+                    if (items[0]) items[0].style.transform = '';
+                    continue;
+                }
+                // Clear first so the rects read below reflect each item's natural
+                // (untransformed) CSS position, not a stale offset from a prior pass.
+                for (const el of items) el.style.transform = '';
+                stacks.push({ isTop: corner.indexOf('top') === 0, items });
+            }
+        }
+        if (stacks.length === 0) return;
 
+        // Every read before any write: transforms don't move an item's natural
+        // position, so the rects are the same whether read before or after.
+        const rects = stacks.map((stack) => stack.items.map((el) => el.getBoundingClientRect()));
+        stacks.forEach(({ isTop, items }, s) => {
             let boundary = null; // trailing edge of the previous item, in viewport coords
-            for (const el of items) {
-                const rect = el.getBoundingClientRect();
+            items.forEach((el, i) => {
+                const rect = rects[s][i];
                 if (boundary === null) {
                     boundary = isTop ? rect.bottom : rect.top;
-                    continue;
+                    return;
                 }
                 const naturalEdge = isTop ? rect.top : rect.bottom;
                 const delta = isTop
@@ -169,8 +185,51 @@
                     // own margin already pushed it far enough) — leave it be.
                     boundary = isTop ? rect.bottom : rect.top;
                 }
-            }
+            });
+        });
+    }
+
+    /** @type {Set<HTMLElement>} hosts waiting for the next batched stacking pass */
+    const pendingStackHosts = new Set();
+    let stackFrame = 0;
+
+    /**
+     * Corner-stack a host in the next animation frame, together with every
+     * other host queued by then. For overlays that land outside the
+     * pipeline's own render slices (the user review chip arrives after an
+     * async lookup): measuring each card as its chip arrives would force a
+     * layout per card.
+     * @param {HTMLElement} host - The .je-tag-host element.
+     */
+    function scheduleCornerStacking(host) {
+        if (!host) return;
+        pendingStackHosts.add(host);
+        if (stackFrame) return;
+        stackFrame = requestAnimationFrame(() => {
+            stackFrame = 0;
+            const hosts = Array.from(pendingStackHosts).filter((h) => h.isConnected);
+            pendingStackHosts.clear();
+            applyCornerStacking(hosts);
+        });
+    }
+
+    /** @type {WeakMap<HTMLElement, HTMLElement|null>} render target → its .card, looked up once */
+    const cardByEl = new WeakMap();
+
+    /**
+     * The .card containing el, memoised per element (a render target never
+     * moves to another card). Every renderer's tagged checks go through here
+     * instead of walking up from the same element several times per card.
+     * @param {HTMLElement} el
+     * @returns {HTMLElement|null}
+     */
+    function cardOf(el) {
+        let card = cardByEl.get(el);
+        if (card === undefined) {
+            card = el.closest('.card');
+            cardByEl.set(el, card);
         }
+        return card;
     }
 
     /**
@@ -192,6 +251,8 @@
             cacheTtl: (30) * 24 * 60 * 60 * 1000,
             /** @type {string[]|null} */
             ignoreSelectors: null,
+            /** @type {string|null} ignoreSelectors joined into one selector list */
+            ignoreSelector: null,
             saveRegistered: false,
             unloadRegistered: false,
         };
@@ -213,20 +274,30 @@
          */
         function defaultShouldIgnore(el) {
             if (!state.ignoreSelectors) state.ignoreSelectors = buildIgnoreSelectors();
+            if (state.ignoreSelector === null) state.ignoreSelector = state.ignoreSelectors.join(', ');
             // The shared pipeline renders into `.je-tag-host`, which is a
             // sibling of `.cardImageContainer` inside `.cardScalable`. Resolve
             // back to the image container before applying exclusion selectors.
             const target = el.closest('.cardImageContainer')
                 || el.closest('.cardScalable')?.querySelector('.cardImageContainer')
                 || el;
-            return state.ignoreSelectors.some((selector) => {
-                try {
-                    if (target.matches(selector)) return true;
-                    return target.closest(selector) !== null;
-                } catch {
-                    return false; // Silently handle potential errors with complex selectors
-                }
-            });
+            // closest() with the whole list matches the element or any ancestor
+            // against every selector in one ancestor walk — what
+            // matches()||closest() per selector did in a dozen walks per card.
+            try {
+                return target.closest(state.ignoreSelector) !== null;
+            } catch {
+                // One unsupported selector rejects the whole list: fall back to
+                // checking them one by one and skipping the bad one.
+                return state.ignoreSelectors.some((selector) => {
+                    try {
+                        if (target.matches(selector)) return true;
+                        return target.closest(selector) !== null;
+                    } catch {
+                        return false; // Silently handle potential errors with complex selectors
+                    }
+                });
+            }
         }
 
         /**
@@ -245,11 +316,16 @@
          * @returns {boolean}
          */
         function isTagged(el) {
-            const card = el.closest('.card');
+            const card = cardOf(el);
             if (!card) return false;
-            const hasAttr = /** @type {HTMLElement} */ (card).dataset?.[TAGGED_ATTR] === '1';
-            const hasOverlay = !!card.querySelector(`.${containerClass}`);
-            return hasAttr && hasOverlay;
+            // Attribute first: the common case (this renderer hasn't tagged the
+            // card yet) then costs a dataset read, not a subtree query.
+            if (/** @type {HTMLElement} */ (card).dataset?.[TAGGED_ATTR] !== '1') return false;
+            // The overlay is normally a direct child of the render target.
+            for (const child of el.children) {
+                if (child.classList.contains(containerClass)) return true;
+            }
+            return !!card.querySelector(`.${containerClass}`);
         }
 
         /**
@@ -257,7 +333,7 @@
          * @param {HTMLElement} el
          */
         function markTagged(el) {
-            const card = el.closest('.card');
+            const card = cardOf(el);
             if (card) /** @type {HTMLElement} */ (card).dataset[TAGGED_ATTR] = '1';
         }
 
@@ -462,6 +538,7 @@
         function initialize() {
             loadCacheSettings();
             state.ignoreSelectors = buildIgnoreSelectors();
+            state.ignoreSelector = null;
             cleanupOldCaches();
 
             if (spec.cache && state.localStorageEnabled) {
@@ -574,6 +651,7 @@
         reinitialize,
         resolvePosition,
         applyCornerStacking,
+        scheduleCornerStacking,
     };
 
     console.log('🪼 Jellyfin Enhanced: Tag renderer core initialized');

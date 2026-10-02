@@ -204,17 +204,39 @@
      * Debounce a function call
      * @param {Function} func - The function to debounce
      * @param {number} wait - Wait time in ms
+     * @param {{maxWait?: number}} [options] - maxWait caps how long a burst of
+     *   calls can keep postponing the call (ms since the burst's first call).
      * @returns {Function}
      */
-    function debounce(func, wait) {
-        let timeout;
+    function debounce(func, wait, options) {
+        const maxWait = options && options.maxWait > 0 ? options.maxWait : Infinity;
+        // Trailing-edge debounce that keeps one timer alive per burst instead of
+        // clearing and re-arming a timer on every call: the observer-driven
+        // callers are invoked hundreds of times per navigation, and the
+        // clear+set pair each time was the plugin's single largest source of
+        // timers (~6,300 per ten navigations). The timer re-checks the last call
+        // time when it fires and re-arms only for the remaining wait.
+        let timeout = null;
+        let lastCall = 0;
+        let firstCall = 0;
+        let lastArgs = [];
+        const fire = () => {
+            const now = Date.now();
+            const remaining = Math.min(wait - (now - lastCall), maxWait - (now - firstCall));
+            if (remaining > 0) {
+                timeout = setTimeout(fire, remaining);
+                return;
+            }
+            timeout = null;
+            func(...lastArgs);
+        };
         return function executedFunction(...args) {
-            const later = () => {
-                clearTimeout(timeout);
-                func(...args);
-            };
-            clearTimeout(timeout);
-            timeout = setTimeout(later, wait);
+            lastArgs = args;
+            lastCall = Date.now();
+            if (timeout === null) {
+                firstCall = lastCall;
+                timeout = setTimeout(fire, Math.min(wait, maxWait));
+            }
         };
     }
 
@@ -398,6 +420,58 @@
         if (!muiDrawerPanel) return null;
 
         return muiDrawerPanel.querySelector('[role="presentation"]') || muiDrawerPanel;
+    }
+
+    // --- Shared sidebar re-injection watcher ---
+    // Every sidebar page (bookmarks, hidden content, requests, calendar,
+    // recommendations) used to run its own document-wide MutationObserver to
+    // put its nav link back when Jellyfin rebuilds the drawer. Five observers,
+    // each querying the document on every DOM change, cost ~250 ms per ten
+    // navigations. One subscription on the shared (post-paint, batched) body
+    // observer now checks `isConnected` on the cached elements instead, and
+    // only calls a page's injector when its link is gone and the section exists.
+    /** @type {Map<string, { selector: string, inject: Function, element: Element|null }>} */
+    const sidebarNavEntries = new Map();
+    /** @type {Element|null} */
+    let sidebarSectionElement = null;
+    let sidebarNavSubscribed = false;
+
+    function checkSidebarNavEntries() {
+        if (sidebarNavEntries.size === 0) return;
+        if (!sidebarSectionElement || !sidebarSectionElement.isConnected) {
+            sidebarSectionElement = document.querySelector('.jellyfinEnhancedSection');
+            if (!sidebarSectionElement) return;
+        }
+        for (const entry of sidebarNavEntries.values()) {
+            if (entry.element && entry.element.isConnected) continue;
+            entry.element = document.querySelector(entry.selector);
+            if (entry.element) continue;
+            try {
+                entry.inject();
+            } catch (err) {
+                console.error('🪼 Jellyfin Enhanced: Sidebar nav injector failed:', err);
+            }
+            entry.element = document.querySelector(entry.selector);
+        }
+    }
+
+    /**
+     * Re-run `inject` whenever the sidebar is rebuilt without this page's nav
+     * link. `inject` keeps its own gating (config mode checks) and must be
+     * idempotent; it runs only when `.jellyfinEnhancedSection` exists and no
+     * element matches `selector`.
+     * @param {string} id - Unique id per page (replaces an earlier registration).
+     * @param {string} selector - Selector matching the page's injected nav link.
+     * @param {Function} inject - Injects the nav link into the section.
+     * @returns {Function} Unregister function.
+     */
+    function onSidebarRebuilt(id, selector, inject) {
+        sidebarNavEntries.set(id, { selector, inject, element: null });
+        if (!sidebarNavSubscribed) {
+            sidebarNavSubscribed = true;
+            JE.core.dom.onBodyMutation('sidebar-nav-watcher', checkSidebarNavEntries);
+        }
+        return () => sidebarNavEntries.delete(id);
     }
 
     /** @param {Element} element @returns {Element[]} All page/tab ancestors, innermost first. */
@@ -618,6 +692,7 @@
         getHeaderRightContainer,
         getHeaderButtonTray,
         getSidebarContainer,
+        onSidebarRebuilt,
         isActiveTabContainer,
         observeTabContainers,
         waitForElement: (selector, timeout) => JE.core.dom.waitForElement(selector, timeout), // (core)

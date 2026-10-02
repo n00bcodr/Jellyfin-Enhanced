@@ -524,7 +524,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `jellyseerr/status` | Seerr connection/reachability check |
+| GET | `jellyseerr/status` | Seerr connection/reachability check (answer cached for 30 s) |
 | GET | `jellyseerr/validate` | Validate configured Seerr URL(s) + API key |
 | POST | `jellyseerr/trigger-recently-added-scan` | Kick off a Seerr library scan |
 | GET | `jellyseerr/user-status` | Is the calling Jellyfin user linked to a Seerr account |
@@ -572,7 +572,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 | GET | `tmdb/search/person`, `tmdb/search/keyword` | TMDB search proxy |
 | GET | `tmdb/genres/movie`, `tmdb/genres/tv` | TMDB genre lists |
 | GET | `tmdb/validate` | Validate the configured TMDB API key |
-| GET | `tmdb/{**apiPath}` | Generic pass-through TMDB proxy (catch-all) |
+| GET | `tmdb/{**apiPath}` | Generic pass-through TMDB proxy (catch-all). Responses are cached server-side (6 h for single resources, 30 min for lists, persisted across restarts); a cold `movie`/`tv` title and its `release_dates`, `watch/providers` and `reviews` are fetched in one upstream call |
 
 ### Client Bootstrap & Config
 
@@ -627,8 +627,9 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `tag-cache/rebuild` | Admin: force a full tag-cache rebuild |
-| GET | `tag-cache/{userId}` | This user's tag cache |
+| GET | `tag-cache/{userId}` | This user's tag cache (`?since=<timestamp>` returns only entries changed since, plus any under the user's Spoiler Guard). Includes `servedAt` (server time the response was captured, for ordering stored copies), `filterRevision`, a fingerprint of how this user's entries are filtered (library access) and Spoiler Guard-stripped (a client holding a copy made under another revision must replace it), and `reviewRatings`, the average user-review rating per `mediaType:tmdbKey` visible to this user, when user ratings on posters are on |
 | POST | `tag-data/{userId}` | Batch tag lookup by item ids |
+| GET | `item-stats/{userId}/{itemId}` | File size and watch progress for an item in one response (what the details page uses) |
 | GET | `file-size/{userId}/{itemId}` | File size for an item |
 | GET | `watch-progress/{userId}/{itemId}` | Watch progress for an item |
 | GET | `awards/{mediaType}/{tmdbId}` | Wikidata award wins/nominations |

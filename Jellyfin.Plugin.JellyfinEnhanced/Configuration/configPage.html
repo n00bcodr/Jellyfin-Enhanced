@@ -24,7 +24,7 @@
         };
         // Inject the Material Symbols Rounded @font-face from the plugin's bundled font route.
         var jeFontStyle = document.createElement('style');
-        jeFontStyle.textContent = "@font-face{font-family:'Material Symbols Rounded';font-style:normal;font-weight:100 700;font-display:block;src:url(" + ApiClient.getUrl('/JellyfinEnhanced/fonts/materialsymbolsrounded.woff2') + ") format('woff2');}";
+        jeFontStyle.textContent = "@font-face{font-family:'Material Symbols Rounded';font-style:normal;font-weight:100 700;font-display:block;src:url(" + ApiClient.getUrl('/JellyfinEnhanced/fonts/materialsymbolsrounded.woff2', jeCssVersion ? { v: jeCssVersion } : undefined) + ") format('woff2');}";
         document.head.appendChild(jeFontStyle);
     </script>
     <style>

@@ -202,12 +202,13 @@
 
   function observeOsd() {
     if (osdObserver) return; // Already observing
-    osdObserver = new MutationObserver(() => {
-      scheduleUpdate();
+    // The player container does not exist yet when this runs, so a dedicated
+    // observer always ended up on document.body. Subscribe to the shared
+    // (post-paint, batched) body observer instead and ignore batches off the
+    // video page before touching the update timer.
+    osdObserver = JE.helpers.onBodyMutation('osd-rating', () => {
+      if (JE.isVideoPage()) scheduleUpdate();
     });
-    // Only observe the video player container, not the entire document
-    const observeTarget = document.querySelector('.videoPlayerContainer') || document.body;
-    osdObserver.observe(observeTarget, { childList: true, subtree: true });
   }
 
   JE.initializeOsdRating = function() {

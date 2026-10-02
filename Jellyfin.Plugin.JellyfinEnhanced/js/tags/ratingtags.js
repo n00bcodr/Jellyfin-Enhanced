@@ -78,6 +78,32 @@
         return false;
     }
 
+    // The review chips (userreviewtags.js) update cards outside this renderer
+    // when the review averages change; they use the same scope rule so a card
+    // this renderer leaves bare never gets a chip.
+    JE.isRatingTagExcludedByScope = isExcludedByScope;
+
+    /**
+     * True while rating suppression is only the fail-closed default because
+     * Spoiler Guard's per-user state request is still in flight (see
+     * shouldSuppressRatingTag). Such cards get NOTHING yet — not even the
+     * user-review chip, whose overlay would make the card look finished — so
+     * the rescan Spoiler Guard runs once its state loads renders them
+     * properly. After a FAILED load nothing rescans, so suppression is final
+     * then and the chip goes on as before.
+     * @returns {boolean}
+     */
+    function isSuppressionPending() {
+        try {
+            const sg = JE.spoilerBlur;
+            if (!sg || JE.pluginConfig?.SpoilerBlurEnabled !== true) return false;
+            if (typeof sg.isLoaded === 'function') return sg.isLoaded() !== true;
+            return typeof sg.isLoadOk === 'function' && sg.isLoadOk() !== true;
+        } catch {
+            return false;
+        }
+    }
+
     /**
      * True when the community/critic rating tag must be SUPPRESSED because the
      * item is (or belongs to) a Spoiler-Guarded series and ratings are being
@@ -318,7 +344,9 @@
                 // Spoiler Guard was enabled must never flash back onto a card.
                 if (shouldSuppressRatingTag(item)) {
                     ctx.markTagged(el);
-                    if (typeof JE.appendUserRatingToContainer === 'function') {
+                    // Guarded: hide the rating, keep the user-review chip. Still
+                    // loading: add nothing, the post-load rescan decides.
+                    if (!isSuppressionPending() && typeof JE.appendUserRatingToContainer === 'function') {
                         JE.appendUserRatingToContainer(el, item, extras);
                     }
                     return;
@@ -422,7 +450,7 @@
                 }
                 return !!(cached.tmdb || cached.critic !== null);
             },
-            renderFromServerCache(ctx, el, entry) {
+            renderFromServerCache(ctx, el, entry, itemId) {
                 if (ctx.isTagged(el)) return;
                 if (ctx.shouldIgnore(el)) return;
                 if (isExcludedByScope(el, entry.Type)) {
@@ -431,23 +459,31 @@
                 }
                 // Server-cache episode entries lack Played state, so only apply
                 // the parent-series suppression where it is authoritative.
-                if ((entry.Type === 'Series' || entry.Type === 'Season')
+                // (A cache entry carries no Id of its own; the pipeline passes it.)
+                // Suppression hides the community/critic rating only: the
+                // user-review chip still goes on, as in the batch render path.
+                const suppressed = (entry.Type === 'Series' || entry.Type === 'Season')
                     && shouldSuppressRatingTag({
                         Type: entry.Type,
-                        Id: entry.Id,
+                        Id: itemId,
                         SeriesId: entry.SeriesId
-                    })) {
+                    });
+                if (suppressed) {
                     ctx.markTagged(el);
-                    return;
-                }
-                const tmdb = entry.CommunityRating != null
-                    ? parseFloat(entry.CommunityRating).toFixed(1)
-                    : null;
-                const critic = entry.CriticRating != null
-                    ? normalizeCriticPercent(entry.CriticRating)
-                    : null;
-                if (tmdb || critic !== null) {
-                    applyRatingTag(ctx, el, { tmdb, critic });
+                    // Still loading Spoiler Guard state: add nothing, not even
+                    // the review chip (its overlay would mark the card finished
+                    // and keep the rating off after the post-load rescan).
+                    if (isSuppressionPending()) return;
+                } else {
+                    const tmdb = entry.CommunityRating != null
+                        ? parseFloat(entry.CommunityRating).toFixed(1)
+                        : null;
+                    const critic = entry.CriticRating != null
+                        ? normalizeCriticPercent(entry.CriticRating)
+                        : null;
+                    if (tmdb || critic !== null) {
+                        applyRatingTag(ctx, el, { tmdb, critic });
+                    }
                 }
                 if (typeof JE.appendUserRatingToContainer === 'function') {
                     // Build a synthetic item so resolveTmdbKey can derive the correct key

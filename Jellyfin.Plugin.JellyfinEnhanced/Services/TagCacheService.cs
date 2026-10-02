@@ -105,8 +105,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // PartialAudioLanguages for languages missing from some of them, and adds
         // OfficialRating (age rating) with the Series fallback for Seasons/Episodes.
         // (It skips v5 so caches written by builds carrying only one of the two are discarded too.)
+        // v7 stops storing stream data the client derives from another field anyway
+        // (see BuildStreamData / ExtractMediaData): a source Name that is just its
+        // Path without the extension, an ItemPath equal to a source Path, and the
+        // VideoRangeType of audio streams. Every client reads them with an empty
+        // fallback, and the served payload shrinks by roughly a fifth.
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        private const int CurrentCacheSchemaVersion = 6;
+        private const int CurrentCacheSchemaVersion = 7;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -119,8 +124,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private const int HydrationPageSize = 500;
 
         // User access cache: avoids expensive GetItemIds query on every request
-        private readonly ConcurrentDictionary<string, (HashSet<string> Ids, DateTime CachedAt)> _userAccessCache = new();
+        private readonly ConcurrentDictionary<string, (HashSet<string> Ids, DateTime CachedAt, long Generation)> _userAccessCache = new();
         private static readonly TimeSpan UserAccessCacheTtl = TimeSpan.FromSeconds(60);
+        // Bumped by InvalidateUserAccess. Each cached access set records the
+        // generation it was computed under and is only used while that is still
+        // current, so a set computed before a bump (user policy or library
+        // changed meanwhile) can serve its own request but never a later one —
+        // even if it lands in the dictionary after the clear.
+        private long _userAccessGeneration;
+
+        /// <summary>
+        /// Drop every cached per-user access set, so the next request filters
+        /// with the user's current access. Called when a user's policy changes
+        /// and when library changes are applied to the cache: tag-cache deltas
+        /// are filtered by this set and clients keep their copy across page
+        /// loads, so a stale set would either skip a newly added item for good
+        /// (its update is behind the cursor by the time the set refreshes) or
+        /// hide an access change from the filterRevision.
+        /// </summary>
+        public void InvalidateUserAccess()
+        {
+            Interlocked.Increment(ref _userAccessGeneration);
+            _userAccessCache.Clear();
+        }
 
         public static readonly HashSet<BaseItemKind> TaggableTypes = new()
         {
@@ -354,7 +380,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciliationStartedUtc.Ticks);
             // Invalidate user access cache since items may have changed
-            _userAccessCache.Clear();
+            InvalidateUserAccess();
             progress?.Report(100);
 
             sw.Stop();
@@ -601,7 +627,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                 }
 
-                _userAccessCache.Clear();
+                InvalidateUserAccess();
             }
 
             Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciliationStartedUtc.Ticks);
@@ -771,7 +797,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     Interlocked.Exchange(ref _firstPendingTicks, 0);
                     var batch = _pending.Drain();
-                    if (ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry))
+                    var changed = ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry);
+                    // Any library change may alter who can see an item (added,
+                    // removed, moved, re-rated, re-tagged) even when its tag entry
+                    // is unchanged: access sets computed before it are stale.
+                    InvalidateUserAccess();
+                    if (changed)
                     {
                         Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                         ScheduleDebouncedSave();
@@ -888,15 +919,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// Get cache entries filtered by a user's library access, together with
         /// the version and timestamp belonging to the SAME cache generation.
         /// User access IDs are cached for 60 seconds to avoid expensive DB queries.
-        /// Optionally returns only entries modified after a given timestamp.
+        /// Optionally returns only entries modified after a given timestamp, plus
+        /// any older entry <paramref name="alsoInclude"/> asks for (the controller
+        /// uses it to carry the caller's Spoiler-Guarded entries with every delta,
+        /// since what those serve depends on the user's played state, not on
+        /// <see cref="TagCacheEntry.LastUpdated"/>). Both come from the one
+        /// generation capture, so a delta never mixes two cache generations.
         /// The out values must come from the same _publishLock-guarded capture as
         /// the dictionary reference: pairing a freshly published cache with the
         /// previous generation's version/timestamp would let a client store a
         /// pre-first-publish timestamp of 0 (which disables its delta refresh)
         /// or a version the next poll can't detect a rebuild against.
         /// </summary>
-        public Dictionary<string, TagCacheEntry> GetCacheForUser(JUser user, out long version, out long timestamp, long? since = null)
+        public Dictionary<string, TagCacheEntry> GetCacheForUser(JUser user, out long version, out long timestamp, long? since = null, Func<string, TagCacheEntry, bool>? alsoInclude = null)
+            => GetCacheForUser(user, out version, out timestamp, out _, since, alsoInclude);
+
+        /// <summary>
+        /// As <see cref="GetCacheForUser(JUser, out long, out long, long?, Func{string, TagCacheEntry, bool}?)"/>,
+        /// also returning <paramref name="accessRevision"/>: a fingerprint of the
+        /// cache entries this user can NOT see, computed from the very access set
+        /// used to filter the result. It changes whenever an entry stops being
+        /// visible to the user (library access, parental limits or tags changed
+        /// on the user or on the item), which a filtered delta cannot express,
+        /// and not when visible items are added.
+        /// </summary>
+        public Dictionary<string, TagCacheEntry> GetCacheForUser(JUser user, out long version, out long timestamp, out string accessRevision, long? since = null, Func<string, TagCacheEntry, bool>? alsoInclude = null)
         {
+            accessRevision = "none";
             ConcurrentDictionary<string, TagCacheEntry> cache;
             lock (_publishLock)
             {
@@ -920,12 +969,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // Check user access cache
             HashSet<string> accessibleSet;
-            if (_userAccessCache.TryGetValue(userKey, out var cached) && DateTime.UtcNow - cached.CachedAt < UserAccessCacheTtl)
+            if (_userAccessCache.TryGetValue(userKey, out var cached)
+                && cached.Generation == Interlocked.Read(ref _userAccessGeneration)
+                && DateTime.UtcNow - cached.CachedAt < UserAccessCacheTtl)
             {
                 accessibleSet = cached.Ids;
             }
             else
             {
+                var accessGeneration = Interlocked.Read(ref _userAccessGeneration);
                 var accessibleIds = _libraryManager.GetItemIds(new InternalItemsQuery(user)
                 {
                     IncludeItemTypes = TaggableTypes.ToArray(),
@@ -944,22 +996,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // cache for the off window.
                 lock (_publishLock)
                 {
-                    if (ServerModeEnabled && !_cacheReleased)
+                    if (ServerModeEnabled && !_cacheReleased && Interlocked.Read(ref _userAccessGeneration) == accessGeneration)
                     {
-                        _userAccessCache[userKey] = (accessibleSet, DateTime.UtcNow);
+                        _userAccessCache[userKey] = (accessibleSet, DateTime.UtcNow, accessGeneration);
                     }
                 }
             }
 
             var result = new Dictionary<string, TagCacheEntry>();
+            // Order-independent digest of the excluded keys (sum of a stable
+            // 64-bit hash per key, plus the count), so no sort or list is needed.
+            ulong excludedSum = 0;
+            var excludedCount = 0;
             foreach (var kvp in cache)
             {
-                if (!accessibleSet.Contains(kvp.Key)) continue;
-                if (since.HasValue && kvp.Value.LastUpdated <= since.Value) continue;
+                if (!accessibleSet.Contains(kvp.Key))
+                {
+                    excludedSum = unchecked(excludedSum + StableKeyHash(kvp.Key));
+                    excludedCount++;
+                    continue;
+                }
+                if (since.HasValue && kvp.Value.LastUpdated <= since.Value
+                    && (alsoInclude == null || !alsoInclude(kvp.Key, kvp.Value)))
+                {
+                    continue;
+                }
+
                 result[kvp.Key] = kvp.Value;
             }
 
+            accessRevision = excludedCount == 0
+                ? "all"
+                : excludedCount.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + excludedSum.ToString("x16", System.Globalization.CultureInfo.InvariantCulture);
             return result;
+        }
+
+        /// <summary>A hash of a cache key that is stable across processes (string.GetHashCode is randomized).</summary>
+        private static ulong StableKeyHash(string key)
+        {
+            // FNV-1a, 64-bit.
+            ulong hash = 14695981039346656037UL;
+            foreach (var c in key)
+            {
+                hash = unchecked((hash ^ c) * 1099511628211UL);
+            }
+
+            return hash;
         }
 
         /// <summary>
@@ -1046,7 +1128,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         _cacheReleased = true;
                         _cache = new ConcurrentDictionary<string, TagCacheEntry>();
-                        _userAccessCache.Clear();
+                        InvalidateUserAccess();
                     }
                 }
             }
@@ -1534,15 +1616,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// Stream data for an entry, from the given item's extracted streams/sources.
+        /// ItemPath is only kept when it names a file none of the sources already
+        /// name: qualitytags.js reads both into the same signal list, so a
+        /// duplicate adds bytes (a file name per item, on every full download)
+        /// and nothing else.
         /// </summary>
         private static TagStreamData BuildStreamData(BaseItem item, List<TagMediaStream> streams, List<TagMediaSource> sources)
         {
+            var itemPath = string.IsNullOrEmpty(item.Path) ? null : Path.GetFileName(item.Path);
+            if (itemPath != null && sources.Exists(source => string.Equals(source.Path, itemPath, StringComparison.Ordinal)))
+            {
+                itemPath = null;
+            }
+
             return new TagStreamData
             {
                 Streams = streams,
                 Sources = sources,
                 ItemName = item.Name,
-                ItemPath = string.IsNullOrEmpty(item.Path) ? null : Path.GetFileName(item.Path)
+                ItemPath = itemPath
             };
         }
 
@@ -1557,10 +1649,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var mediaSources = item.GetMediaSources(false);
                 foreach (var source in mediaSources)
                 {
+                    // A source's Name is normally its file name without the
+                    // extension. qualitytags.js only ever reads Name and Path
+                    // into the same word-boundary regex signals, so a Name the
+                    // Path already contains is dropped; one that says more
+                    // (a version label) is kept.
+                    var sourceName = source.Name;
+                    if (!string.IsNullOrEmpty(source.Path)
+                        && string.Equals(sourceName, Path.GetFileNameWithoutExtension(source.Path), StringComparison.Ordinal))
+                    {
+                        sourceName = null;
+                    }
+
                     sources.Add(new TagMediaSource
                     {
                         Path = string.IsNullOrEmpty(source.Path) ? null : Path.GetFileName(source.Path),
-                        Name = source.Name
+                        Name = sourceName
                     });
 
                     foreach (var resolved in MediaStreamLanguageResolver.Resolve(source, item.Path))
@@ -1570,6 +1674,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                         if (s.Type != MediaStreamType.Video && s.Type != MediaStreamType.Audio)
                             continue;
+
+                        // Only a video stream's range is read (for the HDR /
+                        // Dolby Vision tag); an audio stream's is always
+                        // "Unknown", which the client treats like no value.
+                        var videoRangeType = s.Type == MediaStreamType.Video ? s.VideoRangeType.ToString() : null;
+                        if (string.Equals(videoRangeType, "Unknown", StringComparison.Ordinal))
+                        {
+                            videoRangeType = null;
+                        }
 
                         streams.Add(new TagMediaStream
                         {
@@ -1581,7 +1694,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             Height = s.Height,
                             Channels = s.Channels,
                             ChannelLayout = s.ChannelLayout,
-                            VideoRangeType = s.VideoRangeType.ToString(),
+                            VideoRangeType = videoRangeType,
                             DisplayTitle = s.DisplayTitle
                         });
 
