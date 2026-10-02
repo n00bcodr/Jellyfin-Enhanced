@@ -324,7 +324,7 @@
         JE.core.ui.injectCss('je-people-tags-styles', `
 
             .material-symbols-rounded {
-                font-family: 'Material Symbols Rounded';
+                font-family: 'JE Material Symbols Rounded';
                 font-weight: normal;
                 font-style: normal;
                 font-size: 24px;

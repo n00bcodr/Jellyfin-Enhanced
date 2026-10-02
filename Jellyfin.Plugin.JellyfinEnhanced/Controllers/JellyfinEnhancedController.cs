@@ -4352,9 +4352,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         // Material Symbols glyph fonts, bundled with the plugin instead of proxied
-        // from Google Fonts (see #830).
+        // from Google Fonts (see #830). The -subset files hold only the icons the
+        // client uses (scripts/material-symbols/subset.py) under JE-private family
+        // names; the full fonts back the public family names for themes and custom
+        // CSS that rely on JE providing them.
         private static readonly HashSet<string> BundledFontNames = new(StringComparer.OrdinalIgnoreCase)
         {
+            "materialsymbolsrounded-subset.woff2",
+            "materialsymbolsoutlined-subset.woff2",
             "materialsymbolsrounded.woff2",
             "materialsymbolsoutlined.woff2"
         };
