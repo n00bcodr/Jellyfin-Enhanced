@@ -94,7 +94,7 @@ Administrators configure the feature at the bottom of **Dashboard → Plugins �
 | Setting | Default | Description |
 |---|---|---|
 | **Enable Native Poster Tags (Experimental)** | Off | Server-wide master switch. When on, every user gets native poster tags unless they turn them off for themselves. When off, every app gets the original posters, whatever a user's personal choice, and the server does no extra image work. |
-| **Additional Web Client Names** | Empty | Apps that already run Jellyfin Enhanced's web overlays and should keep the original posters, on top of the built-in list below. Enter the app name as shown under **Dashboard → Devices**, one per line or comma separated. |
+| **Additional Excluded Clients** | Empty | Apps that already run Jellyfin Enhanced's web overlays and should keep the original posters, on top of the built-in list below. Enter the app name as shown under **Dashboard → Devices**, one per line or comma separated. |
 
 These apps load the Jellyfin web client, so Jellyfin Enhanced's overlays already run in them. They always get the original posters, which avoids drawing the tags twice:
 
@@ -104,7 +104,7 @@ These apps load the Jellyfin web client, so Jellyfin Enhanced's overlays already
 - Jellyfin for WebOS
 - Jellyfin for Android (the phone app; **Jellyfin for Android TV** is a native app and does get the tags)
 
-If another app shows the tags twice, for example a custom shell around the web client, add its name to **Additional Web Client Names**.
+If another app shows the tags twice, for example a custom shell around the web client, add its name to **Additional Excluded Clients**.
 
 **Per-user choice.** Each user can opt out in **Enhanced panel → UI Settings** with **Show Tags in Native Clients (Experimental)**, which is on until they turn it off. While the master switch is off the control is hidden and the saved choice is kept.
 

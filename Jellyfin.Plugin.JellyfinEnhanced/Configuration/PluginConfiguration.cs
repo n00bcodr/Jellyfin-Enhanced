@@ -595,6 +595,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>
         /// Extra Jellyfin client names (one per line or comma separated) that already run the web overlays and must
         /// get original posters, on top of the built-in web client list. Admin-only; never exposed in public configuration.
+        /// Deliberately NOT [AnalyticsInclude] (free text): analytics shares a sanitized
+        /// derivation instead, see AnalyticsReportingService.GetStringSettings.
         /// </summary>
         public string NativePosterTagsWebClientNames { get; set; }
         public int TagsCacheTtlDays { get; set; }

@@ -421,15 +421,32 @@
 
                             <div class="checkboxContainer"><label><input id="nativePosterTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Native Poster Tags (Experimental)</span></label></div>
                             <div class="je-setting-description" data-desc-for="nativePosterTagsEnabled">
-                                <div class="fieldDescription">Experimental. Draws each user's Media Tags into poster images for native apps such as Android TV that don't run Jellyfin Enhanced's web overlays, using that user's tag choices, corners and order. Every user gets them unless they switch off Show Tags in Native Clients in the Enhanced panel under UI Settings. Jellyfin Web, Jellyfin Media Player, Jellyfin Desktop, Jellyfin for WebOS and Jellyfin for Android already show the overlays, so they keep the original posters. Each poster is drawn the first time it is viewed, which costs some server CPU, and is then cached. Apps may need to reopen the library or be restarted to show changes. Original artwork files are never modified.</div>
+                                <div class="fieldDescription je-field-desc-sm-font-lg">
+                                    <ul style="margin:4px 0 0 20px; padding:0;">
+                                        <li>Experimental. Draws each user's Media Tags into poster images for native apps such as Android TV, which can't show Jellyfin Enhanced's web overlays</li>
+                                        <li>Uses each user's own tag choices, corners and order. Users can turn it off with Show Tags in Native Clients in the Enhanced panel under UI Settings</li>
+                                        <li>Web-based apps (Jellyfin Web, Media Player, Desktop, WebOS, Android) already show the overlays, so they keep the original posters</li>
+                                        <li>Each poster is drawn the first time it is viewed, which uses some server CPU, and is then cached</li>
+                                        <li>Apps may need to reopen the library or restart to show changes</li>
+                                        <li>Original artwork files are never modified</li>
+                                    </ul>
+                                </div>
                             </div>
 
                             <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="nativePosterTagsWebClientNames">Additional Web Client Names</label>
+                                <label class="inputLabel inputLabelUnfocused" for="nativePosterTagsWebClientNames">Additional Excluded Clients</label>
                                 <textarea class="emby-textarea emby-input je-textarea-medium" id="nativePosterTagsWebClientNames" name="nativePosterTagsWebClientNames" placeholder="One per line"></textarea>
                             </div>
                             <div class="je-setting-description" data-desc-for="nativePosterTagsWebClientNames">
-                                <div class="fieldDescription">Other apps that already run Jellyfin Enhanced's web overlays and should keep the original posters, such as a custom web wrapper. Enter the app name as shown under Dashboard → Devices, one per line or comma separated. The clients listed above are always excluded.</div>
+                                <div class="fieldDescription je-field-desc-sm-font-lg">
+                                    <ul style="margin:4px 0 0 20px; padding:0;">
+                                        <li>Apps listed here never get tags drawn into their posters</li>
+                                        <li>Add apps that already show Jellyfin Enhanced's tags themselves, such as a custom wrapper around the Jellyfin web UI, so tags aren't shown twice</li>
+                                        <li>Always excluded already: Jellyfin Web, Jellyfin Media Player, Jellyfin Desktop, Jellyfin for WebOS and Jellyfin for Android. No need to list these</li>
+                                        <li>Every other app gets drawn-in tags</li>
+                                        <li>Enter each name exactly as shown under Dashboard → Devices, one per line or comma separated</li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     </fieldset>
