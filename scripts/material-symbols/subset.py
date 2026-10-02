@@ -4,9 +4,27 @@
 The plugin ships two Material Symbols faces (Rounded and Outlined) for the
 poster tags, awards, reviews, calendar, release dates and people tags. The
 full fonts are ~340 KB and ~320 KB each; the client renders a few dozen icons,
-so the served files under `Jellyfin.Plugin.JellyfinEnhanced/js/fonts/` are
-subsets built by this script (a couple of KB each). Ligature lookups are kept,
-so `<span class="material-symbols-rounded">cake</span>` still resolves.
+so JE's own icons use subsets built by this script (a couple of KB each).
+Ligature lookups are kept, so `<span class="material-symbols-rounded">cake
+</span>` still resolves.
+
+Layout of `Jellyfin.Plugin.JellyfinEnhanced/js/fonts/` (all four embedded):
+
+    materialsymbolsrounded.woff2           full font, input to this script,
+    materialsymbolsoutlined.woff2          declared under the public family
+                                           names ('Material Symbols Rounded',
+                                           'Material Symbols Outlined') for
+                                           themes and custom CSS that rely on
+                                           JE providing them
+    materialsymbolsrounded-subset.woff2    output of this script, declared
+    materialsymbolsoutlined-subset.woff2   under the JE-private family names
+                                           ('JE Material Symbols Rounded',
+                                           'JE Material Symbols Outlined')
+                                           that JE's own rules use
+
+The two sets must stay separate: themes declare the public families
+themselves, and a subset under the same name would shadow the theme's full
+font, so every icon outside the subset would render as its ligature name.
 
 Usage (from the repository root):
 
@@ -14,14 +32,12 @@ Usage (from the repository root):
     python3 scripts/material-symbols/subset.py
 
 Add every new icon name to ICONS below before using it in a component, then
-re-run the script and commit the regenerated fonts. The script also scans the
-client sources for literal icon names inside symbol-font elements and fails if
-one is missing from ICONS, but names built at runtime (maps, ternaries) can
-only be covered by the list. The font URL carries the plugin version as a cache
-key (`JE.cdn.font`), so a rebuilt subset is picked up on the next release.
-
-The full source fonts live next to this script (`*-full.woff2`); they are not
-embedded in the plugin.
+re-run the script and commit the regenerated subsets. The script also scans
+the client sources for literal icon names inside symbol-font elements and
+fails if one is missing from ICONS, but names built at runtime (maps,
+ternaries) can only be covered by the list. The font URL carries the plugin
+version as a cache key (`JE.cdn.font`), so a rebuilt subset is picked up on
+the next release.
 """
 import re
 import subprocess
@@ -31,9 +47,8 @@ from pathlib import Path
 from fontTools.ttLib import TTFont
 
 ROOT = Path(__file__).resolve().parents[2]
-SRC = Path(__file__).resolve().parent
 JS = ROOT / 'Jellyfin.Plugin.JellyfinEnhanced' / 'js'
-OUT = JS / 'fonts'
+FONTS = JS / 'fonts'
 CONFIG_PAGE = ROOT / 'Jellyfin.Plugin.JellyfinEnhanced' / 'Configuration' / 'configPage.html'
 
 # Icon names per face. Keep the comments: they say which module needs a name.
@@ -68,9 +83,10 @@ COMPONENT_GLYPHS = list('abcdefghijklmnopqrstuvwxyz') + [
     'underscore', 'space',
 ]
 
+# Face -> (full font, subset) file names, both under FONTS.
 FACES = {
-    'rounded': ('materialsymbolsrounded-full.woff2', 'materialsymbolsrounded.woff2'),
-    'outlined': ('materialsymbolsoutlined-full.woff2', 'materialsymbolsoutlined.woff2'),
+    'rounded': ('materialsymbolsrounded.woff2', 'materialsymbolsrounded-subset.woff2'),
+    'outlined': ('materialsymbolsoutlined.woff2', 'materialsymbolsoutlined-subset.woff2'),
 }
 
 ROUNDED_CLASSES = ('material-symbols-rounded', 'je-release-date-icon', 'je-userreview-icon')
@@ -129,8 +145,8 @@ def main():
 
     for face, (src_name, out_name) in FACES.items():
         names = sorted(ICONS[face])
-        src = SRC / src_name
-        out = OUT / out_name
+        src = FONTS / src_name
+        out = FONTS / out_name
         ligatures = ligature_map(TTFont(src))
         unknown = [name for name in names if name not in ligatures]
         if unknown:

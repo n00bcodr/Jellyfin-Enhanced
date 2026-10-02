@@ -309,7 +309,7 @@
         // @font-face is declared once in enhanced/ui-styles.js.
         JE.core.ui.injectCss('mat-sym', `
             .material-symbols-outlined {
-                font-family: 'Material Symbols Outlined';
+                font-family: 'JE Material Symbols Outlined';
                 font-weight: normal;
                 font-style: normal;
                 font-size: 24px;

@@ -19,7 +19,7 @@
             style.id = styleId;
             style.textContent = `
                 .je-awards-label .material-symbols-rounded {
-                    font-family: 'Material Symbols Rounded';
+                    font-family: 'JE Material Symbols Rounded';
                     font-weight: normal;
                     font-style: normal;
                     line-height: 1;

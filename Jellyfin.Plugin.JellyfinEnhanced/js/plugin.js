@@ -30,8 +30,8 @@
             // Country flag as an SVG (cdnjs flag-icons, 4x3)
             flagSvg(code) { return this.url('flag-icons', `flags/4x3/${String(code).toLowerCase()}.svg`); },
             // Material Symbols glyph font, bundled with the plugin (not Google Fonts).
-            // Served immutable, so the plugin version keys the cache: the files are
-            // subsets (scripts/material-symbols/subset.py) that change with releases.
+            // Served immutable, so the plugin version keys the cache: the -subset files
+            // (scripts/material-symbols/subset.py) change with releases.
             font(name) { return ApiClient.getUrl(`/JellyfinEnhanced/fonts/${name}?v=${getScriptVersion()}`); }
         },
         // Stub functions that will be overwritten by modules
