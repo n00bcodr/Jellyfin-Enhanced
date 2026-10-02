@@ -22,14 +22,16 @@
         window.jeCdnUrl = function (subpath) {
             return ApiClient.getUrl('/JellyfinEnhanced/cdn/' + subpath);
         };
-        // Inject the Material Symbols Rounded @font-face from the plugin's bundled font route.
+        // Inject the Material Symbols Rounded @font-face from the plugin's bundled font route
+        // (JE's icon subset, under the JE-private family name so a theme's own
+        // 'Material Symbols Rounded' declaration is never shadowed by it).
         var jeFontStyle = document.createElement('style');
-        jeFontStyle.textContent = "@font-face{font-family:'Material Symbols Rounded';font-style:normal;font-weight:100 700;font-display:block;src:url(" + ApiClient.getUrl('/JellyfinEnhanced/fonts/materialsymbolsrounded.woff2', jeCssVersion ? { v: jeCssVersion } : undefined) + ") format('woff2');}";
+        jeFontStyle.textContent = "@font-face{font-family:'JE Material Symbols Rounded';font-style:normal;font-weight:100 700;font-display:block;src:url(" + ApiClient.getUrl('/JellyfinEnhanced/fonts/materialsymbolsrounded-subset.woff2', jeCssVersion ? { v: jeCssVersion } : undefined) + ") format('woff2');}";
         document.head.appendChild(jeFontStyle);
     </script>
     <style>
         .material-symbols-rounded {
-            font-family: 'Material Symbols Rounded';
+            font-family: 'JE Material Symbols Rounded';
             font-weight: normal;
             font-style: normal;
             line-height: 1;

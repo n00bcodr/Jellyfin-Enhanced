@@ -410,7 +410,7 @@
         JE.core.ui.injectCss('je-userreview-tags-css', `
             .je-userreview-tag { color: #e91e8c !important; }
             .je-userreview-icon {
-                font-family: 'Material Symbols Rounded';
+                font-family: 'JE Material Symbols Rounded';
                 font-size: 14px !important;
                 font-weight: normal;
                 font-style: normal;
