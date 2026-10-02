@@ -529,6 +529,8 @@ See the [Contributing Translations](../faq-support/contributing-translations.md)
 
 ## Maintenance Mode
 
+![Maintenance mode banner with countdown](../images/readme/maintenance-mode.webp)
+
 Puts up a login-page banner and optionally locks non-admin users out while you work on the server, from **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Admin** tab.
 
 !!! danger "This changes account/network access, read before enabling"
