@@ -244,7 +244,7 @@ Everything is configured from **Dashboard → Plugins → Jellyfin Enhanced**, w
 - **Documented CSS hooks** to restyle any part of the plugin
 - **Translated into 30+ languages** by the community
 
-<p align="center"><img src="docs/images/readme/maintenance-mode.webp" alt="Maintenance banner on the Jellyfin login page" width="100%"></p>
+<p align="center"><img src="docs/images/readme/maintenance-mode.webp" alt="Maintenance banner with a countdown on the Jellyfin login page" width="100%"></p>
 
 <sub>[Admin & other features →](https://n00bcodr.github.io/Jellyfin-Enhanced/other/other-features/)</sub>
 
