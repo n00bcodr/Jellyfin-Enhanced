@@ -208,6 +208,8 @@ The **Requests** page shows Seerr requests and what's downloading right now, wit
 - **Reviews and ratings:** anyone can rate a movie, show, season or episode and write a review. The average appears on detail pages, and optionally on posters.
 - **Login picture:** when someone picks their name to sign in, their profile picture appears above the password box.
 
+<p align="center"><img src="docs/images/readme/login-picture.webp" alt="Picking Riley on the sign-in screen shows Riley's profile picture above the password box" width="60%"></p>
+
 ### 📡 See who's watching right now
 
 A live counter in the header shows how many streams are playing. Click it for everyone's poster, progress and device, and whether each stream is playing directly or being transcoded (with codec and bitrate). Admins can also send a message to everyone who's connected. Only admins see the counter unless you choose to show it to everyone.
