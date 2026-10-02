@@ -22,7 +22,10 @@
     // until it has. Multi-version items keep waiting for the select (an
     // unplayable one never fills it and shows the all-versions total).
     let lastDetailsDefaultSourceId = null;
-    let itemTypeFetchInProgress = null;
+    // The pending item lookup, as { itemId }, or null. Keyed by item so that
+    // navigating away while it is pending neither blocks the new item's own
+    // lookup nor lets the old one's answer land in the new item's state.
+    let itemTypeFetch = null;
 
     // Types that support file size and watch progress
     const FEATURES_SUPPORTED_TYPES = ['Episode', 'Season', 'Series', 'Movie', 'BoxSet', 'Playlist'];
@@ -275,20 +278,26 @@
 
             // Fetch item type once per item to decide applicability
             if (!lastDetailsItemType) {
-                if (!itemTypeFetchInProgress) {
+                if (itemTypeFetch?.itemId !== itemId) {
                     const userId = ApiClient.getCurrentUserId();
-                    itemTypeFetchInProgress = (JE.helpers?.getItemCached
+                    const lookup = { itemId };
+                    itemTypeFetch = lookup;
+                    (JE.helpers?.getItemCached
                         ? JE.helpers.getItemCached(itemId, { userId })
                         : ApiClient.getItem(userId, itemId))
                         .then(item => {
+                            if (itemTypeFetch === lookup) itemTypeFetch = null;
+                            // The page has moved on to another item: this answer
+                            // is not its type or source (that item runs its own
+                            // lookup).
+                            if (lastDetailsItemId !== itemId) return;
                             lastDetailsItemType = item?.Type || null;
                             lastDetailsDefaultSourceId = item?.MediaSources?.length === 1 ? (item.MediaSources[0].Id || null) : null;
-                            itemTypeFetchInProgress = null;
                             // Re-run once the type is known, without waiting for
                             // the page's mutations to go quiet again.
                             runItemDetails(false);
                         })
-                        .catch(() => { itemTypeFetchInProgress = null; });
+                        .catch(() => { if (itemTypeFetch === lookup) itemTypeFetch = null; });
                 }
                 return;
             }

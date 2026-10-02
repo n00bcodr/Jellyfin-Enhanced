@@ -7671,32 +7671,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // downloads the whole cache, and re-serializing tens of MB per client
             // used to take seconds of CPU and hundreds of MB each. Those clients
             // arrive together, so the serialization runs one at a time and the
-            // waiters find the first one's copy. The delta and strip paths below
-            // are per request.
+            // waiters find the first one's copy. While the cache is being
+            // mutated nothing is shared (TryGetSerializedItems reports it not
+            // shareable) and the request is serialized on its own below, like
+            // the delta and strip paths.
             if (!since.HasValue && spState == null)
             {
-                if (_tagCacheService.TryGetSerializedItems(user, out var sharedVersion, out var sharedTimestamp, out var sharedAccessRevision, out var sharedItemsJson, out var sharedCount))
+                if (_tagCacheService.TryGetSerializedItems(user, out var sharedVersion, out var sharedTimestamp, out var sharedAccessRevision, out var sharedItemsJson, out var sharedCount, out var shareable))
                 {
                     return Respond(sharedVersion, sharedTimestamp, sharedAccessRevision, sharedItemsJson, sharedCount);
                 }
 
-                _tagCacheSerializationGate.Wait();
-                try
+                if (shareable)
                 {
-                    if (!_tagCacheService.TryGetSerializedItems(user, out sharedVersion, out sharedTimestamp, out sharedAccessRevision, out sharedItemsJson, out sharedCount))
+                    _tagCacheSerializationGate.Wait();
+                    try
                     {
-                        var sharedItems = _tagCacheService.GetCacheForUser(user, out sharedVersion, out sharedTimestamp, out sharedAccessRevision);
-                        sharedItemsJson = JsonSerializer.SerializeToUtf8Bytes(sharedItems, jsonOptions);
-                        sharedCount = sharedItems.Count;
-                        _tagCacheService.StoreSerializedItems(sharedVersion, sharedTimestamp, sharedAccessRevision, sharedItemsJson, sharedCount);
+                        if (!_tagCacheService.TryGetSerializedItems(user, out sharedVersion, out sharedTimestamp, out sharedAccessRevision, out sharedItemsJson, out sharedCount, out _))
+                        {
+                            var sharedItems = _tagCacheService.GetShareableCacheForUser(user, out sharedVersion, out sharedTimestamp, out sharedAccessRevision, out var shareKey);
+                            sharedItemsJson = JsonSerializer.SerializeToUtf8Bytes(sharedItems, jsonOptions);
+                            sharedCount = sharedItems.Count;
+                            if (shareKey != null)
+                            {
+                                _tagCacheService.StoreSerializedItems(shareKey, sharedItemsJson, sharedCount);
+                            }
+                        }
                     }
-                }
-                finally
-                {
-                    _tagCacheSerializationGate.Release();
-                }
+                    finally
+                    {
+                        _tagCacheSerializationGate.Release();
+                    }
 
-                return Respond(sharedVersion, sharedTimestamp, sharedAccessRevision, sharedItemsJson, sharedCount);
+                    return Respond(sharedVersion, sharedTimestamp, sharedAccessRevision, sharedItemsJson, sharedCount);
+                }
             }
 
             var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, out var accessRevision, since, guardedRider);

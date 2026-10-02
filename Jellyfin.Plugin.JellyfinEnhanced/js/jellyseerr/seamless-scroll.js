@@ -416,16 +416,19 @@
          */
         // A More Info modal covers the page: nobody is reading the row behind
         // it, and its own requests should not queue behind the row's pages.
-        // The row's poll (horizontal) or the next scroll (vertical) resumes
-        // the fill once the modal is gone.
+        // A fill it stopped is resumed when the modal closes (see the
+        // 'jellyseerr-more-info-closed' listener below) — a grid too short to
+        // scroll would otherwise never be asked to fill again — and a
+        // horizontal row's poll resumes it too.
         const modalOpen = () => !!document.querySelector('.je-more-info-modal');
+        let suspendedByModal = false;
 
         const fill = async () => {
             if (filling || destroyed || paused) return;
             filling = true;
             try {
                 while (!destroyed && !paused && sentinel.isConnected && hasMoreCheck() && !isLoadingCheck()) {
-                    if (modalOpen()) break;
+                    if (modalOpen()) { suspendedByModal = true; break; }
                     const g = measure();
                     if (!g.inRange) break;
                     const deficit = g.target - g.ahead;
@@ -521,6 +524,11 @@
         };
         listen(window, 'scroll', onUserScroll, { passive: true });
         listen(window, 'resize', onUserScroll, { passive: true });
+        listen(document, 'jellyseerr-more-info-closed', () => {
+            if (!suspendedByModal) return;
+            suspendedByModal = false;
+            fill();
+        });
         let pollTimer = null;
         if (horizontal) {
             // emby-scroller scrolls an inner element (native) or translates the

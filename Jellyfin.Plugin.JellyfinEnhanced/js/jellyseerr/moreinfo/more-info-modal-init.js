@@ -218,12 +218,18 @@ moreInfoModal.close = function() {
         if (state.currentModal._cleanupEscapeListener) {
             state.currentModal._cleanupEscapeListener();
         }
-        state.currentModal.classList.remove('active');
+        const closing = state.currentModal;
+        closing.classList.remove('active');
         setTimeout(() => {
-            if (document.body.contains(state.currentModal)) {
-                document.body.removeChild(state.currentModal);
+            // Remove the modal this close was for: another may have opened in
+            // the 300ms fade (showModal closes the old one first) and must stay.
+            if (document.body.contains(closing)) {
+                document.body.removeChild(closing);
             }
-            state.currentModal = null;
+            if (state.currentModal === closing) state.currentModal = null;
+            // Work held back while the modal covered the page (the
+            // seamless-scroll fill) resumes on this.
+            document.dispatchEvent(new CustomEvent('jellyseerr-more-info-closed'));
         }, 300);
     }
 }
