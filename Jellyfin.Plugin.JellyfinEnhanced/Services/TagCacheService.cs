@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
@@ -59,6 +60,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private sealed class EpisodeScanMemo : Dictionary<Guid, EpisodeScan>
         {
             public IReadOnlySet<Guid>? Pending { get; init; }
+
+            /// <summary>
+            /// Parent Series per series id, looked up once per pass (see
+            /// <see cref="GetParentSeries"/>): every Episode and Season entry
+            /// reads its Series for the rating fallbacks, the TMDB id and the
+            /// age rating, which cost two library lookups per item before.
+            /// </summary>
+            public Dictionary<Guid, BaseItem> ParentSeries { get; } = new();
         }
 
         // Guards the {_cacheReleased, _cache, _version, _lastModified} generation
@@ -75,6 +84,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private Timer? _debounceSaveTimer;
         private volatile bool _dirty;
         private long _firstDirtyTicks; // 0 = nothing dirty since the last disk save
+        private long _lastDirtyTicks;  // time of the most recent unsaved change (trailing debounce)
+
+        // Newest LastUpdated any entry of the published cache can carry. Raised
+        // BEFORE an entry is stored (RebuildEntry) and set with every publish, so
+        // a delta request whose cursor is at or past it knows — without walking
+        // the cache — that no entry would pass the LastUpdated filter. Only ever
+        // too high (removals don't lower it), which merely costs the walk.
+        private long _maxLastUpdated;
+
+        // Number of passes currently mutating the published dictionary in place
+        // (a flush batch, the reconcile's rebuild/sweep). While it is non-zero the
+        // version/timestamp pair does not pin the cache contents, so the shared
+        // per-generation results below (access digests, serialized items) are
+        // neither used nor stored. Writers bracket their mutations AND the
+        // timestamp bump that follows (see FlushPending).
+        private int _inPlaceWriters;
 
         // Disk-save cadence: a save runs 30s after the last applied change, but under
         // sustained change (a metadata refresh where values really do change on every
@@ -83,6 +108,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // full-cache write per 5 minutes instead of one per flush cycle (~30s).
         private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan SaveMaxWait = TimeSpan.FromMinutes(5);
+
+        // While Jellyfin's library scan runs, new and changed items keep arriving
+        // for as long as it lasts (hours for a big import) with gaps long enough
+        // for the 30s debounce to fire, and every save rewrites the whole file
+        // (tens of MB on large libraries): stretch both to 10 minutes, so a scan
+        // costs one write per 10 minutes — the most a crash can lose — plus one
+        // shortly after it ends. An armed save re-checks the scan state every
+        // ScanSavePoll (OnSaveTimer), so the end of a scan is noticed within that
+        // interval rather than up to ten minutes later.
+        private static readonly TimeSpan ScanSaveDebounce = TimeSpan.FromMinutes(10);
+        private static readonly TimeSpan ScanSaveMaxWait = TimeSpan.FromMinutes(10);
+        private static readonly TimeSpan ScanSavePoll = TimeSpan.FromSeconds(30);
+
+        // On-disk serialization: nulls omitted. Every nullable property of the
+        // persisted types (TagCacheDiskFormat, TagCacheEntry, TagStreamData,
+        // TagMediaStream, TagMediaSource) reads back as null whether it was absent
+        // or an explicit null, and the non-nullable ones (SchemaVersion, Version,
+        // LastModified, LastReconciledUtcTicks, LastUpdated, Items) are never
+        // null, so LoadFromDisk (default options) is unaffected and the file is
+        // roughly a third smaller. One shared instance: System.Text.Json caches
+        // its type metadata per options object.
+        private static readonly JsonSerializerOptions DiskJsonOptions = new()
+        {
+            WriteIndented = false,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        };
 
         // Incremental cache maintenance. Library-scan events are recorded here (O(1),
         // no DB/probe work) and drained by a debounced background worker so scans are
@@ -124,8 +175,86 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private const int HydrationPageSize = 500;
 
         // User access cache: avoids expensive GetItemIds query on every request
-        private readonly ConcurrentDictionary<string, (HashSet<string> Ids, DateTime CachedAt, long Generation)> _userAccessCache = new();
+        private readonly ConcurrentDictionary<string, UserAccess> _userAccessCache = new();
         private static readonly TimeSpan UserAccessCacheTtl = TimeSpan.FromSeconds(60);
+
+        /// <summary>
+        /// One user's cached access set (see <see cref="_userAccessCache"/>) and,
+        /// once a request has walked the cache with it, the excluded-key digest
+        /// that walk produced for the cache generation it saw.
+        /// </summary>
+        private sealed class UserAccess
+        {
+            public UserAccess(HashSet<string> ids, DateTime cachedAt, long generation)
+            {
+                Ids = ids;
+                CachedAt = cachedAt;
+                Generation = generation;
+            }
+
+            public HashSet<string> Ids { get; }
+            public DateTime CachedAt { get; }
+            public long Generation { get; }
+
+            /// <summary>
+            /// Memo of the <c>accessRevision</c> this set yields for one cache
+            /// generation (see <see cref="AccessDigest"/>): the digest covers only
+            /// which KEYS the set excludes, so for an unchanged generation it is
+            /// the same on every request and a delta that has nothing newer than
+            /// its cursor can answer without the walk (see GetCacheForUser).
+            /// </summary>
+            public volatile AccessDigest? Digest;
+        }
+
+        /// <summary>
+        /// The excluded-key digest of one access set over one cache generation,
+        /// identified by the dictionary instance and the version/timestamp pair
+        /// captured with it. Valid only while no in-place writer is active (see
+        /// <see cref="_inPlaceWriters"/>).
+        /// </summary>
+        private sealed record AccessDigest(ConcurrentDictionary<string, TagCacheEntry> Cache, long Version, long Timestamp, string Revision);
+
+        /// <summary>
+        /// A snapshot reader's view of the published generation: the dictionary
+        /// with the version/timestamp published alongside it and the newest
+        /// LastUpdated it can hold (<see cref="_maxLastUpdated"/>), all taken
+        /// under <see cref="_publishLock"/>.
+        /// </summary>
+        private readonly record struct CacheGeneration(ConcurrentDictionary<string, TagCacheEntry> Cache, long Version, long Timestamp, long MaxLastUpdated);
+
+        // Serialized `items` of whole-cache responses (GetTagCache), keyed by the
+        // cache generation and the access digest: a user without a Spoiler Guard
+        // strip gets exactly the generation's entries their access set admits,
+        // so every such request — and every user with the same access, which
+        // for unrestricted users is all of them — can send the same bytes
+        // instead of re-serializing tens of MB (and the ETag is a hash of the
+        // bytes sent, so it is shared too). Bounded by count and total size,
+        // least recently used first; dropped whenever the dictionary is swapped
+        // (publish, load, release) and superseded by any newer generation.
+        private sealed class SerializedItems
+        {
+            public SerializedItems(long version, long timestamp, string accessRevision, byte[] json, int count)
+            {
+                Version = version;
+                Timestamp = timestamp;
+                AccessRevision = accessRevision;
+                Json = json;
+                Count = count;
+                LastUsedTicks = DateTime.UtcNow.Ticks;
+            }
+
+            public long Version { get; }
+            public long Timestamp { get; }
+            public string AccessRevision { get; }
+            public byte[] Json { get; }
+            public int Count { get; }
+            public long LastUsedTicks { get; set; }
+        }
+
+        private readonly List<SerializedItems> _serializedItems = new();
+        private readonly object _serializedItemsLock = new();
+        private const int SerializedItemsMaxEntries = 4;
+        private const long SerializedItemsMaxBytes = 64L * 1024 * 1024;
         // Bumped by InvalidateUserAccess. Each cached access set records the
         // generation it was computed under and is only used while that is still
         // current, so a set computed before a bump (user policy or library
@@ -245,23 +374,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        // 0 = idle, 1 = a manual full rebuild is running. Purely a UI-facing
-        // guard so a second click gets an immediate "already running" instead
-        // of silently queuing behind _rebuildLock; BuildFullCache itself is
-        // already safe to call concurrently with anything else in this class.
-        private int _manualRebuildInProgress;
-
         /// <summary>
         /// Admin-triggered full rebuild (config page "Rebuild Server Tag Cache"
         /// button). Unlike <see cref="ReconcileCache"/>, this always recomputes
         /// every item regardless of Jellyfin's saved-item timestamps, which is
         /// the only way to pick up a tag-computation change (e.g. this plugin's
         /// own logic changing) for items nobody has actually edited. Runs on a
-        /// background thread; returns immediately once started.
+        /// background thread; returns immediately once started. Returns false
+        /// when a build, reconcile or server-mode transition already owns the
+        /// cache — the controller answers "already in progress" — instead of
+        /// queuing behind it: the previous guard only knew about manual
+        /// rebuilds, so a click during the startup build reported "started"
+        /// while the work sat behind the lock for minutes.
         /// </summary>
         public bool TryStartManualFullRebuild()
         {
-            if (Interlocked.CompareExchange(ref _manualRebuildInProgress, 1, 0) != 0)
+            // Claimed here, on the caller's thread, so the answer is truthful;
+            // the background task releases it (SemaphoreSlim has no owner).
+            if (!_rebuildLock.Wait(0))
             {
                 return false;
             }
@@ -270,7 +400,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 try
                 {
-                    BuildFullCache(null, CancellationToken.None);
+                    BuildFullCacheCore(null, CancellationToken.None, DateTime.UtcNow);
                 }
                 catch (Exception ex)
                 {
@@ -278,7 +408,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 finally
                 {
-                    Interlocked.Exchange(ref _manualRebuildInProgress, 0);
+                    _rebuildLock.Release();
                 }
             });
 
@@ -367,6 +497,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // dictionary with the previous generation's version/timestamp — a
             // request stamped with a pre-first-publish timestamp of 0 would
             // permanently disable that client's delta refresh.
+            var newMaxLastUpdated = MaxLastUpdated(newCache);
             lock (_saveLock)
             {
                 lock (_publishLock)
@@ -375,6 +506,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _cache = newCache;
                     Interlocked.Increment(ref _version);
                     Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                    Interlocked.Exchange(ref _maxLastUpdated, newMaxLastUpdated);
+                    ClearSerializedItems();
                 }
             }
 
@@ -483,6 +616,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var idsToRebuild = itemsToRebuild.Concat(containersToRebuild).ToList();
             var episodeScans = new EpisodeScanMemo { Pending = idsToRebuild.ToHashSet() };
+            // Everything from here mutates the published dictionary in place
+            // (rebuilds, the sweep, the version/timestamp bump), so the shared
+            // per-generation results stay off until this method returns.
+            using var inPlaceWrites = BeginInPlaceWrites();
             var changed = false;
             var rebuilt = 0;
             foreach (var id in idsToRebuild)
@@ -797,15 +934,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     Interlocked.Exchange(ref _firstPendingTicks, 0);
                     var batch = _pending.Drain();
-                    var changed = ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry);
-                    // Any library change may alter who can see an item (added,
-                    // removed, moved, re-rated, re-tagged) even when its tag entry
-                    // is unchanged: access sets computed before it are stale.
-                    InvalidateUserAccess();
-                    if (changed)
+                    // Access sets are only dropped when a change can alter who sees
+                    // an item: an entry added (a stale set would skip it for good —
+                    // its update is behind the cursor by the time the set refreshes)
+                    // or removed, or an age rating change (parental limits). A
+                    // library scan re-saves every item, and treating each of those
+                    // pure in-place updates as an access change made every request
+                    // during a scan re-run the per-user GetItemIds query. Outside a
+                    // scan every flush still drops them, as before: a single edit
+                    // can change what the entry can't see (e.g. the tags parental
+                    // control blocks on). During a scan such a change is picked up
+                    // when the 60s TTL expires (or at the next flush after the scan),
+                    // and the filterRevision then has the client reload.
+                    var visibilityChanged = !IsLibraryScanRunning;
+                    bool changed;
+                    using (BeginInPlaceWrites())
                     {
-                        Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-                        ScheduleDebouncedSave();
+                        changed = ApplyBatch(
+                            batch,
+                            RebuildWithBatchMemo(batch, () => visibilityChanged = true),
+                            id =>
+                            {
+                                var removed = RemoveEntry(id);
+                                visibilityChanged |= removed;
+                                return removed;
+                            });
+                        if (changed)
+                        {
+                            Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                            ScheduleDebouncedSave();
+                        }
+                    }
+
+                    if (visibilityChanged)
+                    {
+                        InvalidateUserAccess();
                     }
                 }
                 finally
@@ -861,20 +1024,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// lets the second container reuse the episode streams the first read,
         /// and episodes outside the batch come from their live cache entries.
         /// </summary>
-        private Func<Guid, bool> RebuildWithBatchMemo(IReadOnlyList<(Guid Id, bool Removed)> batch)
+        private Func<Guid, bool> RebuildWithBatchMemo(IReadOnlyList<(Guid Id, bool Removed)> batch, Action? onVisibilityChange = null)
         {
             var episodeScans = new EpisodeScanMemo { Pending = batch.Select(change => change.Id).ToHashSet() };
-            return id => RebuildEntry(id, episodeScans);
+            return id =>
+            {
+                var changed = RebuildEntry(id, episodeScans, out var visibilityChanged);
+                if (visibilityChanged) onVisibilityChange?.Invoke();
+                return changed;
+            };
         }
+
+        private bool RebuildEntry(Guid id, EpisodeScanMemo episodeScans) => RebuildEntry(id, episodeScans, out _);
 
         /// <summary>
         /// Resolve an id to its live library item and (re)build its cache entry.
         /// Returns true if the cache was modified. Runs on the flush worker only.
         /// <paramref name="episodeScans"/> is the caller's per-episode memo (see
         /// <see cref="BuildEntryForItem"/>), shared across one batch/reconcile.
+        /// <paramref name="visibilityChanged"/> is true when the change could alter
+        /// which users see the item — a new entry, or an age rating change — as
+        /// opposed to a pure in-place update (see <see cref="FlushPending"/>).
         /// </summary>
-        private bool RebuildEntry(Guid id, EpisodeScanMemo episodeScans)
+        private bool RebuildEntry(Guid id, EpisodeScanMemo episodeScans, out bool visibilityChanged)
         {
+            visibilityChanged = false;
             var item = _libraryManager.GetItemById<BaseItem>(id);
             if (item == null) return false; // gone before we processed it; ItemRemoved cleans up
 
@@ -897,8 +1071,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return false;
             }
 
+            visibilityChanged = existing == null
+                || !string.Equals(existing.OfficialRating, entry.OfficialRating, StringComparison.Ordinal);
+            // Raised before the store so no reader can see the entry under a
+            // lower maximum (see _maxLastUpdated).
+            RaiseMaxLastUpdated(entry.LastUpdated);
             _cache[key] = entry;
             return true;
+        }
+
+        /// <summary>Lock-free max update of <see cref="_maxLastUpdated"/>.</summary>
+        private void RaiseMaxLastUpdated(long lastUpdated)
+        {
+            var current = Interlocked.Read(ref _maxLastUpdated);
+            while (lastUpdated > current)
+            {
+                var seen = Interlocked.CompareExchange(ref _maxLastUpdated, lastUpdated, current);
+                if (seen == current) return;
+                current = seen;
+            }
+        }
+
+        private static long MaxLastUpdated(IEnumerable<KeyValuePair<string, TagCacheEntry>> entries)
+        {
+            long max = 0;
+            foreach (var kvp in entries)
+            {
+                if (kvp.Value.LastUpdated > max) max = kvp.Value.LastUpdated;
+            }
+
+            return max;
+        }
+
+        /// <summary>
+        /// Marks the start of a pass that mutates the published dictionary in
+        /// place; dispose the returned scope when its mutations AND the
+        /// version/timestamp bump that follows them are done (see
+        /// <see cref="_inPlaceWriters"/>).
+        /// </summary>
+        private InPlaceWriteScope BeginInPlaceWrites()
+        {
+            Interlocked.Increment(ref _inPlaceWriters);
+            return new InPlaceWriteScope(this);
+        }
+
+        private readonly struct InPlaceWriteScope : IDisposable
+        {
+            private readonly TagCacheService _owner;
+
+            public InPlaceWriteScope(TagCacheService owner) => _owner = owner;
+
+            public void Dispose() => Interlocked.Decrement(ref _owner._inPlaceWriters);
         }
 
         private bool RemoveEntry(Guid id)
@@ -946,61 +1169,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public Dictionary<string, TagCacheEntry> GetCacheForUser(JUser user, out long version, out long timestamp, out string accessRevision, long? since = null, Func<string, TagCacheEntry, bool>? alsoInclude = null)
         {
             accessRevision = "none";
-            ConcurrentDictionary<string, TagCacheEntry> cache;
-            lock (_publishLock)
+            var generation = CaptureGeneration(out var live);
+            version = generation.Version;
+            timestamp = generation.Timestamp;
+            if (!live)
             {
-                version = Interlocked.Read(ref _version);
-                timestamp = Interlocked.Read(ref _lastModified);
-                cache = _cache;
-
-                // A request that passed the controller's mode gate can still land
-                // here after a disable released the caches; running the expensive
-                // per-user GetItemIds then would park a large accessible-id set in
-                // _userAccessCache for the whole off window (nothing evicts it
-                // while the endpoint 404s). Serve empty instead — the client falls
-                // back to batch mode, exactly as if it had hit the 404.
-                if (!ServerModeEnabled || _cacheReleased)
-                {
-                    return new Dictionary<string, TagCacheEntry>();
-                }
+                return new Dictionary<string, TagCacheEntry>();
             }
 
-            var userKey = user.Id.ToString("N");
+            var access = ResolveUserAccess(user);
+            var accessibleSet = access.Ids;
 
-            // Check user access cache
-            HashSet<string> accessibleSet;
-            if (_userAccessCache.TryGetValue(userKey, out var cached)
-                && cached.Generation == Interlocked.Read(ref _userAccessGeneration)
-                && DateTime.UtcNow - cached.CachedAt < UserAccessCacheTtl)
+            // A delta whose cursor is at or past the newest stamp in this
+            // generation, with no guarded riders to pick out, would walk every
+            // entry to return none of them; its accessRevision is the one the
+            // last walk with this access set produced for this generation (the
+            // digest depends only on which keys the set excludes). Every
+            // navigation sends such a delta, so this is the common case.
+            if (since.HasValue && alsoInclude == null && since.Value >= generation.MaxLastUpdated
+                && TryGetAccessDigest(access, generation, out var memoizedRevision))
             {
-                accessibleSet = cached.Ids;
-            }
-            else
-            {
-                var accessGeneration = Interlocked.Read(ref _userAccessGeneration);
-                var accessibleIds = _libraryManager.GetItemIds(new InternalItemsQuery(user)
-                {
-                    IncludeItemTypes = TaggableTypes.ToArray(),
-                    Recursive = true
-                });
-                accessibleSet = new HashSet<string>(
-                    accessibleIds.Select(id => id.ToString("N").ToLowerInvariant())
-                );
-
-                // Store under _publishLock with the released flag re-checked:
-                // the entry bail above is check-then-act, and a disable can
-                // complete while the GetItemIds query runs. The disable clears
-                // _userAccessCache inside the same lock as it sets the flag, so
-                // this store either lands before the clear (and is cleared) or
-                // sees the flag and skips — it can never repopulate the access
-                // cache for the off window.
-                lock (_publishLock)
-                {
-                    if (ServerModeEnabled && !_cacheReleased && Interlocked.Read(ref _userAccessGeneration) == accessGeneration)
-                    {
-                        _userAccessCache[userKey] = (accessibleSet, DateTime.UtcNow, accessGeneration);
-                    }
-                }
+                accessRevision = memoizedRevision;
+                return new Dictionary<string, TagCacheEntry>();
             }
 
             var result = new Dictionary<string, TagCacheEntry>();
@@ -1008,7 +1198,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // 64-bit hash per key, plus the count), so no sort or list is needed.
             ulong excludedSum = 0;
             var excludedCount = 0;
-            foreach (var kvp in cache)
+            foreach (var kvp in generation.Cache)
             {
                 if (!accessibleSet.Contains(kvp.Key))
                 {
@@ -1025,10 +1215,232 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 result[kvp.Key] = kvp.Value;
             }
 
-            accessRevision = excludedCount == 0
+            accessRevision = FormatAccessRevision(excludedCount, excludedSum);
+            StoreAccessDigest(access, generation, accessRevision);
+            return result;
+        }
+
+        private static string FormatAccessRevision(int excludedCount, ulong excludedSum) =>
+            excludedCount == 0
                 ? "all"
                 : excludedCount.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + excludedSum.ToString("x16", System.Globalization.CultureInfo.InvariantCulture);
-            return result;
+
+        /// <summary>
+        /// The accessRevision of <paramref name="access"/> for <paramref name="generation"/>:
+        /// the memo if there is one, else the same excluded-key digest
+        /// <see cref="GetCacheForUser"/> computes, from a keys-only walk (no
+        /// result dictionary), memoized the same way.
+        /// </summary>
+        private string ResolveAccessDigest(UserAccess access, in CacheGeneration generation)
+        {
+            if (TryGetAccessDigest(access, generation, out var revision)) return revision;
+
+            ulong excludedSum = 0;
+            var excludedCount = 0;
+            foreach (var kvp in generation.Cache)
+            {
+                if (!access.Ids.Contains(kvp.Key))
+                {
+                    excludedSum = unchecked(excludedSum + StableKeyHash(kvp.Key));
+                    excludedCount++;
+                }
+            }
+
+            revision = FormatAccessRevision(excludedCount, excludedSum);
+            StoreAccessDigest(access, generation, revision);
+            return revision;
+        }
+
+        /// <summary>
+        /// The published generation as one consistent capture (see
+        /// <see cref="CacheGeneration"/>). <paramref name="live"/> is false when
+        /// the cache is not in service: a request that passed the controller's
+        /// mode gate can still land here after a disable released the caches,
+        /// and running the expensive per-user GetItemIds then would park a
+        /// large accessible-id set in _userAccessCache for the whole off window
+        /// (nothing evicts it while the endpoint 404s). Callers serve empty
+        /// instead — the client falls back to batch mode, exactly as if it had
+        /// hit the 404.
+        /// </summary>
+        private CacheGeneration CaptureGeneration(out bool live)
+        {
+            lock (_publishLock)
+            {
+                live = ServerModeEnabled && !_cacheReleased;
+                return new CacheGeneration(_cache, Interlocked.Read(ref _version), Interlocked.Read(ref _lastModified), Interlocked.Read(ref _maxLastUpdated));
+            }
+        }
+
+        /// <summary>
+        /// The user's accessible-id set, from <see cref="_userAccessCache"/> while
+        /// its entry is current (same access generation, within the TTL), else
+        /// computed with one GetItemIds query and cached.
+        /// </summary>
+        private UserAccess ResolveUserAccess(JUser user)
+        {
+            var userKey = user.Id.ToString("N");
+
+            // Check user access cache
+            if (_userAccessCache.TryGetValue(userKey, out var cached)
+                && cached.Generation == Interlocked.Read(ref _userAccessGeneration)
+                && DateTime.UtcNow - cached.CachedAt < UserAccessCacheTtl)
+            {
+                return cached;
+            }
+
+            var accessGeneration = Interlocked.Read(ref _userAccessGeneration);
+            var accessibleIds = _libraryManager.GetItemIds(new InternalItemsQuery(user)
+            {
+                IncludeItemTypes = TaggableTypes.ToArray(),
+                Recursive = true
+            });
+            var access = new UserAccess(
+                new HashSet<string>(accessibleIds.Select(id => id.ToString("N").ToLowerInvariant())),
+                DateTime.UtcNow,
+                accessGeneration);
+
+            // Store under _publishLock with the released flag re-checked:
+            // the live check in CaptureGeneration is check-then-act, and a
+            // disable can complete while the GetItemIds query runs. The disable
+            // clears _userAccessCache inside the same lock as it sets the flag,
+            // so this store either lands before the clear (and is cleared) or
+            // sees the flag and skips — it can never repopulate the access
+            // cache for the off window.
+            lock (_publishLock)
+            {
+                if (ServerModeEnabled && !_cacheReleased && Interlocked.Read(ref _userAccessGeneration) == accessGeneration)
+                {
+                    _userAccessCache[userKey] = access;
+                }
+            }
+
+            return access;
+        }
+
+        /// <summary>
+        /// The memoized accessRevision of <paramref name="access"/> for exactly
+        /// <paramref name="generation"/>, if a walk recorded one and no in-place
+        /// writer is active (its mutations would not be in the memo yet).
+        /// </summary>
+        private bool TryGetAccessDigest(UserAccess access, in CacheGeneration generation, out string revision)
+        {
+            var digest = access.Digest;
+            if (digest != null
+                && ReferenceEquals(digest.Cache, generation.Cache)
+                && digest.Version == generation.Version
+                && digest.Timestamp == generation.Timestamp
+                && Volatile.Read(ref _inPlaceWriters) == 0)
+            {
+                revision = digest.Revision;
+                return true;
+            }
+
+            revision = "none";
+            return false;
+        }
+
+        /// <summary>
+        /// Record the digest a walk over <paramref name="generation"/> produced —
+        /// unless an in-place writer is active, in which case the walk may have
+        /// seen a mix of two states. (A writer that started AND finished during
+        /// the walk either changed nothing, so the digest is right, or bumped
+        /// the timestamp, so the memo is never matched.)
+        /// </summary>
+        private void StoreAccessDigest(UserAccess access, in CacheGeneration generation, string revision)
+        {
+            if (Volatile.Read(ref _inPlaceWriters) != 0) return;
+            access.Digest = new AccessDigest(generation.Cache, generation.Version, generation.Timestamp, revision);
+        }
+
+        /// <summary>
+        /// The shared serialized <c>items</c> of a whole-cache response for this
+        /// user, when one exists for the current generation and their access set
+        /// (see <see cref="_serializedItems"/>). Only for requests whose items
+        /// are exactly what <see cref="GetCacheForUser"/> returns for a full load
+        /// — no delta, no Spoiler Guard strip. The out values mirror
+        /// GetCacheForUser's; on false the caller takes the normal path and may
+        /// <see cref="StoreSerializedItems"/> what it serialized. The access
+        /// digest is computed here if this user has none for the generation yet
+        /// (a keys-only walk), so a copy another user with the same access made
+        /// is found on this user's first request.
+        /// </summary>
+        public bool TryGetSerializedItems(JUser user, out long version, out long timestamp, out string accessRevision, out byte[] itemsJson, out int count)
+        {
+            itemsJson = Array.Empty<byte>();
+            count = 0;
+            accessRevision = "none";
+            var generation = CaptureGeneration(out var live);
+            version = generation.Version;
+            timestamp = generation.Timestamp;
+            if (!live) return false;
+
+            accessRevision = ResolveAccessDigest(ResolveUserAccess(user), generation);
+
+            lock (_serializedItemsLock)
+            {
+                foreach (var entry in _serializedItems)
+                {
+                    if (entry.Version == generation.Version && entry.Timestamp == generation.Timestamp
+                        && string.Equals(entry.AccessRevision, accessRevision, StringComparison.Ordinal))
+                    {
+                        entry.LastUsedTicks = DateTime.UtcNow.Ticks;
+                        itemsJson = entry.Json;
+                        count = entry.Count;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Keep the serialized <c>items</c> a whole-cache response produced for
+        /// the generation it was captured from, for the next request with the
+        /// same access digest. Skipped when the generation has moved on or an
+        /// in-place writer is active (the bytes may then mix two states).
+        /// </summary>
+        public void StoreSerializedItems(long version, long timestamp, string accessRevision, byte[] itemsJson, int count)
+        {
+            if (Volatile.Read(ref _inPlaceWriters) != 0) return;
+            lock (_publishLock)
+            {
+                if (_cacheReleased || version != Interlocked.Read(ref _version) || timestamp != Interlocked.Read(ref _lastModified)) return;
+            }
+
+            lock (_serializedItemsLock)
+            {
+                // Older generations can never be served again; a same-key entry is
+                // replaced (identical bytes, the newer copy just keeps the usage stamp).
+                _serializedItems.RemoveAll(entry => entry.Version != version || entry.Timestamp != timestamp
+                    || string.Equals(entry.AccessRevision, accessRevision, StringComparison.Ordinal));
+                _serializedItems.Add(new SerializedItems(version, timestamp, accessRevision, itemsJson, count));
+
+                // Bound by count and bytes, evicting the least recently used; the
+                // entry just added is always kept.
+                long totalBytes = 0;
+                foreach (var entry in _serializedItems) totalBytes += entry.Json.LongLength;
+                while (_serializedItems.Count > 1 && (_serializedItems.Count > SerializedItemsMaxEntries || totalBytes > SerializedItemsMaxBytes))
+                {
+                    var oldest = 0;
+                    for (var i = 1; i < _serializedItems.Count - 1; i++)
+                    {
+                        if (_serializedItems[i].LastUsedTicks < _serializedItems[oldest].LastUsedTicks) oldest = i;
+                    }
+
+                    totalBytes -= _serializedItems[oldest].Json.LongLength;
+                    _serializedItems.RemoveAt(oldest);
+                }
+            }
+        }
+
+        /// <summary>Drop every shared serialized copy; called under _publishLock wherever the dictionary is swapped.</summary>
+        private void ClearSerializedItems()
+        {
+            lock (_serializedItemsLock)
+            {
+                _serializedItems.Clear();
+            }
         }
 
         /// <summary>A hash of a cache key that is stable across processes (string.GetHashCode is randomized).</summary>
@@ -1128,6 +1540,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         _cacheReleased = true;
                         _cache = new ConcurrentDictionary<string, TagCacheEntry>();
+                        Interlocked.Exchange(ref _maxLastUpdated, 0);
+                        ClearSerializedItems();
                         InvalidateUserAccess();
                     }
                 }
@@ -1224,6 +1638,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
 
                     var loaded = new ConcurrentDictionary<string, TagCacheEntry>(data.Items);
+                    var loadedMaxLastUpdated = MaxLastUpdated(loaded);
 
                     // Same _saveLock discipline as the build publish: flag, swap
                     // and version/timestamp change together or not at all from a
@@ -1236,6 +1651,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             _cache = loaded;
                             Interlocked.Exchange(ref _version, data.Version);
                             Interlocked.Exchange(ref _lastModified, data.LastModified);
+                            Interlocked.Exchange(ref _maxLastUpdated, loadedMaxLastUpdated);
+                            ClearSerializedItems();
                         }
                     }
                     var reconciledTicks = data.LastReconciledUtcTicks;
@@ -1300,7 +1717,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var tempPath = CacheFilePath + ".tmp";
                     using (var stream = File.Create(tempPath))
                     {
-                        JsonSerializer.Serialize(stream, data, new JsonSerializerOptions { WriteIndented = false });
+                        JsonSerializer.Serialize(stream, data, DiskJsonOptions);
                     }
 
                     File.Move(tempPath, CacheFilePath, overwrite: true);
@@ -1334,7 +1751,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private void ScheduleDebouncedSave()
         {
             _dirty = true;
-            Interlocked.CompareExchange(ref _firstDirtyTicks, DateTime.UtcNow.Ticks, 0);
+            var nowTicks = DateTime.UtcNow.Ticks;
+            Interlocked.Exchange(ref _lastDirtyTicks, nowTicks);
+            Interlocked.CompareExchange(ref _firstDirtyTicks, nowTicks, 0);
             // During/after shutdown, persist synchronously instead of arming a timer that a
             // torn-down service would never fire. This is what keeps a flush that finishes
             // AFTER Dispose's (bounded) wait from losing its applied changes — it saves them
@@ -1345,11 +1764,65 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            // Trailing debounce with a hard cap (same math as the flush timer): 30s after
-            // the last change, but never more than 5 minutes after the first unsaved one,
-            // so sustained real changes can't starve persistence NOR write every cycle.
-            var due = ComputeFlushDelay(Interlocked.Read(ref _firstDirtyTicks), DateTime.UtcNow, SaveDebounce, SaveMaxWait);
+            ArmSaveTimer(ComputeSaveDelay());
+        }
 
+        /// <summary>Jellyfin's library scan is running (see ScanSaveDebounce).</summary>
+        private bool IsLibraryScanRunning => _libraryManager.IsScanRunning;
+
+        /// <summary>
+        /// Due time of the next save check. Trailing debounce with a hard cap
+        /// (same math as the flush timer): normally 30s after the last change
+        /// but never more than 5 minutes after the first unsaved one, so
+        /// sustained real changes can't starve persistence NOR write every
+        /// cycle; both stretched to 10 minutes while a library scan runs, and
+        /// then no longer than ScanSavePoll so the scan's end is re-checked.
+        /// The debounce is measured from the LAST change, so re-evaluating when
+        /// the timer fires (OnSaveTimer) gives the same answer as arming it
+        /// fresh would — the cadence outside scans is unchanged.
+        /// </summary>
+        private TimeSpan ComputeSaveDelay()
+        {
+            var now = DateTime.UtcNow;
+            var scanning = IsLibraryScanRunning;
+            var sinceLastChange = now - new DateTime(Interlocked.Read(ref _lastDirtyTicks), DateTimeKind.Utc);
+            var remainingDebounce = (scanning ? ScanSaveDebounce : SaveDebounce) - sinceLastChange;
+            if (remainingDebounce < TimeSpan.Zero) remainingDebounce = TimeSpan.Zero;
+
+            var due = ComputeFlushDelay(Interlocked.Read(ref _firstDirtyTicks), now, remainingDebounce, scanning ? ScanSaveMaxWait : SaveMaxWait);
+            return scanning && due > ScanSavePoll ? ScanSavePoll : due;
+        }
+
+        /// <summary>
+        /// The save timer's callback: saves when the current debounce/cap pair
+        /// says the time has come, otherwise re-arms for the remainder (a poll
+        /// tick during a scan, or the trailing debounce after one ended).
+        /// </summary>
+        private void OnSaveTimer()
+        {
+            // The mode gate keeps a save armed before a disable from writing
+            // the post-release (near-empty) cache over the good snapshot;
+            // OnServerModeDisabled does its own explicit save-if-dirty first.
+            if (!_dirty || !ServerModeEnabled) return;
+
+            // A second of slack absorbs timer jitter so a save armed for its exact
+            // due time doesn't re-arm for a few milliseconds instead of running.
+            var due = ComputeSaveDelay();
+            if (due > TimeSpan.FromSeconds(1))
+            {
+                ArmSaveTimer(due);
+                return;
+            }
+
+            SaveToDisk();
+        }
+
+        /// <summary>
+        /// Arm (or reset) the single save timer to fire <see cref="OnSaveTimer"/>
+        /// once after <paramref name="due"/>.
+        /// </summary>
+        private void ArmSaveTimer(TimeSpan due)
+        {
             // Reuse existing timer if possible, otherwise create a new one.
             // Change() resets the countdown without creating a new object.
             var existing = _debounceSaveTimer;
@@ -1362,13 +1835,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 catch (ObjectDisposedException) { }
             }
-            var timer = new Timer(_ =>
-            {
-                // The mode gate keeps a save armed before a disable from writing
-                // the post-release (near-empty) cache over the good snapshot;
-                // OnServerModeDisabled does its own explicit save-if-dirty first.
-                if (_dirty && ServerModeEnabled) SaveToDisk();
-            }, null, due, Timeout.InfiniteTimeSpan);
+            var timer = new Timer(_ => OnSaveTimer(), null, due, Timeout.InfiniteTimeSpan);
             var old = Interlocked.Exchange(ref _debounceSaveTimer, timer);
             if (old != null && !ReferenceEquals(old, timer))
             {
@@ -1434,10 +1901,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (ServerModeEnabled && !_cacheReleased)
                 {
                     var batch = _pending.Drain();
-                    if (ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry))
+                    using (BeginInPlaceWrites())
                     {
-                        Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-                        _dirty = true;
+                        if (ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry))
+                        {
+                            Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                            _dirty = true;
+                        }
                     }
                 }
                 else
@@ -1533,7 +2003,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     if (kind == BaseItemKind.Season && entry.CommunityRating == null)
                     {
-                        var series = GetParentSeries(item);
+                        var series = GetParentSeries(item, episodeScans);
                         if (series != null)
                         {
                             entry.CommunityRating = series.CommunityRating;
@@ -1548,7 +2018,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // For Season: store parent series TMDB ID + season number for user review key
                     if (kind == BaseItemKind.Season && item is MediaBrowser.Controller.Entities.TV.Season season)
                     {
-                        var series = GetParentSeries(item);
+                        var series = GetParentSeries(item, episodeScans);
                         if (series?.ProviderIds?.TryGetValue("Tmdb", out var seriesTmdb) == true)
                             entry.SeriesTmdbId = seriesTmdb;
                         entry.SeasonNumber = season.IndexNumber;
@@ -1581,7 +2051,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     if (kind == BaseItemKind.Episode && entry.CommunityRating == null)
                     {
-                        var series = GetParentSeries(item);
+                        var series = GetParentSeries(item, episodeScans);
                         if (series != null)
                         {
                             entry.CommunityRating = series.CommunityRating;
@@ -1592,7 +2062,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // For Episode: store parent series TMDB ID + season/episode numbers for user review key
                     if (kind == BaseItemKind.Episode && item is MediaBrowser.Controller.Entities.TV.Episode ep)
                     {
-                        var series = GetParentSeries(item);
+                        var series = GetParentSeries(item, episodeScans);
                         if (series?.ProviderIds?.TryGetValue("Tmdb", out var seriesTmdb) == true)
                             entry.SeriesTmdbId = seriesTmdb;
                         entry.SeasonNumber = ep.ParentIndexNumber;
@@ -2014,7 +2484,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private BaseItem? GetParentSeries(BaseItem item)
+        /// <summary>
+        /// The Series an Episode or Season belongs to, looked up once per pass
+        /// through <paramref name="episodeScans"/> (see
+        /// <see cref="EpisodeScanMemo.ParentSeries"/>) — a Series edited during
+        /// a pass is seen as it was when first looked up in that pass. A miss
+        /// (series not found) is not memoized.
+        /// </summary>
+        private BaseItem? GetParentSeries(BaseItem item, EpisodeScanMemo? episodeScans)
         {
             try
             {
@@ -2026,7 +2503,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (seriesId.HasValue && seriesId.Value != Guid.Empty)
                 {
-                    return _libraryManager.GetItemById<BaseItem>(seriesId.Value);
+                    if (episodeScans != null && episodeScans.ParentSeries.TryGetValue(seriesId.Value, out var memoized))
+                    {
+                        return memoized;
+                    }
+
+                    var series = _libraryManager.GetItemById<BaseItem>(seriesId.Value);
+                    if (series != null && episodeScans != null)
+                    {
+                        episodeScans.ParentSeries[seriesId.Value] = series;
+                    }
+
+                    return series;
                 }
             }
             catch (Exception ex)

@@ -40,6 +40,8 @@ using Jellyfin.Plugin.JellyfinEnhanced.Extensions;
 using Jellyfin.Database.Implementations;
 using Jellyfin.Database.Implementations.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 {
@@ -7640,13 +7642,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // stripped below exactly like a full load, instead of the whole cache.
             Func<string, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry, bool>? guardedRider =
                 since.HasValue && spState != null ? (key, e) => GuardedKind(key, e) != null : null;
-            // Server clock at capture (taken before reading the cache, so it never
-            // post-dates the data): clients order stored snapshots by it. Unlike
-            // the cache version, it keeps moving forward across a restart that
-            // restores an older on-disk cache.
-            var servedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, out var accessRevision, since, guardedRider);
-
             // Fingerprint of how this user's entries are filtered and stripped:
             // which cache entries their access excludes (from the same access
             // set that filtered `items`, see GetCacheForUser) and, under Spoiler
@@ -7657,6 +7652,54 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // item leaving the guard set, or the strip policy changing — so the
             // client replaces its copy instead (tags/tag-pipeline.js).
             var stripFingerprint = "none";
+
+            // Server clock at capture (taken before reading the cache, so it never
+            // post-dates the data): clients order stored snapshots by it. Unlike
+            // the cache version, it keeps moving forward across a restart that
+            // restores an older on-disk cache.
+            var servedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            // The body is serialized here, once, into the bytes that are sent AND
+            // hashed for the ETag (see Respond below) — with the options MVC's
+            // formatter would have applied to Ok(payload), so it is the same body.
+            var jsonOptions = TagCacheJsonOptions();
+
+            // A full load for a user without a Spoiler Guard strip is exactly the
+            // generation's entries their access set admits, so its serialized
+            // `items` is shared across requests and users with the same access
+            // (every unrestricted user, typically): after a rebuild every client
+            // downloads the whole cache, and re-serializing tens of MB per client
+            // used to take seconds of CPU and hundreds of MB each. Those clients
+            // arrive together, so the serialization runs one at a time and the
+            // waiters find the first one's copy. The delta and strip paths below
+            // are per request.
+            if (!since.HasValue && spState == null)
+            {
+                if (_tagCacheService.TryGetSerializedItems(user, out var sharedVersion, out var sharedTimestamp, out var sharedAccessRevision, out var sharedItemsJson, out var sharedCount))
+                {
+                    return Respond(sharedVersion, sharedTimestamp, sharedAccessRevision, sharedItemsJson, sharedCount);
+                }
+
+                _tagCacheSerializationGate.Wait();
+                try
+                {
+                    if (!_tagCacheService.TryGetSerializedItems(user, out sharedVersion, out sharedTimestamp, out sharedAccessRevision, out sharedItemsJson, out sharedCount))
+                    {
+                        var sharedItems = _tagCacheService.GetCacheForUser(user, out sharedVersion, out sharedTimestamp, out sharedAccessRevision);
+                        sharedItemsJson = JsonSerializer.SerializeToUtf8Bytes(sharedItems, jsonOptions);
+                        sharedCount = sharedItems.Count;
+                        _tagCacheService.StoreSerializedItems(sharedVersion, sharedTimestamp, sharedAccessRevision, sharedItemsJson, sharedCount);
+                    }
+                }
+                finally
+                {
+                    _tagCacheSerializationGate.Release();
+                }
+
+                return Respond(sharedVersion, sharedTimestamp, sharedAccessRevision, sharedItemsJson, sharedCount);
+            }
+
+            var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, out var accessRevision, since, guardedRider);
 
             if (spCfg?.SpoilerBlurEnabled == true && anyStripEnabled)
             {
@@ -7870,73 +7913,106 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            // The poster review chips resolve from this map instead of asking
-            // /reviews/ratings for every page of cards: it holds the average for
-            // every item that has a rated review visible to THIS viewer (same
-            // reviews, same visibility rule and same rating filter as that
-            // endpoint), keyed "mediaType:tmdbKey". A key that is absent has no
-            // visible rated review. Sent with full loads and deltas alike, since
-            // reviews change independently of the tag cache; null (omitted) when
-            // the chips are switched off, which tells the client to skip them.
-            Dictionary<string, object>? reviewRatings = null;
-            if (JellyfinEnhanced.Instance?.Configuration is { ShowUserReviews: true, ShowUserRatingOnPosters: true })
+            // `items` is final (post Spoiler Guard strip above); serialized once.
+            var itemsJson = JsonSerializer.SerializeToUtf8Bytes(items, jsonOptions);
+            return Respond(cacheVersion, cacheTimestamp, accessRevision, itemsJson, items.Count);
+
+            // The rest of the response — review ratings, filterRevision, body,
+            // ETag/304 — for either source of `items`.
+            IActionResult Respond(long version, long timestamp, string access, byte[] itemsBytes, int itemCount)
             {
-                reviewRatings = new Dictionary<string, object>(StringComparer.Ordinal);
-                var ctx = CreateReviewVisibilityContext(nameof(GetTagCache), "review ratings");
-                foreach (var (key, sum, count) in AggregateVisibleReviewRatings(ctx, _ => true))
+                // The poster review chips resolve from this map instead of asking
+                // /reviews/ratings for every page of cards: it holds the average for
+                // every item that has a rated review visible to THIS viewer (same
+                // reviews, same visibility rule and same rating filter as that
+                // endpoint), keyed "mediaType:tmdbKey". A key that is absent has no
+                // visible rated review. Sent with full loads and deltas alike, since
+                // reviews change independently of the tag cache; null (omitted) when
+                // the chips are switched off, which tells the client to skip them.
+                Dictionary<string, object>? reviewRatings = null;
+                if (JellyfinEnhanced.Instance?.Configuration is { ShowUserReviews: true, ShowUserRatingOnPosters: true })
                 {
-                    reviewRatings[key] = new { average = sum / count, count };
+                    reviewRatings = new Dictionary<string, object>(StringComparer.Ordinal);
+                    var ctx = CreateReviewVisibilityContext(nameof(GetTagCache), "review ratings");
+                    foreach (var (key, sum, count) in AggregateVisibleReviewRatings(ctx, _ => true))
+                    {
+                        reviewRatings[key] = new { average = sum / count, count };
+                    }
+                }
+
+                var filterRevision = Convert.ToHexString(
+                    SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(access + "#" + stripFingerprint)), 0, 12);
+
+                // Body { version, timestamp, servedAt, filterRevision, count, items,
+                // reviewRatings }, assembled around the serialized items without
+                // another serialization. The ETag is a hash of the FINAL response
+                // body minus servedAt (see TagCacheResponseBody.ETag), not of
+                // cacheVersion: two users at the same version can legitimately
+                // receive different stripped bodies, and an ETag keyed on version
+                // alone would let one user's stripped body satisfy another user's
+                // conditional request.
+                var body = Services.TagCacheResponseBody.Compose(
+                    jsonOptions,
+                    version,
+                    timestamp,
+                    servedAt,
+                    filterRevision,
+                    itemCount,
+                    itemsBytes,
+                    reviewRatings == null ? null : JsonSerializer.SerializeToUtf8Bytes(reviewRatings, jsonOptions));
+
+                // no-cache (not no-store): the client may keep a copy to revalidate against,
+                // but must always revalidate. Freshness is unchanged, this only avoids
+                // re-sending an unchanged multi-MB body.
+                Response.Headers["Cache-Control"] = "private, no-cache";
+                Response.Headers["ETag"] = body.ETag;
+
+                if (Request.Headers.TryGetValue("If-None-Match", out var ifNoneMatch)
+                    && ifNoneMatch.ToString().Contains(body.ETag, StringComparison.Ordinal))
+                {
+                    return StatusCode(304);
+                }
+
+                return body.ToActionResult();
+            }
+        }
+
+        // The JsonSerializerOptions of the formatter MVC runs for an
+        // application/json ObjectResult on this host. GetTagCache serializes its
+        // own body (once, into the bytes it sends and hashes), so it has to use
+        // exactly what Ok(payload) would have: resolved the way MVC's selector
+        // does — the first registered JSON formatter that writes
+        // application/json (Jellyfin registers its own PascalCase profile
+        // formatter ahead of the default one) — and cached, since the formatter
+        // list is fixed for the process.
+        private static JsonSerializerOptions? _tagCacheJsonOptions;
+
+        // One shareable full-load serialization at a time (see GetTagCache):
+        // waiters re-check the shared copy once they get in, so a burst of
+        // clients after a rebuild costs one serialization, not one each.
+        private static readonly SemaphoreSlim _tagCacheSerializationGate = new(1, 1);
+
+        private JsonSerializerOptions TagCacheJsonOptions()
+        {
+            var options = _tagCacheJsonOptions;
+            if (options != null) return options;
+
+            var formatters = HttpContext.RequestServices.GetRequiredService<IOptions<MvcOptions>>().Value.OutputFormatters;
+            foreach (var formatter in formatters)
+            {
+                if (formatter is Microsoft.AspNetCore.Mvc.Formatters.SystemTextJsonOutputFormatter json
+                    && json.SupportedMediaTypes.Any(type =>
+                        Microsoft.Net.Http.Headers.MediaTypeHeaderValue.TryParse(type, out var parsed)
+                        && parsed.MediaType.Equals("application/json", StringComparison.OrdinalIgnoreCase)))
+                {
+                    options = json.SerializerOptions;
+                    break;
                 }
             }
 
-            var filterRevision = Convert.ToHexString(
-                SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(accessRevision + "#" + stripFingerprint)), 0, 12);
-
-            var payload = new
-            {
-                version = cacheVersion,
-                timestamp = cacheTimestamp,
-                servedAt,
-                filterRevision,
-                count = items.Count,
-                items,
-                reviewRatings
-            };
-            // The validator covers everything but servedAt, which changes on
-            // every request and would otherwise defeat revalidation of an
-            // unchanged body (a 304 hands back the stored body with its own,
-            // earlier servedAt — the same data, captured then).
-            var validatorPayload = new
-            {
-                version = cacheVersion,
-                timestamp = cacheTimestamp,
-                filterRevision,
-                count = items.Count,
-                items,
-                reviewRatings
-            };
-
-            // ETag is a hash of the FINAL response body (post Spoiler Guard strip above),
-            // not of cacheVersion. Two users at the same version can legitimately receive
-            // different stripped bodies, and an ETag keyed on version alone would let one
-            // user's stripped body satisfy another user's conditional request.
-            var payloadBytes = JsonSerializer.SerializeToUtf8Bytes(validatorPayload);
-            var hash = SHA256.HashData(payloadBytes);
-            var etag = $"\"{Convert.ToHexString(hash)}\"";
-
-            // no-cache (not no-store): the client may keep a copy to revalidate against,
-            // but must always revalidate. Freshness is unchanged, this only avoids
-            // re-sending an unchanged multi-MB body.
-            Response.Headers["Cache-Control"] = "private, no-cache";
-            Response.Headers["ETag"] = etag;
-
-            if (Request.Headers.TryGetValue("If-None-Match", out var ifNoneMatch)
-                && ifNoneMatch.ToString().Contains(etag, StringComparison.Ordinal))
-            {
-                return StatusCode(304);
-            }
-
-            return Ok(payload);
+            options ??= HttpContext.RequestServices.GetRequiredService<IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>>().Value.JsonSerializerOptions;
+            _tagCacheJsonOptions = options;
+            return options;
         }
 
         // ─── Activity Feed (recently watched / favorited / reviewed) ─────────────
