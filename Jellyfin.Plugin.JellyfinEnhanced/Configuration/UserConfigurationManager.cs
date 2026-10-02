@@ -33,6 +33,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             catch (Exception ex) { _logger.Error($"Per-user dir case-variant migration failed: {ex}"); }
         }
 
+        /// <summary>
+        /// Raised after a per-user file was written by <see cref="SaveUserConfiguration"/>, with the
+        /// normalized (N-format, lowercase) user id and the file name. Handlers must be cheap and must not
+        /// throw; they run on the saving thread.
+        /// </summary>
+        public event Action<string, string>? UserConfigurationSaved;
+
+        /// <summary>Raised after the shared reviews.json was written (review added, edited or deleted).</summary>
+        public event Action? ReviewsChanged;
+
         public object GetUserFileLock(string userId, string fileName)
         {
             var normalized = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
@@ -235,6 +245,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 {
                     Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.InvalidateUser(userId);
                 }
+
+                RaiseUserConfigurationSaved(userId, fileName);
             }
             catch (Exception ex)
             {
@@ -242,6 +254,68 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 try { if (!string.IsNullOrEmpty(tempPath) && File.Exists(tempPath)) File.Delete(tempPath); }
                 catch (Exception cleanupEx) { _logger.Warning($"Failed to clean up stale .tmp for '{fileName}': {cleanupEx.Message}"); }
                 throw;
+            }
+        }
+
+        // Swallows subscriber exceptions so a misbehaving handler can never turn
+        // a successful save into a reported (and rethrown) save failure.
+        private void RaiseUserConfigurationSaved(string userId, string fileName)
+        {
+            var handler = UserConfigurationSaved;
+            if (handler == null) return;
+            try
+            {
+                handler((userId ?? string.Empty).Replace("-", "").ToLowerInvariant(), fileName);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"User configuration save hook failed for '{fileName}': {ex.Message}");
+            }
+        }
+
+        private void RaiseReviewsChanged()
+        {
+            try
+            {
+                ReviewsChanged?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Reviews change hook failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Raw text of a per-user file: null only when the file does not exist; <see cref="string.Empty"/>
+        /// when it exists but is empty, whitespace or unreadable (so callers can tell "no file yet" from "a
+        /// file that yields nothing", which the typed reads treat differently). For callers that apply their
+        /// own per-key defaults and must see which keys the file actually contains (typed reads fill absent
+        /// keys with C# initializer values). Never throws.
+        /// </summary>
+        public string? TryReadUserConfigurationText(string userId, string fileName)
+        {
+            string configPath;
+            try
+            {
+                configPath = ResolveUserFile(userId, fileName);
+                if (!File.Exists(configPath)) return null;
+            }
+            catch (Exception ex)
+            {
+                // Cannot even resolve/stat the file: treat as present but unreadable.
+                _logger.Warning($"Could not read '{fileName}' for user '{userId}': {ex.Message}");
+                return string.Empty;
+            }
+
+            try
+            {
+                var text = File.ReadAllText(configPath);
+                return string.IsNullOrWhiteSpace(text) ? string.Empty : text;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not read '{fileName}' for user '{userId}': {ex.Message}");
+                return string.Empty;
             }
         }
 
@@ -651,6 +725,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
                 WriteStoreUnlocked(store);
             }
+
+            RaiseReviewsChanged();
         }
 
         /// <summary>
@@ -667,8 +743,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 var key = $"{userIdN}:{mediaType}:{tmdbId}";
                 if (!store.Reviews.Remove(key)) return false;
                 WriteStoreUnlocked(store);
-                return true;
             }
+
+            RaiseReviewsChanged();
+            return true;
         }
 
         // ─── Shared activity file (Activity Feed) ──────────────────────────────

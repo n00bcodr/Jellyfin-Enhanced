@@ -355,6 +355,13 @@
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_ui_audio_languages')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_audio_languages_desc')}</div></div>
                                 </label>
                             </div>
+                            ${JE.pluginConfig?.NativePosterTagsEnabled === true ? `
+                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                    <input type="checkbox" id="nativePosterTagsToggle" ${JE.currentSettings.useNativePosterTags !== false ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer; flex-shrink:0;">
+                                    <div><div style="font-weight:500;">${escapeHtml(JE.t('panel_settings_ui_native_poster_tags'))}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${escapeHtml(JE.t('panel_settings_ui_native_poster_tags_desc'))}</div></div>
+                                </label>
+                            </div>` : ''}
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
                                     <div style="display: flex; align-items: center; gap: 12px;">

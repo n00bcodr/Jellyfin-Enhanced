@@ -57,6 +57,10 @@ specific ones are ever safe to include:
 - Language tag priority list (`LanguageTagsPriority`) — normalized before sending: only tokens
   shaped like language codes (e.g. `en,ja,fr`) are included, anything else typed into that box is
   dropped
+- Native Poster Tags extra excluded clients (`NativePosterTagsWebClientNames`) — normalized before
+  sending: only short app-name-shaped entries are included (up to 20), the built-in web clients are
+  left out, and anything else typed into that box is dropped. Whether Native Poster Tags is turned
+  on is reported with the other on/off feature settings
 
 No other string setting is ever included: URLs, API keys, branding text/images, and every other
 free-text field are permanently excluded by design, not by an admin-configurable option.

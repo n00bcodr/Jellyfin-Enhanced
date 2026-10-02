@@ -1,0 +1,10 @@
+<Project>
+  <!-- Separate restore/build outputs per SkiaSharp line, so both can be built side by side:
+         dotnet run -p:Skia=3.119.4   (Jellyfin 12.1 host libraries, the default)
+         dotnet run -p:Skia=3.116.1   (Jellyfin 10.11 host libraries) -->
+  <PropertyGroup>
+    <Skia Condition="'$(Skia)' == ''">3.119.4</Skia>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj/$(Skia)/</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)bin/$(Skia)/</BaseOutputPath>
+  </PropertyGroup>
+</Project>

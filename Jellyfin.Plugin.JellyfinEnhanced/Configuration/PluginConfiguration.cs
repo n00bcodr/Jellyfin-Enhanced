@@ -111,6 +111,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RatingTagsEnabled = false;
             AgeRatingTagsEnabled = false;
             PeopleTagsEnabled = false;
+            NativePosterTagsEnabled = false;
+            NativePosterTagsWebClientNames = string.Empty;
             TagsCacheTtlDays = 30;
             DisableTagsOnSearchPage = false;
             TagsHideOnHover = false;
@@ -588,6 +590,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RatingTagsEnabled { get; set; }
         public bool AgeRatingTagsEnabled { get; set; }
         public bool PeopleTagsEnabled { get; set; }
+        /// <summary>Allows experimental poster tags drawn into poster images for native clients that don't run the web overlays.</summary>
+        public bool NativePosterTagsEnabled { get; set; }
+        /// <summary>
+        /// Extra Jellyfin client names (one per line or comma separated) that already run the web overlays and must
+        /// get original posters, on top of the built-in web client list. Admin-only; never exposed in public configuration.
+        /// Deliberately NOT [AnalyticsInclude] (free text): analytics shares a sanitized
+        /// derivation instead, see AnalyticsReportingService.GetStringSettings.
+        /// </summary>
+        public string NativePosterTagsWebClientNames { get; set; }
         public int TagsCacheTtlDays { get; set; }
         public bool DisableTagsOnSearchPage { get; set; }
         public bool TagsHideOnHover { get; set; }

@@ -20,6 +20,8 @@ Yes, the plugin works on the official Jellyfin Android and iOS apps, as well as 
 
 No, the plugin does not work on Android TV or other native TV apps. It only functions on clients that use Jellyfin's embedded web UI, such as the official web, desktop, and mobile apps.
 
+Two things do reach native apps because they happen on the server: automatic season and movie requests, and the experimental [Native Poster Tags](../enhanced/enhanced-features.md#native-poster-tags-experimental), which draw your tags into the poster images native apps download.
+
 ### Is this plugin affiliated with Seerr?
 
 No, this plugin is not affiliated with Seerr. Seerr is an independent project, and this plugin simply integrates with it to enhance the Jellyfin experience. **Please report plugin issues to this repository, not to the Seerr team**.

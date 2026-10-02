@@ -416,6 +416,38 @@
                                 </button>
                                 <div class="fieldDescription">Forces clients to clear caches on next load. May cause initial slowness.</div>
                             </div>
+
+                            <div class="fieldDescription" style="margin-top: 20px;"><strong>Native Poster Tags</strong> — the tags above, drawn into poster images for apps that can't show the web overlays.</div>
+
+                            <div class="checkboxContainer"><label><input id="nativePosterTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Native Poster Tags (Experimental)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="nativePosterTagsEnabled">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">
+                                    <ul style="margin:4px 0 0 20px; padding:0;">
+                                        <li>Experimental. Draws each user's Media Tags into poster images for native apps such as Android TV, which can't show Jellyfin Enhanced's web overlays</li>
+                                        <li>Uses each user's own tag choices, corners and order. Users can turn it off with Show Tags in Native Clients in the Enhanced panel under UI Settings</li>
+                                        <li>Web-based apps (Jellyfin Web, Media Player, Desktop, WebOS, Android) already show the overlays, so they keep the original posters</li>
+                                        <li>Each poster is drawn the first time it is viewed, which uses some server CPU, and is then cached</li>
+                                        <li>Apps may need to reopen the library or restart to show changes</li>
+                                        <li>Original artwork files are never modified</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="nativePosterTagsWebClientNames">Additional Excluded Clients</label>
+                                <textarea class="emby-textarea emby-input je-textarea-medium" id="nativePosterTagsWebClientNames" name="nativePosterTagsWebClientNames" placeholder="One per line"></textarea>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="nativePosterTagsWebClientNames">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">
+                                    <ul style="margin:4px 0 0 20px; padding:0;">
+                                        <li>Apps listed here never get tags drawn into their posters</li>
+                                        <li>Add apps that already show Jellyfin Enhanced's tags themselves, such as a custom wrapper around the Jellyfin web UI, so tags aren't shown twice</li>
+                                        <li>Always excluded already: Jellyfin Web, Jellyfin Media Player, Jellyfin Desktop, Jellyfin for WebOS and Jellyfin for Android. No need to list these</li>
+                                        <li>Every other app gets drawn-in tags</li>
+                                        <li>Enter each name exactly as shown under Dashboard → Devices, one per line or comma separated</li>
+                                    </ul>
+                                </div>
+                            </div>
                         </div>
                     </fieldset>
 
@@ -5829,6 +5861,8 @@
                 document.querySelector('#showAudioLanguages').checked = config.ShowAudioLanguages;
                 document.querySelector('#removeContinueWatchingEnabled').checked = config.RemoveContinueWatchingEnabled;
                 document.querySelector('#qualityTagsEnabled').checked = config.QualityTagsEnabled;
+                document.querySelector('#nativePosterTagsEnabled').checked = config.NativePosterTagsEnabled === true;
+                document.querySelector('#nativePosterTagsWebClientNames').value = config.NativePosterTagsWebClientNames || '';
                 document.querySelector('#showResolutionTag').checked = config.ShowResolutionTag !== false;
                 document.querySelector('#showSourceTag').checked = config.ShowSourceTag !== false;
                 document.querySelector('#showDynamicRangeTag').checked = config.ShowDynamicRangeTag !== false;
@@ -6387,6 +6421,8 @@
             config.ShowAudioLanguages = document.querySelector('#showAudioLanguages').checked;
             config.RemoveContinueWatchingEnabled = document.querySelector('#removeContinueWatchingEnabled').checked;
             config.QualityTagsEnabled = document.querySelector('#qualityTagsEnabled').checked;
+            config.NativePosterTagsEnabled = document.querySelector('#nativePosterTagsEnabled').checked;
+            config.NativePosterTagsWebClientNames = document.querySelector('#nativePosterTagsWebClientNames').value.trim();
             config.ShowResolutionTag = document.querySelector('#showResolutionTag').checked;
             config.ShowSourceTag = document.querySelector('#showSourceTag').checked;
             config.ShowDynamicRangeTag = document.querySelector('#showDynamicRangeTag').checked;
@@ -7929,6 +7965,7 @@
         }
 
         var PARENT_DEPS = [
+            { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['nativePosterTagsWebClientNames'] },
             { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },

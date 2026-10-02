@@ -658,6 +658,46 @@ Show the item's parental / age rating (PG-13, R, TV-MA, FSK 12, BBFC 15, ...) as
     Spoiler Guard keeps the badge: a series' or movie's age rating reveals nothing about the plot, and the details page shows it regardless. While Spoiler Guard is hiding ratings, unwatched episodes (and unstarted seasons) of a guarded series show the series' rating rather than their own, since an episode rated higher than its show can hint at what happens in it.
 
 
+### Native Poster Tags (Experimental)
+
+Show your Media Tags in native Jellyfin apps that can't run Jellyfin Enhanced's web overlays, such as the official Android TV app. The server draws each user's tags into the poster images it sends to those apps, so they appear without any change to the app.
+
+<!-- Screenshot placeholder: Android TV home row with native poster tags (native-poster-tags-androidtv.png) -->
+<!-- Screenshot placeholder: same poster on the web (overlay) and on Android TV (drawn in) side by side (native-poster-tags-compare.png) -->
+
+**What gets drawn:**
+
+- Quality, genre, language, rating (with the user-review chip) and age rating tags, matching the web look as closely as a static image allows
+- Movies, series, seasons, episodes, collections and videos, on their primary images (posters, and episode thumbnails in landscape layout)
+- Each user's own tag choices, corners, quality categories and order, preferred audio language, priority languages and rating item-type scope, the same settings the web overlays use
+- Spoiler Guard is respected: guarded items use the same spoiler-safe tag data as the web, and tags are drawn on top of the blurred image
+
+**Which apps:**
+
+- Native apps, for example Jellyfin for Android TV, Jellyfin for Tizen, Swiftfin, Findroid and Streamyfin
+- Apps that already run Jellyfin Enhanced's web overlays keep the original posters so tags are never drawn twice: Jellyfin Web, Jellyfin Media Player, Jellyfin Desktop, Jellyfin for WebOS and Jellyfin for Android (the phone app). Admins can add more names in the settings
+- An app that builds poster addresses without Jellyfin's image tag, or asks Jellyfin to draw its own watched or unplayed-count indicator into the image, keeps the original posters
+
+**Setup:**
+
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Display** → **Media Tags**
+2. Turn on **Enable Native Poster Tags (Experimental)** at the bottom
+3. Click **Save**
+4. Every user now gets their tags in native apps; anyone who doesn't want them can turn off *Show Tags in Native Clients* in the Enhanced panel's UI Settings
+5. Reopen the library, or restart the app, on the TV or phone
+
+See [Enhanced Settings - Native Poster Tags](enhanced-settings.md#native-poster-tags-experimental) for every setting.
+
+**Limitations:**
+
+- **Static layout.** There is no hover, so hover-only details (genre names, Hide Tags on Hover) don't apply. Tag size follows the poster's width rather than the size the app displays it at
+- **No row or page context.** The server only sees an image request, not where it is shown. The Continue Watching and Next Up rating scopes are not applied (the per-item-type scopes are), Disable Tags on Search Page has no effect, and the tags also appear wherever the app reuses the poster, such as its details page
+- **Posters are re-downloaded after a change.** Turning the feature on, changing your tag settings, or a change to an item's tag data gives its posters a new address, so the app downloads them again
+- **First-view CPU cost.** Each poster is drawn the first time it is viewed at a given size, which uses some server CPU; a big home screen on a fresh cache can mean a short burst of work. Drawn posters are cached in memory and in Jellyfin's cache folder
+- **Apps may need a refresh.** Native apps cache poster addresses, so a change shows after reopening the library or restarting the app
+- **With Server-Side Tag Cache off**, changed tag data can take up to an hour to show on a poster an app has already downloaded
+- Original artwork files are never modified
+
 ### People Tags
 
 ![People tags on cast cards](../images/people-tags.png)

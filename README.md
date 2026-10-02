@@ -100,6 +100,7 @@ For detailed installation instructions and troubleshooting, see the [Installatio
 - **Language Tags** - Country flags for available audio languages
 - **Rating Tags** - TMDB and Rotten Tomatoes ratings at a glance
 - **Age Rating Tags** - Colour-coded parental ratings (PG-13, TV-MA, FSK 12, ...) on posters
+- **Native Poster Tags (Experimental)** - Your tags drawn into posters for native apps such as Android TV
 - **People Tags** - Age and birthplace info for cast members
 
 ### 🔍 Discovery
@@ -125,8 +126,8 @@ For detailed installation instructions and troubleshooting, see the [Installatio
 | Android App | ✅ Full | Official app with embedded web UI |
 | iOS App | ✅ Full | Official app with embedded web UI |
 | Desktop Apps | ✅ Full | Jellyfin Desktop v3.0.0+ (currently unreleased) |
-| Android TV | ❌ Not Supported, but auto-season, movie requests work| Native app, no web UI |
-| Third-party Apps | ❌ Not Supported, but auto-season, movie requests work | Depends on embedded web UI |
+| Android TV | ❌ Not Supported, but auto-season, movie requests and experimental Native Poster Tags work| Native app, no web UI |
+| Third-party Apps | ❌ Not Supported, but auto-season, movie requests and experimental Native Poster Tags work | Depends on embedded web UI |
 
 <br>
 

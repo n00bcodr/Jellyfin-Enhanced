@@ -333,6 +333,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 settings["LanguageTagsPriority"] = joinedCodes;
             }
 
+            // Free-text box of app names (Native Poster Tags exclusions). Only
+            // short app-name-shaped tokens are shared, de-duplicated and capped,
+            // and the built-in web clients are skipped since they are always
+            // excluded and say nothing about this install. What remains is the
+            // useful signal: which other apps admins have had to exclude.
+            var excludedClients = (config.NativePosterTagsWebClientNames ?? string.Empty)
+                .Split(new[] { '\n', '\r', ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(t => System.Text.RegularExpressions.Regex.IsMatch(t, @"^[A-Za-z0-9][A-Za-z0-9 ._+\-]{0,39}$"))
+                .Where(t => !PosterTags.NativeClientPolicy.BuiltInWebClients.Contains(t, StringComparer.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(20);
+            var joinedClients = string.Join(",", excludedClients);
+            if (!string.IsNullOrEmpty(joinedClients))
+            {
+                settings["NativePosterTagsWebClientNames"] = joinedClients;
+            }
+
             return settings;
         }
 
