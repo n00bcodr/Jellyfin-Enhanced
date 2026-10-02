@@ -18,6 +18,8 @@ The More menu uses labeled buttons. On short screens, previous/next buttons show
 
 ### Random Button
 
+![Random button picking a title](../images/readme/random.webp)
+
 The dice button (or `R`) opens a random movie or show from your library. In the Enhanced panel's **Random Button** tab you can limit it to unwatched items, choose whether movies and/or shows are eligible, and narrow the pool under **Random Source**:
 
 - **Use the playlist or collection I'm viewing** - on a playlist or collection page, the pick comes from that container's items (movies, shows or episodes) instead of the whole library.
@@ -197,7 +199,7 @@ Comprehensive hotkeys for navigation, playback control, and more.
 
 ### Smart Bookmarks
 
-![Bookmark markers on the video timeline](../images/bookmarks-timeline.png)
+![Bookmark markers on the video timeline](../images/readme/player-bookmarks.webp)
 
 Save timestamps and jump to specific moments with visual timeline markers.
 
@@ -229,7 +231,7 @@ Save timestamps and jump to specific moments with visual timeline markers.
 
 Beautiful overlay with media info when you pause a video.
 
-![Pause Screen](../images/pausescreen.png)
+![Pause Screen](../images/readme/pause-screen.webp)
 
 **Displays:**
 
@@ -403,7 +405,7 @@ Search, request, and discover media directly from Jellyfin's search interface.
 
 ### Seerr Item Details
 
-![Seerr recommendations and similar items on a detail page](../images/seerr-recommendations.png)
+![Seerr recommendations and similar items on a detail page](../images/readme/recommendations.webp)
 
 View recommendations and similar items on detail pages.
 
@@ -507,6 +509,8 @@ Admins see a delete button on all reviews, not just their own. A confirmation di
 
 ### Activity Feed
 
+![Activity Feed page](../images/readme/activity.webp)
+
 Shows recently watched, favorited, and reviewed titles across the server, so users can see what others are up to. Each viewer only ever sees activity for items they themselves have library access to - someone else's activity on a library you can't see never appears.
 
 **Features:**
@@ -557,6 +561,8 @@ See [Elsewhere Features](../elsewhere/elsewhere-features.md#tmdb-reviews) for fu
 ## Visual Enhancements
 
 ### Quality Tags
+
+![Quality, genre, language, age rating and score badges on posters](../images/readme/library-tags.webp)
 
 Display quality information (4K, HDR, Atmos) directly on posters.
 
@@ -700,7 +706,7 @@ See [Enhanced Settings - Native Poster Tags](enhanced-settings.md#native-poster-
 
 ### People Tags
 
-![People tags on cast cards](../images/people-tags.png)
+![People tags on cast cards](../images/readme/cast-tags.webp)
 
 Display age and birthplace information for cast members.
 
@@ -719,6 +725,8 @@ Display age and birthplace information for cast members.
 - Deceased styling (grayscale filter)
 
 ### Awards
+
+![Expanded awards panel listing wins and nominations](../images/readme/awards.webp)
 
 Show award wins and nominations on item detail pages and person pages, sourced from [Wikidata](https://www.wikidata.org/) by TMDB id.
 

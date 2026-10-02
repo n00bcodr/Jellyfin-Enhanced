@@ -166,7 +166,7 @@ Report problems with media directly to Seerr.
 
 ## Requests Page
 
-![Seerr requests page showing pending, approved, and available requests](../images/seerr-requests-page.png)
+![Seerr requests page showing pending, approved, and available requests](../images/readme/requests.webp)
 
 Monitor active downloads from Sonarr/Radarr and manage Seerr requests and issues in one dedicated page.
 

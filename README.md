@@ -1,231 +1,353 @@
-# Jellyfin Enhanced
 <p align="center">
-  <img src="https://img.shields.io/github/last-commit/n00bcodr/Jellyfin-Enhanced/main?logo=semantic-release&logoColor=white&label=Last%20Updated&labelColor=black&color=AA5CC3&cacheSeconds=3600" alt="Last Updated">
-  <img src="https://img.shields.io/github/commit-activity/w/n00bcodr/Jellyfin-Enhanced?logo=git&label=Commit%20Activity&labelColor=black&color=00A4DC&cacheSeconds=600" alt="Commit Activity">
-  <img src="https://img.shields.io/badge/Jellyfin%20Version-10.11, 12.x-AA5CC3?logo=jellyfin&logoColor=00A4DC&labelColor=black" alt="Jellyfin Version">
-  <br><br>
-  <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/n00bcodr/Jellyfin-Enhanced/latest/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip?displayAssetName=false&label=10.11%20Downloads%40Latest&labelColor=black&color=AA5CC3&cacheSeconds=60">
-    <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/n00bcodr/Jellyfin-Enhanced/latest/Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip?displayAssetName=false&label=12.0.0%20Downloads%40Latest&labelColor=black&color=AA5CC3&cacheSeconds=60">
-  <br><br>
-  <a href="https://discord.gg/EYNFf7y4CG"><img alt="Discord" src="https://img.shields.io/badge/Jellyfin%20Enhanced%20-%20Jellyfin%20Community?&logo=discord&logoColor=white&style=for-the-badge&label=Jellyfin%20Community&labelColor=5865F2&color=black"></a>
-  <br><br>
-  <a href='https://ko-fi.com/G2G51TIZF0' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi1.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
-  <a href='https://www.buymeacoffee.com/n00bcodr' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png' border='0' alt='Buy Me a Coffee' /></a>
+  <img src="docs/images/icon.png" alt="Jellyfin Enhanced" width="380">
 </p>
 
-<br>
+<h3 align="center">Everything you wish Jellyfin's web app already did, in one plugin.</h3>
 
-The essential enhancement suite for Jellyfin, bundling advanced features and customizations into one convenient plugin.
+<p align="center">
+  Request new movies right from search · Watch shows without spoilers · See 4K, HDR and Atmos on every poster<br>
+  Keyboard shortcuts · Bookmarks · A release calendar · Reviews · Live "who's watching" · and a lot more
+</p>
 
-<div align="center">
-  <video src="https://github.com/user-attachments/assets/c3fed9fe-63c4-4e26-b2b6-73c4817613aa"></video>
-</div>
+<p align="center">
+  <img src="https://img.shields.io/badge/Jellyfin-10.11%20%7C%2012.x-AA5CC3?logo=jellyfin&logoColor=00A4DC&labelColor=black" alt="Jellyfin 10.11 and 12.x">
+  <img src="https://img.shields.io/github/last-commit/n00bcodr/Jellyfin-Enhanced/main?logo=semantic-release&logoColor=white&label=Updated&labelColor=black&color=00A4DC&cacheSeconds=3600" alt="Last updated">
+  <img alt="Downloads for 10.11" src="https://img.shields.io/github/downloads/n00bcodr/Jellyfin-Enhanced/latest/Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip?displayAssetName=false&label=10.11%20downloads&labelColor=black&color=AA5CC3&cacheSeconds=60">
+  <img alt="Downloads for 12.x" src="https://img.shields.io/github/downloads/n00bcodr/Jellyfin-Enhanced/latest/Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip?displayAssetName=false&label=12.x%20downloads&labelColor=black&color=AA5CC3&cacheSeconds=60">
+  <a href="https://discord.gg/EYNFf7y4CG"><img alt="Discord" src="https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white&labelColor=black"></a>
+</p>
 
-<br>
+<p align="center">
+  <a href="#-install-in-a-minute"><b>Install</b></a> ·
+  <a href="#%EF%B8%8F-the-tour"><b>Tour</b></a> ·
+  <a href="https://n00bcodr.github.io/Jellyfin-Enhanced/"><b>Documentation</b></a> ·
+  <a href="#-common-questions"><b>FAQ</b></a> ·
+  <a href="https://discord.gg/EYNFf7y4CG"><b>Discord</b></a>
+</p>
 
-## 📚 Documentation
+<p align="center">
+  <img src="docs/images/readme/hero.webp" alt="A quick tour: quality tags on posters, then a movie page with ratings, streaming availability, reviews, awards, cast ages and Seerr recommendations" width="100%">
+</p>
 
-**Complete documentation is available at: [https://n00bcodr.github.io/Jellyfin-Enhanced/](https://n00bcodr.github.io/Jellyfin-Enhanced/)**
+## 🪼 What is Jellyfin Enhanced?
 
-Quick links:
-- [Installation Guide](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/installation/)
-- [Features Overview](https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/enhanced-features/)
-- [Seerr Integration](https://n00bcodr.github.io/Jellyfin-Enhanced/seerr/seerr-features/)
-- [ARR Integration](https://n00bcodr.github.io/Jellyfin-Enhanced/arr/arr-features/)
-- [Spoiler Guard](https://n00bcodr.github.io/Jellyfin-Enhanced/spoiler-guard/spoiler-guard-features/)
-- [FAQ & Troubleshooting](https://n00bcodr.github.io/Jellyfin-Enhanced/faq-support/faq/)
-- [CSS Customization](https://n00bcodr.github.io/Jellyfin-Enhanced/advanced/css-customization/)
+[Jellyfin](https://jellyfin.org) is a free media server you run yourself, like your own private Netflix. **Jellyfin Enhanced** is a free plugin for that server. It adds dozens of features to the screens you already use in the Jellyfin web app, and in the official Android and iOS apps and Jellyfin Desktop (they use the same web interface).
 
-<br>
+- **Install it once, on the server.** Everyone who uses your server gets the new features. There is nothing to install on phones, TVs or computers.
+- **Every person picks what they want.** Press <kbd>?</kbd> anywhere in Jellyfin to open the Enhanced panel and switch features on or off for yourself.
+- **Everything is optional.** Whoever runs the server chooses which features are available and how they're set up by default; many start switched off. Connecting [Seerr](https://github.com/seerr-team/seerr), Sonarr, Radarr, TMDB or MDBList adds even more.
 
-## 🚀 Quick Start
+**🍿 For viewers:** [Poster tags](#%EF%B8%8F-see-quality-at-a-glance) · [Richer movie pages](#-richer-movie-and-show-pages) · [A better player](#%EF%B8%8F-a-better-player) · [Shortcuts](#%EF%B8%8F-the-enhanced-panel-and-shortcuts) · [Random](#-cant-decide)<br>
+**👨‍👩‍👧 For households:** [Spoiler Guard](#-watch-without-spoilers) · [Hide things](#-keep-your-home-screen-tidy) · [Reviews and Activity](#-share-it-with-your-household) · [Phones](#-on-your-phone)<br>
+**🛠️ For whoever runs the server:** [Requests](#-request-anything-right-from-search) · [Calendar](#-see-whats-coming) · [Active Streams](#-see-whos-watching-right-now) · [Admin tools](#%EF%B8%8F-tools-for-the-server-admin)
 
-### Installation
+## ⚡ Install in a minute
 
-1. In Jellyfin, go to **Dashboard** → **Plugins** → **Repositories**
-2. Click **➕** and add the repository:
-
-> [!NOTE]
-> ```
-> https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/manifest.json
-> ```
->
-> One manifest for every Jellyfin version (10.11.x, 12.x incl. RCs): Jellyfin picks the matching build automatically.
-
-3. Go to **Catalog** tab, find **Jellyfin Enhanced**, and click **Install**
-4. **Restart** your Jellyfin server
+1. In Jellyfin, open **Dashboard → Plugins → Repositories** and click **➕**.
+2. Give it a name (for example `Jellyfin Enhanced`), paste this repository URL, and save:
+   ```
+   https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/manifest.json
+   ```
+3. Open the **Catalog** tab, find **Jellyfin Enhanced**, and click **Install**.
+4. **Restart** Jellyfin, refresh your browser (<kbd>Ctrl</kbd>+<kbd>F5</kbd>), and press <kbd>?</kbd>. If the Enhanced panel opens, you're done. 🎉
 
 > [!IMPORTANT]
-> **Jellyfin 10.11+ Required** - From version 11 this plugin only supports Jellyfin 10.11 and newer.
+> Jellyfin Enhanced needs **Jellyfin 10.11 or newer** (12.x and its release candidates included). The same repository URL serves every version, and Jellyfin installs the build that matches your server. Something not working? See the [installation guide](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/installation/) and [troubleshooting](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/troubleshooting/).
 
-> [!TIP]
-> **Highly Recommended:** Install the [File Transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) to avoid permission issues on all installation types (Docker, Windows, Linux, etc.).
+## 🗺️ The tour
 
-For detailed installation instructions and troubleshooting, see the [Installation Guide](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/installation/).
+> Every screenshot and recording below comes from a real Jellyfin 12 server running this plugin.
 
-<br>
+### 🔎 Request anything, right from search
 
-## ✨ Features Highlights
+Search Jellyfin as usual. If what you want isn't on the server yet, it shows up underneath from Seerr, and you can request it with one click. Your request goes to whoever runs the server, who can approve it from inside Jellyfin.
 
-### 🎬 Enhanced Playback
-- **Advanced Keyboard Shortcuts** - Comprehensive hotkeys for navigation and playback
-- **Smart Bookmarks** - Save and jump to timestamps with visual markers
-- **Custom Pause Screen** - Beautiful overlay with media info
-- **Auto-Skip Intros/Outros** - Seamless binge-watching (requires Intro Skipper plugin)
-- **Custom Subtitle Colors** - Full color customization with alpha support
+<p align="center"><img src="docs/images/readme/seerr-request.webp" alt="Searching for 'spider' shows library movies with quality tags, then Seerr results; one click requests a movie" width="100%"></p>
 
-### 🙈 Content Management
-- **Hidden Content System** - Per-user content hiding with server-side storage
-- **Granular Filtering** - Control visibility across library, discovery, search, and more
-- **Management Panel** - Search, unhide, and bulk operations
-- **Spoiler Guard** - Per-user opt-in blur and metadata stripping for unwatched content, enforced server-side on every client
+- **Request movies and shows** from search results, detail pages and discovery pages, including **4K** and **specific seasons**.
+- **Recommendations and "Similar"** rows on every movie and show page, with request buttons.
+- **Browse and discover** by genre, network, studio, actor, collection or tag, plus a **Recommendations** page with trending and popular titles. Studio and network pages show their movies and series side by side, with an All / Movies / Series switch.
+- **Smarter search:** type `Dune (2021)` to match a specific year, and optionally hide Seerr results you already have in Jellyfin.
+- **Automatic requests:** when you're close to the end of a season, the next season is requested for you. The same works for the next movie in a collection.
+- **More request options:** pick the server, quality profile and folder when requesting, see your request quota, and use **Request More** on a show to add missing seasons.
+- **Watchlist sync** between Seerr and Jellyfin, in both directions ([KefinTweaks](https://github.com/ranaldsgift/KefinTweaks) shows the Jellyfin side as a watchlist).
+- **Report a problem** (video, audio, subtitles or other) straight to Seerr from the item page.
+- **Fix shows Seerr can't match:** for a series with no TVDB match (common with anime), pick the right one, or type its TVDB ID, before you request it.
+- **Parental controls are respected.** Results follow each user's rating limit and blocked tags.
 
-### 🪼 Seerr Integration
-- **Search & Request** - Request media directly from Jellyfin search
-- **Item Details** - Recommendations and similar items on detail pages
-- **Discovery Pages** - Browse by genre, network, person, or tag
-- **Parental Ratings** - Seerr results respect each user's rating limit and blocked/allowed tags
-- **Issue Reporting** - Report problems directly to Seerr
-- **Watchlist Sync** - Auto-sync with Jellyfin watchlist
+<p align="center"><b>Recommendations page</b><br><img src="docs/images/readme/recommendations.webp" alt="Seerr Recommendations page with Trending and Popular rows" width="100%"></p>
 
-### 🔗 *arr Integration
-- **Quick Links** - Jump to Sonarr, Radarr, Bazarr pages (admin only)
-- **Tag Links** - Display and filter *arr tags
-- **Calendar View** - Upcoming releases from Sonarr/Radarr
-- **Requests Page** - Monitor download queue and status
+<p align="center"><b>Requests, with approve and decline for admins</b><br><img src="docs/images/readme/requests.webp" alt="Requests page showing pending requests with approve and decline buttons" width="100%"></p>
 
-### 🏷️ Visual Enhancements
-- **Quality Tags** - 4K, HDR, Atmos, and more on posters
-- **Genre Tags** - Themed icons for instant genre identification
-- **Language Tags** - Country flags for available audio languages
-- **Rating Tags** - TMDB and Rotten Tomatoes ratings at a glance
-- **Age Rating Tags** - Colour-coded parental ratings (PG-13, TV-MA, FSK 12, ...) on posters
-- **Native Poster Tags (Experimental)** - Your tags drawn into posters for native apps such as Android TV
-- **People Tags** - Age and birthplace info for cast members
+<sub>Needs a [Seerr](https://github.com/seerr-team/seerr) server. · [Seerr docs →](https://n00bcodr.github.io/Jellyfin-Enhanced/seerr/seerr-features/)</sub>
 
-### 🔍 Discovery
-- **Elsewhere Integration** - See where media is available to stream
-- **TMDB Reviews** - Display user reviews from TMDB
-- **Random Button** - Discover content in your library
+### 🫣 Watch without spoilers
 
-### 🎨 Customization
-- **Custom Branding** - Upload your own logos, banners, and favicon
-- **Theme Selector** - Choose from multiple color variants
-- **Extensive CSS Options** - Customize every visual element
-- **Multi-language Support** - Available in 15+ languages
+Turn on **Spoiler Guard** for a show, movie or collection. Until you've watched an episode, its thumbnail is swapped for the show's artwork (or blurred, if your admin prefers), and its title, plot, rating, chapter names and guest stars are hidden. Everything you've already watched looks normal.
 
-[View all features →](https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/enhanced-features/)
+<p align="center"><img src="docs/images/readme/spoiler-guard-compare.webp" alt="The same season with Spoiler Guard on (later episodes blurred and renamed 'Season 1, Episode 7') and off" width="100%"></p>
 
-<br>
+- It runs **on the server**, so it protects **every** Jellyfin app, including TV apps, Swiftfin, Findroid and Streamyfin.
+- It's **per person**: turning it on for yourself doesn't change anything for anyone else. You can also choose which details stay visible for you, such as ratings or the cast.
+- It also covers **trickplay previews** when you scrub the timeline, the **chapter list**, **search results** and **reviews**.
+- Admins can turn it on automatically when someone starts a new show, requests one, or when a new title lands in the library, for shows, movies or only certain libraries.
 
-## 🧪 Compatibility
+<details>
+<summary>▶️ See it in action</summary>
+<p align="center"><img src="docs/images/readme/spoiler-guard.webp" alt="Scrolling a season: watched episodes are normal, later episodes are blurred with hidden titles" width="100%"></p>
+</details>
 
-| Platform | Support | Notes |
-|----------|---------|-------|
-| Jellyfin Web UI | ✅ Full | All features available |
-| Android App | ✅ Full | Official app with embedded web UI |
-| iOS App | ✅ Full | Official app with embedded web UI |
-| Desktop Apps | ✅ Full | Jellyfin Desktop v3.0.0+ (currently unreleased) |
-| Android TV | ❌ Not Supported, but auto-season, movie requests and experimental Native Poster Tags work| Native app, no web UI |
-| Third-party Apps | ❌ Not Supported, but auto-season, movie requests and experimental Native Poster Tags work | Depends on embedded web UI |
+<sub>[Spoiler Guard docs →](https://n00bcodr.github.io/Jellyfin-Enhanced/spoiler-guard/spoiler-guard-features/)</sub>
 
-<br>
+### 🏷️ See quality at a glance
 
-## 📸 Screenshots
+Every poster gets small badges, so you can tell at a glance what you're about to watch.
 
-<table>
-  <tr>
-    <th>Shortcuts</th>
-    <th>Settings</th>
-  </tr>
-  <tr>
-    <td><img src="docs/images/enhanced-panel-shortcuts.png" width="400" /></td>
-    <td><img src="docs/images/enhanced-panel-settings.png" width="400" /></td>
-  </tr>
-  <tr>
-    <th>Pause Screen</th>
-    <th>Elsewhere</th>
-  </tr>
-  <tr>
-    <td><img src="docs/images/pausescreen.png" width="400" /></td>
-    <td><img src="docs/images/elsewhere.png" width="400" /></td>
-  </tr>
-  <tr>
-    <th>Seerr</th>
-    <th>Ratings</th>
-  </tr>
-  <tr>
-    <td><img src="docs/images/jellyseerr.png" width="400" /></td>
-    <td><img src="docs/images/ratings.png" width="400" /></td>
-  </tr>
-</table>
+<p align="center"><img src="docs/images/readme/library-tags.webp" alt="Movie library with quality, genre, language, age rating and score badges on every poster" width="100%"></p>
 
-<br>
+| Badge | What it shows |
+|---|---|
+| **Quality** (top left) | Resolution (8K, 4K, 1080p…), HDR, Dolby Vision, HDR10+, IMAX, 3D, codec, and audio such as Atmos, DTS:X, TrueHD and 7.1. It can describe the best audio in *your* language rather than the best in the file |
+| **Genre** (top right) | Icons for up to three genres, which expand into their names when you hover |
+| **Language** (bottom left) | A flag for each audio language. On shows, a dimmed flag means that dub doesn't cover every episode |
+| **Age rating** (bottom right) | The parental rating (PG-13, TV-MA, FSK 12, BBFC 15…), colour-coded by rating board |
+| **Ratings** (bottom right) | The community and critic scores from your metadata (usually TMDB and Rotten Tomatoes), plus (optionally) the average rating from people on your server |
+| **People** (cast photos) | Each actor's age now and at release, and their birthplace |
 
-## 🌍 Contributing
+<p align="center"><img src="docs/images/readme/cast-tags.webp" alt="Cast row with each actor's age, age at release and birthplace" width="100%"></p>
 
-### Translations
+On TV apps such as Android TV, which can't show these badges themselves, an admin can turn on the experimental **Native Poster Tags** setting so the server draws each person's badges into the posters.
 
-Help translate Jellyfin Enhanced into your language!
+<sub>You can move, restyle or hide every badge. · [Tag docs →](https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/enhanced-features/#visual-enhancements)</sub>
+
+### 📄 Richer movie and show pages
+
+<p align="center"><img src="docs/images/readme/details.webp" alt="Movie page with ratings, release dates, file size, audio languages and external links" width="100%"></p>
+
+<p align="center"><img src="docs/images/readme/elsewhere-reviews.webp" alt="Streaming availability and user reviews on a movie page" width="100%"></p>
+
+- **Ratings** from TMDB and Rotten Tomatoes, plus IMDb, Letterboxd, Metacritic, Trakt and more through [MDBList](https://mdblist.com). MDBList ratings can also be saved into Jellyfin itself, so every app shows them
+- **Elsewhere:** which streaming services carry the title, in your country or any other
+- **Reviews:** TMDB reviews, and **reviews and star ratings written by people on your server**
+- **Awards:** Oscars, Golden Globes, BAFTAs, Emmys and more, for movies, shows and people
+- **Extra details** such as release dates (cinema, digital and physical for movies, air dates for shows), file size, watch progress and audio languages
+- **Quick links** to Letterboxd, and (for admins) to the title in Sonarr, Radarr or Bazarr
+
+<p align="center"><img src="docs/images/readme/awards.webp" alt="Expanded awards panel listing wins and nominations" width="75%"></p>
+
+<sub>Streaming availability, TMDB reviews and release dates need a free TMDB API key, and extra ratings need a free MDBList key. · [Elsewhere docs →](https://n00bcodr.github.io/Jellyfin-Enhanced/elsewhere/elsewhere-features/)</sub>
+
+### ⏯️ A better player
+
+<p align="center"><img src="docs/images/readme/pause-screen.webp" alt="Custom pause screen with logo, plot, rating and progress" width="100%"></p>
+
+- A **pause screen** with the title, plot, rating and how far you are through it
+- **Bookmarks:** press <kbd>B</kbd> to save a moment. It appears as a marker on the timeline, and every bookmark is listed on its own page, where you can label, export and import them.
+- **Automatic intro and outro skipping**, using the intro data Jellyfin already has (for example from [Intro Skipper](https://github.com/intro-skipper/intro-skipper))
+- **Auto-pause** when you switch browser tabs, **auto-resume** when you come back, and optional picture-in-picture
+- **Custom subtitles:** font, size, color, background, position and an outline or drop shadow, with a live preview
+- **Press and hold the video for 2× speed** (mouse or touch)
+- **Ratings in the player** while the controls are showing, and optionally a brief age rating, content advisory and genre card when playback starts
+
+<p align="center"><b>Bookmarks on the timeline</b><br><img src="docs/images/readme/player-bookmarks.webp" alt="Player timeline with bookmark markers" width="100%"></p>
+
+<p align="center"><b>All your bookmarks in one place</b><br><img src="docs/images/readme/bookmarks.webp" alt="Bookmarks page listing saved moments with play, edit and delete buttons" width="100%"></p>
+
+<sub>[Playback docs →](https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/enhanced-features/#playback-controls)</sub>
+
+### ⌨️ The Enhanced panel and shortcuts
+
+Press <kbd>?</kbd> anywhere to open your personal settings panel. It's also where you change keyboard shortcuts: click a key and press a new one.
+
+<p align="center"><img src="docs/images/readme/panel.webp" alt="Pressing ? opens the Enhanced panel; clicking through Playback, Subtitle, UI and Spoiler Guard settings" width="100%"></p>
+
+<details>
+<summary>⌨️ Default keyboard shortcuts</summary>
+
+| Anywhere | | In the player | |
+|---|---|---|---|
+| <kbd>/</kbd> | Search | <kbd>B</kbd> | Bookmark this moment |
+| <kbd>Shift</kbd>+<kbd>H</kbd> | Home | <kbd>O</kbd> | Skip intro or outro |
+| <kbd>D</kbd> | Dashboard | <kbd>S</kbd> / <kbd>C</kbd> | Subtitle menu / next subtitle track |
+| <kbd>Q</kbd> | Quick Connect | <kbd>V</kbd> | Next audio track |
+| <kbd>R</kbd> | Open something random | <kbd>+</kbd> / <kbd>-</kbd> / <kbd>R</kbd> | Faster / slower / normal speed |
+| <kbd>?</kbd> | Open the Enhanced panel | <kbd>A</kbd> | Change aspect ratio |
+| | | <kbd>I</kbd> | Playback info |
+| | | <kbd>P</kbd> | Episode preview (with the [InPlayerEpisodePreview](https://github.com/Namo2/InPlayerEpisodePreview) plugin) |
+| | | <kbd>,</kbd> / <kbd>.</kbd> | Back or forward one frame |
+| | | <kbd>Z</kbd> | Jump back to where you were |
+| | | <kbd>0</kbd>–<kbd>9</kbd> | Jump to 0–90% of the video |
+
+</details>
+
+### 🙈 Keep your home screen tidy
+
+<p align="center"><b>Remove from Continue Watching</b><br><img src="docs/images/readme/remove-continue-watching.webp" alt="Removing a movie from the Continue Watching row via its menu" width="100%"></p>
+
+<p align="center"><b>Hide a title everywhere</b><br><img src="docs/images/readme/hide-content.webp" alt="Hiding a movie, then finding it on the Hidden Content page" width="100%"></p>
+
+- **Remove** things from **Continue Watching** or **Next Up** without losing your place, one at a time or several at once. Start watching again and it comes back to Continue Watching by itself.
+- **Hide** anything you never want to see, from the library, search, recommendations, the calendar and more.
+- Your hidden list is **saved on the server and private to you** (admins can manage it), so it follows you to every device. Manage it, and unhide things, on the **Hidden Content** page.
+
+<sub>[Hidden content docs →](https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/enhanced-features/#content-management)</sub>
+
+### 📅 See what's coming
+
+A **Calendar** shows upcoming episodes and movies from Sonarr and Radarr (several of each, if you have them) and anime from Shoko, in day, week, month or agenda view. You can filter by cinema, digital or physical release, see what's already available, and optionally highlight shows you've favorited or watched.
+
+<p align="center"><img src="docs/images/readme/calendar.webp" alt="Month calendar of upcoming episodes and movie releases" width="100%"></p>
+
+The **Requests** page shows Seerr requests and what's downloading right now, with progress bars, so nobody has to ask "is it ready yet?" It also lists reported issues and recent downloads. Admins see everyone's; other people see their own.
+
+<sub>The Calendar needs Sonarr, Radarr or Shoko. The Requests page needs Seerr, plus Sonarr or Radarr for download progress. · [*arr docs →](https://n00bcodr.github.io/Jellyfin-Enhanced/arr/arr-features/)</sub>
+
+### 👥 Share it with your household
+
+<p align="center"><img src="docs/images/readme/activity.webp" alt="Activity page showing who is watching now and recent watch history" width="100%"></p>
+
+- **Activity:** see what everyone is watching right now, and what they recently watched, favorited and reviewed. History only includes titles each person has access to.
+- **Reviews and ratings:** anyone can rate a movie, show, season or episode and write a review. The average appears on detail pages, and optionally on posters.
+- **Login picture:** when someone picks their name to sign in, their profile picture appears above the password box.
+
+<p align="center"><img src="docs/images/readme/login-picture.webp" alt="Picking Riley on the sign-in screen shows Riley's profile picture above the password box" width="60%"></p>
+
+### 📡 See who's watching right now
+
+A live counter in the header shows how many streams are playing. Click it for everyone's poster, progress and device, and whether each stream is playing directly or being transcoded (with codec and bitrate). Admins can also send a message to everyone who's connected. Only admins see the counter unless you choose to show it to everyone.
+
+<p align="center"><img src="docs/images/readme/active-streams.webp" alt="Opening the Active Streams panel showing three live sessions" width="80%"></p>
+
+### 🎲 Can't decide?
+
+The **Random** button (or <kbd>R</kbd>) picks something from your library. You can limit it to movies, shows or things you haven't watched yet, or have it pick from the playlist or collection you're looking at (or one you choose).
+
+<p align="center"><img src="docs/images/readme/random.webp" alt="Clicking the random button twice opens two random titles" width="100%"></p>
+
+### 📱 On your phone
+
+It works in the official Jellyfin apps for Android and iOS, and in Jellyfin 12's layout on any phone browser. The header adapts to small screens.
+
+<p align="center"><img src="docs/images/readme/mobile.webp" alt="Three phone screenshots in Jellyfin 12: a movie page with ratings, streaming availability with awards, and a season protected by Spoiler Guard" width="100%"></p>
+
+### 🛠️ Tools for the server admin
+
+Everything is configured from **Dashboard → Plugins → Jellyfin Enhanced**, with search, descriptions for every option and highlights of the new settings after each update.
+
+<p align="center"><img src="docs/images/readme/admin-settings.webp" alt="Jellyfin Enhanced settings page in the dashboard" width="100%"></p>
+
+- **Set defaults** for everyone, or overwrite everyone's personal settings in one click
+- **Import Jellyfin users into Seerr**, and **audit** who is allowed to request what
+- **Sonarr, Radarr and Bazarr links**, and \*arr tags shown on items or copied into Jellyfin's own tags
+- **Check which parts are working** with built-in connection tests
+- **Maintenance mode:** a banner on the login page with a live countdown, reminders when people start playing something, and optionally lock out everyone except admins while you work. It can also switch itself on every day for a set window, such as overnight while library scans run
+- **Your own branding:** upload a logo, login banners, favicon and app icon, and set your own loading screen
+- **Themes:** pick a color theme for [Jellyfish](https://github.com/n00bcodr/Jellyfish/) (or a random one each day), plus colored activity and plugin icons
+- **Documented CSS hooks** to restyle any part of the plugin
+- **Translated into 30+ languages** by the community
+
+<p align="center"><img src="docs/images/readme/maintenance-mode.webp" alt="Maintenance banner with a countdown on the Jellyfin login page" width="100%"></p>
+
+<sub>[Admin & other features →](https://n00bcodr.github.io/Jellyfin-Enhanced/other/other-features/)</sub>
+
+<p align="center"><b><a href="https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/enhanced-features/">📖 Read the full feature guide →</a></b></p>
+
+## 📱 Where it works
+
+| App | What you get |
+|---|---|
+| Jellyfin web, in any browser | ✅ Everything |
+| Official Android and iOS apps | ✅ Everything (they use the web interface) |
+| Jellyfin Desktop v3.0.0+ (currently unreleased) | ✅ Everything |
+| Android TV, Roku, Swiftfin, Findroid, Streamyfin and other apps | ⚠️ Only the features that run on the server: **Spoiler Guard**, **hidden content** (including Continue Watching / Next Up removals), **automatic Seerr requests**, experimental **Native Poster Tags** (your tags drawn into the posters), watchlist sync, MDBList ratings and \*arr tags saved into Jellyfin, and **maintenance mode** lockouts. Admin messages and maintenance reminders appear if the app shows server messages. Turning these on for a title is done from the web interface or the official phone apps |
+
+## 🧩 Works great with
+
+| Plugin or app | Why |
+|---|---|
+| [Seerr](https://github.com/seerr-team/seerr) | Powers requests, discovery, recommendations and watchlist sync. |
+| Sonarr / Radarr | Power the Calendar, the Requests page's download progress, and admin links. |
+| Bazarr / Shoko | Bazarr adds subtitle links for admins; Shoko adds anime to the Calendar. |
+| [Intro Skipper](https://github.com/intro-skipper/intro-skipper) | Finds the intros and outros that auto-skip jumps over. |
+| [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) / [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) | Optional. Put the Calendar, Requests, Activity and other pages in the sidebar (the profile menu on Jellyfin 12) or as home tabs. Both need [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation). Jellyfin Enhanced's built-in home tabs work without them. |
+| [KefinTweaks](https://github.com/ranaldsgift/KefinTweaks) | Shows the Jellyfin watchlist that watchlist sync keeps up to date. |
+| [Jellyfish](https://github.com/n00bcodr/Jellyfish/) | A Jellyfin theme by the same author. The theme selector picks its colors. |
+
+## ❓ Common questions
+
+<details>
+<summary><b>Does it work on my TV?</b></summary>
+
+Partly. Most features live in Jellyfin's web interface, so you get all of them in browsers, the official Android and iOS apps, and Jellyfin Desktop v3.0.0+. Native TV apps and other apps like Swiftfin, Findroid and Streamyfin don't use that interface. They still get the features that run on the server: Spoiler Guard, hidden content (including Continue Watching / Next Up removals), automatic Seerr requests, experimental Native Poster Tags (your quality, genre, language and rating badges drawn into the posters), watchlist sync, MDBList ratings and \*arr tags saved into Jellyfin, and maintenance-mode lockouts. Admin messages and maintenance reminders show up if the app displays server messages. You switch these on from the web interface or a phone, and your TV follows.
+
+</details>
+
+<details>
+<summary><b>Do I need Seerr, Sonarr or Radarr?</b></summary>
+
+No. Without them you still get tags, shortcuts, the pause screen, bookmarks, Spoiler Guard, reviews, the Activity page, hidden content, themes and much more. The request, calendar and download features appear only after you connect them.
+
+</details>
+
+<details>
+<summary><b>Will it mess up my server or my watch history?</b></summary>
+
+No. It doesn't touch your media files. Removing something from Continue Watching keeps your progress, and hidden titles can be unhidden at any time. To uninstall, remove the plugin under **Dashboard → Plugins** and restart.
+
+</details>
+
+<details>
+<summary><b>Does it send my data anywhere?</b></summary>
+
+It talks to the services you connect, such as Seerr, Sonarr, Radarr, TMDB and MDBList, and posters for titles you don't have yet load from TMDB. The plugin's own icons and fonts come from your server, not third-party sites. There is an anonymous usage report that helps guide development, but it's **off by default**, an admin has to turn it on, and the settings page shows exactly what would be sent. [More about it →](https://n00bcodr.github.io/Jellyfin-Enhanced/advanced/community-analytics/)
+
+</details>
+
+<details>
+<summary><b>Is it free?</b></summary>
+
+Yes. It's open source under [GPL-3.0](LICENSE). If you'd like to say thanks, there's [Ko-fi](https://ko-fi.com/n00bcodr) and [Buy Me a Coffee](https://www.buymeacoffee.com/n00bcodr).
+
+</details>
+
+<details>
+<summary><b>Is it in my language?</b></summary>
+
+Probably. It's translated into more than 30 languages and follows the language set in your Jellyfin profile. Missing yours? [Help translate on Weblate](https://hosted.weblate.org/engage/jellyfinenhanced/). No coding needed.
+
+</details>
+
+<details>
+<summary><b>Is this made by Jellyfin or Seerr?</b></summary>
+
+No. It's a community project by [n00bcodr](https://github.com/n00bcodr) and contributors. Please report problems **here**, not to Jellyfin or Seerr.
+
+</details>
+
+More answers are in the [full FAQ](https://n00bcodr.github.io/Jellyfin-Enhanced/faq-support/faq/).
+
+## 💬 Help, feedback and translations
+
+- **Stuck?** Read the [FAQ](https://n00bcodr.github.io/Jellyfin-Enhanced/faq-support/faq/) or ask on [Discord](https://discord.gg/EYNFf7y4CG).
+- **Found a bug?** [Open an issue](https://github.com/n00bcodr/Jellyfin-Enhanced/issues).
+- **Have an idea?** [Start a discussion](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions).
+- **Speak another language?** [Help translate on Weblate](https://hosted.weblate.org/engage/jellyfinenhanced/).
+- **Want to contribute code?** Start with [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <p align="center">
-  <a href="https://hosted.weblate.org/engage/jellyfinenhanced/">
-    <img src="https://hosted.weblate.org/widget/jellyfinenhanced/multi-auto.svg" alt="Translation status" />
-  </a>
+  <a href="https://hosted.weblate.org/engage/jellyfinenhanced/"><img src="https://hosted.weblate.org/widget/jellyfinenhanced/multi-auto.svg" alt="Translation status"></a>
 </p>
 
-Translate directly in Weblate:
+<details>
+<summary><b>More from n00bcodr</b></summary>
 
-- https://hosted.weblate.org/projects/jellyfinenhanced/
+- [Jellyfish](https://github.com/n00bcodr/Jellyfish/): a custom Jellyfin theme
+- [Jellyfin Tweaks](https://github.com/n00bcodr/JellyfinTweaks): a plugin with extra tweaks
+- [Jellyfin JavaScript Injector](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector): adds your own scripts to Jellyfin
 
-1. Open the Jellyfin Enhanced project in Weblate
-2. Pick your language (or request a new language)
-3. Translate strings in the Web UI
-4. Save and submit suggestions/changes
+</details>
 
-Weblate will sync translation changes back to this repository.
-
-Manual locale PRs are still possible for maintainers, but Weblate is the preferred workflow for all translators.
-
-[Translation Guide →](https://n00bcodr.github.io/Jellyfin-Enhanced/faq-support/contributing-translations/)
-
-### Bug Reports & Feature Requests
-
-- [Report Issues](https://github.com/n00bcodr/Jellyfin-Enhanced/issues)
-- [Feature Requests](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
-- [Discord Community](https://discord.gg/EYNFf7y4CG)
-
-<br>
-
-## 💡 Support
-
-Need help? Check these resources:
-
-- [FAQ](https://n00bcodr.github.io/Jellyfin-Enhanced/faq-support/faq/)
-- [Troubleshooting Guide](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/troubleshooting/)
-- [GitHub Discussions](https://github.com/n00bcodr/Jellyfin-Enhanced/discussions)
-- [Discord Community](https://discord.gg/EYNFf7y4CG)
-
-<br>
-
-## 🎯 Related Projects
-
-Other projects by n00bcodr:
-
-- [Jellyfin-Tweaks](https://github.com/n00bcodr/JellyfinTweaks) - Additional tweaks plugin
-- [Jellyfin-JavaScript-Injector](https://github.com/n00bcodr/Jellyfin-JavaScript-Injector) - Custom script injection
-- [Jellyfish](https://github.com/n00bcodr/Jellyfish/) - Custom Jellyfin theme
-
-Recommended plugins:
-
-- [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) - Safe file modifications
-- [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) - Custom navigation tabs
-- [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) - Helps Plugins create custom pages for settings and info
-- [Kefin Tweaks](https://github.com/ranaldsgift/KefinTweaks) - Watchlist and more
-
-<br>
-
-## ⭐ Star History
+## ⭐ Star history
 
 <a href="https://www.star-history.com/?repos=n00bcodr%2FJellyfin-Enhanced&type=date&legend=top-left">
  <picture>
@@ -235,23 +357,15 @@ Recommended plugins:
  </picture>
 </a>
 
-<br>
-
-## 📄 License
-
-This project is licensed under the [GNU General Public License v3.0](LICENSE).
-
-<br>
-
 ---
 
 <div align="center">
 
-### Enjoying Jellyfin Enhanced?
+**If Jellyfin Enhanced made your server better, please ⭐ star the repo. It helps other people find it.**
 
-If this plugin has enhanced your Jellyfin experience, consider:
-⭐ Starring the repository ⦁ 🐛 Reporting bugs or suggesting features ⦁ 🌍 Contributing translations ⦁ 💬 Joining <a href="https://discord.gg/EYNFf7y4CG">Discord community</a> ⦁ ☕ Supporting me on <a href="https://ko-fi.com/n00bcodr">Ko-Fi</a>
+<a href='https://ko-fi.com/G2G51TIZF0' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi1.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
+<a href='https://www.buymeacoffee.com/n00bcodr' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png' border='0' alt='Buy Me a Coffee' /></a>
 
-Made with 💜 for Jellyfin and the community
+Licensed under [GPL-3.0](LICENSE) · Made with 💜 for Jellyfin and the community
 
 </div>
