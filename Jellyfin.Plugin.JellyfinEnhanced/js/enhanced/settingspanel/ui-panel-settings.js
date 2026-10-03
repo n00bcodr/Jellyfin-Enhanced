@@ -26,6 +26,21 @@
     };
 
     /**
+     * Re-measure corner stacking on every card that still has tag overlays.
+     * Called after a tag type's overlays are removed by its panel toggle, so
+     * an overlay that was stacked above them (e.g. the age rating badge over
+     * the rating chip) drops back into its corner instead of keeping a stale
+     * translateY.
+     */
+    const restackTagCorners = () => {
+        const restack = JE.core?.tagRenderer?.applyCornerStacking;
+        if (typeof restack !== 'function') return;
+        const hosts = new Set();
+        document.querySelectorAll('[data-je-corner]').forEach(el => { if (el.parentElement) hosts.add(el.parentElement); });
+        hosts.forEach(host => restack(host));
+    };
+
+    /**
      * Wires the feature toggles, quality-tag category controls and subtitle
      * styling/position controls of the Settings tab.
      * @param {object} ctx Shared panel context assembled in ui-panel.js.
@@ -49,6 +64,7 @@
                     } else {
                         // Remove all tags if disabling
                         document.querySelectorAll('.quality-overlay-container').forEach(el => el.remove());
+                        restackTagCorners();
                     }
                     requiresRefresh = false; // No longer needs refresh
                 } else if (id === 'genreTagsToggle') {
@@ -58,6 +74,7 @@
                         }
                     } else {
                         document.querySelectorAll('.genre-overlay-container').forEach(el => el.remove());
+                        restackTagCorners();
                     }
                     requiresRefresh = false;
                 } else if (id === 'languageTagsToggle') {
@@ -67,6 +84,7 @@
                         }
                     } else {
                         document.querySelectorAll('.language-overlay-container').forEach(el => el.remove());
+                        restackTagCorners();
                     }
                     requiresRefresh = false;
                 } else if (id === 'ratingTagsToggle') {
@@ -76,6 +94,17 @@
                         }
                     } else {
                         document.querySelectorAll('.rating-overlay-container').forEach(el => el.remove());
+                        restackTagCorners();
+                    }
+                    requiresRefresh = false;
+                } else if (id === 'ageRatingTagsToggle') {
+                    if (e.target.checked) {
+                        if (typeof JE.initializeAgeRatingTags === 'function') {
+                            JE.initializeAgeRatingTags();
+                        }
+                    } else {
+                        document.querySelectorAll('.age-rating-overlay-container').forEach(el => el.remove());
+                        restackTagCorners();
                     }
                     requiresRefresh = false;
                 } else if (id === 'peopleTagsToggle') {
@@ -110,6 +139,7 @@
         addSettingToggleListener('autoSkipOutroToggle', 'autoSkipOutro', 'feature_auto_skip_outro');
         addSettingToggleListener('randomButtonToggle', 'randomButtonEnabled', 'feature_random_button');
         addSettingToggleListener('randomUnwatchedOnly', 'randomUnwatchedOnly', 'feature_unwatched_only');
+        addSettingToggleListener('randomScopeCurrentContainer', 'randomScopeCurrentContainer', 'feature_random_scope_current');
         addSettingToggleListener('showWatchProgressToggle', 'showWatchProgress', 'feature_watch_progress_display');
                 // Watch progress selects
                 const modeSel = document.getElementById('watchProgressModeSelect');
@@ -131,6 +161,18 @@
         addSettingToggleListener('showFileSizesToggle', 'showFileSizes', 'feature_file_size_display');
         addSettingToggleListener('showAudioLanguagesToggle', 'showAudioLanguages', 'feature_audio_language_display');
         addSettingToggleListener('removeContinueWatchingToggle', 'removeContinueWatchingEnabled', 'feature_remove_continue_watching');
+        document.getElementById('nativePosterTagsToggle')?.addEventListener('change', (event) => {
+            if (JE.pluginConfig?.NativePosterTagsEnabled !== true) return;
+            const enabled = event.target.checked;
+            // Record the explicit choice so saveUserSettings writes it (an untouched user stays unset = on).
+            JE.userConfig = JE.userConfig || {};
+            JE.userConfig.settings = JE.userConfig.settings || {};
+            JE.userConfig.settings.useNativePosterTags = enabled;
+            JE.currentSettings.useNativePosterTags = enabled;
+            JE.saveUserSettings('settings.json', JE.currentSettings);
+            JE.toast(JE.t('toast_native_poster_tags_saved'));
+            resetAutoCloseTimer();
+        });
         addSettingToggleListener('qualityTagsToggle', 'qualityTagsEnabled', 'feature_quality_tags', true);
         // Show or hide the nested category section when the master quality-tags toggle changes
         const qualityMasterToggle = document.getElementById('qualityTagsToggle');
@@ -209,6 +251,56 @@
             });
         }
 
+        // Preferred audio language for the sound tag (#433). The fixed choices
+        // (server default / my Jellyfin audio language / none) are in the
+        // template; the language list comes from Jellyfin's cultures endpoint,
+        // like the display-language dropdown.
+        const audioLangSelect = document.getElementById('qualityTagsAudioLanguageSelect');
+        if (audioLangSelect) {
+            // The fixed choices exist already; a language is selected once the list loads.
+            const initial = JE.currentSettings.qualityTagsPreferredAudioLanguage || '';
+            if (Array.from(audioLangSelect.options).some(o => o.value === initial)) audioLangSelect.value = initial;
+            (async () => {
+                try {
+                    const cultures = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' });
+                    const seen = new Set();
+                    cultures
+                        .map(c => ({ code: c.TwoLetterISOLanguageName || c.ThreeLetterISOLanguageName, name: c.DisplayName || c.Name }))
+                        .filter(o => o.code && o.name && !seen.has(o.code) && seen.add(o.code))
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .forEach(({ code, name }) => {
+                            const option = document.createElement('option');
+                            option.value = code;
+                            option.textContent = name;
+                            option.style.background = 'rgba(30,30,30,1)';
+                            option.style.color = '#fff';
+                            audioLangSelect.appendChild(option);
+                        });
+                } catch (err) {
+                    console.warn('🪼 Jellyfin Enhanced: Failed to load audio language options:', err);
+                }
+                // Read the setting only now: the user may have picked one of the
+                // fixed choices while the list was loading.
+                const saved = JE.currentSettings.qualityTagsPreferredAudioLanguage || '';
+                // A saved code the list doesn't offer (e.g. a hand-edited pt-BR) still shows as selected.
+                if (saved && !Array.from(audioLangSelect.options).some(o => o.value === saved)) {
+                    const option = document.createElement('option');
+                    option.value = saved;
+                    option.textContent = saved;
+                    audioLangSelect.appendChild(option);
+                }
+                audioLangSelect.value = saved;
+            })();
+            audioLangSelect.addEventListener('change', (e) => {
+                JE.currentSettings.qualityTagsPreferredAudioLanguage = e.target.value;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
+                    JE.reinitializeQualityTags();
+                }
+                resetAutoCloseTimer();
+            });
+        }
+
         /**
          * Updates ↑/↓ button enabled state to reflect each row's position in the list
          * @param {HTMLElement} group - The container holding the category rows
@@ -255,6 +347,7 @@
         }
         addSettingToggleListener('languageTagsToggle', 'languageTagsEnabled', 'feature_language_tags', true);
         addSettingToggleListener('ratingTagsToggle', 'ratingTagsEnabled', 'feature_rating_tags', true);
+        addSettingToggleListener('ageRatingTagsToggle', 'ageRatingTagsEnabled', 'feature_age_rating_tags', true);
         addSettingToggleListener('peopleTagsToggle', 'peopleTagsEnabled', 'feature_people_tags', true);
         addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', false);
         // Live-toggle the body class so hover fade CSS applies immediately (no refresh needed)
@@ -262,6 +355,42 @@
         if (hideOnHoverCheckbox) {
             hideOnHoverCheckbox.addEventListener('change', () => {
                 document.body.classList.toggle('je-tags-hide-on-hover', hideOnHoverCheckbox.checked);
+            });
+        }
+        // Rating tag scope (item types / home rows): nested under the master
+        // toggle exactly like the quality-tag categories above.
+        const ratingMasterToggle = document.getElementById('ratingTagsToggle');
+        const ratingSubWrap = document.getElementById('ratingTagsSubWrap');
+        const ratingSubGroup = document.getElementById('ratingTagsSubToggles');
+        const ratingSubExpander = document.getElementById('ratingTagsSubToggleExpander');
+        if (ratingMasterToggle && ratingSubWrap) {
+            ratingMasterToggle.addEventListener('change', () => {
+                ratingSubWrap.style.display = ratingMasterToggle.checked ? 'block' : 'none';
+                if (!ratingMasterToggle.checked && ratingSubGroup && ratingSubExpander) {
+                    ratingSubGroup.style.display = 'none';
+                    ratingSubExpander.setAttribute('aria-expanded', 'false');
+                }
+            });
+        }
+        if (ratingSubExpander && ratingSubGroup) {
+            ratingSubExpander.addEventListener('click', () => {
+                const expanded = ratingSubExpander.getAttribute('aria-expanded') === 'true';
+                ratingSubExpander.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+                ratingSubGroup.style.display = expanded ? 'none' : 'block';
+            });
+        }
+        if (ratingSubGroup) {
+            ratingSubGroup.addEventListener('change', (e) => {
+                const target = e.target;
+                if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
+                const settingKey = target.closest('.je-quality-cat-row')?.dataset.catKey;
+                if (!settingKey) return;
+                JE.currentSettings[settingKey] = target.checked;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                if (typeof JE.reinitializeRatingTags === 'function' && JE.currentSettings.ratingTagsEnabled) {
+                    JE.reinitializeRatingTags();
+                }
+                resetAutoCloseTimer();
             });
         }
         addSettingToggleListener('disableCustomSubtitleStyles', 'disableCustomSubtitleStyles', 'feature_disable_custom_subtitle_styles', true);
@@ -337,6 +466,16 @@
             }
         })();
 
+        // Keeps the two panel previews showing the same text effect as the video.
+        const syncPreviewTextShadow = (bgColor) => {
+            const shadow = JE.getSubtitleTextShadow(bgColor);
+            ['subtitleColorPreview', 'subtitlePositionPreview'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.textShadow = shadow;
+            });
+        };
+        internal.syncSubtitlePreviewTextShadow = syncPreviewTextShadow;
+
         // Inline custom subtitle color pickers
         const customTextColorPicker = document.getElementById('customSubtitleTextColorPicker');
         const customTextAlpha = document.getElementById('customSubtitleTextAlpha');
@@ -370,6 +509,7 @@
                 posPreviewEl.style.color = textColor;
                 posPreviewEl.style.backgroundColor = bgColor;
             }
+            syncPreviewTextShadow(bgColor);
 
             JE.saveUserSettings('settings.json', JE.currentSettings);
             JE.applySavedStylesWhenReady();
@@ -476,6 +616,44 @@
         document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeMovies = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
         document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
 
+        // Random source picker: lists the user's playlists and collections; '' = whole library.
+        const sourceSelect = document.getElementById('randomSourceSelect');
+        if (sourceSelect) {
+            const savedId = JE.currentSettings.randomSourceId || '';
+            const userId = ApiClient.getCurrentUserId();
+            ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/Users/${userId}/Items?IncludeItemTypes=Playlist,BoxSet&Recursive=true&SortBy=SortName`), dataType: 'json' })
+                .then(async response => {
+                    if (!sourceSelect.isConnected) return; // panel closed before the list arrived
+                    const groups = { Playlist: 'panel_settings_random_button_source_playlists', BoxSet: 'panel_settings_random_button_source_collections' };
+                    for (const [type, labelKey] of Object.entries(groups)) {
+                        const items = (response?.Items || []).filter(item => item.Type === type);
+                        if (items.length === 0) continue;
+                        const group = document.createElement('optgroup');
+                        group.label = JE.t(labelKey);
+                        items.forEach(item => group.appendChild(new Option(item.Name, item.Id, false, item.Id === savedId)));
+                        sourceSelect.appendChild(group);
+                    }
+                    // A saved source missing from the list is either gone (show why picks fall back) or
+                    // still readable but filtered out of lists, e.g. hidden with Hidden Content, in which
+                    // case the button still draws from it, so show its real name.
+                    if (savedId && sourceSelect.value !== savedId) {
+                        const saved = await ApiClient.getItem(userId, savedId).catch(() => null);
+                        if (!sourceSelect.isConnected || JE.currentSettings.randomSourceId !== savedId) return;
+                        const label = saved && ['Playlist', 'BoxSet'].includes(saved.Type)
+                            ? saved.Name
+                            : JE.t('panel_settings_random_button_source_missing');
+                        sourceSelect.appendChild(new Option(label, savedId, false, true));
+                    }
+                })
+                .catch(err => console.warn('🪼 Jellyfin Enhanced: Could not list playlists for the random source picker', err));
+            sourceSelect.addEventListener('change', (e) => {
+                JE.currentSettings.randomSourceId = e.target.value;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.toast(JE.t('toast_random_source_set', { name: JE.escapeHtml(e.target.selectedOptions[0]?.textContent || '') }));
+                resetAutoCloseTimer();
+            });
+        }
+
         document.getElementById('releaseNotesBtn').addEventListener('click', async () => { await showReleaseNotesNotification(); resetAutoCloseTimer(); });
 
         // --- Position Selectors ---
@@ -525,6 +703,10 @@
                 } else if (settingKey === 'ratingTagsPosition' && JE.currentSettings.ratingTagsEnabled) {
                     if (typeof JE.reinitializeRatingTags === 'function') {
                         JE.reinitializeRatingTags();
+                    }
+                } else if (settingKey === 'ageRatingTagsPosition' && JE.currentSettings.ageRatingTagsEnabled) {
+                    if (typeof JE.reinitializeAgeRatingTags === 'function') {
+                        JE.reinitializeAgeRatingTags();
                     }
                 }
 
@@ -583,7 +765,8 @@
                         const fontSize = JE.fontSizePresets[fontSizeIndex].size;
                         const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
                         updatePositionPreviewFont(JE.fontSizePresets[fontSizeIndex], JE.fontFamilyPresets[fontFamilyIndex]);
-                        JE.applySubtitleStyles(selectedPreset.textColor, selectedPreset.bgColor, fontSize, fontFamily, selectedPreset.textShadow);
+                        internal.syncSubtitlePreviewTextShadow?.(selectedPreset.bgColor);
+                        JE.applySubtitleStyles(selectedPreset.textColor, selectedPreset.bgColor, fontSize, fontFamily, JE.getSubtitleTextShadow(selectedPreset.bgColor));
                         JE.toast(JE.t('toast_subtitle_style', { style: selectedPreset.name }));
                     } else if (type === 'font-size') {
                         JE.currentSettings.selectedFontSizePresetIndex = presetIndex;
@@ -593,9 +776,7 @@
                         // Use saved custom colors
                         const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
                         const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
-                        const textShadow = bgColor === 'transparent' || bgColor === '#00000000'
-                            ? '0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000'
-                            : 'none';
+                        const textShadow = JE.getSubtitleTextShadow(bgColor);
 
                         updatePositionPreviewFont(selectedPreset, JE.fontFamilyPresets[fontFamilyIndex]);
                         JE.applySubtitleStyles(textColor, bgColor, selectedPreset.size, fontFamily, textShadow);
@@ -608,13 +789,25 @@
                         // Use saved custom colors
                         const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
                         const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
-                        const textShadow = bgColor === 'transparent' || bgColor === '#00000000'
-                            ? '0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000'
-                            : 'none';
+                        const textShadow = JE.getSubtitleTextShadow(bgColor);
 
                         updatePositionPreviewFont(JE.fontSizePresets[fontSizeIndex], selectedPreset);
                         JE.applySubtitleStyles(textColor, bgColor, fontSize, selectedPreset.family, textShadow);
                         JE.toast(JE.t('toast_subtitle_font', { font: selectedPreset.name }));
+                    } else if (type === 'text-effect') {
+                        JE.currentSettings.selectedTextEffectPresetIndex = presetIndex;
+                        const fontSizeIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
+                        const fontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
+                        const fontSize = JE.fontSizePresets[fontSizeIndex].size;
+                        const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
+
+                        // Use saved custom colors
+                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
+                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
+
+                        internal.syncSubtitlePreviewTextShadow?.(bgColor);
+                        JE.applySubtitleStyles(textColor, bgColor, fontSize, fontFamily, JE.getSubtitleTextShadow(bgColor, presetIndex));
+                        JE.toast(JE.t('toast_subtitle_text_effect', { effect: selectedPreset.name }));
                     }
 
                     JE.saveUserSettings('settings.json', JE.currentSettings);
@@ -648,12 +841,21 @@
                 if (activeBox) {
                     activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
                 }
+            } else if (type === 'text-effect') {
+                currentIndex = JE.currentSettings.selectedTextEffectPresetIndex;
+                // An unknown index renders as Auto (see JE.getSubtitleTextShadow), so highlight that.
+                if (!Number.isInteger(currentIndex) || !JE.subtitleTextEffectPresets[currentIndex]) currentIndex = 0;
+                const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
+                if (activeBox) {
+                    activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
+                }
             }
         };
 
         setupPresetHandlers('subtitle-style-presets-container', JE.subtitlePresets, 'style');
         setupPresetHandlers('font-size-presets-container', JE.fontSizePresets, 'font-size');
         setupPresetHandlers('font-family-presets-container', JE.fontFamilyPresets, 'font-family');
+        setupPresetHandlers('text-effect-presets-container', JE.subtitleTextEffectPresets, 'text-effect');
     };
 
 })(window.JellyfinEnhanced);

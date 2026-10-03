@@ -25,6 +25,7 @@
     /** Ordered list of {id, title, onMount, index}. Order determines data-index assignment. */
     var entries = [];
     var injectPending = false;
+    var appliedDeepLink = null;
     /** Whether the last ensureInjected() call found us off the home page -- logged only on change. */
     var wasOffHomePage = false;
 
@@ -36,8 +37,15 @@
 
     /** The shared parent of all native `.tabContent.pageTabContent` panels (Home's page root). */
     function getTabsRoot() {
-        var nativePanel = document.querySelector('.tabContent.pageTabContent[data-index="0"]');
-        return nativePanel ? nativePanel.parentElement : null;
+        // Jellyfin 10 can retain old Home pages while loading a replacement.
+        // Never attach to the first cached (hidden) page just because its IDs
+        // still exist in the document.
+        var panels = document.querySelectorAll('.tabContent.pageTabContent[data-index="0"]');
+        for (var i = panels.length - 1; i >= 0; i--) {
+            var root = panels[i].parentElement;
+            if (JE.helpers.isActiveTabContainer(root)) return root;
+        }
+        return null;
     }
 
     /**
@@ -106,18 +114,28 @@
                 console.log('🪼 Jellyfin Enhanced: [native-tabs] added tab button "' + entry.title + '" at data-index=' + entry.index);
             }
 
-            if (!document.getElementById('je-native-tab-panel-' + entry.id)) {
-                var panel = document.createElement('div');
+            var panel = document.getElementById('je-native-tab-panel-' + entry.id);
+            if (!panel) {
+                panel = document.createElement('div');
                 panel.id = 'je-native-tab-panel-' + entry.id;
                 panel.className = 'tabContent pageTabContent';
                 panel.setAttribute('data-index', String(entry.index));
                 root.appendChild(panel);
                 entry.onMount(panel);
                 console.log('🪼 Jellyfin Enhanced: [native-tabs] added tab panel "' + entry.title + '" at data-index=' + entry.index);
+            } else if (panel.parentElement !== root) {
+                panel.classList.remove('is-active');
+                root.appendChild(panel);
             }
-
-            ensureDiscoverable(entry);
         });
+
+        // Read all visibilities before acting on them, so the reads share one layout
+        // instead of each forcing one right after a panel mount.
+        entries.forEach(function (entry) {
+            var tabBtn = document.getElementById('je-native-tab-btn-' + entry.id);
+            if (tabBtn) isTabButtonVisible(tabBtn, entry.id);
+        });
+        entries.forEach(ensureDiscoverable);
 
         // The tab strip's ScrollerFactory (emby-tabs.js) caches each tab's
         // width/position at init time and never watches for new children --
@@ -176,11 +194,22 @@
      * visible (old/stable layout), so that layout doesn't get a redundant
      * second way to reach the same tab.
      */
+    // offsetParent forces layout; reuse a recent answer across mutation bursts.
+    var visibilityCache = {};
+    function isTabButtonVisible(btn, id) {
+        var cached = visibilityCache[id];
+        var now = Date.now();
+        if (cached && cached.btn === btn && now - cached.ts < 1000) return cached.visible;
+        var visible = btn.offsetParent !== null;
+        visibilityCache[id] = { btn: btn, ts: now, visible: visible };
+        return visible;
+    }
+
     function ensureDiscoverable(entry) {
         var btn = document.getElementById('je-native-tab-btn-' + entry.id);
         var linkId = 'je-native-tab-link-' + entry.id;
 
-        if (btn && btn.offsetParent !== null) {
+        if (btn && isTabButtonVisible(btn, entry.id)) {
             document.getElementById(linkId)?.remove();
             removeGroupIfEmpty();
             return;
@@ -190,6 +219,9 @@
 
         var headerRight = JE.helpers.getHeaderButtonTray?.();
         if (!headerRight) return;
+        // getHeaderButtonTray can reconnect the existing links after React
+        // replaces its toolbar, so repeat the guard before creating a link.
+        if (document.getElementById(linkId)) return;
 
         var group = getOrCreateGroup(headerRight);
         var separator = document.getElementById('je-native-tabs-separator');
@@ -220,16 +252,29 @@
         if (!entry) return;
 
         var btn = document.getElementById('je-native-tab-btn-' + entry.id);
+        var panel = document.getElementById('je-native-tab-panel-' + entry.id);
         var tabsElem = document.querySelector('[is="emby-tabs"]');
-        if (btn && tabsElem?.selectedIndex && tabsElem.selectedIndex() !== wantedIndex) {
+        var hash = window.location.hash;
+        var root = panel?.parentElement;
+        // Consume a deep link once per page/header. Reapplying it for every
+        // content mutation would undo a later click on Home or Favorites.
+        if (appliedDeepLink && appliedDeepLink.hash === hash && appliedDeepLink.root === root &&
+            appliedDeepLink.panel === panel && appliedDeepLink.tabs === tabsElem) return;
+        // A rebuilt Home page needs tabchange even if the persistent header
+        // already reports this index; its new panel has not been activated.
+        if (btn && panel && tabsElem?.selectedIndex &&
+            (tabsElem.selectedIndex() !== wantedIndex || !panel.classList.contains('is-active'))) {
             tabsElem.selectedIndex(wantedIndex);
+        }
+        if (panel?.classList.contains('is-active') && tabsElem?.selectedIndex?.() === wantedIndex) {
+            appliedDeepLink = { hash: hash, root: root, panel: panel, tabs: tabsElem };
         }
     }
 
     function scheduleInject() {
         if (injectPending) return;
         injectPending = true;
-        requestAnimationFrame(function () {
+        JE.core.dom.afterNextPaint(function () {
             injectPending = false;
             ensureInjected();
         });
@@ -257,9 +302,15 @@
         }
     };
 
-    JE.helpers.onBodyMutation('native-tabs', scheduleInject);
+    // A replacement Home root can arrive hidden and be revealed after the
+    // view event. Child mutations alone miss that final class-only transition.
+    JE.helpers.observeTabContainers('native-tabs', '.tabContent.pageTabContent[data-index="0"]', scheduleInject);
     // Re-inject on every navigation (hashchange, popstate AND pushState navs
     // the old raw hashchange listener missed).
-    JE.core.navigation.onNavigate(scheduleInject);
+    JE.core.navigation.onNavigate(function () {
+        appliedDeepLink = null;
+        scheduleInject();
+    });
+    JE.core.navigation.onViewPage(scheduleInject, { fetchItem: false });
 
 })(window.JellyfinEnhanced);

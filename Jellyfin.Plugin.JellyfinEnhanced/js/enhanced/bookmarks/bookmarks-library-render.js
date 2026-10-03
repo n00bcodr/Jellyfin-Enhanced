@@ -18,7 +18,6 @@
 
   const logPrefix = '🪼 Jellyfin Enhanced: Bookmarks Library:';
   let isRendering = false;
-  let lastRenderTs = 0;
   let lastMountedContainer = null;
 
   // The mounted-container guard suppresses re-renders while the same DOM
@@ -29,13 +28,13 @@
   // then force a fresh render once the new user's bookmarks are loaded.
   window.JellyfinEnhanced.session?.onUserChange('bookmarks-library-render', () => {
     lastMountedContainer = null;
-    lastRenderTs = 0;
   });
-  document.addEventListener('je:user-data-loaded', () => {
+  function invalidateBookmarks() {
     lastMountedContainer = null;
-    lastRenderTs = 0;
     renderIfSectionExists();
-  });
+  }
+  document.addEventListener('je:user-data-loaded', invalidateBookmarks);
+  document.addEventListener('je-bookmarks-updated', invalidateBookmarks);
 
   /**
    * Render when section exists or bookmarks updated
@@ -43,8 +42,6 @@
   function renderIfSectionExists() {
     // Prevent re-entrant renders triggered by our own DOM mutations
     if (isRendering) return;
-    const now = Date.now();
-    if (now - lastRenderTs < 150) return;
 
     const container = findActiveBookmarksContainer();
     if (!container) {
@@ -60,11 +57,24 @@
     if (shouldRender) {
       revealSection(container);
       isRendering = true;
-      renderBookmarksLibrary(container).finally(() => {
-        isRendering = false;
-        lastRenderTs = Date.now();
-      });
       lastMountedContainer = container;
+      let completed = false;
+      renderBookmarksLibrary(container).then(() => {
+        completed = true;
+      }).catch(error => {
+        console.error(`${logPrefix} Failed to render bookmarks:`, error);
+      }).finally(() => {
+        isRendering = false;
+        // A tab can be replaced or user data invalidated while poster requests
+        // are pending. Reconcile once more; the populated-container guard
+        // prevents our own DOM mutations from rendering it again.
+        // Custom Tabs can also clear the same marker during a pending render.
+        // Retry an emptied marker after success, but never spin on a failure.
+        if (lastMountedContainer !== container || findActiveBookmarksContainer() !== container ||
+            (completed && !container.hasChildNodes())) {
+          renderIfSectionExists();
+        }
+      });
     }
   }
 
@@ -78,14 +88,7 @@
     const all = document.querySelectorAll('.sections.bookmarks');
     for (let i = all.length - 1; i >= 0; i--) {
       const el = all[i];
-      // 1. Standard Jellyfin page structure
-      const page = el.closest('.page');
-      if (page && !page.classList.contains('hide')) return el;
-      // 2. Custom Tabs wraps content in .tabContent.is-active (no .page ancestor)
-      const tabContent = el.closest('.tabContent');
-      if (tabContent && tabContent.classList.contains('is-active')) return el;
-      // 3. Last resort: element is simply visible in the document
-      if (!page && !tabContent && el.offsetParent !== null) return el;
+      if (JE.helpers.isActiveTabContainer(el)) return el;
     }
     return null;
   }
@@ -101,18 +104,9 @@
       const e = rawEvent;
       if (!e) return;
       if (isRendering) return;
-      // CustomTabs provides a view element on e.detail.view
-      const view = e.detail?.view || document;
-      const container = view.querySelector?.('.sections.bookmarks') || findActiveBookmarksContainer();
-      if (container) {
-        revealSection(container);
-        isRendering = true;
-        renderBookmarksLibrary(container).finally(() => {
-          isRendering = false;
-          lastRenderTs = Date.now();
-        });
-        lastMountedContainer = container;
-      }
+      // Use the same active-container search as the mount observer. A cached,
+      // hidden page may be the first match in a document-level view event.
+      renderIfSectionExists();
     });
   }
 

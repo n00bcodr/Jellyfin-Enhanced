@@ -75,11 +75,7 @@
    * Returns null if no visible container exists -- never falls back to a
    * stale DOM-cached copy.
    *
-   * Tries three anchors in order so the mount works regardless of how the
-   * host plugin (Custom Tabs, Plugin Pages, etc.) wraps the content:
-   *  1. Nearest `.page` ancestor that doesn't have `.hide`  (standard Jellyfin)
-   *  2. Nearest `.tabContent` ancestor that has `.is-active`  (Custom Tabs fallback)
-   *  3. Element is itself visible (offsetParent !== null)     (last resort)
+   * Requires both the page and its enclosing tab to be active.
    *
    * @returns {HTMLElement|null}
    */
@@ -87,14 +83,7 @@
     var all = document.querySelectorAll('.jellyfinenhanced.requests');
     for (var i = all.length - 1; i >= 0; i--) {
       var el = all[i];
-      // 1. Standard Jellyfin page structure
-      var page = el.closest('.page');
-      if (page && !page.classList.contains('hide')) return el;
-      // 2. Custom Tabs wraps content in .tabContent.is-active (no .page ancestor)
-      var tabContent = el.closest('.tabContent');
-      if (tabContent && tabContent.classList.contains('is-active')) return el;
-      // 3. Last resort: element is simply visible in the document
-      if (!page && !tabContent && el.offsetParent !== null) return el;
+      if (window.JellyfinEnhanced.helpers.isActiveTabContainer(el)) return el;
     }
     return null;
   }
@@ -185,16 +174,7 @@
     // .mainAnimatedPages when navigating to the admin dashboard — an observer
     // bound to the old element would become orphaned after returning to home
     // (issue 536). Routes to the shared multiplexed body observer.
-    var mountPending = false;
-    JE.helpers.createObserver('arr-requests-custom-tab', function () {
-      if (!mountPending) {
-        mountPending = true;
-        requestAnimationFrame(function () {
-          mountPending = false;
-          tryMount();
-        });
-      }
-    }, document.body, { childList: true, subtree: true });
+    JE.helpers.observeTabContainers('arr-requests-custom-tab', '.jellyfinenhanced.requests', tryMount);
   }
 
   waitForDownloads(function (JE) {

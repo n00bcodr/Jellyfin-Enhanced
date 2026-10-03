@@ -170,7 +170,8 @@
                 visibility: hidden !important;
             }
 
-            .pause-screen-active .headerBackButton {
+            .pause-screen-active .headerBackButton,
+            .pause-screen-active .skinHeader.osdHeader .videoOsd-appBar > button:first-child {
                 visibility: visible !important;
             }
 

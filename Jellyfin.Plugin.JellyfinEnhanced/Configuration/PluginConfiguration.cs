@@ -32,6 +32,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             MaintenanceModeNotificationMessage = "Server undergoing maintenance.";
             MaintenanceModeAction = "disable_accounts";
             MaintenanceModeAffectedUsers = "all";
+            MaintenanceModeDurationMinutes = 0;
+            MaintenanceModeRemindOnPlayback = false;
+            MaintenanceScheduleEnabled = false;
+            MaintenanceScheduleStart = "00:00";
+            MaintenanceScheduleEnd = "08:00";
+            MaintenanceScheduleMessage = "The library is updating; slowdowns are normal. Time remaining: {countdown}";
+            MaintenanceScheduleNotificationMessage = "The library is updating; slowdowns are normal.";
+            MaintenanceScheduleAction = "none";
             SplashScreenImageUrl = "/web/assets/img/banner-light.png";
             DevMode = false;
 
@@ -58,6 +66,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RandomIncludeMovies = true;
             RandomIncludeShows = true;
             RandomUnwatchedOnly = false;
+            RandomScopeCurrentContainer = false;
             ShowWatchProgress = false;
             WatchProgressDefaultMode = "percentage";
             WatchProgressTimeFormat = "hours";
@@ -84,6 +93,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ShowUserRatingOnPosters = false;
             ShowUserRatingDash = true;
             PauseScreenEnabled = true;
+            ShowPlaybackRatingBadge = false;
             QualityTagsEnabled = false;
             ShowResolutionTag = true;
             ShowSourceTag = true;
@@ -100,7 +110,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             GenreTagsEnabled = false;
             LanguageTagsEnabled = false;
             RatingTagsEnabled = false;
+            AgeRatingTagsEnabled = false;
             PeopleTagsEnabled = false;
+            NativePosterTagsEnabled = false;
+            NativePosterTagsWebClientNames = string.Empty;
             TagsCacheTtlDays = 30;
             DisableTagsOnSearchPage = false;
             TagsHideOnHover = false;
@@ -111,12 +124,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             LanguageTagsPosition = "bottom-left";
             LanguageTagsPriority = string.Empty;
             LanguageTagsPriorityStrict = false;
+            QualityTagsPreferredAudioLanguage = string.Empty;
+            QualityTagsAudioLanguageFromUser = false;
             RatingTagsPosition = "bottom-right";
+            RatingTagsOnMovies = true;
+            RatingTagsOnSeries = true;
+            RatingTagsOnSeasons = true;
+            RatingTagsOnEpisodes = true;
+            RatingTagsOnContinueWatching = true;
+            RatingTagsOnNextUp = true;
+            AgeRatingTagsPosition = "bottom-right";
             ShowRatingInPlayer = true;
             DisableAllShortcuts = false;
             DefaultSubtitleStyle = 0;
             DefaultSubtitleSize = 2;
             DefaultSubtitleFont = 0;
+            DefaultSubtitleTextEffect = 0;
             DisableCustomSubtitleStyles = false;
             DefaultLanguage = string.Empty;
             Shortcuts = new List<Shortcut>
@@ -165,6 +188,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ShowElsewhereOnJellyseerr = false;
             JellyseerrUseMoreInfoModal = true;
             JellyseerrAvailablePosterLinksToJellyfin = false;
+            JellyseerrSearchExcludeLibraryItems = false;
             JellyseerrUrls = "";
             JellyseerrApiKey = "";
             JellyseerrUrlMappings = "";
@@ -364,6 +388,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerBlurArtwork = false;
             SpoilerAutoEnableOnFirstPlay = false;
             SpoilerAutoEnableOnSeerrRequest = false;
+            SpoilerAutoEnableOnLibraryAdd = false;
+            // Auto-enable scope defaults to "everything" so existing installs
+            // keep today's first-play / Seerr-request behaviour unchanged.
+            SpoilerAutoEnableSeries = true;
+            SpoilerAutoEnableMovies = true;
+            SpoilerAutoEnableLibraryIds = "";
             SpoilerBlurStrictRefresh = false;
             SpoilerKeepMoviePosters = true;
             SpoilerOverviewPlaceholder = "Spoiler Guard activated";
@@ -418,6 +448,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// AnalyticsReportingService.GetStringSettings.
         /// </summary>
         public string MaintenanceModeAffectedUsers { get; set; } = "all";
+        /// <summary>Manual mode auto-disables after this many minutes; 0 = until turned off.</summary>
+        public int MaintenanceModeDurationMinutes { get; set; }
+        /// <summary>Re-send the notification (with time remaining) to affected users on every playback start.</summary>
+        public bool MaintenanceModeRemindOnPlayback { get; set; }
+        /// <summary>Daily window that turns maintenance mode on/off automatically (MaintenanceScheduleService).</summary>
+        public bool MaintenanceScheduleEnabled { get; set; }
+        /// <summary>"HH:mm", server local time.</summary>
+        public string MaintenanceScheduleStart { get; set; } = "00:00";
+        /// <summary>"HH:mm", server local time; earlier than the start means the window crosses midnight.</summary>
+        public string MaintenanceScheduleEnd { get; set; } = "08:00";
+        /// <summary>Banner message used while a scheduled window is active.</summary>
+        public string MaintenanceScheduleMessage { get; set; } = string.Empty;
+        /// <summary>Popup sent to active sessions when a scheduled window starts.</summary>
+        public string MaintenanceScheduleNotificationMessage { get; set; } = string.Empty;
+        /// <summary>"none" | "disable_accounts" | "disable_remote" | "both", applied during the scheduled window.</summary>
+        [AnalyticsInclude]
+        public string MaintenanceScheduleAction { get; set; } = "none";
 
         // Jellyfin Enhanced Settings
         public int ToastDuration { get; set; }
@@ -460,6 +507,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RandomIncludeMovies { get; set; }
         public bool RandomIncludeShows { get; set; }
         public bool RandomUnwatchedOnly { get; set; }
+        public bool RandomScopeCurrentContainer { get; set; }
         public bool ShowWatchProgress { get; set; }
         public string WatchProgressDefaultMode { get; set; }
         public string WatchProgressTimeFormat { get; set; }
@@ -532,6 +580,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ShowUserRatingDash { get; set; } = true;
         public List<Shortcut> Shortcuts { get; set; }
         public bool PauseScreenEnabled { get; set; }
+        public bool ShowPlaybackRatingBadge { get; set; }
         public int PauseScreenDelaySeconds { get; set; } = 5;
         public bool QualityTagsEnabled { get; set; }
         public bool ShowResolutionTag { get; set; } = true;
@@ -548,7 +597,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int AudioInfoTagOrder { get; set; } = 6;
         public bool LanguageTagsEnabled { get; set; }
         public bool RatingTagsEnabled { get; set; }
+        public bool AgeRatingTagsEnabled { get; set; }
         public bool PeopleTagsEnabled { get; set; }
+        /// <summary>Allows experimental poster tags drawn into poster images for native clients that don't run the web overlays.</summary>
+        public bool NativePosterTagsEnabled { get; set; }
+        /// <summary>
+        /// Extra Jellyfin client names (one per line or comma separated) that already run the web overlays and must
+        /// get original posters, on top of the built-in web client list. Admin-only; never exposed in public configuration.
+        /// Deliberately NOT [AnalyticsInclude] (free text): analytics shares a sanitized
+        /// derivation instead, see AnalyticsReportingService.GetStringSettings.
+        /// </summary>
+        public string NativePosterTagsWebClientNames { get; set; }
         public int TagsCacheTtlDays { get; set; }
         public bool DisableTagsOnSearchPage { get; set; }
         public bool TagsHideOnHover { get; set; }
@@ -558,6 +617,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int DefaultSubtitleStyle { get; set; }
         public int DefaultSubtitleSize { get; set; }
         public int DefaultSubtitleFont { get; set; }
+        public int DefaultSubtitleTextEffect { get; set; }
         public bool DisableCustomSubtitleStyles { get; set; }
         [AnalyticsInclude]
         public string QualityTagsPosition { get; set; } = "top-left";
@@ -587,8 +647,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// is empty.
         /// </summary>
         public bool LanguageTagsPriorityStrict { get; set; }
+        /// <summary>
+        /// Language whose audio tracks decide the sound tag (Atmos, DTS, 5.1, ...)
+        /// on poster cards, as an ISO 639 code (de, deu, pt-BR). Empty (default)
+        /// judges every track, i.e. the best track overall. Users can override it
+        /// in their own settings.
+        /// </summary>
+        public string QualityTagsPreferredAudioLanguage { get; set; } = string.Empty;
+        /// <summary>
+        /// When on, a user's own Jellyfin audio language preference (Settings →
+        /// Playback → Preferred audio language) is used instead of
+        /// <see cref="QualityTagsPreferredAudioLanguage"/>; users without one keep
+        /// the fixed language.
+        /// </summary>
+        public bool QualityTagsAudioLanguageFromUser { get; set; }
         [AnalyticsInclude]
         public string RatingTagsPosition { get; set; } = "bottom-right";
+        // Where rating tags are allowed to render. The item-type switches gate
+        // cards by their Jellyfin type; the two home-row switches additionally
+        // gate any card shown in the Continue Watching / Next Up rows. All
+        // default to true so existing installs render exactly as before.
+        public bool RatingTagsOnMovies { get; set; } = true;
+        public bool RatingTagsOnSeries { get; set; } = true;
+        public bool RatingTagsOnSeasons { get; set; } = true;
+        public bool RatingTagsOnEpisodes { get; set; } = true;
+        public bool RatingTagsOnContinueWatching { get; set; } = true;
+        public bool RatingTagsOnNextUp { get; set; } = true;
+        [AnalyticsInclude]
+        public string AgeRatingTagsPosition { get; set; } = "bottom-right";
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool GenreTagsEnabled { get; set; }
         public string DefaultLanguage { get; set; }
@@ -596,6 +682,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Seerr Search Settings
         public bool JellyseerrEnabled { get; set; }
         public bool JellyseerrShowSearchResults { get; set; }
+        public bool JellyseerrSearchExcludeLibraryItems { get; set; } = false;
         public bool JellyseerrShowReportButton { get; set; }
         public bool JellyseerrShowIssueIndicator { get; set; }
         public bool JellyseerrEnable4KRequests { get; set; }
@@ -945,6 +1032,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // controls only the auto-on-request path — manual opt-in from the Seerr
         // more-info modal stays available (gated only by SpoilerBlurEnabled).
         public bool SpoilerAutoEnableOnSeerrRequest { get; set; } = false;
+        // When true, every new Series/Movie that lands in the library (any
+        // source: scan, Seerr, manual copy) is added to the Spoiler Guard list
+        // of every user who can see its library — before anyone presses play.
+        // SpoilerLibraryAddAutoEnabler batches the ItemAdded burst of a scan
+        // into one file write per user.
+        public bool SpoilerAutoEnableOnLibraryAdd { get; set; } = false;
+        // Scope shared by all three auto-enable modes (first play, Seerr
+        // request, library add): which content types qualify, and an optional
+        // library allow-list (comma-separated library ids; empty = every
+        // library). The library filter can't apply to a Seerr request (the
+        // title isn't in a library yet). Defaults = everything, so existing
+        // installs keep their current auto-enable behaviour.
+        public bool SpoilerAutoEnableSeries { get; set; } = true;
+        public bool SpoilerAutoEnableMovies { get; set; } = true;
+        public string SpoilerAutoEnableLibraryIds { get; set; } = "";
         // True: toggling Spoiler Guard also fires a full page reload so DTO-derived
         // text (Overview, titles, ratings) updates immediately. False (default):
         // only the in-place image-URL refresh runs — image bytes flip at once but

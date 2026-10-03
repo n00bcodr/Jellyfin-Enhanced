@@ -95,8 +95,9 @@
 
         ctx.removeExistingOverlay(container);
 
-        // Ensure container is positioned (avoids forced reflow from getComputedStyle)
-        container.style.position = 'relative';
+        // Ensure container is positioned (avoids forced reflow from getComputedStyle,
+        // and a style write per card when it already is)
+        if (container.style.position !== 'relative') container.style.position = 'relative';
 
         const genreContainer = document.createElement('div');
         genreContainer.className = containerClass;
@@ -304,16 +305,11 @@
     };
 
     JE.initializeGenreTags = function() {
-        // Material Symbols Outlined font, bundled with the plugin (#830)
+        // Material Symbols Outlined font, bundled with the plugin (#830); the
+        // @font-face is declared once in enhanced/ui-styles.js.
         JE.core.ui.injectCss('mat-sym', `
-            @font-face {
-                font-family: 'Material Symbols Outlined';
-                font-style: normal;
-                font-weight: 400;
-                src: url(${JE.cdn.font('materialsymbolsoutlined.woff2')}) format('woff2');
-            }
             .material-symbols-outlined {
-                font-family: 'Material Symbols Outlined';
+                font-family: 'JE Material Symbols Outlined';
                 font-weight: normal;
                 font-style: normal;
                 font-size: 24px;

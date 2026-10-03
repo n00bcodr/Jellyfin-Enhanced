@@ -48,12 +48,12 @@
             .jellyseerr-status-badge.status-deleted { background-color: rgba(220, 38, 38, 0.78); border-color: rgba(248, 113, 113, 0.6); }
             @keyframes jellyseerr-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
             .jellyseerr-status-badge.status-processing svg { animation: jellyseerr-spin 1s linear infinite; }
-            .jellyseerr-media-badge { position: absolute; top: 8px; left: 8px; z-index: 100; color: #fff; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.2); font-size: 1em; font-weight: 500; text-transform: uppercase; letter-spacing: 1.5px; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); box-shadow: 0 4px 4px -1px rgba(0,0,0,0.1), 0 2px 2px -2px rgba(0,0,0,0.1); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+            .jellyseerr-media-badge { position: absolute; top: 8px; left: 8px; z-index: 100; color: #fff; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.2); font-size: 1em; font-weight: 500; text-transform: uppercase; letter-spacing: 1.5px; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); box-shadow: 0 4px 4px -1px rgba(0,0,0,0.1), 0 2px 2px -2px rgba(0,0,0,0.1); }
             .layout-mobile .jellyseerr-media-badge { font-size: 0.8em !important; }
             .jellyseerr-media-badge-movie { background-color: rgba(59, 130, 246, .9); box-shadow: 0 0 0 1px rgba(59,130,246,.35), 0 8px 24px rgba(59,130,246,.25); }
             .jellyseerr-media-badge-series { background-color: rgba(243, 51, 214, .9); box-shadow: 0 0 0 1px rgba(236,72,153,.35), 0 8px 24px rgba(236,72,153,.25); }
             .jellyseerr-media-badge-collection { background-color: rgba(16, 185, 129, .9); box-shadow: 0 0 0 1px rgba(16,185,129,.35), 0 8px 24px rgba(16,185,129,.25); }
-            .jellyseerr-collection-badge { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 1000; color: #fff; padding: 6px 16px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.2); font-size: 0.8em; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; text-transform: none; letter-spacing: .25px; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); background-color: rgba(16, 185, 129, .85); box-shadow: 0 0 0 1px rgba(16,185,129,.35), 0 8px 24px rgba(16,185,129,.25); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); cursor: pointer; transition: all 0.2s ease; max-width: 85%; pointer-events: auto; }
+            .jellyseerr-collection-badge { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 1000; color: #fff; padding: 6px 16px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.2); font-size: 0.8em; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; text-transform: none; letter-spacing: .25px; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); background-color: rgba(16, 185, 129, .85); box-shadow: 0 0 0 1px rgba(16,185,129,.35), 0 8px 24px rgba(16,185,129,.25); cursor: pointer; transition: all 0.2s ease; max-width: 85%; pointer-events: auto; }
             .cardImageContainer:has(.jellyseerr-elsewhere-icons:not(.has-icons)) .jellyseerr-collection-badge { bottom: 10px; }
             .jellyseerr-collection-badge:hover { transform: translateX(-50%) translateY(-2px); box-shadow: 0 0 0 1px rgba(16,185,129,.5), 0 12px 32px rgba(16,185,129,.35); }
             .jellyseerr-collection-badge .material-icons { font-size: 1.1em; flex-shrink: 0; }
@@ -71,8 +71,14 @@
 
             .jellyseerr-overview .title { font-weight: 600; display: block; margin-bottom: .35em; }
             .jellyseerr-elsewhere-icons { display: none; position: absolute; bottom: 0; left:0; right:0; z-index: 3; justify-content: center; gap: 0.6em; pointer-events: none; background: rgba(0,0,0,0.8); border-top-left-radius: 1.5em; border-top-right-radius: 1.5em; padding: 0.5em 0 0.2em 0; }
-            .jellyseerr-elsewhere-icons.has-icons {display: flex;}
-            .jellyseerr-elsewhere-icons img { width: 1.8em; border-radius: 0.7em; background-color: rgba(255,255,255,0.5); padding: 2px;}
+            .jellyseerr-elsewhere-icons.has-icons {display: flex; animation: jellyseerr-icons-fade-in .25s ease-out;}
+            /* Keyframes rather than a transition: the strip goes from display:none to flex, which a transition cannot animate. */
+            @keyframes jellyseerr-icons-fade-in { from { opacity: 0; } to { opacity: 1; } }
+            @media (prefers-reduced-motion: reduce) {
+                .jellyseerr-elsewhere-icons.has-icons { animation: none; }
+                .jellyseerr-collection-badge { transition: none; }
+            }
+            .jellyseerr-elsewhere-icons img { width: 1.8em; height: auto; border-radius: 0.7em; background-color: rgba(255,255,255,0.5); padding: 2px;}
             .jellyseerr-meta { display: flex; justify-content: center; align-items: center; gap: 1em; padding: 0 .75em; }
             .jellyseerr-rating { display: flex; align-items: center; gap: .3em; color: #bdbdbd; }
             .cardText-first > a.jellyseerr-more-info-link { padding: 0 !important; margin: 0 !important; color: inherit; text-decoration: none; }
@@ -364,6 +370,23 @@
             .jellyseerr-modal-button-primary:hover:not(:disabled) { background: linear-gradient(135deg, #4338ca, #6d28d9); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4); }
             .jellyseerr-modal-button-secondary { background: rgba(71, 85, 105, 0.8); color: #e2e8f0; border: 1px solid rgba(148, 163, 184, 0.2); }
             .jellyseerr-modal-button-secondary:hover { background: rgba(71, 85, 105, 1); border-color: rgba(148, 163, 184, 0.3); }
+
+            /* TVDB match block — shown at the top of the season modal when TMDB has no TVDB id for the show (#653). */
+            .jellyseerr-tvdb-match { display: grid; gap: 12px; margin-bottom: 20px; padding: 16px; background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(251, 191, 36, 0.35); border-radius: 12px; }
+            .jellyseerr-tvdb-match-notice { color: #fcd34d; font-size: 0.9rem; line-height: 1.4; }
+            /* Capped so the season list below stays within reach when several candidates come back. */
+            .jellyseerr-tvdb-match-results { display: grid; gap: 6px; max-height: 240px; overflow-y: auto; }
+            .jellyseerr-tvdb-match-hint { color: #94a3b8; font-size: 0.85rem; line-height: 1.4; }
+            .jellyseerr-tvdb-match-row { display: grid; grid-template-columns: 46px 1fr; align-items: center; gap: 12px; padding: 10px 12px; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(51, 65, 85, 0.3); border-radius: 8px; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: all 0.2s ease; }
+            .jellyseerr-tvdb-match-row:hover { background: rgba(30, 41, 59, 0.7); border-color: rgba(59, 130, 246, 0.3); }
+            .jellyseerr-tvdb-match-row.selected { background: rgba(79, 70, 229, 0.28); border-color: rgba(129, 140, 248, 0.9); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.35); }
+            .jellyseerr-tvdb-match-row:focus-visible { outline: 2px solid rgba(59, 130, 246, 0.8); outline-offset: 2px; }
+            .jellyseerr-tvdb-match-row img { width: 100%; height: 69px; object-fit: cover; border-radius: 4px; background: rgba(15, 23, 42, 0.6); }
+            .jellyseerr-tvdb-match-row .title { font-weight: 600; color: #e2e8f0; font-size: 0.95rem; }
+            .jellyseerr-tvdb-match-row .meta { font-size: 0.8rem; color: #94a3b8; }
+            .jellyseerr-tvdb-match-row .overview { font-size: 0.8rem; color: #94a3b8; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+            .jellyseerr-tvdb-match .jellyseerr-form-group input[type="number"] { box-sizing: border-box; -moz-appearance: textfield; }
+            .jellyseerr-tvdb-match .jellyseerr-form-group input::-webkit-outer-spin-button, .jellyseerr-tvdb-match .jellyseerr-form-group input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
             /* Quota chip — shown above request modals when a per-user limit applies. */
             .jellyseerr-quota-chip { padding: 12px 16px; margin-bottom: 16px; background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 10px; color: #cbd5e1; font-size: 0.9rem; font-weight: 500; line-height: 1.4; display: flex; flex-direction: column; gap: 4px; }

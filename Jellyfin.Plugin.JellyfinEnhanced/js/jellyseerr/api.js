@@ -330,6 +330,19 @@
     };
 
     /**
+     * Looks up Sonarr candidates for a TV show that has no TVDB id on TMDB (#653).
+     * Seerr searches its first Sonarr instance by the show's title; the caller
+     * lets the user pick one so the request can carry an explicit `tvdbId`.
+     * Rejects when Seerr has no Sonarr configured (404) or the lookup fails.
+     * @param {number} tmdbId - The TMDB ID of the TV show.
+     * @returns {Promise<Array<{tvdbId: number, title: string, year?: number, overview?: string, remotePoster?: string}>>}
+     */
+    api.fetchSonarrLookup = async function(tmdbId) {
+        const results = await get(`/sonarr/lookup/${tmdbId}`);
+        return Array.isArray(results) ? results : [];
+    };
+
+    /**
      * Fetches season detail with episodes from Seerr.
      * @param {number} tmdbId - The TMDB ID of the TV show.
      * @param {number} seasonNumber - The season number.
@@ -527,9 +540,10 @@
      * @param {object} [advancedSettings={}] - Optional advanced settings (server, quality, folder).
      * @param {boolean} [is4k=false] - Whether this is a 4K request.
      * @param {object} [mediaData=null] - Optional media data for override rule evaluation.
+     * @param {number|null} [tvdbId=null] - Manually matched TVDB id for TV shows TMDB has none for (#653).
      * @returns {Promise<any>}
      */
-    api.requestMedia = async function(tmdbId, mediaType, advancedSettings = {}, is4k = false, mediaData = null) {
+    api.requestMedia = async function(tmdbId, mediaType, advancedSettings = {}, is4k = false, mediaData = null, tvdbId = null) {
         // Apply override rules if no advanced settings are provided and media data is available
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, mediaType, is4k);
@@ -544,6 +558,7 @@
             mediaId: parseInt(tmdbId),
             ...advancedSettings,
             ...(mediaType === 'tv' ? { seasons: 'all' } : {}),
+            ...(mediaType === 'tv' && tvdbId ? { tvdbId } : {}),
             ...(is4k ? { is4k: true } : {})
         };
 
@@ -572,9 +587,12 @@
      * @param {object} [advancedSettings={}] - Optional advanced settings (server, quality, folder).
      * @param {object} [mediaData=null] - Optional media data for override rule evaluation.
      * @param {boolean} [is4k=false] - Whether this is a 4K request.
+     * @param {number|null} [tvdbId=null] - Manually matched TVDB id for shows TMDB has none for (#653).
+     *   Passed separately from advancedSettings so a manual match does not
+     *   disable override-rule evaluation.
      * @returns {Promise<any>}
      */
-    api.requestTvSeasons = async function(tmdbId, seasonNumbers, advancedSettings = {}, mediaData = null, is4k = false) {
+    api.requestTvSeasons = async function(tmdbId, seasonNumbers, advancedSettings = {}, mediaData = null, is4k = false, tvdbId = null) {
         // Apply override rules if no advanced settings are provided and media data is available
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, 'tv', is4k);
@@ -589,6 +607,7 @@
             mediaId: parseInt(tmdbId),
             seasons: seasonNumbers,
             ...advancedSettings,
+            ...(tvdbId ? { tvdbId } : {}),
             ...(is4k ? { is4k: true } : {})
         };
         const result = await post('/request', body);

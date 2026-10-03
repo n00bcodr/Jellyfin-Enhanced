@@ -430,19 +430,25 @@
     }
 
     let activeStreamsPollTimer = null;
+    let pollGeneration = 0;
     function stopActiveStreamsPolling() {
+        // Invalidate pending initial loads too: they must not restart a poller
+        // after the user leaves this tab or a newer render replaces it.
+        pollGeneration++;
         if (activeStreamsPollTimer) {
             clearInterval(activeStreamsPollTimer);
             activeStreamsPollTimer = null;
         }
     }
 
-    async function refreshActiveStreams(section, body) {
+    async function refreshActiveStreams(section, body, generation) {
         try {
             const sessions = await JE.core.api.plugin('/active-streams/sessions');
+            if (generation !== pollGeneration || !section.isConnected) return;
             const active = (sessions || []).filter(s => s.NowPlayingItem);
             fillSection(body, active, renderSessionRow, JE.t('active_streams_none') || 'No Active Streams');
         } catch (e) {
+            if (generation !== pollGeneration) return;
             // Feature disabled or this viewer isn't allowed to see it -- drop
             // the whole section rather than show an error for something that
             // isn't actually broken.
@@ -460,6 +466,7 @@
     async function renderForCustomTab(host) {
         applyThemeVars();
         stopActiveStreamsPolling();
+        const generation = pollGeneration;
         host.textContent = '';
         const container = document.createElement('div');
         container.className = 'je-activity-feed';
@@ -506,7 +513,7 @@
         async function loadAll() {
             const tasks = [];
             if (activeSection) {
-                tasks.push(refreshActiveStreams(activeSection.section, activeSection.body));
+                tasks.push(refreshActiveStreams(activeSection.section, activeSection.body, generation));
             }
 
             if (watch || reviews) {
@@ -549,10 +556,13 @@
 
         await loadAll();
 
+        if (generation !== pollGeneration || !container.isConnected) return;
         if (activeSection) {
             activeStreamsPollTimer = setInterval(() => {
+                if (generation !== pollGeneration) return;
+                if (!container.isConnected) { stopActiveStreamsPolling(); return; }
                 if (document.visibilityState === 'hidden') return;
-                refreshActiveStreams(activeSection.section, activeSection.body);
+                refreshActiveStreams(activeSection.section, activeSection.body, generation);
             }, ACTIVE_STREAMS_POLL_MS);
         }
     }

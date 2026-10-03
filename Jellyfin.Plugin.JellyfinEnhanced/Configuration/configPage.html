@@ -8,7 +8,11 @@
     <script>
         var link = document.createElement('link');
         link.rel = 'stylesheet';
-        link.href = ApiClient.getUrl('/JellyfinEnhanced/Configuration/configPage.css');
+        // The stylesheet is served with long-lived immutable caching, so version the URL
+        // (same key as the injected client script) to make each release fetch a fresh copy.
+        var jeScriptTag = document.querySelector('script[plugin="Jellyfin Enhanced"]');
+        var jeCssVersion = jeScriptTag && jeScriptTag.getAttribute('version');
+        link.href = ApiClient.getUrl('/JellyfinEnhanced/Configuration/configPage.css', jeCssVersion ? { v: jeCssVersion } : undefined);
         document.head.appendChild(link);
 
         // Local CDN route helper. Every external CDN asset this admin page used to load
@@ -18,15 +22,16 @@
         window.jeCdnUrl = function (subpath) {
             return ApiClient.getUrl('/JellyfinEnhanced/cdn/' + subpath);
         };
-        // Inject the Material Symbols Rounded @font-face pointing at the local gfont route
-        // (replaces the former fonts.gstatic.com @font-face).
+        // Inject the Material Symbols Rounded @font-face from the plugin's bundled font route
+        // (JE's icon subset, under the JE-private family name so a theme's own
+        // 'Material Symbols Rounded' declaration is never shadowed by it).
         var jeFontStyle = document.createElement('style');
-        jeFontStyle.textContent = "@font-face{font-family:'Material Symbols Rounded';font-style:normal;font-weight:100 700;font-display:block;src:url(" + jeCdnUrl('gfont/s/materialsymbolsrounded/v258/syl0-zNym6YjUruM-QrEh7-nyTnjDwKNJ_190FjpZIvDmUSVOK7BDB_Qb9vUSzq3wzLK-P0J-V_Zs-QtQth3-jOcbTCVpeRL2w5rwZu2rIelXxc.woff2') + ") format('woff2');}";
+        jeFontStyle.textContent = "@font-face{font-family:'JE Material Symbols Rounded';font-style:normal;font-weight:100 700;font-display:block;src:url(" + ApiClient.getUrl('/JellyfinEnhanced/fonts/materialsymbolsrounded-subset.woff2', jeCssVersion ? { v: jeCssVersion } : undefined) + ") format('woff2');}";
         document.head.appendChild(jeFontStyle);
     </script>
     <style>
         .material-symbols-rounded {
-            font-family: 'Material Symbols Rounded';
+            font-family: 'JE Material Symbols Rounded';
             font-weight: normal;
             font-style: normal;
             line-height: 1;
@@ -227,41 +232,56 @@
                                 </div>
                             </div>
                             <div class="je-setting-description" data-desc-for="qualityTagsEnabled">
-                                <div class="fieldDescription je-field-desc-sm">This feature is a slightly modified version of the original script by <a class="sectionTitle" href="https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/" target="_blank">BobHasNoSoul</a></div>
+                                <div class="fieldDescription je-field-desc-sm">Resolution, source, HDR, format and sound badges on poster cards. A slightly modified version of the original script by <a class="sectionTitle" href="https://github.com/BobHasNoSoul/Jellyfin-Qualitytags/" target="_blank">BobHasNoSoul</a>.</div>
                             </div>
-                            <details id="qualityCategoriesAdminDetails" class="je-details-section">
-                                <summary>Configure tag categories</summary>
-                                <div id="qualityCategoriesAdmin" class="je-details-body">
-                                    <div class="fieldDescription je-field-desc-sm">Pick which categories of quality tags should appear, and the order they stack within the chosen corner. Use the <i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_upward</i> / <i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_downward</i> buttons to reorder.</div>
-                                    <div class="je-quality-cat-admin-row" data-cat-key="ShowResolutionTag" data-order-key="ResolutionTagOrder" data-default-order="1">
-                                        <div class="checkboxContainer"><label><input id="showResolutionTag" is="emby-checkbox" type="checkbox"/><span>Show resolution (4K, 1080p, ...)</span></label></div>
-                                        <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
-                                        <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                            <details id="qualityCategoriesAdminDetails" class="je-details-section" style="margin-left: 20px;">
+                                <summary>Categories and sound language</summary>
+                                <div class="je-details-body">
+                                    <div id="qualityCategoriesAdmin">
+                                        <div class="fieldDescription je-field-desc-sm">Pick which categories of quality tags should appear, and the order they stack within the chosen corner. Use the <i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_upward</i> / <i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_downward</i> buttons to reorder.</div>
+                                        <div class="je-quality-cat-admin-row" data-cat-key="ShowResolutionTag" data-order-key="ResolutionTagOrder" data-default-order="1">
+                                            <div class="checkboxContainer"><label><input id="showResolutionTag" is="emby-checkbox" type="checkbox"/><span>Show resolution (4K, 1080p, ...)</span></label></div>
+                                            <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
+                                            <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                        </div>
+                                        <div class="je-quality-cat-admin-row" data-cat-key="ShowSourceTag" data-order-key="SourceTagOrder" data-default-order="2">
+                                            <div class="checkboxContainer"><label><input id="showSourceTag" is="emby-checkbox" type="checkbox"/><span>Show source (BluRay, DVD, HDTV, VHS, ...)</span></label></div>
+                                            <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
+                                            <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                        </div>
+                                        <div class="je-quality-cat-admin-row" data-cat-key="ShowDynamicRangeTag" data-order-key="DynamicRangeTagOrder" data-default-order="3">
+                                            <div class="checkboxContainer"><label><input id="showDynamicRangeTag" is="emby-checkbox" type="checkbox"/><span>Show HDR (HDR10+, Dolby Vision)</span></label></div>
+                                            <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
+                                            <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                        </div>
+                                        <div class="je-quality-cat-admin-row" data-cat-key="ShowSpecialFormatTag" data-order-key="SpecialFormatTagOrder" data-default-order="4">
+                                            <div class="checkboxContainer"><label><input id="showSpecialFormatTag" is="emby-checkbox" type="checkbox"/><span>Show special format (IMAX, 3D)</span></label></div>
+                                            <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
+                                            <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                        </div>
+                                        <div class="je-quality-cat-admin-row" data-cat-key="ShowVideoCodecTag" data-order-key="VideoCodecTagOrder" data-default-order="5">
+                                            <div class="checkboxContainer"><label><input id="showVideoCodecTag" is="emby-checkbox" type="checkbox"/><span>Show video format (HEVC, H264, AV1, ...)</span></label></div>
+                                            <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
+                                            <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                        </div>
+                                        <div class="je-quality-cat-admin-row" data-cat-key="ShowAudioInfoTag" data-order-key="AudioInfoTagOrder" data-default-order="6">
+                                            <div class="checkboxContainer"><label><input id="showAudioInfoTag" is="emby-checkbox" type="checkbox"/><span>Show sound (Atmos, DTS, 5.1, 7.1, ...)</span></label></div>
+                                            <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
+                                            <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                        </div>
                                     </div>
-                                    <div class="je-quality-cat-admin-row" data-cat-key="ShowSourceTag" data-order-key="SourceTagOrder" data-default-order="2">
-                                        <div class="checkboxContainer"><label><input id="showSourceTag" is="emby-checkbox" type="checkbox"/><span>Show source (BluRay, DVD, HDTV, VHS, ...)</span></label></div>
-                                        <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
-                                        <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="qualityTagsPreferredAudioLanguage">Preferred Audio Language for Sound Tags</label>
+                                        <select is="emby-select" id="qualityTagsPreferredAudioLanguage" name="qualityTagsPreferredAudioLanguage" class="emby-select">
+                                            <option value="">No preference (best track overall)</option>
+                                        </select>
                                     </div>
-                                    <div class="je-quality-cat-admin-row" data-cat-key="ShowDynamicRangeTag" data-order-key="DynamicRangeTagOrder" data-default-order="3">
-                                        <div class="checkboxContainer"><label><input id="showDynamicRangeTag" is="emby-checkbox" type="checkbox"/><span>Show HDR (HDR10+, Dolby Vision)</span></label></div>
-                                        <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
-                                        <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                    <div class="je-setting-description" data-desc-for="qualityTagsPreferredAudioLanguage">
+                                        <div class="fieldDescription">The sound tag (Atmos, DTS, 5.1, ...) describes the best audio track in this language rather than the best track in the file — a film whose English track is Atmos but whose German dub is plain AC3 then reads AC3. Titles with no audio in the language fall back to their best track. Users can override this in their own settings.</div>
                                     </div>
-                                    <div class="je-quality-cat-admin-row" data-cat-key="ShowSpecialFormatTag" data-order-key="SpecialFormatTagOrder" data-default-order="4">
-                                        <div class="checkboxContainer"><label><input id="showSpecialFormatTag" is="emby-checkbox" type="checkbox"/><span>Show special format (IMAX, 3D)</span></label></div>
-                                        <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
-                                        <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
-                                    </div>
-                                    <div class="je-quality-cat-admin-row" data-cat-key="ShowVideoCodecTag" data-order-key="VideoCodecTagOrder" data-default-order="5">
-                                        <div class="checkboxContainer"><label><input id="showVideoCodecTag" is="emby-checkbox" type="checkbox"/><span>Show video format (HEVC, H264, AV1, ...)</span></label></div>
-                                        <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
-                                        <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
-                                    </div>
-                                    <div class="je-quality-cat-admin-row" data-cat-key="ShowAudioInfoTag" data-order-key="AudioInfoTagOrder" data-default-order="6">
-                                        <div class="checkboxContainer"><label><input id="showAudioInfoTag" is="emby-checkbox" type="checkbox"/><span>Show sound (Atmos, DTS, 5.1, 7.1, ...)</span></label></div>
-                                        <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
-                                        <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                    <div class="checkboxContainer"><label><input id="qualityTagsAudioLanguageFromUser" is="emby-checkbox" type="checkbox"/><span>Use Each User's Jellyfin Audio Language</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="qualityTagsAudioLanguageFromUser">
+                                        <div class="fieldDescription">Judge sound tags by each user's own Jellyfin audio language (Settings → Playback → Preferred audio language) instead of the language above. Users who have not set one keep the language above.</div>
                                     </div>
                                 </div>
                             </details>
@@ -291,17 +311,22 @@
                             <div class="je-setting-description" data-desc-for="languageTagsEnabled">
                                 <div class="fieldDescription">Display available audio languages as country flags on poster cards.</div>
                             </div>
-                            <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="languageTagsPriority">Priority Languages</label>
-                                <input id="languageTagsPriority" is="emby-input" type="text" placeholder="e.g. English, Japanese, fr"/>
-                            </div>
-                            <div class="je-setting-description" data-desc-for="languageTagsPriority">
-                                <div class="fieldDescription">Comma-separated language names or codes, e.g. <code>English, Japanese, fr</code>. A title with audio in one of these gets that flag guaranteed a spot among the ones shown, ahead of anything else it has. Leave blank to just show whichever languages are found first.</div>
-                            </div>
-                            <div class="checkboxContainer"><label><input id="languageTagsPriorityStrict" is="emby-checkbox" type="checkbox"/><span>Only Show Priority Languages</span></label></div>
-                            <div class="je-setting-description" data-desc-for="languageTagsPriorityStrict">
-                                <div class="fieldDescription">Only show flags for the languages listed above, everything else is hidden. A title with none of them will show no flags at all.</div>
-                            </div>
+                            <details id="languagePriorityAdminDetails" class="je-details-section" style="margin-left: 20px;">
+                                <summary>Priority languages</summary>
+                                <div class="je-details-body">
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="languageTagsPriority">Priority Languages</label>
+                                        <input id="languageTagsPriority" is="emby-input" type="text" placeholder="e.g. English, Japanese, fr"/>
+                                    </div>
+                                    <div class="je-setting-description" data-desc-for="languageTagsPriority">
+                                        <div class="fieldDescription">Comma-separated language names or codes, e.g. <code>English, Japanese, fr</code>. A title with audio in one of these gets that flag guaranteed a spot among the ones shown, ahead of anything else it has. Leave blank to just show whichever languages are found first.</div>
+                                    </div>
+                                    <div class="checkboxContainer"><label><input id="languageTagsPriorityStrict" is="emby-checkbox" type="checkbox"/><span>Only Show Priority Languages</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="languageTagsPriorityStrict">
+                                        <div class="fieldDescription">Hide flags for every language not listed above. A title with none of them shows no flags at all.</div>
+                                    </div>
+                                </div>
+                            </details>
 
                             <div class="je-tag-row">
                                 <div class="checkboxContainer"><label><input id="ratingTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Rating Tags</span></label></div>
@@ -315,6 +340,31 @@
                             <div class="je-setting-description" data-desc-for="ratingTagsEnabled">
                                 <div class="fieldDescription">Show TMDB and Rotten Tomatoes ratings on poster cards.</div>
                             </div>
+                            <details id="ratingScopeAdminDetails" class="je-details-section" style="margin-left: 20px;">
+                                <summary>Choose where to show</summary>
+                                <div class="je-details-body">
+                                    <div class="fieldDescription je-field-desc-sm">Pick which item types get rating tags, and whether the Continue Watching and Next Up rows show them (on the home screen, and the Next Up shelf on a series page). Untick episodes to keep ratings off every episode card, including Next Up and Continue Watching; untick a row to hide them for every card in that row only. Users can override these in their personal settings.</div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnMovies" is="emby-checkbox" type="checkbox"/><span>Show on movies</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnSeries" is="emby-checkbox" type="checkbox"/><span>Show on series</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnSeasons" is="emby-checkbox" type="checkbox"/><span>Show on seasons</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnEpisodes" is="emby-checkbox" type="checkbox"/><span>Show on episodes</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnContinueWatching" is="emby-checkbox" type="checkbox"/><span>Show in the Continue Watching row</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsOnNextUp" is="emby-checkbox" type="checkbox"/><span>Show in the Next Up row</span></label></div>
+                                </div>
+                            </details>
+
+                            <div class="je-tag-row">
+                                <div class="checkboxContainer"><label><input id="ageRatingTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Age Rating Tags</span></label></div>
+                                <div class="inputContainer je-tag-position">
+                                    <label class="inputLabel" for="ageRatingTagsPosition">Position</label>
+                                    <select is="emby-select" id="ageRatingTagsPosition" name="ageRatingTagsPosition" class="emby-select">
+                                        <option value="top-left">Top Left</option><option value="top-right">Top Right</option><option value="bottom-left">Bottom Left</option><option value="bottom-right">Bottom Right</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="ageRatingTagsEnabled">
+                                <div class="fieldDescription">Show the age rating (PG-13, TV-MA, FSK 12, ...) as a colour-coded badge on poster cards. Episodes and seasons use their series' rating. Shares the colour scheme of Colored Ratings.</div>
+                            </div>
 
                             <div class="je-tag-row">
                                 <div class="checkboxContainer"><label><input id="peopleTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable People Tags</span></label></div>
@@ -323,12 +373,14 @@
                                 <div class="fieldDescription">Display age and birthplace information for cast members on item detail pages.</div>
                             </div>
 
+                            <div class="fieldDescription"><strong>General</strong> — shared by every tag type above.</div>
+
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="tagsCacheTtlDays">Tags Cache Duration (days)</label>
                                 <input id="tagsCacheTtlDays" is="emby-input" type="number" min="1" max="365" value="30"/>
                             </div>
                             <div class="je-setting-description" data-desc-for="tagsCacheTtlDays">
-                                <div class="fieldDescription">How long to cache the above tags data (1–365 days, default: 30).</div>
+                                <div class="fieldDescription">How long to cache tag data (1–365 days, default: 30).</div>
                             </div>
 
                             <div class="checkboxContainer"><label><input id="showRatingInPlayer" is="emby-checkbox" type="checkbox"/><span>Show Rating in Video Player</span></label></div>
@@ -355,7 +407,7 @@
                                 <label><input id="enableTagsLocalStorageFallback" is="emby-checkbox" type="checkbox"/><span>Persist Tag Fallback Cache in Browser Storage</span></label>
                             </div>
                             <div class="je-setting-description" data-desc-for="enableTagsLocalStorageFallback">
-                                <div class="fieldDescription je-field-desc-sm-font-xl">Available when Server-Side Tag Cache is disabled. Stores fallback tag cache entries in browser localStorage for faster repeat loads.</div>
+                                <div class="fieldDescription je-field-desc-sm-font-xl">Stores fallback tag cache entries in browser localStorage for faster repeat loads. Only used while Server-Side Tag Cache is off.</div>
                             </div>
 
                             <div id="clientTagCacheControls" style="margin-top:10px;">
@@ -363,6 +415,38 @@
                                     <span>Clear All Client Caches</span>
                                 </button>
                                 <div class="fieldDescription">Forces clients to clear caches on next load. May cause initial slowness.</div>
+                            </div>
+
+                            <div class="fieldDescription" style="margin-top: 20px;"><strong>Native Poster Tags</strong> — the tags above, drawn into poster images for apps that can't show the web overlays.</div>
+
+                            <div class="checkboxContainer"><label><input id="nativePosterTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Native Poster Tags (Experimental)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="nativePosterTagsEnabled">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">
+                                    <ul style="margin:4px 0 0 20px; padding:0;">
+                                        <li>Experimental. Draws each user's Media Tags into poster images for native apps such as Android TV, which can't show Jellyfin Enhanced's web overlays</li>
+                                        <li>Uses each user's own tag choices, corners and order. Users can turn it off with Show Tags in Native Clients in the Enhanced panel under UI Settings</li>
+                                        <li>Web-based apps (Jellyfin Web, Media Player, Desktop, WebOS, Android) already show the overlays, so they keep the original posters</li>
+                                        <li>Each poster is drawn the first time it is viewed, which uses some server CPU, and is then cached</li>
+                                        <li>Apps may need to reopen the library or restart to show changes</li>
+                                        <li>Original artwork files are never modified</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="nativePosterTagsWebClientNames">Additional Excluded Clients</label>
+                                <textarea class="emby-textarea emby-input je-textarea-medium" id="nativePosterTagsWebClientNames" name="nativePosterTagsWebClientNames" placeholder="One per line"></textarea>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="nativePosterTagsWebClientNames">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">
+                                    <ul style="margin:4px 0 0 20px; padding:0;">
+                                        <li>Apps listed here never get tags drawn into their posters</li>
+                                        <li>Add apps that already show Jellyfin Enhanced's tags themselves, such as a custom wrapper around the Jellyfin web UI, so tags aren't shown twice</li>
+                                        <li>Always excluded already: Jellyfin Web, Jellyfin Media Player, Jellyfin Desktop, Jellyfin for WebOS and Jellyfin for Android. No need to list these</li>
+                                        <li>Every other app gets drawn-in tags</li>
+                                        <li>Enter each name exactly as shown under Dashboard → Devices, one per line or comma separated</li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     </fieldset>
@@ -421,6 +505,26 @@
                             <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerAutoEnableOnSeerrRequest" is="emby-checkbox" type="checkbox"/><span>Auto-enable Spoiler Guard on Seerr request</span></label></div>
                             <div class="je-setting-description" data-desc-for="spoilerAutoEnableOnSeerrRequest" data-gated-by="spoilerBlurEnabled">
                                 <div class="fieldDescription">When on, requesting something through Seerr also pre-arms Spoiler Guard for that title: when the show or movie lands in the library, protection is already on for the user who requested it. Users can also pre-arm titles manually with the "Enable Spoiler Guard" button in the Seerr details popup (always available regardless of this toggle), handy when someone else requested the title first.</div>
+                            </div>
+
+                            <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerAutoEnableOnLibraryAdd" is="emby-checkbox" type="checkbox"/><span>Auto-enable Spoiler Guard when new titles are added to the library</span></label></div>
+                            <div class="je-setting-description" data-desc-for="spoilerAutoEnableOnLibraryAdd" data-gated-by="spoilerBlurEnabled">
+                                <div class="fieldDescription">When on, every new show or movie that appears in the library (from a scan, a Seerr download, or a manual copy) is added to the Spoiler Guard list of every user who can see that library, so protection is in place before anyone presses play. Only brand-new titles are affected: a user who later switches Spoiler Guard off for a title isn't re-armed by metadata refreshes. Library scans are batched, so a big scan results in one settings write per user rather than one per title.</div>
+                            </div>
+
+                            <div id="spoilerAutoEnableScopeContainer" data-gated-by="spoilerBlurEnabled" style="margin-left: 20px;">
+                                <div class="fieldDescription" style="margin-bottom: 6px;"><strong>Auto-enable applies to</strong> — shared by all three auto-enable options above.</div>
+                                <div class="checkboxContainer"><label><input id="spoilerAutoEnableSeries" is="emby-checkbox" type="checkbox"/><span>TV shows</span></label></div>
+                                <div class="checkboxContainer"><label><input id="spoilerAutoEnableMovies" is="emby-checkbox" type="checkbox"/><span>Movies</span></label></div>
+                                <div class="fieldDescription" style="margin-top: 8px; margin-bottom: 6px;">Libraries — leave every library unticked to cover all of them. Doesn't apply to Seerr requests (the title isn't in a library yet).</div>
+                                <div id="spoilerAutoEnableLibraryList"><div class="fieldDescription">Loading libraries…</div></div>
+                            </div>
+
+                            <div id="spoilerApplyExistingContainer" class="je-spoiler-apply-existing" data-gated-by="spoilerBlurEnabled" style="margin-left: 20px; margin-top: 12px; margin-bottom: 16px;">
+                                <div class="fieldDescription" style="margin-bottom: 6px;"><strong>Titles already in the library</strong> — auto-enable only arms titles as they arrive, and a rescan doesn't count (so nobody who switched Spoiler Guard off for a title gets it switched back on). To guard what's already there, apply the <em>saved</em> scope above to existing titles, for every user who can see them. Works whether or not "when new titles are added" is on. Titles a user already has, or has fully watched, are skipped. Also available as the "Spoiler Guard: apply to existing titles" scheduled task.</div>
+                                <div class="checkboxContainer"><label><input id="spoilerApplyExistingSkipStarted" is="emby-checkbox" type="checkbox"/><span>Also skip titles a user has already started watching</span></label></div>
+                                <button id="spoilerApplyExistingBtn" is="emby-button" type="button" class="raised"><span>Apply to existing titles now…</span></button>
+                                <div id="spoilerApplyExistingStatus" class="fieldDescription" style="margin-top: 6px;" aria-live="polite"></div>
                             </div>
 
                             <div class="checkboxContainer" data-gated-by="spoilerBlurEnabled"><label><input id="spoilerBlurStrictRefresh" is="emby-checkbox" type="checkbox"/><span>Strict refresh mode (full page reload after toggle)</span></label></div>
@@ -585,6 +689,11 @@
                             <div class="je-setting-description" data-desc-for="randomIncludeShows">
                                 <div class="fieldDescription">Include TV Shows in the random pool.</div>
                             </div>
+
+                            <div class="checkboxContainer"><label><input id="randomScopeCurrentContainer" is="emby-checkbox" type="checkbox"/><span>Scope to the current playlist or collection</span></label></div>
+                            <div class="je-setting-description" data-desc-for="randomScopeCurrentContainer">
+                                <div class="fieldDescription">On a playlist or collection page, the Random button picks from that container's items instead of the whole library. Users can also pin a playlist or collection as their permanent source in the Enhanced panel.</div>
+                            </div>
                         </div>
                     </fieldset>
 
@@ -735,6 +844,11 @@
                                 <div class="fieldDescription">Long-press anywhere on the player to temporarily play at 2× speed; release to return to normal speed. Beta, touch devices only.</div>
                             </div>
 
+                            <div class="checkboxContainer"><label><input id="showPlaybackRatingBadge" is="emby-checkbox" type="checkbox"/><span>Show Age Rating When Playback Starts</span></label></div>
+                            <div class="je-setting-description" data-desc-for="showPlaybackRatingBadge">
+                                <div class="fieldDescription">Briefly shows the age rating in a corner of the player when a video starts, followed by a line of any content-advisory tags (such as violence or strong language) and a line of its genres.</div>
+                            </div>
+
                             <div class="checkboxContainer"><label><input id="pauseScreenEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Custom Pause Screen</span></label></div>
                             <div class="je-setting-description" data-desc-for="pauseScreenEnabled">
                                 <div class="fieldDescription je-field-desc-sm">This feature is a modified version of the original script by <a class="sectionTitle" href="https://github.com/BobHasNoSoul/Jellyfin-PauseScreen" target="_blank">BobHasNoSoul</a></div>
@@ -798,6 +912,17 @@
                                 <div class="fieldDescription">Default subtitle font applied to new users; users can override in their personal settings.</div>
                             </div>
 
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="DefaultSubtitleTextEffect">Default Subtitle Text Effect</label>
+                                <select is="emby-select" id="DefaultSubtitleTextEffect" name="DefaultSubtitleTextEffect" class="emby-select">
+                                    <option value="0">Auto</option><option value="1">None</option><option value="2">Shadow</option>
+                                    <option value="3">Outline</option><option value="4">Outline + Shadow</option>
+                                </select>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="DefaultSubtitleTextEffect">
+                                <div class="fieldDescription">Default subtitle text effect (outline / drop shadow) applied to new users; users can override in their personal settings. Auto adds a shadow only when the subtitle background is transparent.</div>
+                            </div>
+
                         </div>
                     </fieldset>
 
@@ -837,7 +962,8 @@
                     <div class="je-info-banner je-fieldset-wide je-tab-intro">
                         <i class="material-icons je-info-icon">integration_instructions</i>
                         <div>
-                            These features add or replace pages in the Jellyfin web UI. Support integration with <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a> (sidebar) or <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> (home page).
+                            These features add or replace pages in the Jellyfin web UI. Support integration with <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-pages">Plugin Pages</a> (sidebar) or <a class="sectionTitle" target="_blank" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs">Custom Tabs</a> (home page).<br/>
+                            <strong>On Jellyfin 12's Modern Layout, sidebar links (including Plugin Pages) only appear on mobile</strong>, not desktop, a limitation of that layout's nav drawer. Use the <strong>native Home tab</strong> option below for a desktop-visible entry point on Jellyfin 12.
                         </div>
                     </div>
 
@@ -1616,6 +1742,17 @@
                             <div class="checkboxContainer"><label><input id="jellyseerrShowSearchResults" is="emby-checkbox" type="checkbox"/><span>Show Seerr Results in Search</span></label></div>
                             <div class="je-setting-description" data-desc-for="jellyseerrShowSearchResults">
                                 <div class="fieldDescription je-field-desc-xl">Enhance Jellyfin search by showing results from Seerr.<br/>This allows users to discover and request missing movies and shows directly from Jellyfin.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="jellyseerrSearchExcludeLibraryItems" is="emby-checkbox" type="checkbox"/><span>Exclude search items already in library</span></label></div>
+                            <div class="je-setting-description" data-desc-for="jellyseerrSearchExcludeLibraryItems">
+                                <div class="fieldDescription je-field-desc-xl">Hide Seerr search results that already exist in your Jellyfin library (the ones marked as available), including shows where only some seasons are in the library.<br/>If disabled, available items are shown and link to the media item in the library.</div>
+                            </div>
+                            <div class="je-note-banner je-banner-stack-mobile" id="je-search-exclude-library-warning" style="display:none;">
+                                <i class="material-icons je-note-icon">warning_amber</i>
+                                <div>
+                                    <strong>Warning:</strong> A movie in the library in a lower quality won't appear to request in higher quality like 4K, and a show with only some seasons won't appear to request the rest.
+                                    Missing seasons can still be requested with the <strong>Request More</strong> button on the show's page, and anything can still be requested directly in Seerr.
+                                </div>
                             </div>
                             <div class="checkboxContainer"><label><input id="showCollectionsInSearch" is="emby-checkbox" type="checkbox"/><span>Show Collections in Seerr Results</span></label></div>
                             <div class="je-setting-description" data-desc-for="showCollectionsInSearch">
@@ -2427,7 +2564,7 @@
                                 <div class="je-note-banner">
                                 <i class="material-icons je-note-icon">note</i>
                                 <div>
-                                    Currently replaces icons for (if installed): Jellyfin Enhanced, JavaScript Injector, Intro Skipper, Reports, JellySleep, Home Screen Sections, File Transformation and Jellyfin Helper.
+                                    Currently replaces icons for (if installed): Jellyfin Enhanced, JavaScript Injector, Intro Skipper, Reports, JellySleep, Home Screen Sections, File Transformation, Jellyfin Helper, Newsletters, Segment Editor and Moonbase.
                                 </div>
                                 </div>
                             </div>
@@ -2654,22 +2791,40 @@
                                 Disabling restores all users automatically.
                             </div>
 
+                            <!-- Duration -->
+                            <div class="inputContainer" style="margin-bottom:1.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="maintenanceModeDurationMinutes">Duration (minutes)</label>
+                                <input id="maintenanceModeDurationMinutes" is="emby-input" type="number" min="0" max="525600" step="1" style="max-width:200px;"/>
+                                <div class="fieldDescription">0 = stays on until you turn it off. Otherwise maintenance ends itself after this many minutes: the banner shows a live countdown and the toggle above switches off automatically. Changing the number restarts the clock; saving other settings does not.</div>
+                            </div>
+
                             <!-- Banner message -->
                             <div class="inputContainer" style="margin-bottom:1.5em;">
                                 <label class="inputLabel inputLabelUnfocused" for="maintenanceModeMessage">Login Page Banner Message</label>
                                 <textarea id="maintenanceModeMessage" is="emby-textarea" class="emby-textarea" rows="2"
                                     placeholder="This server is currently undergoing maintenance. Please try again later."
                                     style="width:100%;max-width:640px;box-sizing:border-box;resize:vertical;"></textarea>
-                                <div class="fieldDescription">Shown as a red banner at the top of every page (login + home). Plain text only.</div>
+                                <div class="fieldDescription">Shown as a red banner at the top of every page (login + home). Plain text only. Use <code>{countdown}</code> for the time remaining and <code>{ends_at}</code> for the end time; with a duration set and no token, the time remaining is appended automatically.</div>
                             </div>
 
                             <!-- Notification message (broadcast) -->
-                            <div class="inputContainer" style="margin-bottom:1.5em;">
+                            <div class="inputContainer" style="margin-bottom:0.75em;">
                                 <label class="inputLabel inputLabelUnfocused" for="maintenanceModeNotificationMessage">Active Session Notification</label>
                                 <textarea id="maintenanceModeNotificationMessage" is="emby-textarea" class="emby-textarea" rows="2"
                                     placeholder="Server maintenance is starting. Please finish up and try again later."
                                     style="width:100%;max-width:640px;box-sizing:border-box;resize:vertical;"></textarea>
-                                <div class="fieldDescription">Sent as a native Jellyfin popup to anyone currently watching; reaches all clients (web, mobile, TV apps).</div>
+                                <div class="fieldDescription">Sent as a native Jellyfin popup to anyone currently watching; reaches all clients (web, mobile, TV apps). Same <code>{countdown}</code> / <code>{ends_at}</code> tokens as the banner.</div>
+                            </div>
+
+                            <!-- Playback reminder -->
+                            <div class="checkboxContainer">
+                                <label>
+                                    <input id="maintenanceModeRemindOnPlayback" is="emby-checkbox" type="checkbox"/>
+                                    <span>Remind on playback start</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom:1.5em;">
+                                While maintenance is active, re-send the notification above (with the time remaining) to affected non-admin users each time they start playing something, on any client. At most once every 5 minutes per session. Only useful when accounts are <em>not</em> disabled.
                             </div>
 
                             <!-- Action selection -->
@@ -2715,6 +2870,59 @@
                                         <div id="je-mm-users-loading" style="opacity:0.55;font-size:0.875em;">Loading users…</div>
                                     </div>
                                 </div>
+                            </div>
+
+                            <!-- Scheduled window. Fields stay direct children of .configSection so they
+                                 pick up the same card/label layout as the manual fields above. -->
+                            <div style="font-weight:600;margin-top:1.75em;padding-top:1.25em;margin-bottom:0.6em;border-top:1px solid rgba(255,255,255,0.12);">Scheduled Window</div>
+                            <div class="checkboxContainer">
+                                <label>
+                                    <input id="maintenanceScheduleEnabled" is="emby-checkbox" type="checkbox"/>
+                                    <span>Enable daily maintenance window</span>
+                                </label>
+                            </div>
+                            <div class="fieldDescription" style="margin-bottom:1.25em;">
+                                Turns maintenance mode on and off by itself every day between the times below (server local time), with its own message and action, e.g. for nightly library scans. Uses the <strong>Affected Users</strong> selection above. The manual toggle takes precedence while it is on; turning the schedule off ends a running window early.
+                            </div>
+                            <div style="display:flex;gap:1.5em;flex-wrap:wrap;margin-bottom:0.5em;">
+                                <div class="inputContainer" style="margin:0;">
+                                    <label class="inputLabel inputLabelUnfocused" for="maintenanceScheduleStart">Start time</label>
+                                    <input id="maintenanceScheduleStart" is="emby-input" type="time" style="max-width:160px;"/>
+                                </div>
+                                <div class="inputContainer" style="margin:0;">
+                                    <label class="inputLabel inputLabelUnfocused" for="maintenanceScheduleEnd">End time</label>
+                                    <input id="maintenanceScheduleEnd" is="emby-input" type="time" style="max-width:160px;"/>
+                                </div>
+                            </div>
+                            <div id="mmScheduleSameTimeWarning" class="fieldDescription" style="display:none;color:#ff8a80;">Start and end time must differ; the schedule is ignored until they do.</div>
+                            <div id="mmServerTimeHint" class="fieldDescription" style="margin-bottom:1.5em;"></div>
+                            <div class="inputContainer" style="margin-bottom:1.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="maintenanceScheduleMessage">Scheduled Banner Message</label>
+                                <textarea id="maintenanceScheduleMessage" is="emby-textarea" class="emby-textarea" rows="2"
+                                    placeholder="The library is updating; slowdowns are normal. Time remaining: {countdown}"
+                                    style="width:100%;max-width:640px;box-sizing:border-box;resize:vertical;"></textarea>
+                                <div class="fieldDescription">Banner shown while the window is active. Same <code>{countdown}</code> / <code>{ends_at}</code> tokens.</div>
+                            </div>
+                            <div class="inputContainer" style="margin-bottom:1.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="maintenanceScheduleNotificationMessage">Scheduled Session Notification</label>
+                                <textarea id="maintenanceScheduleNotificationMessage" is="emby-textarea" class="emby-textarea" rows="2"
+                                    placeholder="The library is updating; slowdowns are normal."
+                                    style="width:100%;max-width:640px;box-sizing:border-box;resize:vertical;"></textarea>
+                                <div class="fieldDescription">Popup sent to active sessions when the window starts, and on playback start when reminders are on.</div>
+                            </div>
+                            <div>
+                                <div style="font-weight:600;margin-bottom:0.6em;">Scheduled Action</div>
+                                <label style="display:flex;align-items:flex-start;gap:0.6em;margin-bottom:0.6em;cursor:pointer;">
+                                    <input type="checkbox" id="mmSchedAction_accounts" style="margin-top:3px;flex-shrink:0;"/>
+                                    <span>
+                                        <strong>Disable user accounts</strong>
+                                        <span class="fieldDescription" style="display:block;margin:0;">Leave both unchecked for a banner-only window.</span>
+                                    </span>
+                                </label>
+                                <label style="display:flex;align-items:flex-start;gap:0.6em;cursor:pointer;">
+                                    <input type="checkbox" id="mmSchedAction_remote" style="margin-top:3px;flex-shrink:0;"/>
+                                    <span><strong>Disable remote connections</strong></span>
+                                </label>
                             </div>
 
                         </div>
@@ -3157,7 +3365,12 @@
                 // Double rAF: lands after activateTab's own scroll-memory restore.
                 requestAnimationFrame(() => {
                     requestAnimationFrame(() => {
+                        // Open any collapsed expander hiding a target so it can be scrolled to and flashed.
+                        const openAncestors = (el) => {
+                            for (let d = el && el.closest('details'); d; d = d.parentElement.closest('details')) d.open = true;
+                        };
                         const rawTarget = document.querySelector(selector);
+                        openAncestors(rawTarget);
                         const target = jeResolveFlashTarget(rawTarget);
                         if (target) {
                             if (target.tagName === 'FIELDSET') {
@@ -3171,7 +3384,9 @@
                         }
                         (extraSelectors || []).forEach((extraSelector) => {
                             if (extraSelector === selector) return;
-                            const extraTarget = jeResolveFlashTarget(document.querySelector(extraSelector));
+                            const rawExtra = document.querySelector(extraSelector);
+                            openAncestors(rawExtra);
+                            const extraTarget = jeResolveFlashTarget(rawExtra);
                             if (extraTarget && extraTarget !== target) jeFlashElement(extraTarget);
                         });
                     });
@@ -3600,6 +3815,7 @@
                 form.querySelectorAll('input, select, textarea').forEach((el, i) => {
                     if (el.type === 'file') return; // can't be read back, and not part of the saved config shape
                     if (el.closest('.je-arr-seerr-import-picker')) return; // transient browsing state, not a form change until actually imported
+                    if (el.closest('.je-spoiler-apply-existing')) return; // per-run option of an action, not a saved setting
                     const key = el.id || el.name || ('#' + i);
                     parts.push(key + '=' + (el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value));
                 });
@@ -4221,9 +4437,9 @@
         function syncAllManagedCustomTabs(savedConfig) {
             if (!document.body.classList.contains('je-has-customtabs-compat')) {
                 // Bail early. If the admin has auto-create intent stored but we
-                // can't act on it (plugin missing / compat probe failed), return
-                // ok:false so the save-flow alert gate fires — otherwise the
-                // green "Saved!" toast masks the dropped intent.
+                // can't act on it (compat probe failed / detection unknown),
+                // return ok:false so the save-flow alert gate fires — otherwise
+                // the green "Saved!" toast masks the dropped intent.
                 // Mirror `shouldExist`: intent requires all three flags —
                 // master + parent + auto. A disabled-at-master feature with
                 // auto+parent still checked wouldn't have a real sync action
@@ -4234,12 +4450,31 @@
                         && savedConfig[e.parentKey] === true
                         && savedConfig[e.masterKey] === true;
                 });
+                // Custom Tabs definitely absent (not installed, or installed
+                // but disabled): there is nothing to sync and nothing the admin
+                // can fix from here, so skip cleanly. Typical after a 10.11 →
+                // 12 upgrade where Custom Tabs was dropped in favour of the
+                // native home tabs; the stored intent is deliberately kept so
+                // the entries sync again if the plugin is reinstalled. The
+                // auto-create toggles are hidden in this state, so an ok:false
+                // here would re-alert on every save with no way out.
+                if (hasCustomTabs === false) {
+                    return Promise.resolve({
+                        ok: true,
+                        status: 'skipped',
+                        detail: 'Custom Tabs not installed; nothing to sync.',
+                        ownedUpdates: []
+                    });
+                }
                 return Promise.resolve({
                     ok: !anyIntent, // only "skipped cleanly" when there was nothing to do
                     status: 'skipped',
                     detail: anyIntent
-                        ? 'Custom Tabs is not detected (or its config schema is unrecognized). Auto-create was requested but skipped; toggle a Custom Tabs setting to retry the probe.'
-                        : 'Custom Tabs not detected; nothing to sync.',
+                        ? (hasCustomTabs === true
+                            ? 'Custom Tabs is installed, but its config could not be read or has an unrecognized shape, so the auto-create entry was skipped.'
+                            : 'Plugin detection did not complete, so the auto-create entry was skipped.')
+                          + ' Use the Retry button on the "Plugin detection issue" banner at the top of this page (or reload the page), then save again.'
+                        : 'Custom Tabs compat probe not passed; nothing to sync.',
                     ownedUpdates: []
                 });
             }
@@ -5273,6 +5508,270 @@
                 });
         }
 
+        /**
+         * Selects `value` in the sound-tag audio language dropdown. A code the
+         * culture list does not offer (a hand-edited pt-BR, or the list has not
+         * loaded / failed to load) is parked as a bare option so it stays
+         * selected and a save cannot silently reset it to "no preference".
+         * @param {HTMLSelectElement|null} select
+         * @param {string} value
+         */
+        function applyQualityAudioLanguage(select, value) {
+            if (!select) return;
+            const saved = value || '';
+            if (saved && !Array.from(select.options).some(o => o.value === saved)) {
+                const option = document.createElement('option');
+                option.value = saved;
+                option.textContent = saved;
+                option.dataset.jePlaceholder = '1';
+                select.appendChild(option);
+            }
+            select.value = saved;
+        }
+
+        // SpoilerAutoEnableLibraryIds as loaded, and whether the checkbox
+        // list has been rendered from it yet. Until it has (VirtualFolders
+        // still loading, or failed) a save round-trips the stored value
+        // untouched instead of silently resetting it to "every library".
+        var _spoilerAutoEnableLibrariesRaw = '';
+        var _spoilerAutoEnableLibrariesRendered = false;
+
+        /**
+         * Renders the Spoiler Guard auto-enable library allow-list as one
+         * checkbox per movie / TV / mixed library, pre-ticking the ids stored
+         * in SpoilerAutoEnableLibraryIds (comma-separated). Ids that no longer
+         * resolve to a library are flagged and dropped on the next save.
+         * @param {string} selectedRaw - Stored comma-separated library ids
+         */
+        function renderSpoilerAutoEnableLibraries(selectedRaw) {
+            var host = document.getElementById('spoilerAutoEnableLibraryList');
+            if (!host) return;
+            _spoilerAutoEnableLibrariesRaw = String(selectedRaw || '');
+            _spoilerAutoEnableLibrariesRendered = false;
+            var selected = _spoilerAutoEnableLibrariesRaw.split(',').map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
+            ApiClient.getJSON(ApiClient.getUrl('Library/VirtualFolders')).then(function (folders) {
+                host.innerHTML = '';
+                var eligible = (folders || []).filter(function (f) {
+                    var t = (f.CollectionType || '').toLowerCase();
+                    // Untyped ("mixed") libraries can hold both shows and movies.
+                    return f.ItemId && (t === 'tvshows' || t === 'movies' || t === '');
+                });
+                var known = {};
+                eligible.forEach(function (f) {
+                    var id = String(f.ItemId).replace(/-/g, '').toLowerCase();
+                    known[id] = true;
+                    var wrap = document.createElement('div');
+                    wrap.className = 'checkboxContainer';
+                    var label = document.createElement('label');
+                    var input = document.createElement('input');
+                    input.setAttribute('is', 'emby-checkbox');
+                    input.type = 'checkbox';
+                    input.className = 'spoilerAutoEnableLibrary';
+                    input.setAttribute('data-library-id', f.ItemId);
+                    input.checked = selected.indexOf(id) !== -1;
+                    var span = document.createElement('span');
+                    var type = (f.CollectionType || '').toLowerCase();
+                    span.textContent = f.Name + (type === 'tvshows' ? ' (TV shows)' : type === 'movies' ? ' (Movies)' : ' (Mixed)');
+                    label.appendChild(input);
+                    label.appendChild(span);
+                    wrap.appendChild(label);
+                    host.appendChild(wrap);
+                });
+                if (!eligible.length) {
+                    host.innerHTML = '<div class="fieldDescription">No movie or TV libraries found.</div>';
+                }
+                // Ids saved earlier whose library has since been deleted: the
+                // server can't match them (so, if they were the only ones,
+                // nothing auto-enables) until the admin saves again.
+                var stale = selected.filter(function (id) { return !known[id]; });
+                if (stale.length) {
+                    var note = document.createElement('div');
+                    note.className = 'fieldDescription';
+                    note.textContent = stale.length === 1
+                        ? '1 previously selected library no longer exists and will be dropped when you save.'
+                        : stale.length + ' previously selected libraries no longer exist and will be dropped when you save.';
+                    host.appendChild(note);
+                }
+                _spoilerAutoEnableLibrariesRendered = true;
+            }).catch(function () {
+                host.innerHTML = '<div class="fieldDescription">Could not load the library list. Saving keeps the current selection.</div>';
+            });
+        }
+
+        /**
+         * Collects the ticked auto-enable libraries back into the stored
+         * comma-separated form (dashless lowercase ids, matching Jellyfin's
+         * VirtualFolders ItemId format). Empty string = every library. If the
+         * list hasn't rendered, returns the stored value unchanged.
+         * @returns {string}
+         */
+        function collectSpoilerAutoEnableLibraries() {
+            if (!_spoilerAutoEnableLibrariesRendered) return _spoilerAutoEnableLibrariesRaw;
+            var ids = [];
+            document.querySelectorAll('#spoilerAutoEnableLibraryList input.spoilerAutoEnableLibrary').forEach(function (el) {
+                if (el.checked) ids.push(String(el.getAttribute('data-library-id') || '').replace(/-/g, '').toLowerCase());
+            });
+            return ids.filter(Boolean).join(',');
+        }
+
+        /**
+         * Plain-text summary of an "apply to existing titles" run from the
+         * server (SpoilerExistingTitlesApplier.Summary, PascalCase like the
+         * rest of Jellyfin's JSON).
+         * @param {Object} s - Run summary
+         * @returns {string}
+         */
+        function describeSpoilerApplyExistingRun(s) {
+            var armed = (s.SeriesArmed || 0) + (s.MoviesArmed || 0);
+            var parts = [armed + ' Spoiler Guard entr' + (armed === 1 ? 'y' : 'ies') + ' added (' + (s.SeriesArmed || 0) + ' series, ' + (s.MoviesArmed || 0) + ' movies) for ' + (s.UsersAffected || 0) + ' user' + (s.UsersAffected === 1 ? '' : 's')];
+            parts.push((s.AlreadyArmed || 0) + ' already guarded');
+            parts.push((s.SkippedWatched || 0) + ' fully watched');
+            if (s.SkipStarted) parts.push((s.SkippedStarted || 0) + ' started');
+            var text = parts.join(', ') + ' skipped.';
+            if (s.UsersFailed) text += ' ' + s.UsersFailed + ' user' + (s.UsersFailed === 1 ? '' : 's') + ' could not be updated (see the server log).';
+            return text;
+        }
+
+        /**
+         * Joins plain-text lines into the HTML body Jellyfin's alert/confirm
+         * dialogs render (they treat the message as sanitized HTML, so plain
+         * newlines collapse). Each line is escaped; user names come from the server.
+         * @param {string[]} lines - Plain-text lines ('' = blank line)
+         * @returns {string}
+         */
+        function spoilerApplyExistingLinesHtml(lines) {
+            var div = document.createElement('div');
+            return lines.map(function (line) {
+                div.textContent = line;
+                return div.innerHTML;
+            }).join('<br>');
+        }
+
+        /**
+         * Resolves to the `message` of a failed JellyfinEnhanced API call
+         * (ApiClient rejects with the fetch Response), or null.
+         * @param {*} err - Rejection value from ApiClient.getJSON / ajax
+         * @returns {Promise<string|null>}
+         */
+        function spoilerApplyExistingErrorMessage(err) {
+            if (!err || typeof err.json !== 'function') return Promise.resolve(null);
+            return err.json().then(function (body) { return (body && body.message) || null; }, function () { return null; });
+        }
+
+        /**
+         * Polls the apply-to-existing-titles status until the run started by
+         * this page has finished, mirroring progress and then the result into
+         * the status line under the button.
+         * @param {number} completedRunsBefore - Server's finished-run counter just before this run started
+         */
+        function pollSpoilerApplyExisting(completedRunsBefore) {
+            var statusEl = document.getElementById('spoilerApplyExistingStatus');
+            var btn = document.getElementById('spoilerApplyExistingBtn');
+            var idleTicks = 0;
+            var tick = function () {
+                ApiClient.getJSON(ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/apply-existing/status')).then(function (st) {
+                    var finished = st.completedRuns > completedRunsBefore && st.lastRun;
+                    if (!finished) {
+                        // Idle without a new result for a while: the task
+                        // never ran (or the server restarted); stop polling.
+                        idleTicks = st.state === 'Idle' ? idleTicks + 1 : 0;
+                        if (idleTicks > 10) {
+                            btn.disabled = false;
+                            statusEl.textContent = 'The run did not report back; check Dashboard > Scheduled Tasks and the server log.';
+                            return;
+                        }
+                        statusEl.textContent = 'Applying… ' + (typeof st.progress === 'number' ? Math.round(st.progress) + '%' : '');
+                        setTimeout(tick, 1000);
+                        return;
+                    }
+                    var last = st.lastRun;
+                    btn.disabled = false;
+                    if (last.Error) {
+                        statusEl.textContent = 'Apply failed: ' + last.Error;
+                    } else if (last.Cancelled) {
+                        statusEl.textContent = 'Cancelled. Users processed before the cancel keep their new entries; run it again to finish (nothing is added twice).';
+                    } else {
+                        statusEl.textContent = 'Done in ' + (last.ElapsedMs / 1000).toFixed(1) + ' s. ' + describeSpoilerApplyExistingRun(last);
+                    }
+                }).catch(function () {
+                    btn.disabled = false;
+                    statusEl.textContent = 'Lost track of the run; check Dashboard > Scheduled Tasks and the server log.';
+                });
+            };
+            tick();
+        }
+
+        /**
+         * "Apply to existing titles now…": dry-runs the saved auto-enable
+         * scope, shows what would be armed, and on confirmation starts the
+         * "Spoiler Guard: apply to existing titles" scheduled task.
+         */
+        (function wireSpoilerApplyExisting() {
+            var btn = document.getElementById('spoilerApplyExistingBtn');
+            var statusEl = document.getElementById('spoilerApplyExistingStatus');
+            if (!btn || !statusEl) return;
+            btn.addEventListener('click', function () {
+                if (document.querySelector('.je-save-dock.je-dirty')) {
+                    Dashboard.alert({ title: 'Save first', message: 'This uses the saved auto-enable settings. Save your changes, then try again.' });
+                    return;
+                }
+                var skipStarted = !!(document.getElementById('spoilerApplyExistingSkipStarted') || {}).checked;
+                btn.disabled = true;
+                statusEl.textContent = 'Counting titles…';
+                var previewUrl = ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/apply-existing/preview', { skipStarted: skipStarted });
+                ApiClient.getJSON(previewUrl).then(function (p) {
+                    statusEl.textContent = '';
+                    var armed = (p.SeriesArmed || 0) + (p.MoviesArmed || 0);
+                    var scope = 'In the saved scope: ' + p.SeriesInScope + ' series and ' + p.MoviesInScope + ' movies.';
+                    var skipped = 'Skipped: ' + (p.AlreadyArmed || 0) + ' already guarded, ' + (p.SkippedWatched || 0) + ' fully watched' + (p.SkipStarted ? ', ' + (p.SkippedStarted || 0) + ' started' : '') + '.'
+                        + (p.UsersFailed ? ' ' + p.UsersFailed + ' user' + (p.UsersFailed === 1 ? '' : 's') + ' could not be read (see the server log).' : '');
+                    if (armed === 0) {
+                        btn.disabled = false;
+                        Dashboard.alert({ title: 'Nothing to apply', message: spoilerApplyExistingLinesHtml([scope, '', 'Every user who can see them already has them guarded or has watched them.', skipped]) });
+                        return;
+                    }
+                    var lines = [
+                        scope,
+                        '',
+                        'This adds ' + armed + ' Spoiler Guard entr' + (armed === 1 ? 'y' : 'ies') + ', one per title per user (' + p.SeriesArmed + ' series, ' + p.MoviesArmed + ' movies), for ' + p.UsersAffected + ' user' + (p.UsersAffected === 1 ? '' : 's') + ':'
+                    ];
+                    (p.PerUser || []).forEach(function (u) {
+                        var n = u.Series + u.Movies;
+                        if (n > 0) lines.push('• ' + u.UserName + (u.IsDisabled ? ' (disabled)' : '') + ': ' + n + ' (' + u.Series + ' series, ' + u.Movies + ' movies)');
+                    });
+                    lines.push('');
+                    lines.push(skipped);
+                    lines.push('Users can switch it off again per title. Running this again later re-arms titles they switched off, unless they have watched them.');
+                    Dashboard.confirm(spoilerApplyExistingLinesHtml(lines), 'Apply Spoiler Guard to existing titles?', function (confirmed) {
+                        if (!confirmed) { btn.disabled = false; return; }
+                        statusEl.textContent = 'Starting…';
+                        ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/apply-existing', { skipStarted: skipStarted }),
+                            dataType: 'json'
+                        }).then(function (res) {
+                            if (res && typeof res.completedRuns === 'number') {
+                                pollSpoilerApplyExisting(res.completedRuns);
+                            } else {
+                                btn.disabled = false;
+                                statusEl.textContent = 'Started. Follow it in Dashboard > Scheduled Tasks.';
+                            }
+                        }).catch(function (err) {
+                            spoilerApplyExistingErrorMessage(err).then(function (msg) {
+                                btn.disabled = false;
+                                statusEl.textContent = 'Could not start the run: ' + (msg || 'see Dashboard > Scheduled Tasks and the server log.');
+                            });
+                        });
+                    });
+                }).catch(function (err) {
+                    spoilerApplyExistingErrorMessage(err).then(function (msg) {
+                        btn.disabled = false;
+                        statusEl.textContent = 'Could not count titles: ' + (msg || 'check the server log.');
+                    });
+                });
+            });
+        })();
+
         function loadConfig() {
             Dashboard.showLoadingMsg();
             checkInstalledPlugins();
@@ -5292,8 +5791,21 @@
                 // Load all other settings
                 document.querySelector('#devMode').checked = config.DevMode;
                 document.querySelector('#maintenanceModeEnabled').checked = config.MaintenanceModeEnabled || false;
+                document.querySelector('#maintenanceModeEnabled').dataset.jeLoaded = String(config.MaintenanceModeEnabled === true);
                 document.querySelector('#maintenanceModeMessage').value = config.MaintenanceModeMessage || '';
                 document.querySelector('#maintenanceModeNotificationMessage').value = config.MaintenanceModeNotificationMessage || '';
+                document.querySelector('#maintenanceModeDurationMinutes').value = config.MaintenanceModeDurationMinutes || 0;
+                document.querySelector('#maintenanceModeRemindOnPlayback').checked = config.MaintenanceModeRemindOnPlayback || false;
+                document.querySelector('#maintenanceScheduleEnabled').checked = config.MaintenanceScheduleEnabled || false;
+                document.querySelector('#maintenanceScheduleStart').value = config.MaintenanceScheduleStart || '00:00';
+                document.querySelector('#maintenanceScheduleEnd').value = config.MaintenanceScheduleEnd || '08:00';
+                updateMaintenanceScheduleWarning();
+                refreshMaintenanceServerTime();
+                document.querySelector('#maintenanceScheduleMessage').value = config.MaintenanceScheduleMessage || '';
+                document.querySelector('#maintenanceScheduleNotificationMessage').value = config.MaintenanceScheduleNotificationMessage || '';
+                const savedSchedAction = config.MaintenanceScheduleAction || 'none';
+                document.getElementById('mmSchedAction_accounts').checked = savedSchedAction === 'disable_accounts' || savedSchedAction === 'both';
+                document.getElementById('mmSchedAction_remote').checked   = savedSchedAction === 'disable_remote'   || savedSchedAction === 'both';
                 // Restore action checkboxes
                 const savedAction = config.MaintenanceModeAction || 'disable_accounts';
                 document.getElementById('mmAction_accounts').checked = savedAction === 'disable_accounts' || savedAction === 'both';
@@ -5345,6 +5857,7 @@
                 document.querySelector('#randomIncludeMovies').checked = config.RandomIncludeMovies;
                 document.querySelector('#randomIncludeShows').checked = config.RandomIncludeShows;
                 document.querySelector('#randomUnwatchedOnly').checked = config.RandomUnwatchedOnly;
+                document.querySelector('#randomScopeCurrentContainer').checked = config.RandomScopeCurrentContainer;
                 document.querySelector('#showWatchProgress').checked = config.ShowWatchProgress;
                 document.querySelector('#watchProgressDefaultMode').value = (config.WatchProgressDefaultMode || 'percentage');
                 document.querySelector('#watchProgressTimeFormat').value = (config.WatchProgressTimeFormat || 'hours');
@@ -5352,6 +5865,8 @@
                 document.querySelector('#showAudioLanguages').checked = config.ShowAudioLanguages;
                 document.querySelector('#removeContinueWatchingEnabled').checked = config.RemoveContinueWatchingEnabled;
                 document.querySelector('#qualityTagsEnabled').checked = config.QualityTagsEnabled;
+                document.querySelector('#nativePosterTagsEnabled').checked = config.NativePosterTagsEnabled === true;
+                document.querySelector('#nativePosterTagsWebClientNames').value = config.NativePosterTagsWebClientNames || '';
                 document.querySelector('#showResolutionTag').checked = config.ShowResolutionTag !== false;
                 document.querySelector('#showSourceTag').checked = config.ShowSourceTag !== false;
                 document.querySelector('#showDynamicRangeTag').checked = config.ShowDynamicRangeTag !== false;
@@ -5367,34 +5882,52 @@
                 const gPos = (config.GenreTagsPosition || 'top-right');
                 const lPos = (config.LanguageTagsPosition || 'bottom-left');
                 const rPos = (config.RatingTagsPosition || 'bottom-right');
+                const arPos = (config.AgeRatingTagsPosition || 'bottom-right');
                 const langEnabled = !!config.LanguageTagsEnabled;
                 const ratingEnabled = !!config.RatingTagsEnabled;
+                const ageRatingEnabled = !!config.AgeRatingTagsEnabled;
                 const peopleEnabled = !!config.PeopleTagsEnabled;
                 const showRatingInPlayer = config.ShowRatingInPlayer !== false;
                 const qSel = document.querySelector('#qualityTagsPosition');
                 const gSel = document.querySelector('#genreTagsPosition');
                 const lSel = document.querySelector('#languageTagsPosition');
                 const rSel = document.querySelector('#ratingTagsPosition');
+                const arSel = document.querySelector('#ageRatingTagsPosition');
                 const lChk = document.querySelector('#languageTagsEnabled');
                 const rChk = document.querySelector('#ratingTagsEnabled');
+                const arChk = document.querySelector('#ageRatingTagsEnabled');
                 const rPlayerChk = document.querySelector('#showRatingInPlayer');
                 if (qSel) qSel.value = qPos;
                 if (gSel) gSel.value = gPos;
                 if (lSel) lSel.value = lPos;
                 if (rSel) rSel.value = rPos;
+                if (arSel) arSel.value = arPos;
                 if (lChk) lChk.checked = langEnabled;
                 document.querySelector('#languageTagsPriority').value = config.LanguageTagsPriority || '';
                 document.querySelector('#languageTagsPriorityStrict').checked = config.LanguageTagsPriorityStrict === true;
+                const qualityAudioLangSelect = document.querySelector('#qualityTagsPreferredAudioLanguage');
+                // The culture list loads asynchronously; keep the value so it can be re-applied once the options exist.
+                qualityAudioLangSelect.dataset.savedValue = config.QualityTagsPreferredAudioLanguage || '';
+                applyQualityAudioLanguage(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
+                document.querySelector('#qualityTagsAudioLanguageFromUser').checked = config.QualityTagsAudioLanguageFromUser === true;
                 if (rChk) rChk.checked = ratingEnabled;
+                if (arChk) arChk.checked = ageRatingEnabled;
                 const pChk = document.querySelector('#peopleTagsEnabled');
                 if (pChk) pChk.checked = peopleEnabled;
                 if (rPlayerChk) rPlayerChk.checked = showRatingInPlayer;
                 document.querySelector('#disableTagsOnSearchPage').checked = config.DisableTagsOnSearchPage === true;
                 document.querySelector('#tagsHideOnHover').checked = config.TagsHideOnHover === true;
+                document.querySelector('#ratingTagsOnMovies').checked = config.RatingTagsOnMovies !== false;
+                document.querySelector('#ratingTagsOnSeries').checked = config.RatingTagsOnSeries !== false;
+                document.querySelector('#ratingTagsOnSeasons').checked = config.RatingTagsOnSeasons !== false;
+                document.querySelector('#ratingTagsOnEpisodes').checked = config.RatingTagsOnEpisodes !== false;
+                document.querySelector('#ratingTagsOnContinueWatching').checked = config.RatingTagsOnContinueWatching !== false;
+                document.querySelector('#ratingTagsOnNextUp').checked = config.RatingTagsOnNextUp !== false;
                 document.querySelector('#tagCacheServerMode').checked = config.TagCacheServerMode !== false;
                 document.querySelector('#enableTagsLocalStorageFallback').checked = config.EnableTagsLocalStorageFallback === true;
                 document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
+                document.querySelector('#showPlaybackRatingBadge').checked = config.ShowPlaybackRatingBadge === true;
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#showAwards').checked = !!config.ShowAwards;
                 document.querySelector('#mdblistRatingsEnabled').checked = !!config.MdblistRatingsEnabled;
@@ -5418,6 +5951,7 @@
                 document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
                 document.querySelector('#showCollectionsInSearch').checked = config.ShowCollectionsInSearch !== false;
                 document.querySelector('#jellyseerrShowSearchResults').checked = config.JellyseerrShowSearchResults !== false;
+                document.querySelector('#jellyseerrSearchExcludeLibraryItems').checked = config.JellyseerrSearchExcludeLibraryItems === true;
                 document.querySelector('#jellyseerrEnable4kRequests').checked = !!config.JellyseerrEnable4KRequests;
                 document.querySelector('#jellyseerrEnable4kTvRequests').checked = !!config.JellyseerrEnable4KTvRequests;
                 document.querySelector('#jellyseerrUseMoreInfoModal').checked = !!config.JellyseerrUseMoreInfoModal;
@@ -5506,6 +6040,7 @@
                 document.querySelector('#DefaultSubtitleStyle').value = config.DefaultSubtitleStyle;
                 document.querySelector('#DefaultSubtitleSize').value = config.DefaultSubtitleSize;
                 document.querySelector('#DefaultSubtitleFont').value = config.DefaultSubtitleFont;
+                document.querySelector('#DefaultSubtitleTextEffect').value = config.DefaultSubtitleTextEffect ?? 0;
                 document.querySelector('#disableCustomSubtitleStyles').checked = config.DisableCustomSubtitleStyles;
                 document.querySelector('#DefaultLanguage').value = config.DefaultLanguage || '';
                 document.querySelector('#letterboxdEnabled').checked = config.LetterboxdEnabled;
@@ -5750,6 +6285,11 @@
                     ['spoilerBlurArtwork',          'SpoilerBlurArtwork',          false],
                     ['spoilerAutoEnableOnFirstPlay','SpoilerAutoEnableOnFirstPlay',false],
                     ['spoilerAutoEnableOnSeerrRequest','SpoilerAutoEnableOnSeerrRequest',false],
+                    ['spoilerAutoEnableOnLibraryAdd','SpoilerAutoEnableOnLibraryAdd',false],
+                    // Auto-enable scope defaults to everything so upgrading
+                    // doesn't narrow the existing first-play / Seerr modes.
+                    ['spoilerAutoEnableSeries',     'SpoilerAutoEnableSeries',     true],
+                    ['spoilerAutoEnableMovies',     'SpoilerAutoEnableMovies',     true],
                     ['spoilerBlurStrictRefresh',    'SpoilerBlurStrictRefresh',    false],
                     ['spoilerKeepMoviePosters',     'SpoilerKeepMoviePosters',     true],
                     // Advanced per-category reveals. The master switch is off
@@ -5774,6 +6314,7 @@
                 if (__sbCastMode) __sbCastMode.value = config.SpoilerStripCastMode === 'All' ? 'All' : 'GuestStars';
                 var __sbPlaceholder = document.querySelector('#spoilerOverviewPlaceholder');
                 if (__sbPlaceholder) __sbPlaceholder.value = config.SpoilerOverviewPlaceholder || 'Spoiler Guard activated';
+                renderSpoilerAutoEnableLibraries(config.SpoilerAutoEnableLibraryIds || '');
 
                 document.querySelector('#loginImageEnabled').checked = config.EnableLoginImage || false;
                 document.querySelector('#customPluginLinks').value = config.CustomPluginLinks || '';
@@ -5815,9 +6356,33 @@
             });
             config.Shortcuts = finalShortcuts;
             config.DevMode = document.querySelector('#devMode').checked;
-            config.MaintenanceModeEnabled = document.querySelector('#maintenanceModeEnabled').checked;
+            // A timed window switches maintenance off by itself (and another admin or the API can
+            // flip it) while this page is open. When the toggle was not touched since it was loaded,
+            // keep the server's current value so saving unrelated settings never quietly starts a
+            // new window or ends someone else's.
+            const mmToggle = document.querySelector('#maintenanceModeEnabled');
+            const mmServerEnabled = String(config.MaintenanceModeEnabled === true);
+            if (String(mmToggle.checked) === mmToggle.dataset.jeLoaded && mmServerEnabled !== mmToggle.dataset.jeLoaded) {
+                mmToggle.checked = config.MaintenanceModeEnabled === true;
+            }
+            mmToggle.dataset.jeLoaded = String(mmToggle.checked);
+            config.MaintenanceModeEnabled = mmToggle.checked;
             config.MaintenanceModeMessage = document.querySelector('#maintenanceModeMessage').value;
             config.MaintenanceModeNotificationMessage = document.querySelector('#maintenanceModeNotificationMessage').value;
+            // Clamped (0 .. one year): a value past int range would fail the whole config save.
+            config.MaintenanceModeDurationMinutes = Math.min(525600, Math.max(0, parseInt(document.querySelector('#maintenanceModeDurationMinutes').value, 10) || 0));
+            config.MaintenanceModeRemindOnPlayback = document.querySelector('#maintenanceModeRemindOnPlayback').checked;
+            config.MaintenanceScheduleEnabled = document.querySelector('#maintenanceScheduleEnabled').checked;
+            config.MaintenanceScheduleStart = document.querySelector('#maintenanceScheduleStart').value || '00:00';
+            config.MaintenanceScheduleEnd = document.querySelector('#maintenanceScheduleEnd').value || '08:00';
+            config.MaintenanceScheduleMessage = document.querySelector('#maintenanceScheduleMessage').value;
+            config.MaintenanceScheduleNotificationMessage = document.querySelector('#maintenanceScheduleNotificationMessage').value;
+            const mmSchedAccounts = document.getElementById('mmSchedAction_accounts').checked;
+            const mmSchedRemote   = document.getElementById('mmSchedAction_remote').checked;
+            config.MaintenanceScheduleAction = (mmSchedAccounts && mmSchedRemote) ? 'both'
+                                             : mmSchedAccounts                    ? 'disable_accounts'
+                                             : mmSchedRemote                      ? 'disable_remote'
+                                             :                                      'none';
             const mmAccounts = document.getElementById('mmAction_accounts').checked;
             const mmRemote   = document.getElementById('mmAction_remote').checked;
             config.MaintenanceModeAction = (mmAccounts && mmRemote) ? 'both'
@@ -5853,6 +6418,7 @@
             config.RandomIncludeMovies = document.querySelector('#randomIncludeMovies').checked;
             config.RandomIncludeShows = document.querySelector('#randomIncludeShows').checked;
             config.RandomUnwatchedOnly = document.querySelector('#randomUnwatchedOnly').checked;
+            config.RandomScopeCurrentContainer = document.querySelector('#randomScopeCurrentContainer').checked;
             config.ShowWatchProgress = document.querySelector('#showWatchProgress').checked;
             config.WatchProgressDefaultMode = document.querySelector('#watchProgressDefaultMode').value;
             config.WatchProgressTimeFormat = document.querySelector('#watchProgressTimeFormat').value;
@@ -5860,6 +6426,8 @@
             config.ShowAudioLanguages = document.querySelector('#showAudioLanguages').checked;
             config.RemoveContinueWatchingEnabled = document.querySelector('#removeContinueWatchingEnabled').checked;
             config.QualityTagsEnabled = document.querySelector('#qualityTagsEnabled').checked;
+            config.NativePosterTagsEnabled = document.querySelector('#nativePosterTagsEnabled').checked;
+            config.NativePosterTagsWebClientNames = document.querySelector('#nativePosterTagsWebClientNames').value.trim();
             config.ShowResolutionTag = document.querySelector('#showResolutionTag').checked;
             config.ShowSourceTag = document.querySelector('#showSourceTag').checked;
             config.ShowDynamicRangeTag = document.querySelector('#showDynamicRangeTag').checked;
@@ -5880,9 +6448,16 @@
             config.GenreTagsEnabled = document.querySelector('#genreTagsEnabled').checked;
             config.LanguageTagsEnabled = document.querySelector('#languageTagsEnabled').checked;
             config.RatingTagsEnabled = document.querySelector('#ratingTagsEnabled').checked;
+            config.AgeRatingTagsEnabled = document.querySelector('#ageRatingTagsEnabled').checked;
             config.PeopleTagsEnabled = document.querySelector('#peopleTagsEnabled').checked;
             config.DisableTagsOnSearchPage = document.querySelector('#disableTagsOnSearchPage').checked;
             config.TagsHideOnHover = document.querySelector('#tagsHideOnHover').checked;
+            config.RatingTagsOnMovies = document.querySelector('#ratingTagsOnMovies').checked;
+            config.RatingTagsOnSeries = document.querySelector('#ratingTagsOnSeries').checked;
+            config.RatingTagsOnSeasons = document.querySelector('#ratingTagsOnSeasons').checked;
+            config.RatingTagsOnEpisodes = document.querySelector('#ratingTagsOnEpisodes').checked;
+            config.RatingTagsOnContinueWatching = document.querySelector('#ratingTagsOnContinueWatching').checked;
+            config.RatingTagsOnNextUp = document.querySelector('#ratingTagsOnNextUp').checked;
             config.TagCacheServerMode = document.querySelector('#tagCacheServerMode').checked;
             config.EnableTagsLocalStorageFallback = config.TagCacheServerMode
                 ? document.querySelector('#enableTagsLocalStorageFallback').checked
@@ -5892,10 +6467,14 @@
             config.LanguageTagsPosition = document.querySelector('#languageTagsPosition').value;
             config.LanguageTagsPriority = document.querySelector('#languageTagsPriority').value.trim();
             config.LanguageTagsPriorityStrict = document.querySelector('#languageTagsPriorityStrict').checked;
+            config.QualityTagsPreferredAudioLanguage = document.querySelector('#qualityTagsPreferredAudioLanguage').value || '';
+            config.QualityTagsAudioLanguageFromUser = document.querySelector('#qualityTagsAudioLanguageFromUser').checked;
             config.RatingTagsPosition = document.querySelector('#ratingTagsPosition').value;
+            config.AgeRatingTagsPosition = document.querySelector('#ageRatingTagsPosition').value;
             config.ShowRatingInPlayer = document.querySelector('#showRatingInPlayer').checked;
             config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
+            config.ShowPlaybackRatingBadge = document.querySelector('#showPlaybackRatingBadge').checked;
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.ShowAwards = document.querySelector('#showAwards').checked;
             config.MdblistRatingsEnabled = document.querySelector('#mdblistRatingsEnabled').checked;
@@ -5917,6 +6496,7 @@
             config.ShowUserRatingOnPosters = document.querySelector('#showUserRatingOnPosters').checked;
             config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
             config.JellyseerrShowSearchResults = document.querySelector('#jellyseerrShowSearchResults').checked;
+            config.JellyseerrSearchExcludeLibraryItems = document.querySelector('#jellyseerrSearchExcludeLibraryItems').checked;
             config.ShowCollectionsInSearch = document.querySelector('#showCollectionsInSearch').checked;
             config.JellyseerrEnable4KRequests = document.querySelector('#jellyseerrEnable4kRequests').checked;
             config.JellyseerrEnable4KTvRequests = document.querySelector('#jellyseerrEnable4kTvRequests').checked;
@@ -6057,6 +6637,7 @@
             config.DefaultSubtitleStyle = parseInt(document.querySelector('#DefaultSubtitleStyle').value, 10);
             config.DefaultSubtitleSize = parseInt(document.querySelector('#DefaultSubtitleSize').value, 10);
             config.DefaultSubtitleFont = parseInt(document.querySelector('#DefaultSubtitleFont').value, 10);
+            config.DefaultSubtitleTextEffect = parseInt(document.querySelector('#DefaultSubtitleTextEffect').value, 10);
             config.DisableCustomSubtitleStyles = document.querySelector('#disableCustomSubtitleStyles').checked;
             config.DefaultLanguage = document.querySelector('#DefaultLanguage').value || '';
             config.LetterboxdEnabled = document.querySelector('#letterboxdEnabled').checked;
@@ -6194,7 +6775,9 @@
                 'spoilerStripPremiereDate',
                 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerStripReviews',
                 'spoilerBlurArtwork', 'spoilerAutoEnableOnFirstPlay',
-                'spoilerAutoEnableOnSeerrRequest', 'spoilerBlurStrictRefresh',
+                'spoilerAutoEnableOnSeerrRequest', 'spoilerAutoEnableOnLibraryAdd',
+                'spoilerAutoEnableSeries', 'spoilerAutoEnableMovies',
+                'spoilerBlurStrictRefresh',
                 'spoilerKeepMoviePosters',
                 'spoilerAdvancedMode',
                 'spoilerNextEpisodeStripTitle', 'spoilerNextEpisodeStripOverview',
@@ -6207,6 +6790,7 @@
                 var pascal = id.charAt(0).toUpperCase() + id.slice(1);
                 config[pascal] = !!el.checked;
             });
+            config.SpoilerAutoEnableLibraryIds = collectSpoilerAutoEnableLibraries();
             var __sbCastModeSave = document.querySelector('#spoilerStripCastMode');
             config.SpoilerStripCastMode = (__sbCastModeSave && __sbCastModeSave.value === 'All') ? 'All' : 'GuestStars';
             var __sbModeSave = document.querySelector('#spoilerBlurMode');
@@ -6353,7 +6937,8 @@
                             contentType: 'application/json',
                             data: JSON.stringify({
                                 message: config.MaintenanceModeMessage || '',
-                                durationMinutes: 0,
+                                notificationMessage: config.MaintenanceModeNotificationMessage || '',
+                                durationMinutes: config.MaintenanceModeDurationMinutes || 0,
                                 action: config.MaintenanceModeAction || 'disable_accounts',
                                 affectedUserIds: affectedIds
                             })
@@ -6378,9 +6963,13 @@
                             console.warn('[JE] Maintenance broadcast failed (no active sessions?):', bcErr);
                         }
                     } else {
+                        // With the daily schedule on, "manual off" must leave a scheduled window running;
+                        // with it off, nothing should be active, so end a scheduled window right away too.
                         await ApiClient.ajax({
                             type: 'POST',
-                            url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Disable')
+                            url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Disable', {
+                                includeScheduled: !config.MaintenanceScheduleEnabled
+                            })
                         });
                     }
                 } catch (mmErr) {
@@ -6538,7 +7127,34 @@
             });
         }
 
+        /** Shows the inline warning when the daily window's start and end time are equal. */
+        function updateMaintenanceScheduleWarning() {
+            const start = document.getElementById('maintenanceScheduleStart').value;
+            const end = document.getElementById('maintenanceScheduleEnd').value;
+            document.getElementById('mmScheduleSameTimeWarning').style.display = start && start === end ? '' : 'none';
+        }
+
+        /**
+         * Shows the server's current time under the daily window: the window runs on the server's
+         * clock, which in containers is often UTC rather than the admin's time zone.
+         */
+        function refreshMaintenanceServerTime() {
+            ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Status'),
+                dataType: 'json'
+            }).then(function(status) {
+                const el = document.getElementById('mmServerTimeHint');
+                if (!el || !status || !status.ServerLocalTime) return;
+                el.textContent = 'Server time is now ' + status.ServerLocalTime + ' (UTC' + status.ServerUtcOffset + '). Set the window in this time zone.';
+            }).catch(function() { /* hint only */ });
+        }
+
         function setupMaintenanceModeControls() {
+            ['maintenanceScheduleStart', 'maintenanceScheduleEnd'].forEach(function(id) {
+                document.getElementById(id).addEventListener('input', updateMaintenanceScheduleWarning);
+            });
+
             // Show/hide user checklist based on radio selection
             document.querySelectorAll('input[name="maintenanceModeUsers"]').forEach(function(radio) {
                 radio.addEventListener('change', function() {
@@ -6562,7 +7178,7 @@
         }
 
         // Setup branding file uploads and previews
-        function setupBrandingUploads() {
+        async function setupBrandingUploads() {
             const uploadConfigs = [
                 { inputId: 'iconTransparentInput', dropZoneId: 'iconTransparentDropZone', statusId: 'iconTransparentStatus', fileName: 'icon-transparent.png', previewId: 'iconTransparentPreview', placeholderId: 'iconTransparentPlaceholder', deleteId: 'iconTransparentDelete', dimensionsId: 'iconTransparentDimensions' },
                 { inputId: 'faviconInput', dropZoneId: 'faviconDropZone', statusId: 'faviconStatus', fileName: 'favicon.ico', previewId: 'faviconPreview', placeholderId: 'faviconPlaceholder', deleteId: 'faviconDelete', dimensionsId: 'faviconDimensions' },
@@ -6570,6 +7186,21 @@
                 { inputId: 'bannerDarkInput', dropZoneId: 'bannerDarkDropZone', statusId: 'bannerDarkStatus', fileName: 'banner-dark.png', previewId: 'bannerDarkPreview', placeholderId: 'bannerDarkPlaceholder', deleteId: 'bannerDarkDelete', dimensionsId: 'bannerDarkDimensions' },
                 { inputId: 'touchiconInput', dropZoneId: 'touchiconDropZone', statusId: 'touchiconStatus', fileName: 'apple-touch-icon.png', previewId: 'touchiconPreview', placeholderId: 'touchiconPlaceholder', deleteId: 'touchiconDelete', dimensionsId: 'touchiconDimensions' }
             ];
+
+            // Which slots have a custom image, in one request, so we don't probe
+            // all five individually (and 404 on every empty one).
+            let brandingStatus = null;
+            try {
+                const token = ApiClient.accessToken ? ApiClient.accessToken() : '';
+                const statusResponse = await fetch(ApiClient.getUrl('/JellyfinEnhanced/BrandingStatus'), {
+                    headers: { 'Authorization': 'MediaBrowser Token="' + token + '"', 'X-MediaBrowser-Token': token }
+                });
+                if (statusResponse.ok) {
+                    brandingStatus = await statusResponse.json();
+                }
+            } catch (err) {
+                brandingStatus = null;
+            }
 
             uploadConfigs.forEach(config => {
                 const input = document.getElementById(config.inputId);
@@ -6616,8 +7247,16 @@
                     });
                 }
 
-                // Load existing preview if present
-                refreshBrandingPreview(config);
+                // Known-empty slots skip the network probe entirely.
+                if (brandingStatus && brandingStatus[config.fileName] === false) {
+                    const previewImg = document.getElementById(config.previewId);
+                    const placeholder = document.getElementById(config.placeholderId);
+                    if (previewImg) previewImg.style.display = 'none';
+                    if (placeholder) placeholder.style.display = 'block';
+                    if (deleteButton) deleteButton.style.display = 'none';
+                } else {
+                    refreshBrandingPreview(config);
+                }
             });
         }
 
@@ -6785,6 +7424,9 @@
         setupBrandingUploads();
         setupMaintenanceModeControls();
 
+        // Jellyfin's culture list feeds both the UI language and the sound-tag audio language dropdowns.
+        const culturesPromise = ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' });
+
         // Populate language options dynamically
         (async () => {
             const defaultLanguageSelect = document.getElementById('DefaultLanguage');
@@ -6802,7 +7444,7 @@
             try {
                 const [localeCodes, cultures] = await Promise.all([
                     ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/locales'), dataType: 'json' }),
-                    ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' })
+                    culturesPromise
                 ]);
 
                 // Check GitHub for any new locale files added since the last plugin release (1 request)
@@ -6849,6 +7491,33 @@
                 });
             } catch (err) {
                 console.warn('Jellyfin Enhanced: Failed to load language options:', err);
+            }
+        })();
+
+        // Preferred audio language for sound tags: every Jellyfin culture, by name. Kept apart from
+        // the UI language list so a slow GitHub probe or a failed locales request cannot hold it up.
+        (async () => {
+            const qualityAudioLangSelect = document.getElementById('qualityTagsPreferredAudioLanguage');
+            if (!qualityAudioLangSelect) return;
+            try {
+                const cultures = await culturesPromise;
+                // loadConfig may have run first and parked the saved code as a bare option; the named list replaces it.
+                qualityAudioLangSelect.querySelectorAll('option[data-je-placeholder]').forEach(o => o.remove());
+                const seen = new Set();
+                cultures
+                    .map(c => ({ code: c.TwoLetterISOLanguageName || c.ThreeLetterISOLanguageName, name: c.DisplayName || c.Name }))
+                    .filter(o => o.code && o.name && !seen.has(o.code) && seen.add(o.code))
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .forEach(({ code, name }) => {
+                        const option = document.createElement('option');
+                        option.value = code;
+                        option.textContent = name;
+                        qualityAudioLangSelect.appendChild(option);
+                    });
+                applyQualityAudioLanguage(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
+            } catch (err) {
+                // loadConfig parks the saved code as a bare option, so a save still keeps it.
+                console.warn('Jellyfin Enhanced: Failed to load audio language options:', err);
             }
         })();
 
@@ -7124,6 +7793,17 @@
         }
 
         /**
+         * Shows the warning under "Exclude search items already in library"
+         * only while that checkbox is checked.
+         */
+        function updateSearchExcludeLibraryWarning() {
+            var checkbox = document.getElementById('jellyseerrSearchExcludeLibraryItems');
+            var banner = document.getElementById('je-search-exclude-library-warning');
+            if (!checkbox || !banner) return;
+            banner.style.display = checkbox.checked ? '' : 'none';
+        }
+
+        /**
          * Adds a dependency tag to an element's comma-separated data-dep-disabled attribute.
          * @param {HTMLElement} el - The element to tag
          * @param {string} tag - The dependency tag to add
@@ -7291,16 +7971,18 @@
         }
 
         var PARENT_DEPS = [
+            { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['nativePosterTagsWebClientNames'] },
             { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'mirrorReviewRatingsToJellyfin', 'showUserRatingDash', 'showUserRatingOnPosters'] },
-            { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows'] },
+            { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows', 'randomScopeCurrentContainer'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
-            { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag'], noHint: true },
+            { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser'], noHint: true },
             { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition'], noHint: true },
             { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict'], noHint: true },
-            { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition'], noHint: true },
+            { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp'], noHint: true },
+            { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition'], noHint: true },
             { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
             { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },
@@ -7323,7 +8005,7 @@
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
             { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseNativeTab', 'bookmarksUseCustomTabs'] },
             { parent: 'hiddenContentEnabled', label: 'Enable Hidden Content', children: ['hiddenContentUsePluginPages', 'hiddenContentUseNativeTab', 'hiddenContentUseCustomTabs'] },
-            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Guard', children: ['spoilerBlurIntensity', 'spoilerBlurArtwork', 'spoilerStripSeriesOverview', 'spoilerStripOverview', 'spoilerOverviewPlaceholder', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripRatings', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerBlurStrictRefresh', 'spoilerKeepMoviePosters', 'spoilerAdvancedMode'] },
+            { parent: 'spoilerBlurEnabled', label: 'Enable Spoiler Guard', children: ['spoilerBlurIntensity', 'spoilerBlurArtwork', 'spoilerStripSeriesOverview', 'spoilerStripOverview', 'spoilerOverviewPlaceholder', 'spoilerStripTags', 'spoilerStripChapters', 'spoilerStripTaglines', 'spoilerStripRatings', 'spoilerStripPremiereDate', 'spoilerReplaceTitle', 'spoilerStripCast', 'spoilerAutoEnableOnFirstPlay', 'spoilerAutoEnableOnSeerrRequest', 'spoilerAutoEnableOnLibraryAdd', 'spoilerAutoEnableSeries', 'spoilerAutoEnableMovies', 'spoilerBlurStrictRefresh', 'spoilerKeepMoviePosters', 'spoilerAdvancedMode'] },
             { parent: 'spoilerStripCast',     label: 'Hide cast on unwatched episodes', children: ['spoilerStripCastMode'] },
             { parent: 'spoilerAdvancedMode',  label: 'Enable advanced per-category reveals', children: ['spoilerNextEpisodeStripTitle', 'spoilerNextEpisodeStripOverview', 'spoilerNextEpisodeStripRatings', 'spoilerNextEpisodeStripImage', 'spoilerCurrentSeasonStripTitle', 'spoilerCurrentSeasonStripOverview', 'spoilerCurrentSeasonStripRatings'] }
         ];
@@ -7801,7 +8483,7 @@
             container.appendChild(badge);
         }
 
-        /** When a whole fieldset is new, badge just its legend instead of every control inside it. Each badge uses its own setting's first-detected version. */
+        /** When a whole fieldset (or expander) is new, badge just its legend (or summary) instead of every control inside it. Each badge uses its own setting's first-detected version. */
         function renderWhatsNewBadges(perSetting) {
             document.querySelectorAll('.je-new-badge').forEach(function(b) { b.remove(); });
             var newIdSet = new Set(perSetting.map(function(f) { return f.id; }));
@@ -7823,16 +8505,27 @@
             });
 
             byFieldset.forEach(function(newEls, fieldset) {
-                var allIds = Array.from(fieldset.querySelectorAll('input[id], select[id], textarea[id], button[id]')).map(function(el) { return el.id; });
-                var allNew = allIds.length > 0 && allIds.every(function(id) { return newIdSet.has(id); });
-                if (allNew) {
+                if (jeAllControlsNew(fieldset, newIdSet)) {
                     jeAppendNewBadge(fieldset.querySelector(':scope > legend.sectionTitle'), versionById.get(newEls[0].id));
                 } else {
                     newEls.forEach(function(el) {
-                        jeAppendNewBadge(el.closest('label') || el.parentElement, versionById.get(el.id));
+                        // Same rule one level down: an expander whose controls are all new gets
+                        // one badge on its summary, and a tag row (Enable + Position) one on its label.
+                        var details = el.closest('details');
+                        var host = (details && jeAllControlsNew(details, newIdSet))
+                            ? details.querySelector(':scope > summary')
+                            : (el.closest('.je-tag-row') ? el.closest('.je-tag-row').querySelector('label') : (el.closest('label') || el.parentElement));
+                        if (!host || host.querySelector(':scope > .je-new-badge')) return;
+                        jeAppendNewBadge(host, versionById.get(el.id));
                     });
                 }
             });
+        }
+
+        /** True when every control inside container is a newly added setting. */
+        function jeAllControlsNew(container, newIdSet) {
+            var ids = Array.from(container.querySelectorAll('input[id], select[id], textarea[id], button[id]')).map(function(el) { return el.id; });
+            return ids.length > 0 && ids.every(function(id) { return newIdSet.has(id); });
         }
 
         /**
@@ -7977,12 +8670,13 @@
 
             // Display
             feat('Remove from Continue Watching', bool('removeContinueWatchingEnabled'), 'display', 'Enabled');
-            var tagCount = ['qualityTagsEnabled','genreTagsEnabled','languageTagsEnabled','ratingTagsEnabled','peopleTagsEnabled'].filter(bool).length;
+            var tagCount = ['qualityTagsEnabled','genreTagsEnabled','languageTagsEnabled','ratingTagsEnabled','ageRatingTagsEnabled','peopleTagsEnabled'].filter(bool).length;
             feat('Media Tags', tagCount > 0, 'display', tagCount + ' tag type(s) enabled');
             feat('Random Button', bool('randomButtonEnabled'), 'display', 'Enabled');
 
             // Playback
             feat('Custom Pause Screen', bool('pauseScreenEnabled'), 'playback', 'Enabled');
+            feat('Age Rating on Playback Start', bool('showPlaybackRatingBadge'), 'playback', 'Enabled');
             feat('Long press for 2x speed', bool('longPress2xEnabled'), 'playback', 'Enabled (touch devices)');
             var autoSkip = bool('autoSkipIntro') || bool('autoSkipOutro');
             var autoSkipWarn = autoSkip && hasIntroSkipper !== true;
@@ -8211,6 +8905,7 @@
             SECTION_DEPS.forEach(updateSectionDep);
             INDIVIDUAL_DEPS.forEach(updateIndividualDep);
             CUSTOM_TABS_V12_HINTS.forEach(updateCustomTabsV12Hint);
+            updateSearchExcludeLibraryWarning();
             PARENT_DEPS.forEach(updateParentDep);
             updateClientTagCacheControlsVisibility();
             // `updateStatusDashboard` and the legacy `renderChecklist` both
@@ -8573,6 +9268,8 @@
                 if (el) el.addEventListener('change', function() { updateCustomTabsV12Hint(dep); });
             });
         });
+        var searchExcludeLibraryCheckbox = document.getElementById('jellyseerrSearchExcludeLibraryItems');
+        if (searchExcludeLibraryCheckbox) searchExcludeLibraryCheckbox.addEventListener('change', updateSearchExcludeLibraryWarning);
 
         var originalTestTmdb = testTmdbConnection;
         testTmdbConnection = async function(event) {

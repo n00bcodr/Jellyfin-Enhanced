@@ -393,6 +393,9 @@
         if (observer) return;
 
         const callback = (mutations) => {
+            // Activity links and the activity page only exist in the dashboard
+            // document; skip the per-record subtree queries everywhere else.
+            if (!document.body.classList.contains('dashboardDocument')) return;
             let shouldProcess = false;
 
             mutations.forEach((mutation) => {

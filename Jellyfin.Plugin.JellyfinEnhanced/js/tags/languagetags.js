@@ -9,7 +9,30 @@
     const logPrefix = '🪼 Jellyfin Enhanced: Language Tags:';
     const containerClass = 'language-overlay-container';
     const flagClass = 'language-flag';
+    // Series/Season flag for a language that only some episodes carry (#557).
+    const partialFlagClass = 'language-flag-partial';
     const langDisplayNames = new Intl.DisplayNames(['en'], { type: 'language' });
+    /** @type {Map<string, string>} language code → display name; an Intl lookup per flag per card adds up */
+    const displayNameByCode = new Map();
+
+    /**
+     * English display name of a language code (the code upper-cased when Intl
+     * has no name for it), memoised per code.
+     * @param {string} code
+     * @returns {string}
+     */
+    function displayName(code) {
+        let name = displayNameByCode.get(code);
+        if (name === undefined) {
+            try {
+                name = langDisplayNames.of(code) || code.toUpperCase();
+            } catch (e) {
+                name = code.toUpperCase();
+            }
+            displayNameByCode.set(code, name);
+        }
+        return name;
+    }
     // Flag resolution lives in the shared core module (js/core/media-language.js)
     // so this overlay and the details-page audio-language row can never disagree.
     // It understands region subtags: pt-BR → Brazilian flag, es-419 → Mexican,
@@ -30,12 +53,7 @@
             streams.filter(function(s) { return s.Type === 'Audio'; }).forEach(function(stream) {
                 var langCode = stream.Language;
                 if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
-                    try {
-                        var langName = langDisplayNames.of(langCode);
-                        languages.add(JSON.stringify({ name: langName, code: langCode }));
-                    } catch (e) {
-                        languages.add(JSON.stringify({ name: langCode.toUpperCase(), code: langCode }));
-                    }
+                    languages.add(JSON.stringify({ name: displayName(langCode), code: langCode }));
                 }
             });
         };
@@ -53,7 +71,9 @@
         return normalizeLanguages(Array.from(languages).map(JSON.parse));
     }
 
-    // Normalize different shapes of language arrays into [{ name, code }] and de-duplicate
+    // Normalize different shapes of language arrays into [{ name, code, partial }]
+    // and de-duplicate. `partial` marks a language a Series/Season only carries
+    // on some episodes; it is only ever set by the server cache path.
     function normalizeLanguages(languages) {
         if (!Array.isArray(languages)) return [];
         const norm = [];
@@ -66,19 +86,16 @@
                 // full tag — a region subtag (pt-BR) is meaningful and must
                 // survive normalization so the region flag can render.
                 const code = entry.toLowerCase();
-                let name = null;
-                try { name = new Intl.DisplayNames(['en'], { type: 'language' }).of(code) || code.toUpperCase(); }
-                catch { name = code.toUpperCase(); }
-                obj = { name, code };
+                obj = { name: displayName(code), code };
             } else if (typeof entry === 'object') {
                 // Same here: never strip the region from the code.
                 const code = (entry.code || entry.Code || '').toString();
                 const name = entry.name || entry.Name || null;
                 if (code) {
-                    let resolvedName = name;
-                    try { if (!resolvedName) resolvedName = new Intl.DisplayNames(['en'], { type: 'language' }).of(code) || code.toUpperCase(); }
-                    catch { resolvedName = (name || code.toUpperCase()); }
-                    obj = { name: resolvedName, code };
+                    obj = { name: name || displayName(code), code };
+                    // Only the server cache path sets it, so the localStorage
+                    // cache (legacy per-page mode) never carries the field.
+                    if (entry.partial) obj.partial = true;
                 }
             }
             if (!obj) continue;
@@ -86,6 +103,16 @@
             if (!seen.has(key)) { seen.add(key); norm.push(obj); }
         }
         return norm;
+    }
+
+    /**
+     * Tooltip line for one language: the display name, suffixed for a language
+     * that is only on some of a Series/Season's episodes.
+     * @param {{name: string, partial?: boolean}} lang
+     * @returns {string}
+     */
+    function languageLabel(lang) {
+        return lang.partial ? `${lang.name} (${JE.t('language_tags_partial_tooltip')})` : lang.name;
     }
 
     /**
@@ -157,7 +184,8 @@
         if (ctx.isTagged(container)) return;
         // Always re-render to handle cache migrations or setting changes
         ctx.removeExistingOverlay(container);
-        container.style.position = 'relative'; // Avoid forced reflow from getComputedStyle
+        // Avoid forced reflow from getComputedStyle (and a style write per card when already set)
+        if (container.style.position !== 'relative') container.style.position = 'relative';
 
         const wrap = document.createElement('div');
         wrap.className = containerClass;
@@ -165,8 +193,7 @@
         wrap.style.position = 'absolute';
         wrap.style.top = pos.topVal; wrap.style.right = pos.rightVal; wrap.style.bottom = pos.bottomVal; wrap.style.left = pos.leftVal;
         // If positioned top-right and the card has indicators, add a top margin to avoid overlap
-        const hasIndicators = !!container.querySelector('.cardIndicators');
-        if (hasIndicators && pos.needsTopRightOffset) {
+        if (pos.needsTopRightOffset && container.querySelector('.cardIndicators')) {
             wrap.style.marginTop = 'clamp(20px, 3vw, 30px)';
         }
 
@@ -177,32 +204,43 @@
 
         // Deduplicate by flag while preserving language info for tooltips.
         // Regional variants resolve to distinct flags (pt vs pt-BR), so a
-        // movie carrying both tracks correctly shows both.
+        // movie carrying both tracks correctly shows both. A flag is only
+        // "partial" when every language behind it is: Hindi on all episodes
+        // plus Telugu on a few still earns the Indian flag its full look.
         normalized.forEach(lang => {
             const codeKey = (lang.code || '').toString();
             const nameKey = (lang.name || '').toString();
+            const name = nameKey || codeKey.toUpperCase();
             const countryCode = JE.core.mediaLanguage.resolveFlag(lang);
             if (countryCode && !seenCountries.has(countryCode)) {
                 seenCountries.add(countryCode);
-                uniqueFlags.push({ countryCode, code: codeKey, name: nameKey || codeKey.toUpperCase(), allLanguages: [nameKey || codeKey.toUpperCase()] });
+                uniqueFlags.push({ countryCode, code: codeKey, name, partial: !!lang.partial, allLanguages: [name], labels: [languageLabel({ name, partial: lang.partial })] });
             } else if (countryCode && seenCountries.has(countryCode)) {
                 // Add language name to existing country's tooltip
                 const existingFlag = uniqueFlags.find(f => f.countryCode === countryCode);
-                if (existingFlag && !existingFlag.allLanguages.includes(nameKey || codeKey.toUpperCase())) {
-                    existingFlag.allLanguages.push(nameKey || codeKey.toUpperCase());
+                if (existingFlag && !existingFlag.allLanguages.includes(name)) {
+                    existingFlag.allLanguages.push(name);
+                    existingFlag.labels.push(languageLabel({ name, partial: lang.partial }));
+                    existingFlag.partial = existingFlag.partial && !!lang.partial;
                 }
             }
         });
 
+        // Full-series languages before partial ones (stable sort keeps detection
+        // order within each group), so the 3 visible flags favour what every
+        // episode has. The admin priority list still wins over this.
+        uniqueFlags.sort((a, b) => (a.partial ? 1 : 0) - (b.partial ? 1 : 0));
+
         orderByPriority(uniqueFlags).slice(0, maxToShow).forEach(flagInfo => {
             const img = document.createElement('img');
             img.src = JE.core.mediaLanguage.flagSrc(flagInfo.countryCode);
-            img.className = flagClass;
-            img.alt = flagInfo.allLanguages.join(', ');
-            img.title = flagInfo.allLanguages.join(', ');
+            img.className = flagInfo.partial ? `${flagClass} ${partialFlagClass}` : flagClass;
+            img.alt = flagInfo.labels.join(', ');
+            img.title = flagInfo.labels.join(', ');
             img.loading = 'lazy';
             img.dataset.lang = flagInfo.countryCode.toLowerCase();
             img.dataset.langName = flagInfo.allLanguages.join(', ');
+            if (flagInfo.partial) img.dataset.partial = 'true';
             // A region subtag from the wild can name a country the flag set
             // lacks; drop the broken image rather than showing it.
             img.onerror = () => img.remove();
@@ -247,6 +285,17 @@
                     box-shadow: 0 1px 3px rgba(0,0,0,0.4);
                     flex-shrink: 0;
                     object-fit: cover;
+                }
+                /* Dub that doesn't cover every episode: dimmed, washed out and
+                   dash-outlined so it reads as "incomplete" next to a full flag.
+                   The dark ring keeps the white dashes (and a white flag's edge)
+                   visible on light posters. */
+                .${partialFlagClass} {
+                    opacity: 0.55;
+                    filter: saturate(0.5);
+                    outline: 1px dashed rgba(255, 255, 255, 0.95);
+                    outline-offset: -1px;
+                    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
                 }
                 .layout-mobile .${flagClass} {
                     width: clamp(20px, 5vw, 26px);
@@ -322,12 +371,11 @@
                 if (ctx.shouldIgnore(el)) return;
                 var codes = entry.AudioLanguages;
                 if (!codes || codes.length === 0) return;
+                // Series/Season: AudioLanguages is the union over all episodes and
+                // PartialAudioLanguages the ones missing from some of them.
+                var partial = new Set(entry.PartialAudioLanguages || []);
                 var languages = codes.map(function(code) {
-                    try {
-                        return { name: langDisplayNames.of(code), code: code };
-                    } catch (e) {
-                        return { name: code.toUpperCase(), code: code };
-                    }
+                    return { name: displayName(code), code: code, partial: partial.has(code) };
                 });
                 insertLanguageTags(ctx, el, languages);
             },

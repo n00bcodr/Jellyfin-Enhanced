@@ -20,8 +20,8 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 | Android App | ✅ Full | Official app with embedded web UI |
 | iOS App | ✅ Full | Official app with embedded web UI |
 | Desktop Apps | ✅ Full | Jellyfin Desktop v3.0.0+ (currently unreleased)|
-| Android TV | ❌ Not Supported, but auto-season, movie requests work| Native app, no web UI |
-| Third-party Apps | ❌ Not Supported, but auto-season, movie requests work | Depends on embedded web UI |
+| Android TV | ❌ Not Supported, but auto-season, movie requests and experimental Native Poster Tags work| Native app, no web UI |
+| Third-party Apps | ❌ Not Supported, but auto-season, movie requests and experimental Native Poster Tags work | Depends on embedded web UI |
 
 ## Features Overview
 

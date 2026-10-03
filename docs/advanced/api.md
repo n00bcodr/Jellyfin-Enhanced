@@ -569,13 +569,14 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `jellyseerr/status` | Seerr connection/reachability check |
+| GET | `jellyseerr/status` | Seerr connection/reachability check (answer cached for 30 s) |
 | GET | `jellyseerr/validate` | Validate configured Seerr URL(s) + API key |
 | POST | `jellyseerr/trigger-recently-added-scan` | Kick off a Seerr library scan |
 | GET | `jellyseerr/user-status` | Is the calling Jellyfin user linked to a Seerr account |
 | GET | `jellyseerr/permission-audit` | Admin: audit every Jellyfin user's Seerr permission bits |
 | GET | `jellyseerr/search` | Proxy a Seerr search query |
 | GET | `jellyseerr/sonarr` / `jellyseerr/radarr` | List Sonarr/Radarr instances known to Seerr (read-only profile/folder discovery, no credentials) |
+| GET | `jellyseerr/sonarr/lookup/{tmdbId}` | Sonarr title-lookup candidates for a series TMDB has no TVDB ID for; backs the "match series" block in the season modal. 404 when Seerr has no Sonarr configured |
 | GET | `jellyseerr/{type}/{serverId}` | Sonarr/Radarr server details by Seerr service id |
 | GET | `jellyseerr/settings/{type}` | Admin-only: Seerr's own Radarr/Sonarr instance connection settings (hostname, port, **apiKey**, externalUrl, ...). Backs the *arr tab's "Import from Seerr" button; not the same endpoint as `jellyseerr/sonarr`/`jellyseerr/radarr` above |
 | GET | `jellyfin-urls` | Admin-only: Jellyfin's own detected internal LAN URL and "Published server URIs" external/all override from Dashboard → Networking → Advanced, if configured. Backs the Seerr-import URL Mapping pre-fill |
@@ -589,6 +590,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 | GET | `.../upcoming` | Upcoming releases |
 | GET | `.../trending` | Trending feed |
 | GET | `.../network/{networkId}`, `.../studio/{studioId}` | Discovery filtered by network/studio |
+| GET | `jellyseerr/discover/tv/studio/{studioId}` | Series produced by a TMDB company, from TMDB (needs the TMDB key) in Seerr's discover shape; only rows in the caller's library carry a status (Seerr's own) |
 | GET | `.../genre/{genreId}`, `.../keyword/{keywordId}` | Discovery filtered by genre/keyword |
 | GET | `jellyseerr/discover/genreslider/movie`, `.../tv` | Genre-slider rows for the discovery UI |
 | GET | `jellyseerr/person/{personId}` | Person detail proxy |
@@ -615,7 +617,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 | GET | `tmdb/search/person`, `tmdb/search/keyword` | TMDB search proxy |
 | GET | `tmdb/genres/movie`, `tmdb/genres/tv` | TMDB genre lists |
 | GET | `tmdb/validate` | Validate the configured TMDB API key |
-| GET | `tmdb/{**apiPath}` | Generic pass-through TMDB proxy (catch-all) |
+| GET | `tmdb/{**apiPath}` | Generic pass-through TMDB proxy (catch-all). Responses are cached server-side (6 h for single resources, 30 min for lists, persisted across restarts); a cold `movie`/`tv` title and its `release_dates`, `watch/providers` and `reviews` are fetched in one upstream call |
 
 ### Client Bootstrap & Config
 
@@ -654,6 +656,9 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 | POST / DELETE | `spoiler-blur/movies/{movieId}` | Enable/disable for a movie |
 | POST / DELETE | `spoiler-blur/collections/{collectionId}` | Enable/disable for a collection |
 | POST / DELETE | `spoiler-blur/pending/{mediaType}/{tmdbId}` | Pre-arm Spoiler Guard for a title not yet in the library |
+| GET | `spoiler-blur/apply-existing/preview?skipStarted=false` | Admin: dry run of "apply to existing titles" with the saved auto-enable scope (per-user counts, nothing written; `409` if Spoiler Guard is off or a run is in progress, `500` with the error message if the count fails) |
+| POST | `spoiler-blur/apply-existing?skipStarted=false` | Admin: start the "Spoiler Guard: apply to existing titles" scheduled task with these options (`202` with `completedRuns`; `409` if already running or Spoiler Guard is off; `503` if the task isn't registered) |
+| GET | `spoiler-blur/apply-existing/status` | Admin: task `state` and `progress`, `completedRuns` and the last run's summary (`lastRun`) since server start |
 
 ### Continue Watching / Next Up
 
@@ -667,8 +672,9 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `tag-cache/rebuild` | Admin: force a full tag-cache rebuild |
-| GET | `tag-cache/{userId}` | This user's tag cache |
+| GET | `tag-cache/{userId}` | This user's tag cache (`?since=<timestamp>` returns only entries changed since, plus any under the user's Spoiler Guard). Includes `servedAt` (server time the response was captured, for ordering stored copies), `filterRevision`, a fingerprint of how this user's entries are filtered (library access) and Spoiler Guard-stripped (a client holding a copy made under another revision must replace it), and `reviewRatings`, the average user-review rating per `mediaType:tmdbKey` visible to this user, when user ratings on posters are on |
 | POST | `tag-data/{userId}` | Batch tag lookup by item ids |
+| GET | `item-stats/{userId}/{itemId}` | File size and watch progress for an item in one response (what the details page uses) |
 | GET | `file-size/{userId}/{itemId}` | File size for an item |
 | GET | `watch-progress/{userId}/{itemId}` | Watch progress for an item |
 | GET | `awards/{mediaType}/{tmdbId}` | Wikidata award wins/nominations |
@@ -721,11 +727,13 @@ All admin-only.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `MaintenanceMode/Status` | Current maintenance-mode state |
-| POST | `MaintenanceMode/Enable` | Enable maintenance mode |
-| POST | `MaintenanceMode/Disable` | Disable maintenance mode |
+| GET | `MaintenanceMode/Status` | Current maintenance-mode state (includes `Source`: `manual` or `schedule`, `EndsAt`, and the server's local time / UTC offset) |
+| POST | `MaintenanceMode/Enable` | Enable maintenance mode (`message`, `notificationMessage`, `durationMinutes`, `action`, `affectedUserIds`). While a manual window is running, re-sending the same `durationMinutes` keeps its end time; a different value restarts the clock |
+| POST | `MaintenanceMode/Disable` | Disable maintenance mode. A scheduled window ended this way stays off until the next day's window; `?includeScheduled=false` (what the config page sends while the daily schedule is on) leaves it running instead |
 | GET | `MaintenanceMode/Users` | Users affected by the current maintenance-mode config |
-| POST | `MaintenanceMode/Broadcast` | Send the maintenance notification immediately |
+| POST | `MaintenanceMode/Broadcast` | Send the maintenance notification immediately (`{countdown}` / `{ends_at}` are resolved) |
+
+The anonymous `public-config` payload carries `MaintenanceModeEnabled`, `MaintenanceModeMessage` and `MaintenanceModeEndsAt` (UTC, or null when open-ended) for the banner countdown.
 
 ### Misc
 

@@ -7,12 +7,35 @@
     let subtitleObserver = null;
     let currentSubtitleStyle = {};
 
+    // Marks elements this module has styled. Jellyfin's own Custom subtitle mode writes
+    // the same inline properties, so cleanup must only touch marked elements, and puts
+    // back the inline style Jellyfin had set before this module overwrote it.
+    const STYLED_ATTR = 'data-je-subtitle-styled';
+    const ORIGINAL_STYLE_ATTR = 'data-je-original-style';
+
+    // Jellyfin renders a secondary subtitle track in its own sibling element inside .videoSubtitles.
+    const TEXT_SELECTOR = '.videoSubtitlesInner, .videoSecondarySubtitlesInner';
+
+    function markStyled(el) {
+        if (el.hasAttribute(STYLED_ATTR)) return;
+        el.setAttribute(ORIGINAL_STYLE_ATTR, el.getAttribute('style') || '');
+        el.setAttribute(STYLED_ATTR, '');
+    }
+
+    function restoreOriginalStyle(el) {
+        const original = el.getAttribute(ORIGINAL_STYLE_ATTR);
+        el.removeAttribute(STYLED_ATTR);
+        el.removeAttribute(ORIGINAL_STYLE_ATTR);
+        if (original) el.setAttribute('style', original);
+        else el.removeAttribute('style');
+    }
+
     /**
      * Preset styles for subtitles.
      * @type {Array<object>}
      */
     JE.subtitlePresets = [
-        { name: "Clean White", textColor: "#FFFFFFFF", bgColor: "transparent", textShadow: "0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000", previewText: "Aa" },
+        { name: "Clean White", textColor: "#FFFFFFFF", bgColor: "transparent", previewText: "Aa" },
         { name: "Classic Black Box", textColor: "#FFFFFFFF", bgColor: "#000000FF", previewText: "Aa" },
         { name: "Netflix Style", textColor: "#FFFFFFFF", bgColor: "#000000B2", previewText: "Aa" },
         { name: "Cinema Yellow", textColor: "#FFFF00FF", bgColor: "#000000B2", previewText: "Aa" },
@@ -44,6 +67,64 @@
         { name: "Typewriter", family: "Courier New,Courier,monospace", previewText: "AaBb" },
         { name: "Roboto", family: "Roboto Mono,monospace", previewText: "AaBb" }
     ];
+
+    // The soft glow used since #47 when text sits directly on the video with no
+    // background box. Also what the "Auto" text effect resolves to in that case.
+    const AUTO_SHADOW = '0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000';
+
+    /**
+     * Builds an outline as a ring of hard (zero-blur) text-shadows. A dense ring
+     * reads as a solid stroke; the four-corner version this module used to ship
+     * left visible gaps at the cardinal points (#205). em units keep the stroke
+     * proportional to whatever font size preset is active. Layered text-shadow is
+     * used instead of -webkit-text-stroke because it is honoured by ::cue and
+     * paints behind the glyph rather than eating into it.
+     * @param {number} width Stroke radius in em.
+     * @param {string} color CSS color of the stroke.
+     * @returns {string} A text-shadow value.
+     */
+    function outlineShadow(width, color) {
+        const steps = 16;
+        const parts = [];
+        for (let i = 0; i < steps; i++) {
+            const angle = (Math.PI * 2 * i) / steps;
+            const x = (Math.cos(angle) * width).toFixed(3);
+            const y = (Math.sin(angle) * width).toFixed(3);
+            parts.push(`${x}em ${y}em 0 ${color}`);
+        }
+        return parts.join(', ');
+    }
+
+    /**
+     * Preset text effects for subtitles. `shadow` is the CSS text-shadow to apply;
+     * `null` marks the "Auto" preset, which keeps the historical behaviour (soft
+     * shadow on a transparent background, nothing on a solid one) and is the
+     * default so existing users see no change.
+     * @type {Array<object>}
+     */
+    JE.subtitleTextEffectPresets = [
+        { name: "Auto", shadow: null, previewText: "Aa" },
+        { name: "None", shadow: "none", previewText: "Aa" },
+        { name: "Shadow", shadow: AUTO_SHADOW, previewText: "Aa" },
+        { name: "Outline", shadow: outlineShadow(0.08, '#000'), previewText: "Aa" },
+        { name: "Outline + Shadow", shadow: `${outlineShadow(0.08, '#000')}, 0.12em 0.12em 0.2em rgba(0,0,0,0.85)`, previewText: "Aa" }
+    ];
+
+    /**
+     * Resolves the text-shadow for the user's selected text effect preset.
+     * @param {string} bgColor The subtitle background color in effect; only the
+     *   "Auto" preset looks at it (shadow when transparent, none otherwise).
+     * @param {number} [presetIndex] Text effect preset to resolve; defaults to
+     *   the saved selection.
+     * @returns {string} A CSS text-shadow value.
+     */
+    JE.getSubtitleTextShadow = (bgColor, presetIndex) => {
+        const index = presetIndex ?? JE.currentSettings.selectedTextEffectPresetIndex;
+        // Anything that isn't a known preset index (stale or hand-edited settings) resolves to Auto.
+        const preset = (Number.isInteger(index) && JE.subtitleTextEffectPresets[index]) || JE.subtitleTextEffectPresets[0];
+        if (preset.shadow !== null) return preset.shadow;
+        return bgColor === 'transparent' || bgColor === '#00000000' ? AUTO_SHADOW : 'none';
+    };
 
     /**
      * Splits a stored subtitle color into a swatch (for <input type="color">)
@@ -84,16 +165,9 @@
 
         containers.forEach(container => {
             if (disabled) {
-                // Remove JE overrides — let vanilla Jellyfin control position
-                container.style.removeProperty('position');
-                container.style.removeProperty('left');
-                container.style.removeProperty('top');
-                container.style.removeProperty('bottom');
-                container.style.removeProperty('transform');
-                container.style.removeProperty('width');
-                container.style.removeProperty('text-align');
-                container.style.removeProperty('gap');
+                if (container.hasAttribute(STYLED_ATTR)) restoreOriginalStyle(container);
             } else {
+                markStyled(container);
                 const xPct = JE.currentSettings.subtitleHorizontalPosition ?? 50;
                 const yPct = JE.currentSettings.subtitleVerticalPosition ?? 95;
                 container.style.setProperty('position', 'absolute', 'important');
@@ -111,35 +185,13 @@
     }
 
     /**
-     * Removes all JE-injected subtitle styles from existing elements.
-     * Called when the user disables custom subtitle styles.
+     * Removes JE-injected subtitle styles from the elements this module styled.
+     * Called when the user disables custom subtitle styles. Elements it never
+     * styled are left alone so Jellyfin's own subtitle appearance stays intact.
      */
     function removeInjectedStyles() {
-        document.querySelectorAll('.videoSubtitlesInner').forEach(el => {
-            el.style.removeProperty('background-color');
-            el.style.removeProperty('color');
-            el.style.removeProperty('font-size');
-            el.style.removeProperty('font-family');
-            el.style.removeProperty('text-shadow');
-            el.style.removeProperty('border-radius');
-            el.style.removeProperty('padding');
-            el.style.removeProperty('font-weight');
-            el.style.removeProperty('font-style');
-            el.style.removeProperty('font-variant');
-            el.style.removeProperty('margin-top');
-            el.style.removeProperty('margin-bottom');
-        });
-        document.querySelectorAll('.videoSubtitles').forEach(container => {
-            container.style.removeProperty('position');
-            container.style.removeProperty('left');
-            container.style.removeProperty('top');
-            container.style.removeProperty('bottom');
-            container.style.removeProperty('transform');
-            container.style.removeProperty('width');
-            container.style.removeProperty('max-width');
-            container.style.removeProperty('text-align');
-            container.style.removeProperty('gap');
-        });
+        document.querySelectorAll(`.videoSubtitlesInner[${STYLED_ATTR}], .videoSecondarySubtitlesInner[${STYLED_ATTR}], .videoSubtitles[${STYLED_ATTR}]`)
+            .forEach(restoreOriginalStyle);
         // Remove legacy ::cue overrides
         const styleElement = document.getElementById('je-html-videoplayer-cuestyle');
         if (styleElement?.sheet) {
@@ -163,6 +215,7 @@
      */
     function forceApplyInlineStyles(element) {
         if (!element || JE.currentSettings.disableCustomSubtitleStyles) return;
+        markStyled(element);
 
         // Apply all custom styles directly to videoSubtitlesInner
         element.style.setProperty('background-color', currentSubtitleStyle.bgColor, 'important');
@@ -186,6 +239,10 @@
         element.style.setProperty('font-style', 'normal', 'important');
         element.style.setProperty('font-variant', 'normal', 'important');
 
+        // The secondary element keeps Jellyfin's own spacing (margins are set by its
+        // stylesheet), which is what separates it from the primary line.
+        if (element.classList.contains('videoSecondarySubtitlesInner')) return;
+
         // Vanilla Jellyfin's own subtitle-position slider writes its offset as a
         // margin directly on this same element, independent of anything JE sets.
         // Left alone it stacks on top of our container-level positioning, so the
@@ -203,11 +260,10 @@
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
                     if (node.nodeType === 1) {
-                        if (node.classList.contains('videoSubtitlesInner')) {
+                        if (node.matches(TEXT_SELECTOR)) {
                             forceApplyInlineStyles(node);
-                        } else if (node.querySelector) {
-                            const inner = node.querySelector('.videoSubtitlesInner');
-                            if (inner) forceApplyInlineStyles(inner);
+                        } else if (node.querySelectorAll) {
+                            node.querySelectorAll(TEXT_SELECTOR).forEach(forceApplyInlineStyles);
                         }
                         // Also reapply position whenever a subtitle container appears
                         if (node.classList.contains('videoSubtitles') || node.querySelector?.('.videoSubtitles')) {
@@ -227,7 +283,7 @@
         currentSubtitleStyle = { textColor, bgColor, fontSize, fontFamily, textShadow };
 
         // Force-apply to any subtitle elements that might already exist
-        document.querySelectorAll('.videoSubtitlesInner').forEach(forceApplyInlineStyles);
+        document.querySelectorAll(TEXT_SELECTOR).forEach(forceApplyInlineStyles);
 
         // Apply position to the container
         applySubtitlePosition();
@@ -289,9 +345,7 @@
 
         const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
         const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
-        const textShadow = bgColor === 'transparent' || bgColor === '#00000000'
-            ? '0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000'
-            : 'none';
+        const textShadow = JE.getSubtitleTextShadow(bgColor);
 
         const fontSizePreset = JE.fontSizePresets[JE.currentSettings.selectedFontSizePresetIndex ?? 2];
         const fontFamilyPreset = JE.fontFamilyPresets[JE.currentSettings.selectedFontFamilyPresetIndex ?? 0];

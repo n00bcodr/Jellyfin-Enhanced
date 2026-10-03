@@ -917,15 +917,8 @@
             const style = document.createElement('style');
             style.id = styleId;
             style.textContent = `
-                @font-face {
-                    font-family: 'Material Symbols Rounded';
-                    font-style: normal;
-                    font-weight: 100 700;
-                    font-display: block;
-                    src: url(${JE.cdn.font('materialsymbolsrounded.woff2')}) format('woff2');
-                }
                 .material-symbols-rounded {
-                    font-family: 'Material Symbols Rounded';
+                    font-family: 'JE Material Symbols Rounded';
                     font-weight: normal;
                     font-style: normal;
                     line-height: 1;

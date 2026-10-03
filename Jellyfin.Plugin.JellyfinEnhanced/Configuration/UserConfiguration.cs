@@ -18,6 +18,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int SelectedStylePresetIndex { get; set; }
         public int SelectedFontSizePresetIndex { get; set; }
         public int SelectedFontFamilyPresetIndex { get; set; }
+        public int SelectedTextEffectPresetIndex { get; set; }
         public string CustomSubtitleTextColor { get; set; } = "#FFFFFFFF";
         public string CustomSubtitleBgColor { get; set; } = "#00000000";
         public bool UsingCustomColors { get; set; }
@@ -27,11 +28,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RandomUnwatchedOnly { get; set; }
         public bool RandomIncludeMovies { get; set; }
         public bool RandomIncludeShows { get; set; }
+        public bool RandomScopeCurrentContainer { get; set; }
+        public string RandomSourceId { get; set; } = "";
         public bool ShowWatchProgress { get; set; }
         public string WatchProgressMode { get; set; } = "percentage";
         public string WatchProgressTimeFormat { get; set; } = "hours";
         public bool ShowFileSizes { get; set; }
         public bool ShowAudioLanguages { get; set; }
+        /// <summary>Native poster tags preference; null (never chosen) and true are on, false is off.</summary>
+        public bool? UseNativePosterTags { get; set; }
         public bool QualityTagsEnabled { get; set; }
         public bool ShowResolutionTag { get; set; } = true;
         public bool ShowSourceTag { get; set; } = true;
@@ -48,12 +53,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool GenreTagsEnabled { get; set; }
         public bool LanguageTagsEnabled { get; set; }
         public bool RatingTagsEnabled { get; set; }
+        public bool AgeRatingTagsEnabled { get; set; }
         public bool PeopleTagsEnabled { get; set; }
         public bool TagsHideOnHover { get; set; }
         public string QualityTagsPosition { get; set; } = "top-left";
+        // Audio language the sound tag is judged by: "" = server default,
+        // "auto" = the user's Jellyfin audio language, "none" = no preference,
+        // otherwise an ISO 639 code.
+        public string QualityTagsPreferredAudioLanguage { get; set; } = string.Empty;
         public string GenreTagsPosition { get; set; } = "top-right";
         public string LanguageTagsPosition { get; set; } = "bottom-left";
         public string RatingTagsPosition { get; set; } = "bottom-right";
+        public bool RatingTagsOnMovies { get; set; } = true;
+        public bool RatingTagsOnSeries { get; set; } = true;
+        public bool RatingTagsOnSeasons { get; set; } = true;
+        public bool RatingTagsOnEpisodes { get; set; } = true;
+        public bool RatingTagsOnContinueWatching { get; set; } = true;
+        public bool RatingTagsOnNextUp { get; set; } = true;
+        public string AgeRatingTagsPosition { get; set; } = "bottom-right";
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool RemoveContinueWatchingEnabled { get; set; }
         public string LastOpenedTab { get; set; } = string.Empty;

@@ -124,6 +124,16 @@ Customize quality tag appearance.
 }
 ```
 
+**Restyle (or hide) flags for languages not on every episode of a series/season:**
+```css
+.language-flag-partial {
+    opacity: 1 !important;
+    filter: none !important;
+    outline: 2px solid gold !important;
+    /* or hide them: display: none !important; */
+}
+```
+
 ### Rating Tags CSS
 
 **Customize TMDB rating:**
@@ -137,6 +147,23 @@ Customize quality tag appearance.
 ```css
 .rating-tag-critic {
     display: none !important;
+}
+```
+
+### Age Rating Tags CSS
+
+**Customize the badge:**
+```css
+.age-rating-tag {
+    border-radius: 999px !important;
+    font-size: 12px !important;
+}
+```
+
+**Override the colour of one rating:**
+```css
+.age-rating-tag[rating='TV-MA'] {
+    background-color: #000 !important;
 }
 ```
 

@@ -96,6 +96,31 @@
                 font-family: inherit;
                 box-shadow: 0 1px 1px rgba(0,0,0,0.2);
             }
+            /* The two bundled Material Symbols faces JE's own icons use
+               (subsets built by scripts/material-symbols/subset.py, ~5 KB
+               each), declared once here for every module that uses them under
+               JE-private family names; a declaration costs nothing until a
+               rule references the family. */
+            @font-face {
+              font-family: 'JE Material Symbols Rounded';
+              font-style: normal;
+              font-weight: 100 700;
+              font-display: block;
+              src: url(${JE.cdn.font('materialsymbolsrounded-subset.woff2')}) format('woff2');
+            }
+            @font-face {
+              font-family: 'JE Material Symbols Outlined';
+              font-style: normal;
+              font-weight: 400;
+              src: url(${JE.cdn.font('materialsymbolsoutlined-subset.woff2')}) format('woff2');
+            }
+            /* The full fonts under the public family names, for themes and
+               custom CSS that rely on JE providing them (e.g. Jellyfish points
+               .material-icons at 'Material Symbols Rounded'). They must not be
+               the subsets: a theme's own declaration of the same family loses
+               to JE's later one, and every icon outside the subset would then
+               render as its ligature name. JE's code never references these
+               names, so users without such a theme never download them. */
             @font-face {
               font-family: 'Material Symbols Rounded';
               font-style: normal;
@@ -103,10 +128,16 @@
               font-display: block;
               src: url(${JE.cdn.font('materialsymbolsrounded.woff2')}) format('woff2');
             }
+            @font-face {
+              font-family: 'Material Symbols Outlined';
+              font-style: normal;
+              font-weight: 400;
+              src: url(${JE.cdn.font('materialsymbolsoutlined.woff2')}) format('woff2');
+            }
             .mediaInfoItem-fileSize .material-icons,
             .mediaInfoItem-watchProgress .material-icons,
             .mediaInfoItem-audioLanguage .material-icons {
-              font-family: 'Material Symbols Rounded' !important;
+              font-family: 'JE Material Symbols Rounded' !important;
               line-height: 1;
               letter-spacing: normal;
               text-transform: none;

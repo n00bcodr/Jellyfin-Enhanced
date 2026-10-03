@@ -242,7 +242,7 @@
                     icon: 'newspaper'
                 },
                 {
-                    selector: 'a[href*="Segment%Editor"]',
+                    selector: 'a[href*="Segment%20Editor"]',
                     type: 'material',
                     icon: 'content_cut'
                 },
@@ -251,6 +251,12 @@
                     type: 'image',
                     src: window.JellyfinEnhanced.cdn.url('jelly-helper', 'media/favicon.ico'),
                     alt: 'Jellyfin Helper'
+                },
+                {
+                    selector: 'a[href*="Moonbase"]',
+                    type: 'image',
+                    src: window.JellyfinEnhanced.cdn.url('moonbase', 'moonfin-client'),
+                    alt: 'Moonbase'
                 }
             ];
 
@@ -277,6 +283,9 @@
         if (observer) return;
 
         const callback = (mutations) => {
+            // The plugins list only exists in the dashboard document; skip the
+            // per-record subtree queries below on every other page.
+            if (!document.body.classList.contains('dashboardDocument')) return;
             let shouldProcess = false;
 
             mutations.forEach((mutation) => {

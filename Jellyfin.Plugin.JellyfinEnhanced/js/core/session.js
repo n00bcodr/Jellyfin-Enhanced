@@ -234,11 +234,13 @@
         // Slow reconcile: catches window.ApiClient being replaced wholesale
         // (multi-server switching creates a fresh client our wrapper isn't
         // on) and any path none of the event-driven detectors saw. Two
-        // property reads per tick — no observable cost.
+        // property reads per tick — the interval only sets how often the
+        // page wakes for it; every login/logout also navigates, so the
+        // event-driven detectors above are what actually catch switches.
         setInterval(() => {
             installAuthHook(typeof ApiClient !== 'undefined' ? ApiClient : null);
             checkNow('reconcile');
-        }, 1000);
+        }, 5000);
     }
 
     JE.session = {

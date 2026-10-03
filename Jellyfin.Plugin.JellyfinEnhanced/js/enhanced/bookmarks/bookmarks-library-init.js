@@ -64,7 +64,6 @@
           window.JE = je;
         }
         hookViewEvents();
-        document.addEventListener('je-bookmarks-updated', renderIfSectionExists);
 
         // Sidebar navigation (when neither Plugin Pages, Custom Tabs, nor the
         // native tab is handling it)
@@ -109,16 +108,7 @@
         // when navigating to the admin dashboard — an observer bound to the old
         // element would become orphaned after returning to home (issue 536).
         // Routes to the shared multiplexed body observer.
-        let mountPending = false;
-        JE.helpers.createObserver('bookmarks-library-custom-tab', () => {
-          if (!mountPending) {
-            mountPending = true;
-            requestAnimationFrame(() => {
-              mountPending = false;
-              renderIfSectionExists();
-            });
-          }
-        }, document.body, { childList: true, subtree: true });
+        JE.helpers.observeTabContainers('bookmarks-library-custom-tab', '.sections.bookmarks', renderIfSectionExists);
 
         // Try immediate render in case tab is already visible
         renderIfSectionExists();

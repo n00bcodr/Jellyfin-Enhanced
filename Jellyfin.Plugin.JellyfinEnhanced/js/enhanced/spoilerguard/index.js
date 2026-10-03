@@ -38,6 +38,7 @@
         disableForTmdb: internal.disableForTmdb,
         whenLoaded: internal.whenLoaded,
         isLoadOk: internal.isLoadOk,
+        isLoaded: internal.isLoaded,
         confirmDisableSpoiler: internal.confirmDisableSpoiler,
         getUserPrefs: internal.getUserPrefs,
         setUserPrefs: internal.setUserPrefs,

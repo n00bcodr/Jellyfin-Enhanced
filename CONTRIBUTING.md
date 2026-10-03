@@ -44,9 +44,10 @@ Key directories:
 Adding a client module:
 
 1. Create the file in the directory for its feature, **following the naming already used in that directory**. The recently split page-style directories use concern suffixes (`-styles`, `-data`, `-render`, `-actions`, `-init`, `-custom-tab`); others use bare names or a different prefix.
-2. Register it in the `allComponentScripts` array in `js/plugin.js`, **after** every module whose exports it reads at load time — scripts execute in array order, and nothing validates it.
+2. Register it in the `js/component-scripts.json` manifest, **after** every module whose exports it reads at load time — scripts execute in manifest order, and nothing validates it. Entries starting with `//` are ordering notes and are skipped. The server concatenates the manifest into `/JellyfinEnhanced/bundle.js` and plugin.js loads that in production (individual files in dev mode and as a fallback), so there is nothing else to register.
 3. Avoid hyphens in new directory names. Embedded-resource names are derived from the file path and a hyphen in a *directory* segment is rewritten to an underscore, which makes the module unreachable at runtime.
 4. No `.csproj` change is needed — `js\**` is embedded by a glob — but the plugin must be rebuilt and redeployed for a new file to be served.
+5. `js/fonts/` holds two copies of each Material Symbols face. JE's own icons use the `*-subset.woff2` files, which contain only the icons the client uses and are declared under the private family names `'JE Material Symbols Rounded'` / `'JE Material Symbols Outlined'` — always use those names in JE rules. The full fonts stay under the public names (`'Material Symbols Rounded'` / `'Material Symbols Outlined'`) only for themes and custom CSS that rely on JE providing them; a subset under a public name would shadow a theme's own declaration and break its icons. To use a new Material Symbols icon, add its name to `ICONS` in `scripts/material-symbols/subset.py`, re-run the script and commit the regenerated subsets — otherwise the icon renders as its name in plain text.
 
 ## 📝 Code Contribution Guidelines
 

@@ -13,16 +13,9 @@
 
   // CSS Styles
   const CSS_STYLES = `
-    @font-face {
-      font-family: 'Material Symbols Rounded';
-      font-style: normal;
-      font-weight: 100 700;
-      font-display: block;
-      src: url(${window.JellyfinEnhanced.cdn.font('materialsymbolsrounded.woff2')}) format('woff2');
-    }
 
     .material-symbols-rounded {
-      font-family: 'Material Symbols Rounded';
+      font-family: 'JE Material Symbols Rounded';
       font-weight: normal;
       font-style: normal;
       font-size: 24px;

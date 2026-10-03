@@ -340,25 +340,16 @@
     if (config.HiddenContentUseCustomTabs) return;
     if (config.HiddenContentUseNativeTab) return;
 
-    const observer = new MutationObserver(() => {
+    // Shared watcher (helpers.onSidebarRebuilt): runs only when the link is
+    // gone and the section exists, instead of a document-wide observer.
+    JE.helpers.onSidebarRebuilt('hidden-content', '.je-nav-hidden-content-item', () => {
       const currentConfig = JE.pluginConfig || {};
       if (currentConfig.HiddenContentUseCustomTabs) return;
       if (currentConfig.HiddenContentUseNativeTab) return;
       if (pluginPagesExists && currentConfig.HiddenContentUsePluginPages) return;
-
-      if (!document.querySelector('.je-nav-hidden-content-item')) {
-        const jellyfinEnhancedSection = document.querySelector('.jellyfinEnhancedSection');
-        if (jellyfinEnhancedSection) {
-          console.log(`${logPrefix} Sidebar rebuilt, re-injecting navigation`);
-          injectNavigation();
-        }
-      }
+      console.log(`${logPrefix} Sidebar rebuilt, re-injecting navigation`);
+      injectNavigation();
     });
-
-    const navDrawer = document.querySelector('.mainDrawer, .navDrawer, body');
-    if (navDrawer) {
-      observer.observe(navDrawer, { childList: true, subtree: true });
-    }
   }
 
   Object.assign(internal, {

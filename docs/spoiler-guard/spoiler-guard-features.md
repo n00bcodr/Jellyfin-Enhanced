@@ -4,6 +4,8 @@ A per-user, per-show opt-in protection layer for episodes, seasons, movies, and 
 
 ![Spoiler Guard on a series page](web-02-bluey-series.png)
 
+![The same season with Spoiler Guard on and off](../images/readme/spoiler-guard-compare.webp)
+
 !!! info "How it works at a glance"
 
     Spoiler Guard runs on the server inside Jellyfin's image and metadata APIs. When you have Spoiler Guard enabled for a series:
@@ -155,12 +157,15 @@ There are no client-side tweaks to install. Once an admin turns the master switc
 
 ## Auto-enable options (optional, admin-controlled)
 
-Two admin toggles can save you from manually opting in for every new show:
+Three admin toggles can save you from manually opting in for every new show:
 
 - **Auto-enable on first play of a new show** — the first time you press play on S1E1 of a series you've never watched, the plugin adds it to your Spoiler Guard list automatically. Rewatches and jumping in at later episodes don't trigger it.
 - **Auto-enable on Seerr request** — every successful Seerr request you submit via JE automatically registers a pending Spoiler Guard intent. When the content lands, Spoiler Guard is already on for you.
+- **Auto-enable when new titles are added to the library** — every new show or movie that appears in a library you can see is added to your Spoiler Guard list the moment it lands, before anyone presses play. You can still switch it off per title afterwards, and a rescan or metadata refresh won't bring it back.
 
-Both are admin-level (off by default). Ask your admin to turn them on if you want a hands-free experience.
+All three are admin-level (off by default), and the admin can limit them to TV shows only, movies only, or specific libraries. Ask your admin to turn them on if you want a hands-free experience.
+
+Titles that were already in the library aren't armed by a rescan. An admin can arm them once with **Apply to existing titles now…** (or the matching scheduled task), which skips anything you already guard or have fully watched. See [Guarding titles already in the library](spoiler-guard-settings.md#guarding-titles-already-in-the-library).
 
 ---
 

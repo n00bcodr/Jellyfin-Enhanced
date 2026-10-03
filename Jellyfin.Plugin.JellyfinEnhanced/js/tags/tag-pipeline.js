@@ -14,9 +14,51 @@
     const MEDIA_TYPES = new Set(['Movie', 'Episode', 'Series', 'Season', 'BoxSet', 'Video']);
     const FETCH_DEBOUNCE_MS = 150; // Debounce only the batch API call, not the scan
     const logPrefix = '🪼 Jellyfin Enhanced [TagPipeline]:';
-    let serverCache = null; // Map<itemId, TagCacheEntry> loaded from server
+
+    // ── Server cache state ─────────────────────────────────────────────
+    //
+    // Entries come from the server's pre-computed cache and live in two places:
+    // `serverCache` in memory and, when the browser allows it, a per-user copy
+    // in IndexedDB (tags/tag-cache-store.js). The first load downloads the
+    // whole cache — memory then holds every entry (serverCacheComplete) — and
+    // persists it in idle slices. Every later page load restores from the
+    // stored copy instead: memory starts empty and fills from IndexedDB as
+    // cards ask for entries, while a `?since=` request fetches only what
+    // changed. The stored copy is scoped to server + user because the payload
+    // is filtered (library access) and spoiler-stripped for the user who
+    // fetched it, and it records the filter revision it was made under: a
+    // restored copy renders nothing until that first `?since=` answer confirms
+    // the revision (and version) still match — access or Spoiler Guard changed
+    // (possibly elsewhere) means a full download instead, so a stale filter or
+    // strip never reaches a card. Without IndexedDB
+    // (private mode, quota, errors) this is exactly the old behaviour: one full
+    // download per page load, memory only.
+
+    let serverCache = null;          // Map<itemId, TagCacheEntry>; null = not in use (batch fallback)
+    let serverCacheComplete = false; // memory holds every entry the server has for this user
     let serverCacheVersion = 0;
     let serverCacheTimestamp = 0;
+    let serverFilterRevision = null; // filter revision memory was made under (access + Spoiler Guard, from the server)
+    let cacheGeneration = 0;         // bumped whenever memory is replaced or dropped
+    let storeGate = null;            // Promise while a restored copy awaits confirmation; lookups wait on it
+    let openStoreGate = null;        // resolves storeGate
+    const deltaIds = new Set();      // ids memory holds from a delta (newer than the stored copy until persisted)
+    let deltaInFlight = null;        // { promise, epoch, generation } of the running fetchDelta(), shared by load and refresh
+    let storeBaseServedAt = 0;       // capture time of the stored snapshot this page restored and confirmed
+    let storeScope = null;           // `${serverId}:${userId}` while the stored copy backs lookups/writes
+    let persistGeneration = 0;       // bumped whenever queued stored-copy writes must stop
+    let persistChain = Promise.resolve(); // stored-copy writes run one after another
+    const storeMisses = new Set();   // ids the stored copy has no entry for (never ask IndexedDB twice)
+    let skipStoreThisSession = false; // server answered empty or disabled: don't restore a stored copy
+    let loadInFlight = null;         // Promise of the running loadServerCache(), shared by concurrent callers
+    let loadInFlightEpoch = 0;       // session epoch that load was started for
+    let refreshInFlight = null;      // Promise of the running refreshServerCache()
+    let reviewRatings = null;        // Map<"mediaType:tmdbKey", average> from the payload; null = unavailable
+    let reviewRatingsRequestedAt = 0; // performance.now() when the request behind reviewRatings started
+    const reviewRatingsListeners = new Set(); // called with the changed keys (Set, or null = all) when averages change
+    const PERSIST_SLICE = 250;       // entries per idle-slice write (each put clones its entry on this thread)
+    const PERSIST_START_DELAY_MS = 1500; // let the page's first tag scans have the idle time before persisting
+    const MEMORY_SOFT_CAP = 20000;   // entries kept in memory on the stored-copy path before it is reset
 
     // ── State ──────────────────────────────────────────────────────────
 
@@ -44,6 +86,10 @@
         '#mediaLibraryPage .cardImageContainer',
         '.listItemImage:not(.listItemImage-large)', // Small list rows (Playlists, Albums); listItemImage-large (e.g. episode lists) is big enough for overlays
     ];
+    // One ancestor walk per card: closest() with a selector list matches the
+    // element itself or any ancestor against every selector in one pass, which
+    // is what matches()||closest() per selector did in eight passes.
+    const PIPELINE_SKIP_SELECTOR = PIPELINE_SKIP_SELECTORS.join(', ');
 
     /**
      * Check if an element should be skipped by the pipeline entirely.
@@ -51,7 +97,7 @@
      * @returns {boolean}
      */
     function shouldSkipElement(el) {
-        return PIPELINE_SKIP_SELECTORS.some(sel => el.matches(sel) || el.closest(sel));
+        return el.closest(PIPELINE_SKIP_SELECTOR) !== null;
     }
 
     // ── Renderer Registration ──────────────────────────────────────────
@@ -137,6 +183,7 @@
                     url: ApiClient.getUrl('/Items', {
                         ParentId: parentId,
                         IncludeItemTypes: 'Episode',
+                        IsVirtualItem: false,
                         Recursive: true,
                         SortBy: 'PremiereDate',
                         SortOrder: 'Ascending',
@@ -197,51 +244,368 @@
     // ── Server Cache ───────────────────────────────────────────────────
 
     /**
-     * Load the pre-computed tag cache from the server.
-     * If available, tags render entirely from this cache with zero batch API calls.
-     * Falls back to the existing batch POST pipeline if the cache is empty or unavailable.
-     * @returns {Promise<void>}
+     * Storage scope of the signed-in user's cache copy.
+     * @returns {string|null} `${serverId}:${userId}`, or null before sign-in.
      */
-    async function loadServerCache() {
-        if (!JE.pluginConfig?.TagCacheServerMode) {
-            console.log(`${logPrefix} Server cache mode disabled`);
-            return;
-        }
-        try {
-            const userId = ApiClient.getCurrentUserId();
-            if (!userId) return;
+    function cacheScope() {
+        const userId = JE.session?.getUserId() || ApiClient.getCurrentUserId();
+        if (!userId) return null;
+        return `${JE.session?.getServerId() || ''}:${userId}`;
+    }
 
-            // The response is spoiler-stripped for THIS user — drop it if the
-            // signed-in user changed while the request was in flight.
-            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-            const resp = await ApiClient.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}`),
-                dataType: 'json'
-            });
-            if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
-
-            if (resp && resp.items && resp.count > 0) {
-                serverCache = new Map(Object.entries(resp.items));
-                serverCacheVersion = resp.version;
-                serverCacheTimestamp = resp.timestamp;
-                console.log(`${logPrefix} Server cache loaded: ${serverCache.size} items (v${serverCacheVersion})`);
-            } else {
-                console.log(`${logPrefix} Server cache empty, using batch fallback`);
+    /**
+     * Take the review rating averages that ride on a tag-cache response
+     * (full or delta). Absent (chips off, or an older server) means the user
+     * review tags ask /reviews/ratings themselves. A response whose request
+     * started before the one behind the current map is older data and is
+     * ignored; the start time also tells the review tags whether the map can
+     * reflect a review the viewer just edited (see getReviewRatingsRequestedAt).
+     * @param {object} resp - Tag-cache response body.
+     * @param {number} requestedAt - performance.now() when its request started.
+     */
+    function applyReviewRatings(resp, requestedAt) {
+        if (requestedAt < reviewRatingsRequestedAt) return;
+        reviewRatingsRequestedAt = requestedAt;
+        const previous = reviewRatings;
+        const raw = resp && resp.reviewRatings;
+        if (!raw || typeof raw !== 'object') {
+            reviewRatings = null;
+        } else {
+            const map = new Map();
+            for (const key in raw) {
+                const value = raw[key];
+                if (value && typeof value.average === 'number' && Number.isFinite(value.average)) {
+                    map.set(key, value.average);
+                }
             }
-        } catch (err) {
-            console.warn(`${logPrefix} Failed to load server cache, using batch fallback:`, err);
+            reviewRatings = map;
+        }
+        notifyReviewRatingsChanged(previous, reviewRatings);
+    }
+
+    /**
+     * Tell the review tags a newer averages map was accepted and which of its
+     * values changed, so chips already on cards are updated in place. Called
+     * even when no value changed: the newer map can still supersede values the
+     * review tags looked up on their own (they decide; usually nothing to do).
+     * @param {Map<string, number>|null} previous
+     * @param {Map<string, number>|null} next
+     */
+    function notifyReviewRatingsChanged(previous, next) {
+        if (reviewRatingsListeners.size === 0 || (!previous && !next)) return;
+        let changed = null; // null = every key (one side unavailable)
+        if (previous && next) {
+            changed = new Set();
+            for (const [key, value] of next) {
+                if (previous.get(key) !== value) changed.add(key);
+            }
+            for (const key of previous.keys()) {
+                if (!next.has(key)) changed.add(key);
+            }
+        }
+        for (const listener of reviewRatingsListeners) {
+            try { listener(changed); } catch (err) { console.warn(`${logPrefix} review ratings listener failed:`, err); }
         }
     }
 
     /**
-     * Fetch incremental server cache updates since last load.
+     * Forget the server cache (memory and the stored copy as a lookup source).
+     * Queued stored-copy writes stop at their next slice.
+     */
+    function dropServerCache() {
+        serverCache = null;
+        serverCacheComplete = false;
+        serverCacheVersion = 0;
+        serverCacheTimestamp = 0;
+        serverFilterRevision = null;
+        cacheGeneration++;
+        storeBaseServedAt = 0;
+        storeScope = null;
+        storeMisses.clear();
+        deltaIds.clear();
+        persistGeneration++;
+        releaseStoreGate();
+    }
+
+    /**
+     * Let lookups waiting on a restored copy proceed (it was confirmed,
+     * replaced or dropped).
+     */
+    function releaseStoreGate(gate) {
+        // A confirmation only ever releases the gate it was confirming.
+        if (gate !== undefined && gate !== storeGate) return;
+        const open = openStoreGate;
+        storeGate = null;
+        openStoreGate = null;
+        if (open) open();
+    }
+
+    /**
+     * Queue a stored-copy write after the ones already queued. A failure gives
+     * up on persistence (the store marks itself unavailable); memory is
+     * unaffected either way.
+     * @param {() => Promise<void>} work
+     */
+    function queuePersist(work) {
+        persistChain = persistChain.then(work).catch((err) => {
+            console.warn(`${logPrefix} Could not persist the server cache; keeping it in memory only:`, err);
+        });
+    }
+
+    /**
+     * Write a freshly downloaded full cache to the stored copy in idle slices:
+     * clear the scope, put the entries a slice at a time, then the meta record
+     * (its presence is what marks the stored copy complete, so an interrupted
+     * write is never restored). Memory already holds everything, so nothing
+     * waits for this.
+     * @param {string} scope
+     * @param {object} resp - Full tag-cache response body.
+     */
+    function persistFullCache(scope, resp) {
+        const servedAt = typeof resp.servedAt === 'number' ? resp.servedAt : 0;
+        if (!JE.tagCacheStore?.available()) return;
+        const store = JE.tagCacheStore;
+        const entries = Object.entries(resp.items);
+        const meta = {
+            version: resp.version,
+            timestamp: resp.timestamp,
+            filterRevision: typeof resp.filterRevision === 'string' ? resp.filterRevision : '',
+            count: entries.length,
+            clearStamp: JE.pluginConfig?.ClearLocalStorageTimestamp || 0,
+            servedAt,
+            savedAt: Date.now(),
+        };
+        storeScope = scope;
+        const generation = ++persistGeneration;
+        queuePersist(async () => {
+            // Not urgent: the page's own tag scans get the idle slices first.
+            // A page closed before this runs simply downloads in full next time.
+            await new Promise((resolve) => setTimeout(resolve, PERSIST_START_DELAY_MS));
+            if (generation !== persistGeneration) return;
+            // Claim the scope; another tab rewriting it later takes it over and
+            // this write stops (every slice and the final meta check the claim).
+            const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+            // Another tab already stored newer data: keep it.
+            if (!await store.beginFullWrite(scope, token, { servedAt })) return;
+            for (let i = 0; i < entries.length; i += PERSIST_SLICE) {
+                await idleYield();
+                if (generation !== persistGeneration) return;
+                if (!await store.putManyIfOwner(scope, token, entries.slice(i, i + PERSIST_SLICE))) return;
+            }
+            if (generation !== persistGeneration) return;
+            if (await store.commitFullWrite(scope, token, meta)) {
+                console.log(`${logPrefix} Server cache persisted: ${entries.length} items`);
+            }
+        });
+    }
+
+    /**
+     * Write delta entries to the stored copy and advance its cursor. Runs after
+     * any full persist still queued, and applies only on top of exactly the
+     * copy the delta was fetched against (see tagCacheStore.applyDelta): if
+     * another tab moved the copy on, or a rewrite is in progress, nothing is
+     * written and memory alone carries this delta.
+     * @param {Array<[string, object]>} entries - [itemId, entry] pairs
+     * @param {{timestamp: number, version: number, filterRevision: string}} base - What the delta was requested against.
+     * @param {number} timestamp - The delta response's timestamp.
+     * @param {number} servedAt - When the server captured the delta (ms, server clock).
+     */
+    function persistDelta(entries, base, timestamp, servedAt) {
+        const scope = storeScope;
+        if (!scope || !JE.tagCacheStore?.available()) return;
+        const store = JE.tagCacheStore;
+        const generation = persistGeneration;
+        queuePersist(async () => {
+            if (generation !== persistGeneration) return;
+            await store.applyDelta(scope, base, entries, timestamp, servedAt);
+        });
+    }
+
+    /**
+     * Restore the stored copy for the current user, if there is a complete one
+     * (other users' copies are deleted on the way). Lookups then read from it;
+     * the caller fetches the delta.
+     * @returns {Promise<boolean>} true when lookups now run against the stored copy
+     */
+    async function restoreStoredCache() {
+        const store = JE.tagCacheStore;
+        if (!store?.available() || skipStoreThisSession) return false;
+        const scope = cacheScope();
+        if (!scope) return false;
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        try {
+            const meta = await store.getMeta(scope);
+            // Other users' copies go in the background (queued ahead of any
+            // persist, and only ever touching keys outside this scope), so a
+            // first load isn't held up by a second transaction before its
+            // full download can start.
+            queuePersist(() => store.clearOtherScopes(scope));
+            if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
+            // Complete copies only (a pending record is a rewrite in progress),
+            // written with a filter revision and capture time (older copies
+            // predate them).
+            if (!meta || meta.pending || !(meta.count > 0) || !meta.timestamp
+                || typeof meta.filterRevision !== 'string' || typeof meta.servedAt !== 'number') return false;
+            // The admin's "Clear All Client Caches" applies to this copy too.
+            const clearStamp = JE.pluginConfig?.ClearLocalStorageTimestamp || 0;
+            if (clearStamp > (meta.clearStamp || 0)) {
+                console.log(`${logPrefix} Server triggered cache clear; dropping the stored copy`);
+                await store.clearScope(scope);
+                return false;
+            }
+            serverCache = new Map();
+            serverCacheComplete = false;
+            serverCacheVersion = meta.version;
+            serverCacheTimestamp = meta.timestamp;
+            storeBaseServedAt = meta.servedAt || 0;
+            serverFilterRevision = meta.filterRevision;
+            cacheGeneration++;
+            storeScope = scope;
+            storeMisses.clear();
+            deltaIds.clear();
+            // Nothing renders from the copy until the first delta confirms its
+            // strip revision and version (fetchDelta releases the gate).
+            releaseStoreGate();
+            storeGate = new Promise((resolve) => { openStoreGate = resolve; });
+            console.log(`${logPrefix} Server cache restored from IndexedDB: ${meta.count} items (v${meta.version}), awaiting confirmation`);
+            return true;
+        } catch (err) {
+            console.warn(`${logPrefix} Could not read the stored server cache:`, err);
+            return false;
+        }
+    }
+
+    /**
+     * Download the whole cache for the current user and make it the live copy:
+     * memory holds every entry, and the stored copy is rewritten in the
+     * background. Resolves once memory is ready.
+     * @param {{fresh?: boolean}} [options] - fresh bypasses HTTP revalidation (always done when IndexedDB is available).
+     * @returns {Promise<boolean>} true when the server had entries
+     */
+    async function downloadFullCache(options) {
+        const userId = ApiClient.getCurrentUserId();
+        if (!userId) return false;
+        const scope = cacheScope();
+
+        // The response is spoiler-stripped for THIS user — drop it if the
+        // signed-in user changed while the request was in flight.
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const requestedAt = performance.now();
+        // A download that will be persisted must carry a current capture time
+        // (servedAt): revalidating the browser's HTTP-cached body (304) hands
+        // back the capture time of an identical older response, and a stored
+        // copy (complete or an interrupted write) could look newer and refuse
+        // it on every reload. With IndexedDB, full downloads are rare (first
+        // load, replacements), so they always bypass revalidation; without it
+        // the cache downloads on every page load and revalidation still pays.
+        const fresh = (options?.fresh || JE.tagCacheStore?.available()) ? `?fresh=${Date.now()}` : '';
+        const resp = await ApiClient.ajax({
+            type: 'GET',
+            url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}${fresh}`),
+            dataType: 'json'
+        });
+        if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
+
+        applyReviewRatings(resp, requestedAt);
+        if (!(resp && resp.items && resp.count > 0)) {
+            console.log(`${logPrefix} Server cache empty, using batch fallback`);
+            dropServerCache();
+            skipStoreThisSession = true;
+            return false;
+        }
+
+        persistGeneration++;
+        serverCache = new Map(Object.entries(resp.items));
+        serverCacheComplete = true;
+        serverCacheVersion = resp.version;
+        serverCacheTimestamp = resp.timestamp;
+        serverFilterRevision = typeof resp.filterRevision === 'string' ? resp.filterRevision : '';
+        cacheGeneration++;
+        storeMisses.clear();
+        deltaIds.clear();
+        skipStoreThisSession = false;
+        // Memory is complete and current: nothing needs the stored copy now.
+        releaseStoreGate();
+        console.log(`${logPrefix} Server cache loaded: ${serverCache.size} items (v${serverCacheVersion})`);
+        if (scope) persistFullCache(scope, resp);
+        return true;
+    }
+
+    /**
+     * Load the pre-computed tag cache from the server: restore the stored copy
+     * and catch up with a delta, or download it in full. Tags then render
+     * entirely from the cache with zero batch API calls; falls back to the
+     * existing batch POST pipeline if the cache is empty or unavailable.
+     * Concurrent callers share one load, unless the one in flight was started
+     * for another user or the caller needs a full download; then it is
+     * allowed to finish (its identity guards discard its result) before the
+     * new one starts, rather than racing it.
+     * @param {{forceDownload?: boolean}} [options] - forceDownload skips the
+     *   stored copy (its per-user strip may be stale, e.g. after a Spoiler
+     *   Guard toggle) and rewrites it from a full download.
      * @returns {Promise<void>}
      */
-    async function refreshServerCache() {
+    function loadServerCache(options) {
+        if (!JE.pluginConfig?.TagCacheServerMode) {
+            console.log(`${logPrefix} Server cache mode disabled`);
+            return Promise.resolve();
+        }
+        const epoch = JE.session ? JE.session.getEpoch() : 0;
+        if (loadInFlight && !options?.forceDownload && loadInFlightEpoch === epoch) return loadInFlight;
+        const previous = loadInFlight;
+        const load = (async () => {
+            if (previous) await previous; // never rejects
+            try {
+                if (!ApiClient.getCurrentUserId()) return;
+                if (!options?.forceDownload && await restoreStoredCache()) {
+                    // Cards render from the stored copy once the delta confirms
+                    // it (what changed since, and the review ratings, come with
+                    // it). The delta is fetched directly, never through
+                    // refreshServerCache: a refresh may itself be waiting for
+                    // this load.
+                    await fetchDelta();
+                    return;
+                }
+                // A forced download replaces a copy (a Spoiler Guard toggle, a
+                // filter change noticed mid-session): it needs a current servedAt.
+                await downloadFullCache({ fresh: !!options?.forceDownload });
+            } catch (err) {
+                releaseStoreGate();
+                console.warn(`${logPrefix} Failed to load server cache, using batch fallback:`, err);
+                if (!serverCache) skipStoreThisSession = true;
+                // Server-side cache switched off (404): the stored copy has
+                // nothing to catch up to any more, so don't keep it around.
+                if (err && err.status === 404 && JE.tagCacheStore?.available()) {
+                    const scope = cacheScope();
+                    if (scope) JE.tagCacheStore.clearScope(scope).catch(() => {});
+                }
+            }
+        })();
+        loadInFlight = load;
+        loadInFlightEpoch = epoch;
+        load.finally(() => { if (loadInFlight === load) loadInFlight = null; });
+        return load;
+    }
+
+    /**
+     * Fetch incremental server cache updates since last load (navigation).
+     * @returns {Promise<void>}
+     */
+    function refreshServerCache() {
+        if (refreshInFlight) return refreshInFlight;
+        const refresh = refreshServerCacheCore();
+        refreshInFlight = refresh;
+        refresh.finally(() => { if (refreshInFlight === refresh) refreshInFlight = null; });
+        return refresh;
+    }
+
+    async function refreshServerCacheCore() {
         // If server cache was never loaded (e.g. cache was empty at startup),
-        // retry the full load — the scheduled task may have built it since then
+        // retry the full load — the scheduled task may have built it since then.
         if (!serverCache) {
+            // A load already in flight (boot, user switch) brings the cache and
+            // its own delta.
+            if (loadInFlight) return;
             await loadServerCache();
             if (serverCache) {
                 // Cache is now available — rescan cards to render from it
@@ -250,40 +614,92 @@
             }
             return;
         }
-        if (!serverCacheTimestamp) return;
+        await fetchDelta();
+    }
+
+    /**
+     * Fetch what changed since the cursor and apply it; shared by concurrent
+     * callers. Never waits for a load or a refresh (both wait for this), so
+     * they can't deadlock. Also the confirmation step for a restored copy:
+     * whatever the outcome, the store gate is released at the end.
+     * @returns {Promise<void>}
+     */
+    function fetchDelta() {
+        // Only share a fetch made for this session and this memory: one from
+        // before a sign-out or a restore answers for a cursor that's gone (and
+        // can't confirm the new copy), so it's left to discard its own result.
+        const epoch = JE.session ? JE.session.getEpoch() : 0;
+        if (deltaInFlight && deltaInFlight.epoch === epoch && deltaInFlight.generation === cacheGeneration) {
+            return deltaInFlight.promise;
+        }
+        const entry = { promise: null, epoch, generation: cacheGeneration };
+        entry.promise = fetchDeltaCore();
+        deltaInFlight = entry;
+        entry.promise.finally(() => { if (deltaInFlight === entry) deltaInFlight = null; });
+        return entry.promise;
+    }
+
+    async function fetchDeltaCore() {
+        const gate = storeGate;
+        const confirming = !!gate;
+        const startGeneration = cacheGeneration;
+        // Set once the restored copy is confirmed current or replaced; any
+        // other exit drops the unconfirmed copy from memory (finally below).
+        let settled = false;
         try {
+            if (!serverCache || !serverCacheTimestamp) return;
             const userId = ApiClient.getCurrentUserId();
             if (!userId) return;
 
             // Same identity guard as loadServerCache: incremental entries are
             // spoiler-stripped for the user that requested them.
             const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+            const generation = cacheGeneration;
+            const base = { timestamp: serverCacheTimestamp, version: serverCacheVersion, filterRevision: serverFilterRevision };
+            const requestedAt = performance.now();
             const resp = await ApiClient.ajax({
                 type: 'GET',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}?since=${serverCacheTimestamp}`),
+                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}?since=${base.timestamp}`),
                 dataType: 'json'
             });
             if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+            // Memory was replaced while this was in flight (full download,
+            // invalidation): the answer is relative to a cursor that's gone.
+            if (!resp || !resp.items || !serverCache || generation !== cacheGeneration) return;
 
-            if (resp && resp.items) {
-                const newEntries = Object.entries(resp.items);
-                if (newEntries.length > 0) {
-                    for (const [id, entry] of newEntries) {
-                        serverCache.set(id, entry);
-                    }
-                    serverCacheTimestamp = resp.timestamp;
-                    // Notify renderers to invalidate derived caches for updated items
+            applyReviewRatings(resp, requestedAt);
+
+            // Full rebuild (entries may have been removed, which a delta can't
+            // express), or this user's filter changed since memory was made
+            // (library access revoked, Spoiler Guard list or policy changed,
+            // possibly on another device): the copy can't be patched — replace it.
+            const revision = typeof resp.filterRevision === 'string' ? resp.filterRevision : '';
+            // A cursor older than the one asked about means the server's cache
+            // went back (restored from an older save or backup): entries this
+            // copy got since may disagree with it, and a delta can't say which.
+            const rolledBack = typeof resp.timestamp === 'number' && resp.timestamp < base.timestamp;
+            if (resp.version !== serverCacheVersion || revision !== serverFilterRevision || rolledBack) {
+                const why = resp.version !== serverCacheVersion ? 'Cache version changed'
+                    : rolledBack ? 'Server cache went back in time' : 'Access or Spoiler Guard filter changed';
+                if (confirming) {
+                    // A restored copy that never rendered: download instead.
+                    console.log(`${logPrefix} ${why}; replacing the stored copy with a full download`);
+                    await downloadFullCache({ fresh: true });
+                    settled = true;
                     for (const [, renderer] of renderers) {
                         if (renderer.onServerCacheRefresh) {
-                            try { renderer.onServerCacheRefresh(newEntries.map(e => e[0])); } catch {}
+                            try { renderer.onServerCacheRefresh(null); } catch {}
                         }
                     }
-                    console.log(`${logPrefix} Server cache updated: +${newEntries.length} items`);
-                }
-                // Full rebuild detected — reload everything
-                if (resp.version !== serverCacheVersion) {
-                    console.log(`${logPrefix} Cache version changed, reloading full cache`);
-                    await loadServerCache();
+                } else if (revision !== serverFilterRevision) {
+                    // Cards already show entries stripped the old way: the full
+                    // invalidation also removes their overlays. Not awaited — it
+                    // runs its own load, which may wait for this delta.
+                    console.log(`${logPrefix} ${why}; reloading the full cache`);
+                    setTimeout(() => { JE.tagPipeline.invalidateServerCache().catch(() => {}); }, 0);
+                } else {
+                    console.log(`${logPrefix} ${why}, reloading full cache`);
+                    await downloadFullCache({ fresh: true });
                     // Clear all derived caches on full rebuild
                     for (const [, renderer] of renderers) {
                         if (renderer.onServerCacheRefresh) {
@@ -291,10 +707,118 @@
                         }
                     }
                 }
+                return;
             }
+
+            const newEntries = Object.entries(resp.items);
+            if (newEntries.length > 0) {
+                for (const [id, entry] of newEntries) {
+                    serverCache.set(id, entry);
+                    storeMisses.delete(id);
+                    deltaIds.add(id);
+                }
+                serverCacheTimestamp = resp.timestamp;
+                persistDelta(newEntries, base, resp.timestamp, typeof resp.servedAt === 'number' ? resp.servedAt : 0);
+                // Notify renderers to invalidate derived caches for updated items
+                for (const [, renderer] of renderers) {
+                    if (renderer.onServerCacheRefresh) {
+                        try { renderer.onServerCacheRefresh(newEntries.map(e => e[0])); } catch {}
+                    }
+                }
+                console.log(`${logPrefix} Server cache updated: +${newEntries.length} items`);
+            }
+            settled = true;
+            if (confirming) console.log(`${logPrefix} Stored copy confirmed current`);
         } catch (err) {
             console.warn(`${logPrefix} Failed to refresh server cache:`, err);
+        } finally {
+            if (confirming) {
+                // Unconfirmed (request failed, empty answer, signed out): its
+                // strip may be stale, so drop it from memory and let cards use
+                // the batch path. The copy itself stays for the next page load
+                // to confirm. Memory someone else replaced meanwhile is theirs.
+                if (!settled && cacheGeneration === startGeneration) dropServerCache();
+                releaseStoreGate(gate);
+            }
         }
+    }
+
+    /**
+     * Server cache entries for a set of item ids: from memory, then from the
+     * stored copy for ids memory hasn't seen. Ids without an entry are absent
+     * from the result. Returns the Map itself when no IndexedDB read is needed
+     * (the common case once entries are in memory) so the caller can render
+     * synchronously, and a Promise of it otherwise.
+     * @param {string[]} ids
+     * @returns {Map<string, object>|Promise<Map<string, object>>}
+     */
+    function lookupServerEntries(ids) {
+        // A restored copy renders nothing until the delta confirms it.
+        if (storeGate) return storeGate.then(() => lookupServerEntries(ids));
+        const found = new Map();
+        if (!serverCache) return found;
+        let missing = null;
+        for (const id of ids) {
+            const entry = serverCache.get(id);
+            if (entry) {
+                found.set(id, entry);
+            } else if (!serverCacheComplete && storeScope && !storeMisses.has(id)) {
+                (missing = missing || []).push(id);
+            }
+        }
+        if (!missing) return found;
+
+        const scope = storeScope;
+        const generation = cacheGeneration;
+        return JE.tagCacheStore.getMany(scope, missing).then(({ entries: read, meta }) => {
+            // Memory was replaced (user switch, full download, invalidation)
+            // while reading: what was read may predate it. Answer again from
+            // the current state instead.
+            if (storeScope !== scope || !serverCache || generation !== cacheGeneration) {
+                return lookupServerEntries(ids);
+            }
+            // Only use the stored entries while the stored snapshot is the one
+            // this page confirmed (same version and filter revision, complete):
+            // another tab may be rewriting it or may have replaced it with data
+            // filtered differently. Anything else counts as not stored.
+            // Never captured before the snapshot this page restored (older
+            // entries could miss updates its deltas already skipped).
+            const usable = !!meta && !meta.pending
+                && meta.version === serverCacheVersion
+                && meta.filterRevision === serverFilterRevision
+                && (meta.servedAt || 0) >= storeBaseServedAt;
+            const stored = usable ? read : new Map();
+            if (serverCache.size + stored.size > MEMORY_SOFT_CAP) {
+                // Reset, but keep what deltas installed: the stored copy may
+                // not have those yet (its write is queued, or another tab owns it).
+                const keep = [];
+                for (const id of deltaIds) {
+                    const entry = serverCache.get(id);
+                    if (entry) keep.push([id, entry]);
+                }
+                serverCache.clear();
+                for (const [id, entry] of keep) serverCache.set(id, entry);
+            }
+            for (const id of missing) {
+                // A delta that landed while reading is newer than the copy.
+                const current = serverCache.get(id);
+                if (current) {
+                    found.set(id, current);
+                    continue;
+                }
+                const entry = stored.get(id);
+                if (entry) {
+                    found.set(id, entry);
+                    serverCache.set(id, entry);
+                } else {
+                    storeMisses.add(id);
+                }
+            }
+            return found;
+        }).catch((err) => {
+            console.warn(`${logPrefix} Stored server cache read failed:`, err);
+            return found;
+        });
     }
 
     // ── Card Scanning ──────────────────────────────────────────────────
@@ -311,7 +835,14 @@
     }
 
     let scanScheduled = false;
-    const CARDS_PER_CHUNK = 5; // ~2.5ms per card with cache render, 5 cards = ~12ms (under 16ms frame budget)
+    // Cards per idle slice are sized from the measured render cost so a slice
+    // stays around CHUNK_BUDGET_MS on this device: a fast desktop renders
+    // dozens per slice, a slow phone a handful. The first slice assumes the
+    // pre-measurement cost.
+    const CHUNK_BUDGET_MS = 8;
+    const CHUNK_MIN_CARDS = 4;
+    const CHUNK_MAX_CARDS = 40;
+    let msPerCard = 1.5;
     // Separate, much larger threshold for yielding during batch render (see processBatch).
     const RENDER_YIELD_CHUNK = 40;
     let scanGeneration = 0; // Incremented on each new scan to cancel stale chunk chains
@@ -346,10 +877,65 @@
     }
 
     /**
-     * Scan all unprocessed cards. Uses chunked processing to avoid jank.
-     * Each chunk processes CARDS_PER_CHUNK cards then yields via rAF.
-     * A generation counter ensures stale chunk chains from previous scans
-     * are cancelled when a new scan starts (e.g., rapid page changes).
+     * Fold a measured per-card render cost into the running estimate that
+     * sizes the next slice.
+     * @param {number} elapsedMs
+     * @param {number} cards
+     */
+    function recordRenderCost(elapsedMs, cards) {
+        if (cards <= 0) return;
+        msPerCard = msPerCard * 0.5 + (elapsedMs / cards) * 0.5;
+    }
+
+    /**
+     * Render one classified card from its server entry, or from the local
+     * caches with a batch-fetch fallback. The host is collected for one
+     * corner-stacking pass over the whole slice instead of a layout per card.
+     * @param {{el: HTMLElement, itemId: string, itemType: string|null}} card
+     * @param {object|undefined} serverEntry
+     * @param {HTMLElement[]} hosts
+     */
+    function renderCard(card, serverEntry, hosts) {
+        const { el, itemId, itemType } = card;
+        const renderTarget = resolveRenderTarget(el);
+
+        // Server cache first (all tag data pre-computed in one object)
+        if (serverEntry) {
+            for (const [, renderer] of renderers) {
+                if (!renderer.isEnabled()) continue;
+                if (renderer.renderFromServerCache) {
+                    try { renderer.renderFromServerCache(renderTarget, serverEntry, itemId); } catch {}
+                }
+            }
+            hosts.push(renderTarget);
+            return; // Fully rendered from server cache, skip queue
+        }
+
+        // Fall back to localStorage/hot cache, then batch fetch for misses
+        let allCacheHits = true;
+        for (const [, renderer] of renderers) {
+            if (!renderer.isEnabled()) continue;
+            if (renderer.renderFromCache) {
+                if (!renderer.renderFromCache(renderTarget, itemId)) allCacheHits = false;
+            } else {
+                allCacheHits = false;
+            }
+        }
+        hosts.push(renderTarget);
+
+        if (!allCacheHits) {
+            requestQueue.push({ el, renderTarget, itemId, itemType });
+        }
+    }
+
+    /**
+     * Scan all unprocessed cards. Uses chunked processing to avoid jank:
+     * each idle slice classifies a chunk of cards (cheap DOM reads), looks up
+     * their server entries (synchronously from memory, or from the stored copy)
+     * and renders them, then yields. A generation counter ensures stale chunk
+     * chains from previous scans are cancelled when a new scan starts (e.g.,
+     * rapid page changes); a chain cancelled while waiting for the stored copy
+     * releases its cards so the newer scan picks them up.
      */
     let isInvalidating = false;
     function runScan() {
@@ -371,17 +957,59 @@
         const myGeneration = ++scanGeneration;
         let index = 0;
 
+        /** Continue with the next slice, or schedule the batch fetch once every card is done. */
+        function continueScan() {
+            if (index < unprocessed.length) {
+                // More cards to process — yield and continue when browser is idle
+                scheduleIdle(processChunk);
+            } else {
+                // All cards processed — schedule batch fetch for cache misses
+                if (requestQueue.length > 0 && !isProcessing) {
+                    if (fetchTimer) clearTimeout(fetchTimer);
+                    fetchTimer = setTimeout(() => {
+                        fetchTimer = null;
+                        processQueue();
+                    }, FETCH_DEBOUNCE_MS);
+                }
+            }
+        }
+
+        /**
+         * Render a classified chunk from the looked-up entries.
+         * @param {Array<{el: HTMLElement, itemId: string, itemType: string|null}>} chunk
+         * @param {Map<string, object>} entries
+         */
+        function renderChunk(chunk, entries) {
+            const started = performance.now();
+            const hosts = [];
+            for (const card of chunk) {
+                // Gone since classification (page changed): release it in case
+                // it comes back, exactly like a card skipped before marking.
+                if (!card.el.isConnected) {
+                    processedCards.delete(card.el);
+                    continue;
+                }
+                renderCard(card, entries.get(card.itemId), hosts);
+            }
+            // One coalesced layout pass for the slice instead of one per card.
+            JE.core.tagRenderer.applyCornerStacking(hosts);
+            recordRenderCost(performance.now() - started, chunk.length);
+            continueScan();
+        }
+
         function processChunk() {
             // Abort if a newer scan has started
             if (myGeneration !== scanGeneration) return;
 
-            const end = Math.min(index + CARDS_PER_CHUNK, unprocessed.length);
+            const limit = Math.max(CHUNK_MIN_CARDS, Math.min(CHUNK_MAX_CARDS, Math.floor(CHUNK_BUDGET_MS / Math.max(msPerCard, 0.05))));
+            const chunk = [];
+            const ids = [];
 
-            for (; index < end; index++) {
+            for (; index < unprocessed.length && chunk.length < limit; index++) {
                 const el = unprocessed[index];
                 if (processedCards.has(el)) continue;
                 // Skip elements no longer in the DOM (page changed)
-                if (!document.contains(el)) continue;
+                if (!el.isConnected) continue;
 
                 const card = el.closest('.card');
                 if (card && card.classList.contains('je-hidden')) continue;
@@ -404,51 +1032,31 @@
                 }
 
                 processedCards.add(el);
-                const renderTarget = resolveRenderTarget(el);
-
-                // Try server cache first (all tag data pre-computed in one object)
-                const serverEntry = serverCache?.get(itemId);
-                if (serverEntry) {
-                    for (const [, renderer] of renderers) {
-                        if (!renderer.isEnabled()) continue;
-                        if (renderer.renderFromServerCache) {
-                            try { renderer.renderFromServerCache(renderTarget, serverEntry, itemId); } catch {}
-                        }
-                    }
-                    JE.core.tagRenderer.applyCornerStacking(renderTarget);
-                    continue; // Fully rendered from server cache, skip queue
-                }
-
-                // Fall back to localStorage/hot cache, then batch fetch for misses
-                let allCacheHits = true;
-                for (const [, renderer] of renderers) {
-                    if (!renderer.isEnabled()) continue;
-                    if (renderer.renderFromCache) {
-                        if (!renderer.renderFromCache(renderTarget, itemId)) allCacheHits = false;
-                    } else {
-                        allCacheHits = false;
-                    }
-                }
-                JE.core.tagRenderer.applyCornerStacking(renderTarget);
-
-                if (!allCacheHits) {
-                    requestQueue.push({ el, renderTarget, itemId, itemType });
-                }
+                chunk.push({ el, itemId, itemType });
+                ids.push(itemId);
             }
 
-            if (index < unprocessed.length) {
-                // More cards to process — yield and continue when browser is idle
-                scheduleIdle(processChunk);
-            } else {
-                // All cards processed — schedule batch fetch for cache misses
-                if (requestQueue.length > 0 && !isProcessing) {
-                    if (fetchTimer) clearTimeout(fetchTimer);
-                    fetchTimer = setTimeout(() => {
-                        fetchTimer = null;
-                        processQueue();
-                    }, FETCH_DEBOUNCE_MS);
-                }
+            if (chunk.length === 0) {
+                continueScan();
+                return;
             }
+
+            const lookup = lookupServerEntries(ids);
+            if (lookup instanceof Map) {
+                renderChunk(chunk, lookup);
+                return;
+            }
+            lookup.then((entries) => {
+                if (myGeneration !== scanGeneration) {
+                    // Superseded while waiting: release the cards and scan again.
+                    // The newer scan took its snapshot while these were still
+                    // marked processed, so it won't pick them up by itself.
+                    for (const card of chunk) processedCards.delete(card.el);
+                    scheduleScan();
+                    return;
+                }
+                renderChunk(chunk, entries);
+            });
         }
 
         processChunk();
@@ -530,7 +1138,7 @@
                     // page like search re-renders its whole result set on every
                     // keystroke, on the same generation). Skipping them here avoids
                     // fetching and rendering tag data nobody will ever see.
-                    .filter((entry) => document.contains(entry.el));
+                    .filter((entry) => entry.el.isConnected);
                 if (batch.length === 0) continue;
                 await processBatch(batch, myGeneration);
             }
@@ -606,6 +1214,15 @@
             // Items that DO (Series, Season) render after their first-episode fetch completes.
             // This way a slow first-episode lookup doesn't block everything else.
 
+            // Hosts rendered since the last corner-stacking pass: measured once
+            // per yield chunk (below) rather than once per card.
+            let pendingHosts = [];
+            const stackPendingHosts = () => {
+                if (pendingHosts.length === 0) return;
+                JE.core.tagRenderer.applyCornerStacking(pendingHosts);
+                pendingHosts = [];
+            };
+
             const renderItem = (item, firstEpisode) => {
                 // Re-check per render: first-episode/parent-series awaits can
                 // span a navigation OR a user switch (clearProcessed bumps the
@@ -635,8 +1252,8 @@
                     // Jellyfin time to rebuild the card's subtree). Re-resolve from
                     // the still-tracked card element rather than dropping the tag —
                     // resolveRenderTarget is a couple of cheap DOM queries, not a fetch.
-                    if (!document.contains(renderTarget)) {
-                        if (!document.contains(el)) continue; // card itself is gone
+                    if (!renderTarget.isConnected) {
+                        if (!el.isConnected) continue; // card itself is gone
                         renderTarget = resolveRenderTarget(el);
                     }
                     const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
@@ -648,10 +1265,7 @@
                             console.warn(`${logPrefix} Renderer "${name}" failed for item ${itemId}:`, err);
                         }
                     }
-                    // One coalesced layout pass per card instead of one per
-                    // renderer, avoiding repeated forced reflows when multiple
-                    // tag types share a corner.
-                    JE.core.tagRenderer.applyCornerStacking(renderTarget);
+                    pendingHosts.push(renderTarget);
                 }
             };
 
@@ -668,22 +1282,30 @@
             let renderedSinceYield = 0;
             for (const item of items) {
                 if (anyNeedsFirstEp && item.FirstEpisode?.NeedsStreamFetch) {
-                    // Series/Season: fetch first episode in background, render when ready
+                    // Series/Season: fetch first episode in background, render when ready.
+                    // These land one at a time, so their hosts are stacked in one
+                    // batched frame rather than measured individually.
                     pendingFirstEps.push(
                         getFirstEpisode(userId, item.Id, item.FirstEpisode.Id)
                             .then(ep => renderItem(item, ep))
                             .catch(() => renderItem(item, null))
+                            .then(() => {
+                                for (const host of pendingHosts) JE.core.tagRenderer.scheduleCornerStacking(host);
+                                pendingHosts = [];
+                            })
                     );
                 } else {
                     // Movies, Episodes, etc: render immediately (no extra fetch needed)
                     renderItem(item, item.FirstEpisode || null);
                     if (++renderedSinceYield >= RENDER_YIELD_CHUNK) {
                         renderedSinceYield = 0;
+                        stackPendingHosts();
                         await idleYield();
                         if (generation !== batchGeneration) return; // navigation or user switch while yielded
                     }
                 }
             }
+            stackPendingHosts();
 
             // Wait for all first-episode renders to complete before marking batch done
             if (pendingFirstEps.length > 0) {
@@ -704,8 +1326,8 @@
                         ? await getFirstEpisode(userId, item.Id) : null;
                     if (generation !== batchGeneration) break; // switched during the awaits above
                     let renderTarget = queuedRenderTarget;
-                    if (!document.contains(renderTarget)) {
-                        if (!document.contains(el)) continue; // card itself is gone
+                    if (!renderTarget.isConnected) {
+                        if (!el.isConnected) continue; // card itself is gone
                         renderTarget = resolveRenderTarget(el);
                     }
                     const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget };
@@ -734,6 +1356,7 @@
             'quality-overlay-container': JE.currentSettings?.qualityTagsPosition || JE.pluginConfig?.QualityTagsPosition || 'top-left',
             'language-overlay-container': JE.currentSettings?.languageTagsPosition || JE.pluginConfig?.LanguageTagsPosition || 'bottom-left',
             'rating-overlay-container': JE.currentSettings?.ratingTagsPosition || JE.pluginConfig?.RatingTagsPosition || 'bottom-right',
+            'age-rating-overlay-container': JE.currentSettings?.ageRatingTagsPosition || JE.pluginConfig?.AgeRatingTagsPosition || 'bottom-right',
         };
         const topRightContainers = Object.entries(posMap)
             .filter(([, pos]) => pos === 'top-right')
@@ -801,7 +1424,8 @@
                 .je-tag-host .genre-overlay-container,
                 .je-tag-host .quality-overlay-container,
                 .je-tag-host .language-overlay-container,
-                .je-tag-host .rating-overlay-container {
+                .je-tag-host .rating-overlay-container,
+                .je-tag-host .age-rating-overlay-container {
                     contain: layout style;
                     pointer-events: none;
                     z-index: auto !important;
@@ -810,6 +1434,36 @@
                    (unwatched count badge, played checkmark). Indicators are always top-right in Jellyfin.
                    Only affects containers configured for the top-right position. */
                 ${buildIndicatorOffsetCSS()}
+            `);
+
+            // Card-width sizing; mobile layout and browsers without container queries keep the per-tag rules.
+            JE.helpers.addCSS('je-tag-card-scale', `
+                @supports (container-type: inline-size) {
+                    .je-tag-host { container-type: inline-size; }
+                    html:not(.layout-mobile) .je-tag-host .quality-overlay-container { gap: clamp(1px, 1.8cqw, 4px); }
+                    html:not(.layout-mobile) .je-tag-host .quality-overlay-label {
+                        font-size: clamp(9px, 6.6cqw, 13.6px);
+                        padding: clamp(0px, 0.6cqw, 2px) clamp(4px, 4.2cqw, 10px);
+                        border-radius: clamp(2px, 2.4cqw, 5px);
+                    }
+                    html:not(.layout-mobile) .je-tag-host .language-overlay-container { gap: clamp(1px, 1.8cqw, 3px); }
+                    html:not(.layout-mobile) .je-tag-host .language-flag { width: clamp(16px, 15cqw, 32px); }
+                    html:not(.layout-mobile) .je-tag-host .rating-overlay-container { gap: clamp(2px, 1.8cqw, 3px); }
+                    html:not(.layout-mobile) .je-tag-host .rating-tag {
+                        font-size: clamp(9px, 6.8cqw, 13px);
+                        padding: clamp(2px, 2cqw, 4px) clamp(4px, 4.5cqw, 8px);
+                        gap: clamp(2px, 2.2cqw, 4px);
+                    }
+                    html:not(.layout-mobile) .je-tag-host .rating-star-icon { font-size: clamp(9px, 7cqw, 14px) !important; }
+                    html:not(.layout-mobile) .je-tag-host .rating-tomato-icon { width: clamp(9px, 7cqw, 14px); height: clamp(9px, 7cqw, 14px); }
+                    html:not(.layout-mobile) .je-tag-host .genre-overlay-container { gap: clamp(2px, 1.8cqw, 4px); }
+                    html:not(.layout-mobile) .je-tag-host .genre-tag {
+                        width: clamp(18px, 15cqw, 30px);
+                        height: clamp(18px, 15cqw, 30px);
+                        min-width: clamp(18px, 15cqw, 30px);
+                    }
+                    html:not(.layout-mobile) .je-tag-host .genre-tag .material-symbols-outlined { font-size: clamp(11px, 9.5cqw, 20px); }
+                }
             `);
 
             // "Hide Tags on Hover" setting: fully hides the tag layer on hover.
@@ -847,30 +1501,60 @@
         getParentSeries,
         /** @param {string} name - Renderer name (e.g. 'quality'). */
         getRenderer(name) { return renderers.get(name); },
+        /**
+         * Review rating averages that came with the server cache, once the
+         * load or refresh in flight has settled: Map<"mediaType:tmdbKey",
+         * average>, or null when the server cache (or the poster chips) is
+         * off — the user review tags then ask /reviews/ratings themselves.
+         * @returns {Promise<Map<string, number>|null>}
+         */
+        getReviewRatings() {
+            return (loadInFlight || refreshInFlight || Promise.resolve()).then(() => reviewRatings);
+        },
+        /**
+         * The review rating averages already at hand, without waiting.
+         * @returns {Map<string, number>|null}
+         */
+        peekReviewRatings() { return reviewRatings; },
+        /** @returns {number} Bumped each time the review rating averages are replaced. */
+        /** @returns {number} performance.now() when the request behind the current review averages started (0 = none). */
+        getReviewRatingsRequestedAt() { return reviewRatingsRequestedAt; },
+        /**
+         * Subscribe to accepted review averages maps.
+         * @param {(changed: Set<string>|null) => void} listener - Receives the "mediaType:tmdbKey" keys whose value changed (possibly none), or null for all.
+         */
+        onReviewRatingsChanged(listener) { reviewRatingsListeners.add(listener); },
         // For reinitialize support
         clearProcessed() {
             processedCards = new WeakSet(); // Create fresh WeakSet so all cards get re-scanned
             requestQueue = [];
             batchGeneration++;
+            scanGeneration++; // a scan chain waiting on the stored copy would render into the old set
             firstEpisodeCache.clear();
             parentSeriesCache.clear();
         },
         // Bust the server cache so the next scan re-fetches everything through the
         // spoiler-strip pipeline. Used after toggling Spoiler Guard so newly-eligible
         // items lose their cached unstripped tag data.
-        async invalidateServerCache() {
+        /**
+         * @param {{reuseStored?: boolean}} [options] - reuseStored keeps the
+         *   browser's stored copy as the source (a user switch: the incoming
+         *   user's own copy is still theirs); by default the copy is dropped
+         *   and rewritten from a full download, because its per-user strip is
+         *   what a Spoiler Guard toggle just changed.
+         */
+        async invalidateServerCache(options) {
             // Hold a flag for the duration of the reload so concurrent scheduleScan()
             // calls (from the body MutationObserver during the await) no-op instead of
             // processing cards against the empty cache. processedCards is reset a
             // SECOND time after load so cards partially marked during await re-scan.
             isInvalidating = true;
             try {
-                serverCache = null;
-                serverCacheVersion = 0;
-                serverCacheTimestamp = 0;
+                dropServerCache();
                 processedCards = new WeakSet();
                 requestQueue = [];
                 batchGeneration++;
+                scanGeneration++;
                 firstEpisodeCache.clear();
                 parentSeriesCache.clear();
                 // Clear each renderer's derived cache (e.g. quality's serverQualityCache)
@@ -888,23 +1572,24 @@
                 try {
                     document.querySelectorAll(
                         '.quality-overlay-container, .rating-overlay-container, '
-                        + '.genre-overlay-container, .language-overlay-container'
+                        + '.genre-overlay-container, .language-overlay-container, '
+                        + '.age-rating-overlay-container'
                     ).forEach(function (el) { el.remove(); });
                     document.querySelectorAll(
                         '[data-je-quality-tagged], [data-je-rating-tagged], '
-                        + '[data-je-genre-tagged], [data-je-language-tagged]'
+                        + '[data-je-genre-tagged], [data-je-language-tagged], '
+                        + '[data-je-age-rating-tagged]'
                     ).forEach(function (el) {
                         delete el.dataset.jeQualityTagged;
                         delete el.dataset.jeRatingTagged;
                         delete el.dataset.jeGenreTagged;
                         delete el.dataset.jeLanguageTagged;
+                        delete el.dataset.jeAgeRatingTagged;
                     });
                 } catch (domErr) {
                     console.warn(`${logPrefix} overlay cleanup during invalidate failed:`, domErr);
                 }
-                if (typeof loadServerCache === 'function') {
-                    await loadServerCache();
-                }
+                await loadServerCache({ forceDownload: !options?.reuseStored });
                 processedCards = new WeakSet();
             } catch (e) {
                 console.warn(`${logPrefix} invalidateServerCache failed:`, e);
@@ -924,15 +1609,17 @@
     // user), so it must not survive a user switch. Reset synchronously here;
     // the full invalidate-and-reload (which also strips stale DOM overlays)
     // runs once the new user's data is live — reloading at reset time would
-    // race the credential swap.
+    // race the credential swap. The stored copy is per user as well: the
+    // outgoing user's is deleted when the incoming user's opens.
     JE.session?.onUserChange('tag-pipeline', () => {
-        serverCache = null;
-        serverCacheVersion = 0;
-        serverCacheTimestamp = 0;
+        dropServerCache();
+        reviewRatings = null;
+        reviewRatingsRequestedAt = 0;
+        skipStoreThisSession = false;
         JE.tagPipeline.clearProcessed();
     });
     document.addEventListener('je:user-data-loaded', () => {
-        JE.tagPipeline.invalidateServerCache().catch(() => {});
+        JE.tagPipeline.invalidateServerCache({ reuseStored: true }).catch(() => {});
     });
 
     console.log(`${logPrefix} Module loaded`);

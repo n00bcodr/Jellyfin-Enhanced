@@ -13,6 +13,7 @@ using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Globalization;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
@@ -25,9 +26,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     {
         private readonly ILibraryManager _libraryManager;
         private readonly IApplicationPaths _applicationPaths;
+        private readonly ILocalizationManager _localization;
         private readonly Logger _logger;
+
+        // Memo for LanguageIdentity: a library uses a few dozen distinct codes,
+        // and the culture lookup behind it is a linear scan.
+        private readonly ConcurrentDictionary<string, string> _languageIdentities = new(StringComparer.Ordinal);
         private volatile ConcurrentDictionary<string, TagCacheEntry> _cache = new();
         private readonly object _saveLock = new();
+
+        /// <summary>
+        /// What one episode contributes to its parents' Series/Season entries:
+        /// its audio languages (null when it has no audio/video streams, so it
+        /// can't be a tag source) and, when its own entry was built in the same
+        /// pass, that entry's stream data. Kept per episode id for the length of
+        /// one full build, reconcile or incremental batch (see
+        /// <see cref="BuildEntryForItem"/>), so an episode's streams are read once
+        /// however many of its parents are rebuilt alongside it.
+        /// </summary>
+        private readonly record struct EpisodeScan(string[]? Languages, TagStreamData? StreamData);
+
+        /// <summary>
+        /// Per-pass <see cref="EpisodeScan"/> memo, keyed by episode id.
+        /// <see cref="Pending"/> is set by the incremental passes (flush batch,
+        /// reconcile) to the ids being rebuilt in that pass: every other episode
+        /// already has a current entry in the live cache, so a container scan
+        /// takes its languages from there instead of re-reading its streams (a
+        /// 400-episode series touched by one episode change would otherwise open
+        /// 400 files). Null for the full build, whose live cache is the previous
+        /// generation.
+        /// </summary>
+        private sealed class EpisodeScanMemo : Dictionary<Guid, EpisodeScan>
+        {
+            public IReadOnlySet<Guid>? Pending { get; init; }
+        }
 
         // Guards the {_cacheReleased, _cache, _version, _lastModified} generation
         // as one unit for readers. Publish/release sites mutate all four inside
@@ -68,8 +100,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // SeriesId for Spoiler Guard stripping. v3 preserves authoritative
         // Matroska LanguageBCP47/LanguageIETF audio languages instead of the
         // region-less values exposed by Jellyfin/FFmpeg.
+        // v4 picks a real episode with streams as the Series/Season tag source, requires actual audio/video streams and searches beyond the first page.
+        // v6 makes Series/Season AudioLanguages the union across all episodes and adds
+        // PartialAudioLanguages for languages missing from some of them, and adds
+        // OfficialRating (age rating) with the Series fallback for Seasons/Episodes.
+        // (It skips v5 so caches written by builds carrying only one of the two are discarded too.)
+        // v7 stops storing stream data the client derives from another field anyway
+        // (see BuildStreamData / ExtractMediaData): a source Name that is just its
+        // Path without the extension, an ItemPath equal to a source Path, and the
+        // VideoRangeType of audio streams. Every client reads them with an empty
+        // fallback, and the served payload shrinks by roughly a fifth.
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        private const int CurrentCacheSchemaVersion = 3;
+        private const int CurrentCacheSchemaVersion = 7;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -82,8 +124,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private const int HydrationPageSize = 500;
 
         // User access cache: avoids expensive GetItemIds query on every request
-        private readonly ConcurrentDictionary<string, (HashSet<string> Ids, DateTime CachedAt)> _userAccessCache = new();
+        private readonly ConcurrentDictionary<string, (HashSet<string> Ids, DateTime CachedAt, long Generation)> _userAccessCache = new();
         private static readonly TimeSpan UserAccessCacheTtl = TimeSpan.FromSeconds(60);
+        // Bumped by InvalidateUserAccess. Each cached access set records the
+        // generation it was computed under and is only used while that is still
+        // current, so a set computed before a bump (user policy or library
+        // changed meanwhile) can serve its own request but never a later one —
+        // even if it lands in the dictionary after the clear.
+        private long _userAccessGeneration;
+
+        /// <summary>
+        /// Drop every cached per-user access set, so the next request filters
+        /// with the user's current access. Called when a user's policy changes
+        /// and when library changes are applied to the cache: tag-cache deltas
+        /// are filtered by this set and clients keep their copy across page
+        /// loads, so a stale set would either skip a newly added item for good
+        /// (its update is behind the cursor by the time the set refreshes) or
+        /// hide an access change from the filterRevision.
+        /// </summary>
+        public void InvalidateUserAccess()
+        {
+            Interlocked.Increment(ref _userAccessGeneration);
+            _userAccessCache.Clear();
+        }
 
         public static readonly HashSet<BaseItemKind> TaggableTypes = new()
         {
@@ -95,10 +158,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             BaseItemKind.Video,
         };
 
-        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, Logger logger)
+        /// <summary>
+        /// Series and Season entries are derived from their episodes.
+        /// </summary>
+        private static bool IsContainerKind(BaseItemKind kind) => kind == BaseItemKind.Series || kind == BaseItemKind.Season;
+
+        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger)
         {
             _libraryManager = libraryManager;
             _applicationPaths = applicationPaths;
+            _localization = localizationManager;
             _logger = logger;
 
             // The service is a DI singleton; expose it so the plugin's
@@ -224,17 +293,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Ids only — a Guid list is tiny even for huge libraries. The heavy
             // BaseItem hydration happens page by page below so the build never
             // holds more than HydrationPageSize full items at a time.
+            // Series/Season last: by the time a container scans its episodes,
+            // every episode's own entry has already recorded its languages and
+            // stream data in the memo below, so the scans read no streams.
             var allIds = _libraryManager.GetItemIds(new InternalItemsQuery
             {
-                IncludeItemTypes = TaggableTypes.ToArray(),
+                IncludeItemTypes = TaggableTypes.Where(kind => !IsContainerKind(kind)).ToArray(),
                 IsVirtualItem = false,
                 Recursive = true
-            });
+            }).Concat(_libraryManager.GetItemIds(new InternalItemsQuery
+            {
+                IncludeItemTypes = new[] { BaseItemKind.Series, BaseItemKind.Season },
+                IsVirtualItem = false,
+                Recursive = true
+            })).ToList();
 
             _logger.Info($"[TagCache] Found {allIds.Count} taggable items");
 
             var newCache = new ConcurrentDictionary<string, TagCacheEntry>();
             var processed = 0;
+
+            // Lives for the whole build because Series/Season come last. Each
+            // value only references arrays/objects the episode's cache entry
+            // already holds, so the extra cost is one dictionary slot (~50 bytes)
+            // per episode, dropped with this frame when the build ends.
+            var episodeScans = new EpisodeScanMemo();
 
             foreach (var page in HydrateInPages(allIds, cancellationToken))
             {
@@ -251,7 +334,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var entry = BuildEntryForItem(item);
+                    var entry = BuildEntryForItem(item, episodeScans);
                     if (entry != null)
                     {
                         var key = item.Id.ToString("N").ToLowerInvariant();
@@ -297,7 +380,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciliationStartedUtc.Ticks);
             // Invalidate user access cache since items may have changed
-            _userAccessCache.Clear();
+            InvalidateUserAccess();
             progress?.Report(100);
 
             sw.Stop();
@@ -362,7 +445,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 MinDateLastSaved = changedSinceUtc
             });
 
-            var idsToRebuild = new HashSet<Guid>();
+            // Series/Season go after everything else and share one per-episode
+            // memo with it (see BuildFullCacheCore): after a sweeping change this
+            // reads each episode's streams once instead of up to three times.
+            var itemsToRebuild = new HashSet<Guid>();
+            var containersToRebuild = new HashSet<Guid>();
             foreach (var page in HydrateInPages(changedIds, cancellationToken))
             {
                 // Same mid-run gate as the full build: stop when the admin turns
@@ -377,23 +464,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    idsToRebuild.Add(item.Id);
+                    (IsContainerKind(item.GetBaseItemKind()) ? containersToRebuild : itemsToRebuild).Add(item.Id);
 
                     if (item is MediaBrowser.Controller.Entities.TV.Episode episode)
                     {
                         if (episode.SeriesId != Guid.Empty)
                         {
-                            idsToRebuild.Add(episode.SeriesId);
+                            containersToRebuild.Add(episode.SeriesId);
                         }
 
                         if (episode.SeasonId != Guid.Empty)
                         {
-                            idsToRebuild.Add(episode.SeasonId);
+                            containersToRebuild.Add(episode.SeasonId);
                         }
                     }
                 }
             }
 
+            var idsToRebuild = itemsToRebuild.Concat(containersToRebuild).ToList();
+            var episodeScans = new EpisodeScanMemo { Pending = idsToRebuild.ToHashSet() };
             var changed = false;
             var rebuilt = 0;
             foreach (var id in idsToRebuild)
@@ -410,7 +499,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return;
                 }
 
-                changed |= RebuildEntry(id);
+                changed |= RebuildEntry(id, episodeScans);
                 rebuilt++;
                 progress?.Report(idsToRebuild.Count == 0 ? 50 : (double)rebuilt / idsToRebuild.Count * 80);
             }
@@ -485,7 +574,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 try
                 {
-                    changed |= RebuildEntry(seriesId);
+                    changed |= RebuildEntry(seriesId, episodeScans);
                 }
                 catch (Exception ex)
                 {
@@ -515,7 +604,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     try
                     {
-                        changed |= RebuildEntry(season.Id);
+                        changed |= RebuildEntry(season.Id, episodeScans);
                     }
                     catch (Exception ex)
                     {
@@ -538,7 +627,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                 }
 
-                _userAccessCache.Clear();
+                InvalidateUserAccess();
             }
 
             Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciliationStartedUtc.Ticks);
@@ -707,7 +796,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
 
                     Interlocked.Exchange(ref _firstPendingTicks, 0);
-                    if (ApplyBatch(_pending.Drain(), RebuildEntry, RemoveEntry))
+                    var batch = _pending.Drain();
+                    var changed = ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry);
+                    // Any library change may alter who can see an item (added,
+                    // removed, moved, re-rated, re-tagged) even when its tag entry
+                    // is unchanged: access sets computed before it are stale.
+                    InvalidateUserAccess();
+                    if (changed)
                     {
                         Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                         ScheduleDebouncedSave();
@@ -761,10 +856,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
+        /// Rebuild callback for one drained batch. An episode change queues the
+        /// episode, its Season and its Series together, so one memo per batch
+        /// lets the second container reuse the episode streams the first read,
+        /// and episodes outside the batch come from their live cache entries.
+        /// </summary>
+        private Func<Guid, bool> RebuildWithBatchMemo(IReadOnlyList<(Guid Id, bool Removed)> batch)
+        {
+            var episodeScans = new EpisodeScanMemo { Pending = batch.Select(change => change.Id).ToHashSet() };
+            return id => RebuildEntry(id, episodeScans);
+        }
+
+        /// <summary>
         /// Resolve an id to its live library item and (re)build its cache entry.
         /// Returns true if the cache was modified. Runs on the flush worker only.
+        /// <paramref name="episodeScans"/> is the caller's per-episode memo (see
+        /// <see cref="BuildEntryForItem"/>), shared across one batch/reconcile.
         /// </summary>
-        private bool RebuildEntry(Guid id)
+        private bool RebuildEntry(Guid id, EpisodeScanMemo episodeScans)
         {
             var item = _libraryManager.GetItemById<BaseItem>(id);
             if (item == null) return false; // gone before we processed it; ItemRemoved cleans up
@@ -772,7 +881,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var kind = item.GetBaseItemKind();
             if (!TaggableTypes.Contains(kind)) return false;
 
-            var entry = BuildEntryForItem(item);
+            var entry = BuildEntryForItem(item, episodeScans);
             if (entry == null) return false;
 
             var key = id.ToString("N").ToLowerInvariant();
@@ -810,15 +919,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// Get cache entries filtered by a user's library access, together with
         /// the version and timestamp belonging to the SAME cache generation.
         /// User access IDs are cached for 60 seconds to avoid expensive DB queries.
-        /// Optionally returns only entries modified after a given timestamp.
+        /// Optionally returns only entries modified after a given timestamp, plus
+        /// any older entry <paramref name="alsoInclude"/> asks for (the controller
+        /// uses it to carry the caller's Spoiler-Guarded entries with every delta,
+        /// since what those serve depends on the user's played state, not on
+        /// <see cref="TagCacheEntry.LastUpdated"/>). Both come from the one
+        /// generation capture, so a delta never mixes two cache generations.
         /// The out values must come from the same _publishLock-guarded capture as
         /// the dictionary reference: pairing a freshly published cache with the
         /// previous generation's version/timestamp would let a client store a
         /// pre-first-publish timestamp of 0 (which disables its delta refresh)
         /// or a version the next poll can't detect a rebuild against.
         /// </summary>
-        public Dictionary<string, TagCacheEntry> GetCacheForUser(JUser user, out long version, out long timestamp, long? since = null)
+        public Dictionary<string, TagCacheEntry> GetCacheForUser(JUser user, out long version, out long timestamp, long? since = null, Func<string, TagCacheEntry, bool>? alsoInclude = null)
+            => GetCacheForUser(user, out version, out timestamp, out _, since, alsoInclude);
+
+        /// <summary>
+        /// As <see cref="GetCacheForUser(JUser, out long, out long, long?, Func{string, TagCacheEntry, bool}?)"/>,
+        /// also returning <paramref name="accessRevision"/>: a fingerprint of the
+        /// cache entries this user can NOT see, computed from the very access set
+        /// used to filter the result. It changes whenever an entry stops being
+        /// visible to the user (library access, parental limits or tags changed
+        /// on the user or on the item), which a filtered delta cannot express,
+        /// and not when visible items are added.
+        /// </summary>
+        public Dictionary<string, TagCacheEntry> GetCacheForUser(JUser user, out long version, out long timestamp, out string accessRevision, long? since = null, Func<string, TagCacheEntry, bool>? alsoInclude = null)
         {
+            accessRevision = "none";
             ConcurrentDictionary<string, TagCacheEntry> cache;
             lock (_publishLock)
             {
@@ -842,12 +969,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // Check user access cache
             HashSet<string> accessibleSet;
-            if (_userAccessCache.TryGetValue(userKey, out var cached) && DateTime.UtcNow - cached.CachedAt < UserAccessCacheTtl)
+            if (_userAccessCache.TryGetValue(userKey, out var cached)
+                && cached.Generation == Interlocked.Read(ref _userAccessGeneration)
+                && DateTime.UtcNow - cached.CachedAt < UserAccessCacheTtl)
             {
                 accessibleSet = cached.Ids;
             }
             else
             {
+                var accessGeneration = Interlocked.Read(ref _userAccessGeneration);
                 var accessibleIds = _libraryManager.GetItemIds(new InternalItemsQuery(user)
                 {
                     IncludeItemTypes = TaggableTypes.ToArray(),
@@ -866,22 +996,81 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // cache for the off window.
                 lock (_publishLock)
                 {
-                    if (ServerModeEnabled && !_cacheReleased)
+                    if (ServerModeEnabled && !_cacheReleased && Interlocked.Read(ref _userAccessGeneration) == accessGeneration)
                     {
-                        _userAccessCache[userKey] = (accessibleSet, DateTime.UtcNow);
+                        _userAccessCache[userKey] = (accessibleSet, DateTime.UtcNow, accessGeneration);
                     }
                 }
             }
 
             var result = new Dictionary<string, TagCacheEntry>();
+            // Order-independent digest of the excluded keys (sum of a stable
+            // 64-bit hash per key, plus the count), so no sort or list is needed.
+            ulong excludedSum = 0;
+            var excludedCount = 0;
             foreach (var kvp in cache)
             {
-                if (!accessibleSet.Contains(kvp.Key)) continue;
-                if (since.HasValue && kvp.Value.LastUpdated <= since.Value) continue;
+                if (!accessibleSet.Contains(kvp.Key))
+                {
+                    excludedSum = unchecked(excludedSum + StableKeyHash(kvp.Key));
+                    excludedCount++;
+                    continue;
+                }
+                if (since.HasValue && kvp.Value.LastUpdated <= since.Value
+                    && (alsoInclude == null || !alsoInclude(kvp.Key, kvp.Value)))
+                {
+                    continue;
+                }
+
                 result[kvp.Key] = kvp.Value;
             }
 
+            accessRevision = excludedCount == 0
+                ? "all"
+                : excludedCount.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + excludedSum.ToString("x16", System.Globalization.CultureInfo.InvariantCulture);
             return result;
+        }
+
+        /// <summary>A hash of a cache key that is stable across processes (string.GetHashCode is randomized).</summary>
+        private static ulong StableKeyHash(string key)
+        {
+            // FNV-1a, 64-bit.
+            ulong hash = 14695981039346656037UL;
+            foreach (var c in key)
+            {
+                hash = unchecked((hash ^ c) * 1099511628211UL);
+            }
+
+            return hash;
+        }
+
+        /// <summary>
+        /// The live shared entry for one item (native poster tags). False when the
+        /// server tag cache is off, not yet published or has no entry for the item.
+        /// The entry is shared across users and must be treated as immutable
+        /// (<see cref="TagCacheEntry.Clone"/> before changing it).
+        /// </summary>
+        public bool TryGetEntry(Guid itemId, out TagCacheEntry entry)
+        {
+            entry = null!;
+            if (!ServerModeEnabled || _cacheReleased) return false;
+            var cache = _cache; // one volatile read of the current generation
+            if (!cache.TryGetValue(itemId.ToString("N"), out var found) || found == null) return false;
+            entry = found;
+            return true;
+        }
+
+        /// <summary>
+        /// Builds the entry an item would have in the server tag cache, without
+        /// touching the cache (native poster tags when the cache is off or has no
+        /// entry yet). Same derivation as the cache, including the Series/Season
+        /// episode scan, so it can be expensive for containers: callers memoize.
+        /// Null for non-taggable items or when the build fails.
+        /// </summary>
+        public TagCacheEntry? BuildEntryOnDemand(BaseItem item)
+        {
+            if (item == null || !TaggableTypes.Contains(item.GetBaseItemKind())) return null;
+            return BuildEntryForItem(item);
         }
 
         /// <summary>
@@ -968,7 +1157,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         _cacheReleased = true;
                         _cache = new ConcurrentDictionary<string, TagCacheEntry>();
-                        _userAccessCache.Clear();
+                        InvalidateUserAccess();
                     }
                 }
             }
@@ -1273,7 +1462,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // or timestamp reconcile.
                 if (ServerModeEnabled && !_cacheReleased)
                 {
-                    if (ApplyBatch(_pending.Drain(), RebuildEntry, RemoveEntry))
+                    var batch = _pending.Drain();
+                    if (ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry))
                     {
                         Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                         _dirty = true;
@@ -1300,14 +1490,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// Build a TagCacheEntry for a single library item.
-        /// For Series/Season, resolves first-episode data server-side.
+        /// For Series/Season, resolves first-episode data server-side and
+        /// aggregates audio languages across all episodes.
+        /// <paramref name="episodeScans"/> is an optional per-episode memo shared
+        /// across one build/reconcile/batch: an episode's own entry records into
+        /// it and a parent's scan reads from it (or records what it had to read),
+        /// so every episode's streams are read once instead of once for the
+        /// episode, once for its season and once for its series.
         /// </summary>
-        private TagCacheEntry? BuildEntryForItem(BaseItem item)
+        private TagCacheEntry? BuildEntryForItem(BaseItem item, EpisodeScanMemo? episodeScans = null)
         {
             try
             {
                 var kind = item.GetBaseItemKind();
-                var isContainer = kind == BaseItemKind.Series || kind == BaseItemKind.Season;
+                var isContainer = IsContainerKind(kind);
 
                 // Capture parent series ID for Episodes/Seasons so the Spoiler
                 // Guard filter can strip unwatched-episode entries without a
@@ -1329,13 +1525,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     Genres = item.Genres,
                     CommunityRating = item.CommunityRating,
                     CriticRating = item.CriticRating,
+                    OfficialRating = string.IsNullOrWhiteSpace(item.OfficialRating) ? null : item.OfficialRating,
                     LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     SeriesId = seriesIdN,
                 };
 
                 if (isContainer)
                 {
-                    var firstEp = GetFirstEpisode(item);
+                    var (firstEp, languages, partialLanguages) = ScanContainerEpisodes(item, episodeScans);
                     if (firstEp != null)
                     {
                         if (entry.Genres == null || entry.Genres.Length == 0)
@@ -1343,15 +1540,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             entry.Genres = firstEp.Genres;
                         }
 
-                        var (streams, sources, languages) = ExtractMediaData(firstEp);
-                        entry.StreamData = new TagStreamData
+                        // Quality tags still describe one representative episode;
+                        // language tags cover every episode (see ScanContainerEpisodes).
+                        // The episode's own entry built the identical stream data
+                        // when it ran earlier in this pass; share it (never mutated).
+                        if (episodeScans != null
+                            && episodeScans.TryGetValue(firstEp.Id, out var firstScan)
+                            && firstScan.StreamData != null)
                         {
-                            Streams = streams,
-                            Sources = sources,
-                            ItemName = firstEp.Name,
-                            ItemPath = string.IsNullOrEmpty(firstEp.Path) ? null : Path.GetFileName(firstEp.Path)
-                        };
+                            entry.StreamData = firstScan.StreamData;
+                        }
+                        else
+                        {
+                            var (streams, sources, _) = ExtractMediaData(firstEp);
+                            entry.StreamData = BuildStreamData(firstEp, streams, sources);
+                        }
+
                         entry.AudioLanguages = languages;
+                        entry.PartialAudioLanguages = partialLanguages;
                     }
 
                     if (kind == BaseItemKind.Season && entry.CommunityRating == null)
@@ -1375,6 +1581,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (series?.ProviderIds?.TryGetValue("Tmdb", out var seriesTmdb) == true)
                             entry.SeriesTmdbId = seriesTmdb;
                         entry.SeasonNumber = season.IndexNumber;
+                        // Age rating: a Season rarely carries its own, so fall back to
+                        // the Series (same shape as the CommunityRating fallback above).
+                        if (entry.OfficialRating == null && !string.IsNullOrWhiteSpace(series?.OfficialRating))
+                        {
+                            entry.OfficialRating = series.OfficialRating;
+                        }
                     }
                 }
                 else if (kind == BaseItemKind.BoxSet)
@@ -1386,14 +1598,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 else
                 {
                     var (streams, sources, languages) = ExtractMediaData(item);
-                    entry.StreamData = new TagStreamData
-                    {
-                        Streams = streams,
-                        Sources = sources,
-                        ItemName = item.Name,
-                        ItemPath = string.IsNullOrEmpty(item.Path) ? null : Path.GetFileName(item.Path)
-                    };
+                    entry.StreamData = BuildStreamData(item, streams, sources);
                     entry.AudioLanguages = languages;
+
+                    if (kind == BaseItemKind.Episode && episodeScans != null)
+                    {
+                        // Same "has streams" rule as ExtractAudioLanguages: the
+                        // stream list only ever holds audio/video streams.
+                        episodeScans[item.Id] = new EpisodeScan(streams.Count > 0 ? languages : null, entry.StreamData);
+                    }
 
                     if (kind == BaseItemKind.Episode && entry.CommunityRating == null)
                     {
@@ -1413,6 +1626,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             entry.SeriesTmdbId = seriesTmdb;
                         entry.SeasonNumber = ep.ParentIndexNumber;
                         entry.EpisodeNumber = ep.IndexNumber;
+                        // Age rating: Episodes inherit the Series rating when they have none.
+                        if (entry.OfficialRating == null && !string.IsNullOrWhiteSpace(series?.OfficialRating))
+                        {
+                            entry.OfficialRating = series.OfficialRating;
+                        }
                     }
                 }
 
@@ -1423,6 +1641,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _logger.Warning($"[TagCache] Failed to build entry for {item.Id}: {ex.Message}");
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Stream data for an entry, from the given item's extracted streams/sources.
+        /// ItemPath is only kept when it names a file none of the sources already
+        /// name: qualitytags.js reads both into the same signal list, so a
+        /// duplicate adds bytes (a file name per item, on every full download)
+        /// and nothing else.
+        /// </summary>
+        private static TagStreamData BuildStreamData(BaseItem item, List<TagMediaStream> streams, List<TagMediaSource> sources)
+        {
+            var itemPath = string.IsNullOrEmpty(item.Path) ? null : Path.GetFileName(item.Path);
+            if (itemPath != null && sources.Exists(source => string.Equals(source.Path, itemPath, StringComparison.Ordinal)))
+            {
+                itemPath = null;
+            }
+
+            return new TagStreamData
+            {
+                Streams = streams,
+                Sources = sources,
+                ItemName = item.Name,
+                ItemPath = itemPath
+            };
         }
 
         private (List<TagMediaStream>, List<TagMediaSource>, string[]) ExtractMediaData(BaseItem item)
@@ -1436,10 +1678,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var mediaSources = item.GetMediaSources(false);
                 foreach (var source in mediaSources)
                 {
+                    // A source's Name is normally its file name without the
+                    // extension. qualitytags.js only ever reads Name and Path
+                    // into the same word-boundary regex signals, so a Name the
+                    // Path already contains is dropped; one that says more
+                    // (a version label) is kept.
+                    var sourceName = source.Name;
+                    if (!string.IsNullOrEmpty(source.Path)
+                        && string.Equals(sourceName, Path.GetFileNameWithoutExtension(source.Path), StringComparison.Ordinal))
+                    {
+                        sourceName = null;
+                    }
+
                     sources.Add(new TagMediaSource
                     {
                         Path = string.IsNullOrEmpty(source.Path) ? null : Path.GetFileName(source.Path),
-                        Name = source.Name
+                        Name = sourceName
                     });
 
                     foreach (var resolved in MediaStreamLanguageResolver.Resolve(source, item.Path))
@@ -1449,6 +1703,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                         if (s.Type != MediaStreamType.Video && s.Type != MediaStreamType.Audio)
                             continue;
+
+                        // Only a video stream's range is read (for the HDR /
+                        // Dolby Vision tag); an audio stream's is always
+                        // "Unknown", which the client treats like no value.
+                        var videoRangeType = s.Type == MediaStreamType.Video ? s.VideoRangeType.ToString() : null;
+                        if (string.Equals(videoRangeType, "Unknown", StringComparison.Ordinal))
+                        {
+                            videoRangeType = null;
+                        }
 
                         streams.Add(new TagMediaStream
                         {
@@ -1460,17 +1723,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             Height = s.Height,
                             Channels = s.Channels,
                             ChannelLayout = s.ChannelLayout,
-                            VideoRangeType = s.VideoRangeType.ToString(),
+                            VideoRangeType = videoRangeType,
                             DisplayTitle = s.DisplayTitle
                         });
 
-                        if (s.Type == MediaStreamType.Audio && !string.IsNullOrEmpty(effectiveLanguage))
+                        if (s.Type == MediaStreamType.Audio && NormalizeAudioLanguage(effectiveLanguage) is { } lang)
                         {
-                            var lang = effectiveLanguage.ToLowerInvariant();
-                            if (lang != "und" && lang != "root")
-                            {
-                                languages.Add(lang);
-                            }
+                            languages.Add(lang);
                         }
                     }
                 }
@@ -1481,6 +1740,231 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             return (streams, sources, languages.ToArray());
+        }
+
+        /// <summary>
+        /// Lower-cases a stream language for the tag cache, or returns null when
+        /// the track carries no usable language (empty, "und", "root").
+        /// </summary>
+        private static string? NormalizeAudioLanguage(string? language)
+        {
+            if (string.IsNullOrEmpty(language)) return null;
+            var lang = language.ToLowerInvariant();
+            return lang == "und" || lang == "root" ? null : lang;
+        }
+
+        /// <summary>
+        /// Audio languages of one episode, or null when it has no audio/video
+        /// streams at all (unprobed file, disc stub). Same normalization as
+        /// <see cref="ExtractMediaData"/>, without building the stream/source
+        /// lists the container scan doesn't need.
+        /// </summary>
+        private static string[]? ExtractAudioLanguages(BaseItem item)
+        {
+            var hasStreams = false;
+            var languages = new HashSet<string>();
+            foreach (var source in item.GetMediaSources(false))
+            {
+                foreach (var resolved in MediaStreamLanguageResolver.Resolve(source, item.Path))
+                {
+                    var type = resolved.Stream.Type;
+                    if (type != MediaStreamType.Video && type != MediaStreamType.Audio) continue;
+
+                    hasStreams = true;
+                    if (type == MediaStreamType.Audio && NormalizeAudioLanguage(resolved.Language) is { } lang)
+                    {
+                        languages.Add(lang);
+                    }
+                }
+            }
+
+            return hasStreams ? languages.ToArray() : null;
+        }
+
+        /// <summary>
+        /// One pass over a Series/Season's episodes: picks the representative
+        /// episode (same rule as <see cref="TagEpisodeSelector.GetFirstEpisode"/>)
+        /// and aggregates audio languages across every episode with streams.
+        /// Returns the union as <c>Languages</c> and, as <c>Partial</c>, the
+        /// languages missing from at least one episode — so the card can show a
+        /// dub that only covers part of the show differently from one that covers
+        /// all of it (#557). <c>Partial</c> is null when every language is full.
+        /// Specials don't count against a Series' full languages (an untranslated
+        /// special shouldn't demote a complete dub) unless the container is the
+        /// Specials season itself or the series has nothing but specials. Episodes
+        /// whose audio has no language tag are neutral: an untagged track says
+        /// nothing about which language it is, so it neither adds to the union nor
+        /// marks every other language as partial.
+        /// The "on every episode" test is <see cref="Covers"/> over
+        /// <see cref="LanguageIdentity"/>, not raw-code equality: one season
+        /// tagged "eng" and the next "en" (or "fr-FR" vs "fre") is still one
+        /// complete English/French dub, while an "es-ES" track that sits next to
+        /// "es-419" on some episodes stays partial even if "es-419" is on all.
+        /// <paramref name="episodeScans"/> is the pass's per-episode memo (see
+        /// <see cref="BuildEntryForItem"/>); episodes missing from it are taken
+        /// from their live cache entry when the pass allows it (see
+        /// <see cref="EpisodeScanMemo"/>) or read here, and recorded for the
+        /// next container.
+        /// </summary>
+        private (BaseItem? FirstEpisode, string[] Languages, string[]? Partial) ScanContainerEpisodes(
+            BaseItem container,
+            EpisodeScanMemo? episodeScans)
+        {
+            // Union keeps insertion order (deterministic for a stable library), so
+            // the order-sensitive ContentEquals compare stays no-op on re-saves.
+            var union = new HashSet<string>();
+            // Distinct per-episode identity sets: a series has a handful of
+            // track layouts however many episodes it has, so these stay tiny.
+            var regularSets = new Dictionary<string, string[]>(StringComparer.Ordinal);
+            var specialSets = new Dictionary<string, string[]>(StringComparer.Ordinal);
+            try
+            {
+                var firstEp = TagEpisodeSelector.ScanEpisodes(_libraryManager, container, null, episode =>
+                {
+                    string[]? languages;
+                    if (episodeScans != null && episodeScans.TryGetValue(episode.Id, out var scan))
+                    {
+                        languages = scan.Languages;
+                    }
+                    else if (episodeScans?.Pending != null
+                        && !episodeScans.Pending.Contains(episode.Id)
+                        && _cache.TryGetValue(episode.Id.ToString("N"), out var cached)
+                        && string.Equals(cached.Type, "Episode", StringComparison.Ordinal))
+                    {
+                        // Same "has streams" rule as the episode's own build: its
+                        // stream list only ever holds audio/video streams.
+                        languages = cached.StreamData?.Streams?.Count > 0 ? cached.AudioLanguages ?? Array.Empty<string>() : null;
+                        episodeScans[episode.Id] = new EpisodeScan(languages, cached.StreamData);
+                    }
+                    else
+                    {
+                        languages = ExtractAudioLanguages(episode);
+                        if (episodeScans != null) episodeScans[episode.Id] = new EpisodeScan(languages, null);
+                    }
+
+                    if (languages == null) return false; // no streams: not a tag source
+                    if (languages.Length == 0) return true; // streams but untagged audio: neutral
+
+                    union.UnionWith(languages);
+                    var identities = languages.Select(LanguageIdentity).Distinct().OrderBy(id => id, StringComparer.Ordinal).ToArray();
+                    var isSpecial = episode.ParentIndexNumber == 0 && container is not MediaBrowser.Controller.Entities.TV.Season;
+                    (isSpecial ? specialSets : regularSets).TryAdd(string.Join('|', identities), identities);
+                    return true;
+                }, stopAtFirstRegular: false);
+
+                // Two regional variants are separate dubs only when some episode
+                // carries both as separate tracks; otherwise they're one dub tagged
+                // differently from one release to the next.
+                var separateDubs = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var set in regularSets.Values.Concat(specialSets.Values))
+                {
+                    for (var i = 0; i < set.Length; i++)
+                    {
+                        for (var j = i + 1; j < set.Length; j++)
+                        {
+                            if (SubtagVariants(set[i], set[j])) separateDubs.Add(set[i] + "|" + set[j]);
+                        }
+                    }
+                }
+
+                var counted = regularSets.Count > 0 ? regularSets.Values : specialSets.Values;
+                var partial = union
+                    .Where(lang =>
+                    {
+                        var identity = LanguageIdentity(lang);
+                        return !counted.All(set => Covers(set, identity, separateDubs));
+                    })
+                    .ToArray();
+                return (firstEp, union.ToArray(), partial.Length > 0 ? partial : null);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[TagCache] Failed to scan episodes for {container.Id}: {ex.Message}");
+                return (null, Array.Empty<string>(), null);
+            }
+        }
+
+        /// <summary>
+        /// Whether an episode whose audio has the given (ordinal-sorted)
+        /// <see cref="LanguageIdentity"/> set carries <paramref name="identity"/>:
+        /// the same identity, or the same base language unless both sides name
+        /// different region/script subtags that <paramref name="separateDubs"/>
+        /// (sorted "a|b" pairs) proves are different dubs. A bare "fre" says
+        /// nothing about the region, so it matches "fr-FR" and "fr-CA"; "es-419"
+        /// on every episode doesn't complete an "es-ES" track that shares
+        /// episodes with it.
+        /// </summary>
+        private static bool Covers(string[] episodeIdentities, string identity, HashSet<string> separateDubs)
+        {
+            foreach (var other in episodeIdentities)
+            {
+                if (string.Equals(other, identity, StringComparison.Ordinal)) return true;
+                if (!string.Equals(BaseOf(other), BaseOf(identity), StringComparison.Ordinal)) continue;
+                if (!SubtagVariants(other, identity)) return true; // one side is bare
+
+                var pair = string.CompareOrdinal(other, identity) < 0 ? other + "|" + identity : identity + "|" + other;
+                if (!separateDubs.Contains(pair)) return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Two different identities of the same base language that both carry a
+        /// region/script subtag ("es-419" and "es-es").
+        /// </summary>
+        private static bool SubtagVariants(string a, string b)
+        {
+            return a.IndexOf('-') > 0
+                && b.IndexOf('-') > 0
+                && !string.Equals(a, b, StringComparison.Ordinal)
+                && string.Equals(BaseOf(a), BaseOf(b), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// Base language of a <see cref="LanguageIdentity"/> ("pt-br" → "pt").
+        /// </summary>
+        private static string BaseOf(string identity)
+        {
+            var dash = identity.IndexOf('-');
+            return dash > 0 ? identity[..dash] : identity;
+        }
+
+        /// <summary>
+        /// Canonical identity of a stream language code, for deciding whether two
+        /// episodes carry "the same" dub. Files are tagged inconsistently — ISO
+        /// 639-2 from Jellyfin's probe ("eng", "ger"/"deu") next to Matroska
+        /// BCP-47 ("en", "de-DE") — so the base is mapped through Jellyfin's
+        /// culture table to its two-letter code and any subtag is kept, lower-cased
+        /// ("fre" → "fr", "fr-FR" → "fr-fr"). Unknown codes, and ones such as "zxx"
+        /// with no two-letter form, stay as their lower-cased selves so they still
+        /// compare consistently with themselves.
+        /// </summary>
+        private string LanguageIdentity(string code)
+        {
+            return _languageIdentities.GetOrAdd(code, static (raw, localization) =>
+            {
+                var lowered = raw.ToLowerInvariant();
+                var dash = lowered.IndexOf('-');
+                var baseCode = dash > 0 ? lowered[..dash] : lowered;
+                var subtag = dash > 0 ? lowered[dash..] : string.Empty;
+                try
+                {
+                    var twoLetter = localization.FindLanguageInfo(baseCode)?.TwoLetterISOLanguageName;
+                    if (!string.IsNullOrEmpty(twoLetter))
+                    {
+                        // A few culture rows carry a region of their own ("pob" → "pt-br").
+                        twoLetter = twoLetter.ToLowerInvariant();
+                        return twoLetter.Contains('-', StringComparison.Ordinal) ? twoLetter : twoLetter + subtag;
+                    }
+                }
+                catch
+                {
+                    // A lookup failure only costs canonicalization for this code.
+                }
+
+                return lowered;
+            }, _localization);
         }
 
         /// <summary>
@@ -1505,27 +1989,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 yield return _libraryManager.GetItemList(new InternalItemsQuery { ItemIds = pageIds });
-            }
-        }
-
-        private BaseItem? GetFirstEpisode(BaseItem container)
-        {
-            try
-            {
-                var epQuery = new InternalItemsQuery
-                {
-                    ParentId = container.Id,
-                    IncludeItemTypes = new[] { BaseItemKind.Episode },
-                    Recursive = true,
-                    Limit = 1,
-                    OrderBy = new[] { (ItemSortBy.PremiereDate, JSortOrder.Ascending) }
-                };
-                return _libraryManager.GetItemList(epQuery).FirstOrDefault();
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"[TagCache] Failed to get first episode for {container.Id}: {ex.Message}");
-                return null;
             }
         }
 
