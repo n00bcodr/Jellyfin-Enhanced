@@ -55,7 +55,9 @@
     function loadCustomTabCount() {
         if (customTabFetchStarted) return;
         customTabFetchStarted = true;
-        if (!JE.hasCustomTabs) { customTabCount = 0; return; }
+        // Only skip on a definite "not installed": the /Plugins fallback leaves
+        // the flag unset for non-admins, and Custom Tabs may still be there.
+        if (JE.hasCustomTabs === false) { customTabCount = 0; return; }
         ApiClient.fetch({
             url: ApiClient.getUrl('CustomTabs/Config'),
             type: 'GET',
@@ -89,6 +91,93 @@
             if (!isNaN(idx) && idx > max) max = idx;
         });
         return max + 1;
+    }
+
+    var RESERVED_ID_PREFIX = 'je-native-tab-reserved-';
+
+    /** Whether a tab button/panel was created by this module (a tab of ours or a reserved slot). */
+    function isOwnSlot(el) {
+        return el.id.indexOf('je-native-tab-') === 0;
+    }
+
+    function slotIndex(el) {
+        return parseInt(el.getAttribute('data-index'), 10);
+    }
+
+    /**
+     * Hidden, empty stand-in for a tab index another plugin claims without
+     * putting anything at that position in the Home tab strip or panel list.
+     * @param {string} kind - 'btn' or 'panel'.
+     * @param {number} index - The claimed index.
+     * @returns {HTMLElement} The placeholder element.
+     */
+    function createReservedSlot(kind, index) {
+        var el;
+        if (kind === 'btn') {
+            el = document.createElement('button');
+            el.type = 'button';
+            el.className = 'emby-tab-button hide';
+            el.tabIndex = -1;
+            el.setAttribute('aria-hidden', 'true');
+        } else {
+            el = document.createElement('div');
+            el.className = 'tabContent pageTabContent';
+        }
+        el.id = RESERVED_ID_PREFIX + kind + '-' + index;
+        el.setAttribute('data-index', String(index));
+        return el;
+    }
+
+    /**
+     * Make each of our tabs sit at the position its index names. Jellyfin
+     * resolves a Home tab by position, not by `data-index`: emby-tabs selects
+     * `tabButtons[index]` and maintabsmanager activates the index-th
+     * `.tabContent`. On the modern layout Custom Tabs claims `?tab=2..` with
+     * React header links only, so every index below ours that nothing fills
+     * gets a hidden placeholder. On the legacy layout Custom Tabs may append
+     * its buttons after ours, so ours are moved back to the end.
+     * @param {HTMLElement} container - The tab strip or the panel root.
+     * @param {string} kind - 'btn' or 'panel'.
+     * @param {number} lastIndex - Highest index used by one of our tabs.
+     * @returns {boolean} Whether anything was added, removed or moved.
+     */
+    function alignSlots(container, kind, lastIndex) {
+        var selector = kind === 'btn' ? '.emby-tab-button' : '.tabContent';
+        var items = function () { return Array.prototype.slice.call(container.querySelectorAll(selector)); };
+        var changed = false;
+        var claimed = {};
+        items().forEach(function (el) {
+            if (!isOwnSlot(el)) claimed[slotIndex(el)] = true;
+        });
+        entries.forEach(function (entry) {
+            if (entry.index != null) claimed[entry.index] = true;
+        });
+
+        items().forEach(function (el) {
+            if (el.id.indexOf(RESERVED_ID_PREFIX) !== 0) return;
+            var idx = slotIndex(el);
+            if (claimed[idx] || idx >= lastIndex) {
+                el.remove();
+                changed = true;
+            }
+        });
+        for (var i = 0; i < lastIndex; i++) {
+            if (claimed[i]) continue;
+            // A slot left behind in a cached Home page moves over, like our panels do.
+            var slot = document.getElementById(RESERVED_ID_PREFIX + kind + '-' + i);
+            if (slot && container.contains(slot)) continue;
+            container.appendChild(slot || createReservedSlot(kind, i));
+            changed = true;
+        }
+
+        var all = items();
+        var ours = all.filter(isOwnSlot).sort(function (x, y) { return slotIndex(x) - slotIndex(y); });
+        var tail = all.slice(all.length - ours.length);
+        if (ours.some(function (el, k) { return tail[k] !== el; })) {
+            ours.forEach(function (el) { container.appendChild(el); });
+            changed = true;
+        }
+        return changed;
     }
 
     function ensureInjected() {
@@ -157,6 +246,15 @@
                 root.appendChild(panel);
             }
         });
+
+        var lastIndex = -1;
+        entries.forEach(function (entry) {
+            if (entry.index != null && entry.index > lastIndex) lastIndex = entry.index;
+        });
+        if (lastIndex >= 0) {
+            if (alignSlots(slider, 'btn', lastIndex)) addedTabButton = true;
+            alignSlots(root, 'panel', lastIndex);
+        }
 
         // Read all visibilities before acting on them, so the reads share one layout
         // instead of each forcing one right after a panel mount.
