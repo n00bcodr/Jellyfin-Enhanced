@@ -713,6 +713,31 @@
                     </fieldset>
 
                     <fieldset>
+                        <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">translate</i>Audio Language Tags</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer je-main-feature"><label><input id="audioLanguageTagSyncEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Audio Language Tags Sync</span></label></div>
+                            <div class="je-setting-description" data-desc-for="audioLanguageTagSyncEnabled">
+                                <div class="fieldDescription je-field-desc-xl">
+                                    Adds each movie's and series' audio languages as Jellyfin tags. A regional track such as en-US gets a base tag ("JE Language: English") and a regional tag ("JE Language: English (United States)").
+                                    <br/><br/>
+                                    Existing items are tagged by the "Sync Audio Language Tags to Jellyfin" scheduled task. New and changed items are tagged after a library scan when the Server-Side Tag Cache is enabled.
+                                </div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="audioLanguageTagPrefix">Tag Prefix</label>
+                                <input id="audioLanguageTagPrefix" is="emby-input" name="audioLanguageTagPrefix" type="text" placeholder="JE Language: "/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="audioLanguageTagPrefix">
+                                <div class="fieldDescription">Prefix added before each language, e.g. "JE Language: English".</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="audioLanguageTagShowAsLinks" is="emby-checkbox" type="checkbox"/><span>Link audio languages to their tag page</span></label></div>
+                            <div class="je-setting-description" data-desc-for="audioLanguageTagShowAsLinks">
+                                <div class="fieldDescription je-field-desc-xl">Links each audio language on item detail pages to Jellyfin's list of items with that tag.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
                         <legend class="sectionTitle">Awards</legend>
                         <div class="configSection">
                             <div class="checkboxContainer je-main-feature"><label><input id="showAwards" is="emby-checkbox" type="checkbox"/><span>Show Awards Banner</span></label></div>
@@ -6037,6 +6062,9 @@
                 document.querySelector('#arrTagsSyncFilter').value = config.ArrTagsSyncFilter || '';
                 document.querySelector('#arrTagsLinksFilter').value = config.ArrTagsLinksFilter || '';
                 document.querySelector('#arrTagsLinksHideFilter').value = config.ArrTagsLinksHideFilter || '';
+                document.querySelector('#audioLanguageTagSyncEnabled').checked = config.AudioLanguageTagSyncEnabled === true;
+                document.querySelector('#audioLanguageTagPrefix').value = config.AudioLanguageTagPrefix || 'JE Language: ';
+                document.querySelector('#audioLanguageTagShowAsLinks').checked = config.AudioLanguageTagShowAsLinks !== false;
                 document.querySelector('#DefaultSubtitleStyle').value = config.DefaultSubtitleStyle;
                 document.querySelector('#DefaultSubtitleSize').value = config.DefaultSubtitleSize;
                 document.querySelector('#DefaultSubtitleFont').value = config.DefaultSubtitleFont;
@@ -6634,6 +6662,9 @@
             config.ArrTagsSyncFilter = document.querySelector('#arrTagsSyncFilter').value || '';
             config.ArrTagsLinksFilter = document.querySelector('#arrTagsLinksFilter').value || '';
             config.ArrTagsLinksHideFilter = document.querySelector('#arrTagsLinksHideFilter').value || '';
+            config.AudioLanguageTagSyncEnabled = document.querySelector('#audioLanguageTagSyncEnabled').checked;
+            config.AudioLanguageTagPrefix = document.querySelector('#audioLanguageTagPrefix').value || 'JE Language: ';
+            config.AudioLanguageTagShowAsLinks = document.querySelector('#audioLanguageTagShowAsLinks').checked;
             config.DefaultSubtitleStyle = parseInt(document.querySelector('#DefaultSubtitleStyle').value, 10);
             config.DefaultSubtitleSize = parseInt(document.querySelector('#DefaultSubtitleSize').value, 10);
             config.DefaultSubtitleFont = parseInt(document.querySelector('#DefaultSubtitleFont').value, 10);
@@ -7997,6 +8028,7 @@
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },
             { parent: 'arrTagsShowAsLinks', label: 'Show synced tags as links', children: ['arrTagsLinksFilter', 'arrTagsLinksHideFilter'] },
+            { parent: 'audioLanguageTagSyncEnabled', label: 'Enable Audio Language Tags Sync', children: ['audioLanguageTagPrefix', 'audioLanguageTagShowAsLinks'] },
             { parent: 'calendarPageEnabled', label: 'Enable Calendar Page', children: ['calendarUsePluginPages', 'calendarUseNativeTab', 'calendarUseCustomTabs', 'calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
             { parent: 'recommendationsPageEnabled', label: 'Enable Recommendations Page', children: ['recommendationsUseNativeTab', 'recommendationsUsePluginPages', 'recommendationsUseCustomTabs', 'recommendationsAutoCreateCustomTab'] },
             { parent: 'activityFeedEnabled', label: 'Enable Activity Feed', children: ['activityFeedShowWatched', 'activityFeedShowFavorited', 'activityFeedShowReviewed', 'activityFeedShowActiveStreams', 'activityFeedUseNativeTab', 'activityFeedUsePluginPages', 'activityFeedUseCustomTabs', 'activityFeedAutoCreateCustomTab'] },

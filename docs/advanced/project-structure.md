@@ -353,3 +353,8 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
 
 * **`/Model/`** (Spoiler Guard):
     * **`TagCacheEntry.cs`**: Pre-computed per-item tag data served to clients in bulk; carries the parent-series ID so the Spoiler Guard filter can strip cache entries for unwatched episodes without per-request library lookups.
+
+* **Audio Language Tags**:
+    * **`/Helpers/AudioLanguageTagHelper.cs`**: Maps stream language codes to tag names (base and regional) and computes the tag changes for an item.
+    * **`/ScheduledTasks/AudioLanguageTagsSyncTask.cs`**: "Sync Audio Language Tags to Jellyfin" (no default triggers). Writes the tags for every movie and series.
+    * **`/Services/TagCacheService.cs`**: Applies the same tags to a movie or series when its cache entry is rebuilt after a library event.

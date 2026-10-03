@@ -884,6 +884,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var entry = BuildEntryForItem(item, episodeScans);
             if (entry == null) return false;
 
+            // Before the no-op guard: tags can be missing while the entry is unchanged
+            SyncAudioLanguageTags(item, kind, entry);
+
             var key = id.ToString("N").ToLowerInvariant();
 
             // No-op guard: Jellyfin raises ItemUpdated for every item a nightly
@@ -899,6 +902,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             _cache[key] = entry;
             return true;
+        }
+
+        /// <summary>
+        /// Syncs a movie's or series' audio-language tags with its freshly built entry.
+        /// Runs on the flush worker. The tag write raises ItemUpdated, which queues one
+        /// more rebuild that makes no change.
+        /// </summary>
+        private void SyncAudioLanguageTags(BaseItem item, BaseItemKind kind, TagCacheEntry entry)
+        {
+            if (kind != BaseItemKind.Movie && kind != BaseItemKind.Series) return;
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.AudioLanguageTagSyncEnabled) return;
+
+            try
+            {
+                var updated = AudioLanguageTagHelper.BuildUpdatedTags(
+                    item.Tags, entry.AudioLanguages, AudioLanguageTagHelper.GetPrefix(config), _localization);
+                if (updated == null) return;
+
+                item.Tags = updated;
+                item.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, CancellationToken.None).GetAwaiter().GetResult();
+                _logger.Info($"[TagCache] Updated audio language tags for '{item.Name}'");
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[TagCache] Failed to update audio language tags for '{item.Name}': {ex.Message}");
+            }
         }
 
         private bool RemoveEntry(Guid id)

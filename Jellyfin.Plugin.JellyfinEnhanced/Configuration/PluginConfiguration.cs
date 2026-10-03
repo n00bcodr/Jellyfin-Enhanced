@@ -236,6 +236,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ArrTagsLinksHideFilter = "";
             ArrTagsSyncFilter = "";
 
+            // Audio Language Tags Sync Settings
+            AudioLanguageTagSyncEnabled = false;
+            AudioLanguageTagPrefix = "JE Language: ";
+            AudioLanguageTagShowAsLinks = true;
+
             // Letterboxd Settings
             LetterboxdEnabled = false;
             ShowLetterboxdLinkAsText = false;
@@ -765,6 +770,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string ArrTagsLinksFilter { get; set; }
         public string ArrTagsLinksHideFilter { get; set; }
         public string ArrTagsSyncFilter { get; set; }
+
+        // Audio Language Tags Sync Settings
+        public bool AudioLanguageTagSyncEnabled { get; set; }
+        public string AudioLanguageTagPrefix { get; set; }
+        public bool AudioLanguageTagShowAsLinks { get; set; }
 
         // Letterboxd Settings
         public bool LetterboxdEnabled { get; set; }

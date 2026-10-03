@@ -635,6 +635,19 @@ Display available audio languages as country flags on posters.
     (`pt-BR`, `es-MX`, `pob`…). Tracks tagged with only a base language code
     can't be told apart, so they show the language's default flag.
 
+### Audio Language Links
+
+Audio languages on item detail pages link to Jellyfin's list of items with that language.
+
+**Features:**
+
+- Backed by Jellyfin tags written by the **Sync Audio Language Tags to Jellyfin** scheduled task (movies and series)
+- A regional track gets two tags: a base tag (`JE Language: English`) and a regional tag (`JE Language: English (United States)`)
+- A regional language links to its regional tag; a base language links to the base tag
+- Series use the union of languages across their episodes
+- A language without a matching tag on the item is shown as plain text
+- Tags for languages an item no longer has are removed on each sync
+
 ### Rating Tags
 
 Show TMDB and Rotten Tomatoes ratings on posters and in player.

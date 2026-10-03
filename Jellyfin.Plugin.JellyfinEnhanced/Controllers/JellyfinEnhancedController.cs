@@ -3635,6 +3635,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ArrTagsLinksFilter,
                 config.ArrTagsLinksHideFilter,
 
+                // Audio Language Tags Sync Settings
+                config.AudioLanguageTagSyncEnabled,
+                config.AudioLanguageTagPrefix,
+                config.AudioLanguageTagShowAsLinks,
+
                 // Letterboxd Settings
                 config.LetterboxdEnabled,
                 config.ShowLetterboxdLinkAsText,
@@ -4218,6 +4223,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 LastReportedAt = config.AnalyticsLastReportedAt,
                 LastPayloadJson = config.AnalyticsLastPayloadJson,
             });
+        }
+
+        /// <summary>
+        /// Returns the audio-language tag names (base and regional) for the given stream language codes.
+        /// </summary>
+        [HttpGet("audio-language-tags")]
+        [Authorize]
+        public ActionResult GetAudioLanguageTags([FromQuery] string codes)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.AudioLanguageTagSyncEnabled)
+            {
+                return Ok(new Dictionary<string, object>());
+            }
+
+            var prefix = string.IsNullOrWhiteSpace(config.AudioLanguageTagPrefix)
+                ? "JE Language: "
+                : config.AudioLanguageTagPrefix;
+            var localization = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
+                .GetRequiredService<MediaBrowser.Model.Globalization.ILocalizationManager>(HttpContext.RequestServices);
+
+            var result = new Dictionary<string, object>();
+            foreach (var code in (codes ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(50))
+            {
+                if (code.Length > 16 || result.ContainsKey(code)) continue;
+                var (baseName, variantName) = AudioLanguageTagHelper.GetTagNames(code, localization);
+                result[code] = new
+                {
+                    baseTag = prefix + baseName,
+                    variantTag = variantName == null ? null : prefix + variantName
+                };
+            }
+
+            return Ok(result);
         }
 
         [HttpGet("awards/{mediaType}/{tmdbId}")]

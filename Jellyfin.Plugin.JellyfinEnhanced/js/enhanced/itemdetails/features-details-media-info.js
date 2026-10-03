@@ -461,6 +461,85 @@
         }
     }
 
+    // Language code -> { baseTag, variantTag }
+    const languageTagNameCache = new Map();
+
+    /**
+     * Resolves the audio-language tag each chip links to: the regional tag if the
+     * item has it, else the base tag, else none.
+     * @param {string} itemId The item ID.
+     * @param {Array<{code: string}>} languages The chips about to be rendered.
+     * @returns {Promise<Map<string, string>>} Language code to full tag; empty when the feature is off.
+     */
+    async function loadLanguageTagMap(itemId, languages) {
+        const map = new Map();
+        const cfg = JE.pluginConfig;
+        if (!cfg?.AudioLanguageTagSyncEnabled || !cfg?.AudioLanguageTagShowAsLinks) return map;
+        try {
+            const codes = [...new Set(languages.map((l) => l.code))];
+            const unknown = codes.filter((c) => !languageTagNameCache.has(c));
+            const [item, names] = await Promise.all([
+                JE.helpers?.getItemCached
+                    ? JE.helpers.getItemCached(itemId)
+                    : ApiClient.getItem(ApiClient.getCurrentUserId(), itemId),
+                unknown.length
+                    ? ApiClient.ajax({
+                        type: 'GET',
+                        url: ApiClient.getUrl('/JellyfinEnhanced/audio-language-tags', { codes: unknown.join(',') }),
+                        dataType: 'json'
+                    })
+                    : Promise.resolve({})
+            ]);
+            Object.entries(names || {}).forEach(([code, tags]) => {
+                languageTagNameCache.set(code, {
+                    baseTag: tags.baseTag ?? tags.BaseTag ?? null,
+                    variantTag: tags.variantTag ?? tags.VariantTag ?? null
+                });
+            });
+
+            const itemTags = new Map((item?.Tags || []).map((t) => [t.toLowerCase(), t]));
+            codes.forEach((code) => {
+                const tags = languageTagNameCache.get(code);
+                if (!tags) return;
+                const found = [tags.variantTag, tags.baseTag]
+                    .filter(Boolean)
+                    .map((t) => itemTags.get(t.toLowerCase()))
+                    .find(Boolean);
+                if (found) map.set(code, found);
+            });
+        } catch {
+            // Chips render as plain text without links
+        }
+        return map;
+    }
+
+    /**
+     * Builds a link to Jellyfin's tag list page.
+     * @param {string} tag The full tag, prefix included.
+     * @returns {HTMLAnchorElement}
+     */
+    function createLanguageTagLink(tag) {
+        const serverId = ApiClient.serverId();
+        const url = `list.html?type=tag&tag=${encodeURIComponent(tag)}&serverId=${serverId}`;
+        const link = document.createElement('a');
+        link.className = 'audio-language-link';
+        link.href = `#!/${url}`;
+        link.title = tag;
+        link.style.color = 'inherit';
+        link.style.textDecoration = 'none';
+        link.addEventListener('mouseenter', () => { link.style.textDecoration = 'underline'; });
+        link.addEventListener('mouseleave', () => { link.style.textDecoration = 'none'; });
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.Dashboard && typeof window.Dashboard.navigate === 'function') {
+                window.Dashboard.navigate(url);
+            } else {
+                window.location.hash = `!/${url}`;
+            }
+        });
+        return link;
+    }
+
     /**
      * Displays the audio languages of an item (and its children) on its details page.
      * @param {string} itemId The ID of the item.
@@ -512,7 +591,7 @@
         };
 
         // Helper to render language items with proper DOM elements
-        const renderLanguages = (languages) => {
+        const renderLanguages = (languages, tagMap = new Map()) => {
             // Clear the loading indicator
             placeholder.innerHTML = '';
             placeholder.style.display = 'flex';
@@ -593,8 +672,14 @@
                     langSpan.appendChild(flag);
                 }
 
-                const text = document.createTextNode(lang.name);
-                langSpan.appendChild(text);
+                const languageTag = tagMap.get(lang.code);
+                if (languageTag) {
+                    const link = createLanguageTagLink(languageTag);
+                    link.textContent = lang.name;
+                    langSpan.appendChild(link);
+                } else {
+                    langSpan.appendChild(document.createTextNode(lang.name));
+                }
 
                 scrollContainer.appendChild(langSpan);
 
@@ -614,7 +699,11 @@
         // while in flight); the chip is built in the next animation frame so
         // its small DOM write lands with that frame's own layout pass.
         const renderUnavailableInFrame = () => nextFrame().then(() => { if (placeholder.isConnected) renderUnavailable(); });
-        const renderLanguagesInFrame = (languages) => nextFrame().then(() => { if (placeholder.isConnected) renderLanguages(languages); });
+        const renderLanguagesInFrame = async (languages) => {
+            const tagMap = await loadLanguageTagMap(itemId, languages);
+            await nextFrame();
+            if (placeholder.isConnected) renderLanguages(languages, tagMap);
+        };
         const performFetch = async () => {
             // Check cache first
             const now = Date.now();
@@ -626,7 +715,8 @@
                     return;
                 }
                 // Render from cache
-                renderLanguages(cached.languages);
+                const tagMap = await loadLanguageTagMap(itemId, cached.languages);
+                if (placeholder.isConnected) renderLanguages(cached.languages, tagMap);
                 return;
             }
 

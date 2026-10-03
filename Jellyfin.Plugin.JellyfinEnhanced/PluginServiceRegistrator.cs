@@ -86,6 +86,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddTransient<AnalyticsReportTask>();
             serviceCollection.AddTransient<RefreshCdnAssetsTask>();
             serviceCollection.AddTransient<ArrTagsSyncTask>();
+            serviceCollection.AddTransient<AudioLanguageTagsSyncTask>();
             serviceCollection.AddTransient<MdblistRatingsFetchTask>();
             serviceCollection.AddTransient<MdblistRatingsSyncTask>();
             serviceCollection.AddTransient<BuildTagCacheTask>();

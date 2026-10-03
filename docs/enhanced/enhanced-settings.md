@@ -83,6 +83,18 @@ Disabling **Server-Side Tag Cache** (Dashboard → Plugins → Jellyfin Enhanced
 
 Turning the setting back on from the dashboard restores the last saved snapshot and catches up on anything that changed while it was off, automatically in the background — no restart or manual task run needed. (Only if you edit the plugin's configuration file by hand instead of using the dashboard: restart the server so the change is picked up, then run the **Refresh Tag Cache** scheduled task to catch up.)
 
+### Audio Language Tags
+
+Dashboard → Plugins → Jellyfin Enhanced → Display → Audio Language Tags. See [Audio Language Links](enhanced-features.md#audio-language-links).
+
+| Setting | Description |
+|---|---|
+| Enable Audio Language Tags Sync | Writes each movie's and series' audio languages as Jellyfin tags. Off by default. |
+| Tag Prefix | Prefix for every tag. Default `JE Language: `. Tags written under a previous prefix are not removed. |
+| Link audio languages to their tag page | Links the audio languages on item detail pages to the tag's list page. |
+
+Run the **Sync Audio Language Tags to Jellyfin** scheduled task (Dashboard → Scheduled Tasks) once to tag existing items. While the [Server-Side Tag Cache](#server-side-tag-cache) is enabled, new and changed items are tagged after a library scan. With the cache off, the task must run on a schedule.
+
 ### Native Poster Tags (Experimental)
 
 Native Poster Tags draw each user's Media Tags into the poster images Jellyfin sends to native apps (Android TV, Tizen, Swiftfin, Findroid and so on), which can't run Jellyfin Enhanced's web overlays. It is built into Jellyfin Enhanced, so there is nothing else to install. See [Native Poster Tags](enhanced-features.md#native-poster-tags-experimental) for what it draws and its limitations.

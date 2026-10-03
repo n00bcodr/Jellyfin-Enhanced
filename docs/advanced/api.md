@@ -677,6 +677,7 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 | GET | `item-stats/{userId}/{itemId}` | File size and watch progress for an item in one response (what the details page uses) |
 | GET | `file-size/{userId}/{itemId}` | File size for an item |
 | GET | `watch-progress/{userId}/{itemId}` | Watch progress for an item |
+| GET | `audio-language-tags?codes=` | Audio-language tag names (base and regional) for comma-separated stream language codes |
 | GET | `awards/{mediaType}/{tmdbId}` | Wikidata award wins/nominations |
 | GET | `mdblist-ratings/{mediaType}/{tmdbId}` | MDBList ratings for a title |
 | GET | `mdblist-ratings/account-status` | MDBList account quota/status |
