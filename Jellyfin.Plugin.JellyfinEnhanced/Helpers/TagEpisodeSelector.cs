@@ -14,6 +14,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
     internal static class TagEpisodeSelector
     {
         /// <summary>
+        /// Page size of <see cref="ScanEpisodes"/>. The full cache build needs it
+        /// to tell which containers' scans it can reproduce from one ordered
+        /// list (see <c>TagCacheService.BuildContainerEpisodeIndex</c>).
+        /// </summary>
+        public const int ScanPageSize = 50;
+
+        /// <summary>
         /// Finds a non-virtual episode with audio/video streams, preferring regular
         /// episodes over specials. Returns null when no episode has usable streams.
         /// The optional user keeps batch lookups subject to Jellyfin's access filters.
@@ -53,7 +60,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             Func<BaseItem, bool> hasUsableStreams,
             bool stopAtFirstRegular)
         {
-            const int pageSize = 50;
+            const int pageSize = ScanPageSize;
             var query = CreateEpisodeQuery(user);
             query.ParentId = container.Id;
             query.Limit = pageSize;

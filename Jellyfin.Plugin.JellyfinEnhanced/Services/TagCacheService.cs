@@ -110,7 +110,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// generation. <see cref="ContainerIndex"/> is set by the full build only,
         /// between its episode and container passes (see
         /// <see cref="BuildFullCacheBody"/>); while it is set, container scans
-        /// read their episodes from it instead of querying the library.
+        /// read their episodes from it instead of querying the library (all but
+        /// its <see cref="ContainerEpisodeIndex.PagedScan"/> containers).
         /// </summary>
         private sealed class EpisodeScanMemo : ConcurrentDictionary<Guid, EpisodeScan>
         {
@@ -126,19 +127,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// (<see cref="Members"/>), plus the few episodes that had no entry of
         /// their own in the episode pass (<see cref="Late"/>, e.g. added after
         /// its id query), hydrated here so a container can read them the way its
-        /// scan would have. Read-only once built.
+        /// scan would have. <see cref="PagedScan"/> lists the containers whose
+        /// scan order the list can't reproduce (sort-key ties across one of the
+        /// scan's page boundaries); they run their own scan instead. Read-only
+        /// once built, so parallel container builds share it without locking.
         /// </summary>
         private sealed class ContainerEpisodeIndex
         {
-            public ContainerEpisodeIndex(Dictionary<Guid, List<Guid>> members, Dictionary<Guid, MediaBrowser.Controller.Entities.TV.Episode> late)
+            public ContainerEpisodeIndex(
+                Dictionary<Guid, List<Guid>> members,
+                Dictionary<Guid, MediaBrowser.Controller.Entities.TV.Episode> late,
+                HashSet<Guid> pagedScan)
             {
                 Members = members;
                 Late = late;
+                PagedScan = pagedScan;
             }
 
             public Dictionary<Guid, List<Guid>> Members { get; }
 
             public Dictionary<Guid, MediaBrowser.Controller.Entities.TV.Episode> Late { get; }
+
+            public HashSet<Guid> PagedScan { get; }
         }
 
         /// <summary>
@@ -668,7 +678,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // whole library's episode count, see BuildContainerEpisodeIndex).
             if (containerIds.Count > 0)
             {
-                episodeScans.ContainerIndex = BuildContainerEpisodeIndex(containerIds, episodeScans, cancellationToken);
+                var index = BuildContainerEpisodeIndex(containerIds, episodeScans, cancellationToken);
+                episodeScans.ContainerIndex = index;
+                _logger.Info($"[TagCache] Grouped episodes for {index.Members.Count} containers; {index.PagedScan.Count} with tied episodes across a scan page use their own episode scan");
             }
 
             if (!BuildPass(containerIds))
@@ -2542,7 +2554,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <see cref="EpisodeScanMemo"/>) or read here, and recorded for the
         /// next container. In the full build the episodes come from the memo's
         /// <see cref="EpisodeScanMemo.ContainerIndex"/> rather than a query per
-        /// container; both walks feed the same per-episode step in the same
+        /// container (except for its <see cref="ContainerEpisodeIndex.PagedScan"/>
+        /// containers); both walks feed the same per-episode step in the same
         /// order, so they produce the same entry.
         /// </summary>
         private (RepresentativeEpisode? FirstEpisode, string[] Languages, string[]? Partial) ScanContainerEpisodes(
@@ -2575,7 +2588,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 RepresentativeEpisode? firstEp;
-                if (episodeScans?.ContainerIndex is { } index)
+                if (episodeScans?.ContainerIndex is { } index && !index.PagedScan.Contains(container.Id))
                 {
                     // Full build: the container's episodes come from the index, in
                     // the order its scan would have returned them, and every one of
@@ -2787,15 +2800,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var placed = new List<(Guid Id, EpisodePlacement Placement)>(orderedIds.Count);
+            var placementOf = new Dictionary<Guid, EpisodePlacement>(orderedIds.Count);
             foreach (var id in orderedIds)
             {
                 if (episodeScans.TryGetValue(id, out var scan) && scan.Placement is { } recorded)
                 {
                     placed.Add((id, recorded));
+                    placementOf[id] = recorded;
                 }
                 else if (late.TryGetValue(id, out var episode))
                 {
-                    placed.Add((id, EpisodePlacement.Of(episode)));
+                    var placement = EpisodePlacement.Of(episode);
+                    placed.Add((id, placement));
+                    placementOf[id] = placement;
                 }
 
                 // Otherwise gone since the id query (or not loadable): no scan would return it.
@@ -2809,6 +2826,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // its page the scan returned them by id (as stored: the GUID's
             // string form, which orders the same in either letter case). Do the
             // same here, so the representative and the language order match.
+            // That only holds within one page: the page's LIMIT is applied
+            // before the key ordering, so which of a tied run lands on each
+            // side of a page boundary is up to the database (see PagedScan below).
             for (var start = 0; start < placed.Count;)
             {
                 var end = start + 1;
@@ -2841,7 +2861,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            return new ContainerEpisodeIndex(members, late);
+            // A tied run that starts on one page of a container's scan and ends
+            // on the next can come back in either order across the boundary, so
+            // its id order above isn't necessarily the scan's. Only those
+            // containers (a run inside one page is fully on that page, so its
+            // order there is the id order) are left to their own paged scan,
+            // which gives them exactly the entry it always did. A tie needs the
+            // same premiere date and sort name (which carries the season and
+            // episode numbers), in practice several versions of one episode, and
+            // must also cross a 50-episode boundary, so this is rare.
+            var pagedScan = new HashSet<Guid>();
+            foreach (var (containerId, list) in members)
+            {
+                for (var start = 0; start < list.Count;)
+                {
+                    var end = start + 1;
+                    while (end < list.Count && placementOf[list[end]].SortsEqualTo(placementOf[list[start]])) end++;
+                    if (start / TagEpisodeSelector.ScanPageSize != (end - 1) / TagEpisodeSelector.ScanPageSize)
+                    {
+                        pagedScan.Add(containerId);
+                        break;
+                    }
+
+                    start = end;
+                }
+            }
+
+            return new ContainerEpisodeIndex(members, late, pagedScan);
         }
 
         /// <summary>
