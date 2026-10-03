@@ -398,6 +398,51 @@ Any other shape (letters, missing digits, extra segments) is rejected with `400 
 
     Returns `404` with `{"success": false, "removed": false}` if no review exists for that user and item.
 
+???+ dev "List every review on the server (admin)"
+
+    **`/JellyfinEnhanced/reviews/admin/all`**
+
+    Returns all reviews from every user in one call, for headless consumers (a scrobbler, a Letterboxd/Trakt sync job, a backup script) that want the whole store without knowing its on-disk layout or calling the per-item endpoint once per TMDB ID. Ordered by `updatedAt` ascending, so a poller can keep the newest `updatedAt` it has seen and pass it back as `since` next time.
+
+    === "cURL"
+
+        ``` bash title="Bash" hl_lines="2"
+        curl -X GET \
+          -H "X-Emby-Token: JELLYFIN_API_KEY" \
+          "JELLYFIN_SERVER_URL/JellyfinEnhanced/reviews/admin/all?since=2026-01-01T00:00:00Z&limit=500&offset=0"
+        ```
+
+    - Jellyfin Server **Administrator** API key (`JELLYFIN_API_KEY`); a non-admin caller gets `403 Forbidden`
+    - `since` (optional): ISO 8601 timestamp; only reviews whose `updatedAt` is at or after it are returned. Inclusive, so a poller that passes back the last `updatedAt` it saw will see that review again and should treat the pair `userId` + `mediaType` + `tmdbId` as the identity when de-duplicating
+    - `userId` (optional): restrict to one author, 32-character hex form with no dashes
+    - `limit` (optional, default `500`, max `1000`) and `offset` (optional, default `0`) page through the result; `total` in the response is the count of reviews matching the filters, not the page size
+    - Hidden and disabled authors are **not** filtered out here: this is an admin surface and returns the whole store, the same as what an admin sees on an item page
+
+    Response:
+
+    ``` json title="200 OK"
+    {
+      "reviews": [
+        {
+          "userId": "9285e8b541494149...",
+          "userName": "alice",
+          "tmdbId": "1399:s1:e1",
+          "mediaType": "tv",
+          "content": "Great episode!",
+          "rating": 4.5,
+          "createdAt": "2026-01-03T12:00:00.000Z",
+          "updatedAt": "2026-01-05T09:30:00.000Z"
+        }
+      ],
+      "total": 1,
+      "offset": 0,
+      "limit": 500
+    }
+    ```
+
+    - Each entry has the same shape as the per-item endpoint, including `rating` being omitted for a text-only review; `tmdbId` carries the season/episode suffix for season and episode reviews
+    - A review whose stored `updatedAt` cannot be parsed is always returned (and sorts first) rather than being silently dropped by the `since` filter
+
 ## Seerr Integration API
 
 **`/JellyfinEnhanced/jellyseerr`**

@@ -690,10 +690,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// Atomically creates or updates a user's review for a specific item.
         /// The read-modify-write happens inside a single critical section so
         /// concurrent upserts from different users cannot cause lost updates.
+        /// Returns the rating the review had before this call (null for a new
+        /// review or one that had no rating).
         /// </summary>
-        public void UpsertReview(string userIdN, string mediaType, string tmdbId,
-                                 string content, double? rating, string nowIso)
+        public double? UpsertReview(string userIdN, string mediaType, string tmdbId,
+                                    string content, double? rating, string nowIso)
         {
+            double? previousRating = null;
             lock (_reviewsFileLock)
             {
                 // Use throwOnCorruption so we NEVER overwrite an unreadable
@@ -705,6 +708,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
                 if (store.Reviews.TryGetValue(key, out var existing))
                 {
+                    previousRating = existing.Rating;
                     existing.Content = content;
                     existing.Rating = rating;
                     existing.UpdatedAt = nowIso;
@@ -727,22 +731,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
 
             RaiseReviewsChanged();
+            return previousRating;
         }
 
         /// <summary>
         /// Atomically deletes a review identified by userIdN + mediaType + tmdbId.
         /// Returns true if a review was removed, false if no matching review existed.
+        /// removedRating is the deleted review's rating (null if it had none).
         /// </summary>
-        public bool DeleteReview(string userIdN, string mediaType, string tmdbId)
+        public bool DeleteReview(string userIdN, string mediaType, string tmdbId, out double? removedRating)
         {
+            removedRating = null;
             lock (_reviewsFileLock)
             {
                 // Same reasoning as UpsertReview — refuse to rewrite a
                 // corrupt file.
                 var store = ReadStoreUnlocked(throwOnCorruption: true);
                 var key = $"{userIdN}:{mediaType}:{tmdbId}";
-                if (!store.Reviews.Remove(key)) return false;
+                if (!store.Reviews.Remove(key, out var removed)) return false;
                 WriteStoreUnlocked(store);
+                removedRating = removed.Rating;
             }
 
             RaiseReviewsChanged();

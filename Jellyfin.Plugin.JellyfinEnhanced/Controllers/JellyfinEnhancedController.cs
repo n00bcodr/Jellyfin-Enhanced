@@ -7232,9 +7232,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var now = DateTime.UtcNow.ToString("o");
-                _userConfigurationManager.UpsertReview(
+                var previousRating = _userConfigurationManager.UpsertReview(
                     userIdN, mediaType, tmdbId, normalizedContent, payload.Rating, now);
                 _logger.Info($"Saved review for {mediaType}:{tmdbId} by user {ResolveUserDisplay(userIdN)}.");
+                MirrorReviewRatingToUserData(userIdN, mediaType, tmdbId, previousRating, payload.Rating);
                 return Ok(new { success = true });
             }
             catch (Exception ex)
@@ -7278,9 +7279,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var now = DateTime.UtcNow.ToString("o");
-                _userConfigurationManager.UpsertReview(
+                var previousRating = _userConfigurationManager.UpsertReview(
                     userIdN, mediaType, tmdbId, normalizedContent, payload.Rating, now);
                 _logger.Info($"Admin saved review for {mediaType}:{tmdbId} on behalf of {ResolveUserDisplay(userIdN)}.");
+                MirrorReviewRatingToUserData(userIdN, mediaType, tmdbId, previousRating, payload.Rating);
                 return Ok(new { success = true });
             }
             catch (Exception ex)
@@ -7307,14 +7309,213 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                if (_userConfigurationManager.DeleteReview(userIdN, mediaType, tmdbId))
+                if (_userConfigurationManager.DeleteReview(userIdN, mediaType, tmdbId, out var removedRating))
+                {
                     _logger.Info($"Deleted review for {mediaType}:{tmdbId} by user {ResolveUserDisplay(userIdN)}.");
+                    MirrorReviewRatingToUserData(userIdN, mediaType, tmdbId, removedRating, null);
+                }
                 return Ok(new { success = true });
             }
             catch (Exception ex)
             {
                 _logger.Error($"Failed to delete review for user {ResolveUserDisplay(userIdN)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to delete review." });
+            }
+        }
+
+        /// <summary>
+        /// Optionally keeps Jellyfin's own per-user rating for the matching
+        /// library item in step with a review's star rating, so tools that only
+        /// read Jellyfin user data (scrobblers, Letterboxd/Trakt syncs, other
+        /// clients) can see ratings given through the reviews UI. Gated by the
+        /// MirrorReviewRatingsToJellyfin setting (off by default).
+        ///
+        /// previousRating is the review's rating before this change (null if it
+        /// had none or is new) and newRating the rating after it (null when the
+        /// review was deleted or saved without a rating).
+        ///
+        /// - newRating set: write it to Jellyfin (overwrites).
+        /// - newRating null and previousRating set: clear the Jellyfin rating,
+        ///   but only if it still equals what the review would have mirrored.
+        ///   Jellyfin ratings carry no provenance, so a value that differs was
+        ///   changed somewhere else (another client, a sync tool) and is left
+        ///   alone.
+        ///
+        /// Only whole movies and series are touched (a season/episode key has
+        /// no reliably TMDB-keyed library item). Scale: 1-5 stars in half steps
+        /// become Jellyfin's 0-10 (x2), which is what Jellyfin's own clients
+        /// and the ratings-based sync tools already expect.
+        ///
+        /// Never throws: the review change is already saved by the time this
+        /// runs, and a mirror failure must not turn that into a 500.
+        /// </summary>
+        private void MirrorReviewRatingToUserData(string userIdN, string mediaType, string tmdbId, double? previousRating, double? newRating)
+        {
+            try
+            {
+                var config = JellyfinEnhanced.Instance?.Configuration;
+                if (config == null || !config.MirrorReviewRatingsToJellyfin) return;
+                if (!newRating.HasValue && !previousRating.HasValue) return;
+
+                // Season/episode reviews carry a ":s{n}[:e{n}]" suffix; there is no
+                // TMDB-keyed library item to attach those to, so leave them alone.
+                if (tmdbId.Contains(':')) return;
+
+                if (!Guid.TryParseExact(userIdN, "N", out var userGuid)) return;
+                var user = _userManager.GetUserById(userGuid);
+                if (user == null) return;
+
+                var item = FindLibraryItemByTmdb(user, mediaType, tmdbId);
+                if (item == null)
+                {
+                    _logger.Debug($"[ReviewRatingMirror] No library item for {mediaType}:{tmdbId}; nothing to mirror for {ResolveUserDisplay(userIdN)}.");
+                    return;
+                }
+
+                var userData = _userDataManager.GetUserData(user, item);
+                if (userData == null) return;
+
+                if (newRating.HasValue)
+                {
+                    var jellyfinRating = Math.Round(newRating.Value * 2, 1);
+                    if (userData.Rating.HasValue && Math.Abs(userData.Rating.Value - jellyfinRating) < 0.01) return;
+
+                    userData.Rating = jellyfinRating;
+                    _userDataManager.SaveUserData(user, item, userData, UserDataSaveReason.UpdateUserRating, default);
+                    _logger.Info($"[ReviewRatingMirror] Set Jellyfin rating {jellyfinRating} on '{item.Name}' for {ResolveUserDisplay(userIdN)} from their review.");
+                    return;
+                }
+
+                var mirroredRating = Math.Round(previousRating!.Value * 2, 1);
+                if (!userData.Rating.HasValue) return;
+                if (Math.Abs(userData.Rating.Value - mirroredRating) >= 0.01)
+                {
+                    _logger.Debug($"[ReviewRatingMirror] Jellyfin rating {userData.Rating.Value} on '{item.Name}' no longer matches the review's {mirroredRating}; leaving it for {ResolveUserDisplay(userIdN)}.");
+                    return;
+                }
+
+                userData.Rating = null;
+                _userDataManager.SaveUserData(user, item, userData, UserDataSaveReason.UpdateUserRating, default);
+                _logger.Info($"[ReviewRatingMirror] Cleared Jellyfin rating {mirroredRating} on '{item.Name}' for {ResolveUserDisplay(userIdN)} after their review rating was removed.");
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[ReviewRatingMirror] Could not mirror rating for {mediaType}:{tmdbId}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Lists every review on the server for an Administrator caller, so a
+        /// headless integration (a sync job, a scrobbler, a backup script) can
+        /// consume reviews without knowing the store's on-disk layout or
+        /// polling the per-item endpoint once per TMDB id. Ordered by
+        /// updatedAt ascending so a client can page forward and keep the last
+        /// updatedAt it saw as its next "since".
+        /// </summary>
+        /// <param name="since">Optional ISO 8601 timestamp; only reviews whose updatedAt is at or after it are returned. A review whose stored timestamp cannot be parsed is always returned rather than silently dropped.</param>
+        /// <param name="userId">Optional author filter, 32-char hex (N) form.</param>
+        /// <param name="limit">Page size, 1-1000, default 500.</param>
+        /// <param name="offset">Number of matching reviews to skip, default 0.</param>
+        [HttpGet("reviews/admin/all")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult AdminListReviews(
+            [FromQuery] string? since = null,
+            [FromQuery] string? userId = null,
+            [FromQuery] int limit = 500,
+            [FromQuery] int offset = 0)
+        {
+            if (!IsAdminUser())
+                return Forbid();
+
+            DateTimeOffset? sinceUtc = null;
+            if (!string.IsNullOrWhiteSpace(since))
+            {
+                if (!DateTimeOffset.TryParse(since, System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                        out var parsedSince))
+                    return BadRequest(new { success = false, message = "Invalid 'since' (expected ISO 8601)." });
+                sinceUtc = parsedSince;
+            }
+
+            if (!string.IsNullOrWhiteSpace(userId) && !Guid.TryParseExact(userId, "N", out _))
+                return BadRequest(new { success = false, message = "Invalid userId (expected 32-char hex)." });
+
+            if (limit < 1 || limit > 1000)
+                return BadRequest(new { success = false, message = "limit must be between 1 and 1000." });
+
+            if (offset < 0)
+                return BadRequest(new { success = false, message = "offset must be 0 or greater." });
+
+            try
+            {
+                var store = _userConfigurationManager.GetAllReviews();
+
+                var matching = new List<(DateTimeOffset? UpdatedAt, string Key, UserReview Review)>();
+                foreach (var kvp in store.Reviews)
+                {
+                    var review = kvp.Value;
+                    if (review == null) continue;
+
+                    if (!string.IsNullOrWhiteSpace(userId)
+                        && !string.Equals(review.UserId, userId, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    DateTimeOffset? updatedAt = null;
+                    if (DateTimeOffset.TryParse(review.UpdatedAt, System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                            out var parsedUpdated))
+                        updatedAt = parsedUpdated;
+
+                    // Unparseable timestamps are kept so a corrupt field never hides a review.
+                    if (sinceUtc.HasValue && updatedAt.HasValue && updatedAt.Value < sinceUtc.Value)
+                        continue;
+
+                    matching.Add((updatedAt, kvp.Key, review));
+                }
+
+                // Stable order: by updatedAt, then by key so ties never reshuffle between pages.
+                matching.Sort((a, b) =>
+                {
+                    var byDate = Nullable.Compare(a.UpdatedAt, b.UpdatedAt);
+                    return byDate != 0 ? byDate : string.CompareOrdinal(a.Key, b.Key);
+                });
+
+                var page = matching.Skip(offset).Take(limit).Select(m =>
+                {
+                    var review = m.Review;
+                    string displayName = review.UserId;
+                    if (Guid.TryParseExact(review.UserId, "N", out var authorGuid))
+                    {
+                        var author = _userManager.GetUserById(authorGuid);
+                        if (author != null) displayName = author.Username;
+                    }
+
+                    return new
+                    {
+                        userId = review.UserId,
+                        userName = displayName,
+                        tmdbId = review.TmdbId,
+                        mediaType = review.MediaType,
+                        content = review.Content,
+                        rating = review.Rating,
+                        createdAt = review.CreatedAt,
+                        updatedAt = review.UpdatedAt
+                    };
+                }).ToList();
+
+                return Ok(new
+                {
+                    reviews = page,
+                    total = matching.Count,
+                    offset,
+                    limit
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Admin failed to list reviews: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to list reviews." });
             }
         }
 
@@ -7337,10 +7538,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                var removed = _userConfigurationManager.DeleteReview(userIdN, mediaType, tmdbId);
+                var removed = _userConfigurationManager.DeleteReview(userIdN, mediaType, tmdbId, out var removedRating);
                 if (removed)
                 {
                     _logger.Info($"Admin deleted review for {mediaType}:{tmdbId} by user {ResolveUserDisplay(userIdN)}.");
+                    MirrorReviewRatingToUserData(userIdN, mediaType, tmdbId, removedRating, null);
                     return Ok(new { success = true, removed = true });
                 }
                 // Fail explicitly: nothing to delete means the review was
