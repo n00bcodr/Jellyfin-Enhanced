@@ -7232,10 +7232,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var now = DateTime.UtcNow.ToString("o");
-                _userConfigurationManager.UpsertReview(
+                var previousRating = _userConfigurationManager.UpsertReview(
                     userIdN, mediaType, tmdbId, normalizedContent, payload.Rating, now);
                 _logger.Info($"Saved review for {mediaType}:{tmdbId} by user {ResolveUserDisplay(userIdN)}.");
-                MirrorReviewRatingToUserData(userIdN, mediaType, tmdbId, payload.Rating);
+                MirrorReviewRatingToUserData(userIdN, mediaType, tmdbId, previousRating, payload.Rating);
                 return Ok(new { success = true });
             }
             catch (Exception ex)
@@ -7279,10 +7279,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var now = DateTime.UtcNow.ToString("o");
-                _userConfigurationManager.UpsertReview(
+                var previousRating = _userConfigurationManager.UpsertReview(
                     userIdN, mediaType, tmdbId, normalizedContent, payload.Rating, now);
                 _logger.Info($"Admin saved review for {mediaType}:{tmdbId} on behalf of {ResolveUserDisplay(userIdN)}.");
-                MirrorReviewRatingToUserData(userIdN, mediaType, tmdbId, payload.Rating);
+                MirrorReviewRatingToUserData(userIdN, mediaType, tmdbId, previousRating, payload.Rating);
                 return Ok(new { success = true });
             }
             catch (Exception ex)
@@ -7309,8 +7309,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                if (_userConfigurationManager.DeleteReview(userIdN, mediaType, tmdbId))
+                if (_userConfigurationManager.DeleteReview(userIdN, mediaType, tmdbId, out var removedRating))
+                {
                     _logger.Info($"Deleted review for {mediaType}:{tmdbId} by user {ResolveUserDisplay(userIdN)}.");
+                    MirrorReviewRatingToUserData(userIdN, mediaType, tmdbId, removedRating, null);
+                }
                 return Ok(new { success = true });
             }
             catch (Exception ex)
@@ -7321,29 +7324,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// Optionally copies a review's star rating into Jellyfin's own per-user
-        /// rating for the matching library item, so tools that only read
-        /// Jellyfin user data (scrobblers, Letterboxd/Trakt syncs, other clients)
-        /// can see ratings given through the reviews UI. Gated by the
+        /// Optionally keeps Jellyfin's own per-user rating for the matching
+        /// library item in step with a review's star rating, so tools that only
+        /// read Jellyfin user data (scrobblers, Letterboxd/Trakt syncs, other
+        /// clients) can see ratings given through the reviews UI. Gated by the
         /// MirrorReviewRatingsToJellyfin setting (off by default).
         ///
-        /// Deliberately narrow: only whole movies and series (a season/episode
-        /// key has no reliably TMDB-keyed library item), only when a rating was
-        /// actually supplied (a text-only review leaves the Jellyfin rating
-        /// alone), and only ever writes, never clears. Scale: 1-5 stars in half
-        /// steps become Jellyfin's 0-10 (x2), which is what Jellyfin's own
-        /// clients and the ratings-based sync tools already expect.
+        /// previousRating is the review's rating before this change (null if it
+        /// had none or is new) and newRating the rating after it (null when the
+        /// review was deleted or saved without a rating).
         ///
-        /// Never throws: the review itself is already saved by the time this
+        /// - newRating set: write it to Jellyfin (overwrites).
+        /// - newRating null and previousRating set: clear the Jellyfin rating,
+        ///   but only if it still equals what the review would have mirrored.
+        ///   Jellyfin ratings carry no provenance, so a value that differs was
+        ///   changed somewhere else (another client, a sync tool) and is left
+        ///   alone.
+        ///
+        /// Only whole movies and series are touched (a season/episode key has
+        /// no reliably TMDB-keyed library item). Scale: 1-5 stars in half steps
+        /// become Jellyfin's 0-10 (x2), which is what Jellyfin's own clients
+        /// and the ratings-based sync tools already expect.
+        ///
+        /// Never throws: the review change is already saved by the time this
         /// runs, and a mirror failure must not turn that into a 500.
         /// </summary>
-        private void MirrorReviewRatingToUserData(string userIdN, string mediaType, string tmdbId, double? rating)
+        private void MirrorReviewRatingToUserData(string userIdN, string mediaType, string tmdbId, double? previousRating, double? newRating)
         {
             try
             {
                 var config = JellyfinEnhanced.Instance?.Configuration;
                 if (config == null || !config.MirrorReviewRatingsToJellyfin) return;
-                if (!rating.HasValue) return;
+                if (!newRating.HasValue && !previousRating.HasValue) return;
 
                 // Season/episode reviews carry a ":s{n}[:e{n}]" suffix; there is no
                 // TMDB-keyed library item to attach those to, so leave them alone.
@@ -7363,12 +7375,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var userData = _userDataManager.GetUserData(user, item);
                 if (userData == null) return;
 
-                var jellyfinRating = Math.Round(rating.Value * 2, 1);
-                if (userData.Rating.HasValue && Math.Abs(userData.Rating.Value - jellyfinRating) < 0.01) return;
+                if (newRating.HasValue)
+                {
+                    var jellyfinRating = Math.Round(newRating.Value * 2, 1);
+                    if (userData.Rating.HasValue && Math.Abs(userData.Rating.Value - jellyfinRating) < 0.01) return;
 
-                userData.Rating = jellyfinRating;
+                    userData.Rating = jellyfinRating;
+                    _userDataManager.SaveUserData(user, item, userData, UserDataSaveReason.UpdateUserRating, default);
+                    _logger.Info($"[ReviewRatingMirror] Set Jellyfin rating {jellyfinRating} on '{item.Name}' for {ResolveUserDisplay(userIdN)} from their review.");
+                    return;
+                }
+
+                var mirroredRating = Math.Round(previousRating!.Value * 2, 1);
+                if (!userData.Rating.HasValue) return;
+                if (Math.Abs(userData.Rating.Value - mirroredRating) >= 0.01)
+                {
+                    _logger.Debug($"[ReviewRatingMirror] Jellyfin rating {userData.Rating.Value} on '{item.Name}' no longer matches the review's {mirroredRating}; leaving it for {ResolveUserDisplay(userIdN)}.");
+                    return;
+                }
+
+                userData.Rating = null;
                 _userDataManager.SaveUserData(user, item, userData, UserDataSaveReason.UpdateUserRating, default);
-                _logger.Info($"[ReviewRatingMirror] Set Jellyfin rating {jellyfinRating} on '{item.Name}' for {ResolveUserDisplay(userIdN)} from their review.");
+                _logger.Info($"[ReviewRatingMirror] Cleared Jellyfin rating {mirroredRating} on '{item.Name}' for {ResolveUserDisplay(userIdN)} after their review rating was removed.");
             }
             catch (Exception ex)
             {
@@ -7510,10 +7538,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                var removed = _userConfigurationManager.DeleteReview(userIdN, mediaType, tmdbId);
+                var removed = _userConfigurationManager.DeleteReview(userIdN, mediaType, tmdbId, out var removedRating);
                 if (removed)
                 {
                     _logger.Info($"Admin deleted review for {mediaType}:{tmdbId} by user {ResolveUserDisplay(userIdN)}.");
+                    MirrorReviewRatingToUserData(userIdN, mediaType, tmdbId, removedRating, null);
                     return Ok(new { success = true, removed = true });
                 }
                 // Fail explicitly: nothing to delete means the review was

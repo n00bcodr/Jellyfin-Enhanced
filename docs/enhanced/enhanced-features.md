@@ -497,7 +497,7 @@ Jellyfin users can write their own reviews for movies, series, seasons, and epis
 3. Enable **"Show User Reviews"**
 4. Optionally enable **"Show User Rating on Posters"** to display the average rating as a poster tag
 5. Optionally disable **"Show User Rating Dash"** to hide the `—` placeholder on posters when no ratings exist yet
-6. Optionally enable **"Also save review star ratings as the user's Jellyfin rating"** to mirror each review's 1-5 star rating (scaled to Jellyfin's 0-10) onto the user's Jellyfin rating for that movie or series. Off by default because it overwrites a rating the user may have set elsewhere. Ratings are only written, never cleared, and season/episode reviews are not mirrored
+6. Optionally enable **"Also save review star ratings as the user's Jellyfin rating"** to mirror each review's 1-5 star rating (scaled to Jellyfin's 0-10) onto the user's Jellyfin rating for that movie or series. Off by default because it overwrites a rating the user may have set elsewhere. Deleting a review (or removing its stars) clears the Jellyfin rating only if it still matches the review's rating, so a rating changed elsewhere in the meantime is kept. Season/episode reviews are not mirrored
 7. Click **Save**
 
 !!! note

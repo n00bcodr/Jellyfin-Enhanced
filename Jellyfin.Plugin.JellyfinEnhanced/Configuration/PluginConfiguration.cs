@@ -524,8 +524,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// (1-5 stars scaled to Jellyfin's 0-10). Off by default: it lets other
         /// tools that read Jellyfin user data (scrobblers, Letterboxd/Trakt syncs)
         /// see ratings given here, at the cost of overwriting a rating set elsewhere.
-        /// Ratings are only ever written, never cleared, and only for whole movies
-        /// and series (season/episode reviews have no reliable TMDB-keyed item).</summary>
+        /// Deleting a review, or removing its stars, clears the Jellyfin rating only
+        /// when it still equals the mirrored value. Only whole movies and series
+        /// are touched (season/episode reviews have no reliable TMDB-keyed item).</summary>
         public bool MirrorReviewRatingsToJellyfin { get; set; }
         public bool ShowAwards { get; set; }
         /// <summary>MDBList API key (mdblist.com). Never exposed to clients;
