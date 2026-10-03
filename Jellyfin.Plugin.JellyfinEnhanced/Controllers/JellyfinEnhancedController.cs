@@ -108,6 +108,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private async Task<bool> IsSeerrReachableCached()
         {
+            var cached = TryGetCachedSeerrReachability();
+            if (cached.HasValue)
+            {
+                return cached.Value;
+            }
+
+            bool active = await ProbeJellyseerrStatusAsync();
+            lock (_seerrStatusCacheLock)
+            {
+                _seerrStatusCache = (active, DateTime.UtcNow);
+            }
+            return active;
+        }
+
+        /// <summary>
+        /// The answer <see cref="IsSeerrReachableCached"/> would give right now if it
+        /// can be given from the probe cache alone; null when a probe would be needed.
+        /// </summary>
+        private static bool? TryGetCachedSeerrReachability()
+        {
             lock (_seerrStatusCacheLock)
             {
                 if (_seerrStatusCache.HasValue
@@ -117,12 +137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            bool active = await ProbeJellyseerrStatusAsync();
-            lock (_seerrStatusCacheLock)
-            {
-                _seerrStatusCache = (active, DateTime.UtcNow);
-            }
-            return active;
+            return null;
         }
 
         // Cache for request-page TMDB enrichments (movie/tv detail lookups via Jellyseerr)
@@ -564,22 +579,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             lock (_arrHistoryCacheLock) { _arrHistoryCache = null; }
         }
 
+        /// <summary>
+        /// The Seerr user id for a Jellyfin user when it is in the user-id cache
+        /// (unexpired, cache not disabled), without contacting Seerr; null otherwise.
+        /// </summary>
+        private static string? TryGetCachedJellyseerrUserId(string jellyfinUserId)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config != null && config.JellyseerrDisableCache)
+            {
+                return null;
+            }
+
+            lock (_userIdCacheLock)
+            {
+                if (_userIdCache.TryGetValue(jellyfinUserId, out var cached) &&
+                    DateTime.UtcNow - cached.CachedAt < GetUserIdCacheTtl())
+                {
+                    return cached.JellyseerrUserId;
+                }
+            }
+
+            return null;
+        }
+
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             bool cacheEnabled = config == null || !config.JellyseerrDisableCache;
 
             // Check cache first (unless disabled)
-            if (cacheEnabled)
+            var cachedId = TryGetCachedJellyseerrUserId(jellyfinUserId);
+            if (cachedId != null)
             {
-                lock (_userIdCacheLock)
-                {
-                    if (_userIdCache.TryGetValue(jellyfinUserId, out var cached) &&
-                        DateTime.UtcNow - cached.CachedAt < GetUserIdCacheTtl())
-                    {
-                        return cached.JellyseerrUserId;
-                    }
-                }
+                return cachedId;
             }
 
             var user = await GetJellyseerrUser(jellyfinUserId);
@@ -1099,8 +1132,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> GetJellyseerrStatus()
         {
-            return Ok(new { active = await IsSeerrReachableCached() });
+            return Ok(SeerrStatusResponse(await IsSeerrReachableCached()));
         }
+
+        /// <summary>The <c>jellyseerr/status</c> response body.</summary>
+        private static object SeerrStatusResponse(bool active) => new { active };
 
         private async Task<bool> ProbeJellyseerrStatusAsync()
         {
@@ -1273,28 +1309,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // a meaningful banner instead of silently hiding discovery sections.
             // Possible reasons: disabled, no_user, blocked, unlinked, unreachable.
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || !config.JellyseerrEnabled ||
-                string.IsNullOrEmpty(config.JellyseerrApiKey) ||
-                string.IsNullOrEmpty(config.JellyseerrUrls))
-            {
-                return Ok(new { active = false, userFound = false, reason = "disabled" });
-            }
-
             var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
-            if (string.IsNullOrEmpty(jellyfinUserId))
-                return Ok(new { active = false, userFound = false, reason = "no_user" });
-
-            if (IsJellyseerrImportBlocked(jellyfinUserId, config))
+            var withoutLookup = TryBuildSeerrUserStatusWithoutLookup(config, jellyfinUserId);
+            if (withoutLookup != null)
             {
-                return Ok(new { active = true, userFound = false, reason = "blocked" });
+                return Ok(withoutLookup);
             }
 
+            // Only reached with Seerr configured, a signed-in user that is not
+            // blocked and no cached Seerr user id.
             // GetSeerrUserId uses the user ID cache (30-min TTL).
             // A successful user lookup implicitly proves Seerr is reachable.
-            var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
+            var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId!);
             if (!string.IsNullOrEmpty(jellyseerrUserId))
             {
-                return Ok(new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId, reason = "linked" });
+                return Ok(LinkedSeerrUserStatus(jellyseerrUserId));
             }
 
             // User not found — could be server unreachable, HTML challenge from
@@ -1316,6 +1345,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 reason = active ? "unlinked" : "unreachable"
             });
         }
+
+        /// <summary>
+        /// The <c>jellyseerr/user-status</c> answer when it needs no Seerr round trip:
+        /// Seerr not configured, no signed-in user, the user blocked from import, or
+        /// the user's Seerr id already in the user-id cache. Null when the full
+        /// lookup is required. Shared by the endpoint and the bootstrap payload so
+        /// both return the same object.
+        /// </summary>
+        private static object? TryBuildSeerrUserStatusWithoutLookup(Configuration.PluginConfiguration? config, string? jellyfinUserId)
+        {
+            if (config == null || !config.JellyseerrEnabled ||
+                string.IsNullOrEmpty(config.JellyseerrApiKey) ||
+                string.IsNullOrEmpty(config.JellyseerrUrls))
+            {
+                return new { active = false, userFound = false, reason = "disabled" };
+            }
+
+            if (string.IsNullOrEmpty(jellyfinUserId))
+            {
+                return new { active = false, userFound = false, reason = "no_user" };
+            }
+
+            if (IsJellyseerrImportBlocked(jellyfinUserId, config))
+            {
+                return new { active = true, userFound = false, reason = "blocked" };
+            }
+
+            var cachedId = TryGetCachedJellyseerrUserId(jellyfinUserId);
+            return cachedId != null ? LinkedSeerrUserStatus(cachedId) : null;
+        }
+
+        /// <summary>The <c>jellyseerr/user-status</c> answer for a linked user.</summary>
+        private static object LinkedSeerrUserStatus(string jellyseerrUserId)
+            => new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId, reason = "linked" };
 
         [HttpGet("jellyseerr/permission-audit")]
         [Authorize]
@@ -3880,6 +3943,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Error($"Bootstrap: could not read the component-script manifest: {ex.Message}");
             }
 
+            var isAdmin = IsAdminUser();
+
             return new JsonResult(new
             {
                 Version = JellyfinEnhanced.Instance?.Version.ToString() ?? "unknown",
@@ -3887,7 +3952,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // (a token swap during a user switch must never be applied silently).
                 UserId = authorizedUserId,
                 PublicConfig = BuildPublicConfig(config),
-                PrivateConfig = IsAdminUser() ? BuildPrivateConfig(config) : null,
+                PrivateConfig = isAdmin ? BuildPrivateConfig(config) : null,
                 // Same name checks the client used to run against GET /Plugins.
                 HasCustomTabs = IsPluginInstalled("Custom Tabs"),
                 HasPluginPages = IsPluginInstalled("Plugin Pages"),
@@ -3900,7 +3965,72 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     HiddenContent = TryLoadUserDocument("hidden-content.json", authorizedUserId, () => LoadUserHiddenContentDocument(authorizedUserId)),
                 },
                 ComponentScripts = componentScripts,
+                Prefetched = BuildBootstrapPrefetched(config, userId.Value, authorizedUserId, isAdmin),
             });
+        }
+
+        /// <summary>
+        /// Small answers the component modules ask for on every page load, carried
+        /// in the bootstrap so they cost no request of their own. Each value is the
+        /// exact body of its standalone endpoint (which stays for every other
+        /// caller) under the same gate, or null when that endpoint would be needed
+        /// anyway: the feature is off, the caller may not read it, or answering
+        /// would mean an upstream round trip (Seerr) or a failure the endpoint
+        /// reports itself (a corrupt Spoiler Guard file). The client takes each
+        /// value at most once and only shortly after the response, and otherwise
+        /// asks the endpoint as before.
+        ///   SpoilerBlurSeries    — GET spoiler-blur/series (the caller's own state)
+        ///   SeerrUserStatus      — GET jellyseerr/user-status, when no Seerr lookup is needed
+        ///   SeerrStatus          — GET jellyseerr/status, from the 30-second probe cache only
+        ///   ActiveStreamSessions — GET active-streams/sessions, admins or ActiveStreamsAllUsers
+        /// </summary>
+        private object BuildBootstrapPrefetched(PluginConfiguration config, Guid userId, string authorizedUserId, bool isAdmin)
+        {
+            object? spoilerBlurSeries = null;
+            object? seerrUserStatus = null;
+            object? seerrStatus = null;
+            List<object>? activeStreamSessions = null;
+
+            if (config.SpoilerBlurEnabled)
+            {
+                spoilerBlurSeries = TryReadSpoilerBlurStateForBootstrap(authorizedUserId);
+            }
+
+            if (config.JellyseerrEnabled)
+            {
+                // Same "D"-format id GetJellyseerrUserStatus reads from the token.
+                seerrUserStatus = TryBuildSeerrUserStatusWithoutLookup(config, userId.ToString());
+
+                // Asked at startup by the issue reporter only.
+                if (config.JellyseerrShowReportButton)
+                {
+                    var reachable = TryGetCachedSeerrReachability();
+                    if (reachable.HasValue)
+                    {
+                        seerrStatus = SeerrStatusResponse(reachable.Value);
+                    }
+                }
+            }
+
+            if (CanReadActiveSessions(config, isAdmin))
+            {
+                try
+                {
+                    activeStreamSessions = BuildActiveSessionList(isAdmin);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Bootstrap: could not list active sessions: {ex.Message}");
+                }
+            }
+
+            return new
+            {
+                SpoilerBlurSeries = spoilerBlurSeries,
+                SeerrUserStatus = seerrUserStatus,
+                SeerrStatus = seerrStatus,
+                ActiveStreamSessions = activeStreamSessions,
+            };
         }
 
         /// <summary>
@@ -5800,6 +5930,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 completedRuns = _spoilerExistingApplier.CompletedRuns,
                 lastRun = _spoilerExistingApplier.LastRun,
             });
+        }
+
+        /// <summary>
+        /// The caller's Spoiler Guard state exactly as GET spoiler-blur/series returns
+        /// it on success, for the bootstrap payload. Null when the file cannot be read
+        /// cleanly: the client then asks that endpoint, which quarantines and reports
+        /// a corrupt file as before (this read never quarantines anything).
+        /// </summary>
+        private UserSpoilerBlur? TryReadSpoilerBlurStateForBootstrap(string userKey)
+        {
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            try
+            {
+                if (!_userConfigurationManager.UserConfigurationExists(userKey, fileName))
+                {
+                    return new UserSpoilerBlur();
+                }
+
+                return _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(
+                    userKey, fileName, quarantineCorrupt: false);
+            }
+            catch (Exception)
+            {
+                // The strict reader logs read/parse failures; the endpoint reports them.
+                return null;
+            }
         }
 
         [HttpGet("spoiler-blur/series")]
@@ -9611,71 +9767,88 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!IsAdminUser() && !config.ActiveStreamsAllUsers)
                 return Forbid();
 
-            var isAdmin = IsAdminUser();
-
             try
             {
-                var sessions = _sessionManager.Sessions
-                    .Where(s => s.NowPlayingItem != null)
-                    .Select(s => new
-                    {
-                        UserId = s.UserId,
-                        UserName = s.UserName,
-                        UserHasPrimaryImage = s.UserPrimaryImageTag != null,
-                        Client = s.Client,
-                        DeviceName = s.DeviceName,
-                        // IP only for admins
-                        RemoteEndPoint = isAdmin ? s.RemoteEndPoint : null,
-                        LastActivityDate = s.LastActivityDate,
-                        NowPlayingItem = s.NowPlayingItem == null ? null : new
-                        {
-                            Id = s.NowPlayingItem.Id.ToString("N"),
-                            Type = s.NowPlayingItem.Type.ToString(),
-                            s.NowPlayingItem.Name,
-                            s.NowPlayingItem.SeriesName,
-                            s.NowPlayingItem.RunTimeTicks,
-                            s.NowPlayingItem.ProductionYear,
-                            ParentIndexNumber = s.NowPlayingItem.ParentIndexNumber,
-                            IndexNumber = s.NowPlayingItem.IndexNumber,
-                            ImageTags = s.NowPlayingItem.ImageTags != null
-                                ? s.NowPlayingItem.ImageTags.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value)
-                                : null,
-                            SeriesId = s.NowPlayingItem.SeriesId?.ToString("N"),
-                            SeriesPrimaryImageTag = s.NowPlayingItem.SeriesPrimaryImageTag,
-                            MediaStreams = s.NowPlayingItem.MediaStreams?.Select(ms => new
-                            {
-                                ms.Type,
-                                ms.Codec,
-                                ms.BitRate
-                            })
-                        },
-                        PlayState = s.PlayState == null ? null : new
-                        {
-                            s.PlayState.IsPaused,
-                            s.PlayState.PositionTicks,
-                            s.PlayState.PlayMethod
-                        },
-                        TranscodingInfo = s.TranscodingInfo == null ? null : new
-                        {
-                            s.TranscodingInfo.IsVideoDirect,
-                            s.TranscodingInfo.VideoCodec,
-                            s.TranscodingInfo.AudioCodec,
-                            s.TranscodingInfo.Bitrate,
-                            s.TranscodingInfo.TranscodeReasons,
-                            s.TranscodingInfo.CompletionPercentage,
-                            s.TranscodingInfo.Width,
-                            s.TranscodingInfo.Height,
-                            s.TranscodingInfo.Framerate
-                        }
-                    });
-
-                return Ok(sessions.ToList());
+                return Ok(BuildActiveSessionList(IsAdminUser()));
             }
             catch (Exception ex)
             {
                 _logger.Error($"Failed to get active sessions: {ex.Message}");
                 return StatusCode(500, "Failed to retrieve sessions.");
             }
+        }
+
+        /// <summary>
+        /// Whether the caller may read the active-streams session list: the feature
+        /// is on and the caller is an admin or ActiveStreamsAllUsers is set. The same
+        /// gate GetActiveSessions applies, for the bootstrap payload.
+        /// </summary>
+        private static bool CanReadActiveSessions(Configuration.PluginConfiguration config, bool isAdmin)
+            => config.ActiveStreamsEnabled && (isAdmin || config.ActiveStreamsAllUsers);
+
+        /// <summary>
+        /// The now-playing sessions as GET active-streams/sessions returns them
+        /// (client IPs only for admins). Callers apply the access gate first.
+        /// </summary>
+        private List<object> BuildActiveSessionList(bool isAdmin)
+        {
+            var sessions = _sessionManager.Sessions
+                .Where(s => s.NowPlayingItem != null)
+                .Select(s => new
+                {
+                    UserId = s.UserId,
+                    UserName = s.UserName,
+                    UserHasPrimaryImage = s.UserPrimaryImageTag != null,
+                    Client = s.Client,
+                    DeviceName = s.DeviceName,
+                    // IP only for admins
+                    RemoteEndPoint = isAdmin ? s.RemoteEndPoint : null,
+                    LastActivityDate = s.LastActivityDate,
+                    NowPlayingItem = s.NowPlayingItem == null ? null : new
+                    {
+                        Id = s.NowPlayingItem.Id.ToString("N"),
+                        Type = s.NowPlayingItem.Type.ToString(),
+                        s.NowPlayingItem.Name,
+                        s.NowPlayingItem.SeriesName,
+                        s.NowPlayingItem.RunTimeTicks,
+                        s.NowPlayingItem.ProductionYear,
+                        ParentIndexNumber = s.NowPlayingItem.ParentIndexNumber,
+                        IndexNumber = s.NowPlayingItem.IndexNumber,
+                        ImageTags = s.NowPlayingItem.ImageTags != null
+                            ? s.NowPlayingItem.ImageTags.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value)
+                            : null,
+                        SeriesId = s.NowPlayingItem.SeriesId?.ToString("N"),
+                        SeriesPrimaryImageTag = s.NowPlayingItem.SeriesPrimaryImageTag,
+                        // Materialized here (not during serialization) so a failure
+                    // surfaces to the caller's try/catch.
+                    MediaStreams = s.NowPlayingItem.MediaStreams?.Select(ms => new
+                        {
+                            ms.Type,
+                            ms.Codec,
+                            ms.BitRate
+                        }).ToList()
+                    },
+                    PlayState = s.PlayState == null ? null : new
+                    {
+                        s.PlayState.IsPaused,
+                        s.PlayState.PositionTicks,
+                        s.PlayState.PlayMethod
+                    },
+                    TranscodingInfo = s.TranscodingInfo == null ? null : new
+                    {
+                        s.TranscodingInfo.IsVideoDirect,
+                        s.TranscodingInfo.VideoCodec,
+                        s.TranscodingInfo.AudioCodec,
+                        s.TranscodingInfo.Bitrate,
+                        s.TranscodingInfo.TranscodeReasons,
+                        s.TranscodingInfo.CompletionPercentage,
+                        s.TranscodingInfo.Width,
+                        s.TranscodingInfo.Height,
+                        s.TranscodingInfo.Framerate
+                    }
+                });
+
+            return sessions.ToList<object>();
         }
 
         [HttpPost("active-streams/broadcast")]

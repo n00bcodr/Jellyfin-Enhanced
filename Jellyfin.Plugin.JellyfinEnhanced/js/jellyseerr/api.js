@@ -186,7 +186,9 @@
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const isCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
         try {
-            const status = await get('/user-status', { skipCache: true });
+            // The page-load bootstrap carries this answer when it needed no Seerr
+            // lookup (same body as the endpoint); handed out once.
+            const status = JE.takePrefetched?.('SeerrUserStatus') || await get('/user-status', { skipCache: true });
             if (isCurrent()) {
                 cachedUserStatus = status;
                 cachedUserStatusAt = Date.now();

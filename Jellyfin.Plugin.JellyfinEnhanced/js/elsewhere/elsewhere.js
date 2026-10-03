@@ -48,9 +48,13 @@
 
         console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere starting...');
 
-        // Load regions and providers from GitHub repo
+        /**
+         * Loads the region and provider lists (served through the local CDN
+         * route, falling back to short built-in lists on failure).
+         * @returns {Promise<void>} Settles once both lists are in place; never rejects.
+         */
         function loadRegionsAndProviders() {
-            fetch(JE.cdn.url('elsewhere-res', 'regions.txt'))
+            const regions = fetch(JE.cdn.url('elsewhere-res', 'regions.txt'))
                 .then(response => response.ok ? response.text() : Promise.reject())
                 .then(text => {
                     const lines = text.trim().split('\n');
@@ -74,7 +78,7 @@
                 });
 
                  // Load providers
-            fetch(JE.cdn.url('elsewhere-res', 'providers.txt'))
+            const providers = fetch(JE.cdn.url('elsewhere-res', 'providers.txt'))
                 .then(response => response.ok ? response.text() : Promise.reject())
                 .then(text => {
                     availableProviders = text.trim().split('\n')
@@ -88,6 +92,32 @@
                         'JioCinema', 'Disney+ Hotstar', 'ZEE5', 'SonyLIV'
                     ];
                 });
+
+            return Promise.all([regions, providers]).then(() => {});
+        }
+
+        // The lists are only needed once a details page shows the panel (region
+        // names in its titles, the settings dialog's choices), so they are loaded
+        // then rather than on every page load.
+        let regionsAndProvidersReady = null;
+
+        /**
+         * Loads the region/provider lists on first use and builds the settings
+         * dialog from them, once. The panel waits for this before rendering, so
+         * its region names and its settings button always find both in place.
+         * @returns {Promise<void>} Never rejects.
+         */
+        function ensureRegionsAndProviders() {
+            if (!regionsAndProvidersReady) {
+                regionsAndProvidersReady = loadRegionsAndProviders().then(() => {
+                    try {
+                        createSettingsModal();
+                    } catch (e) {
+                        console.error('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: Failed to build the settings dialog.', e);
+                    }
+                });
+            }
+            return regionsAndProvidersReady;
         }
 
         function createMaterialIcon(iconName, size = '18px') {
@@ -749,10 +779,14 @@
             };
 
             settingsButton.onclick = () => {
-                const modal = document.getElementById('streaming-settings-modal');
-                if (modal) {
-                    modal.style.display = 'flex';
-                }
+                // The dialog is built once the lists have loaded (normally
+                // before this panel rendered).
+                ensureRegionsAndProviders().then(() => {
+                    const modal = document.getElementById('streaming-settings-modal');
+                    if (modal) {
+                        modal.style.display = 'flex';
+                    }
+                });
             };
 
             controls.appendChild(searchButton);
@@ -1078,8 +1112,20 @@
             return container;
         }
 
+        // Longest the panel waits for the region list after its data arrived. The
+        // list normally comes from the browser cache in a few ms; this only bounds
+        // a server whose CDN cache is cold and whose upstream is unreachable —
+        // the panel then renders region codes instead of names, as it would have
+        // when the lists were still loading.
+        const LISTS_WAIT_MS = 1000;
+
         // Auto-load streaming data on page load (default region only)
         function autoLoadStreamingData(tmdbId, mediaType, container) {
+            // In parallel with the providers request.
+            const listsReady = Promise.race([
+                ensureRegionsAndProviders(),
+                new Promise(resolve => setTimeout(resolve, LISTS_WAIT_MS))
+            ]);
             fetchStreamingData(tmdbId, mediaType, (error, data) => {
                 if (error) {
                     const errorDiv = document.createElement('div');
@@ -1089,11 +1135,13 @@
                     return;
                 }
 
-                // Show default region results automatically
-                const defaultResult = processDefaultRegionData(data, tmdbId, mediaType);
-                if (defaultResult) {
-                    container.appendChild(defaultResult);
-                }
+                listsReady.then(() => {
+                    // Show default region results automatically
+                    const defaultResult = processDefaultRegionData(data, tmdbId, mediaType);
+                    if (defaultResult) {
+                        container.appendChild(defaultResult);
+                    }
+                });
             });
         }
 
@@ -1134,15 +1182,10 @@
             });
         }
         // --- Initialization ---
-        loadRegionsAndProviders();
+        // The region/provider lists and the settings dialog built from them are
+        // loaded on the first details page that shows the panel
+        // (ensureRegionsAndProviders), not here.
         loadSettings();
-
-        // Use deferred initialization with requestIdleCallback
-        if (typeof requestIdleCallback !== 'undefined') {
-            requestIdleCallback(() => createSettingsModal(), { timeout: 2000 });
-        } else {
-            setTimeout(createSettingsModal, 2000);
-        }
 
         // Replace polling with MutationObserver for better performance
         let processingElsewhere = false;

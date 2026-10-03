@@ -494,8 +494,23 @@
         return JE?.pluginConfig?.ActiveStreamsAllUsers === true;
     };
 
+    // The page-load bootstrap's copy of the session list is used for the first
+    // count only when it is at most this old; anything later asks the server.
+    const PREFETCHED_SESSIONS_MAX_AGE_MS = 5000;
+
     // ── API — uses plugin proxy so non-admins don't need Sessions permission ─
-    const fetchSessions = async () => {
+    /**
+     * Fetches the now-playing sessions.
+     * @param {boolean} [usePrefetched=false] - Accept the page-load bootstrap's
+     *   copy (same body as the endpoint) if it is still fresh; only the initial
+     *   count passes this — panel opens and refreshes always ask the server.
+     * @returns {Promise<Array<object>|null>} The sessions, or null on failure.
+     */
+    const fetchSessions = async (usePrefetched = false) => {
+        if (usePrefetched) {
+            const prefetchedSessions = JE.takePrefetched?.('ActiveStreamSessions', PREFETCHED_SESSIONS_MAX_AGE_MS);
+            if (Array.isArray(prefetchedSessions)) return prefetchedSessions;
+        }
         try {
             // Core throws on non-OK responses — caught below, returning null
             // exactly like the old !resp.ok branch.
@@ -807,9 +822,13 @@
     let _generation = 0;
 
     // ── Counter updater ──────────────────────────────────────────────────────
-    const updateCounter = async () => {
+    /**
+     * Refreshes the header counter (and the panel when open) from the sessions.
+     * @param {boolean} [usePrefetched=false] - Passed to fetchSessions.
+     */
+    const updateCounter = async (usePrefetched = false) => {
         const startGeneration = _generation;
-        const sessions = await fetchSessions();
+        const sessions = await fetchSessions(usePrefetched);
         if (startGeneration !== _generation) return; // torn down / user switched mid-fetch
         _lastUpdated = new Date();
         const btn = document.getElementById('je-active-streams');
@@ -861,7 +880,7 @@
 
     // ── Fetch on demand (no background polling) ──────────────────────────────
     const startPolling = () => {
-        updateCounter(); // initial fetch only; panel open & refresh button drive updates
+        updateCounter(true); // initial fetch only; panel open & refresh button drive updates
     };
 
     const stopPolling = () => {
