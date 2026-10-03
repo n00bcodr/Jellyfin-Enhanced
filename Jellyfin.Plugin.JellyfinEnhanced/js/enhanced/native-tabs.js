@@ -520,8 +520,13 @@
             // A different button at that position (Custom Tabs' real one
             // replacing our placeholder) only needs its highlight finished --
             // and only while that tab is still the selected one. Once the
-            // user picked another tab, the link stays consumed.
-            if (appliedDeepLink.btn === btn || tabsElem.selectedIndex() !== wantedIndex) {
+            // user picked another tab, the link stays consumed. A click shows
+            // in the highlight and panel at once but in selectedIndex() only
+            // 120 ms later, so all three must still point at this tab.
+            var stillSelected = tabsElem.selectedIndex() === wantedIndex && panel.classList.contains('is-active') &&
+                !Array.prototype.some.call(tabsElem.querySelectorAll('.emby-tab-button-active'),
+                    function (el) { return el !== btn; });
+            if (appliedDeepLink.btn === btn || !stillSelected) {
                 appliedDeepLink.btn = btn;
                 return;
             }
