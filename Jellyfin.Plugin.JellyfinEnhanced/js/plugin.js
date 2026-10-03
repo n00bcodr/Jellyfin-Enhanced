@@ -420,10 +420,13 @@
                 type: 'GET', url: ApiClient.getUrl('/Plugins'), dataType: 'json'
             });
             if (!Array.isArray(installedPlugins)) throw new Error('Unexpected /Plugins response');
-            // A disabled, deleted or failed plugin serves nothing. An update
-            // waiting for a restart (old version "Superseded", new one
-            // "Restart") is still running, so it counts as present.
-            const isRunning = p => !['Disabled', 'Deleted', 'NotSupported', 'Malfunctioned'].includes(p.Status);
+            // Approximates "running right now" (the bootstrap checks that
+            // directly). "Disabled" is reported only once a restart has
+            // unloaded the plugin; until then it shows "Restart" and keeps
+            // serving, as does one deleted or superseded but not yet restarted.
+            // "Restart" can also mean enabled but not loaded yet; that window
+            // ends with the restart either way.
+            const isRunning = p => !['Disabled', 'NotSupported', 'Malfunctioned'].includes(p.Status);
             applyDeliveryPluginFlags(
                 installedPlugins.some(p => p.Name === 'Custom Tabs' && isRunning(p)),
                 installedPlugins.some(p => p.Name === 'Plugin Pages' && isRunning(p))

@@ -46,6 +46,8 @@
     var selectingTab = false;
     /** The tabs element we listen on for the user's own tab changes. */
     var watchedTabs = null;
+    /** When the user last pressed or tapped inside the tab strip (or used a key there). */
+    var lastTabStripInput = 0;
     /** Whether the last ensureInjected() call found us off the home page -- logged only on change. */
     var wasOffHomePage = false;
 
@@ -466,10 +468,13 @@
     }
 
     /**
-     * Note when the user moves to a different tab than the URL names (click,
-     * keyboard or swipe): from then on that URL's deep link is spent, even if
-     * it was never fully applied (a button still missing, a lookup pending).
-     * Jellyfin's own first selection picks the URL's tab, and ours are flagged.
+     * Note when the user picks a tab themselves (click, keyboard or swipe):
+     * from then on the URL's deep link is spent, even if it was never fully
+     * applied (a button still missing, a lookup pending). A tab change counts
+     * as the user's when it moves away from the URL's tab (swipes, clicks on
+     * another tab) or follows real input in the tab strip (a click on the tab
+     * a stale link's number happens to point at). Jellyfin's own selection
+     * picks the URL's tab without any, and ours are flagged.
      * @param {HTMLElement|null} tabsElem - The emby-tabs element.
      */
     function watchUserTabChanges(tabsElem) {
@@ -479,9 +484,47 @@
             if (selectingTab) return;
             var urlIndex = parseInt(hashParam('tab'), 10);
             var picked = parseInt(e.detail?.selectedTabIndex, 10);
-            if (picked !== (isNaN(urlIndex) ? 0 : urlIndex)) userPickedHash = window.location.hash;
+            if (picked !== (isNaN(urlIndex) ? 0 : urlIndex) || Date.now() - lastTabStripInput < 1000) {
+                userPickedHash = window.location.hash;
+            }
+        });
+        // tabchange fires once the index is recorded (120 ms after a click);
+        // the highlight may follow in the same task, hence the extra tick.
+        tabsElem.addEventListener('tabchange', function (e) {
+            var picked = parseInt(e.detail?.selectedTabIndex, 10);
+            setTimeout(function () { clearStraySelection(tabsElem, picked); }, 0);
         });
     }
+
+    /**
+     * Jellyfin only deactivates the previously highlighted tab. After one of
+     * its half-applied selections (a panel shown, no button highlighted) that
+     * panel would stay visible under every tab picked later. Keep exactly the
+     * button and panel at the selected position active, when both really are
+     * that tab.
+     * @param {HTMLElement} tabsElem - The emby-tabs element.
+     * @param {number} index - The selected tab index.
+     */
+    function clearStraySelection(tabsElem, index) {
+        var root = getTabsRoot();
+        if (!root || isNaN(index) || tabsElem.selectedIndex?.() !== index) return;
+        var btn = tabsElem.querySelectorAll('.emby-tab-button')[index];
+        var panel = root.querySelectorAll('.tabContent')[index];
+        if (!btn || !panel || slotIndex(btn) !== index || slotIndex(panel) !== index) return;
+        if (!btn.classList.contains('emby-tab-button-active') || !panel.classList.contains('is-active')) return;
+        Array.prototype.forEach.call(root.querySelectorAll('.tabContent.is-active'), function (el) {
+            if (el !== panel) el.classList.remove('is-active');
+        });
+        Array.prototype.forEach.call(tabsElem.querySelectorAll('.emby-tab-button-active'), function (el) {
+            if (el !== btn) el.classList.remove('emby-tab-button-active');
+        });
+    }
+
+    var noteTabStripInput = function (e) {
+        if (e.isTrusted && e.target?.closest?.('[is="emby-tabs"]')) lastTabStripInput = Date.now();
+    };
+    document.addEventListener('pointerdown', noteTabStripInput, { capture: true, passive: true });
+    document.addEventListener('keydown', noteTabStripInput, { capture: true, passive: true });
 
     /**
      * Link to one of our tabs: `tab=N` lets Jellyfin and Custom Tabs act on it
@@ -517,10 +560,13 @@
             // only once per session. Custom Tabs re-reads the URL on its next
             // sync (it watches history and the DOM).
             var staleHash = window.location.hash;
-            rewrittenHash = deepLinkHash(entry);
-            history.replaceState(history.state, '', window.location.pathname + window.location.search + rewrittenHash);
+            // Local copy: replaceState notifies JE's navigation listeners
+            // synchronously, and ours clears rewrittenHash once it has seen it.
+            var freshHash = deepLinkHash(entry);
+            rewrittenHash = freshHash;
+            history.replaceState(history.state, '', window.location.pathname + window.location.search + freshHash);
             wantedIndex = entry.index;
-            if (userPickedHash === staleHash) userPickedHash = rewrittenHash;
+            if (userPickedHash === staleHash) userPickedHash = freshHash;
             // Our tab moved after this link was already followed: only the URL
             // needed updating. Re-selecting it would undo whatever the user
             // clicked since (tab clicks leave the URL alone).
