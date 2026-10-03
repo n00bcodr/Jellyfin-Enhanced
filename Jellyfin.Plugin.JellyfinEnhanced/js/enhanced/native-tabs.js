@@ -40,6 +40,12 @@
     var appliedDeepLink = null;
     /** URL we just rewrote ourselves; its navigation event is not a new deep link. */
     var rewrittenHash = null;
+    /** URL whose deep link the user overrode by picking another tab (tab clicks leave the URL alone). */
+    var userPickedHash = null;
+    /** True while we select a tab ourselves, so that selection is not mistaken for the user's. */
+    var selectingTab = false;
+    /** The tabs element we listen on for the user's own tab changes. */
+    var watchedTabs = null;
     /** Whether the last ensureInjected() call found us off the home page -- logged only on change. */
     var wasOffHomePage = false;
 
@@ -279,6 +285,7 @@
             checkedSlider = slider;
             refreshCustomTabCount();
         }
+        watchUserTabChanges(slider.closest('[is="emby-tabs"]'));
         // Until Custom Tabs has answered once, tabs it has not drawn yet are invisible to us.
         if (customTabCount == null) return;
 
@@ -459,6 +466,24 @@
     }
 
     /**
+     * Note when the user moves to a different tab than the URL names (click,
+     * keyboard or swipe): from then on that URL's deep link is spent, even if
+     * it was never fully applied (a button still missing, a lookup pending).
+     * Jellyfin's own first selection picks the URL's tab, and ours are flagged.
+     * @param {HTMLElement|null} tabsElem - The emby-tabs element.
+     */
+    function watchUserTabChanges(tabsElem) {
+        if (!tabsElem || tabsElem === watchedTabs) return;
+        watchedTabs = tabsElem;
+        tabsElem.addEventListener('beforetabchange', function (e) {
+            if (selectingTab) return;
+            var urlIndex = parseInt(hashParam('tab'), 10);
+            var picked = parseInt(e.detail?.selectedTabIndex, 10);
+            if (picked !== (isNaN(urlIndex) ? 0 : urlIndex)) userPickedHash = window.location.hash;
+        });
+    }
+
+    /**
      * Link to one of our tabs: `tab=N` lets Jellyfin and Custom Tabs act on it
      * natively, and `jeTab=<id>` names the page independently of N, which
      * shifts whenever other plugins' tabs come and go.
@@ -495,6 +520,7 @@
             rewrittenHash = deepLinkHash(entry);
             history.replaceState(history.state, '', window.location.pathname + window.location.search + rewrittenHash);
             wantedIndex = entry.index;
+            if (userPickedHash === staleHash) userPickedHash = rewrittenHash;
             // Our tab moved after this link was already followed: only the URL
             // needed updating. Re-selecting it would undo whatever the user
             // clicked since (tab clicks leave the URL alone).
@@ -506,6 +532,7 @@
         }
         // Home(0) and Favorites(1) exist before Jellyfin selects, so they always complete.
         if (isNaN(wantedIndex) || wantedIndex < 2) return;
+        if (userPickedHash === window.location.hash) return;
 
         var tabsElem = slider.closest('[is="emby-tabs"]') || document.querySelector('[is="emby-tabs"]');
         var btn = tabsElem?.querySelectorAll('.emby-tab-button')[wantedIndex];
@@ -544,7 +571,12 @@
                 btn.classList.contains('emby-tab-button-active') && strays().length === 0;
         };
         if (!isApplied()) {
-            tabsElem.selectedIndex(wantedIndex);
+            selectingTab = true;
+            try {
+                tabsElem.selectedIndex(wantedIndex);
+            } finally {
+                selectingTab = false;
+            }
             strays().forEach(function (el) { el.classList.remove('is-active', 'emby-tab-button-active'); });
         }
         if (isApplied()) {
@@ -591,7 +623,10 @@
     // Re-inject on every navigation (hashchange, popstate AND pushState navs
     // the old raw hashchange listener missed).
     JE.core.navigation.onNavigate(function () {
-        if (window.location.hash !== rewrittenHash) appliedDeepLink = null;
+        if (window.location.hash !== rewrittenHash) {
+            appliedDeepLink = null;
+            userPickedHash = null;
+        }
         rewrittenHash = null;
         scheduleInject();
     });
