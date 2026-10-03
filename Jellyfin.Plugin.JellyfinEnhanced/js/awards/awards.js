@@ -257,9 +257,20 @@
             };
         }
 
+        /**
+         * Fetches a title's awards. Kept in the core response cache (30 minutes,
+         * dropped on a user switch) so revisits cost no request — the server
+         * keeps this data for months — except a failure placeholder
+         * (Confirmed: false), which the server retries soon, so it is re-asked.
+         * @param {string} tmdbId
+         * @param {string} apiMediaType - 'movie' or 'tv'.
+         * @returns {Promise<object|null>} Normalized awards, or null on failure.
+         */
         async function fetchAwards(tmdbId, apiMediaType) {
             try {
-                const data = await JE.core.api.plugin(`/awards/${apiMediaType}/${tmdbId}`);
+                const cacheKey = `awards:/${apiMediaType}/${tmdbId}`;
+                const data = await JE.core.api.plugin(`/awards/${apiMediaType}/${tmdbId}`, { cacheKey });
+                if (data && data.Confirmed === false) JE.core.api.manager.clearCacheMatching(cacheKey);
                 return normalizeAwardsData(data);
             } catch (e) {
                 // Feature disabled server-side (503), bad id, WDQS having a bad

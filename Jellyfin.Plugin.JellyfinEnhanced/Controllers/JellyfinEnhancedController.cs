@@ -4444,6 +4444,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             });
         }
 
+        /// <summary>
+        /// Browser-cache policy for the awards and MDBList ratings responses: the
+        /// same body for every user (no per-user gating beyond [Authorize]), backed
+        /// by server caches that keep it for days, so a revisit or reload within
+        /// half an hour reuses the browser's copy instead of asking again. Private
+        /// and varied on the auth headers like the TMDB passthrough, so no shared
+        /// cache keeps it and one account's copy is never reused by another.
+        /// Set only for an answer the upstream actually gave (Confirmed): errors
+        /// and failure placeholders, which the server retries within the hour,
+        /// are never kept.
+        /// </summary>
+        private void SetExternalDataCacheHeaders()
+        {
+            Response.Headers["Cache-Control"] = "private, max-age=1800";
+            Response.Headers["Vary"] = "Authorization, X-Emby-Token, X-Jellyfin-User-Id";
+        }
+
         [HttpGet("awards/{mediaType}/{tmdbId}")]
         [Authorize]
         public async Task<IActionResult> GetAwards(string mediaType, string tmdbId, CancellationToken cancellationToken)
@@ -4467,6 +4484,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var result = await _wikidataAwardsService.GetAwardsAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
+                if (result.Confirmed)
+                {
+                    SetExternalDataCacheHeaders();
+                }
                 return Ok(result);
             }
             catch (Exception ex)
@@ -4505,6 +4526,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var result = await _mdblistService.GetRatingsAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
+                if (result.Confirmed)
+                {
+                    SetExternalDataCacheHeaders();
+                }
                 return Ok(result);
             }
             catch (Exception ex)

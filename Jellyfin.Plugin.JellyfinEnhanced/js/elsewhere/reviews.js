@@ -76,10 +76,19 @@
             }
         }
 
+        /**
+         * Fetches TMDB's reviews for a title. Kept in the core response cache
+         * (30 minutes, dropped on a user switch; same key shape as the Seerr TMDB
+         * helper) — the server keeps them for hours.
+         * @param {string} tmdbId
+         * @param {string} mediaType - Jellyfin item type ('Series' or 'Movie').
+         * @returns {Promise<Array<object>|null>} The reviews, or null on failure.
+         */
         function fetchReviews(tmdbId, mediaType) {
             const apiMediaType = mediaType === 'Series' ? 'tv' : 'movie';
+            const path = `/${apiMediaType}/${tmdbId}/reviews?language=en-US&page=1`;
             const url = `${ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${apiMediaType}/${tmdbId}/reviews`)}?language=en-US&page=1`;
-            return JE.core.api.fetch(url)
+            return JE.core.api.fetch(url, { cacheKey: `tmdb:${path}` })
                 .then(data => data.results || [])
                 .catch(error => {
                     console.error(`${logPrefix} Failed to fetch reviews.`, error);
@@ -100,12 +109,41 @@
                 : ApiClient.getItem(userId, seriesId);
         }
 
+        // Other users' reviews may change at any time, so the cached copy is kept
+        // briefly; this user's own writes drop it at once (invalidateUserReviews).
+        const USER_REVIEWS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+        /**
+         * Core response-cache key for an item's user reviews. The response is
+         * per viewer (own and moderated reviews), which is safe because the core
+         * cache is flushed on every user switch.
+         * @param {string} tmdbId - TMDB review key (e.g. '1399', '1399:s1:e2').
+         * @param {string} mediaType - 'movie' or 'tv'.
+         * @returns {string}
+         */
+        function userReviewsCacheKey(tmdbId, mediaType) {
+            return `user-reviews:/${mediaType}/${tmdbId}`;
+        }
+
+        /**
+         * Drops the cached user reviews for an item after this user wrote to it,
+         * so the refresh that follows (and any later visit) shows the change.
+         * @param {string} tmdbId
+         * @param {string} mediaType - 'movie' or 'tv'.
+         */
+        function invalidateUserReviews(tmdbId, mediaType) {
+            JE.core.api.manager.clearCacheMatching(userReviewsCacheKey(tmdbId, mediaType));
+        }
+
         /**
          * Fetches all user-written reviews for a TMDB item (aggregated across all users).
          */
         function fetchUserReviews(tmdbId, mediaType) {
             // mediaType is already in API format ('movie' or 'tv') — no conversion needed
-            return JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`)
+            return JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`, {
+                cacheKey: userReviewsCacheKey(tmdbId, mediaType),
+                cacheTtlMs: USER_REVIEWS_CACHE_TTL_MS
+            })
                 .then(data => data.reviews || [])
                 .catch(err => {
                     console.error(`${logPrefix} Failed to fetch user reviews.`, err);
@@ -129,6 +167,9 @@
                 // Preserve the server-provided message when present, matching the
                 // hand-rolled fetch's `err.message || \`HTTP ${status}\`` shape.
                 throw new Error(e?.responseJSON?.message || e.message);
+            } finally {
+                // Even a failed save may have been stored; never show a stale copy.
+                invalidateUserReviews(tmdbId, mediaType);
             }
         }
 
@@ -138,7 +179,11 @@
         async function deleteUserReview(tmdbId, mediaType) {
             // skipRetry keeps the original single-attempt semantics for this mutation.
             // Core throws Error('HTTP <status>') on failure — same shape as before.
-            await JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`, { method: 'DELETE', skipRetry: true });
+            try {
+                await JE.core.api.plugin(`/reviews/${mediaType}/${tmdbId}`, { method: 'DELETE', skipRetry: true });
+            } finally {
+                invalidateUserReviews(tmdbId, mediaType);
+            }
         }
 
         /**
@@ -160,6 +205,8 @@
                     throw new Error('No matching review to delete (it may have already been removed).');
                 }
                 throw e;
+            } finally {
+                invalidateUserReviews(tmdbId, mediaType);
             }
         }
 

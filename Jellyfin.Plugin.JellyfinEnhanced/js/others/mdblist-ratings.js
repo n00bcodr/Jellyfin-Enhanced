@@ -290,9 +290,21 @@
             console.warn(`${logPrefix} Could not find a suitable anchor to insert the ratings row.`);
         }
 
+        /**
+         * Fetches a title's MDBList ratings. Kept in the core response cache
+         * (30 minutes, dropped on a user switch) so revisits cost no request —
+         * the server keeps this data for days — except a failure placeholder
+         * (Confirmed: false), which the server retries soon, so it is re-asked.
+         * @param {string} tmdbId
+         * @param {string} apiMediaType - 'movie' or 'tv'.
+         * @returns {Promise<object|null>} The ratings entry, or null on failure.
+         */
         async function fetchRatings(tmdbId, apiMediaType) {
             try {
-                return await JE.core.api.plugin(`/mdblist-ratings/${apiMediaType}/${tmdbId}`);
+                const cacheKey = `mdblist-ratings:/${apiMediaType}/${tmdbId}`;
+                const data = await JE.core.api.plugin(`/mdblist-ratings/${apiMediaType}/${tmdbId}`, { cacheKey });
+                if (data && data.Confirmed === false) JE.core.api.manager.clearCacheMatching(cacheKey);
+                return data;
             } catch (e) {
                 // A ratings row is decoration; never surface a fetch failure to the user.
                 console.warn(`${logPrefix} Failed to fetch ratings.`, e);

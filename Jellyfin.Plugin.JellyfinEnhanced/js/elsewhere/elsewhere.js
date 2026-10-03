@@ -547,10 +547,13 @@
             return badge;
         }
 
-        // Fetch streaming data
+        // Fetch streaming data. Kept in the core response cache (30 minutes,
+        // dropped on a user switch; the same key the Seerr TMDB helper would use)
+        // so revisiting a title costs no request — the server keeps it for hours.
         function fetchStreamingData(tmdbId, mediaType, callback) {
-            const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb/${mediaType}/${tmdbId}/watch/providers`);
-            JE.core.api.fetch(url)
+            const path = `/${mediaType}/${tmdbId}/watch/providers`;
+            const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb${path}`);
+            JE.core.api.fetch(url, { cacheKey: `tmdb:${path}` })
                 .then(data => callback(null, data))
                 .catch(error => {
                     let errorMessage;
