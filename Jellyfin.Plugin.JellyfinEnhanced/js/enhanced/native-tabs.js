@@ -514,11 +514,18 @@
             slotIndex(btn) !== wantedIndex || slotIndex(panel) !== wantedIndex) return;
         var hash = window.location.hash;
         // Consume a deep link once per page/header. Reapplying it for every
-        // content mutation would undo a later click on Home or Favorites. A
-        // different button at that position (Custom Tabs' real one replacing
-        // our placeholder) means it was not really applied yet.
+        // content mutation would undo a later click on Home or Favorites.
         if (appliedDeepLink && appliedDeepLink.hash === hash && appliedDeepLink.root === root &&
-            appliedDeepLink.panel === panel && appliedDeepLink.tabs === tabsElem && appliedDeepLink.btn === btn) return;
+            appliedDeepLink.panel === panel && appliedDeepLink.tabs === tabsElem) {
+            // A different button at that position (Custom Tabs' real one
+            // replacing our placeholder) only needs its highlight finished --
+            // and only while that tab is still the selected one. Once the
+            // user picked another tab, the link stays consumed.
+            if (appliedDeepLink.btn === btn || tabsElem.selectedIndex() !== wantedIndex) {
+                appliedDeepLink.btn = btn;
+                return;
+            }
+        }
         // Jellyfin's same-index path highlights the new button without
         // clearing the old one, and never hides the previous panel; a second
         // highlighted button would make the next click on it a no-op.

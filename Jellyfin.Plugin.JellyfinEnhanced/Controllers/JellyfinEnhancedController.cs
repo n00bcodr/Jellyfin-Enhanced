@@ -3833,16 +3833,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// Whether a plugin with exactly this name is installed and active. A disabled
-        /// (or failed) plugin serves nothing, so the client must treat it as absent --
-        /// the same rule the config page applies to GET /Plugins' Status field.
+        /// Whether a plugin with exactly this name is installed and running. A disabled,
+        /// deleted or failed plugin serves nothing, so the client must treat it as absent.
+        /// An update waiting for a restart (old version Superseded, new one Restart) is
+        /// still running and counts as present.
         /// </summary>
         private bool IsPluginInstalled(string name)
         {
             try
             {
                 return _pluginManager.Plugins.Any(p => string.Equals(p.Name, name, StringComparison.Ordinal)
-                    && p.Manifest.Status == PluginStatus.Active);
+                    && p.Manifest.Status is not (PluginStatus.Disabled or PluginStatus.Deleted
+                        or PluginStatus.NotSupported or PluginStatus.Malfunctioned));
             }
             catch (Exception ex)
             {
