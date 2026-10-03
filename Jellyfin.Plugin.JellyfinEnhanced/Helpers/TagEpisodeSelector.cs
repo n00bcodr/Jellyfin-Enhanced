@@ -54,19 +54,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             bool stopAtFirstRegular)
         {
             const int pageSize = 50;
-            var query = new InternalItemsQuery(user)
-            {
-                ParentId = container.Id,
-                IncludeItemTypes = new[] { BaseItemKind.Episode },
-                Recursive = true,
-                IsVirtualItem = false,
-                Limit = pageSize,
-                OrderBy = new[]
-                {
-                    (ItemSortBy.PremiereDate, JSortOrder.Ascending),
-                    (ItemSortBy.SortName, JSortOrder.Ascending)
-                }
-            };
+            var query = CreateEpisodeQuery(user);
+            query.ParentId = container.Id;
+            query.Limit = pageSize;
 
             BaseItem? firstRegular = null;
             BaseItem? firstSpecial = null;
@@ -81,9 +71,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                         continue;
                     }
 
-                    // Within a season there is no other season to prefer. In
-                    // particular, a Specials season can stop at its first match.
-                    if (episode.ParentIndexNumber != 0 || container is Season)
+                    if (CountsAsRegular(episode.ParentIndexNumber, container is Season))
                     {
                         if (stopAtFirstRegular)
                         {
@@ -105,6 +93,88 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     return firstRegular ?? firstSpecial;
                 }
             }
+        }
+
+        /// <summary>
+        /// The same pick as <see cref="ScanEpisodes"/> (with
+        /// <c>stopAtFirstRegular: false</c>) over episodes the caller already
+        /// holds in scan order, for the full cache build, which groups every
+        /// episode of the library under its containers from one ordered query
+        /// (<see cref="GetOrderedEpisodeIds"/>) instead of querying each
+        /// container. <paramref name="hasUsableStreams"/> is called for every
+        /// episode, in order, exactly as the scan's callback is.
+        /// </summary>
+        public static T? SelectRepresentative<T>(
+            IEnumerable<T> orderedEpisodes,
+            bool containerIsSeason,
+            Func<T, int?> parentIndexNumber,
+            Func<T, bool> hasUsableStreams)
+            where T : class
+        {
+            T? firstRegular = null;
+            T? firstSpecial = null;
+            foreach (var episode in orderedEpisodes)
+            {
+                if (!hasUsableStreams(episode))
+                {
+                    continue;
+                }
+
+                if (CountsAsRegular(parentIndexNumber(episode), containerIsSeason))
+                {
+                    firstRegular ??= episode;
+                }
+                else
+                {
+                    firstSpecial ??= episode;
+                }
+            }
+
+            return firstRegular ?? firstSpecial;
+        }
+
+        /// <summary>
+        /// Every non-virtual episode in the library, in the order
+        /// <see cref="ScanEpisodes"/> walks a container's episodes. That scan is
+        /// this same query plus <c>ParentId</c> (which Jellyfin rewrites into an
+        /// ancestor filter for a recursive query on a Series or Season) and
+        /// paging, so the episodes of one container appear here in the same
+        /// relative order as in its own scan. Only episodes tied on both sort
+        /// keys (same or no premiere date AND same sort name) have no defined
+        /// order in either query.
+        /// </summary>
+        public static IReadOnlyList<Guid> GetOrderedEpisodeIds(ILibraryManager libraryManager)
+        {
+            return libraryManager.GetItemIds(CreateEpisodeQuery(null));
+        }
+
+        /// <summary>
+        /// Filter and sort shared by the per-container scan and the library-wide
+        /// ordered episode list, so the two can't drift apart.
+        /// </summary>
+        private static InternalItemsQuery CreateEpisodeQuery(User? user)
+        {
+            return new InternalItemsQuery(user)
+            {
+                IncludeItemTypes = new[] { BaseItemKind.Episode },
+                Recursive = true,
+                IsVirtualItem = false,
+                OrderBy = new[]
+                {
+                    (ItemSortBy.PremiereDate, JSortOrder.Ascending),
+                    (ItemSortBy.SortName, JSortOrder.Ascending)
+                }
+            };
+        }
+
+        /// <summary>
+        /// Whether an episode can be a container's regular (non-special)
+        /// representative. Within a season there is no other season to prefer;
+        /// in particular, a Specials season can stop at its first match.
+        /// </summary>
+        private static bool CountsAsRegular(int? parentIndexNumber, bool containerIsSeason)
+        {
+            return parentIndexNumber != 0 || containerIsSeason;
         }
     }
 }

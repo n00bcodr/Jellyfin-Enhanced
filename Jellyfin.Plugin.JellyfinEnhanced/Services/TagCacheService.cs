@@ -11,10 +11,12 @@ using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using MediaBrowser.Common.Configuration;
+using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Globalization;
+using MediaBrowser.Model.Querying;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
@@ -44,23 +46,116 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// one full build, reconcile or incremental batch (see
         /// <see cref="BuildEntryForItem"/>), so an episode's streams are read once
         /// however many of its parents are rebuilt alongside it.
+        /// <see cref="Placement"/> is what the full build needs to file the
+        /// episode under its containers without re-querying them; set whenever
+        /// the episode's own entry was built in the pass (or the full build
+        /// hydrated it for its containers).
         /// </summary>
-        private readonly record struct EpisodeScan(string[]? Languages, TagStreamData? StreamData);
+        private readonly record struct EpisodeScan(string[]? Languages, TagStreamData? StreamData, EpisodePlacement? Placement = null);
+
+        /// <summary>
+        /// The fields of an episode its parents' entries read: where it sits in
+        /// the tree (<see cref="ParentId"/>, <see cref="SeasonId"/> — together
+        /// they decide which containers it belongs to, see
+        /// <see cref="BuildContainerEpisodeIndex"/>), whether it is a special
+        /// (<see cref="ParentIndexNumber"/>), the genres a container without its
+        /// own falls back to, and its scan sort key (<see cref="SortDate"/>,
+        /// <see cref="SortName"/>, only compared to break ties). All are stored
+        /// columns of the episode's row, so they are what the container's own
+        /// episode query would have hydrated.
+        /// </summary>
+        private readonly record struct EpisodePlacement(
+            Guid ParentId,
+            Guid SeasonId,
+            int? ParentIndexNumber,
+            string[] Genres,
+            DateTime? SortDate,
+            int? SortYear,
+            string? SortName)
+        {
+            public static EpisodePlacement Of(MediaBrowser.Controller.Entities.TV.Episode episode)
+            {
+                // Jellyfin's PremiereDate sort key: the premiere date, else
+                // January 1st of the production year. A year that has no such
+                // date is kept as itself so it only ties with the same year.
+                var year = episode.PremiereDate == null ? episode.ProductionYear : null;
+                var sortDate = episode.PremiereDate
+                    ?? (year is >= 1 and <= 9999 ? DateTime.MinValue.AddYears(year.Value - 1) : null);
+                return new(
+                    episode.ParentId,
+                    episode.SeasonId,
+                    episode.ParentIndexNumber,
+                    episode.Genres,
+                    sortDate,
+                    sortDate == null ? year : null,
+                    episode.SortName);
+            }
+
+            /// <summary>Whether the scan's ORDER BY ranks the two equal.</summary>
+            public bool SortsEqualTo(in EpisodePlacement other) =>
+                SortDate == other.SortDate
+                && SortYear == other.SortYear
+                && string.Equals(SortName, other.SortName, StringComparison.Ordinal);
+        }
 
         /// <summary>
         /// Per-pass <see cref="EpisodeScan"/> memo, keyed by episode id.
+        /// Concurrent because the full build fills it from parallel workers.
         /// <see cref="Pending"/> is set by the incremental passes (flush batch,
         /// reconcile) to the ids being rebuilt in that pass: every other episode
         /// already has a current entry in the live cache, so a container scan
         /// takes its languages from there instead of re-reading its streams (a
         /// 400-episode series touched by one episode change would otherwise open
         /// 400 files). Null for the full build, whose live cache is the previous
-        /// generation.
+        /// generation. <see cref="ContainerIndex"/> is set by the full build only,
+        /// between its episode and container passes (see
+        /// <see cref="BuildFullCacheBody"/>); while it is set, container scans
+        /// read their episodes from it instead of querying the library.
         /// </summary>
-        private sealed class EpisodeScanMemo : Dictionary<Guid, EpisodeScan>
+        private sealed class EpisodeScanMemo : ConcurrentDictionary<Guid, EpisodeScan>
         {
             public IReadOnlySet<Guid>? Pending { get; init; }
+
+            public ContainerEpisodeIndex? ContainerIndex { get; set; }
         }
+
+        /// <summary>
+        /// The full build's answer to every container's episode query, computed
+        /// once from one library-wide ordered episode list: for each Series/
+        /// Season id, its non-virtual episodes in scan order
+        /// (<see cref="Members"/>), plus the few episodes that had no entry of
+        /// their own in the episode pass (<see cref="Late"/>, e.g. added after
+        /// its id query), hydrated here so a container can read them the way its
+        /// scan would have. Read-only once built.
+        /// </summary>
+        private sealed class ContainerEpisodeIndex
+        {
+            public ContainerEpisodeIndex(Dictionary<Guid, List<Guid>> members, Dictionary<Guid, MediaBrowser.Controller.Entities.TV.Episode> late)
+            {
+                Members = members;
+                Late = late;
+            }
+
+            public Dictionary<Guid, List<Guid>> Members { get; }
+
+            public Dictionary<Guid, MediaBrowser.Controller.Entities.TV.Episode> Late { get; }
+        }
+
+        /// <summary>
+        /// A container's representative episode, as its entry needs it: genres
+        /// for the fallback and the stream data its quality tags come from —
+        /// shared from the episode's own entry when this pass built it,
+        /// otherwise read from <see cref="Item"/>.
+        /// </summary>
+        private sealed record RepresentativeEpisode(string[] Genres, TagStreamData? StreamData, BaseItem? Item);
+
+        // Workers per page in the full build. Every item's entry is independent
+        // of the others' (episodes only feed containers, which run in a later
+        // pass), and the per-item work is Jellyfin read paths (stream rows,
+        // alternate versions, parent lookups) plus one Matroska header read, so
+        // a few workers overlap the database and file latency. Kept small so a
+        // build never crowds out request handling.
+        private static readonly int BuildParallelism = Math.Clamp(Environment.ProcessorCount, 1, 4);
 
         // Guards the {_cacheReleased, _cache, _version, _lastModified} generation
         // as one unit for readers. Publish/release sites mutate all four inside
@@ -175,6 +270,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // regardless of library size. The resulting TagCacheEntry objects are
         // small (a few hundred bytes) so the cache itself stays cheap.
         private const int HydrationPageSize = 500;
+
+        // What HydrateInPages loads per item: the stored columns (genres,
+        // ratings, name, path, series/season ids and numbers, the version and
+        // linked-children data GetMediaSources reads) plus provider ids for the
+        // TMDB ids. The default options would also join every image row and
+        // every user's user-data row, which no entry reads; the hydrated items
+        // are never saved back. A fresh instance per query: Jellyfin may adjust
+        // a query's options.
+        private static DtoOptions HydrationOptions => new(false)
+        {
+            Fields = new[] { ItemFields.ProviderIds },
+            EnableImages = false,
+            EnableUserData = false
+        };
 
         // User access cache: avoids expensive GetItemIds query on every request
         private readonly ConcurrentDictionary<string, UserAccess> _userAccessCache = new();
@@ -475,22 +584,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Ids only — a Guid list is tiny even for huge libraries. The heavy
             // BaseItem hydration happens page by page below so the build never
             // holds more than HydrationPageSize full items at a time.
-            // Series/Season last: by the time a container scans its episodes,
-            // every episode's own entry has already recorded its languages and
-            // stream data in the memo below, so the scans read no streams.
-            var allIds = _libraryManager.GetItemIds(new InternalItemsQuery
+            // Series/Season last: by the time a container is built, every
+            // episode's own entry has already recorded its languages, stream
+            // data and placement in the memo below, so containers read no
+            // streams and run no episode queries.
+            var itemIds = _libraryManager.GetItemIds(new InternalItemsQuery
             {
                 IncludeItemTypes = TaggableTypes.Where(kind => !IsContainerKind(kind)).ToArray(),
                 IsVirtualItem = false,
                 Recursive = true
-            }).Concat(_libraryManager.GetItemIds(new InternalItemsQuery
+            });
+            var containerIds = _libraryManager.GetItemIds(new InternalItemsQuery
             {
                 IncludeItemTypes = new[] { BaseItemKind.Series, BaseItemKind.Season },
                 IsVirtualItem = false,
                 Recursive = true
-            })).ToList();
+            });
+            var totalCount = itemIds.Count + containerIds.Count;
 
-            _logger.Info($"[TagCache] Found {allIds.Count} taggable items");
+            _logger.Info($"[TagCache] Found {totalCount} taggable items");
 
             var newCache = new ConcurrentDictionary<string, TagCacheEntry>();
             var processed = 0;
@@ -500,34 +612,69 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // already holds, so the extra cost is one dictionary slot (~50 bytes)
             // per episode, dropped with this frame when the build ends.
             var episodeScans = new EpisodeScanMemo();
-
-            foreach (var page in HydrateInPages(allIds, cancellationToken))
+            var parallelOptions = new ParallelOptions
             {
-                // Stop promptly if the admin turned the cache off (or the server
-                // is shutting down) mid-build; the partial result is discarded,
-                // not published.
-                if (ShouldAbortCacheWork)
-                {
-                    _logger.Info("[TagCache] Full build aborted (setting disabled or server shutting down); nothing published.");
-                    return;
-                }
+                MaxDegreeOfParallelism = BuildParallelism,
+                CancellationToken = cancellationToken
+            };
 
-                foreach (var item in page)
+            // One pass over a list of ids: each page's entries are built in
+            // parallel into a slot per item, then stored in page order, so the
+            // dictionary is filled in the same order as a sequential build.
+            // BuildEntryForItem never throws (it logs and returns null), and a
+            // cancellation surfaces from Parallel.For as the same
+            // OperationCanceledException the sequential loop threw. Returns
+            // false when the build has to stop (setting disabled / shutdown).
+            bool BuildPass(IReadOnlyList<Guid> ids)
+            {
+                foreach (var page in HydrateInPages(ids, cancellationToken))
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    var entry = BuildEntryForItem(item, episodeScans);
-                    if (entry != null)
+                    // Stop promptly if the admin turned the cache off (or the server
+                    // is shutting down) mid-build; the partial result is discarded,
+                    // not published.
+                    if (ShouldAbortCacheWork)
                     {
-                        var key = item.Id.ToString("N").ToLowerInvariant();
-                        newCache[key] = entry;
+                        return false;
                     }
+
+                    var entries = new TagCacheEntry?[page.Count];
+                    Parallel.For(0, page.Count, parallelOptions, i => entries[i] = BuildEntryForItem(page[i], episodeScans));
+
+                    for (var i = 0; i < page.Count; i++)
+                    {
+                        if (entries[i] is { } entry)
+                        {
+                            newCache[page[i].Id.ToString("N").ToLowerInvariant()] = entry;
+                        }
+                    }
+
+                    // An item deleted between the id query and its page hydration just
+                    // doesn't come back, so advance by the page's actual size.
+                    processed += page.Count;
+                    progress?.Report((double)processed / totalCount * 100);
                 }
 
-                // An item deleted between the id query and its page hydration just
-                // doesn't come back, so advance by the page's actual size.
-                processed += page.Count;
-                progress?.Report((double)processed / allIds.Count * 100);
+                return true;
+            }
+
+            if (!BuildPass(itemIds))
+            {
+                _logger.Info("[TagCache] Full build aborted (setting disabled or server shutting down); nothing published.");
+                return;
+            }
+
+            // Every container's episodes, in scan order, from one ordered query
+            // instead of one paged query per container (whose cost grew with the
+            // whole library's episode count, see BuildContainerEpisodeIndex).
+            if (containerIds.Count > 0)
+            {
+                episodeScans.ContainerIndex = BuildContainerEpisodeIndex(containerIds, episodeScans, cancellationToken);
+            }
+
+            if (!BuildPass(containerIds))
+            {
+                _logger.Info("[TagCache] Full build aborted (setting disabled or server shutting down); nothing published.");
+                return;
             }
 
             // Final gate before publishing (the loop check can't run when the
@@ -2121,6 +2268,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     SeriesId = seriesIdN,
                 };
 
+                // Parent Series of a Season/Episode, looked up once per item
+                // (both fallbacks below read it).
+                var series = kind == BaseItemKind.Season || kind == BaseItemKind.Episode ? GetParentSeries(item) : null;
+
                 if (isContainer)
                 {
                     var (firstEp, languages, partialLanguages) = ScanContainerEpisodes(item, episodeScans);
@@ -2135,16 +2286,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         // language tags cover every episode (see ScanContainerEpisodes).
                         // The episode's own entry built the identical stream data
                         // when it ran earlier in this pass; share it (never mutated).
-                        if (episodeScans != null
-                            && episodeScans.TryGetValue(firstEp.Id, out var firstScan)
-                            && firstScan.StreamData != null)
+                        if (firstEp.StreamData != null)
                         {
-                            entry.StreamData = firstScan.StreamData;
+                            entry.StreamData = firstEp.StreamData;
                         }
-                        else
+                        else if (firstEp.Item != null)
                         {
-                            var (streams, sources, _) = ExtractMediaData(firstEp);
-                            entry.StreamData = BuildStreamData(firstEp, streams, sources);
+                            var (streams, sources, _) = ExtractMediaData(firstEp.Item);
+                            entry.StreamData = BuildStreamData(firstEp.Item, streams, sources);
                         }
 
                         entry.AudioLanguages = languages;
@@ -2153,7 +2302,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     if (kind == BaseItemKind.Season && entry.CommunityRating == null)
                     {
-                        var series = GetParentSeries(item);
                         if (series != null)
                         {
                             entry.CommunityRating = series.CommunityRating;
@@ -2168,7 +2316,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // For Season: store parent series TMDB ID + season number for user review key
                     if (kind == BaseItemKind.Season && item is MediaBrowser.Controller.Entities.TV.Season season)
                     {
-                        var series = GetParentSeries(item);
                         if (series?.ProviderIds?.TryGetValue("Tmdb", out var seriesTmdb) == true)
                             entry.SeriesTmdbId = seriesTmdb;
                         entry.SeasonNumber = season.IndexNumber;
@@ -2192,16 +2339,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     entry.StreamData = BuildStreamData(item, streams, sources);
                     entry.AudioLanguages = languages;
 
-                    if (kind == BaseItemKind.Episode && episodeScans != null)
+                    if (kind == BaseItemKind.Episode && episodeScans != null && item is MediaBrowser.Controller.Entities.TV.Episode scanned)
                     {
                         // Same "has streams" rule as ExtractAudioLanguages: the
                         // stream list only ever holds audio/video streams.
-                        episodeScans[item.Id] = new EpisodeScan(streams.Count > 0 ? languages : null, entry.StreamData);
+                        episodeScans[item.Id] = new EpisodeScan(streams.Count > 0 ? languages : null, entry.StreamData, EpisodePlacement.Of(scanned));
                     }
 
                     if (kind == BaseItemKind.Episode && entry.CommunityRating == null)
                     {
-                        var series = GetParentSeries(item);
                         if (series != null)
                         {
                             entry.CommunityRating = series.CommunityRating;
@@ -2212,7 +2358,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // For Episode: store parent series TMDB ID + season/episode numbers for user review key
                     if (kind == BaseItemKind.Episode && item is MediaBrowser.Controller.Entities.TV.Episode ep)
                     {
-                        var series = GetParentSeries(item);
                         if (series?.ProviderIds?.TryGetValue("Tmdb", out var seriesTmdb) == true)
                             entry.SeriesTmdbId = seriesTmdb;
                         entry.SeasonNumber = ep.ParentIndexNumber;
@@ -2395,9 +2540,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <see cref="BuildEntryForItem"/>); episodes missing from it are taken
         /// from their live cache entry when the pass allows it (see
         /// <see cref="EpisodeScanMemo"/>) or read here, and recorded for the
-        /// next container.
+        /// next container. In the full build the episodes come from the memo's
+        /// <see cref="EpisodeScanMemo.ContainerIndex"/> rather than a query per
+        /// container; both walks feed the same per-episode step in the same
+        /// order, so they produce the same entry.
         /// </summary>
-        private (BaseItem? FirstEpisode, string[] Languages, string[]? Partial) ScanContainerEpisodes(
+        private (RepresentativeEpisode? FirstEpisode, string[] Languages, string[]? Partial) ScanContainerEpisodes(
             BaseItem container,
             EpisodeScanMemo? episodeScans)
         {
@@ -2408,40 +2556,76 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // track layouts however many episodes it has, so these stay tiny.
             var regularSets = new Dictionary<string, string[]>(StringComparer.Ordinal);
             var specialSets = new Dictionary<string, string[]>(StringComparer.Ordinal);
+            var containerIsSeason = container is MediaBrowser.Controller.Entities.TV.Season;
+
+            // One episode's contribution, in scan order; the result is the
+            // "usable streams" answer the representative pick needs.
+            bool Accumulate(int? parentIndexNumber, string[]? languages)
+            {
+                if (languages == null) return false; // no streams: not a tag source
+                if (languages.Length == 0) return true; // streams but untagged audio: neutral
+
+                union.UnionWith(languages);
+                var identities = languages.Select(LanguageIdentity).Distinct().OrderBy(id => id, StringComparer.Ordinal).ToArray();
+                var isSpecial = parentIndexNumber == 0 && !containerIsSeason;
+                (isSpecial ? specialSets : regularSets).TryAdd(string.Join('|', identities), identities);
+                return true;
+            }
+
             try
             {
-                var firstEp = TagEpisodeSelector.ScanEpisodes(_libraryManager, container, null, episode =>
+                RepresentativeEpisode? firstEp;
+                if (episodeScans?.ContainerIndex is { } index)
                 {
-                    string[]? languages;
-                    if (episodeScans != null && episodeScans.TryGetValue(episode.Id, out var scan))
+                    // Full build: the container's episodes come from the index, in
+                    // the order its scan would have returned them, and every one of
+                    // them already has its memo record (or is a Late episode, read
+                    // here exactly as the scan's callback below would).
+                    var members = index.Members.TryGetValue(container.Id, out var ids) ? ids : new List<Guid>();
+                    var first = TagEpisodeSelector.SelectRepresentative(
+                        members.Select(id => ReadIndexedEpisode(id, index, episodeScans)),
+                        containerIsSeason,
+                        episode => episode.ParentIndexNumber,
+                        episode => Accumulate(episode.ParentIndexNumber, episode.Languages));
+                    firstEp = first == null ? null : new RepresentativeEpisode(first.Genres, first.StreamData, first.Item);
+                }
+                else
+                {
+                    var first = TagEpisodeSelector.ScanEpisodes(_libraryManager, container, null, episode =>
                     {
-                        languages = scan.Languages;
-                    }
-                    else if (episodeScans?.Pending != null
-                        && !episodeScans.Pending.Contains(episode.Id)
-                        && _cache.TryGetValue(episode.Id.ToString("N"), out var cached)
-                        && string.Equals(cached.Type, "Episode", StringComparison.Ordinal))
-                    {
-                        // Same "has streams" rule as the episode's own build: its
-                        // stream list only ever holds audio/video streams.
-                        languages = cached.StreamData?.Streams?.Count > 0 ? cached.AudioLanguages ?? Array.Empty<string>() : null;
-                        episodeScans[episode.Id] = new EpisodeScan(languages, cached.StreamData);
-                    }
-                    else
-                    {
-                        languages = ExtractAudioLanguages(episode);
-                        if (episodeScans != null) episodeScans[episode.Id] = new EpisodeScan(languages, null);
-                    }
+                        string[]? languages;
+                        if (episodeScans != null && episodeScans.TryGetValue(episode.Id, out var scan))
+                        {
+                            languages = scan.Languages;
+                        }
+                        else if (episodeScans?.Pending != null
+                            && !episodeScans.Pending.Contains(episode.Id)
+                            && _cache.TryGetValue(episode.Id.ToString("N"), out var cached)
+                            && string.Equals(cached.Type, "Episode", StringComparison.Ordinal))
+                        {
+                            // Same "has streams" rule as the episode's own build: its
+                            // stream list only ever holds audio/video streams.
+                            languages = cached.StreamData?.Streams?.Count > 0 ? cached.AudioLanguages ?? Array.Empty<string>() : null;
+                            episodeScans[episode.Id] = new EpisodeScan(languages, cached.StreamData);
+                        }
+                        else
+                        {
+                            languages = ExtractAudioLanguages(episode);
+                            if (episodeScans != null) episodeScans[episode.Id] = new EpisodeScan(languages, null);
+                        }
 
-                    if (languages == null) return false; // no streams: not a tag source
-                    if (languages.Length == 0) return true; // streams but untagged audio: neutral
+                        return Accumulate(episode.ParentIndexNumber, languages);
+                    }, stopAtFirstRegular: false);
 
-                    union.UnionWith(languages);
-                    var identities = languages.Select(LanguageIdentity).Distinct().OrderBy(id => id, StringComparer.Ordinal).ToArray();
-                    var isSpecial = episode.ParentIndexNumber == 0 && container is not MediaBrowser.Controller.Entities.TV.Season;
-                    (isSpecial ? specialSets : regularSets).TryAdd(string.Join('|', identities), identities);
-                    return true;
-                }, stopAtFirstRegular: false);
+                    // Stream data the pass already built for this episode (its own
+                    // entry, or the live cache entry recorded above), if any.
+                    firstEp = first == null
+                        ? null
+                        : new RepresentativeEpisode(
+                            first.Genres,
+                            episodeScans != null && episodeScans.TryGetValue(first.Id, out var firstScan) ? firstScan.StreamData : null,
+                            first);
+                }
 
                 // Two regional variants are separate dubs only when some episode
                 // carries both as separate tracks; otherwise they're one dub tagged
@@ -2473,6 +2657,191 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _logger.Warning($"[TagCache] Failed to scan episodes for {container.Id}: {ex.Message}");
                 return (null, Array.Empty<string>(), null);
             }
+        }
+
+        /// <summary>
+        /// What a container's scan callback reads from one of its episodes, in
+        /// the full build (see <see cref="ReadIndexedEpisode"/>).
+        /// </summary>
+        private sealed record IndexedEpisode(int? ParentIndexNumber, string[]? Languages, string[] Genres, TagStreamData? StreamData, BaseItem? Item);
+
+        /// <summary>
+        /// One indexed episode as the scan callback in
+        /// <see cref="ScanContainerEpisodes"/> would see it: the memo record its
+        /// own entry left, or — for a Late episode no earlier container has read
+        /// yet — its audio languages read now and recorded for the next
+        /// container, the same as the callback does for an episode it can't find
+        /// in the memo (a read that throws fails this container's scan, as it
+        /// did there). Safe to call from parallel container builds.
+        /// </summary>
+        private static IndexedEpisode ReadIndexedEpisode(Guid id, ContainerEpisodeIndex index, EpisodeScanMemo episodeScans)
+        {
+            index.Late.TryGetValue(id, out var late);
+            if (episodeScans.TryGetValue(id, out var scan) && scan.Placement is { } placement)
+            {
+                return new IndexedEpisode(placement.ParentIndexNumber, scan.Languages, placement.Genres, scan.StreamData, late);
+            }
+
+            // The index only lists episodes that have a placement or a Late item.
+            var episode = late ?? throw new InvalidOperationException($"Episode {id} is missing from the container index");
+            var languages = ExtractAudioLanguages(episode);
+            episodeScans[id] = new EpisodeScan(languages, null, EpisodePlacement.Of(episode));
+            return new IndexedEpisode(episode.ParentIndexNumber, languages, episode.Genres, null, episode);
+        }
+
+        /// <summary>
+        /// Files every non-virtual episode under the Series/Season entries the
+        /// full build is about to create, in the order each container's own scan
+        /// (<see cref="TagEpisodeSelector.ScanEpisodes"/>) returns them, with one
+        /// ordered library-wide id query instead of a paged query per container.
+        /// Each of those hydrated its episodes again and filtered on an ancestor
+        /// id across the library's episode rows, so their total cost grew with
+        /// containers x library episodes (most of a 58k-item build).
+        /// <para>
+        /// Membership is the scan's own: a recursive ParentId query on a Series
+        /// or Season is rewritten by Jellyfin into an AncestorIds filter on that
+        /// one id, and an episode's ancestor rows are written with the episode
+        /// (<c>Episode.GetAncestorIds</c> at save time): every item up its
+        /// ParentId chain, plus its <c>SeasonId</c> (the season it is filed
+        /// under even when it sits directly in the series folder). Both are
+        /// stored columns, read here from the episode pass's memo; the chain's
+        /// folders are the containers themselves (their ParentId read from one
+        /// light hydration) and, above or between them, a few library folders
+        /// resolved through Jellyfin's item cache. Episodes with no memo record
+        /// (no entry of their own this pass, e.g. added after the id query) are
+        /// hydrated here and kept as <see cref="ContainerEpisodeIndex.Late"/>,
+        /// standing in for the scan's own hydration of them.
+        /// </para>
+        /// </summary>
+        private ContainerEpisodeIndex BuildContainerEpisodeIndex(IReadOnlyList<Guid> containerIds, EpisodeScanMemo episodeScans, CancellationToken cancellationToken)
+        {
+            var orderedIds = TagEpisodeSelector.GetOrderedEpisodeIds(_libraryManager);
+
+            var late = new Dictionary<Guid, MediaBrowser.Controller.Entities.TV.Episode>();
+            var lateIds = orderedIds.Where(id => !(episodeScans.TryGetValue(id, out var scan) && scan.Placement != null)).ToList();
+            foreach (var page in HydrateInPages(lateIds, cancellationToken))
+            {
+                foreach (var item in page)
+                {
+                    if (item is MediaBrowser.Controller.Entities.TV.Episode episode) late[episode.Id] = episode;
+                }
+            }
+
+            var containerSet = containerIds.ToHashSet();
+            var parentOf = new Dictionary<Guid, Guid>();
+            foreach (var page in HydrateInPages(containerIds, cancellationToken))
+            {
+                foreach (var item in page) parentOf[item.Id] = item.ParentId;
+            }
+
+            // Containers on a folder's ParentId chain (the folder included),
+            // nearest first; memoized per folder, so a season's episodes walk it once.
+            var chains = new Dictionary<Guid, Guid[]>();
+            Guid[] ContainersOnChain(Guid folderId)
+            {
+                var path = new List<Guid>();
+                var tail = Array.Empty<Guid>();
+                for (var id = folderId; id != Guid.Empty;)
+                {
+                    if (chains.TryGetValue(id, out var known))
+                    {
+                        tail = known;
+                        break;
+                    }
+
+                    // Jellyfin's own walk (BaseItem.GetParents) has no guard; a
+                    // cycle or absurd depth here just ends the chain.
+                    if (path.Count >= 64 || path.Contains(id)) break;
+                    path.Add(id);
+                    id = ParentIdOf(id);
+                }
+
+                for (var i = path.Count - 1; i >= 0; i--)
+                {
+                    if (containerSet.Contains(path[i])) tail = tail.Prepend(path[i]).ToArray();
+                    chains[path[i]] = tail;
+                }
+
+                return path.Count > 0 ? chains[folderId] : tail;
+            }
+
+            // Same lookup BaseItem.GetParent does; an unresolvable parent ends the chain there too.
+            Guid ParentIdOf(Guid id)
+            {
+                if (!parentOf.TryGetValue(id, out var parentId))
+                {
+                    try
+                    {
+                        parentId = _libraryManager.GetItemById(id)?.ParentId ?? Guid.Empty;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Warning($"[TagCache] Failed to resolve folder {id} while grouping episodes: {ex.Message}");
+                        parentId = Guid.Empty;
+                    }
+
+                    parentOf[id] = parentId;
+                }
+
+                return parentId;
+            }
+
+            var placed = new List<(Guid Id, EpisodePlacement Placement)>(orderedIds.Count);
+            foreach (var id in orderedIds)
+            {
+                if (episodeScans.TryGetValue(id, out var scan) && scan.Placement is { } recorded)
+                {
+                    placed.Add((id, recorded));
+                }
+                else if (late.TryGetValue(id, out var episode))
+                {
+                    placed.Add((id, EpisodePlacement.Of(episode)));
+                }
+
+                // Otherwise gone since the id query (or not loadable): no scan would return it.
+            }
+
+            // Episodes the sort ranks equal (e.g. two versions of one episode,
+            // stored as separate items) have no order of their own in the id
+            // query. A container's scan loaded its items with their image,
+            // provider and user-data rows joined in, and Entity Framework orders
+            // such a query by the item key after the requested keys, so within
+            // its page the scan returned them by id (as stored: the GUID's
+            // string form, which orders the same in either letter case). Do the
+            // same here, so the representative and the language order match.
+            for (var start = 0; start < placed.Count;)
+            {
+                var end = start + 1;
+                while (end < placed.Count && placed[end].Placement.SortsEqualTo(placed[start].Placement)) end++;
+                if (end - start > 1)
+                {
+                    placed.Sort(start, end - start, Comparer<(Guid Id, EpisodePlacement Placement)>.Create(
+                        (a, b) => string.CompareOrdinal(a.Id.ToString("D"), b.Id.ToString("D"))));
+                }
+
+                start = end;
+            }
+
+            var members = new Dictionary<Guid, List<Guid>>();
+            void Add(Guid containerId, Guid episodeId)
+            {
+                if (!members.TryGetValue(containerId, out var list)) members[containerId] = list = new List<Guid>();
+                list.Add(episodeId);
+            }
+
+            foreach (var (id, placement) in placed)
+            {
+                var chain = placement.ParentId == Guid.Empty ? Array.Empty<Guid>() : ContainersOnChain(placement.ParentId);
+                foreach (var containerId in chain) Add(containerId, id);
+                if (placement.SeasonId != Guid.Empty
+                    && containerSet.Contains(placement.SeasonId)
+                    && Array.IndexOf(chain, placement.SeasonId) < 0)
+                {
+                    Add(placement.SeasonId, id);
+                }
+            }
+
+            return new ContainerEpisodeIndex(members, late);
         }
 
         /// <summary>
@@ -2565,6 +2934,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// memory-bounded on arbitrarily large libraries. An id that no longer
         /// resolves (deleted between the id query and its page) is simply absent
         /// from the returned page.
+        /// Items are loaded with <see cref="HydrationOptions"/>: the stored
+        /// columns plus provider ids, which is everything an entry reads.
         /// </summary>
         private IEnumerable<IReadOnlyList<BaseItem>> HydrateInPages(IReadOnlyList<Guid> ids, CancellationToken cancellationToken)
         {
@@ -2579,7 +2950,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     pageIds[i] = ids[offset + i];
                 }
 
-                yield return _libraryManager.GetItemList(new InternalItemsQuery { ItemIds = pageIds });
+                yield return _libraryManager.GetItemList(new InternalItemsQuery { ItemIds = pageIds, DtoOptions = HydrationOptions });
             }
         }
 
