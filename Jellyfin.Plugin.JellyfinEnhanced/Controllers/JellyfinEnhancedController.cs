@@ -3833,14 +3833,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// Whether a plugin with exactly this name is installed — the same test the
-        /// client used to run against GET /Plugins (which enumerates the same list).
+        /// Whether a plugin with exactly this name is installed and active. A disabled
+        /// (or failed) plugin serves nothing, so the client must treat it as absent --
+        /// the same rule the config page applies to GET /Plugins' Status field.
         /// </summary>
         private bool IsPluginInstalled(string name)
         {
             try
             {
-                return _pluginManager.Plugins.Any(p => string.Equals(p.Name, name, StringComparison.Ordinal));
+                return _pluginManager.Plugins.Any(p => string.Equals(p.Name, name, StringComparison.Ordinal)
+                    && p.Manifest.Status == PluginStatus.Active);
             }
             catch (Exception ex)
             {

@@ -398,6 +398,8 @@
             JE.pluginConfig.CalendarUseCustomTabs = false;
             JE.pluginConfig.HiddenContentUseCustomTabs = false;
             JE.pluginConfig.DownloadsUseCustomTabs = false;
+            JE.pluginConfig.RecommendationsUseCustomTabs = false;
+            JE.pluginConfig.ActivityFeedUseCustomTabs = false;
         }
         if (!hasPluginPages) {
             JE.pluginConfig.BookmarksUsePluginPages = false;
@@ -418,9 +420,10 @@
                 type: 'GET', url: ApiClient.getUrl('/Plugins'), dataType: 'json'
             });
             if (!Array.isArray(installedPlugins)) throw new Error('Unexpected /Plugins response');
+            // A disabled plugin serves nothing; count only active ones.
             applyDeliveryPluginFlags(
-                installedPlugins.some(p => p.Name === 'Custom Tabs'),
-                installedPlugins.some(p => p.Name === 'Plugin Pages')
+                installedPlugins.some(p => p.Name === 'Custom Tabs' && p.Status === 'Active'),
+                installedPlugins.some(p => p.Name === 'Plugin Pages' && p.Status === 'Active')
             );
         } catch (e) {
             console.warn('🪼 Jellyfin Enhanced: Could not verify installed plugins:', e);
