@@ -31,7 +31,7 @@
       var marker = document.createElement('div');
       marker.className = 'jellyfinenhanced recommendations';
       panel.appendChild(marker);
-    }, 'auto_awesome');
+    }, 'auto_awesome', '.jellyfinenhanced.recommendations');
   }
 
   var style = document.createElement('style');

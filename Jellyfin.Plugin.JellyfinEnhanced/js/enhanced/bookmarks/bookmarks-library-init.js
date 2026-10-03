@@ -100,7 +100,7 @@
             const marker = document.createElement('div');
             marker.className = 'sections bookmarks';
             panel.appendChild(marker);
-          }, 'location_on');
+          }, 'location_on', '.sections.bookmarks');
         }
 
         // Watch for section being injected by CustomTabs. Observe document.body

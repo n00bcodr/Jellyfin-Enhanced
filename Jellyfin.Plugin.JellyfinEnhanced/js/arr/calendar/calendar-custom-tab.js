@@ -31,7 +31,7 @@
       var marker = document.createElement('div');
       marker.className = 'jellyfinenhanced calendar';
       panel.appendChild(marker);
-    }, 'calendar_month');
+    }, 'calendar_month', '.jellyfinenhanced.calendar');
   }
 
   var style = document.createElement('style');

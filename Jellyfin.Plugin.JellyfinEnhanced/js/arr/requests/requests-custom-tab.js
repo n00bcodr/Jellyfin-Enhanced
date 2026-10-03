@@ -33,7 +33,7 @@
       var marker = document.createElement('div');
       marker.className = 'jellyfinenhanced requests';
       panel.appendChild(marker);
-    }, 'download');
+    }, 'download', '.jellyfinenhanced.requests');
   }
 
   var style = document.createElement('style');
