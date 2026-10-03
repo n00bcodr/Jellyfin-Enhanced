@@ -3506,6 +3506,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // Config-page stylesheet lives in Configuration/ next to configPage.html.
         [HttpGet("Configuration/configPage.css")]
         public ActionResult GetConfigPageStylesheet() => GetScriptResource("Configuration/configPage.css");
+
+        // The config page's logic, loaded by the small inline loader in configPage.html
+        // as ?v=<ScriptCacheKey> (read off the injected client script tag, like the
+        // stylesheet). A separate script lets the browser cache it, compile it off the
+        // main thread and reuse its code cache, where jellyfin-web re-evaluated the
+        // same ~470 KB inline on every open. Anonymous like every other static script
+        // here: a <script src> request carries no Jellyfin auth header, and the file
+        // is the same public source as the rest of the client (no config, no secrets);
+        // the settings themselves still come from the admin-only plugin config API.
+        [HttpGet("Configuration/configPage.js")]
+        public ActionResult GetConfigPageScript()
+        {
+            var result = GetScriptResource("Configuration/configPage.js");
+
+            // Year-long immutable caching only under this build's own key. A request
+            // with no key (the client script tag was not found) or another build's key
+            // (a tab left open across an upgrade) gets this build's script under a URL
+            // that a different build's configPage.html could request later (unversioned,
+            // or after a rollback), so that response is revalidated instead of pinned.
+            var requestedKey = Request.Query["v"].ToString();
+            var currentKey = JellyfinEnhanced.Instance?.ScriptCacheKey;
+            if (result is FileStreamResult
+                && Response.Headers["Cache-Control"].ToString().Contains("immutable", StringComparison.Ordinal)
+                && (string.IsNullOrEmpty(requestedKey) || !string.Equals(requestedKey, currentKey, StringComparison.Ordinal)))
+            {
+                Response.Headers["Cache-Control"] = "no-cache";
+            }
+
+            return result;
+        }
+
         // [AllowAnonymous]: version is loaded by translations.js cache-buster pre-login.
         // Information disclosure of the plugin version is acceptable — Jellyfin core
         // exposes its own version pre-auth too. CVEs against JE are tracked publicly
