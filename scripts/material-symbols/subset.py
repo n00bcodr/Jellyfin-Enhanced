@@ -50,7 +50,6 @@ ROOT = Path(__file__).resolve().parents[2]
 JS = ROOT / 'Jellyfin.Plugin.JellyfinEnhanced' / 'js'
 FONTS = JS / 'fonts'
 CONFIG_PAGE = ROOT / 'Jellyfin.Plugin.JellyfinEnhanced' / 'Configuration' / 'configPage.html'
-CONFIG_PAGE_JS = ROOT / 'Jellyfin.Plugin.JellyfinEnhanced' / 'Configuration' / 'configPage.js'
 
 # Icon names per face. Keep the comments: they say which module needs a name.
 ICONS = {
@@ -117,7 +116,7 @@ def scan_sources():
     match = re.search(r"const genreIconMap = \{(.*?)\n\s*\};", genre, re.S)
     if match:
         found['outlined'].update(re.findall(r":\s*'([a-z0-9_]+)'", match.group(1)))
-    files = list(JS.rglob('*.js')) + [CONFIG_PAGE, CONFIG_PAGE_JS]
+    files = list(JS.rglob('*.js')) + [CONFIG_PAGE]
     element = re.compile(r'<span\s+class="([^"]*)"[^>]*>\s*([a-z0-9_]+)\s*</span>')
     for path in files:
         text = path.read_text(encoding='utf-8')

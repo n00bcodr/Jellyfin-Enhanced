@@ -66,8 +66,6 @@
     <EmbeddedResource Include="Configuration\configPage.html"/>
     <None Remove="Configuration\configPage.css"/>
     <EmbeddedResource Include="Configuration\configPage.css"/>
-    <None Remove="Configuration\configPage.js"/>
-    <EmbeddedResource Include="Configuration\configPage.js"/>
     <!-- WhatsNewService's fallback baseline: setting ids from the last release before this feature existed (12.2.0.0). -->
     <None Remove="Configuration\whats-new-seed.json"/>
     <EmbeddedResource Include="Configuration\whats-new-seed.json"/>

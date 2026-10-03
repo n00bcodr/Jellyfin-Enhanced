@@ -10,8 +10,6 @@ In production the server concatenates the manifest into one script, `GET /Jellyf
 
 Three client scripts are **not** in the manifest and are loaded by their own dedicated loaders: `others/splashscreen.js` and `extras/login-image.js` (both injected early, before the component stage, so they can affect the login screen) and `enhanced/translations.js` (loaded at the start of `initialize()`, in parallel with the bootstrap request, ahead of the component stage).
 
-The admin settings page is `Configuration/configPage.html` (served by Jellyfin from `GetPages()`). Its logic lives in `Configuration/configPage.js`, not inline: a small inline script at the end of the page fetches it from `GET /JellyfinEnhanced/Configuration/configPage.js` with a synchronous request and runs it before returning, so it runs exactly when the inline script did (while jellyfin-web inserts the page, before the page is shown). The file is served `no-cache` with a content `ETag`, so every open revalidates (a 304 while unchanged) and never runs a stale copy. Setting controls stay in the HTML markup, which `WhatsNewService` and `scripts/generate_config_flag_groups.py` read.
-
 The client is delivered by `Services/ScriptInjectionStartupFilter.cs`, which injects `plugin.js` into the web client; all `js/**` files are embedded resources (`JellyfinEnhanced.csproj`) served by `GetScript` in `Controllers/JellyfinEnhancedController.cs`.
 
 ### File Structure
@@ -23,9 +21,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
 ├── JellyfinEnhanced.cs               # Plugin entry point, GetViews()
 ├── PluginServiceRegistrator.cs       # DI registration
 ├── Configuration/                    # PluginConfiguration.cs, UserConfiguration*.cs,
-│                                     # configPage.html + configPage.css + configPage.js
-│                                     # — the admin settings page (markup, styles, and
-│                                     # its script, served separately and cached; see above)
+│                                     # configPage.html + configPage.css — the admin
+│                                     # settings page
 ├── Controllers/                      # JellyfinEnhancedController.cs — every
 │                                     # /JellyfinEnhanced/* endpoint the client calls
 ├── PluginPages/                      # HTML wrappers for the sidebar/plugin pages
