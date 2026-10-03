@@ -209,6 +209,16 @@
     };
 
     /**
+     * Whether the request modals show the advanced options (server, quality profile,
+     * root folder). Needs the admin setting on and a user who may use them in Seerr.
+     * Reads the cached user status, so it is false until the status has loaded.
+     * @returns {boolean}
+     */
+    api.shouldShowAdvanced = function() {
+        return !!JE.pluginConfig?.JellyseerrShowAdvanced && cachedUserStatus?.canRequestAdvanced === true;
+    };
+
+    /**
      * Clears the cached user status (called when user logs out or on page refresh).
      * Now also wired to navigation/hashchange so transient SPA-session blips
      * don't outlive the page they happened on.

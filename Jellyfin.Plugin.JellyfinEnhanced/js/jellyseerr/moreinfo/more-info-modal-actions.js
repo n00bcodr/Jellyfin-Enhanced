@@ -20,7 +20,7 @@ function buildSingle4kButton(data) {
     button.addEventListener('click', async (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (JE.pluginConfig.JellyseerrShowAdvanced) {
+        if (JE.jellyseerrAPI.shouldShowAdvanced()) {
             window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true);
             return;
         }
@@ -78,7 +78,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
         mainButton.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (JE.pluginConfig.JellyseerrShowAdvanced) {
+            if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                 window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false);
                 return;
             }
@@ -150,7 +150,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
             option.addEventListener('click', async (ev) => {
                 ev.preventDefault();
                 ev.stopPropagation();
-                if (JE.pluginConfig.JellyseerrShowAdvanced) {
+                if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                     close4k();
                     window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true);
                     return;
@@ -196,7 +196,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
         requestButton.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (JE.pluginConfig.JellyseerrShowAdvanced) {
+            if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                 window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false);
                 return;
             }

@@ -741,7 +741,7 @@
                             return;
                         }
 
-                        if (JE.pluginConfig.JellyseerrShowAdvanced) {
+                        if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                             // Close popup and show advanced modal
                             if (popup) popup.remove();
                             showMovieRequestModal(tmdbId, titleText, searchResultItem, true);
@@ -808,7 +808,7 @@
             }
 
             if (mediaType === 'movie') {
-                if (JE.pluginConfig.JellyseerrShowAdvanced) {
+                if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                     showMovieRequestModal(tmdbId, titleText, searchResultItem);
                 } else {
                     button.disabled = true;

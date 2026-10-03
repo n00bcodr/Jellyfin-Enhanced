@@ -776,6 +776,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        // Seerr permissions that allow choosing server, quality profile and root folder on a request (ADMIN implies all).
+        private const JellyseerrPermission AdvancedRequestPermissions =
+            JellyseerrPermission.ADMIN | JellyseerrPermission.REQUEST_ADVANCED | JellyseerrPermission.MANAGE_REQUESTS;
+
+        private static readonly string[] AdvancedRequestFields = { "serverId", "profileId", "rootFolder", "languageProfileId", "tags" };
+
+        /// <summary>
+        /// Removes the advanced options (server, profile, root folder, language profile, tags) from a request body.
+        /// Returns the body unchanged when it is not a JSON object.
+        /// </summary>
+        private static string StripAdvancedRequestOptions(string content)
+        {
+            try
+            {
+                if (System.Text.Json.Nodes.JsonNode.Parse(content) is not System.Text.Json.Nodes.JsonObject body)
+                {
+                    return content;
+                }
+
+                foreach (var field in AdvancedRequestFields)
+                {
+                    body.Remove(field);
+                }
+
+                return body.ToJsonString();
+            }
+            catch (JsonException)
+            {
+                return content;
+            }
+        }
+
         private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null)
         {
             // Propagate client disconnects (superseded search queries, page
@@ -870,6 +902,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             if (!JellyseerrPermissionHelper.HasAnyPermission(perms,
                                 JellyseerrPermission.REQUEST | JellyseerrPermission.REQUEST_MOVIE | JellyseerrPermission.REQUEST_TV))
                                 return StatusCode(403, new { code = "no_request_permission", message = "You do not have permission to make requests in Seerr." });
+
+                            if (content != null && !JellyseerrPermissionHelper.HasAnyPermission(perms, AdvancedRequestPermissions))
+                                content = StripAdvancedRequestOptions(content);
                         }
 
                         // POST /api/v1/issue — report an issue
@@ -1295,7 +1330,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
             if (!string.IsNullOrEmpty(jellyseerrUserId))
             {
-                return Ok(new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId, reason = "linked" });
+                var seerrUser = await GetJellyseerrUser(jellyfinUserId);
+                var canRequestAdvanced = IsAdminUser()
+                    || (seerrUser != null && JellyseerrPermissionHelper.HasAnyPermission(seerrUser.Permissions, AdvancedRequestPermissions));
+                return Ok(new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId, reason = "linked", canRequestAdvanced });
             }
 
             // User not found — could be server unreachable, HTML challenge from
@@ -1406,7 +1444,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     bool canRequest = JellyseerrPermissionHelper.HasAnyPermission(perms,
                         JellyseerrPermission.REQUEST | JellyseerrPermission.REQUEST_MOVIE | JellyseerrPermission.REQUEST_TV);
                     if (canRequest && !JellyseerrPermissionHelper.HasPermission(perms, JellyseerrPermission.REQUEST_ADVANCED))
-                        issues.Add("Cannot use advanced request options (missing REQUEST_ADVANCED)");
+                        issues.Add("Advanced request options are hidden for this user (missing REQUEST_ADVANCED)");
                 }
 
                 // Requests page / view — without REQUEST_VIEW they only see their own requests
