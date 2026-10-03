@@ -80,8 +80,8 @@
     /** @type {Map<string, {promise: Promise<any>, signal: AbortSignal|null, limit: ConcurrencyOptions|null}>} */
     const inFlightRequests = new Map();
 
-    // Response cache with TTL (CONFIG.cache.ttlMs unless the entry carries its own)
-    /** @type {Map<string, {data: any, timestamp: number, ttlMs?: number}>} */
+    // Response cache with TTL
+    /** @type {Map<string, {data: any, timestamp: number}>} */
     const responseCache = new Map();
 
     // AbortController management per page/context
@@ -536,7 +536,7 @@
      */
     function getCached(key) {
         const entry = responseCache.get(key);
-        if (entry && Date.now() - entry.timestamp < (entry.ttlMs || CONFIG.cache.ttlMs)) {
+        if (entry && Date.now() - entry.timestamp < CONFIG.cache.ttlMs) {
             if (metrics.enabled) {
                 console.debug(`${logPrefix} Cache hit for ${key}`);
             }
@@ -556,9 +556,8 @@
      * Set cached response
      * @param {string} key
      * @param {*} data
-     * @param {number} [ttlMs] - Lifetime of this entry; defaults to CONFIG.cache.ttlMs.
      */
-    function setCache(key, data, ttlMs) {
+    function setCache(key, data) {
         // Evict oldest entries if at capacity
         if (responseCache.size >= CONFIG.cache.maxEntries) {
             const oldestKey = responseCache.keys().next().value;
@@ -567,8 +566,7 @@
 
         responseCache.set(key, {
             data,
-            timestamp: Date.now(),
-            ...(ttlMs && ttlMs > 0 ? { ttlMs } : {})
+            timestamp: Date.now()
         });
     }
 
@@ -750,8 +748,6 @@
      * @property {AbortSignal} [signal] - Caller-supplied abort signal.
      * @property {string} [cacheKey] - Enables response cache + in-flight dedup (GET only). Plain GETs
      *   without custom headers still share concurrent identical requests.
-     * @property {number} [cacheTtlMs] - Lifetime of the cached response; defaults to
-     *   CONFIG.cache.ttlMs (30 minutes). For data that may change sooner.
      * @property {boolean} [skipCache=false] - Bypass the response cache.
      * @property {boolean} [skipRetry=false] - Limit to a single attempt.
      * @property {boolean} [auth=true] - Include the Jellyfin auth headers.
@@ -776,7 +772,6 @@
             body,
             signal,
             cacheKey,
-            cacheTtlMs,
             skipCache = false,
             skipRetry = false,
             auth = true,
@@ -861,7 +856,7 @@
                 const data = text ? JSON.parse(text) : {};
 
                 if (isGet && cacheKey && (!JE.session || JE.session.isCurrent(requestEpoch))) {
-                    setCache(cacheKey, data, cacheTtlMs);
+                    setCache(cacheKey, data);
                 }
                 return data;
             } finally {
