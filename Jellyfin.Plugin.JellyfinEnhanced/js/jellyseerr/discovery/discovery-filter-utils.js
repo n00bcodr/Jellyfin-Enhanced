@@ -403,6 +403,77 @@
         });
     }
 
+    // The TMDB genre lists ({id, name} per genre, one list for TV and one for
+    // movies) are prefetched at startup so genre discovery has them at once.
+    // They rarely change, so they are also kept in sessionStorage, per server
+    // and user, for as long as the in-memory response cache keeps them (30
+    // minutes): a reload in the same tab then reuses them instead of asking
+    // the server again on every page load.
+    const GENRE_LIST_STORAGE_PREFIX = 'je-tmdb-genres:';
+    const GENRE_LIST_STORAGE_TTL_MS = 30 * 60 * 1000;
+
+    /**
+     * Builds the sessionStorage key for one TMDB genre list.
+     * @param {'tv'|'movie'} mediaType - Which list
+     * @returns {string|null} The key, or null while the server or user is unknown
+     */
+    function genreListStorageKey(mediaType) {
+        const serverId = JE.session?.getServerId?.();
+        const userId = JE.session?.getUserId?.();
+        if (!serverId || !userId) return null;
+        return `${GENRE_LIST_STORAGE_PREFIX}${serverId}:${userId}:${mediaType}`;
+    }
+
+    /**
+     * Reads a stored TMDB genre list. Anything missing, expired, unreadable or
+     * not shaped like a genre list counts as absent.
+     * @param {string} key - Key from genreListStorageKey
+     * @returns {Array<{id: number, name: string}>|null} The list, or null when absent
+     */
+    function readStoredGenreList(key) {
+        try {
+            const raw = sessionStorage.getItem(key);
+            if (!raw) return null;
+            const entry = JSON.parse(raw);
+            const age = Date.now() - (typeof entry?.storedAt === 'number' ? entry.storedAt : NaN);
+            if (!(age >= 0 && age < GENRE_LIST_STORAGE_TTL_MS)) return null;
+            const genres = entry.genres;
+            if (!Array.isArray(genres) || genres.length === 0) return null;
+            const wellFormed = genres.every(g => g && typeof g.id === 'number' && typeof g.name === 'string');
+            return wellFormed ? genres : null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    /**
+     * Fetches one TMDB genre list, from sessionStorage when this tab already
+     * has a fresh copy, otherwise through fetchWithManagedRequest (shared
+     * cache and in-flight dedup under the 'genre' prefix, as before) and then
+     * stores it.
+     * @param {'tv'|'movie'} mediaType - Which list
+     * @param {object} [options] - Fetch options including signal
+     * @returns {Promise<any>} The genre list (the endpoint's body when fetched)
+     */
+    async function fetchTmdbGenreList(mediaType, options = {}) {
+        const storageKey = genreListStorageKey(mediaType);
+        const stored = storageKey ? readStoredGenreList(storageKey) : null;
+        if (stored) return stored;
+
+        // Only keep a list fetched for the identity it was keyed under.
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const data = await fetchWithManagedRequest(`/JellyfinEnhanced/tmdb/genres/${mediaType}`, 'genre', options);
+        if (storageKey && Array.isArray(data) && data.length > 0
+            && (!JE.session || JE.session.isCurrent(requestEpoch))) {
+            try {
+                sessionStorage.setItem(storageKey, JSON.stringify({ storedAt: Date.now(), genres: data }));
+            } catch (_) {
+                // Storage full or unavailable: the next page load fetches again.
+            }
+        }
+        return data;
+    }
+
     /**
      * Creates cards and returns a DocumentFragment for batch DOM insertion
      * @param {Array} results - Array of items to create cards for
@@ -668,6 +739,7 @@
         createSectionHeader,
         // Shared utilities
         fetchWithManagedRequest,
+        fetchTmdbGenreList,
         createCardsFragment,
         waitForPageReady,
         setupInfiniteScroll,

@@ -965,9 +965,16 @@
                     jellyseerrUserFound = status.userFound;
                     console.debug(`${logPrefix} Status: active=${isJellyseerrActive}, userFound=${jellyseerrUserFound}`);
                     initializePageObserver();
-                    // The TMDB genre lists are not prefetched here: only genre
-                    // discovery uses them, and it fetches (and keeps) them itself
-                    // in parallel with its other lookups on the first genre page.
+
+                    // Prefetch TMDB genres in the background for instant discovery
+                    // (no request when this tab already keeps fresh copies in
+                    // sessionStorage, e.g. after a reload)
+                    if (isJellyseerrActive && JE.pluginConfig?.JellyseerrShowGenreDiscovery !== false) {
+                        Promise.all([
+                            JE.discoveryFilter?.fetchTmdbGenreList?.('tv', {})?.catch(() => {}),
+                            JE.discoveryFilter?.fetchTmdbGenreList?.('movie', {})?.catch(() => {})
+                        ]).catch(() => {});
+                    }
                 } else if (Date.now() - startTime > timeout) {
                     console.warn(`${logPrefix} Timed out waiting for user session. Features may be limited.`);
                     initializePageObserver();

@@ -17,7 +17,8 @@
         JE.discoveryFilter.fetchWithManagedRequest(path, 'genre', options);
 
     /**
-     * Fetches TMDB genre lists and caches them
+     * Fetches TMDB genre lists and caches them. Normally already prefetched at
+     * startup or kept in sessionStorage (JE.discoveryFilter.fetchTmdbGenreList).
      * @param {AbortSignal} [signal] - Optional abort signal
      */
     async function fetchTmdbGenres(signal) {
@@ -30,8 +31,8 @@
 
             const fetchOptions = { signal };
             const [tvResponse, movieResponse] = await Promise.all([
-                fetchWithManagedRequest('/JellyfinEnhanced/tmdb/genres/tv', fetchOptions).catch(() => []),
-                fetchWithManagedRequest('/JellyfinEnhanced/tmdb/genres/movie', fetchOptions).catch(() => [])
+                JE.discoveryFilter.fetchTmdbGenreList('tv', fetchOptions).catch(() => []),
+                JE.discoveryFilter.fetchTmdbGenreList('movie', fetchOptions).catch(() => [])
             ]);
 
             if (signal?.aborted) {

@@ -581,7 +581,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 | GET | `script` | The injected client `<script>` bundle |
 | GET | `js/{**path}` | Individual JS module files |
 | GET | `Configuration/configPage.css` | Admin config page stylesheet |
-| GET | `Configuration/configPage.js` | Admin config page script, loaded by the page's inline loader (immutable-cached under the `?v=` client-script key) |
+| GET | `Configuration/configPage.js` | Admin config page script, loaded synchronously by the page's inline script (`no-cache` with a content `ETag`, so an unchanged script is a 304) |
 | GET | `version` | Plugin version |
 | GET | `private-config` | Admin-only: full plugin config |
 | GET | `public-config` | Curated, non-sensitive config subset the client script reads |

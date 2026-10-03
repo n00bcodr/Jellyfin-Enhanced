@@ -45,14 +45,6 @@
             font-feature-settings: 'liga';
             -webkit-font-smoothing: antialiased;
         }
-        /* Set by the configPage.js loader at the end of this page until the script
-           has wired the page (inline here, not in configPage.css, so it applies
-           before that stylesheet has loaded). Opacity rather than visibility so the
-           layout and jellyfin-web's autofocus behave exactly as when visible. */
-        #JellyfinEnhancedPage.je-config-loading > [data-role="content"] {
-            opacity: 0;
-            pointer-events: none;
-        }
     </style>
     <div data-role="content">
         <div class="content-primary">
@@ -3006,49 +2998,41 @@
         </div>
     </div>
 <script type="text/javascript">
-        // The page logic lives in configPage.js, served by the plugin as its own
-        // long-cached, versioned script (GET /JellyfinEnhanced/Configuration/configPage.js)
-        // instead of ~470 KB of inline script that jellyfin-web re-evaluated on every open.
-        // jellyfin-web runs this loader synchronously while inserting the page, so
-        // the markup is already in the document, exactly as the inline script saw it.
+        // The page logic lives in configPage.js (GET /JellyfinEnhanced/Configuration/configPage.js),
+        // so this ~300 KB page no longer carries ~470 KB of inline script. It still runs
+        // synchronously, right here: jellyfin-web's view loader runs this script while it
+        // inserts the page, and the synchronous request below runs configPage.js before
+        // this script returns, so the markup is in the document and the page is set up
+        // before jellyfin-web shows it or dispatches its pageshow, exactly as with the
+        // inline script. (The view loader would fetch a <script src> the same way, but
+        // only from the same origin and a fixed URL; ApiClient.getUrl also covers a
+        // reverse-proxy sub-path and a web client served from another origin.)
+        // The file is served with Cache-Control: no-cache and a content ETag, so each
+        // open costs a revalidation (304 when unchanged) and never runs a stale copy.
         (function () {
-            var page = document.querySelector('#JellyfinEnhancedPage');
-            if (!page) return;
-
-            // configPage.js arrives asynchronously, so jellyfin-web may dispatch this
-            // view's pageshow (which triggers loadConfig) before the script has run and
-            // registered its listener. Record it; configPage.js replays it once.
-            function recordPageshow() { page.jeConfigPageshowMissed = true; }
-            page.addEventListener('pageshow', recordPageshow);
-
-            // Keep the page laid out and focusable but invisible and unclickable until
-            // configPage.js has wired it, so the half-initialised markup never shows.
-            // jeConfigScriptPending makes sure only one script run wires this page.
-            page.classList.add('je-config-loading');
-            page.jeConfigScriptPending = true;
-            function settle() {
-                page.removeEventListener('pageshow', recordPageshow);
-                page.classList.remove('je-config-loading');
+            var url = ApiClient.getUrl('/JellyfinEnhanced/Configuration/configPage.js');
+            var source = null;
+            try {
+                var xhr = new XMLHttpRequest();
+                xhr.open('GET', url, false);
+                xhr.send();
+                if (xhr.status === 200) source = xhr.responseText;
+            } catch (e) {
+                // Network failure: reported below.
             }
-
-            // Same cache key as the injected client script and configPage.css.
-            var jeTag = document.querySelector('script[plugin="Jellyfin Enhanced"]');
-            var jeVersion = jeTag && jeTag.getAttribute('version');
-            var script = document.createElement('script');
-            script.src = ApiClient.getUrl('/JellyfinEnhanced/Configuration/configPage.js', jeVersion ? { v: jeVersion } : undefined);
-            script.onload = function () {
-                settle();
-                script.remove();
-            };
-            script.onerror = function () {
-                settle();
-                script.remove();
-                console.error('[JE] Failed to load the settings page script: ' + script.src);
+            if (source === null) {
+                console.error('[JE] Failed to load the settings page script: ' + url);
                 if (window.Dashboard && typeof Dashboard.alert === 'function') {
                     Dashboard.alert('Jellyfin Enhanced could not load its settings page script. Reload the page to try again.');
                 }
-            };
-            document.head.appendChild(script);
+                return;
+            }
+            // Run it as a classic global script, the way the view loader ran the inline
+            // one (an inline <script> inserted into <head> runs synchronously); the
+            // sourceURL names it in DevTools and stack traces.
+            var script = document.createElement('script');
+            script.text = source + '\n//# sourceURL=' + url;
+            document.head.appendChild(script).parentNode.removeChild(script);
         })();
 </script>
 </div>

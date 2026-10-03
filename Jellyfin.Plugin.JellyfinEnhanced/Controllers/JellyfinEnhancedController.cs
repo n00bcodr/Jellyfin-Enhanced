@@ -3507,35 +3507,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpGet("Configuration/configPage.css")]
         public ActionResult GetConfigPageStylesheet() => GetScriptResource("Configuration/configPage.css");
 
-        // The config page's logic, loaded by the small inline loader in configPage.html
-        // as ?v=<ScriptCacheKey> (read off the injected client script tag, like the
-        // stylesheet). A separate script lets the browser cache it, compile it off the
-        // main thread and reuse its code cache, where jellyfin-web re-evaluated the
-        // same ~470 KB inline on every open. Anonymous like every other static script
-        // here: a <script src> request carries no Jellyfin auth header, and the file
+        // The config page's logic, which used to be ~470 KB of inline script in
+        // configPage.html. The page's inline script fetches it with a synchronous
+        // request and runs it at the old inline script's position, so it still runs
+        // before jellyfin-web shows the page. Served with no-cache and a strong ETag
+        // (hash of the content) rather than a versioned immutable URL: a tab left open
+        // across an upgrade keeps no version of its own to request, and revalidating on
+        // every open (a 304 while unchanged) means the browser never runs a copy that
+        // does not match the markup it was just served. Anonymous like every other
+        // static script here: the request carries no Jellyfin auth header, and the file
         // is the same public source as the rest of the client (no config, no secrets);
         // the settings themselves still come from the admin-only plugin config API.
         [HttpGet("Configuration/configPage.js")]
         public ActionResult GetConfigPageScript()
         {
-            var result = GetScriptResource("Configuration/configPage.js");
-
-            // Year-long immutable caching only under this build's own key. A request
-            // with no key (the client script tag was not found) or another build's key
-            // (a tab left open across an upgrade) gets this build's script under a URL
-            // that a different build's configPage.html could request later (unversioned,
-            // or after a rollback), so that response is revalidated instead of pinned.
-            var requestedKey = Request.Query["v"].ToString();
-            var currentKey = JellyfinEnhanced.Instance?.ScriptCacheKey;
-            if (result is FileStreamResult
-                && Response.Headers["Cache-Control"].ToString().Contains("immutable", StringComparison.Ordinal)
-                && (string.IsNullOrEmpty(requestedKey) || !string.Equals(requestedKey, currentKey, StringComparison.Ordinal)))
+            var script = _configPageScript.Value;
+            if (script == null)
             {
-                Response.Headers["Cache-Control"] = "no-cache";
+                return NotFound();
             }
 
-            return result;
+            Response.Headers["Cache-Control"] = "no-cache";
+            Response.Headers["ETag"] = script.Value.ETag;
+            if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], script.Value.ETag))
+            {
+                return StatusCode(304);
+            }
+
+            return File(script.Value.Content, "application/javascript");
         }
+
+        // configPage.js and its ETag, read from the embedded resource once per process
+        // (the content is fixed for the lifetime of this build).
+        private static readonly Lazy<(byte[] Content, string ETag)?> _configPageScript = new(() =>
+        {
+            using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("Jellyfin.Plugin.JellyfinEnhanced.Configuration.configPage.js");
+            if (stream == null)
+            {
+                return null;
+            }
+
+            using var buffer = new MemoryStream();
+            stream.CopyTo(buffer);
+            var content = buffer.ToArray();
+            var etag = "\"" + Convert.ToHexString(SHA256.HashData(content), 0, 16) + "\"";
+            return (content, etag);
+        });
 
         // [AllowAnonymous]: version is loaded by translations.js cache-buster pre-login.
         // Information disclosure of the plugin version is acceptable — Jellyfin core

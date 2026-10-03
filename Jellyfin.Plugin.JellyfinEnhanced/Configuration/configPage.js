@@ -3,20 +3,14 @@
  *
  * This used to be an inline <script> at the end of configPage.html. It is now
  * served on its own by GET /JellyfinEnhanced/Configuration/configPage.js
- * (JellyfinEnhancedController.GetConfigPageScript) under the plugin's
- * versioned cache key, so the browser can cache it, stream-compile it off the
- * main thread and reuse its code cache, instead of jellyfin-web re-evaluating
- * ~470 KB of inline script on every page open.
+ * (JellyfinEnhancedController.GetConfigPageScript, no-cache with a content
+ * ETag) so the page HTML stays small and an unchanged script costs a 304.
  *
- * configPage.html's small inline loader inserts this file as a classic
- * (non-module) script once the page markup is in the document, so it runs in
- * global scope and finds the page through the same document.querySelector
- * lookups as before. Because the script now arrives asynchronously, the loader
- * also marks the page as waiting for this file (jeConfigScriptPending, checked
- * at the top of the IIFE below so a page is wired exactly once), hides it until
- * this file has run (class je-config-loading) and records a `pageshow` that
- * jellyfin-web dispatched before it ran (jeConfigPageshowMissed); the last two
- * are handled at the end of the IIFE.
+ * configPage.html's inline script, at the old inline script's position, loads
+ * this file with a synchronous request and runs it as a classic global script
+ * before returning, so it still runs while jellyfin-web inserts the page: the
+ * markup is in the document, the page is not shown yet and its first pageshow
+ * has not been dispatched, exactly as before.
  *
  * Setting controls must stay in configPage.html's markup: WhatsNewService
  * and scripts/generate_config_flag_groups.py read their ids and labels from
@@ -27,13 +21,6 @@
 
             const page = document.querySelector('#JellyfinEnhancedPage');
             const form = document.querySelector('#JellyfinEnhancedForm');
-            // configPage.html's loader marks the page it inserted this file for.
-            // Wire a page exactly once: if the admin navigated away while this file
-            // was loading, the page can be gone, or a newer copy of it can already
-            // have been wired by the script an earlier (since destroyed) copy of
-            // the page requested; there is nothing to do then.
-            if (!page || !form || !page.jeConfigScriptPending) return;
-            page.jeConfigScriptPending = false;
 
             // Point every CDN-backed image on this page at the local plugin CDN route.
             // Images carry a data-je-cdn="<source>/<path>" attribute instead of a hardcoded
@@ -7824,21 +7811,4 @@
             }
             document.body.removeChild(textarea);
         }
-
-        // configPage.html's loader inserts this file asynchronously, so
-        // jellyfin-web may have dispatched this view's `pageshow` before the
-        // listener above existed (inline, this code always ran first). The
-        // loader records that on the page element; replay it here exactly
-        // once, after all of the setup above and on a later task (as the real
-        // event would have been), unless the view is no longer the one shown,
-        // in which case its next pageshow reaches the listener directly.
-        if (page.jeConfigPageshowMissed) {
-            page.jeConfigPageshowMissed = false;
-            setTimeout(() => {
-                if (page.isConnected && !page.classList.contains('hide')) loadConfig();
-            }, 0);
-        }
-        // The loader hides the page until it is wired; reveal it in the same
-        // task as the setup so the half-initialised markup is never painted.
-        page.classList.remove('je-config-loading');
     })();
