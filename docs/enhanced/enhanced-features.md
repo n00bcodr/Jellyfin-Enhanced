@@ -18,6 +18,8 @@ The More menu uses labeled buttons. On short screens, previous/next buttons show
 
 ### Random Button
 
+![Random button picking a title](../images/readme/random.webp)
+
 The dice button (or `R`) opens a random movie or show from your library. In the Enhanced panel's **Random Button** tab you can limit it to unwatched items, choose whether movies and/or shows are eligible, and narrow the pool under **Random Source**:
 
 - **Use the playlist or collection I'm viewing** - on a playlist or collection page, the pick comes from that container's items (movies, shows or episodes) instead of the whole library.
@@ -197,7 +199,7 @@ Comprehensive hotkeys for navigation, playback control, and more.
 
 ### Smart Bookmarks
 
-![Bookmark markers on the video timeline](../images/bookmarks-timeline.png)
+![Bookmark markers on the video timeline](../images/readme/player-bookmarks.webp)
 
 Save timestamps and jump to specific moments with visual timeline markers.
 
@@ -229,7 +231,7 @@ Save timestamps and jump to specific moments with visual timeline markers.
 
 Beautiful overlay with media info when you pause a video.
 
-![Pause Screen](../images/pausescreen.png)
+![Pause Screen](../images/readme/pause-screen.webp)
 
 **Displays:**
 
@@ -403,7 +405,7 @@ Search, request, and discover media directly from Jellyfin's search interface.
 
 ### Seerr Item Details
 
-![Seerr recommendations and similar items on a detail page](../images/seerr-recommendations.png)
+![Seerr recommendations and similar items on a detail page](../images/readme/recommendations.webp)
 
 View recommendations and similar items on detail pages.
 
@@ -478,6 +480,7 @@ Jellyfin users can write their own reviews for movies, series, seasons, and epis
 - Average user rating chip displayed next to TMDB/RT ratings in the item media info bar
 - Average user rating also shown as a poster tag (`person_heart` icon) on library cards when rating tags are enabled
 - Admin moderation — admins can delete any user's review
+- Optional: star ratings given in a review can also be saved as the user's Jellyfin rating on the item, so scrobblers and Letterboxd/Trakt-style sync tools that read Jellyfin user data pick them up
 
 **How to write a review:**
 
@@ -494,7 +497,8 @@ Jellyfin users can write their own reviews for movies, series, seasons, and epis
 3. Enable **"Show User Reviews"**
 4. Optionally enable **"Show User Rating on Posters"** to display the average rating as a poster tag
 5. Optionally disable **"Show User Rating Dash"** to hide the `—` placeholder on posters when no ratings exist yet
-6. Click **Save**
+6. Optionally enable **"Also save review star ratings as the user's Jellyfin rating"** to mirror each review's 1-5 star rating (scaled to Jellyfin's 0-10) onto the user's Jellyfin rating for that movie or series. Off by default because it overwrites a rating the user may have set elsewhere. Deleting a review (or removing its stars) clears the Jellyfin rating only if it still matches the review's rating, so a rating changed elsewhere in the meantime is kept. Season/episode reviews are not mirrored
+7. Click **Save**
 
 !!! note
     The poster tag requires the user to also have **Rating Tags** enabled in the Enhanced panel (Settings tab).
@@ -506,6 +510,8 @@ Admins see a delete button on all reviews, not just their own. A confirmation di
 ---
 
 ### Activity Feed
+
+![Activity Feed page](../images/readme/activity.webp)
 
 Shows recently watched, favorited, and reviewed titles across the server, so users can see what others are up to. Each viewer only ever sees activity for items they themselves have library access to - someone else's activity on a library you can't see never appears.
 
@@ -557,6 +563,8 @@ See [Elsewhere Features](../elsewhere/elsewhere-features.md#tmdb-reviews) for fu
 ## Visual Enhancements
 
 ### Quality Tags
+
+![Quality, genre, language, age rating and score badges on posters](../images/readme/library-tags.webp)
 
 Display quality information (4K, HDR, Atmos) directly on posters.
 
@@ -627,6 +635,19 @@ Display available audio languages as country flags on posters.
     (`pt-BR`, `es-MX`, `pob`…). Tracks tagged with only a base language code
     can't be told apart, so they show the language's default flag.
 
+### Audio Language Links
+
+Audio languages on item detail pages link to Jellyfin's list of items with that language.
+
+**Features:**
+
+- Backed by Jellyfin tags written by the **Sync Audio Language Tags to Jellyfin** scheduled task (movies and series)
+- A regional track gets two tags: a base tag (`JE Language: English`) and a regional tag (`JE Language: English (United States)`)
+- A regional language links to its regional tag; a base language links to the base tag
+- Series use the union of languages across their episodes
+- A language without a matching tag on the item is shown as plain text
+- Tags for languages an item no longer has are removed on each sync
+
 ### Rating Tags
 
 Show TMDB and Rotten Tomatoes ratings on posters and in player.
@@ -658,9 +679,49 @@ Show the item's parental / age rating (PG-13, R, TV-MA, FSK 12, BBFC 15, ...) as
     Spoiler Guard keeps the badge: a series' or movie's age rating reveals nothing about the plot, and the details page shows it regardless. While Spoiler Guard is hiding ratings, unwatched episodes (and unstarted seasons) of a guarded series show the series' rating rather than their own, since an episode rated higher than its show can hint at what happens in it.
 
 
+### Native Poster Tags (Experimental)
+
+Show your Media Tags in native Jellyfin apps that can't run Jellyfin Enhanced's web overlays, such as the official Android TV app. The server draws each user's tags into the poster images it sends to those apps, so they appear without any change to the app.
+
+<!-- Screenshot placeholder: Android TV home row with native poster tags (native-poster-tags-androidtv.png) -->
+<!-- Screenshot placeholder: same poster on the web (overlay) and on Android TV (drawn in) side by side (native-poster-tags-compare.png) -->
+
+**What gets drawn:**
+
+- Quality, genre, language, rating (with the user-review chip) and age rating tags, matching the web look as closely as a static image allows
+- Movies, series, seasons, episodes, collections and videos, on their primary images (posters, and episode thumbnails in landscape layout)
+- Each user's own tag choices, corners, quality categories and order, preferred audio language, priority languages and rating item-type scope, the same settings the web overlays use
+- Spoiler Guard is respected: guarded items use the same spoiler-safe tag data as the web, and tags are drawn on top of the blurred image
+
+**Which apps:**
+
+- Native apps, for example Jellyfin for Android TV, Jellyfin for Tizen, Swiftfin, Findroid and Streamyfin
+- Apps that already run Jellyfin Enhanced's web overlays keep the original posters so tags are never drawn twice: Jellyfin Web, Jellyfin Media Player, Jellyfin Desktop, Jellyfin for WebOS and Jellyfin for Android (the phone app). Admins can add more names in the settings
+- An app that builds poster addresses without Jellyfin's image tag, or asks Jellyfin to draw its own watched or unplayed-count indicator into the image, keeps the original posters
+
+**Setup:**
+
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Display** → **Media Tags**
+2. Turn on **Enable Native Poster Tags (Experimental)** at the bottom
+3. Click **Save**
+4. Every user now gets their tags in native apps; anyone who doesn't want them can turn off *Show Tags in Native Clients* in the Enhanced panel's UI Settings
+5. Reopen the library, or restart the app, on the TV or phone
+
+See [Enhanced Settings - Native Poster Tags](enhanced-settings.md#native-poster-tags-experimental) for every setting.
+
+**Limitations:**
+
+- **Static layout.** There is no hover, so hover-only details (genre names, Hide Tags on Hover) don't apply. Tag size follows the poster's width rather than the size the app displays it at
+- **No row or page context.** The server only sees an image request, not where it is shown. The Continue Watching and Next Up rating scopes are not applied (the per-item-type scopes are), Disable Tags on Search Page has no effect, and the tags also appear wherever the app reuses the poster, such as its details page
+- **Posters are re-downloaded after a change.** Turning the feature on, changing your tag settings, or a change to an item's tag data gives its posters a new address, so the app downloads them again
+- **First-view CPU cost.** Each poster is drawn the first time it is viewed at a given size, which uses some server CPU; a big home screen on a fresh cache can mean a short burst of work. Drawn posters are cached in memory and in Jellyfin's cache folder
+- **Apps may need a refresh.** Native apps cache poster addresses, so a change shows after reopening the library or restarting the app
+- **With Server-Side Tag Cache off**, changed tag data can take up to an hour to show on a poster an app has already downloaded
+- Original artwork files are never modified
+
 ### People Tags
 
-![People tags on cast cards](../images/people-tags.png)
+![People tags on cast cards](../images/readme/cast-tags.webp)
 
 Display age and birthplace information for cast members.
 
@@ -679,6 +740,8 @@ Display age and birthplace information for cast members.
 - Deceased styling (grayscale filter)
 
 ### Awards
+
+![Expanded awards panel listing wins and nominations](../images/readme/awards.webp)
 
 Show award wins and nominations on item detail pages and person pages, sourced from [Wikidata](https://www.wikidata.org/) by TMDB id.
 

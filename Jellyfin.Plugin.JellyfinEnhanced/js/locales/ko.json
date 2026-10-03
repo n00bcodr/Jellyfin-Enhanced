@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "모든 에피소드에 있지는 않음",
+    "panel_settings_ui_native_poster_tags_desc": "Android TV처럼 태그를 표시할 수 없는 네이티브 앱을 위해, 아래의 태그 선택, 모서리, 순서에 따라 포스터 이미지에 태그를 그려 넣습니다. 웹 클라이언트는 기존 오버레이를 그대로 사용합니다. 변경 사항을 보려면 라이브러리를 다시 열거나 TV 앱을 다시 시작하세요.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} 네이티브 포스터 설정이 저장되었습니다. 포스터를 새로 고치려면 라이브러리를 다시 열거나 TV 앱을 다시 시작하세요.",
+    "panel_settings_ui_native_poster_tags": "네이티브 클라이언트에 태그 표시 (실험적)"
 }

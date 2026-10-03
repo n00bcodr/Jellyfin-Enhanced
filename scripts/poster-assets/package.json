@@ -1,0 +1,12 @@
+{
+  "name": "je-poster-assets",
+  "private": true,
+  "description": "Pinned Chromium rasteriser for scripts/build_poster_assets.py (flag-icons -> WebP). Not part of the plugin build.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "playwright": "1.58.2"
+  }
+}

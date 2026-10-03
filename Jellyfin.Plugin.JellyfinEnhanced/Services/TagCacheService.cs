@@ -1236,6 +1236,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var entry = BuildEntryForItem(item, episodeScans);
             if (entry == null) return false;
 
+            // Before the no-op guard: tags can be missing while the entry is unchanged
+            SyncAudioLanguageTags(item, kind, entry);
+
             var key = id.ToString("N").ToLowerInvariant();
 
             // No-op guard: Jellyfin raises ItemUpdated for every item a nightly
@@ -1346,6 +1349,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 Interlocked.Decrement(ref _owner._inPlaceWriters);
+            }
+        }
+
+        /// <summary>
+        /// Syncs a movie's or series' audio-language tags with its freshly built entry.
+        /// Runs on the flush worker. The tag write raises ItemUpdated, which queues one
+        /// more rebuild that makes no change.
+        /// </summary>
+        private void SyncAudioLanguageTags(BaseItem item, BaseItemKind kind, TagCacheEntry entry)
+        {
+            if (kind != BaseItemKind.Movie && kind != BaseItemKind.Series) return;
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.AudioLanguageTagSyncEnabled) return;
+
+            try
+            {
+                var updated = AudioLanguageTagHelper.BuildUpdatedTags(
+                    item.Tags, entry.AudioLanguages, AudioLanguageTagHelper.GetPrefix(config), _localization);
+                if (updated == null) return;
+
+                item.Tags = updated;
+                item.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, CancellationToken.None).GetAwaiter().GetResult();
+                _logger.Info($"[TagCache] Updated audio language tags for '{item.Name}'");
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[TagCache] Failed to update audio language tags for '{item.Name}': {ex.Message}");
             }
         }
 
@@ -1761,6 +1792,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             return hash;
+        }
+
+        /// <summary>
+        /// The live shared entry for one item (native poster tags). False when the
+        /// server tag cache is off, not yet published or has no entry for the item.
+        /// The entry is shared across users and must be treated as immutable
+        /// (<see cref="TagCacheEntry.Clone"/> before changing it).
+        /// </summary>
+        public bool TryGetEntry(Guid itemId, out TagCacheEntry entry)
+        {
+            entry = null!;
+            if (!ServerModeEnabled || _cacheReleased) return false;
+            var cache = _cache; // one volatile read of the current generation
+            if (!cache.TryGetValue(itemId.ToString("N"), out var found) || found == null) return false;
+            entry = found;
+            return true;
+        }
+
+        /// <summary>
+        /// Builds the entry an item would have in the server tag cache, without
+        /// touching the cache (native poster tags when the cache is off or has no
+        /// entry yet). Same derivation as the cache, including the Series/Season
+        /// episode scan, so it can be expensive for containers: callers memoize.
+        /// Null for non-taggable items or when the build fails.
+        /// </summary>
+        public TagCacheEntry? BuildEntryOnDemand(BaseItem item)
+        {
+            if (item == null || !TaggableTypes.Contains(item.GetBaseItemKind())) return null;
+            return BuildEntryForItem(item);
         }
 
         /// <summary>

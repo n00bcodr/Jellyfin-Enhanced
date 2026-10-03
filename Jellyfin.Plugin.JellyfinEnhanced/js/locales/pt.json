@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "não em todos os episódios",
+    "panel_settings_ui_native_poster_tags_desc": "Desenha as suas tags nas imagens dos pósteres para aplicações nativas como o Android TV que não as conseguem mostrar de outra forma, usando as escolhas de tags, cantos e ordem abaixo. Os clientes web mantêm as sobreposições habituais. Volte a abrir a biblioteca ou reinicie a aplicação da TV para ver uma alteração.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} Preferência de pósteres nativos guardada. Volte a abrir a biblioteca ou reinicie a aplicação da TV para atualizar os pósteres.",
+    "panel_settings_ui_native_poster_tags": "Mostrar Tags em Clientes Nativos (Experimental)"
 }

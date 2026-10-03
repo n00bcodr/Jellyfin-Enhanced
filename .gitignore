@@ -323,3 +323,6 @@ auth.json
 /site
 /.kiro
 scripts/deploy*
+
+# Local test output (poster tag harnesses and captures)
+/.engineering-artifacts/

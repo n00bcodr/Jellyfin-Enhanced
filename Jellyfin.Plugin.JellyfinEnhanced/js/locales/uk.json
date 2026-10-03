@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "не в усіх епізодах",
+    "panel_settings_ui_native_poster_tags_desc": "Малює ваші теги на постерах для нативних застосунків, таких як Android TV, які інакше не можуть їх показати, згідно з вибором тегів, кутів і порядку нижче. Веб-клієнти зберігають звичайні накладки. Відкрийте бібліотеку знову або перезапустіть застосунок на телевізорі, щоб побачити зміну.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} Налаштування нативних постерів збережено. Відкрийте бібліотеку знову або перезапустіть застосунок на телевізорі, щоб оновити постери.",
+    "panel_settings_ui_native_poster_tags": "Показувати теги в нативних клієнтах (експериментально)"
 }

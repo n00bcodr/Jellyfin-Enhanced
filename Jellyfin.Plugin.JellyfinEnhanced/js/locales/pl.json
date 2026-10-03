@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "nie we wszystkich odcinkach",
+    "panel_settings_ui_native_poster_tags_desc": "Rysuje Twoje tagi na obrazach plakatów dla aplikacji natywnych, takich jak Android TV, które inaczej nie mogą ich wyświetlić, według wybranych poniżej tagów, rogów i kolejności. Klienty internetowe zachowują zwykłe nakładki. Otwórz bibliotekę ponownie lub uruchom ponownie aplikację telewizyjną, aby zobaczyć zmianę.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} Zapisano preferencję plakatów natywnych. Otwórz bibliotekę ponownie lub uruchom ponownie aplikację telewizyjną, aby odświeżyć jej plakaty.",
+    "panel_settings_ui_native_poster_tags": "Pokaż tagi w klientach natywnych (eksperymentalne)"
 }

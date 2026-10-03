@@ -106,7 +106,7 @@
             return;
         }
 
-        const showAdvanced = JE.pluginConfig.JellyseerrShowAdvanced;
+        const showAdvanced = JE.jellyseerrAPI.shouldShowAdvanced();
 
         // Create checkbox list of movies in the collection with posters and status badges
         const movieListHtml = collectionDetails.parts.map(movie => {

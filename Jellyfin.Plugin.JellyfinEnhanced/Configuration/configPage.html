@@ -416,6 +416,38 @@
                                 </button>
                                 <div class="fieldDescription">Forces clients to clear caches on next load. May cause initial slowness.</div>
                             </div>
+
+                            <div class="fieldDescription" style="margin-top: 20px;"><strong>Native Poster Tags</strong> — the tags above, drawn into poster images for apps that can't show the web overlays.</div>
+
+                            <div class="checkboxContainer"><label><input id="nativePosterTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Native Poster Tags (Experimental)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="nativePosterTagsEnabled">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">
+                                    <ul style="margin:4px 0 0 20px; padding:0;">
+                                        <li>Experimental. Draws each user's Media Tags into poster images for native apps such as Android TV, which can't show Jellyfin Enhanced's web overlays</li>
+                                        <li>Uses each user's own tag choices, corners and order. Users can turn it off with Show Tags in Native Clients in the Enhanced panel under UI Settings</li>
+                                        <li>Web-based apps (Jellyfin Web, Media Player, Desktop, WebOS, Android) already show the overlays, so they keep the original posters</li>
+                                        <li>Each poster is drawn the first time it is viewed, which uses some server CPU, and is then cached</li>
+                                        <li>Apps may need to reopen the library or restart to show changes</li>
+                                        <li>Original artwork files are never modified</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="nativePosterTagsWebClientNames">Additional Excluded Clients</label>
+                                <textarea class="emby-textarea emby-input je-textarea-medium" id="nativePosterTagsWebClientNames" name="nativePosterTagsWebClientNames" placeholder="One per line"></textarea>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="nativePosterTagsWebClientNames">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">
+                                    <ul style="margin:4px 0 0 20px; padding:0;">
+                                        <li>Apps listed here never get tags drawn into their posters</li>
+                                        <li>Add apps that already show Jellyfin Enhanced's tags themselves, such as a custom wrapper around the Jellyfin web UI, so tags aren't shown twice</li>
+                                        <li>Always excluded already: Jellyfin Web, Jellyfin Media Player, Jellyfin Desktop, Jellyfin for WebOS and Jellyfin for Android. No need to list these</li>
+                                        <li>Every other app gets drawn-in tags</li>
+                                        <li>Enter each name exactly as shown under Dashboard → Devices, one per line or comma separated</li>
+                                    </ul>
+                                </div>
+                            </div>
                         </div>
                     </fieldset>
 
@@ -676,6 +708,31 @@
                             </div>
                             <div class="je-setting-description" data-desc-for="DefaultLanguage">
                                 <div class="fieldDescription">Sets the default language for all users. Users can still override this in their own settings.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">translate</i>Audio Language Tags</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer je-main-feature"><label><input id="audioLanguageTagSyncEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Audio Language Tags Sync</span></label></div>
+                            <div class="je-setting-description" data-desc-for="audioLanguageTagSyncEnabled">
+                                <div class="fieldDescription je-field-desc-xl">
+                                    Adds each movie's and series' audio languages as Jellyfin tags. A regional track such as en-US gets a base tag ("JE Language: English") and a regional tag ("JE Language: English (United States)").
+                                    <br/><br/>
+                                    Existing items are tagged by the "Sync Audio Language Tags to Jellyfin" scheduled task. New and changed items are tagged after a library scan when the Server-Side Tag Cache is enabled.
+                                </div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="audioLanguageTagPrefix">Tag Prefix</label>
+                                <input id="audioLanguageTagPrefix" is="emby-input" name="audioLanguageTagPrefix" type="text" placeholder="JE Language: "/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="audioLanguageTagPrefix">
+                                <div class="fieldDescription">Prefix added before each language, e.g. "JE Language: English".</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="audioLanguageTagShowAsLinks" is="emby-checkbox" type="checkbox"/><span>Link audio languages to their tag page</span></label></div>
+                            <div class="je-setting-description" data-desc-for="audioLanguageTagShowAsLinks">
+                                <div class="fieldDescription je-field-desc-xl">Links each audio language on item detail pages to Jellyfin's list of items with that tag.</div>
                             </div>
                         </div>
                     </fieldset>
@@ -973,7 +1030,7 @@
                             <div class="checkboxContainer"><label><input id="bookmarksUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs for Bookmarks</span></label></div>
                             <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-bookmarks" style="display:none;">
                                 <i class="material-icons je-note-icon">info</i>
-                                <div>On Jellyfin 12, <strong>"Add Bookmarks as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                                <div>On Jellyfin 12, <strong>"Add Bookmarks as a native Home tab"</strong> is more reliable than Custom Tabs. The two cannot be enabled together.</div>
                             </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="bookmarksUseCustomTabs,bookmarksEnabled">
@@ -1053,7 +1110,7 @@
                             <div class="checkboxContainer"><label><input id="hiddenContentUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs for Hidden Content</span></label></div>
                             <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-hiddenContent" style="display:none;">
                                 <i class="material-icons je-note-icon">info</i>
-                                <div>On Jellyfin 12, <strong>"Add Hidden Content as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                                <div>On Jellyfin 12, <strong>"Add Hidden Content as a native Home tab"</strong> is more reliable than Custom Tabs. The two cannot be enabled together.</div>
                             </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="hiddenContentUseCustomTabs,hiddenContentEnabled">
@@ -1261,7 +1318,7 @@
                             <div class="checkboxContainer"><label><input id="downloadsUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs for Requests</span></label></div>
                             <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-downloads" style="display:none;">
                                 <i class="material-icons je-note-icon">info</i>
-                                <div>On Jellyfin 12, <strong>"Add Requests as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                                <div>On Jellyfin 12, <strong>"Add Requests as a native Home tab"</strong> is more reliable than Custom Tabs. The two cannot be enabled together.</div>
                             </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="downloadsUseCustomTabs,downloadsPageEnabled">
@@ -1355,7 +1412,7 @@
                             <div class="checkboxContainer"><label><input id="calendarUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs</span></label></div>
                             <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-calendar" style="display:none;">
                                 <i class="material-icons je-note-icon">info</i>
-                                <div>On Jellyfin 12, <strong>"Add Calendar as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                                <div>On Jellyfin 12, <strong>"Add Calendar as a native Home tab"</strong> is more reliable than Custom Tabs. The two cannot be enabled together.</div>
                             </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="calendarUseCustomTabs,calendarPageEnabled">
@@ -1477,7 +1534,7 @@
                             <div class="checkboxContainer"><label><input id="recommendationsUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs</span></label></div>
                             <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-recommendations" style="display:none;">
                                 <i class="material-icons je-note-icon">info</i>
-                                <div>On Jellyfin 12, <strong>"Add Recommendations as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                                <div>On Jellyfin 12, <strong>"Add Recommendations as a native Home tab"</strong> is more reliable than Custom Tabs. The two cannot be enabled together.</div>
                             </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="recommendationsUseCustomTabs,recommendationsPageEnabled">
@@ -1565,7 +1622,7 @@
                             <div class="checkboxContainer"><label><input id="activityFeedUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs</span></label></div>
                             <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-activityFeed" style="display:none;">
                                 <i class="material-icons je-note-icon">info</i>
-                                <div>On Jellyfin 12, <strong>"Add Activity as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                                <div>On Jellyfin 12, <strong>"Add Activity as a native Home tab"</strong> is more reliable than Custom Tabs. The two cannot be enabled together.</div>
                             </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="activityFeedUseCustomTabs,activityFeedEnabled">
@@ -1736,7 +1793,7 @@
                             </div>
                             <div class="checkboxContainer"><label><input id="jellyseerrShowAdvanced" is="emby-checkbox" type="checkbox"/><span>Show advanced request options</span></label></div>
                             <div class="je-setting-description" data-desc-for="jellyseerrShowAdvanced">
-                                <div class="fieldDescription je-field-desc-xl">Enable this if you want users to be able to choose between Servers, Quality and Paths while requesting. <br/> Note: This will disregard any Override Rules set in Seerr.</div>
+                                <div class="fieldDescription je-field-desc-xl">Lets users choose the Server, Quality and Path while requesting. Only shown to users with the Advanced Requests (or Manage Requests) permission in Seerr. <br/> Note: This will disregard any Override Rules set in Seerr.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="jellyseerrShowQuotaInfo" is="emby-checkbox" type="checkbox"/><span>Show request quota info</span></label></div>
                             <div class="je-setting-description" data-desc-for="jellyseerrShowQuotaInfo">
@@ -2442,6 +2499,10 @@
                             <div class="checkboxContainer"><label><input id="hideReviewsFromDisabledUsers" is="emby-checkbox" type="checkbox"/><span>Hide reviews from disabled users</span></label></div>
                             <div class="je-setting-description" data-desc-for="hideReviewsFromDisabledUsers">
                                 <div class="fieldDescription je-field-desc-sm-font-lg">When enabled, reviews written by Jellyfin users marked as "Disable this user" are hidden from non-admin viewers. Admins always see all reviews.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="mirrorReviewRatingsToJellyfin" is="emby-checkbox" type="checkbox"/><span>Also save review star ratings as the user's Jellyfin rating</span></label></div>
+                            <div class="je-setting-description" data-desc-for="mirrorReviewRatingsToJellyfin">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">When a user rates a movie or series in a review, also write that rating (scaled to Jellyfin's 0-10) to their Jellyfin user rating for the item, so scrobblers and rating sync tools that read Jellyfin user data pick it up. Overwrites any rating the user set elsewhere. Deleting a review, or removing its stars, clears the Jellyfin rating only if it still matches the review; a rating changed elsewhere since is left alone. Season/episode reviews are not mirrored.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="showUserRatingOnPosters" is="emby-checkbox" type="checkbox"/><span>Show average user rating on poster cards</span></label></div>
                             <div class="je-setting-description" data-desc-for="showUserRatingOnPosters">
@@ -5829,6 +5890,8 @@
                 document.querySelector('#showAudioLanguages').checked = config.ShowAudioLanguages;
                 document.querySelector('#removeContinueWatchingEnabled').checked = config.RemoveContinueWatchingEnabled;
                 document.querySelector('#qualityTagsEnabled').checked = config.QualityTagsEnabled;
+                document.querySelector('#nativePosterTagsEnabled').checked = config.NativePosterTagsEnabled === true;
+                document.querySelector('#nativePosterTagsWebClientNames').value = config.NativePosterTagsWebClientNames || '';
                 document.querySelector('#showResolutionTag').checked = config.ShowResolutionTag !== false;
                 document.querySelector('#showSourceTag').checked = config.ShowSourceTag !== false;
                 document.querySelector('#showDynamicRangeTag').checked = config.ShowDynamicRangeTag !== false;
@@ -5907,6 +5970,7 @@
                 document.querySelector('#showReleaseDate').checked = !!config.ShowReleaseDates;
                 document.querySelector('#hideReviewsFromHiddenUsers').checked = config.HideReviewsFromHiddenUsers !== false;
                 document.querySelector('#hideReviewsFromDisabledUsers').checked = config.HideReviewsFromDisabledUsers !== false;
+                document.querySelector('#mirrorReviewRatingsToJellyfin').checked = config.MirrorReviewRatingsToJellyfin === true;
                 document.querySelector('#showUserRatingDash').checked = config.ShowUserRatingDash !== false;
                 document.querySelector('#showUserRatingOnPosters').checked = config.ShowUserRatingOnPosters === true;
                 document.querySelector('#jellyseerrEnabled').checked = config.JellyseerrEnabled;
@@ -5998,6 +6062,9 @@
                 document.querySelector('#arrTagsSyncFilter').value = config.ArrTagsSyncFilter || '';
                 document.querySelector('#arrTagsLinksFilter').value = config.ArrTagsLinksFilter || '';
                 document.querySelector('#arrTagsLinksHideFilter').value = config.ArrTagsLinksHideFilter || '';
+                document.querySelector('#audioLanguageTagSyncEnabled').checked = config.AudioLanguageTagSyncEnabled === true;
+                document.querySelector('#audioLanguageTagPrefix').value = config.AudioLanguageTagPrefix || 'JE Language: ';
+                document.querySelector('#audioLanguageTagShowAsLinks').checked = config.AudioLanguageTagShowAsLinks !== false;
                 document.querySelector('#DefaultSubtitleStyle').value = config.DefaultSubtitleStyle;
                 document.querySelector('#DefaultSubtitleSize').value = config.DefaultSubtitleSize;
                 document.querySelector('#DefaultSubtitleFont').value = config.DefaultSubtitleFont;
@@ -6387,6 +6454,8 @@
             config.ShowAudioLanguages = document.querySelector('#showAudioLanguages').checked;
             config.RemoveContinueWatchingEnabled = document.querySelector('#removeContinueWatchingEnabled').checked;
             config.QualityTagsEnabled = document.querySelector('#qualityTagsEnabled').checked;
+            config.NativePosterTagsEnabled = document.querySelector('#nativePosterTagsEnabled').checked;
+            config.NativePosterTagsWebClientNames = document.querySelector('#nativePosterTagsWebClientNames').value.trim();
             config.ShowResolutionTag = document.querySelector('#showResolutionTag').checked;
             config.ShowSourceTag = document.querySelector('#showSourceTag').checked;
             config.ShowDynamicRangeTag = document.querySelector('#showDynamicRangeTag').checked;
@@ -6450,6 +6519,7 @@
             config.ShowReleaseDates = document.querySelector('#showReleaseDate').checked;
             config.HideReviewsFromHiddenUsers = document.querySelector('#hideReviewsFromHiddenUsers').checked;
             config.HideReviewsFromDisabledUsers = document.querySelector('#hideReviewsFromDisabledUsers').checked;
+            config.MirrorReviewRatingsToJellyfin = document.querySelector('#mirrorReviewRatingsToJellyfin').checked;
             config.ShowUserRatingDash = document.querySelector('#showUserRatingDash').checked;
             config.ShowUserRatingOnPosters = document.querySelector('#showUserRatingOnPosters').checked;
             config.JellyseerrEnabled = document.querySelector('#jellyseerrEnabled').checked;
@@ -6592,6 +6662,9 @@
             config.ArrTagsSyncFilter = document.querySelector('#arrTagsSyncFilter').value || '';
             config.ArrTagsLinksFilter = document.querySelector('#arrTagsLinksFilter').value || '';
             config.ArrTagsLinksHideFilter = document.querySelector('#arrTagsLinksHideFilter').value || '';
+            config.AudioLanguageTagSyncEnabled = document.querySelector('#audioLanguageTagSyncEnabled').checked;
+            config.AudioLanguageTagPrefix = document.querySelector('#audioLanguageTagPrefix').value || 'JE Language: ';
+            config.AudioLanguageTagShowAsLinks = document.querySelector('#audioLanguageTagShowAsLinks').checked;
             config.DefaultSubtitleStyle = parseInt(document.querySelector('#DefaultSubtitleStyle').value, 10);
             config.DefaultSubtitleSize = parseInt(document.querySelector('#DefaultSubtitleSize').value, 10);
             config.DefaultSubtitleFont = parseInt(document.querySelector('#DefaultSubtitleFont').value, 10);
@@ -6871,6 +6944,7 @@
             e.preventDefault();
             if (_jeSaveInFlight) return false;
             _jeSaveInFlight = true;
+            enforceTabExclusivity();
             Dashboard.showLoadingMsg();
             var saveBtns = document.querySelectorAll('.je-save-dock-btn');
             saveBtns.forEach(function(b) { b.disabled = true; });
@@ -7937,10 +8011,11 @@
         }
 
         var PARENT_DEPS = [
+            { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['nativePosterTagsWebClientNames'] },
             { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
-            { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'showUserRatingDash', 'showUserRatingOnPosters'] },
+            { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'mirrorReviewRatingsToJellyfin', 'showUserRatingDash', 'showUserRatingOnPosters'] },
             { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows', 'randomScopeCurrentContainer'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
             { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser'], noHint: true },
@@ -7961,6 +8036,7 @@
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },
             { parent: 'arrTagsShowAsLinks', label: 'Show synced tags as links', children: ['arrTagsLinksFilter', 'arrTagsLinksHideFilter'] },
+            { parent: 'audioLanguageTagSyncEnabled', label: 'Enable Audio Language Tags Sync', children: ['audioLanguageTagPrefix', 'audioLanguageTagShowAsLinks'] },
             { parent: 'calendarPageEnabled', label: 'Enable Calendar Page', children: ['calendarUsePluginPages', 'calendarUseNativeTab', 'calendarUseCustomTabs', 'calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
             { parent: 'recommendationsPageEnabled', label: 'Enable Recommendations Page', children: ['recommendationsUseNativeTab', 'recommendationsUsePluginPages', 'recommendationsUseCustomTabs', 'recommendationsAutoCreateCustomTab'] },
             { parent: 'activityFeedEnabled', label: 'Enable Activity Feed', children: ['activityFeedShowWatched', 'activityFeedShowFavorited', 'activityFeedShowReviewed', 'activityFeedShowActiveStreams', 'activityFeedUseNativeTab', 'activityFeedUsePluginPages', 'activityFeedUseCustomTabs', 'activityFeedAutoCreateCustomTab'] },
@@ -8861,12 +8937,38 @@
             }
         })();
 
+        // A page can use the native Home tab or Custom Tabs, never both: the two
+        // would register competing tabs for the same page.
+        var TAB_EXCLUSIVE_PAIRS = ['bookmarks', 'hiddenContent', 'downloads', 'calendar', 'recommendations', 'activityFeed'].map(function(p) {
+            return { native: p + 'UseNativeTab', custom: p + 'UseCustomTabs' };
+        });
+
+        function enforceTabExclusivity(changedId) {
+            TAB_EXCLUSIVE_PAIRS.forEach(function(pair) {
+                var nativeBox = document.getElementById(pair.native);
+                var customBox = document.getElementById(pair.custom);
+                if (!nativeBox || !customBox || !nativeBox.checked || !customBox.checked) return;
+                // The box the admin just ticked wins; on load/save the native tab wins.
+                var loser = changedId === pair.native ? customBox : changedId === pair.custom ? nativeBox : customBox;
+                loser.checked = false;
+                loser.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+        }
+
+        TAB_EXCLUSIVE_PAIRS.forEach(function(pair) {
+            [pair.native, pair.custom].forEach(function(id) {
+                var box = document.getElementById(id);
+                if (box) box.addEventListener('change', function() { enforceTabExclusivity(id); });
+            });
+        });
+
         /**
          * Orchestrator: evaluates all section, individual, and parent dependency rules.
          * Each step is isolated so a throw in the status dashboard (which reads a lot
          * of field values) can't cascade and break dependency updates.
          */
         function updateAllDependencies() {
+            enforceTabExclusivity();
             SECTION_DEPS.forEach(updateSectionDep);
             INDIVIDUAL_DEPS.forEach(updateIndividualDep);
             CUSTOM_TABS_V12_HINTS.forEach(updateCustomTabsV12Hint);

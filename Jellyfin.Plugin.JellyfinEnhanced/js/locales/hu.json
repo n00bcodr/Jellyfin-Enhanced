@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "nem minden epizódon",
+    "panel_settings_ui_native_poster_tags_desc": "Rárajzolja a címkéidet a poszterképekre azoknak a natív alkalmazásoknak, mint az Android TV, amelyek egyébként nem tudják megjeleníteni őket, az alábbi címkeválasztás, sarkok és sorrend szerint. A webes kliensek megtartják a szokásos rétegeket. Nyisd meg újra a könyvtárat, vagy indítsd újra a TV-alkalmazást a változás megtekintéséhez.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} A natív poszterek beállítása mentve. Nyisd meg újra a könyvtárat, vagy indítsd újra a TV-alkalmazást a posztereinek frissítéséhez.",
+    "panel_settings_ui_native_poster_tags": "Címkék megjelenítése natív kliensekben (kísérleti)"
 }

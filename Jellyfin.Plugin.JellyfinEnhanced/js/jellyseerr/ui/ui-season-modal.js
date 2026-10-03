@@ -90,7 +90,7 @@
             || normalizedTitle
             || 'Unknown Show';
 
-        const showAdvanced = JE.pluginConfig.JellyseerrShowAdvanced;
+        const showAdvanced = JE.jellyseerrAPI.shouldShowAdvanced();
 
         // No TVDB id on TMDB (common for anime): Seerr can't hand the show to
         // Sonarr, and its own web UI asks the user to pick a match (#653).

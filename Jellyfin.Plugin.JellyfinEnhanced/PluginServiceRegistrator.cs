@@ -2,6 +2,8 @@ using System.Net.Http;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.EventHandlers;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering;
 using Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks;
 using MediaBrowser.Controller.Events;
 using MediaBrowser.Controller.Library;
@@ -84,6 +86,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddTransient<AnalyticsReportTask>();
             serviceCollection.AddTransient<RefreshCdnAssetsTask>();
             serviceCollection.AddTransient<ArrTagsSyncTask>();
+            serviceCollection.AddTransient<AudioLanguageTagsSyncTask>();
             serviceCollection.AddTransient<MdblistRatingsFetchTask>();
             serviceCollection.AddTransient<MdblistRatingsSyncTask>();
             serviceCollection.AddTransient<BuildTagCacheTask>();
@@ -152,16 +155,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // write path for titles that were already in the library. Run by
             // SpoilerApplyExistingTitlesTask; previewed by the config page.
             serviceCollection.AddSingleton<SpoilerExistingTitlesApplier>();
+            // Spoiler Guard's tag-data strip, shared by GET /tag-cache, POST
+            // /tag-data and native poster tags.
+            serviceCollection.AddSingleton<SpoilerTagDataStripper>();
+
+            // Native Poster Tags (experimental, NativePosterTagsEnabled): JE's
+            // card tags drawn into Primary images for clients that don't run
+            // the web overlays. SpoilerIdentityTagFilter stamps a "-jet"
+            // variant token into eligible image tags (NativePosterTagStamper);
+            // PosterTagImageFilter draws the composite on matching image
+            // requests. Every service is inert while the master switch is off.
+            serviceCollection.AddSingleton<NativeClientPolicy>();
+            serviceCollection.AddSingleton<PosterTagSettingsProvider>();
+            // Short TTL in front of IUserManager.GetUserById (a DB transaction
+            // per call on Jellyfin 12) for the viewer and review-author lookups.
+            serviceCollection.AddSingleton<PosterTagUserCache>();
+            serviceCollection.AddSingleton<PosterTagVariantToken>();
+            serviceCollection.AddSingleton<PosterTagReviewRatings>();
+            serviceCollection.AddSingleton<PosterTagDataProvider>();
+            serviceCollection.AddSingleton<CompositeImageCache>();
+            serviceCollection.AddSingleton<PosterTagRenderer>();
+            serviceCollection.AddSingleton<PosterTagComposer>();
+            serviceCollection.AddSingleton<NativePosterTagStamper>();
+            serviceCollection.AddSingleton<PosterTagImageFilter>();
 
             serviceCollection.Configure<MvcOptions>(o =>
             {
-                // All three are IAsyncActionFilters that rewrite the response after
+                // All are IAsyncActionFilters that rewrite the response after
                 // `await next()`, so post-processing runs in REVERSE registration order.
                 // Identity-tag stamping must run after field-strip cache-busting so
-                // clients echo the final "sb-...-jeu..." tag on image requests.
+                // clients echo the final "sb-...-jet...-jeu..." tag on image requests.
+                // The poster tag image filter is registered BEFORE the blur filter so
+                // it post-processes AFTER it: tags are drawn on Spoiler Guard's output.
                 o.Filters.AddService<HiddenContentResponseFilter>();
                 o.Filters.AddService<SpoilerIdentityTagFilter>();
                 o.Filters.AddService<SpoilerFieldStripFilter>();
+                o.Filters.AddService<PosterTagImageFilter>();
                 o.Filters.AddService<SpoilerBlurImageFilter>();
             });
         }

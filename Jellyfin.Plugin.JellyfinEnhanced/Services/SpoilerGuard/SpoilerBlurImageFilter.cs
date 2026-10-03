@@ -44,6 +44,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private const string TrickplayController = "Trickplay";
         public const string SpoilerBlurFileName = "spoilerblur.json";
 
+        // Set in HttpContext.Items whenever this filter takes over the response's
+        // caching (no-store pass-through registered via OnStarting, or a replaced
+        // image). Outer image filters (native poster tags) read it so they never
+        // weaken caching, even before the OnStarting callback has run.
+        public const string NoStoreHttpContextItem = "JE.Img.SpoilerNoStore";
+
         // Image controller actions we care about. Jellyfin 10.11.x decorates
         // the same C# methods with both [HttpGet] and [HttpHead(Name="HeadItemImage")];
         // Name= only affects link generation, so RouteValues["action"] for a HEAD
@@ -709,6 +715,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             try
             {
+                httpContext.Items[NoStoreHttpContextItem] = true;
                 if (httpContext.Response.HasStarted)
                 {
                     return;
@@ -728,6 +735,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static void ApplyNoStoreHeadersDirect(Microsoft.AspNetCore.Http.HttpContext httpContext, string imageType = "")
         {
+            httpContext.Items[NoStoreHttpContextItem] = true;
             var headers = httpContext.Response.Headers;
             // Chapter / scene preview images render in a hover-tooltip on
             // the player timeline. Strict no-store made every hover round-

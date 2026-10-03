@@ -53,8 +53,14 @@
 
             // Convert data back to PascalCase for server C# deserialization
             let dataToSave = settings;
+            // currentSettings carries the resolved native-poster value (on). Leave it
+            // unset on disk until the user explicitly switches it in the panel.
+            if (fileName === 'settings.json' && settings === JE.currentSettings
+                && JE.userConfig?.settings?.useNativePosterTags == null) {
+                dataToSave = { ...settings, useNativePosterTags: null };
+            }
             if ((fileName === 'bookmark.json' || fileName === 'settings.json') && typeof window.JellyfinEnhanced?.toPascalCase === 'function') {
-                dataToSave = window.JellyfinEnhanced.toPascalCase(settings);
+                dataToSave = window.JellyfinEnhanced.toPascalCase(dataToSave);
             }
 
             const serialized = JSON.stringify(dataToSave);
@@ -107,6 +113,7 @@
             watchProgressTimeFormat: 'hours',
             pauseScreenEnabled: true,
             pauseScreenDelaySeconds: 5,
+            useNativePosterTags: true,
             qualityTagsEnabled: false, genreTagsEnabled: false, languageTagsEnabled: false, ratingTagsEnabled: false, ageRatingTagsEnabled: false, peopleTagsEnabled: false, tagsHideOnHover: false,
             showResolutionTag: true, showSourceTag: true, showDynamicRangeTag: true, showSpecialFormatTag: true, showVideoCodecTag: true, showAudioInfoTag: true,
             resolutionTagOrder: 1, sourceTagOrder: 2, dynamicRangeTagOrder: 3, specialFormatTagOrder: 4, videoCodecTagOrder: 5, audioInfoTagOrder: 6,

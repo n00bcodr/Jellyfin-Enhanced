@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "tüm bölümlerde yok",
+    "panel_settings_ui_native_poster_tags_desc": "Etiketlerinizi, aksi halde gösteremeyen Android TV gibi yerel uygulamalar için, aşağıdaki etiket seçimlerini, köşeleri ve sıralamayı kullanarak poster görsellerine çizer. Web istemcileri olağan katmanları korur. Değişikliği görmek için kitaplığı yeniden açın veya TV uygulamasını yeniden başlatın.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} Yerel poster tercihi kaydedildi. Posterleri yenilemek için kitaplığı yeniden açın veya TV uygulamanızı yeniden başlatın.",
+    "panel_settings_ui_native_poster_tags": "Yerel İstemcilerde Etiketleri Göster (Deneysel)"
 }

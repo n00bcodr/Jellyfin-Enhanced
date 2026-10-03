@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "ei kaikissa jaksoissa",
+    "panel_settings_ui_native_poster_tags_desc": "Piirtää tunnisteesi julistekuviin natiiveille sovelluksille, kuten Android TV, jotka eivät muuten voi näyttää niitä, käyttäen alla olevia tunnistevalintoja, kulmia ja järjestystä. Verkkoasiakkaat säilyttävät tavalliset peittokuvat. Avaa kirjasto uudelleen tai käynnistä TV-sovellus uudelleen nähdäksesi muutoksen.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} Natiivijulisteiden asetus tallennettu. Avaa kirjasto uudelleen tai käynnistä TV-sovelluksesi uudelleen päivittääksesi sen julisteet.",
+    "panel_settings_ui_native_poster_tags": "Näytä tunnisteet natiiveissa sovelluksissa (kokeellinen)"
 }

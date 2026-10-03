@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "نه در همه قسمت‌ها",
+    "panel_settings_ui_native_poster_tags_desc": "برچسب‌های شما را روی تصاویر پوستر برای برنامه‌های بومی مانند Android TV که در غیر این صورت نمی‌توانند آن‌ها را نشان دهند می‌کشد، با استفاده از انتخاب‌های برچسب، گوشه‌ها و ترتیب زیر. کلاینت‌های وب همان پوشش‌های معمول را نگه می‌دارند. برای دیدن تغییر، کتابخانه را دوباره باز کنید یا برنامه تلویزیون را راه‌اندازی مجدد کنید.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} ترجیح پوستر بومی ذخیره شد. برای تازه‌سازی پوسترها، کتابخانه را دوباره باز کنید یا برنامه تلویزیون خود را راه‌اندازی مجدد کنید.",
+    "panel_settings_ui_native_poster_tags": "نمایش برچسب‌ها در کلاینت‌های بومی (آزمایشی)"
 }

@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "എല്ലാ എപ്പിസോഡുകളിലും ഇല്ല",
+    "panel_settings_ui_native_poster_tags_desc": "Android TV പോലുള്ള, ടാഗുകൾ മറ്റുവിധത്തിൽ കാണിക്കാൻ കഴിയാത്ത നേറ്റീവ് ആപ്പുകൾക്കായി, താഴെയുള്ള ടാഗ് തിരഞ്ഞെടുപ്പുകൾ, മൂലകൾ, ക്രമം എന്നിവ ഉപയോഗിച്ച് നിങ്ങളുടെ ടാഗുകൾ പോസ്റ്റർ ചിത്രങ്ങളിൽ വരയ്ക്കുന്നു. വെബ് ക്ലയന്റുകൾ സാധാരണ ഓവർലേകൾ നിലനിർത്തുന്നു. മാറ്റം കാണാൻ ലൈബ്രറി വീണ്ടും തുറക്കുക അല്ലെങ്കിൽ ടിവി ആപ്പ് റീസ്റ്റാർട്ട് ചെയ്യുക.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} നേറ്റീവ് പോസ്റ്റർ മുൻഗണന സേവ് ചെയ്തു. പോസ്റ്ററുകൾ പുതുക്കാൻ ലൈബ്രറി വീണ്ടും തുറക്കുക അല്ലെങ്കിൽ നിങ്ങളുടെ ടിവി ആപ്പ് റീസ്റ്റാർട്ട് ചെയ്യുക.",
+    "panel_settings_ui_native_poster_tags": "നേറ്റീവ് ക്ലയന്റുകളിൽ ടാഗുകൾ കാണിക്കുക (പരീക്ഷണാത്മകം)"
 }

@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "ikke på alle afsnit",
+    "panel_settings_ui_native_poster_tags_desc": "Tegner dine tags ind i plakatbillederne til native apps som Android TV, der ellers ikke kan vise dem, med de tagvalg, hjørner og den rækkefølge, der er angivet nedenfor. Webklienter beholder de sædvanlige overlays. Åbn biblioteket igen, eller genstart tv-appen for at se en ændring.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} Indstillingen for native plakater er gemt. Åbn biblioteket igen, eller genstart din tv-app for at opdatere dens plakater.",
+    "panel_settings_ui_native_poster_tags": "Vis tags i native klienter (eksperimentel)"
 }

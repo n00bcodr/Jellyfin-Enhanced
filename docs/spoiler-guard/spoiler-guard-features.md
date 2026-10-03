@@ -4,6 +4,8 @@ A per-user, per-show opt-in protection layer for episodes, seasons, movies, and 
 
 ![Spoiler Guard on a series page](web-02-bluey-series.png)
 
+![The same season with Spoiler Guard on and off](../images/readme/spoiler-guard-compare.webp)
+
 !!! info "How it works at a glance"
 
     Spoiler Guard runs on the server inside Jellyfin's image and metadata APIs. When you have Spoiler Guard enabled for a series:

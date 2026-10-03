@@ -221,7 +221,7 @@ See README for more CSS examples.
 
 ## Calendar Page
 
-![Calendar page showing upcoming Sonarr and Radarr releases](../images/calendar-page.png)
+![Calendar page showing upcoming Sonarr and Radarr releases](../images/readme/calendar.webp)
 
 View upcoming releases from Sonarr and Radarr in a calendar interface.
 

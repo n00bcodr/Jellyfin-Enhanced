@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "mitte kõigis episoodides",
+    "panel_settings_ui_native_poster_tags_desc": "Joonistab sinu sildid plakatipiltidele natiivsete rakenduste jaoks, nagu Android TV, mis ei suuda neid muidu kuvada, kasutades allpool valitud silte, nurki ja järjekorda. Veebiklientidel jäävad tavapärased ülekatted. Muudatuse nägemiseks ava meediakogu uuesti või taaskäivita teleri rakendus.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} Natiivsete plakatite eelistus salvestatud. Plakatite värskendamiseks ava meediakogu uuesti või taaskäivita teleri rakendus.",
+    "panel_settings_ui_native_poster_tags": "Kuva silte natiivsetes klientides (katseline)"
 }

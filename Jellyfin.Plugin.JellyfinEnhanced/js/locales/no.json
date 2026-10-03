@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "ikke på alle episoder",
+    "panel_settings_ui_native_poster_tags_desc": "Tegner merkelappene dine inn i plakatbildene for native apper som Android TV som ellers ikke kan vise dem, med merkelappvalgene, hjørnene og rekkefølgen nedenfor. Nettklienter beholder de vanlige overleggene. Åpne biblioteket på nytt eller start TV-appen på nytt for å se en endring.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} Innstillingen for native plakater er lagret. Åpne biblioteket på nytt eller start TV-appen på nytt for å oppdatere plakatene.",
+    "panel_settings_ui_native_poster_tags": "Vis merkelapper i native klienter (eksperimentell)"
 }

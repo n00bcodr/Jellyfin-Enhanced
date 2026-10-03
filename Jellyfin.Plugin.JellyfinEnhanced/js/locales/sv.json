@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "inte på alla avsnitt",
+    "panel_settings_ui_native_poster_tags_desc": "Ritar in dina taggar i affischbilderna för inbyggda appar som Android TV, som annars inte kan visa dem, med de taggval, hörn och den ordning som anges nedan. Webbklienter behåller de vanliga överlagringarna. Öppna biblioteket igen eller starta om tv-appen för att se en ändring.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} Inställningen för inbyggda affischer sparad. Öppna biblioteket igen eller starta om din tv-app för att uppdatera dess affischer.",
+    "panel_settings_ui_native_poster_tags": "Visa taggar i inbyggda klienter (experimentell)"
 }

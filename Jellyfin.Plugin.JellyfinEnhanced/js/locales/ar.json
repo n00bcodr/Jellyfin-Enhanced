@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "ليست في جميع الحلقات",
+    "panel_settings_ui_native_poster_tags_desc": "ارسم إشاراتك على صور الملصقات للتطبيقات الأصلية مثل Android TV التي لا تستطيع عرضها بخلاف ذلك، باستخدام خيارات الإشارات والزوايا والترتيب أدناه. يحتفظ عملاء الويب بالتراكبات المعتادة. أعد فتح المكتبة أو أعد تشغيل تطبيق التلفاز لرؤية التغيير.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} تم حفظ تفضيل الملصقات الأصلية. أعد فتح المكتبة أو أعد تشغيل تطبيق التلفاز لتحديث ملصقاته.",
+    "panel_settings_ui_native_poster_tags": "إظهار الإشارات في التطبيقات الأصلية (تجريبي)"
 }

@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "nie vo všetkých epizódach",
+    "panel_settings_ui_native_poster_tags_desc": "Vykreslí vaše tagy do obrázkov plagátov pre natívne aplikácie, ako je Android TV, ktoré ich inak nevedia zobraziť, podľa nižšie zvolených tagov, rohov a poradia. Webové klienty si ponechajú obvyklé prekrytia. Ak chcete vidieť zmenu, znova otvorte knižnicu alebo reštartujte aplikáciu v televízore.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} Predvoľba natívnych plagátov bola uložená. Znova otvorte knižnicu alebo reštartujte aplikáciu v televízore, aby sa plagáty obnovili.",
+    "panel_settings_ui_native_poster_tags": "Zobraziť tagy v natívnych klientoch (experimentálne)"
 }

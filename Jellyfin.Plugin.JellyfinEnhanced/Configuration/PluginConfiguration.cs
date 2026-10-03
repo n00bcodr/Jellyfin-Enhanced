@@ -78,6 +78,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ReviewsExpandedByDefault = false;
             HideReviewsFromHiddenUsers = true;
             HideReviewsFromDisabledUsers = true;
+            MirrorReviewRatingsToJellyfin = false;
             ShowAwards = false;
             MdblistApiKey = "";
             MdblistRatingsEnabled = false;
@@ -111,6 +112,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RatingTagsEnabled = false;
             AgeRatingTagsEnabled = false;
             PeopleTagsEnabled = false;
+            NativePosterTagsEnabled = false;
+            NativePosterTagsWebClientNames = string.Empty;
             TagsCacheTtlDays = 30;
             DisableTagsOnSearchPage = false;
             TagsHideOnHover = false;
@@ -232,6 +235,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ArrTagsLinksFilter = "";
             ArrTagsLinksHideFilter = "";
             ArrTagsSyncFilter = "";
+
+            // Audio Language Tags Sync Settings
+            AudioLanguageTagSyncEnabled = false;
+            AudioLanguageTagPrefix = "JE Language: ";
+            AudioLanguageTagShowAsLinks = true;
 
             // Letterboxd Settings
             LetterboxdEnabled = false;
@@ -516,6 +524,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ReviewsExpandedByDefault { get; set; }
         public bool HideReviewsFromHiddenUsers { get; set; } = true;
         public bool HideReviewsFromDisabledUsers { get; set; } = true;
+        /// <summary>When a user saves a review with a star rating, also write that
+        /// rating to Jellyfin's own per-user rating for the matching library item
+        /// (1-5 stars scaled to Jellyfin's 0-10). Off by default: it lets other
+        /// tools that read Jellyfin user data (scrobblers, Letterboxd/Trakt syncs)
+        /// see ratings given here, at the cost of overwriting a rating set elsewhere.
+        /// Deleting a review, or removing its stars, clears the Jellyfin rating only
+        /// when it still equals the mirrored value. Only whole movies and series
+        /// are touched (season/episode reviews have no reliable TMDB-keyed item).</summary>
+        public bool MirrorReviewRatingsToJellyfin { get; set; }
         public bool ShowAwards { get; set; }
         /// <summary>MDBList API key (mdblist.com). Never exposed to clients;
         /// see GetPublicConfig()'s MdblistEnabled boolean. Used server-side
@@ -588,6 +605,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RatingTagsEnabled { get; set; }
         public bool AgeRatingTagsEnabled { get; set; }
         public bool PeopleTagsEnabled { get; set; }
+        /// <summary>Allows experimental poster tags drawn into poster images for native clients that don't run the web overlays.</summary>
+        public bool NativePosterTagsEnabled { get; set; }
+        /// <summary>
+        /// Extra Jellyfin client names (one per line or comma separated) that already run the web overlays and must
+        /// get original posters, on top of the built-in web client list. Admin-only; never exposed in public configuration.
+        /// Deliberately NOT [AnalyticsInclude] (free text): analytics shares a sanitized
+        /// derivation instead, see AnalyticsReportingService.GetStringSettings.
+        /// </summary>
+        public string NativePosterTagsWebClientNames { get; set; }
         public int TagsCacheTtlDays { get; set; }
         public bool DisableTagsOnSearchPage { get; set; }
         public bool TagsHideOnHover { get; set; }
@@ -744,6 +770,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string ArrTagsLinksFilter { get; set; }
         public string ArrTagsLinksHideFilter { get; set; }
         public string ArrTagsSyncFilter { get; set; }
+
+        // Audio Language Tags Sync Settings
+        public bool AudioLanguageTagSyncEnabled { get; set; }
+        public string AudioLanguageTagPrefix { get; set; }
+        public bool AudioLanguageTagShowAsLinks { get; set; }
 
         // Letterboxd Settings
         public bool LetterboxdEnabled { get; set; }

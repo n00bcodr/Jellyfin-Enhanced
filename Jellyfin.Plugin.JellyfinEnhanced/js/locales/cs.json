@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "ne ve všech epizodách",
+    "panel_settings_ui_native_poster_tags_desc": "Vykreslí vaše štítky do obrázků plakátů pro nativní aplikace, jako je Android TV, které je jinak zobrazit neumí, podle níže zvolených štítků, rohů a pořadí. Weboví klienti si ponechají obvyklé překryvy. Pro zobrazení změny znovu otevřete knihovnu nebo restartujte aplikaci na televizi.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} Předvolba nativních plakátů byla uložena. Znovu otevřete knihovnu nebo restartujte aplikaci na televizi, aby se plakáty obnovily.",
+    "panel_settings_ui_native_poster_tags": "Zobrazit štítky v nativních klientech (experimentální)"
 }

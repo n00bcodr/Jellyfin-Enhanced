@@ -122,8 +122,9 @@ When enabled, new Jellyfin users are automatically imported into Seerr the first
   - The primary season modal button label becomes **Request in 4K**.
 
 ### Show Advanced Request Options
-- Display advanced options in request modal
-- Season selection, quality options, etc.
+- Display advanced options (server, quality profile, root folder) in the request modal
+- Shown only to users with **Advanced Requests** or **Manage Requests** in Seerr, and to admins
+- For other users the advanced fields are hidden and ignored if sent
 
 ### Auto Import Jellyfin Users to Seerr
 

@@ -161,6 +161,18 @@
         addSettingToggleListener('showFileSizesToggle', 'showFileSizes', 'feature_file_size_display');
         addSettingToggleListener('showAudioLanguagesToggle', 'showAudioLanguages', 'feature_audio_language_display');
         addSettingToggleListener('removeContinueWatchingToggle', 'removeContinueWatchingEnabled', 'feature_remove_continue_watching');
+        document.getElementById('nativePosterTagsToggle')?.addEventListener('change', (event) => {
+            if (JE.pluginConfig?.NativePosterTagsEnabled !== true) return;
+            const enabled = event.target.checked;
+            // Record the explicit choice so saveUserSettings writes it (an untouched user stays unset = on).
+            JE.userConfig = JE.userConfig || {};
+            JE.userConfig.settings = JE.userConfig.settings || {};
+            JE.userConfig.settings.useNativePosterTags = enabled;
+            JE.currentSettings.useNativePosterTags = enabled;
+            JE.saveUserSettings('settings.json', JE.currentSettings);
+            JE.toast(JE.t('toast_native_poster_tags_saved'));
+            resetAutoCloseTimer();
+        });
         addSettingToggleListener('qualityTagsToggle', 'qualityTagsEnabled', 'feature_quality_tags', true);
         // Show or hide the nested category section when the master quality-tags toggle changes
         const qualityMasterToggle = document.getElementById('qualityTagsToggle');

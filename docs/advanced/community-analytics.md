@@ -57,6 +57,10 @@ specific ones are ever safe to include:
 - Language tag priority list (`LanguageTagsPriority`) — normalized before sending: only tokens
   shaped like language codes (e.g. `en,ja,fr`) are included, anything else typed into that box is
   dropped
+- Native Poster Tags extra excluded clients (`NativePosterTagsWebClientNames`) — normalized before
+  sending: only short app-name-shaped entries are included (up to 20), the built-in web clients are
+  left out, and anything else typed into that box is dropped. Whether Native Poster Tags is turned
+  on is reported with the other on/off feature settings
 
 No other string setting is ever included: URLs, API keys, branding text/images, and every other
 free-text field are permanently excluded by design, not by an admin-configurable option.
@@ -262,17 +266,33 @@ counts above do for other features.
     });
     html += `</div>`;
 
-    html += `<div class="je-table-scroll"><table class="je-analytics-table"><thead><tr><th>Plugin Version</th><th>Jellyfin Target</th><th>Jellyfin Version</th><th>Installs</th><th>Recently Seen On</th></tr></thead><tbody>`;
-    rows.sort((a, b) => num(b.install_count) - num(a.install_count)).slice(0, 50).forEach(r => {
-      const seen = formatDateDMY(new Date(r.most_recent_seen));
-      const mismatch = isTargetMismatch(r.jellyfin_target, r.jellyfin_version);
-      const versionCell = mismatch
-        ? `<span class="je-analytics-mismatch" title="This build target doesn't match the running server's major version">${escapeHtml(r.jellyfin_version)} ⚠</span>`
-        : escapeHtml(r.jellyfin_version);
-      html += `<tr><td>${escapeHtml(r.plugin_version)}</td><td>${escapeHtml(r.jellyfin_target)}</td><td>${versionCell}</td><td>${num(r.install_count)}</td><td>${seen}</td></tr>`;
-    });
-    html += `</tbody></table></div>`;
-    return html;
+    // Cap BY COUNT before sorting, so the cap keeps the biggest groups.
+    const items = rows.slice().sort((a, b) => num(b.install_count) - num(a.install_count)).slice(0, 50).map(r => ({
+      pluginVersion: String(r.plugin_version == null ? '' : r.plugin_version),
+      target: String(r.jellyfin_target == null ? '' : r.jellyfin_target),
+      jfVersion: String(r.jellyfin_version == null ? '' : r.jellyfin_version),
+      installs: num(r.install_count),
+      seenTs: new Date(r.most_recent_seen).getTime() || 0,
+      mismatch: isTargetMismatch(r.jellyfin_target, r.jellyfin_version),
+    }));
+
+    // Zero-padded segments so "12.10.0" sorts after "12.9.0" as a string compare.
+    const versionKey = v => String(v).split('.').map(p => String(parseInt(p, 10) || 0).padStart(6, '0')).join('.');
+
+    const columns = [
+      { key: 'plugin', label: 'Plugin Version', sortValue: i => versionKey(i.pluginVersion), text: i => i.pluginVersion, render: i => escapeHtml(i.pluginVersion) },
+      { key: 'target', label: 'Jellyfin Target', sortValue: i => i.target, render: i => escapeHtml(i.target) },
+      { key: 'jf', label: 'Jellyfin Version', sortValue: i => versionKey(i.jfVersion), text: i => i.jfVersion,
+        render: i => i.mismatch
+          ? `<span class="je-analytics-mismatch" title="This build target doesn't match the running server's major version">${escapeHtml(i.jfVersion)} ⚠</span>`
+          : escapeHtml(i.jfVersion) },
+      { key: 'installs', label: 'Installs', firstDir: 'desc', sortValue: i => i.installs, render: i => String(i.installs) },
+      { key: 'seen', label: 'Recently Seen On', firstDir: 'desc', sortValue: i => i.seenTs, text: i => formatDateDMY(new Date(i.seenTs)), render: i => formatDateDMY(new Date(i.seenTs)) },
+    ];
+
+    // Faceted by build target so the jf10/jf12 split is one click away.
+    const table = renderSortableTable(items, columns, 'installs', 'target', 'desc');
+    return { html: html + table.html, mount: table.mount };
   }
 
   // "total.*" keys are point-in-time snapshots (e.g. total.bookmarks), sent
@@ -383,11 +403,11 @@ counts above do for other features.
   // text(row) -- optional search haystack, defaults to sortValue}. Returns
   // {html, mount}; setSection calls mount(container) after insertion to
   // wire up click-to-sort/type-to-filter/pill-click via event delegation.
-  function renderSortableTable(rows, columns, initialSortKey, facetKey) {
+  function renderSortableTable(rows, columns, initialSortKey, facetKey, initialSortDir) {
     const uid = Math.random().toString(36).slice(2);
     const tbodyId = 'je-tbody-' + uid;
     let sortKey = initialSortKey || columns[0].key;
-    let sortDir = 'asc';
+    let sortDir = initialSortDir || 'asc';
     let filterText = '';
     let activeFacet = null; // null = "All"
 
@@ -481,8 +501,14 @@ counts above do for other features.
         const th = e.target.closest('th[data-sort-key]');
         if (!th) return;
         const key = th.dataset.sortKey;
-        sortDir = key === sortKey && sortDir === 'asc' ? 'desc' : 'asc';
-        sortKey = key;
+        // Re-click flips direction; a new column starts at its natural
+        // direction (numeric/date columns: biggest/newest first).
+        if (key === sortKey) {
+          sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortDir = columns.find(c => c.key === key).firstDir || 'asc';
+          sortKey = key;
+        }
         thead.innerHTML = renderHead();
         tbody.innerHTML = renderRows();
       });

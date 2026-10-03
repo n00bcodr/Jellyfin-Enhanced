@@ -207,7 +207,7 @@
             if (!mainButtonDisabled) {
                 mainButton.addEventListener('click', async (e) => {
                     e.stopPropagation();
-                    if (JE.pluginConfig.JellyseerrShowAdvanced) {
+                    if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                         ui.showMovieRequestModal(item.id, item.title || item.name, item, false);
                     } else {
                         mainButton.disabled = true;
@@ -274,7 +274,7 @@
             button.addEventListener('click', async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                if (JE.pluginConfig.JellyseerrShowAdvanced) {
+                if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                     ui.showMovieRequestModal(item.id, item.title || item.name, item, false);
                 } else {
                     button.disabled = true;

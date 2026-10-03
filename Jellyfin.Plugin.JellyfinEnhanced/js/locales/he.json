@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "לא בכל הפרקים",
+    "panel_settings_ui_native_poster_tags_desc": "מצייר את התגים שלך על תמונות הפוסטרים עבור אפליקציות מקוריות כמו Android TV שאינן יכולות להציג אותם אחרת, לפי בחירות התגים, הפינות והסדר שלהלן. לקוחות אינטרנט שומרים על שכבות העל הרגילות. פתח את הספרייה מחדש או הפעל מחדש את אפליקציית הטלוויזיה כדי לראות שינוי.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} העדפת הפוסטרים המקוריים נשמרה. פתח את הספרייה מחדש או הפעל מחדש את אפליקציית הטלוויזיה כדי לרענן את הפוסטרים שלה.",
+    "panel_settings_ui_native_poster_tags": "הצג תגים בלקוחות מקוריים (ניסיוני)"
 }

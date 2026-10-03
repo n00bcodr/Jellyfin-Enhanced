@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "nöd i allne Episode",
+    "panel_settings_ui_native_poster_tags_desc": "Zeichnet dini Tags i d Posterbilder für native Apps wie Android TV, wo si sunsch nöd chönd azeige, mit de Tag-Uswahl, Ecke und Reihefolg unte. Web-Clients bhalte d üblichi Overlays. Mach d Bibliothek neu uf oder starte d TV-App neu, zum e Änderig gseh.",
+    "toast_native_poster_tags_saved": "{{icon:tag}} Iistellig für native Poster gspeicheret. Mach d Bibliothek neu uf oder starte dini TV-App neu, zum d Poster z aktualisiere.",
+    "panel_settings_ui_native_poster_tags": "Tags i nativen Clients zeige (experimentell)"
 }

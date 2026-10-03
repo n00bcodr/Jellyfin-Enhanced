@@ -717,5 +717,8 @@
     "panel_settings_ui_quality_tags_audio_language_auto": "My Jellyfin audio language",
     "panel_settings_ui_age_rating_tags": "Show Age Rating Tags",
     "panel_settings_ui_rating_tags_scope_label": "Choose where to show",
-    "language_tags_partial_tooltip": "not on all episodes"
+    "language_tags_partial_tooltip": "並非所有劇集都有",
+    "panel_settings_ui_native_poster_tags_desc": "為無法顯示標籤的原生應用程式（如 Android TV）把你的標籤繪製到海報圖片上，使用下方的標籤選擇、角落和順序。網頁客戶端仍使用一般疊加層。重新開啟媒體庫或重新啟動電視應用程式即可看到更改。",
+    "toast_native_poster_tags_saved": "{{icon:tag}} 原生海報偏好已儲存。重新開啟媒體庫或重新啟動電視應用程式以重新整理海報。",
+    "panel_settings_ui_native_poster_tags": "在原生客戶端中顯示標籤（實驗性）"
 }
