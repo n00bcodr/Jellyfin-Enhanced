@@ -12197,7 +12197,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!IsAdminUser()) return Forbid();
             var users = _userManager.GetAllUsers()
                 .Where(u => !u.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator))
-                .Select(u => new { Id = u.Id.ToString(), u.Username })
+                // HasImage lets the page skip avatar requests that can only 404.
+                .Select(u => new { Id = u.Id.ToString(), u.Username, HasImage = u.ProfileImage != null })
                 .OrderBy(u => u.Username)
                 .ToList();
             return Ok(users);

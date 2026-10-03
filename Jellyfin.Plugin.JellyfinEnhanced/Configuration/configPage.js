@@ -4082,17 +4082,25 @@
                     avatar.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;' +
                         'width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.15);' +
                         'font-size:0.7em;font-weight:700;flex-shrink:0;overflow:hidden;';
-                    // Try to load the user's actual Jellyfin profile picture
-                    const img = document.createElement('img');
-                    img.style.cssText = 'width:26px;height:26px;border-radius:50%;object-fit:cover;display:block;';
-                    img.src = ApiClient.getUrl('/Users/' + uid + '/Images/Primary', { width: 26 });
-                    img.alt = '';
                     const fallbackLetter = document.createTextNode((uname || '?').charAt(0).toUpperCase());
-                    img.onerror = function() {
-                        this.style.display = 'none';
+                    // Users without a profile picture get the letter straight
+                    // away instead of an image request that can only 404 (an
+                    // older server omits hasImage: try the picture as before).
+                    const hasImage = u.hasImage !== undefined ? u.hasImage : u.HasImage;
+                    if (hasImage === false) {
                         avatar.appendChild(fallbackLetter);
-                    };
-                    avatar.appendChild(img);
+                    } else {
+                        // Try to load the user's actual Jellyfin profile picture
+                        const img = document.createElement('img');
+                        img.style.cssText = 'width:26px;height:26px;border-radius:50%;object-fit:cover;display:block;';
+                        img.src = ApiClient.getUrl('/Users/' + uid + '/Images/Primary', { width: 26 });
+                        img.alt = '';
+                        img.onerror = function() {
+                            this.style.display = 'none';
+                            avatar.appendChild(fallbackLetter);
+                        };
+                        avatar.appendChild(img);
+                    }
 
                     const name = document.createElement('span');
                     name.style.cssText = 'font-size:0.875em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
