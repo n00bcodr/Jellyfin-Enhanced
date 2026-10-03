@@ -1911,6 +1911,140 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/movie/{tmdbId}", HttpMethod.Get);
         }
 
+        /// <summary>
+        /// Batched collection lookup for the Seerr search row: the collection each
+        /// movie of one rendered batch of results belongs to, in one request
+        /// instead of a proxied Seerr movie detail per movie plus a TMDB movie
+        /// detail for each one Seerr names no collection for. Same sources, order
+        /// and gating as those per-movie calls: the caller's Seerr movie detail
+        /// through ProxyJellyseerrRequest (its response cache, Seerr user and
+        /// permission checks, parental gate) first; TMDB's movie detail through
+        /// TmdbResponseCache, with the passthrough's parental gate, only when
+        /// Seerr's detail has no collection and a TMDB key is configured.
+        /// ids: comma-separated TMDB movie ids (distinct, max 100).
+        /// Response: { "results": { "603": { id, name, posterPath, backdropPath } | null } }
+        /// where null means no collection; an id whose lookup failed or was
+        /// refused to this caller is left out, so the client asks again later.
+        /// </summary>
+        [HttpGet("jellyseerr/movie-collections")]
+        [Authorize]
+        public async Task<IActionResult> GetMovieCollectionsBatch([FromQuery] string? ids)
+        {
+            // Per-user body (Seerr user, parental gating): never kept by the browser.
+            Response.Headers["Cache-Control"] = "no-store";
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            {
+                return StatusCode(503, "Seerr integration is not configured or enabled.");
+            }
+
+            if (!Services.MovieCollectionsBatch.TryParseIds(ids, out var requested, out var idsError))
+            {
+                return BadRequest(idsError);
+            }
+
+            var callerId = UserHelper.GetCurrentUserId(User)?.ToString();
+            if (string.IsNullOrEmpty(callerId))
+            {
+                return Forbid();
+            }
+
+            var results = new ConcurrentDictionary<int, Services.MovieCollectionsBatch.Collection?>();
+
+            // Resolve the caller's Seerr user once, so the per-movie proxy calls
+            // below read it from the cache instead of all looking it up cold at
+            // the same time. Without one (unlinked, blocked, Seerr unreachable)
+            // every per-movie call fails, so every id stays unknown.
+            if (await GetJellyseerrUser(callerId) == null)
+            {
+                return Content(Services.MovieCollectionsBatch.Serialize(requested, results), "application/json");
+            }
+
+            var tmdbKey = config.TMDB_API_KEY;
+            // The client's TmdbEnabled flag (GetPublicConfig) gated the TMDB fallback.
+            var tmdbEnabled = !string.IsNullOrWhiteSpace(tmdbKey);
+            var aborted = HttpContext.RequestAborted;
+            // As many Seerr detail calls at once as the client used to make; a cold
+            // detail makes Seerr call TMDB, which answers bursts with 5xx.
+            using var slots = new SemaphoreSlim(4);
+            var failures = 0;
+            string? lastError = null;
+
+            async Task LoadAsync(int tmdbId)
+            {
+                await slots.WaitAsync(aborted).ConfigureAwait(false);
+                try
+                {
+                    // Anything but a readable 200 (refused by the parental gate or
+                    // Seerr permissions, upstream failure, cancelled) leaves the id
+                    // unknown, as the failed call left it for the client.
+                    var seerr = await ProxyJellyseerrRequest($"/api/v1/movie/{tmdbId}", HttpMethod.Get).ConfigureAwait(false);
+                    if (seerr is not ContentResult { StatusCode: null or 200, Content: { } json }
+                        || !Services.MovieCollectionsBatch.TryReadSeerrCollection(json, out var collection))
+                    {
+                        return;
+                    }
+
+                    if (collection != null || !tmdbEnabled)
+                    {
+                        results[tmdbId] = collection;
+                        return;
+                    }
+
+                    // The passthrough's gate for "movie/{id}" (TmdbAccess.GateTitle).
+                    if (await _parentalFilter.IsBlockedAsync("movie", tmdbId, callerId, aborted).ConfigureAwait(false))
+                    {
+                        return;
+                    }
+
+                    // Same cache entry (path, empty query, bundle) as the
+                    // passthrough's GET tmdb/movie/{id}.
+                    var response = await _tmdbResponseCache.GetAsync($"movie/{tmdbId}", string.Empty, tmdbKey, aborted, bundle: true).ConfigureAwait(false);
+                    if (response.IsSuccess && Services.MovieCollectionsBatch.TryReadTmdbCollection(response.Content, out var tmdbCollection))
+                    {
+                        results[tmdbId] = tmdbCollection;
+                    }
+                }
+                catch (OperationCanceledException) when (aborted.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or IOException or InvalidOperationException)
+                {
+                    // TMDB failures as GetWatchProvidersBatch sees them; logged once
+                    // per batch below. Seerr failures are logged by the proxy.
+                    Interlocked.Increment(ref failures);
+                    lastError = ex.Message;
+                }
+                finally
+                {
+                    slots.Release();
+                }
+            }
+
+            try
+            {
+                await Task.WhenAll(requested.Select(LoadAsync)).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (aborted.IsCancellationRequested)
+            {
+                return StatusCode(499);
+            }
+
+            if (aborted.IsCancellationRequested)
+            {
+                return StatusCode(499); // the proxy calls answered 499 instead of throwing
+            }
+
+            if (failures > 0)
+            {
+                _logger.Warning($"Movie collections batch: {failures} of {requested.Count} TMDB lookups failed ({lastError}).");
+            }
+
+            return Content(Services.MovieCollectionsBatch.Serialize(requested, results), "application/json");
+        }
+
         [HttpGet("jellyseerr/movie/{tmdbId}/similar")]
         [Authorize]
         public Task<IActionResult> GetSimilarMovies(int tmdbId, [FromQuery] int page = 1)
