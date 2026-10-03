@@ -509,7 +509,7 @@ Jellyfin Enhanced's native Home tabs (Bookmarks, Hidden Content, Requests, Calen
 - They always come after the Custom Tabs tabs, in the order and at the URLs Jellyfin expects, on both the Modern and Legacy layouts. Adding or removing a Custom Tab moves them along without a page reload.
 - Their links look like `#/home?tab=4&jeTab=bookmarks`. The `jeTab` part keeps a saved link pointing at the right page even after the number changes.
 - A page can use the native tab or Custom Tabs, not both; the settings page turns the other one off. If you also added a Custom Tabs entry for the same page by hand, you will see it twice. Remove that entry in the Custom Tabs settings.
-- A disabled Custom Tabs or Plugin Pages plugin counts as not installed.
+- A disabled Custom Tabs or Plugin Pages plugin counts as not installed once Jellyfin has restarted. Until then it is still running and still shows its pages.
 
 ### Plugin conflicts?
 
