@@ -60,14 +60,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private sealed class EpisodeScanMemo : Dictionary<Guid, EpisodeScan>
         {
             public IReadOnlySet<Guid>? Pending { get; init; }
-
-            /// <summary>
-            /// Parent Series per series id, looked up once per pass (see
-            /// <see cref="GetParentSeries"/>): every Episode and Season entry
-            /// reads its Series for the rating fallbacks, the TMDB id and the
-            /// age rating, which cost two library lookups per item before.
-            /// </summary>
-            public Dictionary<Guid, BaseItem> ParentSeries { get; } = new();
         }
 
         // Guards the {_cacheReleased, _cache, _version, _lastModified} generation
@@ -229,7 +221,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// LastUpdated it can hold (<see cref="_maxLastUpdated"/>) and the
         /// mutation epoch, all taken under <see cref="_publishLock"/>.
         /// <see cref="Quiescent"/> is whether no in-place writer was active
-        /// when it was taken (read before the epoch, see IsUnchangedSince).
+        /// and the epoch did not move while it was taken (see
+        /// CaptureGeneration and IsUnchangedSince).
         /// </summary>
         private readonly record struct CacheGeneration(ConcurrentDictionary<string, TagCacheEntry> Cache, long Version, long Timestamp, long MaxLastUpdated, long Epoch, bool Quiescent);
 
@@ -1366,15 +1359,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             lock (_publishLock)
             {
                 live = ServerModeEnabled && !_cacheReleased;
-                // Writer count before the epoch (see IsUnchangedSince).
+                // Epoch first, then the writer count, then the generation (see
+                // IsUnchangedSince): read the other way round, a whole pass could
+                // finish between the metadata reads and the epoch read, pairing
+                // the old version/timestamp/max with the new epoch. Swaps can't
+                // interleave (they hold _publishLock); in-place passes can, so
+                // the epoch and writer count are re-read after the metadata and
+                // a capture that saw anything move is not quiescent — it can
+                // still be served, but never short-circuited or shared.
+                var epoch = Interlocked.Read(ref _mutationEpoch);
                 var quiescent = Interlocked.CompareExchange(ref _inPlaceWriters, 0, 0) == 0;
-                return new CacheGeneration(
-                    _cache,
-                    Interlocked.Read(ref _version),
-                    Interlocked.Read(ref _lastModified),
-                    Interlocked.Read(ref _maxLastUpdated),
-                    Interlocked.Read(ref _mutationEpoch),
-                    quiescent);
+                var cache = _cache;
+                var version = Interlocked.Read(ref _version);
+                var timestamp = Interlocked.Read(ref _lastModified);
+                var maxLastUpdated = Interlocked.Read(ref _maxLastUpdated);
+                quiescent = quiescent
+                    && Interlocked.CompareExchange(ref _inPlaceWriters, 0, 0) == 0
+                    && Interlocked.Read(ref _mutationEpoch) == epoch;
+                return new CacheGeneration(cache, version, timestamp, maxLastUpdated, epoch, quiescent);
             }
         }
 
@@ -1382,16 +1384,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// Whether everything a reader saw of the cache between
         /// <paramref name="generation"/>'s capture and now is exactly the state
         /// of its epoch: no in-place writer was active at the capture, none is
-        /// active now, and the epoch has not moved. Both times the writer count
-        /// is read before the epoch, and every read is a full fence. Writers
-        /// bump the epoch after each store/removal and once more when a scope
-        /// that changed anything exits, before it leaves the count (see
-        /// InPlaceWriteScope), and every dictionary swap bumps it inside
-        /// _publishLock, where the capture reads it. So a write landing in the
-        /// window fails the check: its writer is either still counted at the
-        /// second read, or it left the count after moving the epoch — and a
-        /// writer counted at the capture fails it outright. Two readers that
-        /// pass with the same epoch therefore saw the same contents.
+        /// active now, and the epoch has not moved. The capture reads the epoch,
+        /// then the writer count, then the generation metadata; this check reads
+        /// the writer count, then the epoch; every read is a full fence
+        /// (Interlocked), so they all fall in one order with the writers' own
+        /// Interlocked updates. Writers raise the max before a store, bump the
+        /// epoch after each store/removal, bump version/timestamp only in a pass
+        /// that stored or removed something, and bump the epoch once more when
+        /// such a scope exits, before it leaves the count (see
+        /// InPlaceWriteScope); every dictionary swap bumps it inside
+        /// _publishLock, where the capture runs. So any write after the
+        /// capture's epoch read fails the check: its writer is either counted
+        /// at one of the two writer reads, or it entered and left between them
+        /// — or before the first, after the epoch read — moving the epoch on
+        /// its way out. Every write before that epoch read is visible to the
+        /// metadata reads that follow it. Two readers that pass with the same
+        /// epoch therefore saw the same contents and the same metadata.
         /// </summary>
         private bool IsUnchangedSince(in CacheGeneration generation) =>
             generation.Quiescent
@@ -2145,7 +2153,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     if (kind == BaseItemKind.Season && entry.CommunityRating == null)
                     {
-                        var series = GetParentSeries(item, episodeScans);
+                        var series = GetParentSeries(item);
                         if (series != null)
                         {
                             entry.CommunityRating = series.CommunityRating;
@@ -2160,7 +2168,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // For Season: store parent series TMDB ID + season number for user review key
                     if (kind == BaseItemKind.Season && item is MediaBrowser.Controller.Entities.TV.Season season)
                     {
-                        var series = GetParentSeries(item, episodeScans);
+                        var series = GetParentSeries(item);
                         if (series?.ProviderIds?.TryGetValue("Tmdb", out var seriesTmdb) == true)
                             entry.SeriesTmdbId = seriesTmdb;
                         entry.SeasonNumber = season.IndexNumber;
@@ -2193,7 +2201,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     if (kind == BaseItemKind.Episode && entry.CommunityRating == null)
                     {
-                        var series = GetParentSeries(item, episodeScans);
+                        var series = GetParentSeries(item);
                         if (series != null)
                         {
                             entry.CommunityRating = series.CommunityRating;
@@ -2204,7 +2212,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // For Episode: store parent series TMDB ID + season/episode numbers for user review key
                     if (kind == BaseItemKind.Episode && item is MediaBrowser.Controller.Entities.TV.Episode ep)
                     {
-                        var series = GetParentSeries(item, episodeScans);
+                        var series = GetParentSeries(item);
                         if (series?.ProviderIds?.TryGetValue("Tmdb", out var seriesTmdb) == true)
                             entry.SeriesTmdbId = seriesTmdb;
                         entry.SeasonNumber = ep.ParentIndexNumber;
@@ -2626,14 +2634,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        /// <summary>
-        /// The Series an Episode or Season belongs to, looked up once per pass
-        /// through <paramref name="episodeScans"/> (see
-        /// <see cref="EpisodeScanMemo.ParentSeries"/>) — a Series edited during
-        /// a pass is seen as it was when first looked up in that pass. A miss
-        /// (series not found) is not memoized.
-        /// </summary>
-        private BaseItem? GetParentSeries(BaseItem item, EpisodeScanMemo? episodeScans)
+        private BaseItem? GetParentSeries(BaseItem item)
         {
             try
             {
@@ -2645,18 +2646,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (seriesId.HasValue && seriesId.Value != Guid.Empty)
                 {
-                    if (episodeScans != null && episodeScans.ParentSeries.TryGetValue(seriesId.Value, out var memoized))
-                    {
-                        return memoized;
-                    }
-
-                    var series = _libraryManager.GetItemById<BaseItem>(seriesId.Value);
-                    if (series != null && episodeScans != null)
-                    {
-                        episodeScans.ParentSeries[seriesId.Value] = series;
-                    }
-
-                    return series;
+                    return _libraryManager.GetItemById<BaseItem>(seriesId.Value);
                 }
             }
             catch (Exception ex)
