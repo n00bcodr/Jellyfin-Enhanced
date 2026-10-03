@@ -363,20 +363,22 @@
             userMenuBox = userMenuBox.parentElement;
         }
         const buttonsTray = userMenuBox?.previousElementSibling;
-        // header-actions.js budgets this tray against the whole toolbar before
-        // keeping the JE group inline when it fits beside Jellyfin's controls.
-        if (buttonsTray) {
+        // Other plugins (e.g. Moonfin) can put their own button here; never host inside one.
+        const isInteractive = buttonsTray?.matches('button, a, [role="button"]');
+        if (buttonsTray && !isInteractive) {
             attachDrawerAutoClose(buttonsTray);
             return buttonsTray;
         }
 
-        // No user-menu available (e.g. public/video pages) - fall back to a
-        // synthetic container appended to the toolbar itself.
+        // Fallback: a container we own (foreign button before the user menu, or no user menu).
         let container = toolbar.querySelector(':scope > .headerRight');
         if (!container) {
             container = document.createElement('div');
             container.className = 'headerRight';
-            toolbar.appendChild(container);
+            if (userMenuBox) toolbar.insertBefore(container, userMenuBox);
+            else toolbar.appendChild(container);
+        } else if (userMenuBox && container.nextElementSibling !== userMenuBox && container.compareDocumentPosition(userMenuBox) & Node.DOCUMENT_POSITION_PRECEDING) {
+            toolbar.insertBefore(container, userMenuBox);
         }
         attachDrawerAutoClose(container);
         return container;
