@@ -38,6 +38,8 @@
     var entries = [];
     var injectPending = false;
     var appliedDeepLink = null;
+    /** URL we just rewrote ourselves; its navigation event is not a new deep link. */
+    var rewrittenHash = null;
     /** Whether the last ensureInjected() call found us off the home page -- logged only on change. */
     var wasOffHomePage = false;
 
@@ -158,7 +160,6 @@
         if (tabsElem && btn?.classList.contains('emby-tab-button-active') && tabsElem.selectedTabIndex === previous) {
             tabsElem.selectedTabIndex = index;
         }
-        appliedDeepLink = null;
         console.log('🪼 Jellyfin Enhanced: [native-tabs] "' + entry.title + '" moved from index ' + previous +
             ' to ' + index + ' (another tab now uses ' + previous + ')');
     }
@@ -490,9 +491,18 @@
             // a new Home page, and Custom Tabs fills its legacy-layout panels
             // only once per session. Custom Tabs re-reads the URL on its next
             // sync (it watches history and the DOM).
-            history.replaceState(history.state, '', window.location.pathname + window.location.search +
-                deepLinkHash(entry));
+            var staleHash = window.location.hash;
+            rewrittenHash = deepLinkHash(entry);
+            history.replaceState(history.state, '', window.location.pathname + window.location.search + rewrittenHash);
             wantedIndex = entry.index;
+            // Our tab moved after this link was already followed: only the URL
+            // needed updating. Re-selecting it would undo whatever the user
+            // clicked since (tab clicks leave the URL alone).
+            if (appliedDeepLink && appliedDeepLink.hash === staleHash &&
+                appliedDeepLink.panel === document.getElementById(OWN_ID_PREFIX + 'panel-' + entry.id)) {
+                appliedDeepLink.hash = window.location.hash;
+                appliedDeepLink.btn = document.getElementById(OWN_ID_PREFIX + 'btn-' + entry.id);
+            }
         }
         // Home(0) and Favorites(1) exist before Jellyfin selects, so they always complete.
         if (isNaN(wantedIndex) || wantedIndex < 2) return;
@@ -509,17 +519,21 @@
         // our placeholder) means it was not really applied yet.
         if (appliedDeepLink && appliedDeepLink.hash === hash && appliedDeepLink.root === root &&
             appliedDeepLink.panel === panel && appliedDeepLink.tabs === tabsElem && appliedDeepLink.btn === btn) return;
-        var strayPanels = function () {
+        // Jellyfin's same-index path highlights the new button without
+        // clearing the old one, and never hides the previous panel; a second
+        // highlighted button would make the next click on it a no-op.
+        var strays = function () {
             return Array.prototype.filter.call(root.querySelectorAll('.tabContent.is-active'),
-                function (el) { return el !== panel; });
+                function (el) { return el !== panel; }).concat(Array.prototype.filter.call(
+                tabsElem.querySelectorAll('.emby-tab-button-active'), function (el) { return el !== btn; }));
         };
         var isApplied = function () {
             return tabsElem.selectedIndex() === wantedIndex && panel.classList.contains('is-active') &&
-                btn.classList.contains('emby-tab-button-active') && strayPanels().length === 0;
+                btn.classList.contains('emby-tab-button-active') && strays().length === 0;
         };
         if (!isApplied()) {
             tabsElem.selectedIndex(wantedIndex);
-            strayPanels().forEach(function (el) { el.classList.remove('is-active'); });
+            strays().forEach(function (el) { el.classList.remove('is-active', 'emby-tab-button-active'); });
         }
         if (isApplied()) {
             appliedDeepLink = { hash: hash, root: root, panel: panel, tabs: tabsElem, btn: btn };
@@ -565,7 +579,8 @@
     // Re-inject on every navigation (hashchange, popstate AND pushState navs
     // the old raw hashchange listener missed).
     JE.core.navigation.onNavigate(function () {
-        appliedDeepLink = null;
+        if (window.location.hash !== rewrittenHash) appliedDeepLink = null;
+        rewrittenHash = null;
         scheduleInject();
     });
     JE.core.navigation.onViewPage(scheduleInject, { fetchItem: false });
