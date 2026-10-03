@@ -48,17 +48,44 @@
         return null;
     }
 
+    /** Number of Custom Tabs entries, or null while our own fetch is in flight. Never waits on Custom Tabs itself. */
+    var customTabCount = null;
+    var customTabFetchStarted = false;
+
+    function loadCustomTabCount() {
+        if (customTabFetchStarted) return;
+        customTabFetchStarted = true;
+        if (!JE.hasCustomTabs) { customTabCount = 0; return; }
+        ApiClient.fetch({
+            url: ApiClient.getUrl('CustomTabs/Config'),
+            type: 'GET',
+            dataType: 'json',
+            headers: { accept: 'application/json' }
+        }).then(function (configs) {
+            customTabCount = Array.isArray(configs) ? configs.length : 0;
+        }).catch(function () {
+            customTabCount = 0;
+        }).then(scheduleInject);
+    }
+
     /**
-     * Highest `data-index` currently in use on the tab strip, plus 1. Scanning
-     * live rather than assuming "native tabs are 0/1, ours start at 2" matters
-     * because the external Custom Tabs plugin claims indices the exact same
-     * way (`i + 2`, with no collision checking of its own either) -- if a user
-     * runs both, blindly assuming an index is free would clash with it.
+     * Next free tab index, or null while the Custom Tabs count is loading.
+     * Custom Tabs hardcodes its tabs to `i + 2` and, on Jellyfin 12's modern
+     * layout, renders them as plain links with no `data-index`, so scanning the
+     * strip alone cannot see them. Indices must stay contiguous: emby-tabs
+     * resolves the active button by position.
      */
     function nextFreeIndex(slider) {
-        var max = 1; // native Home(0)/Favorites(1) always present
+        loadCustomTabCount();
+        if (customTabCount == null) return null;
+        var max = Math.max(1, customTabCount + 1); // native Home(0)/Favorites(1) always present
         slider.querySelectorAll('[data-index]').forEach(function (el) {
             var idx = parseInt(el.getAttribute('data-index'), 10);
+            if (!isNaN(idx) && idx > max) max = idx;
+        });
+        document.querySelectorAll('a[href*="#/home?tab="]').forEach(function (el) {
+            var match = /[?&]tab=(\d+)/.exec(el.getAttribute('href') || '');
+            var idx = match ? parseInt(match[1], 10) : NaN;
             if (!isNaN(idx) && idx > max) max = idx;
         });
         return max + 1;
@@ -92,7 +119,9 @@
             // tabs come and go), which would desync its already-created button
             // from its already-created panel.
             if (entry.index == null) {
-                entry.index = nextFreeIndex(slider);
+                var free = nextFreeIndex(slider);
+                if (free == null) return;
+                entry.index = free;
             }
 
             if (!document.getElementById('je-native-tab-btn-' + entry.id)) {

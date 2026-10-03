@@ -1005,7 +1005,7 @@
                             <div class="checkboxContainer"><label><input id="bookmarksUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs for Bookmarks</span></label></div>
                             <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-bookmarks" style="display:none;">
                                 <i class="material-icons je-note-icon">info</i>
-                                <div>On Jellyfin 12, <strong>"Add Bookmarks as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                                <div>On Jellyfin 12, <strong>"Add Bookmarks as a native Home tab"</strong> is more reliable than Custom Tabs. The two cannot be enabled together.</div>
                             </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="bookmarksUseCustomTabs,bookmarksEnabled">
@@ -1085,7 +1085,7 @@
                             <div class="checkboxContainer"><label><input id="hiddenContentUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs for Hidden Content</span></label></div>
                             <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-hiddenContent" style="display:none;">
                                 <i class="material-icons je-note-icon">info</i>
-                                <div>On Jellyfin 12, <strong>"Add Hidden Content as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                                <div>On Jellyfin 12, <strong>"Add Hidden Content as a native Home tab"</strong> is more reliable than Custom Tabs. The two cannot be enabled together.</div>
                             </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="hiddenContentUseCustomTabs,hiddenContentEnabled">
@@ -1293,7 +1293,7 @@
                             <div class="checkboxContainer"><label><input id="downloadsUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs for Requests</span></label></div>
                             <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-downloads" style="display:none;">
                                 <i class="material-icons je-note-icon">info</i>
-                                <div>On Jellyfin 12, <strong>"Add Requests as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                                <div>On Jellyfin 12, <strong>"Add Requests as a native Home tab"</strong> is more reliable than Custom Tabs. The two cannot be enabled together.</div>
                             </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="downloadsUseCustomTabs,downloadsPageEnabled">
@@ -1387,7 +1387,7 @@
                             <div class="checkboxContainer"><label><input id="calendarUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs</span></label></div>
                             <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-calendar" style="display:none;">
                                 <i class="material-icons je-note-icon">info</i>
-                                <div>On Jellyfin 12, <strong>"Add Calendar as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                                <div>On Jellyfin 12, <strong>"Add Calendar as a native Home tab"</strong> is more reliable than Custom Tabs. The two cannot be enabled together.</div>
                             </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="calendarUseCustomTabs,calendarPageEnabled">
@@ -1509,7 +1509,7 @@
                             <div class="checkboxContainer"><label><input id="recommendationsUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs</span></label></div>
                             <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-recommendations" style="display:none;">
                                 <i class="material-icons je-note-icon">info</i>
-                                <div>On Jellyfin 12, <strong>"Add Recommendations as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                                <div>On Jellyfin 12, <strong>"Add Recommendations as a native Home tab"</strong> is more reliable than Custom Tabs. The two cannot be enabled together.</div>
                             </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="recommendationsUseCustomTabs,recommendationsPageEnabled">
@@ -1597,7 +1597,7 @@
                             <div class="checkboxContainer"><label><input id="activityFeedUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs</span></label></div>
                             <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-activityFeed" style="display:none;">
                                 <i class="material-icons je-note-icon">info</i>
-                                <div>On Jellyfin 12, <strong>"Add Activity as a native Home tab"</strong> is more reliable than Custom Tabs. Consider enabling it too.</div>
+                                <div>On Jellyfin 12, <strong>"Add Activity as a native Home tab"</strong> is more reliable than Custom Tabs. The two cannot be enabled together.</div>
                             </div>
 
                             <div class="checkboxContainer je-customtabs-automanage" data-gated-by="activityFeedUseCustomTabs,activityFeedEnabled">
@@ -6913,6 +6913,7 @@
             e.preventDefault();
             if (_jeSaveInFlight) return false;
             _jeSaveInFlight = true;
+            enforceTabExclusivity();
             Dashboard.showLoadingMsg();
             var saveBtns = document.querySelectorAll('.je-save-dock-btn');
             saveBtns.forEach(function(b) { b.disabled = true; });
@@ -8896,12 +8897,38 @@
             }
         })();
 
+        // A page can use the native Home tab or Custom Tabs, never both: the two
+        // would register competing tabs for the same page.
+        var TAB_EXCLUSIVE_PAIRS = ['bookmarks', 'hiddenContent', 'downloads', 'calendar', 'recommendations', 'activityFeed'].map(function(p) {
+            return { native: p + 'UseNativeTab', custom: p + 'UseCustomTabs' };
+        });
+
+        function enforceTabExclusivity(changedId) {
+            TAB_EXCLUSIVE_PAIRS.forEach(function(pair) {
+                var nativeBox = document.getElementById(pair.native);
+                var customBox = document.getElementById(pair.custom);
+                if (!nativeBox || !customBox || !nativeBox.checked || !customBox.checked) return;
+                // The box the admin just ticked wins; on load/save the native tab wins.
+                var loser = changedId === pair.native ? customBox : changedId === pair.custom ? nativeBox : customBox;
+                loser.checked = false;
+                loser.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+        }
+
+        TAB_EXCLUSIVE_PAIRS.forEach(function(pair) {
+            [pair.native, pair.custom].forEach(function(id) {
+                var box = document.getElementById(id);
+                if (box) box.addEventListener('change', function() { enforceTabExclusivity(id); });
+            });
+        });
+
         /**
          * Orchestrator: evaluates all section, individual, and parent dependency rules.
          * Each step is isolated so a throw in the status dashboard (which reads a lot
          * of field values) can't cascade and break dependency updates.
          */
         function updateAllDependencies() {
+            enforceTabExclusivity();
             SECTION_DEPS.forEach(updateSectionDep);
             INDIVIDUAL_DEPS.forEach(updateIndividualDep);
             CUSTOM_TABS_V12_HINTS.forEach(updateCustomTabsV12Hint);

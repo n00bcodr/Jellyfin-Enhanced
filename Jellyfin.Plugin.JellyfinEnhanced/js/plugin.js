@@ -392,6 +392,7 @@
      * @param {boolean} hasPluginPages - Whether the "Plugin Pages" plugin is installed.
      */
     function applyDeliveryPluginFlags(hasCustomTabs, hasPluginPages) {
+        JE.hasCustomTabs = hasCustomTabs;
         if (!hasCustomTabs) {
             JE.pluginConfig.BookmarksUseCustomTabs = false;
             JE.pluginConfig.CalendarUseCustomTabs = false;
