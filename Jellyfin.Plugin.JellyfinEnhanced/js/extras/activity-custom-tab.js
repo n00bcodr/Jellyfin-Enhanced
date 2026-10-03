@@ -32,7 +32,7 @@
       var marker = document.createElement('div');
       marker.className = 'jellyfinenhanced activity';
       panel.appendChild(marker);
-    }, 'history', '.jellyfinenhanced.activity');
+    }, 'history');
   }
 
   var style = document.createElement('style');

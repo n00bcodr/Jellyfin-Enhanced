@@ -252,7 +252,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`features-random-button.js`**: The random item button.
     * **`helpers.js`**: Utility functions shared across the enhanced components.
     * **`icons.js`**: Icon selection and rendering (emoji, Lucide or Material UI).
-    * **`native-tabs.js`**: Shared registry for JE-created home tabs, used when a feature is shown as a native tab rather than via the Custom Tabs plugin. Keeps each tab at the position its index names (Jellyfin resolves tabs by position), places them after any Custom Tabs tabs, and handles the stable `jeTab=<id>` deep links.
+    * **`native-tabs.js`**: Shared registry for JE-created home tabs, used when a feature is shown as a native tab rather than via the Custom Tabs plugin. Reconciles against the live page on every pass: keeps each tab at the position its index names (Jellyfin resolves tabs by position), places ours after every index another plugin occupies (relabelling them if a claim appears later), and handles the stable `jeTab=<id>` deep links.
     * **`themer.js`**: Theme detection and Enhanced Panel styling.
     * **`translations.js`**: Loads and caches translations. Loaded by its own loader at the start of `initialize()`, ahead of the component stage, so `JE.t` is resolved before any component runs.
     * **`ui-styles.js`**: Global stylesheet for the injected UI, including the settings panel's responsive rules.

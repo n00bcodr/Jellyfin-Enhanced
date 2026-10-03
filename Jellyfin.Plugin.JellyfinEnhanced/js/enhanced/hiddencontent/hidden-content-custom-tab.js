@@ -31,7 +31,7 @@
       var marker = document.createElement('div');
       marker.className = 'jellyfinenhanced hidden-content';
       panel.appendChild(marker);
-    }, 'remove_red_eye', '.jellyfinenhanced.hidden-content');
+    }, 'remove_red_eye');
   }
 
   var style = document.createElement('style');
