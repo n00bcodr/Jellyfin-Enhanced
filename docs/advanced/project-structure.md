@@ -244,7 +244,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`navigation.js`**: One deduped SPA navigation dispatcher (`onNavigate`, `onViewPage`), replacing the ad-hoc `hashchange`/`viewshow` listeners that previously double-fired on hash navigation and missed `pushState` navigation.
     * **`session.js`**: Identity-epoch tracker for SPA user switches. Logging out and back in as a different user never reloads the page, so this module detects the transition (an `ApiClient.setAuthenticationInfo` hook plus navigation/storage fallbacks), runs every registered per-feature reset handler (`JE.session.onUserChange`), and emits `je:user-changed`; `plugin.js` then re-fetches the incoming user's data and emits `je:user-data-loaded`. Async loaders capture `JE.session.getEpoch()` and drop stale results after a switch.
     * **`tag-renderer-base.js`**: The shared poster-tag engine — overlay creation, positioning, tagged-card deduplication, caching and reinitialisation. The five poster-overlay renderers (genre, language, quality, rating, age rating) supply a spec; `peopletags.js` and `userreviewtags.js` do not use it.
-    * **`ui-kit.js`**: `escapeHtml`, `toast`, deduped CSS injection, and scroll-friendly tap detection (`addTouchTapListener`).
+    * **`ui-kit.js`**: `escapeHtml`, `toast`, deduped CSS injection, and scroll-friendly tap detection (`addTouchTapListener`, and `addDelegatedTouchTapListener` for one set of listeners on a container of cards).
 
 * **`/enhanced/`**: Core "Jellyfin Enhanced" functionality.
     * **`config.js`**: Manages all settings, both from the plugin backend and the user's local storage.

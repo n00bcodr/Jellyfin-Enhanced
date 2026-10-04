@@ -23,12 +23,35 @@
     const isSafeTmdbImagePath = (p) => typeof p === 'string'
         && /^\/[A-Za-z0-9_\-\.]+\.(jpg|jpeg|png|webp|avif)$/i.test(p);
 
+    // Parsed copies of the status badge icons (SVG markup from
+    // JE.seerrStatus), cloned per card instead of re-parsing the same markup
+    // for every card in a batch.
+    const badgeIconTemplates = new Map();
+
+    /**
+     * Fills a status badge with a copy of an icon's markup.
+     * @param {HTMLElement} badge - The badge element (empty).
+     * @param {string} iconHtml - The icon markup.
+     */
+    function appendBadgeIcon(badge, iconHtml) {
+        let template = badgeIconTemplates.get(iconHtml);
+        if (!template) {
+            template = document.createElement('template');
+            template.innerHTML = iconHtml;
+            badgeIconTemplates.set(iconHtml, template);
+        }
+        badge.appendChild(document.importNode(template.content, true));
+    }
+
     /**
      * Sets the status badge icon based on the item's media status.
      * @param {HTMLElement} card - The card element.
      * @param {Object} item - The search result item.
+     * @param {Object|null} [seasonAnalysis] - analyzeSeasonStatuses() of the
+     *   item's seasons when the caller already has it (TV items with a seasons
+     *   array); computed here otherwise.
      */
-    function setStatusBadge(card, item) {
+    function setStatusBadge(card, item, seasonAnalysis) {
         const badge = card.querySelector('.jellyseerr-status-badge');
         if (!badge || !item.mediaInfo) {
             if (badge) badge.style.display = 'none';
@@ -38,8 +61,8 @@
         // Determine status based on media type
         let status;
         if (item.mediaType === 'tv' && item.mediaInfo.seasons) {
-            const seasonAnalysis = internal.analyzeSeasonStatuses(item.mediaInfo.seasons);
-            status = seasonAnalysis ? seasonAnalysis.overallStatus : item.mediaInfo.status;
+            const analysis = seasonAnalysis || internal.analyzeSeasonStatuses(item.mediaInfo.seasons);
+            status = analysis ? analysis.overallStatus : item.mediaInfo.status;
         } else {
             status = item.mediaInfo.status || 1;
         }
@@ -53,7 +76,11 @@
             return;
         }
 
-        badge.innerHTML = badgeConfig.icon;
+        if (typeof badgeConfig.icon === 'string' && !badge.firstChild) {
+            appendBadgeIcon(badge, badgeConfig.icon);
+        } else {
+            badge.innerHTML = badgeConfig.icon;
+        }
         badge.className = `jellyseerr-status-badge ${badgeConfig.cssClass}`;
         badge.style.display = 'flex';
 
@@ -232,6 +259,19 @@
     }
 
     /**
+     * Shows or hides a card's provider-icon strip, and mirrors that on the
+     * card's image container (jellyseerr-has-provider-icons) so the collection
+     * badge can sit above the strip with a plain class rule instead of a
+     * page-wide :has() rule.
+     * @param {HTMLElement} container - The card's .jellyseerr-elsewhere-icons element
+     * @param {boolean} hasIcons
+     */
+    function setHasIcons(container, hasIcons) {
+        container.classList.toggle('has-icons', hasIcons);
+        container.closest('.cardImageContainer')?.classList.toggle('jellyseerr-has-provider-icons', hasIcons);
+    }
+
+    /**
      * Fetches streaming provider icons from the TMDB API and adds them to a specified container element on a Seerr poster.
      * This function is called only if the "Show Elsewhere on Seerr" setting is enabled and a TMDB API key is present.
      * It retrieves the default region's flat-rate providers (batched across cards) and applies the filters configured in the Elsewhere plugin settings.
@@ -304,13 +344,13 @@
                         // Drop logos that fail to load; hide the strip if none remain.
                         img.onerror = () => {
                             img.remove();
-                            if (container.childElementCount === 0) container.classList.remove('has-icons');
+                            if (container.childElementCount === 0) setHasIcons(container, false);
                         };
                         container.appendChild(img);
                     });
 
                     if (container.childElementCount > 0) {
-                        container.classList.add('has-icons');
+                        setHasIcons(container, true);
                     }
                 }
             }
@@ -326,43 +366,46 @@
      * Adds media type badge to card.
      * @param {HTMLElement} card - Card element.
      * @param {Object} item - Media item data.
+     * @param {HTMLElement} [imageContainer] - The card's .cardImageContainer, when the caller has it.
+     * @param {string} [label] - The badge text, when the caller has already translated it.
      */
-    function addMediaTypeBadge(card, item) {
+    function addMediaTypeBadge(card, item, imageContainer, label) {
         if (item.mediaType === 'movie' || item.mediaType === 'tv' || item.mediaType === 'collection') {
-            const imageContainer = card.querySelector('.cardImageContainer');
-            if (imageContainer) {
+            const container = imageContainer || card.querySelector('.cardImageContainer');
+            if (container) {
                 const badge = document.createElement('div');
-                badge.className = 'jellyseerr-media-badge';
                 if (item.mediaType === 'movie') {
-                    badge.classList.add('jellyseerr-media-badge-movie');
-                    badge.textContent = JE.t('jellyseerr_card_badge_movie');
+                    badge.className = 'jellyseerr-media-badge jellyseerr-media-badge-movie';
+                    badge.textContent = label ?? JE.t('jellyseerr_card_badge_movie');
                 } else if (item.mediaType === 'tv') {
-                    badge.classList.add('jellyseerr-media-badge-series');
-                    badge.textContent = JE.t('jellyseerr_card_badge_series');
+                    badge.className = 'jellyseerr-media-badge jellyseerr-media-badge-series';
+                    badge.textContent = label ?? JE.t('jellyseerr_card_badge_series');
                 } else {
-                    badge.classList.add('jellyseerr-media-badge-collection');
-                    badge.textContent = JE.t('jellyseerr_card_badge_collection');
+                    badge.className = 'jellyseerr-media-badge jellyseerr-media-badge-collection';
+                    badge.textContent = label ?? JE.t('jellyseerr_card_badge_collection');
                 }
-                imageContainer.appendChild(badge);
+                container.appendChild(badge);
             }
         }
     }
 
-    // Adds a small badge indicating the movie belongs to a collection; clicking opens the request modal
-    function addCollectionMembershipBadge(card, item) {
+    /**
+     * Adds a small badge indicating the movie belongs to a collection. Clicking
+     * it opens the collection request modal; that click is handled by the
+     * card's delegated listeners (ui-cards.js), not by the badge itself.
+     * @param {HTMLElement} card - Card element.
+     * @param {Object} item - Media item data.
+     * @param {HTMLElement} [imageContainer] - The card's .cardImageContainer, when the caller has it.
+     */
+    function addCollectionMembershipBadge(card, item, imageContainer) {
         if (!item.collection || item.mediaType !== 'movie') return;
-        const imageContainer = card.querySelector('.cardImageContainer');
-        if (!imageContainer) return;
+        const container = imageContainer || card.querySelector('.cardImageContainer');
+        if (!container) return;
         const badge = document.createElement('div');
         badge.className = 'jellyseerr-collection-badge';
         badge.innerHTML = `<span class="material-icons">collections</span><span>${escapeHtml(item.collection.name) || JE.t('jellyseerr_card_badge_collection')}</span>`; // collection name escaped
         badge.title = `Part of ${item.collection.name || 'collection'}`;
-        badge.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            ui.showCollectionRequestModal(item.collection.id, item.collection.name, item);
-        });
-        imageContainer.appendChild(badge);
+        container.appendChild(badge);
     }
     internal.setStatusBadge = setStatusBadge;
     internal.fetchProviderIcons = fetchProviderIcons;
