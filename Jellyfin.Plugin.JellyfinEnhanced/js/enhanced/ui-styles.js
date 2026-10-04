@@ -100,7 +100,11 @@
                (subsets built by scripts/material-symbols/subset.py, ~5 KB
                each), declared once here for every module that uses them under
                JE-private family names; a declaration costs nothing until a
-               rule references the family. */
+               rule references the family. JE's icon elements carry the
+               JE-private classes .je-msym-rounded / .je-msym-outlined, never
+               Google's .material-symbols-* classes: themes and other plugins
+               style those, and JE's rules must not reach their icons (the
+               subsets lack them) nor theirs reach JE's. */
             @font-face {
               font-family: 'JE Material Symbols Rounded';
               font-style: normal;
@@ -119,7 +123,7 @@
                .material-icons at 'Material Symbols Rounded'). They must not be
                the subsets: a theme's own declaration of the same family loses
                to JE's later one, and every icon outside the subset would then
-               render as its ligature name. JE's code never references these
+               render as its ligature name. JE's own icons never use these
                names, so users without such a theme never download them. */
             @font-face {
               font-family: 'Material Symbols Rounded';
@@ -134,6 +138,29 @@
               font-weight: 400;
               src: url(${JE.cdn.font('materialsymbolsoutlined.woff2')}) format('woff2');
             }
+            /* Google's standard classes on the full fonts, for icons from
+               themes, other plugins and custom HTML that rely on JE providing
+               them. :where() keeps the specificity at zero so any theme or
+               plugin rule on these classes wins; the full font downloads only
+               if such an element is on the page. */
+            :where(.material-symbols-rounded),
+            :where(.material-symbols-outlined) {
+              font-weight: normal;
+              font-style: normal;
+              font-size: 24px;
+              line-height: 1;
+              letter-spacing: normal;
+              text-transform: none;
+              display: inline-block;
+              white-space: nowrap;
+              word-wrap: normal;
+              direction: ltr;
+              -webkit-font-feature-settings: 'liga';
+              font-feature-settings: 'liga';
+              -webkit-font-smoothing: antialiased;
+            }
+            :where(.material-symbols-rounded) { font-family: 'Material Symbols Rounded'; }
+            :where(.material-symbols-outlined) { font-family: 'Material Symbols Outlined'; }
             .mediaInfoItem-fileSize .material-icons,
             .mediaInfoItem-watchProgress .material-icons,
             .mediaInfoItem-audioLanguage .material-icons {

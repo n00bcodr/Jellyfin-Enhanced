@@ -461,7 +461,9 @@
      */
     function createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound) {
         const ctx = getBatchContext();
-        const year = item.releaseDate?.substring(0, 4) || item.firstAirDate?.substring(0, 4) || 'N/A';
+        // Collections have no year or rating: show just the Seerr icon instead of N/A.
+        const isCollection = item.mediaType === 'collection';
+        const year = item.releaseDate?.substring(0, 4) || item.firstAirDate?.substring(0, 4) || (isCollection ? '' : 'N/A');
         // validate posterPath before interpolating into a CSS
         // url() context. Anything other than a leading-slash relative path
         // (TMDB always returns this shape, e.g. "/abc.jpg") is rejected so a
@@ -469,7 +471,7 @@
         const posterUrl = internal.isSafeTmdbImagePath(item.posterPath)
             ? `https://image.tmdb.org/t/p/w400${item.posterPath}`
             : ctx.posterNotFoundUrl;
-        const rating = item.voteAverage ? item.voteAverage.toFixed(1) : 'N/A';
+        const rating = item.voteAverage ? item.voteAverage.toFixed(1) : (isCollection ? '' : 'N/A');
         // API-sourced title, set as text and attribute values (never parsed as HTML).
         const title = String((item.title || item.name) ?? '');
         const jellyseerrUrl = ctx.seerrBase ? `${ctx.seerrBase}/${item.mediaType}/${item.id}` : null;
@@ -509,8 +511,11 @@
         titleLink.setAttribute('title', (jellyfinHref || useMoreInfoModal || !jellyseerrUrl) ? title : ctx.viewOnJellyseerrLabel());
         titleLink.firstElementChild.textContent = title;
         titleLink.addEventListener('click', onTitleLinkCaptureClick, true);
-        meta.children[1].textContent = year;
-        meta.children[2].lastElementChild.textContent = rating;
+        // Empty for collections: drop the element (rating first, so the year keeps its index).
+        if (rating) meta.children[2].lastElementChild.textContent = rating;
+        else meta.children[2].remove();
+        if (year) meta.children[1].textContent = year;
+        else meta.children[1].remove();
 
         // Poster is loaded lazily (see observePoster above); the URL is stored via
         // dataset rather than interpolated into the markup.

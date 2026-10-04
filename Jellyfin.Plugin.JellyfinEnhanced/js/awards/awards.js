@@ -18,7 +18,7 @@
             const style = document.createElement('style');
             style.id = styleId;
             style.textContent = `
-                .je-awards-label .material-symbols-rounded {
+                .je-awards-label .je-msym-rounded {
                     font-family: 'JE Material Symbols Rounded';
                     font-weight: normal;
                     font-style: normal;
@@ -400,7 +400,7 @@
             summary.innerHTML = `
                 <div class="je-awards-sparkles" aria-hidden="true">${sparklesSvg()}</div>
                 <div class="je-awards-label">
-                    <span class="material-symbols-rounded je-awards-star" aria-hidden="true">auto_awesome</span>
+                    <span class="je-msym-rounded je-awards-star" aria-hidden="true">auto_awesome</span>
                     <span class="je-awards-wordmark">${escapeHtml(JE.t('awards_label'))}</span>
                 </div>
                 <div class="je-awards-divider"></div>

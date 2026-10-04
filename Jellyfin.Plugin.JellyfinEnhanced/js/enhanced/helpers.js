@@ -655,6 +655,30 @@
     }
 
     /**
+     * The Jellyfin header currently on screen: the legacy .skinHeader, or the
+     * MUI app bar on Jellyfin 12 (where .skinHeader is hidden, zero height).
+     * Its height varies by layout and theme, so measure it rather than assume.
+     * @returns {HTMLElement|null}
+     */
+    function getHeaderElement() {
+        for (const selector of ['.skinHeader', '.MuiAppBar-root']) {
+            const el = document.querySelector(selector);
+            if (el && el.getBoundingClientRect().height > 0 && getComputedStyle(el).visibility !== 'hidden') return el;
+        }
+        return null;
+    }
+
+    /**
+     * Distance in px from the viewport top to the bottom of the Jellyfin
+     * header, i.e. where fixed or sticky UI should start. 0 if none is showing.
+     * @returns {number}
+     */
+    function getHeaderBottom() {
+        const header = getHeaderElement();
+        return header ? Math.round(header.getBoundingClientRect().bottom) : 0;
+    }
+
+    /**
      * Bumps one opt-in usage-analytics counter (e.g. "seerr.request_submitted").
      * Fire-and-forget: no-ops client-side when analytics/usage-counts aren't
      * both enabled (avoiding a pointless network call from the majority of
@@ -708,6 +732,8 @@
         escHtml: (s) => JE.core.ui.escapeHtml(s), // (core)
         createExternalLink,
         getExternalLinkIconSize,
+        getHeaderElement,
+        getHeaderBottom,
         isSafeAvatarUrl,
         resolveProtectedAvatarUrl,
         hydrateAvatarImages,

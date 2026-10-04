@@ -48,11 +48,12 @@
             .jellyseerr-status-badge.status-deleted { background-color: rgba(220, 38, 38, 0.78); border-color: rgba(248, 113, 113, 0.6); }
             @keyframes jellyseerr-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
             .jellyseerr-status-badge.status-processing svg { animation: jellyseerr-spin 1s linear infinite; }
-            .jellyseerr-media-badge { position: absolute; top: 8px; left: 8px; z-index: 100; color: #fff; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.2); font-size: 1em; font-weight: 500; text-transform: uppercase; letter-spacing: 1.5px; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); box-shadow: 0 4px 4px -1px rgba(0,0,0,0.1), 0 2px 2px -2px rgba(0,0,0,0.1); }
-            .layout-mobile .jellyseerr-media-badge { font-size: 0.8em !important; }
-            .jellyseerr-media-badge-movie { background-color: rgba(59, 130, 246, .9); box-shadow: 0 0 0 1px rgba(59,130,246,.35), 0 8px 24px rgba(59,130,246,.25); }
-            .jellyseerr-media-badge-series { background-color: rgba(243, 51, 214, .9); box-shadow: 0 0 0 1px rgba(236,72,153,.35), 0 8px 24px rgba(236,72,153,.25); }
-            .jellyseerr-media-badge-collection { background-color: rgba(16, 185, 129, .9); box-shadow: 0 0 0 1px rgba(16,185,129,.35), 0 8px 24px rgba(16,185,129,.25); }
+            /* Type badge: sizes with the card (container query units) so it stays proportionate from phone to desktop */
+            .jellyseerr-card .cardScalable { container-type: inline-size; }
+            .jellyseerr-media-badge { position: absolute; top: clamp(6px, 4cqw, 10px); left: clamp(6px, 4cqw, 10px); z-index: 100; color: #fff; padding: 0.26em 0.7em; border-radius: 999px; border: 1px solid rgba(255,255,255,0.28); font-size: clamp(0.7rem, 6.4cqw, 1rem); font-weight: 700; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; max-width: calc(100cqw - 2 * clamp(6px, 4cqw, 10px) - 40px); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45); box-shadow: 0 2px 6px rgba(0,0,0,0.45); }
+            .jellyseerr-media-badge-movie { background-color: #3b6fe0; }
+            .jellyseerr-media-badge-series { background-color: #d92cb8; }
+            .jellyseerr-media-badge-collection { background-color: #0f9f6e; }
             .jellyseerr-collection-badge { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 1000; color: #fff; padding: 6px 16px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.2); font-size: 0.8em; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; text-transform: none; letter-spacing: .25px; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); background-color: rgba(16, 185, 129, .85); box-shadow: 0 0 0 1px rgba(16,185,129,.35), 0 8px 24px rgba(16,185,129,.25); cursor: pointer; transition: all 0.2s ease; max-width: 85%; pointer-events: auto; }
             /* Sits lower while the card shows no provider icons. The class mirrors .has-icons on the
                card's icon strip (ui-badges.js); a :has() rule here made every icon or badge change
@@ -86,11 +87,13 @@
                 .jellyseerr-collection-badge { transition: none; }
             }
             .jellyseerr-elsewhere-icons img { width: 1.8em; height: auto; border-radius: 0.7em; background-color: rgba(255,255,255,0.5); padding: 2px;}
-            .jellyseerr-meta { display: flex; justify-content: center; align-items: center; gap: 1em; padding: 0 .75em; }
+            .jellyseerr-meta { display: flex; justify-content: center; align-items: center; gap: 1em; padding: 0 .75em; min-height: 24px; }
             .jellyseerr-rating { display: flex; align-items: center; gap: .3em; color: #bdbdbd; }
             .cardText-first > a.jellyseerr-more-info-link { padding: 0 !important; margin: 0 !important; color: inherit; text-decoration: none; }
             /* REQUEST BUTTONS */
             .jellyseerr-request-button { display: flex; justify-content: center; align-items: center; gap: 0.5em; white-space: normal; text-align: center; padding: 0.6em 1.2em; line-height: 1.2; font-size: 0.9em; transition: background .2s, border-color .2s, color .2s, transform .2s; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; position: relative; z-index: 10; }
+            .jellyseerr-card .jellyseerr-button-collection { white-space: nowrap; padding: 0.6em 0.9em; font-size: 0.85em; gap: 0.4em; }
+            @media (max-width: 600px) { .jellyseerr-card .jellyseerr-button-collection svg { display: none; } }
             .jellyseerr-request-button svg { width: 1.2em; height: 1.2em; flex-shrink: 0; vertical-align: middle; }
             .layout-mobile .jellyseerr-request-button svg { width: 1em; height: 1em; }
             .layout-mobile .jellyseerr-request-button span { font-size: 0.8em !important; }
@@ -193,8 +196,8 @@
                 width: 1em;
                 height: 1em;
             }
-            .jellyseerr-split-arrow:hover:not(:disabled) { opacity: 0.8; }
-            .jellyseerr-split-arrow:active:not(:disabled) { opacity: 0.7; }
+            .jellyseerr-split-arrow:hover:not(:disabled) { filter: brightness(1.2); }
+            .jellyseerr-split-arrow:active:not(:disabled) { filter: brightness(0.9); }
             .jellyseerr-split-arrow:disabled,
             .jellyseerr-split-arrow.jellyseerr-split-arrow-disabled {
                 opacity: 0.5;
@@ -266,6 +269,14 @@
                 width: 18px;
                 height: 18px;
             }
+            /* Narrow cards (~150px): fill the card width and shrink the split button
+               and 4K popup so they fit instead of overflowing. */
+            @media (max-width: 600px) {
+                .jellyseerr-card .jellyseerr-button-group { width: 100%; }
+                .jellyseerr-card .jellyseerr-request-button { padding: 0.6em 0.5em; font-size: 0.8em; gap: 0.35em; }
+                .jellyseerr-card button.jellyseerr-split-arrow { padding: 0.6em 0.4em !important; }
+                .jellyseerr-4k-popup-item { font-size: 0.8rem; white-space: normal; min-height: 2.25em; padding: 0.4em 0.5em; }
+            }
             /* SPINNERS & LOADERS */
             .jellyseerr-spinner, .jellyseerr-loading-spinner, .jellyseerr-button-spinner { display: inline-block; border-radius: 50%; animation: jellyseerr-spin 1s linear infinite; }
             .jellyseerr-loading-spinner { width: 20px; height: 20px; border: 3px solid rgba(255,255,255,.3); border-top-color: #fff; margin-left: 10px; vertical-align: middle; }
@@ -304,14 +315,24 @@
             body.jellyseerr-modal-is-open { overflow: hidden; }
             .jellyseerr-season-content { background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%); border: 1px solid rgba(148, 163, 184, 0.1); border-radius: 16px; padding: 0; max-width: 700px; width: 90%; max-height: 80vh; overflow: hidden; box-shadow: 0 25px 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(148, 163, 184, 0.05), inset 0 1px 0 rgba(148, 163, 184, 0.1); transform: scale(0.95); transition: transform 0.3s ease; display: flex; flex-direction: column; }
             .jellyseerr-season-modal.show .jellyseerr-season-content { transform: scale(1); }
-            .jellyseerr-season-header { position: relative; padding: 24px; border-radius: 16px 16px 0 0; overflow: hidden; height: 8em; flex-shrink: 0; }
-            .jellyseerr-season-header::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; backdrop-filter: blur(2px); background: rgba(0, 0, 0, 0.8); }
-            .jellyseerr-season-title { position: relative; font-size: 1.8rem; font-weight: 700; margin-bottom: 6px; background: linear-gradient(45deg, #3b82f6, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-            .jellyseerr-season-subtitle { position: relative; font-size: 1.4rem; color: rgba(255,255,255,0.9); font-weight: 500; }
+            .jellyseerr-season-header { position: relative; padding: 20px 24px 18px; border-radius: 16px 16px 0 0; overflow: hidden; min-height: 9.5em; display: flex; flex-direction: column; justify-content: flex-end; flex-shrink: 0; }
+            .jellyseerr-season-header::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; background: linear-gradient(180deg, rgba(15, 23, 42, 0.35) 0%, rgba(15, 23, 42, 0.65) 55%, rgba(15, 23, 42, 0.95) 100%); }
+            /* Small indigo eyebrow above the show title */
+            .jellyseerr-season-title { position: relative; font-size: 0.92rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.4rem; color: #8b9bff; text-shadow: 0 0 14px rgba(99, 102, 241, 0.55); }
+            .jellyseerr-season-subtitle { position: relative; font-size: 1.65rem; line-height: 1.15; color: #fff; font-weight: 700; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); }
             .jellyseerr-modal-body { padding: 24px; overflow-y: auto; }
-            .jellyseerr-advanced-options { margin-top: 1em; padding-top: 1em; border-top: 1px solid rgba(148, 163, 184, 0.1); }
-            .jellyseerr-advanced-options h3 { margin-top: 0; }
+            .jellyseerr-advanced-options { margin-top: 1.25em; padding-top: 1.1em; border-top: 1px solid rgba(148, 163, 184, 0.14); }
+            .jellyseerr-advanced-options h3 { margin: 0 0 0.9rem; font-size: 0.9rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #94a3b8; }
             .jellyseerr-form-row { display: flex; gap: 1em; margin-bottom: 1em; }
+            .jellyseerr-advanced-options .jellyseerr-form-row { gap: 14px; margin-bottom: 14px; }
+            .jellyseerr-advanced-options .jellyseerr-form-group label { margin-bottom: 0.45rem; font-size: 0.9rem; letter-spacing: 0.02em; color: #94a3b8; }
+            .jellyseerr-advanced-options select[is="emby-select"] { min-height: 44px; box-sizing: border-box; border-radius: 10px !important; padding: 0 40px 0 14px !important; background-color: rgba(15, 23, 42, 0.6) !important; border: 1px solid rgba(71, 85, 105, 0.55) !important; color-scheme: dark; }
+            .jellyseerr-advanced-options select[is="emby-select"]:hover { border-color: rgba(129, 140, 248, 0.55) !important; }
+            .jellyseerr-advanced-options select[is="emby-select"]:focus { outline: none !important; border-color: #818cf8 !important; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25) !important; }
+            /* Option list: themes colour it differently (and often garishly), so pin it */
+            .jellyseerr-advanced-options select[is="emby-select"] option { background-color: #111a2e !important; color: #e2e8f0 !important; padding: 10px 14px; }
+            .jellyseerr-advanced-options select[is="emby-select"] option:checked { background-color: #4f46e5 !important; background-image: linear-gradient(135deg, #4f46e5, #7c3aed) !important; color: #fff !important; }
+            .jellyseerr-advanced-options select[is="emby-select"] option[value=""] { color: #94a3b8 !important; }
             .jellyseerr-form-group { flex: 1; }
             .jellyseerr-form-group label { display: block; margin-bottom: 0.5em; font-weight: 600; color: #e2e8f0; }
             .jellyseerr-form-group select, .jellyseerr-form-group input, .jellyseerr-form-group textarea { width: 100%; padding: 0.75em 0.875em; border-radius: 6px; border: 1px solid rgba(71, 85, 105, 0.5); background-color: rgba(30, 41, 59, 0.7); color: #e2e8f0; font-size: 0.95rem; transition: border-color 0.2s ease, background-color 0.2s ease; }
@@ -328,10 +349,10 @@
             .jellyseerr-issue-textarea:hover { border-color: rgba(59, 130, 246, 0.4); background-color: rgba(30, 41, 59, 1); }
             .jellyseerr-issue-textarea:focus { outline: none; border-color: rgba(59, 130, 246, 0.8); background-color: rgba(30, 41, 59, 1); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
             .jellyseerr-season-list { display: grid; gap: 4px; margin-bottom: 24px; }
-            .jellyseerr-season-header-row { display: grid; grid-template-columns: 40px 1fr auto auto; align-items: center; gap: 16px; padding: 12px 20px; background: rgba(51, 65, 85, 0.3); border: 1px solid rgba(71, 85, 105, 0.4); border-radius: 12px; margin-bottom: 8px; font-weight: 600; color: #e2e8f0; }
+            .jellyseerr-season-header-row { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 14px; padding: 12px 16px; background: rgba(51, 65, 85, 0.3); border: 1px solid rgba(71, 85, 105, 0.4); border-radius: 12px; margin-bottom: 8px; font-weight: 600; color: #e2e8f0; }
             .jellyseerr-season-header-row .jellyseerr-season-checkbox { cursor: pointer; }
             .jellyseerr-season-header-label { font-size: 0.95rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #cbd5e1; }
-            .jellyseerr-season-item { display: grid; grid-template-columns: 40px 1fr auto auto; align-items: center; gap: 16px; padding: 16px 20px; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(51, 65, 85, 0.3); border-radius: 12px; transition: all 0.2s ease; position: relative; }
+            .jellyseerr-season-item { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 14px; padding: 14px 16px; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(51, 65, 85, 0.3); border-radius: 12px; transition: all 0.2s ease; position: relative; }
             .jellyseerr-season-item:hover:not(.disabled) { background: rgba(30, 41, 59, 0.7); border-color: rgba(59, 130, 246, 0.3); transform: translateY(-1px); }
             .jellyseerr-season-item.disabled { background: rgba(15, 23, 42, 0.6); opacity: 0.6; border-color: rgba(51, 65, 85, 0.2); }
             .jellyseerr-season-checkbox { appearance: none; -webkit-appearance: none; width: 40px; height: 22px; min-width: 40px; border-radius: 999px; background: rgba(71, 85, 105, 0.6); position: relative; cursor: pointer; transition: background-color 0.2s ease; }
@@ -341,10 +362,19 @@
             .jellyseerr-season-checkbox:focus-visible { outline: 2px solid rgba(59, 130, 246, 0.8); outline-offset: 2px; }
             .jellyseerr-season-checkbox:disabled { opacity: 0.4; cursor: not-allowed; }
             .jellyseerr-season-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-            .jellyseerr-season-name { font-weight: 600; color: #e2e8f0; font-size: 1rem; }
-            .jellyseerr-season-meta { font-size: 0.875rem; color: #94a3b8; }
-            .jellyseerr-season-episodes { font-size: 0.875rem; color: #64748b; text-align: right; min-width: 70px; font-weight: 500; }
-            .jellyseerr-season-status { padding: 6px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; min-width: 110px; text-align: center; letter-spacing: 0.5px; border: 1px solid transparent; }
+            .jellyseerr-season-name { font-weight: 600; color: #e2e8f0; font-size: 0.98rem; }
+            .jellyseerr-season-meta { font-size: 0.8rem; color: #94a3b8; }
+            .jellyseerr-season-episodes { font-size: 0.82rem; color: #64748b; text-align: right; white-space: nowrap; font-weight: 500; }
+            .jellyseerr-season-status { padding: 5px 10px; border-radius: 20px; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; text-align: center; letter-spacing: 0.5px; border: 1px solid transparent; }
+            /* Episode count rides along in the meta line on phones instead of its own column */
+            .jellyseerr-meta-eps { display: none; }
+            @media (max-width: 480px) {
+                .jellyseerr-season-item { grid-template-columns: auto 1fr auto; gap: 12px; }
+                .jellyseerr-season-item .jellyseerr-season-episodes { display: none; }
+                .jellyseerr-meta-eps { display: inline; }
+                .jellyseerr-season-meta { white-space: nowrap; }
+                .jellyseerr-advanced-options .jellyseerr-form-row { flex-direction: column; gap: 12px; }
+            }
             .jellyseerr-season-status-available { background: rgba(34, 197, 94, 0.15); color: #4ade80; border-color: rgba(34, 197, 94, 0.3); }
             .jellyseerr-season-status-pending { background: rgba(251, 146, 60, 0.15); color: #fb923c; border-color: rgba(251, 146, 60, 0.3); }
             .jellyseerr-season-status-processing { background: rgba(147, 51, 234, 0.15); color: #a855f7; border-color: rgba(147, 51, 234, 0.3); }

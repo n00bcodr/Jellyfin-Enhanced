@@ -524,7 +524,7 @@
                 <input type="checkbox" class="jellyseerr-season-checkbox" data-season-number="${escapeHtml(seasonNumber)}" ${checkboxDisabled ? 'disabled' : ''} style="${!partialRequestsEnabled ? 'cursor: not-allowed;' : ''}">
                 <div class="jellyseerr-season-info">
                     <div class="jellyseerr-season-name">${escapeHtml(displayName)}</div>
-                    <div class="jellyseerr-season-meta">${escapeHtml(season.airDate ? season.airDate.substring(0, 4) : '')}</div>
+                    <div class="jellyseerr-season-meta">${escapeHtml(season.airDate ? season.airDate.substring(0, 4) : '')}<span class="jellyseerr-meta-eps"> &middot; ${escapeHtml(season.episodeCount || 0)} ep</span></div>
                 </div>
                 <div class="jellyseerr-season-episodes">${escapeHtml(season.episodeCount || 0)} ep</div>
                 <div class="jellyseerr-season-status jellyseerr-season-status-${escapeHtml(statusClass)}">${escapeHtml(statusText)}</div>

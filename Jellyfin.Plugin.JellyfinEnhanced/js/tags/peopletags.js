@@ -320,10 +320,10 @@
             return batchController;
         }
 
-        // Styles for deceased indicators, overlay positioning, and material-symbols-rounded font
+        // Styles for deceased indicators, overlay positioning, and je-msym-rounded font
         JE.core.ui.injectCss('je-people-tags-styles', `
 
-            .material-symbols-rounded {
+            .je-msym-rounded {
                 font-family: 'JE Material Symbols Rounded';
                 font-weight: normal;
                 font-style: normal;
@@ -372,6 +372,48 @@
             .je-people-tag-banner {
                 max-width: 100%;
                 box-sizing: border-box;
+            }
+
+            /* Round portraits: themes clip the whole .cardScalable to a circle, which
+               crops corner-anchored tags. Clip the image instead so age badges can
+               overlap the edge, and inset the birthplace pill. */
+            .je-people-round .cardScalable {
+                overflow: visible !important;
+                aspect-ratio: 1 / 1;
+            }
+            .je-people-round .cardPadder {
+                display: none !important;
+            }
+            .je-people-round .cardImageContainer,
+            .je-people-round .cardOverlayContainer {
+                bottom: auto !important;
+                height: auto !important;
+                aspect-ratio: 1 / 1;
+                border-radius: 50% !important;
+                overflow: hidden;
+            }
+            .je-people-round .je-people-age-container {
+                top: 2% !important;
+                left: -6% !important;
+                gap: 3px !important;
+            }
+            .je-people-round .je-people-age-chip {
+                padding: 2px 6px !important;
+                font-size: 11px !important;
+                border-radius: 999px !important;
+                box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6) !important;
+            }
+            .je-people-round .je-people-place-banner {
+                left: 12% !important;
+                right: 12% !important;
+                bottom: 9% !important;
+                padding: 3px 8px !important;
+                justify-content: center;
+                border-radius: 999px;
+                background: rgba(0, 0, 0, 0.7) !important;
+            }
+            .je-people-round .je-people-place-text {
+                flex: 0 1 auto !important;
             }
         `);
 
@@ -654,7 +696,7 @@
             `;
 
             const icon = document.createElement('span');
-            icon.className = 'material-symbols-rounded je-people-age-icon';
+            icon.className = 'je-msym-rounded je-people-age-icon';
             icon.textContent = iconName;
             icon.style.cssText = 'font-size: 13px;';
             ageChip.appendChild(icon);
@@ -734,7 +776,7 @@
                 }
 
                 const locationIcon = document.createElement('span');
-                locationIcon.className = 'material-symbols-rounded je-people-place-icon';
+                locationIcon.className = 'je-msym-rounded je-people-place-icon';
                 locationIcon.textContent = 'place';
                 locationIcon.style.cssText = 'font-size: 14px; opacity: 0.9;';
                 placeContainer.appendChild(locationIcon);
@@ -770,6 +812,10 @@
                     console.warn(`${logPrefix} No cardScalable found for ${personId}`);
                     return;
                 }
+
+                // Flag circular portraits so their tags use the round layout.
+                const radius = getComputedStyle(cardScalable).borderRadius;
+                card.classList.toggle('je-people-round', radius.includes('%') && parseFloat(radius) >= 40);
 
                 // Remove existing tags if any
                 const existingAgeContainer = cardScalable.querySelector('.je-people-age-container');

@@ -196,10 +196,10 @@
     const icons = [];
 
     if (state.settings.highlightFavorites && userData?.isFavorite) {
-      icons.push(`<span class="je-calendar-status-icon je-status-watchlist material-symbols-rounded" title="${watchlistLabel}" aria-label="${watchlistLabel}">bookmark</span>`);
+      icons.push(`<span class="je-calendar-status-icon je-status-watchlist je-msym-rounded" title="${watchlistLabel}" aria-label="${watchlistLabel}">bookmark</span>`);
     }
     if (state.settings.highlightWatchedSeries && userData?.isWatched) {
-      icons.push(`<span class="je-calendar-status-icon je-status-watched material-symbols-rounded" title="${watchedLabel}" aria-label="${watchedLabel}">visibility</span>`);
+      icons.push(`<span class="je-calendar-status-icon je-status-watched je-msym-rounded" title="${watchedLabel}" aria-label="${watchedLabel}">visibility</span>`);
     }
 
     if (!icons.length) return "";
@@ -410,7 +410,7 @@
         <div class="je-calendar-agenda-indicators">
           ${indicators.join('')}
         </div>
-        <span class="material-symbols-rounded" style="font-size: 20px;">${materialIcon}</span>
+        <span class="je-msym-rounded" style="font-size: 20px;">${materialIcon}</span>
         <div class="je-calendar-agenda-event-marker" style="background: ${color};"></div>
         <div class="je-calendar-agenda-event-content">
           <div class="je-calendar-agenda-event-title">

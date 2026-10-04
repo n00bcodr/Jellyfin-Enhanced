@@ -24,13 +24,15 @@
         };
         // Inject the Material Symbols Rounded @font-face from the plugin's bundled font route
         // (JE's icon subset, under the JE-private family name so a theme's own
-        // 'Material Symbols Rounded' declaration is never shadowed by it).
+        // 'Material Symbols Rounded' declaration is never shadowed by it). JE's
+        // icons use the private .je-msym-rounded class so theme rules on Google's
+        // class never restyle them.
         var jeFontStyle = document.createElement('style');
         jeFontStyle.textContent = "@font-face{font-family:'JE Material Symbols Rounded';font-style:normal;font-weight:100 700;font-display:block;src:url(" + ApiClient.getUrl('/JellyfinEnhanced/fonts/materialsymbolsrounded-subset.woff2', jeCssVersion ? { v: jeCssVersion } : undefined) + ") format('woff2');}";
         document.head.appendChild(jeFontStyle);
     </script>
     <style>
-        .material-symbols-rounded {
+        .je-msym-rounded {
             font-family: 'JE Material Symbols Rounded';
             font-weight: normal;
             font-style: normal;
@@ -93,6 +95,18 @@
                     <span id="je-probe-warning-msg"></span>
                     <div style="margin-top:8px;">
                         <button id="je-probe-retry-btn" type="button" class="emby-button raised raised-mini">Retry</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="je-host-mismatch-warning" class="je-note-banner" style="display: none;" role="alert">
+                <i class="material-icons je-note-icon">warning_amber</i>
+                <div>
+                    <strong>Wrong plugin build for this Jellyfin version</strong>
+                    <span id="je-host-mismatch-msg"></span>
+                    <div style="margin-top:8px;">
+                        Install <code id="je-host-mismatch-asset"></code> instead, from the plugin repository
+                        <a id="je-host-mismatch-link" target="_blank" rel="noopener noreferrer"></a>.
                     </div>
                 </div>
             </div>
@@ -442,7 +456,7 @@
                                     <ul style="margin:4px 0 0 20px; padding:0;">
                                         <li>Apps listed here never get tags drawn into their posters</li>
                                         <li>Add apps that already show Jellyfin Enhanced's tags themselves, such as a custom wrapper around the Jellyfin web UI, so tags aren't shown twice</li>
-                                        <li>Always excluded already: Jellyfin Web, Jellyfin Media Player, Jellyfin Desktop, Jellyfin for WebOS and Jellyfin for Android. No need to list these</li>
+                                        <li>Always excluded already: Jellyfin Web, Jellyfin Media Player, Jellium Desktop, Jellyfin Desktop, Jellyfin for WebOS and Jellyfin for Android. No need to list these</li>
                                         <li>Every other app gets drawn-in tags</li>
                                         <li>Enter each name exactly as shown under Dashboard → Devices, one per line or comma separated</li>
                                     </ul>
@@ -2506,11 +2520,11 @@
                             </div>
                             <div class="checkboxContainer"><label><input id="showUserRatingOnPosters" is="emby-checkbox" type="checkbox"/><span>Show average user rating on poster cards</span></label></div>
                             <div class="je-setting-description" data-desc-for="showUserRatingOnPosters">
-                                <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, overlay a <span class="material-symbols-rounded" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip on poster cards showing the average rating from all user reviews.</div>
+                                <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, overlay a <span class="je-msym-rounded" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip on poster cards showing the average rating from all user reviews.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="showUserRatingDash" is="emby-checkbox" type="checkbox"/><span>Show "—" on posters for unrated items</span></label></div>
                             <div class="je-setting-description" data-desc-for="showUserRatingDash">
-                                <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, a <span class="material-symbols-rounded" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip appears on every poster. Enable this to show "—" for items the user hasn't rated yet. Disable to hide the chip entirely for unrated items.</div>
+                                <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, a <span class="je-msym-rounded" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip appears on every poster. Enable this to show "—" for items the user hasn't rated yet. Disable to hide the chip entirely for unrated items.</div>
                             </div>
                         </div>
                     </fieldset>
@@ -4294,6 +4308,7 @@
 
                 // Re-run dependencies now that plugin info is available
                 updateAllDependencies();
+                checkHostCompat();
                 checkWhatsNew();
             }).catch(function(err) {
                 // Plugin list request failed (network, auth expiry, server offline, ...).
@@ -8355,6 +8370,34 @@
         function jeHumanizeSettingId(id) {
             var spaced = id.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
             return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+        }
+
+        // Warns when this build targets a different Jellyfin line than the server (GET host-compat).
+        function checkHostCompat() {
+            ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/JellyfinEnhanced/host-compat'),
+                dataType: 'json'
+            }).then(function(data) {
+                var banner = document.getElementById('je-host-mismatch-warning');
+                if (!banner) return;
+                if (!data || !data.mismatch) {
+                    banner.style.display = 'none';
+                    return;
+                }
+                document.getElementById('je-host-mismatch-msg').textContent = ' ' + (data.message || '');
+                document.getElementById('je-host-mismatch-asset').textContent = data.expectedAsset || '';
+                var link = document.getElementById('je-host-mismatch-link');
+                link.textContent = data.manifestUrl || '';
+                if (/^https:\/\//i.test(data.manifestUrl || '')) {
+                    link.href = data.manifestUrl;
+                } else {
+                    link.removeAttribute('href');
+                }
+                banner.style.display = '';
+            }).catch(function(err) {
+                console.warn('[JE] host-compat check failed:', err);
+            });
         }
 
         function checkWhatsNew() {

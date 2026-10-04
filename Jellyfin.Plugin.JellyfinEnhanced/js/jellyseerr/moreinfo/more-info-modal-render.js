@@ -16,9 +16,18 @@
 function buildModalContent(data, mediaType) {
     const title = mediaType === 'movie' ? data.title : data.name;
     const releaseDate = mediaType === 'movie' ? data.releaseDate : data.firstAirDate;
+    const formatRuntime = (min) => `${min >= 60 ? `${Math.floor(min / 60)}h ` : ''}${min % 60 ? `${min % 60}m` : ''}`.trim();
     const runtime = mediaType === 'movie'
-        ? `${data.runtime} minutes`
+        ? (data.runtime ? formatRuntime(data.runtime) : 'N/A')
         : data.episodeRunTime?.length ? `${data.episodeRunTime[0]} min episodes` : 'N/A';
+
+    // With Colored Ratings on, mark the badge so css/ratings.css (and its
+    // observer) colour it like the details-page rating box.
+    const contentRating = internal.getContentRating(data, mediaType);
+    const colorRating = JE.pluginConfig?.ColoredRatingsEnabled && contentRating && contentRating !== 'N/A';
+    const ratingBadge = colorRating
+        ? `<span class="rating-badge mediaInfoOfficialRating" rating="${escapeHtml(JE.normalizeOfficialRating?.(contentRating) || contentRating)}">${escapeHtml(contentRating)}</span>`
+        : `<span class="rating-badge">${escapeHtml(contentRating)}</span>`;
 
     const year = releaseDate ? new Date(releaseDate).getFullYear() : 'N/A';
     const budget = data.budget ? internal.formatCurrency(data.budget) : null;
@@ -66,7 +75,7 @@ function buildModalContent(data, mediaType) {
                                     <div class="title-chip" data-mount="je-status-chip"></div>
                                     </div>
                                     <div class="meta-info">
-                                        <span class="rating-badge">${internal.getContentRating(data, mediaType)}</span>
+                                        ${ratingBadge}
                                         <span class="runtime">${runtime}</span>
                                         <span class="genres">${data.genres?.map(g => escapeHtml(g.name)).join(', ') || 'N/A'}</span>
                                     </div>
@@ -394,8 +403,8 @@ function buildCastSection(data) {
                             <div class="person-avatar">
                                 ${imageUrl ? `<img src="${imageUrl}" alt="${escapeHtml(person.name)}" />` : buildPersonPlaceholder()}
                             </div>
-                            <div class="person-name">${escapeHtml(person.name)}</div>
-                            <div class="person-character">${escapeHtml(person.character || '')}</div>
+                            <div class="person-name" title="${escapeHtml(person.name)}">${escapeHtml(person.name)}</div>
+                            <div class="person-character" title="${escapeHtml(person.character || '')}">${escapeHtml(person.character || '')}</div>
                         </div>
                     `;
                 }).join('')}
