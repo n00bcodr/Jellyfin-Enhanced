@@ -3114,7 +3114,10 @@
                     page.classList.add('je-dark-theme');
                 }
             }
-            _jeDetectTheme();
+            // Next frame, before it paints (the page's first frame already has
+            // the right theme classes): reading the computed background here, in
+            // the middle of the page's insertion, forced an extra style pass.
+            requestAnimationFrame(_jeDetectTheme);
             window.addEventListener('load', _jeDetectTheme);
             setTimeout(_jeDetectTheme, 600);
             const resetAllUserSettingsBtn = document.querySelector('#resetAllUserSettingsBtn');
@@ -3157,7 +3160,11 @@
                 }
                 bar.addEventListener('scroll', updateScrollFade, { passive: true });
                 window.addEventListener('resize', updateScrollFade);
-                updateScrollFade();
+                // First check in the next frame, before it paints: run here, in
+                // the middle of jellyfin-web inserting the page, it forced a full
+                // layout of the whole settings page (~0.5 s on first open) that
+                // the page's first paint then does anyway.
+                requestAnimationFrame(updateScrollFade);
                 setTimeout(updateScrollFade, 300); // re-verify after late-loading fonts/icons can change scrollWidth
 
                 bar.addEventListener('mousedown', (e) => {
@@ -7647,7 +7654,10 @@
                 }
                 return nodes;
             }
-            var candidates = findScrollCandidates(header);
+            // Filled in the first frame (below): getComputedStyle on every
+            // ancestor here, in the middle of the page's insertion, forced a
+            // style pass over the whole page.
+            var candidates = [];
             var ticking = false;
             function currentScrollTop() {
                 var winTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
@@ -7681,13 +7691,20 @@
             // Always listen on window (document-scrolling layouts) and on
             // each overflow-declared ancestor (mid-tree scrollers).
             window.addEventListener('scroll', onScroll, { passive: true });
-            if (candidates.length === 0) {
-                console.warn('[JE] sticky-header: no overflow:auto|scroll ancestors found; relying on window scroll only.');
-            }
-            candidates.forEach(function(n) {
-                n.addEventListener('scroll', onScroll, { passive: true });
+            // The ancestors and the first read in the next frame, before it
+            // paints (so the header's first frame is already right): reading
+            // scrollTop here forced a full layout of the settings page (~0.5 s
+            // on first open) that its first paint then does anyway.
+            requestAnimationFrame(function() {
+                candidates = findScrollCandidates(header);
+                if (candidates.length === 0) {
+                    console.warn('[JE] sticky-header: no overflow:auto|scroll ancestors found; relying on window scroll only.');
+                }
+                candidates.forEach(function(n) {
+                    n.addEventListener('scroll', onScroll, { passive: true });
+                });
+                read();
             });
-            read();
         })();
 
         // ================================
