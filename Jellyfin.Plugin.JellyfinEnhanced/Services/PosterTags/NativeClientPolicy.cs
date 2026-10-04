@@ -28,6 +28,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         {
             "Jellyfin Web",
             "Jellyfin Media Player",
+            "Jellium Desktop",
             "Jellyfin Desktop",
             "Jellyfin for WebOS",
             "Jellyfin for Android",
