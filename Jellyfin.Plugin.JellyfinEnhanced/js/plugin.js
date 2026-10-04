@@ -189,6 +189,30 @@
         } else if (!enabled && existing) {
             existing.remove();
         }
+
+        // The icon sheet flattens native link buttons by href; ours aren't matched,
+        // so flatten them too or they keep the theme's pill. Arr status border stays.
+        const flatStyle = document.getElementById('metadataIconsFlatCss');
+        if (enabled && !flatStyle) {
+            const style = document.createElement('style');
+            style.id = 'metadataIconsFlatCss';
+            style.textContent = `
+                .itemExternalLinks > a.letterboxd-link-icon,
+                .itemExternalLinks > a.seerr-link,
+                .itemExternalLinks > a.arr-link,
+                .itemExternalLinks > a.arr-tag-link {
+                    background: none !important;
+                    padding: 0 !important;
+                    border-radius: 0 !important;
+                }
+                .itemExternalLinks > a.letterboxd-link-icon::before {
+                    margin-right: 0 !important;
+                }
+            `;
+            document.head.appendChild(style);
+        } else if (!enabled && flatStyle) {
+            flatStyle.remove();
+        }
     }
 
     /**
@@ -398,6 +422,8 @@
             JE.pluginConfig.CalendarUseCustomTabs = false;
             JE.pluginConfig.HiddenContentUseCustomTabs = false;
             JE.pluginConfig.DownloadsUseCustomTabs = false;
+            JE.pluginConfig.RecommendationsUseCustomTabs = false;
+            JE.pluginConfig.ActivityFeedUseCustomTabs = false;
         }
         if (!hasPluginPages) {
             JE.pluginConfig.BookmarksUsePluginPages = false;
@@ -418,9 +444,16 @@
                 type: 'GET', url: ApiClient.getUrl('/Plugins'), dataType: 'json'
             });
             if (!Array.isArray(installedPlugins)) throw new Error('Unexpected /Plugins response');
+            // Approximates "running right now" (the bootstrap checks that
+            // directly). "Disabled" is reported only once a restart has
+            // unloaded the plugin; until then it shows "Restart" and keeps
+            // serving, as does one deleted or superseded but not yet restarted.
+            // "Restart" can also mean enabled but not loaded yet; that window
+            // ends with the restart either way.
+            const isRunning = p => !['Disabled', 'NotSupported', 'Malfunctioned'].includes(p.Status);
             applyDeliveryPluginFlags(
-                installedPlugins.some(p => p.Name === 'Custom Tabs'),
-                installedPlugins.some(p => p.Name === 'Plugin Pages')
+                installedPlugins.some(p => p.Name === 'Custom Tabs' && isRunning(p)),
+                installedPlugins.some(p => p.Name === 'Plugin Pages' && isRunning(p))
             );
         } catch (e) {
             console.warn('🪼 Jellyfin Enhanced: Could not verify installed plugins:', e);

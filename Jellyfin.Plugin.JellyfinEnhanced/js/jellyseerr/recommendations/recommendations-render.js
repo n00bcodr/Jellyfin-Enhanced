@@ -20,6 +20,120 @@
   const showCategoryPage = (categoryKey) => P.showCategoryPage(categoryKey);
 
   /**
+   * Keeps a position:sticky bar flush under Jellyfin's header. The header's
+   * height differs per layout and theme, so it is measured
+   * (JE.helpers.getHeaderBottom) and re-read on scroll/resize, since a theme or
+   * layout switch can change it. Also sets --je-bleed-l/-r (the parent's side
+   * padding, for a full-width backdrop) and toggles .je-stuck while the bar is
+   * pinned. Stops itself once the bar leaves the document.
+   * @param {HTMLElement} bar
+   * @returns {() => void} Stops the tracking.
+   */
+  function trackStickyBar(bar) {
+    let observedHeader = null;
+    let resizeObserver = null;
+    let frame = 0;
+
+    function measure() {
+      frame = 0;
+      if (!bar.isConnected) {
+        stop();
+        return;
+      }
+      const header = JE.helpers.getHeaderElement();
+      if (header !== observedHeader && window.ResizeObserver) {
+        if (resizeObserver) resizeObserver.disconnect();
+        observedHeader = header;
+        if (header) {
+          resizeObserver = new ResizeObserver(schedule);
+          resizeObserver.observe(header);
+        }
+      }
+      const headerBottom = JE.helpers.getHeaderBottom();
+      bar.style.setProperty('--je-sticky-top', headerBottom ? `${headerBottom}px` : '');
+      const padding = getComputedStyle(bar.parentElement);
+      bar.style.setProperty('--je-bleed-l', padding.paddingLeft);
+      bar.style.setProperty('--je-bleed-r', padding.paddingRight);
+      const stickyTop = parseFloat(getComputedStyle(bar).top) || 0;
+      bar.classList.toggle('je-stuck', bar.getBoundingClientRect().top <= stickyTop + 1);
+    }
+    function schedule() {
+      if (!frame) frame = requestAnimationFrame(measure);
+    }
+    function stop() {
+      document.removeEventListener('scroll', schedule, { capture: true });
+      window.removeEventListener('resize', schedule);
+      if (resizeObserver) resizeObserver.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    }
+
+    // Capture: the scrolling element differs between Jellyfin layouts.
+    document.addEventListener('scroll', schedule, { capture: true, passive: true });
+    window.addEventListener('resize', schedule);
+    measure();
+    return stop;
+  }
+  P.trackStickyBar = trackStickyBar;
+
+  // Tracking for the page title currently on screen (re-rendered on refresh).
+  let stopTitleTracking = null;
+
+  /**
+   * Adds hover scroll arrows and edge fades to one horizontal row. Arrows are
+   * only displayed on hover-capable devices (CSS); touch keeps native swiping.
+   * @param {HTMLElement} section - The row's position:relative section.
+   * @param {HTMLElement} scroller - The overflow:auto row element.
+   */
+  function enableRowScroll(section, scroller) {
+    // Purely a mouse convenience: the row itself stays natively scrollable
+    // (keyboard, touch, trackpad), so the buttons are hidden from AT and Tab.
+    const makeButton = (dir) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `je-scroll-btn ${dir}`;
+      btn.tabIndex = -1;
+      btn.setAttribute('aria-hidden', 'true');
+      const icon = document.createElement('span');
+      icon.className = 'material-icons';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = `chevron_${dir}`;
+      btn.appendChild(icon);
+      btn.addEventListener('click', () => {
+        scroller.scrollBy({ left: (dir === 'left' ? -1 : 1) * scroller.clientWidth * 0.8, behavior: 'smooth' });
+      });
+      section.appendChild(btn);
+      return btn;
+    };
+    const left = makeButton('left');
+    const right = makeButton('right');
+
+    const update = () => {
+      const canLeft = scroller.scrollLeft > 4;
+      const canRight = scroller.scrollLeft < scroller.scrollWidth - scroller.clientWidth - 4;
+      scroller.classList.toggle('je-fade-l', canLeft);
+      scroller.classList.toggle('je-fade-r', canRight);
+      left.classList.toggle('show', canLeft);
+      right.classList.toggle('show', canRight);
+      // Centre the arrows on the card images rather than the whole row, which
+      // also includes the title and rating lines below them.
+      const items = scroller.firstElementChild;
+      const image = scroller.querySelector('.cardScalable');
+      if (items && image) {
+        const mid = scroller.offsetTop + items.offsetTop + image.offsetTop + image.offsetHeight / 2;
+        left.style.top = right.style.top = `${Math.round(mid - 22)}px`;
+      }
+    };
+    scroller.addEventListener('scroll', update, { passive: true });
+    if (window.ResizeObserver) {
+      // Cards arrive after the row is built, so watch the content size too.
+      const observer = new ResizeObserver(update);
+      observer.observe(scroller);
+      if (scroller.firstElementChild) observer.observe(scroller.firstElementChild);
+    }
+    requestAnimationFrame(update);
+  }
+
+  /**
    * Builds a horizontal media row section, mirroring the layout used for the
    * Jellyseerr search-results row (see jellyseerr/ui/ui-results.js
    * createJellyseerrSection).
@@ -81,6 +195,7 @@
 
     scrollerContainer.appendChild(itemsContainer);
     section.appendChild(scrollerContainer);
+    enableRowScroll(section, scrollerContainer);
     return section;
   }
 
@@ -160,6 +275,7 @@
 
     scrollerContainer.appendChild(itemsContainer);
     section.appendChild(scrollerContainer);
+    enableRowScroll(section, scrollerContainer);
     return section;
   }
 
@@ -265,6 +381,7 @@
 
     scrollerContainer.appendChild(itemsContainer);
     section.appendChild(scrollerContainer);
+    enableRowScroll(section, scrollerContainer);
     return section;
   }
 
@@ -285,9 +402,16 @@
 
     const heading = document.createElement('h1');
     heading.className = 'je-recommendations-title je-pad-left je-pad-right';
-    heading.style.cssText = 'margin-bottom: 0.5em;';
-    heading.textContent = JE.t('recommendations_title');
+    const logo = document.createElement('img');
+    logo.className = 'je-reco-logo';
+    logo.alt = '';
+    logo.src = JE.cdn.selfhst('svg/seerr.svg');
+    const titleText = document.createElement('span');
+    titleText.textContent = JE.t('recommendations_title');
+    heading.append(logo, titleText);
     container.appendChild(heading);
+    if (stopTitleTracking) stopTitleTracking();
+    stopTitleTracking = trackStickyBar(heading);
 
     const loading = document.createElement('div');
     loading.className = 'je-recommendations-loading je-pad-left je-pad-right';
