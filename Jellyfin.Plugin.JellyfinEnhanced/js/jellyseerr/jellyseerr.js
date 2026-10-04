@@ -636,12 +636,23 @@
                 }
 
                 if (results.length > 0 && itemsContainer) {
-                    const fragment = document.createDocumentFragment();
-                    results.forEach(item => {
-                        const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
-                        fragment.appendChild(card);
-                    });
-                    itemsContainer.appendChild(fragment);
+                    const createCard = item => createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
+                    const slices = JE.discoveryFilter?.appendInSlices;
+                    if (slices) {
+                        // The cards in view go in at once; the rest of the batch
+                        // (off to the right of the row) is built in short slices
+                        // and goes in after them. The load resolves once every
+                        // card is in; a new search or a rebuilt row drops the rest.
+                        const rowId = collectionRowId;
+                        await slices(itemsContainer, results, createCard, {
+                            syncCount: JE.discoveryFilter.cardsInView(itemsContainer, { horizontal: true }),
+                            isCurrent: () => rowId === collectionRowId && lastProcessedQuery === query && itemsContainer.isConnected
+                        });
+                    } else {
+                        const fragment = document.createDocumentFragment();
+                        results.forEach(item => fragment.appendChild(createCard(item)));
+                        itemsContainer.appendChild(fragment);
+                    }
                     // This batch's collection cards, one lookup for the batch.
                     enrichWithCollections(results, query);
                 }

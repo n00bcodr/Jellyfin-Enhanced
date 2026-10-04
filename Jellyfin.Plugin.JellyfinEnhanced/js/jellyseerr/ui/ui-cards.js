@@ -133,10 +133,13 @@
      * (or that sit under `root`, when given), and cancels their pending or
      * in-flight provider-icon lookups. Call after tearing down a result
      * row / discovery section so detached cards can be garbage-collected.
-     * @param {HTMLElement} [root]
+     * Cards still being assembled in a DocumentFragment (a batch built over
+     * several tasks) are left alone unless they are under `root`.
+     * @param {HTMLElement|DocumentFragment} [root]
      */
     function releasePosters(root) {
-        const isReleased = (el) => !el.isConnected || (root && root.contains(el));
+        const isReleased = (el) => (root && root.contains(el))
+            || (!el.isConnected && !(el.getRootNode() instanceof DocumentFragment));
         if (posterObserver) {
             for (const el of [...observedPosters]) {
                 if (isReleased(el)) {

@@ -475,18 +475,17 @@
     }
 
     /**
-     * Creates cards and returns a DocumentFragment for batch DOM insertion
-     * @param {Array} results - Array of items to create cards for
-     * @param {object} [options] - Options
-     * @param {string} [options.cardClass] - Card class to use ('portraitCard' or 'overflowPortraitCard')
-     * @returns {DocumentFragment}
+     * The results a discovery batch renders cards for, in order: hidden
+     * content, duplicates within the batch and (when the admin excludes them)
+     * library and blocklisted items are dropped.
+     * @param {Array} results - Array of items
+     * @returns {Array} The items to create cards for
      */
-    function createCardsFragment(results, options = {}) {
-        const { cardClass = 'portraitCard' } = options;
-        const fragment = document.createDocumentFragment();
+    function filterCardResults(results) {
         const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
         const excludeBlocklistedItems = JE.pluginConfig?.JellyseerrExcludeBlocklistedItems === true;
         const seen = new Set();
+        const items = [];
 
         // Filter hidden content before rendering
         const filteredResults = JE.hiddenContent
@@ -508,38 +507,207 @@
             if (excludeBlocklistedItems && item.mediaInfo?.status === JE.seerrStatus.MEDIA.BLOCKED) {
                 continue;
             }
-            const card = JE.jellyseerrUI?.createJellyseerrCard?.(item, true, true);
-            if (!card) continue;
+            items.push(item);
+        }
+        return items;
+    }
 
-            const classList = card.classList;
-            // Remove both possible classes and add the desired one
-            classList.remove('portraitCard', 'overflowPortraitCard');
-            classList.add(cardClass);
+    /**
+     * Creates one discovery card: the shared Seerr card with the section's
+     * card class, its media type for CSS filtering, and the title linking to
+     * the Jellyfin item when the item is in the library.
+     * @param {Object} item - Seerr result
+     * @param {string} cardClass - 'portraitCard' or 'overflowPortraitCard'
+     * @returns {HTMLElement|null}
+     */
+    function createDiscoveryCard(item, cardClass) {
+        const card = JE.jellyseerrUI?.createJellyseerrCard?.(item, true, true);
+        if (!card) return null;
 
-            // Add media type for fast CSS-based filtering
-            card.setAttribute('data-media-type', item.mediaType);
+        const classList = card.classList;
+        // Remove both possible classes and add the desired one
+        classList.remove('portraitCard', 'overflowPortraitCard');
+        classList.add(cardClass);
 
-            const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
-            if (jellyfinMediaId) {
-                card.setAttribute('data-library-item', 'true');
-                card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
-                classList.add('jellyseerr-card-in-library');
+        // Add media type for fast CSS-based filtering
+        card.setAttribute('data-media-type', item.mediaType);
 
-                const titleLink = card.querySelector('.cardText-first a');
-                if (titleLink) {
-                    const itemName = item.title || item.name;
-                    titleLink.textContent = itemName;
-                    titleLink.title = itemName;
-                    titleLink.href = `#!/details?id=${jellyfinMediaId}`;
-                    titleLink.removeAttribute('target');
-                    titleLink.removeAttribute('rel');
+        const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
+        if (jellyfinMediaId) {
+            card.setAttribute('data-library-item', 'true');
+            card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
+            classList.add('jellyseerr-card-in-library');
+
+            const titleLink = card.querySelector('.cardText-first a');
+            if (titleLink) {
+                const itemName = item.title || item.name;
+                titleLink.textContent = itemName;
+                titleLink.title = itemName;
+                titleLink.href = `#!/details?id=${jellyfinMediaId}`;
+                titleLink.removeAttribute('target');
+                titleLink.removeAttribute('rel');
+            }
+        }
+        return card;
+    }
+
+    /**
+     * Creates cards and returns a DocumentFragment for batch DOM insertion
+     * @param {Array} results - Array of items to create cards for
+     * @param {object} [options] - Options
+     * @param {string} [options.cardClass] - Card class to use ('portraitCard' or 'overflowPortraitCard')
+     * @returns {DocumentFragment}
+     */
+    function createCardsFragment(results, options = {}) {
+        const { cardClass = 'portraitCard' } = options;
+        const fragment = document.createDocumentFragment();
+        for (const item of filterCardResults(results)) {
+            const card = createDiscoveryCard(item, cardClass);
+            if (card) fragment.appendChild(card);
+        }
+        return fragment;
+    }
+
+    // ---- Batches built in short slices ------------------------------------------
+    // A load can bring 80-160 cards, and building them all in one go was one
+    // long task. The cards that land where the viewer can see them (or within
+    // half a screen of it) are still built and appended at once. The rest of
+    // the batch, which the scroll engine renders well below the fold, is built
+    // off-document in slices of BUILD_SLICE_MS with the browser free to handle
+    // input and draw frames in between, then appended in one go — so it is
+    // still laid out in a single frame: every frame that changes the page costs
+    // a share proportional to the whole page (layout, paint, layerization), and
+    // appending slice by slice would pay that share once per slice.
+    const BUILD_SLICE_MS = 8;
+
+    // Task-queue yield (no timer clamping, no throttling in hidden tabs).
+    const yieldChannel = typeof MessageChannel !== 'undefined' ? new MessageChannel() : null;
+    const yieldWaiters = [];
+    if (yieldChannel) {
+        yieldChannel.port1.onmessage = () => {
+            const resume = yieldWaiters.shift();
+            if (resume) resume();
+        };
+    }
+
+    /**
+     * Resolves in a later task, letting the browser run input handlers and
+     * render a frame in between.
+     * @returns {Promise<void>}
+     */
+    function yieldToBrowser() {
+        if (!yieldChannel) return new Promise(resolve => setTimeout(resolve, 0));
+        return new Promise((resolve) => {
+            yieldWaiters.push(resolve);
+            yieldChannel.port2.postMessage(null);
+        });
+    }
+
+    /**
+     * How many cards appended to the end of a container would land on screen
+     * or within half a screen past its edge: the part of a batch that must be
+     * appended at once so nothing pops in where the viewer is looking.
+     * @param {HTMLElement} container - Element holding the .card elements
+     * @param {object} [options]
+     * @param {boolean} [options.horizontal=false] - A horizontal row (cards extend to the right)
+     * @returns {number}
+     */
+    function cardsInView(container, options = {}) {
+        const scroll = JE.seamlessScroll;
+        if (!scroll?.cardsNeeded || !container.isConnected) return 0;
+        const rect = container.getBoundingClientRect();
+        if (options.horizontal) {
+            // A row above or below the screen shows none of its new cards.
+            if (rect.bottom <= 0 || rect.top >= window.innerHeight || rect.height === 0) return 0;
+            let last = container.lastElementChild;
+            while (last && !last.classList.contains('card')) last = last.previousElementSibling;
+            const end = last ? last.getBoundingClientRect().right : rect.left;
+            const gapPx = window.innerWidth * 1.5 - end;
+            return gapPx > 0 ? scroll.cardsNeeded(container, { deficitPx: gapPx, horizontal: true }, 20) : 0;
+        }
+        const gapPx = window.innerHeight * 1.5 - rect.bottom;
+        return gapPx > 0 ? scroll.cardsNeeded(container, { deficitPx: gapPx }, 40) : 0;
+    }
+
+    /**
+     * Appends cards for `items` to the end of `container`: the first
+     * `syncCount` (the ones in view) at once, the rest built in short slices
+     * across tasks and appended together at the end. The returned promise
+     * settles once every card is in, so a caller reporting to the scroll
+     * engine measures the whole batch.
+     * @param {HTMLElement} container
+     * @param {Array} items - Items to render, in order
+     * @param {function(Object): (HTMLElement|null)} createCard - Builds one item's card
+     * @param {object} [options]
+     * @param {number} [options.syncCount=0] - Cards that must be appended synchronously
+     * @param {function(): boolean} [options.isCurrent] - False once the batch is
+     *   superseded (navigation, re-sort): the cards not appended yet are dropped
+     * @returns {Promise<number>} Number of cards appended
+     */
+    async function appendInSlices(container, items, createCard, options = {}) {
+        const { syncCount = 0, isCurrent = () => true } = options;
+        let index = 0;
+        /**
+         * Builds cards into a fragment: at least `minCount`, then more while
+         * the slice is under `budgetMs` of script time.
+         * @param {DocumentFragment} fragment
+         * @param {number} minCount
+         * @param {number} budgetMs
+         * @returns {number} Cards built
+         */
+        const build = (fragment, minCount, budgetMs) => {
+            const start = performance.now();
+            let count = 0;
+            while (index < items.length && (count < minCount || performance.now() - start < budgetMs)) {
+                const card = createCard(items[index++]);
+                if (card) {
+                    fragment.appendChild(card);
+                    count++;
                 }
             }
+            return count;
+        };
 
-            fragment.appendChild(card);
+        let appended = 0;
+        if (syncCount > 0) {
+            const visible = document.createDocumentFragment();
+            appended = build(visible, syncCount, 0);
+            if (appended > 0) container.appendChild(visible);
         }
+        const rest = document.createDocumentFragment();
+        let built = build(rest, 0, BUILD_SLICE_MS);
+        while (index < items.length) {
+            await yieldToBrowser();
+            if (!isCurrent()) {
+                // Dropped: stop watching the posters of the cards built so far.
+                JE.jellyseerrUI?.releasePosters?.(rest);
+                return appended;
+            }
+            built += build(rest, 1, BUILD_SLICE_MS);
+        }
+        if (built > 0) container.appendChild(rest);
+        return appended + built;
+    }
 
-        return fragment;
+    /**
+     * Renders a discovery batch into a grid: the same cards as
+     * createCardsFragment, the ones the viewer can see appended at once and
+     * the rest built in short slices (appendInSlices).
+     * @param {HTMLElement} container - The section's itemsContainer
+     * @param {Array} results - The batch
+     * @param {object} [options]
+     * @param {string} [options.cardClass='portraitCard'] - Card class
+     * @param {function(): boolean} [options.isCurrent] - See appendInSlices
+     * @returns {Promise<number>} Number of cards appended
+     */
+    function appendCards(container, results, options = {}) {
+        const { cardClass = 'portraitCard', isCurrent } = options;
+        const items = filterCardResults(results);
+        if (items.length === 0) return Promise.resolve(0);
+        return appendInSlices(container, items, item => createDiscoveryCard(item, cardClass), {
+            syncCount: cardsInView(container),
+            isCurrent
+        });
     }
 
     /**
@@ -741,6 +909,9 @@
         fetchWithManagedRequest,
         fetchTmdbGenreList,
         createCardsFragment,
+        appendCards,
+        appendInSlices,
+        cardsInView,
         waitForPageReady,
         setupInfiniteScroll,
         cleanupScrollObserver,
