@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller;
@@ -544,6 +545,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     ["p_period"] = payload.Period,
                     ["p_events"] = payload.Events,
                     ["p_data_file_sizes"] = payload.DataFileSizes,
+                    ["p_build_proof"] = BuildAttestation.Prove(payload.InstallId, payload.PluginVersion),
                 };
 
                 var client = _httpClientFactory.CreateClient();

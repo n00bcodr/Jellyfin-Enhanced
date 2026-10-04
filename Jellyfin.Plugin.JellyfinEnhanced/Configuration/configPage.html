@@ -99,6 +99,18 @@
                 </div>
             </div>
 
+            <div id="je-host-mismatch-warning" class="je-note-banner" style="display: none;" role="alert">
+                <i class="material-icons je-note-icon">warning_amber</i>
+                <div>
+                    <strong>Wrong plugin build for this Jellyfin version</strong>
+                    <span id="je-host-mismatch-msg"></span>
+                    <div style="margin-top:8px;">
+                        Install <code id="je-host-mismatch-asset"></code> instead, from the plugin repository
+                        <a id="je-host-mismatch-link" target="_blank" rel="noopener noreferrer"></a>.
+                    </div>
+                </div>
+            </div>
+
             <form id="JellyfinEnhancedForm">
 
                 <div id="overview" class="jellyfin-tab-content active">
@@ -4289,6 +4301,7 @@
 
                 // Re-run dependencies now that plugin info is available
                 updateAllDependencies();
+                checkHostCompat();
                 checkWhatsNew();
             }).catch(function(err) {
                 // Plugin list request failed (network, auth expiry, server offline, ...).
@@ -8332,6 +8345,34 @@
         function jeHumanizeSettingId(id) {
             var spaced = id.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
             return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+        }
+
+        // Warns when this build targets a different Jellyfin line than the server (GET host-compat).
+        function checkHostCompat() {
+            ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl('/JellyfinEnhanced/host-compat'),
+                dataType: 'json'
+            }).then(function(data) {
+                var banner = document.getElementById('je-host-mismatch-warning');
+                if (!banner) return;
+                if (!data || !data.mismatch) {
+                    banner.style.display = 'none';
+                    return;
+                }
+                document.getElementById('je-host-mismatch-msg').textContent = ' ' + (data.message || '');
+                document.getElementById('je-host-mismatch-asset').textContent = data.expectedAsset || '';
+                var link = document.getElementById('je-host-mismatch-link');
+                link.textContent = data.manifestUrl || '';
+                if (/^https:\/\//i.test(data.manifestUrl || '')) {
+                    link.href = data.manifestUrl;
+                } else {
+                    link.removeAttribute('href');
+                }
+                banner.style.display = '';
+            }).catch(function(err) {
+                console.warn('[JE] host-compat check failed:', err);
+            });
         }
 
         function checkWhatsNew() {
