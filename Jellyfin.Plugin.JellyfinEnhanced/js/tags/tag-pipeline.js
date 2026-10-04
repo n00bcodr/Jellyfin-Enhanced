@@ -69,7 +69,8 @@
     const reviewRatingsListeners = new Set(); // called with the changed keys (Set, or null = all) when averages change
     const PERSIST_SLICE = 250;       // entries per idle-slice write (each put clones its entry on this thread)
     const PERSIST_START_DELAY_MS = 1500; // let the page's first tag scans have the idle time before persisting
-    const MEMORY_SOFT_CAP = 20000;   // entries kept in memory on the stored-copy path before it is reset
+    const MEMORY_SOFT_CAP = 20000;
+    const TAG_SETTING_KEYS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'languageTagsEnabled'];   // entries kept in memory on the stored-copy path before it is reset
 
     // ── State ──────────────────────────────────────────────────────────
 
@@ -78,6 +79,10 @@
     const firstEpisodeCache = new Map(); // seriesId → Promise<item|null>
     const parentSeriesCache = new Map(); // seriesId → Promise<item|null>
     let fetchTimer = null;
+    let pipelineStarted = false;           // initialize() has wired the observers and loaded the server cache
+    let startWhenRendererRegisters = false; // initialize() ran with no tag type enabled
+    let deferredLoad = null;               // { forceDownload } of an invalidation that skipped its reload (no tag type on)
+    let loadStartedForEpoch = null;        // session epoch in which a renderer registration started the load
     let isProcessing = false;
     let batchGeneration = 0; // Incremented on navigation to cancel stale in-flight batches
     let requestQueue = [];               // { el, itemId, itemType }
@@ -147,6 +152,23 @@
             }
         }
         console.log(`${logPrefix} Renderer registered: ${name} (total: ${renderers.size})`);
+        // Starting now: initialize() scans once the server cache is loaded.
+        // (A renderer can register late, after its user switched to one with
+        // every tag type off: then there is still nothing to start.)
+        if (startWhenRendererRegisters && anyTagTypeEnabled()) {
+            loadStartedForEpoch = JE.session?.getEpoch?.() ?? null;
+            initialize();
+            return;
+        }
+        // The last invalidation skipped its reload while every tag type was off:
+        // run it now, as that invalidation (scans held, fresh download if needed).
+        if (deferredLoad && anyTagTypeEnabled()) {
+            const { forceDownload } = deferredLoad;
+            deferredLoad = null;
+            loadStartedForEpoch = JE.session?.getEpoch?.() ?? null;
+            JE.tagPipeline.invalidateServerCache({ reuseStored: !forceDownload }).catch(() => {});
+            return;
+        }
 
         // If cards are already on the page (renderer registered after initial scan),
         // clear processed set and rescan so existing cards get this renderer's tags.
@@ -639,6 +661,8 @@
      * @returns {void}
      */
     function scheduleNavigationRefresh() {
+        // Every tag type is off: nothing reads the cache until one is turned on.
+        if (!anyTagTypeEnabled()) return;
         const now = Date.now();
         const elapsed = now - lastNavRefreshAt;
         if (!serverCache || elapsed >= NAV_REFRESH_MIN_INTERVAL_MS) {
@@ -650,6 +674,7 @@
         if (navRefreshTimer) return;
         navRefreshTimer = setTimeout(() => {
             navRefreshTimer = null;
+            if (!anyTagTypeEnabled()) return;
             lastNavRefreshAt = Date.now();
             refreshServerCache();
         }, NAV_REFRESH_MIN_INTERVAL_MS - elapsed);
@@ -883,6 +908,16 @@
      * Check whether at least one registered renderer is currently enabled.
      * @returns {boolean} True if any renderer reports enabled.
      */
+    /**
+     * Whether the user has any poster tag type on. Read from the settings as
+     * well as the registered renderers, because a renderer can register after
+     * the pipeline starts (quality tags wait for Jellyfin's audio preference).
+     * @returns {boolean}
+     */
+    function anyTagTypeEnabled() {
+        return TAG_SETTING_KEYS.some((key) => !!JE.currentSettings?.[key]) || hasAnyEnabledRenderer();
+    }
+
     function hasAnyEnabledRenderer() {
         for (const [, r] of renderers) {
             if (r.isEnabled()) return true;
@@ -1435,6 +1470,17 @@
             setTimeout(initialize, 100);
             return;
         }
+        if (pipelineStarted) return;
+        // No tag type is enabled, so nothing would ever be drawn: don't download
+        // the server cache, store it, or refresh it on every navigation. Turning
+        // a tag type on later registers its renderer, which starts the pipeline.
+        if (!anyTagTypeEnabled()) {
+            startWhenRendererRegisters = true;
+            console.log(`${logPrefix} No tag renderers enabled; idle until one is`);
+            return;
+        }
+        startWhenRendererRegisters = false;
+        pipelineStarted = true;
 
         // Register as body mutation subscriber at priority 0 (after hidden-content and prefetch).
         // Only trigger scans when nodes were actually added to the DOM — ignore attribute
@@ -1612,6 +1658,8 @@
          *   what a Spoiler Guard toggle just changed.
          */
         async invalidateServerCache(options) {
+            // Not started (no tag type enabled): no cache or overlays to replace.
+            if (!pipelineStarted) return;
             // Hold a flag for the duration of the reload so concurrent scheduleScan()
             // calls (from the body MutationObserver during the await) no-op instead of
             // processing cards against the empty cache. processedCards is reset a
@@ -1657,8 +1705,16 @@
                 } catch (domErr) {
                     console.warn(`${logPrefix} overlay cleanup during invalidate failed:`, domErr);
                 }
-                await loadServerCache({ forceDownload: !options?.reuseStored });
-                processedCards = new WeakSet();
+                const forceDownload = !options?.reuseStored;
+                if (anyTagTypeEnabled()) {
+                    deferredLoad = null;
+                    await loadServerCache({ forceDownload });
+                    processedCards = new WeakSet();
+                } else {
+                    // Every tag type is off: load when one is turned on (registerRenderer),
+                    // still as a fresh download if any skipped reload needed one.
+                    deferredLoad = { forceDownload: forceDownload || !!deferredLoad?.forceDownload };
+                }
             } catch (e) {
                 console.warn(`${logPrefix} invalidateServerCache failed:`, e);
             } finally {
@@ -1687,6 +1743,11 @@
         JE.tagPipeline.clearProcessed();
     });
     document.addEventListener('je:user-data-loaded', () => {
+        // The incoming user's tag types registered during the switch and
+        // already started loading their cache: don't drop it and load again.
+        const startedThisSwitch = loadStartedForEpoch !== null && loadStartedForEpoch === JE.session?.getEpoch?.();
+        loadStartedForEpoch = null;
+        if (startedThisSwitch) return;
         JE.tagPipeline.invalidateServerCache({ reuseStored: true }).catch(() => {});
     });
 
