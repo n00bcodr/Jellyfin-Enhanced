@@ -359,6 +359,9 @@
     );
   }
 
+  // Stops the sticky-bar tracking (P.trackStickyBar) for the open category page.
+  let stopStickyTracking = null;
+
   async function showCategoryPage(categoryKey) {
     const category = resolveCategory(categoryKey);
     if (!category) return;
@@ -432,6 +435,8 @@
     page.classList.remove("hide");
     page.dispatchEvent(new CustomEvent("viewshow", { bubbles: true, detail: { type: "custom", isRestored: false, options: {} } }));
     page.dispatchEvent(new CustomEvent("pageshow", { bubbles: true, detail: {} }));
+    if (stopStickyTracking) stopStickyTracking();
+    stopStickyTracking = P.trackStickyBar(document.getElementById('je-recommendations-category-header'));
 
     await loadInitialCategoryPage(container, stale);
     if (stale()) return;
@@ -443,6 +448,10 @@
     if (!state.categoryPageVisible) return;
 
     JE.discoveryFilter.cleanupScrollObserver(state.categoryState);
+    if (stopStickyTracking) {
+      stopStickyTracking();
+      stopStickyTracking = null;
+    }
 
     const page = document.getElementById("je-recommendations-category-page");
     JE.jellyseerrUI?.releasePosters?.(page || undefined);
