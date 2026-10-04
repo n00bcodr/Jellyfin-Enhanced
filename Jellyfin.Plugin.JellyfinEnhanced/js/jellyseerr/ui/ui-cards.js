@@ -555,7 +555,9 @@
             imageContainer,
             overview: null,
             button: null,
-            outsideClick: null
+            outsideClick: null,
+            // performance.now() of the last tap that navigated to Jellyfin; 0 once its click is seen.
+            tapNavigatedAt: 0
         });
 
         return card;
@@ -802,12 +804,18 @@
         }
     }
 
+    // How long after a tap that navigated to Jellyfin its synthetic click may
+    // arrive and still count as that tap's (it normally follows within a few
+    // frames; generous for a busy main thread).
+    const TAP_CLICK_FOLLOW_MS = 1000;
+
     /**
      * Poster click. Runs the two steps the poster's two click listeners used
      * to run, in the same order: show the overview (desktop), then go to
-     * Jellyfin or open the More Info modal. A desktop click on a poster that
-     * links to Jellyfin goes there once (both listeners used to navigate,
-     * which could add a second history entry).
+     * Jellyfin or open the More Info modal. A click on a poster that links to
+     * Jellyfin goes there once: on desktop both listeners used to navigate,
+     * and on touch devices the click following a tap navigated again after
+     * the tap had (either could add a second history entry).
      * @param {MouseEvent} e
      * @param {HTMLElement} card
      * @param {Object} state - The card's state
@@ -833,7 +841,12 @@
         if (state.linksAvailableToJellyfin) {
             e.preventDefault();
             e.stopPropagation();
-            goToJellyfinItem(state);
+            // The click that follows a tap the tap handler already navigated
+            // for: handled as before, but it does not navigate a second time.
+            const followsTap = state.tapNavigatedAt > 0
+                && performance.now() - state.tapNavigatedAt < TAP_CLICK_FOLLOW_MS;
+            state.tapNavigatedAt = 0;
+            if (!followsTap) goToJellyfinItem(state);
         } else if (state.posterOpensModal) {
             e.preventDefault();
             e.stopPropagation();
@@ -945,6 +958,8 @@
 
         if (state.linksAvailableToJellyfin) {
             goToJellyfinItem(state);
+            // Its synthetic click still reaches onPosterClick; it must not navigate again.
+            state.tapNavigatedAt = performance.now();
             return;
         }
 
