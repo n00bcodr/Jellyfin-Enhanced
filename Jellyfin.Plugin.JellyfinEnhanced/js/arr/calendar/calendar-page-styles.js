@@ -14,7 +14,7 @@
   // CSS Styles
   const CSS_STYLES = `
 
-    .material-symbols-rounded {
+    .je-msym-rounded {
       font-family: 'JE Material Symbols Rounded';
       font-weight: normal;
       font-style: normal;

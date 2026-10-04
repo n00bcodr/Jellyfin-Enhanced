@@ -229,7 +229,7 @@ function readTags(group, container) {
                 tags.push(`${child.textContent}|${qualityCategory(child.dataset.quality, child.textContent)}`);
                 break;
             case 'Genre': {
-                const icon = child.querySelector('.material-symbols-outlined');
+                const icon = child.querySelector('.je-msym-outlined');
                 tags.push(`${child.title}|${icon ? icon.textContent : ''}`);
                 break;
             }

@@ -110,7 +110,7 @@
             tag.className = tagClass;
             tag.title = genreName;
             const iconSpan = document.createElement('span');
-            iconSpan.className = 'material-symbols-outlined';
+            iconSpan.className = 'je-msym-outlined';
             iconSpan.textContent = iconName;
             tag.appendChild(iconSpan);
             // Skip text labels when tags are hidden on hover — they'd never be visible
@@ -190,7 +190,7 @@
                     contain: style;
                     position: relative;
                 }
-                .${tagClass} .material-symbols-outlined {
+                .${tagClass} .je-msym-outlined {
                     font-size: clamp(1em, 2.8vw, 1.4em);
                     line-height: 1;
                 }
@@ -223,7 +223,7 @@
                     height: clamp(20px, 4vw, 26px);
                     min-width: clamp(20px, 4vw, 26px);
                 }
-                .layout-mobile .${tagClass} .material-symbols-outlined {
+                .layout-mobile .${tagClass} .je-msym-outlined {
                     font-size: clamp(0.95em, 2.4vw, 1.25em);
                 }
                 @media (max-width: 768px) {
@@ -240,7 +240,7 @@
                         min-width: clamp(20px, 3.6vw, 24px);
                         box-shadow: 0 1px 3px rgba(0,0,0,0.4);
                     }
-                    .${tagClass} .material-symbols-outlined {
+                    .${tagClass} .je-msym-outlined {
                         font-size: clamp(0.85em, 2.2vw, 1.1em);
                     }
                 }
@@ -308,7 +308,7 @@
         // Material Symbols Outlined font, bundled with the plugin (#830); the
         // @font-face is declared once in enhanced/ui-styles.js.
         JE.core.ui.injectCss('mat-sym', `
-            .material-symbols-outlined {
+            .je-msym-outlined {
                 font-family: 'JE Material Symbols Outlined';
                 font-weight: normal;
                 font-style: normal;

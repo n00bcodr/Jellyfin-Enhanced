@@ -296,28 +296,28 @@
     const requestsLabel = JE.t?.("requests_requests") || "Requests";
     const requestsLegend = showRequestsFilter
       ? `<div class="je-calendar-legend-item ${getItemClass('Requests')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Requests'); event.stopPropagation();">
-          <span class="material-symbols-rounded" style="color: #6f63f2; font-size: 18px;">download</span>
+          <span class="je-msym-rounded" style="color: #6f63f2; font-size: 18px;">download</span>
           <span>${requestsLabel}</span>
         </div>`
       : "";
 
     const watchlistLegend = state.settings.highlightFavorites
       ? `<div class="je-calendar-legend-item ${getItemClass('Watchlist')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Watchlist'); event.stopPropagation();">
-          <span class="material-symbols-rounded" style="color: #ffd700; font-size: 18px; font-variation-settings: 'FILL' 1;">bookmark</span>
+          <span class="je-msym-rounded" style="color: #ffd700; font-size: 18px; font-variation-settings: 'FILL' 1;">bookmark</span>
           <span>${JE.t("calendar_watchlist")}</span>
         </div>`
       : "";
 
     const watchedLegend = state.settings.highlightWatchedSeries
       ? `<div class="je-calendar-legend-item ${getItemClass('Watched')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Watched'); event.stopPropagation();">
-          <span class="material-symbols-rounded" style="color: #64b5f6; font-size: 18px;">visibility</span>
+          <span class="je-msym-rounded" style="color: #64b5f6; font-size: 18px;">visibility</span>
           <span>${JE.t("calendar_watched")}</span>
         </div>`
       : "";
 
     const hasTwoFilters = state.activeFilters.size >= 2;
     const unmonitoredLegend = `<div class="je-calendar-legend-item je-calendar-unmonitored-toggle ${state.settings.showUnmonitored ? 'active' : hasActiveFilters ? 'inactive' : ''}" onclick="window.JellyfinEnhanced.calendarPage.toggleShowUnmonitored(); event.stopPropagation();" style="cursor: pointer;">
-        <span class="material-symbols-rounded" style="color: #ff9800; font-size: 18px;">${state.settings.showUnmonitored ? 'visibility' : 'visibility_off'}</span>
+        <span class="je-msym-rounded" style="color: #ff9800; font-size: 18px;">${state.settings.showUnmonitored ? 'visibility' : 'visibility_off'}</span>
         <span>${JE.t?.("calendar_include_unmonitored") || "Unmonitored"}</span>
       </div>`;
     const filterControls = `
@@ -333,27 +333,27 @@
       <div class="je-calendar-legend">
         ${filterControls}
         <div class="je-calendar-legend-item ${getItemClass('CinemaRelease')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('CinemaRelease'); event.stopPropagation();">
-          <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.CinemaRelease}; font-size: 18px;">local_movies</span>
+          <span class="je-msym-rounded" style="color: ${STATUS_COLORS.CinemaRelease}; font-size: 18px;">local_movies</span>
           <span>${JE.t("calendar_cinema_release")}</span>
         </div>
         <div class="je-calendar-legend-item ${getItemClass('DigitalRelease')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('DigitalRelease'); event.stopPropagation();">
-          <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.DigitalRelease}; font-size: 18px;">ondemand_video</span>
+          <span class="je-msym-rounded" style="color: ${STATUS_COLORS.DigitalRelease}; font-size: 18px;">ondemand_video</span>
           <span>${JE.t("calendar_digital_release")}</span>
         </div>
         <div class="je-calendar-legend-item ${getItemClass('PhysicalRelease')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('PhysicalRelease'); event.stopPropagation();">
-          <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.PhysicalRelease}; font-size: 18px;">album</span>
+          <span class="je-msym-rounded" style="color: ${STATUS_COLORS.PhysicalRelease}; font-size: 18px;">album</span>
           <span>${JE.t("calendar_physical_release")}</span>
         </div>
         <div class="je-calendar-legend-item ${getItemClass('Episode')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Episode'); event.stopPropagation();">
-          <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.Episode}; font-size: 18px;">tv_guide</span>
+          <span class="je-msym-rounded" style="color: ${STATUS_COLORS.Episode}; font-size: 18px;">tv_guide</span>
           <span>${JE.t("calendar_episode")}</span>
         </div>
         <div class="je-calendar-legend-item ${getItemClass('Anime')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Anime'); event.stopPropagation();">
-          <span class="material-symbols-rounded" style="color: ${STATUS_COLORS.Anime}; font-size: 18px;">animation</span>
+          <span class="je-msym-rounded" style="color: ${STATUS_COLORS.Anime}; font-size: 18px;">animation</span>
           <span>${JE.t("calendar_anime")}</span>
         </div>
         <div class="je-calendar-legend-item ${getItemClass('Available')}" onclick="window.JellyfinEnhanced.calendarPage.toggleFilter('Available'); event.stopPropagation();">
-          <span class="material-symbols-rounded" style="color: #4caf50; font-size: 18px;">check_circle</span>
+          <span class="je-msym-rounded" style="color: #4caf50; font-size: 18px;">check_circle</span>
           <span>${JE.t?.("jellyseerr_btn_available") || "Available"}</span>
         </div>
         ${requestsLegend}
