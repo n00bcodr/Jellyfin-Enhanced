@@ -1033,6 +1033,11 @@
                         .then(r => ({ type: 'movie', data: r }))
                 );
             }
+            // These run while the page wait below is awaited; a navigation
+            // aborting the render then returns before Promise.all ever handles
+            // them, and their AbortError surfaced as an unhandled rejection.
+            // (Only an abort can reject them: the page-1 fetch is tolerant.)
+            fetchPromises.forEach(p => p.catch(() => {}));
 
             // Show the section as soon as the page can hold it: the header goes
             // in now and the cards stream in when page 1 lands, so the first
