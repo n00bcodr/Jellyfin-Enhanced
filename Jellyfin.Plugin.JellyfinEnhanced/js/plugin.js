@@ -189,6 +189,30 @@
         } else if (!enabled && existing) {
             existing.remove();
         }
+
+        // The icon sheet flattens native link buttons by href; ours aren't matched,
+        // so flatten them too or they keep the theme's pill. Arr status border stays.
+        const flatStyle = document.getElementById('metadataIconsFlatCss');
+        if (enabled && !flatStyle) {
+            const style = document.createElement('style');
+            style.id = 'metadataIconsFlatCss';
+            style.textContent = `
+                .itemExternalLinks > a.letterboxd-link-icon,
+                .itemExternalLinks > a.seerr-link,
+                .itemExternalLinks > a.arr-link,
+                .itemExternalLinks > a.arr-tag-link {
+                    background: none !important;
+                    padding: 0 !important;
+                    border-radius: 0 !important;
+                }
+                .itemExternalLinks > a.letterboxd-link-icon::before {
+                    margin-right: 0 !important;
+                }
+            `;
+            document.head.appendChild(style);
+        } else if (!enabled && flatStyle) {
+            flatStyle.remove();
+        }
     }
 
     /**
