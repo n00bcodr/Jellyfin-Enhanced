@@ -10,11 +10,16 @@
 (function(JE) {
     'use strict';
 
-    // Cache for network ID mappings (studioName -> TMDB networkId)
-    const networkIdCache = new Map();
+    // Cache for network ID mappings (studioName -> TMDB company id, or null
+    // when there is no safe match); kept for the tab (see
+    // JE.discoveryFilter.createSessionCache).
+    const networkIdCache = JE.discoveryFilter.createSessionCache('company-id',
+        (v) => v === null || (Number.isInteger(v) && v > 0));
 
-    // Cache for studio info (studioId -> studioInfo)
-    const studioInfoCache = new Map();
+    // Cache for studio info (studioId -> studioInfo {id, name, tmdbId, type}); kept for the tab.
+    const studioInfoCache = JE.discoveryFilter.createSessionCache('studio-info',
+        (v) => !!v && typeof v === 'object' && typeof v.name === 'string'
+            && (v.tmdbId === null || v.tmdbId === undefined || typeof v.tmdbId === 'string'));
 
     // Alias for shared utilities
     const fetchWithManagedRequest = (path, options) =>

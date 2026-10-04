@@ -474,6 +474,117 @@
         return data;
     }
 
+    // ---- Discovery resolution caches kept for the tab --------------------------
+    // Which genre, studio or person a Jellyfin page is, and which TMDB genre,
+    // company or person that maps to, is the same for every user and rarely
+    // changes, yet resolving it costs one or two round trips before a
+    // discovery section can fetch its first page. The modules' lookup caches
+    // therefore also live in sessionStorage, per server and for
+    // RESOLUTION_STORAGE_TTL_MS: a reload in the same tab resolves at once.
+    const RESOLUTION_STORAGE_PREFIX = 'je-discovery-resolution:';
+    const RESOLUTION_STORAGE_TTL_MS = 30 * 60 * 1000;
+    const RESOLUTION_STORAGE_MAX_ENTRIES = 200;
+
+    /**
+     * A Map-like lookup cache (has / get / set) whose entries are also kept
+     * in sessionStorage, one entry set per server. Stored entries that are
+     * expired, malformed or rejected by `isValid` are ignored; storage that is
+     * full or unavailable leaves the cache working from memory.
+     * @param {string} name - Cache name, part of the storage key
+     * @param {function(*): boolean} isValid - Whether a stored value is well-formed
+     * @returns {{has: function(string): boolean, get: function(string): *, set: function(string, *): void}}
+     */
+    function createSessionCache(name, isValid) {
+        // Storage key -> Map(key -> {value, storedAt}); the null key holds a
+        // memory-only cache while the server is unknown.
+        const caches = new Map();
+
+        /** @returns {string|null} sessionStorage key for the current server */
+        const storageKey = () => {
+            const serverId = JE.session?.getServerId?.();
+            return serverId ? `${RESOLUTION_STORAGE_PREFIX}${serverId}:${name}` : null;
+        };
+
+        /**
+         * Reads the stored entries for one storage key, keeping only fresh,
+         * well-formed ones.
+         * @param {string|null} key
+         * @returns {Map<string, {value: *, storedAt: number}>}
+         */
+        const load = (key) => {
+            const entries = new Map();
+            if (!key) return entries;
+            try {
+                const parsed = JSON.parse(sessionStorage.getItem(key) || 'null');
+                const stored = parsed && typeof parsed === 'object' ? parsed.entries : null;
+                if (!stored || typeof stored !== 'object') return entries;
+                const now = Date.now();
+                for (const [k, entry] of Object.entries(stored)) {
+                    const age = now - (typeof entry?.storedAt === 'number' ? entry.storedAt : NaN);
+                    if (!(age >= 0 && age < RESOLUTION_STORAGE_TTL_MS)) continue;
+                    if (!isValid(entry.value)) continue;
+                    entries.set(k, { value: entry.value, storedAt: entry.storedAt });
+                }
+            } catch (_) {
+                // Unreadable or not ours: start empty.
+            }
+            return entries;
+        };
+
+        /** @returns {{key: (string|null), entries: Map<string, {value: *, storedAt: number}>}} */
+        const current = () => {
+            const key = storageKey();
+            let entries = caches.get(key);
+            if (!entries) {
+                entries = load(key);
+                caches.set(key, entries);
+            }
+            return { key, entries };
+        };
+
+        /**
+         * @param {Map<string, {value: *, storedAt: number}>} entries
+         * @param {string} k
+         * @returns {boolean} The entry exists and has not expired
+         */
+        const fresh = (entries, k) => {
+            const entry = entries.get(k);
+            if (!entry) return false;
+            if (Date.now() - entry.storedAt < RESOLUTION_STORAGE_TTL_MS) return true;
+            entries.delete(k);
+            return false;
+        };
+
+        return {
+            has(k) {
+                return fresh(current().entries, String(k));
+            },
+            get(k) {
+                const { entries } = current();
+                return fresh(entries, String(k)) ? entries.get(String(k)).value : undefined;
+            },
+            set(k, value) {
+                const { key, entries } = current();
+                entries.delete(String(k));
+                entries.set(String(k), { value, storedAt: Date.now() });
+                // Oldest first (insertion order): drop the oldest over the cap.
+                while (entries.size > RESOLUTION_STORAGE_MAX_ENTRIES) {
+                    entries.delete(entries.keys().next().value);
+                }
+                if (!key || !isValid(value)) return;
+                try {
+                    const stored = {};
+                    entries.forEach((entry, entryKey) => {
+                        if (isValid(entry.value)) stored[entryKey] = entry;
+                    });
+                    sessionStorage.setItem(key, JSON.stringify({ entries: stored }));
+                } catch (_) {
+                    // Storage full or unavailable: the cache keeps working from memory.
+                }
+            }
+        };
+    }
+
     /**
      * The results a discovery batch renders cards for, in order: hidden
      * content, duplicates within the batch and (when the admin excludes them)
@@ -908,6 +1019,7 @@
         // Shared utilities
         fetchWithManagedRequest,
         fetchTmdbGenreList,
+        createSessionCache,
         createCardsFragment,
         appendCards,
         appendInSlices,

@@ -9,9 +9,14 @@
 
     const logPrefix = '🪼 Jellyfin Enhanced: Person Discovery:';
 
-    // Cache for person ID mappings (personName -> TMDB personId)
-    const personIdCache = new Map();
-    const personInfoCache = new Map();
+    // Cache for person ID mappings (personName -> TMDB personId) and for the
+    // Jellyfin person's name and TMDB id (personId -> {name, tmdbId}); both
+    // kept for the tab (see JE.discoveryFilter.createSessionCache).
+    const personIdCache = JE.discoveryFilter.createSessionCache('person-id',
+        (v) => Number.isInteger(v) && v > 0);
+    const personInfoCache = JE.discoveryFilter.createSessionCache('person-info',
+        (v) => !!v && typeof v === 'object' && typeof v.name === 'string'
+            && (v.tmdbId === null || v.tmdbId === undefined || typeof v.tmdbId === 'string'));
 
     // Alias for shared utilities
     const fetchWithManagedRequest = (path, options) =>
@@ -38,7 +43,8 @@
             }
 
             if (response) {
-                personInfoCache.set(personId, response);
+                // Only the name and TMDB id are used here (and kept for the tab).
+                personInfoCache.set(personId, { name: response.name, tmdbId: response.tmdbId ?? null });
             }
             return response;
         } catch (error) {

@@ -7,7 +7,10 @@
 (function(JE) {
     'use strict';
 
-    const genreInfoCache = new Map();
+    // Jellyfin genre id -> genre info ({id, name, type}); kept for the tab
+    // (see JE.discoveryFilter.createSessionCache).
+    const genreInfoCache = JE.discoveryFilter.createSessionCache('genre-info',
+        (v) => !!v && typeof v === 'object' && typeof v.name === 'string');
 
     // Dynamic genre cache (populated from TMDB API)
     let tmdbGenreCache = null;
