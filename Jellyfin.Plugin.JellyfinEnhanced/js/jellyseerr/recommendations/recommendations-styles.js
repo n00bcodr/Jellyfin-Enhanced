@@ -20,6 +20,21 @@
       [dir="rtl"] .je-pad-right {
         padding-left: max(3.3vw, env(safe-area-inset-left)) !important;
       }
+      /* The items container carries the page padding (je-pad-*); once Jellyfin's
+         scroller upgrades it adds its own side padding too, which pushed the
+         first card ~3.3vw to the right of the section heading. */
+      .je-recommendations-section .emby-scroller {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+      }
+      /* Standalone (Plugin Pages) host: Jellyfin's userPluginSettingsContainer is
+         padded-left/right, and the rows add je-pad-* on top, which doubled the
+         left gap. Cancel the host's padding so ours is the only one (and the
+         rows can still scroll out to the viewport edge). */
+      .userPluginSettingsContainer .je-recommendations-page {
+        margin-left: calc(-1 * max(3.3vw, env(safe-area-inset-left)));
+        margin-right: calc(-1 * max(3.3vw, env(safe-area-inset-right)));
+      }
       .je-tile-image {
         background: #fff;
         display: flex;
