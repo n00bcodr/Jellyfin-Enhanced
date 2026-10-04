@@ -320,10 +320,10 @@
             return batchController;
         }
 
-        // Styles for deceased indicators, overlay positioning, and material-symbols-rounded font
+        // Styles for deceased indicators, overlay positioning, and je-msym-rounded font
         JE.core.ui.injectCss('je-people-tags-styles', `
 
-            .material-symbols-rounded {
+            .je-msym-rounded {
                 font-family: 'JE Material Symbols Rounded';
                 font-weight: normal;
                 font-style: normal;
@@ -696,7 +696,7 @@
             `;
 
             const icon = document.createElement('span');
-            icon.className = 'material-symbols-rounded je-people-age-icon';
+            icon.className = 'je-msym-rounded je-people-age-icon';
             icon.textContent = iconName;
             icon.style.cssText = 'font-size: 13px;';
             ageChip.appendChild(icon);
@@ -776,7 +776,7 @@
                 }
 
                 const locationIcon = document.createElement('span');
-                locationIcon.className = 'material-symbols-rounded je-people-place-icon';
+                locationIcon.className = 'je-msym-rounded je-people-place-icon';
                 locationIcon.textContent = 'place';
                 locationIcon.style.cssText = 'font-size: 14px; opacity: 0.9;';
                 placeContainer.appendChild(locationIcon);

@@ -1462,7 +1462,7 @@
                         height: clamp(18px, 15cqw, 30px);
                         min-width: clamp(18px, 15cqw, 30px);
                     }
-                    html:not(.layout-mobile) .je-tag-host .genre-tag .material-symbols-outlined { font-size: clamp(11px, 9.5cqw, 20px); }
+                    html:not(.layout-mobile) .je-tag-host .genre-tag .je-msym-outlined { font-size: clamp(11px, 9.5cqw, 20px); }
                 }
             `);
 

@@ -619,7 +619,7 @@
                     chip.className = 'mediaInfoCriticRating mediaInfoItem je-avg-user-rating-chip';
                     chip.title = tWithFallback('reviews_avg_rating_tooltip',
                         'Average rating from {count} user(s)', { count: ratingsWithValue.length });
-                    chip.innerHTML = `<span class="material-symbols-rounded starIcon" aria-hidden="true" style="color:#e91e8c;">person_heart</span>${avgDisplay}`;
+                    chip.innerHTML = `<span class="je-msym-rounded starIcon" aria-hidden="true" style="color:#e91e8c;">person_heart</span>${avgDisplay}`;
 
                     // Insert after starRatingContainer, or after mediaInfoCriticRating if present,
                     // falling back to appending to the mediaInfoItems container
@@ -917,7 +917,7 @@
             const style = document.createElement('style');
             style.id = styleId;
             style.textContent = `
-                .material-symbols-rounded {
+                .je-msym-rounded {
                     font-family: 'JE Material Symbols Rounded';
                     font-weight: normal;
                     font-style: normal;

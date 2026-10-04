@@ -24,13 +24,15 @@
         };
         // Inject the Material Symbols Rounded @font-face from the plugin's bundled font route
         // (JE's icon subset, under the JE-private family name so a theme's own
-        // 'Material Symbols Rounded' declaration is never shadowed by it).
+        // 'Material Symbols Rounded' declaration is never shadowed by it). JE's
+        // icons use the private .je-msym-rounded class so theme rules on Google's
+        // class never restyle them.
         var jeFontStyle = document.createElement('style');
         jeFontStyle.textContent = "@font-face{font-family:'JE Material Symbols Rounded';font-style:normal;font-weight:100 700;font-display:block;src:url(" + ApiClient.getUrl('/JellyfinEnhanced/fonts/materialsymbolsrounded-subset.woff2', jeCssVersion ? { v: jeCssVersion } : undefined) + ") format('woff2');}";
         document.head.appendChild(jeFontStyle);
     </script>
     <style>
-        .material-symbols-rounded {
+        .je-msym-rounded {
             font-family: 'JE Material Symbols Rounded';
             font-weight: normal;
             font-style: normal;
@@ -2506,11 +2508,11 @@
                             </div>
                             <div class="checkboxContainer"><label><input id="showUserRatingOnPosters" is="emby-checkbox" type="checkbox"/><span>Show average user rating on poster cards</span></label></div>
                             <div class="je-setting-description" data-desc-for="showUserRatingOnPosters">
-                                <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, overlay a <span class="material-symbols-rounded" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip on poster cards showing the average rating from all user reviews.</div>
+                                <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, overlay a <span class="je-msym-rounded" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip on poster cards showing the average rating from all user reviews.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="showUserRatingDash" is="emby-checkbox" type="checkbox"/><span>Show "—" on posters for unrated items</span></label></div>
                             <div class="je-setting-description" data-desc-for="showUserRatingDash">
-                                <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, a <span class="material-symbols-rounded" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip appears on every poster. Enable this to show "—" for items the user hasn't rated yet. Disable to hide the chip entirely for unrated items.</div>
+                                <div class="fieldDescription je-field-desc-sm-font-lg">When Rating Tags are enabled, a <span class="je-msym-rounded" style="font-size:14px;vertical-align:middle;color:#e91e8c;">person_heart</span> chip appears on every poster. Enable this to show "—" for items the user hasn't rated yet. Disable to hide the chip entirely for unrated items.</div>
                             </div>
                         </div>
                     </fieldset>
