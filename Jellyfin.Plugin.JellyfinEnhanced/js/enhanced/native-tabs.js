@@ -19,15 +19,41 @@
 // problem), but the tab *panel* is not inside `.skinHeader` and stays fully
 // reachable: navigating to `#/home?tab=N` (Jellyfin's own deep-link
 // convention, used natively for `?tab=1` = Favorites) still activates it.
+//
+// Sharing the Home tab strip with other plugins (Custom Tabs claims `?tab=2..`)
+// is reconciled against the live page on every pass, never cached:
+// - Jellyfin resolves a tab by *position* (emby-tabs selects `tabButtons[N]`,
+//   maintabsmanager activates the N-th `.tabContent`), so each tab of ours is
+//   kept at the position its index names (alignSlots).
+// - Our indices start after every index anything else occupies: buttons,
+//   panels, `#/home?tab=N` header links, plus the Custom Tabs count, which
+//   covers tabs that plugin has not drawn yet. A claim that shows up later
+//   relabels our tabs instead of colliding with them (relabel).
+// - Our links carry a stable `jeTab=<id>` next to `tab=N`; a link whose N went
+//   stale is rewritten to the current index before anything acts on it.
 (function (JE) {
     'use strict';
 
-    /** Ordered list of {id, title, onMount, index}. Order determines data-index assignment. */
+    /** Ordered list of {id, title, onMount, icon, index}. Order determines index assignment. */
     var entries = [];
     var injectPending = false;
     var appliedDeepLink = null;
+    /** URL we just rewrote ourselves; its navigation event is not a new deep link. */
+    var rewrittenHash = null;
+    /** URL whose deep link the user overrode by picking another tab (tab clicks leave the URL alone). */
+    var userPickedHash = null;
+    /** True while we select a tab ourselves, so that selection is not mistaken for the user's. */
+    var selectingTab = false;
+    /** The tabs element we listen on for the user's own tab changes. */
+    var watchedTabs = null;
+    /** When the user last pressed or tapped inside the tab strip (or used a key there). */
+    var lastTabStripInput = 0;
     /** Whether the last ensureInjected() call found us off the home page -- logged only on change. */
     var wasOffHomePage = false;
+
+    var OWN_ID_PREFIX = 'je-native-tab-';
+    var RESERVED_ID_PREFIX = 'je-native-tab-reserved-';
+    var DEEP_LINK_PARAM = 'jeTab';
 
     function isOnHomePage() {
         var hash = window.location.hash;
@@ -48,47 +74,193 @@
         return null;
     }
 
-    /** Number of Custom Tabs entries, or null while our own fetch is in flight. Never waits on Custom Tabs itself. */
-    var customTabCount = null;
-    var customTabFetchStarted = false;
+    /** Whether a tab button/panel was created by this module (a tab of ours or a reserved slot). */
+    function isOwnSlot(el) {
+        return el.id.indexOf(OWN_ID_PREFIX) === 0;
+    }
 
-    function loadCustomTabCount() {
-        if (customTabFetchStarted) return;
-        customTabFetchStarted = true;
-        if (!JE.hasCustomTabs) { customTabCount = 0; return; }
+    function slotIndex(el) {
+        return parseInt(el.getAttribute('data-index'), 10);
+    }
+
+    /** Number of Custom Tabs entries, or null before the first answer. */
+    var customTabCount = null;
+    var customTabsFetching = false;
+    /** The tab strip the Custom Tabs count was last read for; Jellyfin rebuilds it per Home visit. */
+    var checkedSlider = null;
+
+    /**
+     * Re-read the Custom Tabs count, on first use and whenever Home's tab strip
+     * is rebuilt. It is only a hint for tabs that plugin has not drawn yet; the
+     * page itself stays the source of truth, so a failed read cannot cause a
+     * collision, at most a later relabel. Never waits on Custom Tabs' script.
+     */
+    function refreshCustomTabCount() {
+        if (customTabsFetching) return;
+        // Only skip on a definite "not installed": the /Plugins fallback leaves
+        // the flag unset for non-admins, and Custom Tabs may still be there.
+        if (JE.hasCustomTabs === false) { setCustomTabCount(0); return; }
+        customTabsFetching = true;
         ApiClient.fetch({
             url: ApiClient.getUrl('CustomTabs/Config'),
             type: 'GET',
             dataType: 'json',
             headers: { accept: 'application/json' }
         }).then(function (configs) {
-            customTabCount = Array.isArray(configs) ? configs.length : 0;
-        }).catch(function () {
-            customTabCount = 0;
-        }).then(scheduleInject);
+            return Array.isArray(configs) ? configs.length : 0;
+        }, function () {
+            return customTabCount || 0;
+        }).then(function (count) {
+            customTabsFetching = false;
+            setCustomTabCount(count);
+        });
+    }
+
+    function setCustomTabCount(count) {
+        if (count === customTabCount) return;
+        customTabCount = count;
+        scheduleInject();
     }
 
     /**
-     * Next free tab index, or null while the Custom Tabs count is loading.
-     * Custom Tabs hardcodes its tabs to `i + 2` and, on Jellyfin 12's modern
-     * layout, renders them as plain links with no `data-index`, so scanning the
-     * strip alone cannot see them. Indices must stay contiguous: emby-tabs
-     * resolves the active button by position.
+     * Highest tab index anything other than us occupies on this Home page:
+     * buttons in the strip, panels under the root, Home deep links in the
+     * header (Custom Tabs' only trace on the modern layout), and the indices
+     * Custom Tabs will take (`2..count+1`). Home(0)/Favorites(1) always count.
+     * @param {HTMLElement} slider - The tab strip.
+     * @param {HTMLElement} root - The panel root.
+     * @returns {number} The highest foreign index.
      */
-    function nextFreeIndex(slider) {
-        loadCustomTabCount();
-        if (customTabCount == null) return null;
-        var max = Math.max(1, customTabCount + 1); // native Home(0)/Favorites(1) always present
-        slider.querySelectorAll('[data-index]').forEach(function (el) {
-            var idx = parseInt(el.getAttribute('data-index'), 10);
-            if (!isNaN(idx) && idx > max) max = idx;
+    function highestForeignIndex(slider, root) {
+        var max = Math.max(1, (customTabCount || 0) + 1);
+        var consider = function (idx) { if (!isNaN(idx) && idx > max) max = idx; };
+        Array.prototype.forEach.call(slider.querySelectorAll('.emby-tab-button'), function (el) {
+            if (!isOwnSlot(el)) consider(slotIndex(el));
         });
-        document.querySelectorAll('a[href*="#/home?tab="]').forEach(function (el) {
-            var match = /[?&]tab=(\d+)/.exec(el.getAttribute('href') || '');
-            var idx = match ? parseInt(match[1], 10) : NaN;
-            if (!isNaN(idx) && idx > max) max = idx;
+        Array.prototype.forEach.call(root.querySelectorAll('.tabContent'), function (el) {
+            if (!isOwnSlot(el)) consider(slotIndex(el));
         });
-        return max + 1;
+        document.querySelectorAll('a[href*="#/home?"], a[href*="#/home.html?"]').forEach(function (el) {
+            if (el.closest('[id^="' + OWN_ID_PREFIX + '"]')) return;
+            var match = /^#\/home(?:\.html)?\?(?:[^#]*&)?tab=(\d+)/.exec(el.getAttribute('href') || '');
+            if (match) consider(parseInt(match[1], 10));
+        });
+        return max;
+    }
+
+    /**
+     * Move a placed tab to a new index: its button and panel are relabelled in
+     * place (content and listeners survive), and if it is the selected tab,
+     * Jellyfin's record of the selection follows so the next click still
+     * deselects it correctly.
+     * @param {object} entry - A registered tab.
+     * @param {number} index - Its new index.
+     */
+    function relabel(entry, index) {
+        var previous = entry.index;
+        entry.index = index;
+        var btn = document.getElementById(OWN_ID_PREFIX + 'btn-' + entry.id);
+        var panel = document.getElementById(OWN_ID_PREFIX + 'panel-' + entry.id);
+        btn?.setAttribute('data-index', String(index));
+        panel?.setAttribute('data-index', String(index));
+        if (previous == null) return;
+        var tabsElem = document.querySelector('[is="emby-tabs"]');
+        if (tabsElem && btn?.classList.contains('emby-tab-button-active') && tabsElem.selectedTabIndex === previous) {
+            tabsElem.selectedTabIndex = index;
+        }
+        console.log('🪼 Jellyfin Enhanced: [native-tabs] "' + entry.title + '" moved from index ' + previous +
+            ' to ' + index + ' (another tab now uses ' + previous + ')');
+    }
+
+    /**
+     * Hidden, empty stand-in for a tab index something else claims without
+     * putting anything at that position in this list (Custom Tabs on the modern
+     * layout only adds header links).
+     * @param {string} kind - 'btn' or 'panel'.
+     * @param {number} index - The claimed index.
+     * @returns {HTMLElement} The placeholder element.
+     */
+    function createReservedSlot(kind, index) {
+        var el;
+        if (kind === 'btn') {
+            el = document.createElement('button');
+            el.type = 'button';
+            el.className = 'emby-tab-button hide';
+            el.tabIndex = -1;
+            el.setAttribute('aria-hidden', 'true');
+        } else {
+            el = document.createElement('div');
+            el.className = 'tabContent pageTabContent';
+        }
+        el.id = RESERVED_ID_PREFIX + kind + '-' + index;
+        el.setAttribute('data-index', String(index));
+        return el;
+    }
+
+    /**
+     * Make positions match indices in one list (the tab strip's buttons, or the
+     * root's panels). Every index below ours that nothing fills gets a hidden
+     * placeholder, placeholders something real now fills are dropped, and the
+     * tabs from index 2 up are kept in index order right after Favorites --
+     * other plugins' too: Custom Tabs on the legacy layout appends its buttons
+     * after ours, and inserts a panel added mid-session straight after
+     * Favorites. Only out-of-place elements move, never Jellyfin's Home(0) and
+     * Favorites(1). Idempotent: a second call on an aligned list changes nothing.
+     * @param {HTMLElement} container - The tab strip or the panel root.
+     * @param {string} kind - 'btn' or 'panel'.
+     * @param {number} lastIndex - Highest index used by one of our tabs.
+     * @returns {boolean} Whether anything was added, removed or moved.
+     */
+    function alignSlots(container, kind, lastIndex) {
+        var selector = kind === 'btn' ? '.emby-tab-button' : '.tabContent';
+        var items = function () {
+            return Array.prototype.filter.call(container.querySelectorAll(selector),
+                function (el) { return el.parentElement === container; });
+        };
+        var changed = false;
+        var claimed = {};
+        items().forEach(function (el) {
+            if (!isOwnSlot(el)) claimed[slotIndex(el)] = true;
+        });
+        entries.forEach(function (entry) {
+            if (entry.index != null) claimed[entry.index] = true;
+        });
+
+        items().forEach(function (el) {
+            if (el.id.indexOf(RESERVED_ID_PREFIX) !== 0) return;
+            var idx = slotIndex(el);
+            if (claimed[idx] || idx >= lastIndex) {
+                el.remove();
+                changed = true;
+            }
+        });
+        for (var i = 2; i < lastIndex; i++) {
+            if (claimed[i]) continue;
+            // A slot left behind in a cached Home page moves over, like our panels do.
+            var slot = document.getElementById(RESERVED_ID_PREFIX + kind + '-' + i);
+            if (slot && slot.parentElement === container) continue;
+            container.appendChild(slot || createReservedSlot(kind, i));
+            changed = true;
+        }
+
+        var all = items();
+        // Something without a numeric index cannot be placed; leave the order alone.
+        if (all.some(function (el) { return isNaN(slotIndex(el)); })) return changed;
+        var head = all.filter(function (el) { return slotIndex(el) < 2; });
+        var tabs = all.filter(function (el) { return slotIndex(el) >= 2; });
+        var sorted = tabs.slice().sort(function (x, y) {
+            return slotIndex(x) - slotIndex(y) || tabs.indexOf(x) - tabs.indexOf(y);
+        });
+        var ref = head.length ? head[head.length - 1] : null;
+        sorted.forEach(function (el) {
+            var target = ref ? ref.nextElementSibling : container.firstElementChild;
+            if (target !== el) {
+                container.insertBefore(el, target);
+                changed = true;
+            }
+            ref = el;
+        });
+        return changed;
     }
 
     function ensureInjected() {
@@ -111,24 +283,28 @@
             return;
         }
 
+        if (slider !== checkedSlider) {
+            checkedSlider = slider;
+            refreshCustomTabCount();
+        }
+        watchUserTabChanges(slider.closest('[is="emby-tabs"]'));
+        // Until Custom Tabs has answered once, tabs it has not drawn yet are invisible to us.
+        if (customTabCount == null) return;
+
         var addedTabButton = false;
+        var nextIndex = highestForeignIndex(slider, root) + 1;
 
         entries.forEach(function (entry) {
-            // Assign the index once and cache it -- recomputing on every pass
-            // could hand an entry a *different* index later (if something else's
-            // tabs come and go), which would desync its already-created button
-            // from its already-created panel.
-            if (entry.index == null) {
-                var free = nextFreeIndex(slider);
-                if (free == null) return;
-                entry.index = free;
-            }
+            // Contiguous from the first free index, in registration order. The
+            // same answer every pass unless another plugin's claims changed.
+            var index = nextIndex++;
+            if (entry.index !== index) relabel(entry, index);
 
-            if (!document.getElementById('je-native-tab-btn-' + entry.id)) {
+            if (!document.getElementById(OWN_ID_PREFIX + 'btn-' + entry.id)) {
                 var btn = document.createElement('button');
                 btn.type = 'button';
                 btn.setAttribute('is', 'emby-button');
-                btn.id = 'je-native-tab-btn-' + entry.id;
+                btn.id = OWN_ID_PREFIX + 'btn-' + entry.id;
                 btn.className = 'emby-tab-button';
                 btn.setAttribute('data-index', String(entry.index));
 
@@ -143,10 +319,10 @@
                 console.log('🪼 Jellyfin Enhanced: [native-tabs] added tab button "' + entry.title + '" at data-index=' + entry.index);
             }
 
-            var panel = document.getElementById('je-native-tab-panel-' + entry.id);
+            var panel = document.getElementById(OWN_ID_PREFIX + 'panel-' + entry.id);
             if (!panel) {
                 panel = document.createElement('div');
-                panel.id = 'je-native-tab-panel-' + entry.id;
+                panel.id = OWN_ID_PREFIX + 'panel-' + entry.id;
                 panel.className = 'tabContent pageTabContent';
                 panel.setAttribute('data-index', String(entry.index));
                 root.appendChild(panel);
@@ -158,10 +334,14 @@
             }
         });
 
+        var lastIndex = entries[entries.length - 1].index;
+        if (alignSlots(slider, 'btn', lastIndex)) addedTabButton = true;
+        alignSlots(root, 'panel', lastIndex);
+
         // Read all visibilities before acting on them, so the reads share one layout
         // instead of each forcing one right after a panel mount.
         entries.forEach(function (entry) {
-            var tabBtn = document.getElementById('je-native-tab-btn-' + entry.id);
+            var tabBtn = document.getElementById(OWN_ID_PREFIX + 'btn-' + entry.id);
             if (tabBtn) isTabButtonVisible(tabBtn, entry.id);
         });
         entries.forEach(ensureDiscoverable);
@@ -176,7 +356,7 @@
             document.querySelector('[is="emby-tabs"]')?.refresh?.();
         }
 
-        syncDeepLink();
+        syncDeepLink(slider, root);
     }
 
     /**
@@ -238,7 +418,8 @@
         var btn = document.getElementById('je-native-tab-btn-' + entry.id);
         var linkId = 'je-native-tab-link-' + entry.id;
 
-        if (btn && isTabButtonVisible(btn, entry.id)) {
+        // No index yet: not placed, nothing to link to.
+        if (entry.index == null || (btn && isTabButtonVisible(btn, entry.id))) {
             document.getElementById(linkId)?.remove();
             removeGroupIfEmpty();
             return;
@@ -263,40 +444,189 @@
         link.title = entry.title;
         link.innerHTML = '<i class="material-icons">' + (entry.icon || 'tab') + '</i>';
         link.addEventListener('click', function () {
-            var hash = window.location.hash;
-            var base = hash.indexOf('#/home') === 0 ? hash.split('?')[0] : '#/home';
-            window.location.hash = base + '?tab=' + entry.index;
+            if (entry.index != null) window.location.hash = deepLinkHash(entry);
         });
 
         group.insertBefore(link, separator);
         console.log('🪼 Jellyfin Enhanced: [native-tabs] tab button for "' + entry.title + '" is hidden (experimental layout), added header-tray fallback link');
     }
 
-    /** If the URL asks for one of our tab indices (Jellyfin's own `?tab=N` convention) but it isn't active yet, activate it. */
-    function syncDeepLink() {
-        var match = /[?&]tab=(\d+)/.exec(window.location.hash);
-        if (!match) return;
-        var wantedIndex = parseInt(match[1], 10);
-        var entry = entries.find(function (e) { return e.index === wantedIndex; });
-        if (!entry) return;
+    /**
+     * @param {string} name - Query parameter in the hash route.
+     * @returns {string|null} Its decoded value, or null when absent.
+     */
+    function hashParam(name) {
+        var match = new RegExp('[?&]' + name + '=([^&]*)').exec(window.location.hash);
+        if (!match) return null;
+        try { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }
+    }
 
-        var btn = document.getElementById('je-native-tab-btn-' + entry.id);
-        var panel = document.getElementById('je-native-tab-panel-' + entry.id);
-        var tabsElem = document.querySelector('[is="emby-tabs"]');
+    /** @returns {string} The current Home route (`#/home` or `#/home.html`) without its query. */
+    function homeRoute() {
         var hash = window.location.hash;
-        var root = panel?.parentElement;
+        return hash.indexOf('#/home') === 0 ? hash.split('?')[0] : '#/home';
+    }
+
+    /**
+     * Note when the user picks a tab themselves (click, keyboard or swipe):
+     * from then on the URL's deep link is spent, even if it was never fully
+     * applied (a button still missing, a lookup pending). A tab change counts
+     * as the user's when it moves away from the URL's tab (swipes, clicks on
+     * another tab) or follows real input in the tab strip (a click on the tab
+     * a stale link's number happens to point at). Jellyfin's own selection
+     * picks the URL's tab without any, and ours are flagged.
+     * @param {HTMLElement|null} tabsElem - The emby-tabs element.
+     */
+    function watchUserTabChanges(tabsElem) {
+        if (!tabsElem || tabsElem === watchedTabs) return;
+        watchedTabs = tabsElem;
+        tabsElem.addEventListener('beforetabchange', function (e) {
+            if (selectingTab) return;
+            var urlIndex = parseInt(hashParam('tab'), 10);
+            var picked = parseInt(e.detail?.selectedTabIndex, 10);
+            if (picked !== (isNaN(urlIndex) ? 0 : urlIndex) || Date.now() - lastTabStripInput < 1000) {
+                userPickedHash = window.location.hash;
+            }
+        });
+        // tabchange fires once the index is recorded (120 ms after a click);
+        // the highlight may follow in the same task, hence the extra tick.
+        tabsElem.addEventListener('tabchange', function (e) {
+            var picked = parseInt(e.detail?.selectedTabIndex, 10);
+            setTimeout(function () { clearStraySelection(tabsElem, picked); }, 0);
+        });
+    }
+
+    /**
+     * Jellyfin only deactivates the previously highlighted tab. After one of
+     * its half-applied selections (a panel shown, no button highlighted) that
+     * panel would stay visible under every tab picked later. Keep exactly the
+     * button and panel at the selected position active, when both really are
+     * that tab.
+     * @param {HTMLElement} tabsElem - The emby-tabs element.
+     * @param {number} index - The selected tab index.
+     */
+    function clearStraySelection(tabsElem, index) {
+        var root = getTabsRoot();
+        if (!root || isNaN(index) || tabsElem.selectedIndex?.() !== index) return;
+        var btn = tabsElem.querySelectorAll('.emby-tab-button')[index];
+        var panel = root.querySelectorAll('.tabContent')[index];
+        if (!btn || !panel || slotIndex(btn) !== index || slotIndex(panel) !== index) return;
+        if (!btn.classList.contains('emby-tab-button-active') || !panel.classList.contains('is-active')) return;
+        Array.prototype.forEach.call(root.querySelectorAll('.tabContent.is-active'), function (el) {
+            if (el !== panel) el.classList.remove('is-active');
+        });
+        Array.prototype.forEach.call(tabsElem.querySelectorAll('.emby-tab-button-active'), function (el) {
+            if (el !== btn) el.classList.remove('emby-tab-button-active');
+        });
+    }
+
+    var noteTabStripInput = function (e) {
+        if (e.isTrusted && e.target?.closest?.('[is="emby-tabs"]')) lastTabStripInput = Date.now();
+    };
+    document.addEventListener('pointerdown', noteTabStripInput, { capture: true, passive: true });
+    document.addEventListener('keydown', noteTabStripInput, { capture: true, passive: true });
+
+    /**
+     * Link to one of our tabs: `tab=N` lets Jellyfin and Custom Tabs act on it
+     * natively, and `jeTab=<id>` names the page independently of N, which
+     * shifts whenever other plugins' tabs come and go.
+     * @param {object} entry - A placed tab.
+     * @returns {string} The hash route for the tab.
+     */
+    function deepLinkHash(entry) {
+        return homeRoute() + '?tab=' + entry.index + '&' + DEEP_LINK_PARAM + '=' + encodeURIComponent(entry.id);
+    }
+
+    /**
+     * Finish what a `?tab=N` link asks for. `jeTab=<id>` wins over `tab=N`: a
+     * link whose N no longer matches (saved before a Custom Tab was added, say)
+     * is rewritten first, since Jellyfin and Custom Tabs both act on N.
+     *
+     * Jellyfin selects N as soon as Home renders, before injected buttons
+     * exist, and stops half way (index recorded, panel maybe shown, button
+     * never highlighted, the previous panel never hidden). That applies to
+     * Custom Tabs' tabs as much as ours, so any N >= 2 is completed here once
+     * the button and panel at position N really are tab N.
+     * @param {HTMLElement} slider - The tab strip.
+     * @param {HTMLElement} root - The panel root.
+     */
+    function syncDeepLink(slider, root) {
+        var wantedId = hashParam(DEEP_LINK_PARAM);
+        var wantedIndex = parseInt(hashParam('tab'), 10);
+        var entry = wantedId != null ? entries.find(function (e) { return e.id === wantedId; }) : null;
+        if (entry && entry.index != null && entry.index !== wantedIndex) {
+            // Rewrite in place rather than navigate: a router navigation builds
+            // a new Home page, and Custom Tabs fills its legacy-layout panels
+            // only once per session. Custom Tabs re-reads the URL on its next
+            // sync (it watches history and the DOM).
+            var staleHash = window.location.hash;
+            // Local copy: replaceState notifies JE's navigation listeners
+            // synchronously, and ours clears rewrittenHash once it has seen it.
+            var freshHash = deepLinkHash(entry);
+            rewrittenHash = freshHash;
+            history.replaceState(history.state, '', window.location.pathname + window.location.search + freshHash);
+            wantedIndex = entry.index;
+            if (userPickedHash === staleHash) userPickedHash = freshHash;
+            // Our tab moved after this link was already followed: only the URL
+            // needed updating. Re-selecting it would undo whatever the user
+            // clicked since (tab clicks leave the URL alone).
+            if (appliedDeepLink && appliedDeepLink.hash === staleHash &&
+                appliedDeepLink.panel === document.getElementById(OWN_ID_PREFIX + 'panel-' + entry.id)) {
+                appliedDeepLink.hash = window.location.hash;
+                appliedDeepLink.btn = document.getElementById(OWN_ID_PREFIX + 'btn-' + entry.id);
+            }
+        }
+        // Home(0) and Favorites(1) exist before Jellyfin selects, so they always complete.
+        if (isNaN(wantedIndex) || wantedIndex < 2) return;
+        if (userPickedHash === window.location.hash) return;
+
+        var tabsElem = slider.closest('[is="emby-tabs"]') || document.querySelector('[is="emby-tabs"]');
+        var btn = tabsElem?.querySelectorAll('.emby-tab-button')[wantedIndex];
+        var panel = root.querySelectorAll('.tabContent')[wantedIndex];
+        if (!tabsElem?.selectedIndex || !btn || !panel ||
+            slotIndex(btn) !== wantedIndex || slotIndex(panel) !== wantedIndex) return;
+        var hash = window.location.hash;
         // Consume a deep link once per page/header. Reapplying it for every
         // content mutation would undo a later click on Home or Favorites.
         if (appliedDeepLink && appliedDeepLink.hash === hash && appliedDeepLink.root === root &&
-            appliedDeepLink.panel === panel && appliedDeepLink.tabs === tabsElem) return;
-        // A rebuilt Home page needs tabchange even if the persistent header
-        // already reports this index; its new panel has not been activated.
-        if (btn && panel && tabsElem?.selectedIndex &&
-            (tabsElem.selectedIndex() !== wantedIndex || !panel.classList.contains('is-active'))) {
-            tabsElem.selectedIndex(wantedIndex);
+            appliedDeepLink.panel === panel && appliedDeepLink.tabs === tabsElem) {
+            // A different button at that position (Custom Tabs' real one
+            // replacing our placeholder) only needs its highlight finished --
+            // and only while that tab is still the selected one. Once the
+            // user picked another tab, the link stays consumed. A click shows
+            // in the highlight and panel at once but in selectedIndex() only
+            // 120 ms later, so all three must still point at this tab.
+            var stillSelected = tabsElem.selectedIndex() === wantedIndex && panel.classList.contains('is-active') &&
+                !Array.prototype.some.call(tabsElem.querySelectorAll('.emby-tab-button-active'),
+                    function (el) { return el !== btn; });
+            if (appliedDeepLink.btn === btn || !stillSelected) {
+                appliedDeepLink.btn = btn;
+                return;
+            }
         }
-        if (panel?.classList.contains('is-active') && tabsElem?.selectedIndex?.() === wantedIndex) {
-            appliedDeepLink = { hash: hash, root: root, panel: panel, tabs: tabsElem };
+        // Jellyfin's same-index path highlights the new button without
+        // clearing the old one, and never hides the previous panel; a second
+        // highlighted button would make the next click on it a no-op.
+        var strays = function () {
+            return Array.prototype.filter.call(root.querySelectorAll('.tabContent.is-active'),
+                function (el) { return el !== panel; }).concat(Array.prototype.filter.call(
+                tabsElem.querySelectorAll('.emby-tab-button-active'), function (el) { return el !== btn; }));
+        };
+        var isApplied = function () {
+            return tabsElem.selectedIndex() === wantedIndex && panel.classList.contains('is-active') &&
+                btn.classList.contains('emby-tab-button-active') && strays().length === 0;
+        };
+        if (!isApplied()) {
+            selectingTab = true;
+            try {
+                tabsElem.selectedIndex(wantedIndex);
+            } finally {
+                selectingTab = false;
+            }
+            strays().forEach(function (el) { el.classList.remove('is-active', 'emby-tab-button-active'); });
+        }
+        if (isApplied()) {
+            appliedDeepLink = { hash: hash, root: root, panel: panel, tabs: tabsElem, btn: btn };
         }
     }
 
@@ -328,6 +658,8 @@
             entries = entries.filter(function (e) { return e.id !== id; });
             document.getElementById('je-native-tab-btn-' + id)?.remove();
             document.getElementById('je-native-tab-panel-' + id)?.remove();
+            document.getElementById('je-native-tab-link-' + id)?.remove();
+            removeGroupIfEmpty();
         }
     };
 
@@ -337,7 +669,11 @@
     // Re-inject on every navigation (hashchange, popstate AND pushState navs
     // the old raw hashchange listener missed).
     JE.core.navigation.onNavigate(function () {
-        appliedDeepLink = null;
+        if (window.location.hash !== rewrittenHash) {
+            appliedDeepLink = null;
+            userPickedHash = null;
+        }
+        rewrittenHash = null;
         scheduleInject();
     });
     JE.core.navigation.onViewPage(scheduleInject, { fetchItem: false });

@@ -502,6 +502,15 @@ Yes, via Enhanced panel settings:
 | Admin config page tabs not switching | May be caused by Cloudflare Rocket Loader — try disabling it for your Jellyfin domain. See [troubleshooting](../installation/troubleshooting.md#admin-config-page-tabs-not-switching) |
 | Calendar/Requests custom tab shows blank screen | Disable Cloudflare Rocket Loader for your Jellyfin domain. See [arr troubleshooting](../arr/troubleshooting-support.md#calendar-not-loading) |
 
+### Native Home tabs and the Custom Tabs plugin
+
+Jellyfin Enhanced's native Home tabs (Bookmarks, Hidden Content, Requests, Calendar, Recommendations, Activity) work alongside your own [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) tabs:
+
+- They always come after the Custom Tabs tabs, in the order and at the URLs Jellyfin expects, on both the Modern and Legacy layouts. Adding or removing a Custom Tab moves them along without a page reload.
+- Their links look like `#/home?tab=4&jeTab=bookmarks`. The `jeTab` part keeps a saved link pointing at the right page even after the number changes.
+- A page can use the native tab or Custom Tabs, not both; the settings page turns the other one off. If you also added a Custom Tabs entry for the same page by hand, you will see it twice. Remove that entry in the Custom Tabs settings.
+- A disabled Custom Tabs or Plugin Pages plugin counts as not installed once Jellyfin has restarted. Until then it is still running and still shows its pages.
+
 ### Plugin conflicts?
 
 **Known Conflicts:**
