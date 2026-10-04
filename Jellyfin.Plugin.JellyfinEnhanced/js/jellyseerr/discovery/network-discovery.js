@@ -11,12 +11,12 @@
     'use strict';
 
     // Cache for network ID mappings (studioName -> TMDB company id, or null
-    // when there is no safe match); kept for the tab (see
+    // when there is no safe match); kept for the tab, per user (see
     // JE.discoveryFilter.createSessionCache).
     const networkIdCache = JE.discoveryFilter.createSessionCache('company-id',
         (v) => v === null || (Number.isInteger(v) && v > 0));
 
-    // Cache for studio info (studioId -> studioInfo {id, name, tmdbId, type}); kept for the tab.
+    // Cache for studio info (studioId -> studioInfo {id, name, tmdbId, type}); kept for the tab, per user.
     const studioInfoCache = JE.discoveryFilter.createSessionCache('studio-info',
         (v) => !!v && typeof v === 'object' && typeof v.name === 'string'
             && (v.tmdbId === null || v.tmdbId === undefined || typeof v.tmdbId === 'string'));
@@ -88,8 +88,9 @@
      * @param {AbortSignal} [signal]
      */
     async function getStudioInfo(studioId, signal) {
-        if (studioInfoCache.has(studioId)) {
-            return studioInfoCache.get(studioId);
+        const cache = studioInfoCache.scope();
+        if (cache.has(studioId)) {
+            return cache.get(studioId);
         }
 
         try {
@@ -104,7 +105,7 @@
             }
 
             if (response) {
-                studioInfoCache.set(studioId, response);
+                cache.set(studioId, response);
             }
             return response;
         } catch (error) {
@@ -137,9 +138,10 @@
      */
     async function searchTmdbCompany(networkName, signal) {
         const cacheKey = networkName.toLowerCase().trim();
+        const cache = networkIdCache.scope();
 
-        if (networkIdCache.has(cacheKey)) {
-            return networkIdCache.get(cacheKey);
+        if (cache.has(cacheKey)) {
+            return cache.get(cacheKey);
         }
 
         try {
@@ -166,7 +168,7 @@
                 // exact match "Disney+" would fall back to Disney Junior (and
                 // "Paramount+" to Paramount Pictures): a different company's movies.
                 if (exactMatches.length === 0 && networkName.includes('+')) {
-                    networkIdCache.set(cacheKey, null);
+                    cache.set(cacheKey, null);
                     return null;
                 }
 
@@ -182,7 +184,7 @@
                 if (scored.length === 0) return null;
                 const companyId = scored[0].id;
 
-                networkIdCache.set(cacheKey, companyId);
+                cache.set(cacheKey, companyId);
                 return companyId;
             }
         } catch (error) {

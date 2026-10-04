@@ -338,6 +338,8 @@
     // its listeners the first time anything in one of its cards is pointed at,
     // touched, focused or clicked (bindCardContainersFrom), so every caller of
     // createJellyseerrCard keeps working without registering its container.
+    // The one exception is the title link's click listener, which stays on
+    // the link itself (see onTitleLinkCaptureClick).
 
     // Card element -> its state: the item, the links derived from it, and the
     // hover overview while one is open. WeakMap, so removed cards are freed.
@@ -506,6 +508,7 @@
         titleLink.setAttribute('data-media-type', item.mediaType);
         titleLink.setAttribute('title', (jellyfinHref || useMoreInfoModal || !jellyseerrUrl) ? title : ctx.viewOnJellyseerrLabel());
         titleLink.firstElementChild.textContent = title;
+        titleLink.addEventListener('click', onTitleLinkCaptureClick, true);
         meta.children[1].textContent = year;
         meta.children[2].lastElementChild.textContent = rating;
 
@@ -678,8 +681,26 @@
     }
 
     /**
-     * Title link click (capture phase on the container, so it runs before
-     * anything on the link itself, as the capture listener on the link did).
+     * Capture-phase click listener on every card's title link (one shared
+     * function). It stays on the link itself, not on the container, so every
+     * click reaches the link exactly as before: one it stops (collection,
+     * More Info modal) is stopped at the link, where engines that run a
+     * target's listeners in registration order still run the link's own
+     * emby-linkbutton handler (on app shells without TargetBlank that opens
+     * a Seerr URL in the system browser); stopped at the container, it would
+     * never reach the link at all.
+     * @param {MouseEvent} e
+     */
+    function onTitleLinkCaptureClick(e) {
+        const link = /** @type {HTMLElement} */ (e.currentTarget);
+        const card = link.closest('.jellyseerr-card');
+        const state = card && cardStates.get(card);
+        if (state) onTitleLinkClick(e, link, state);
+    }
+
+    /**
+     * Title link click (capture phase on the link, so it runs before anything
+     * inside the link and before the link's own bubble-phase handlers).
      * @param {MouseEvent} e
      * @param {HTMLElement} moreInfoLink
      * @param {Object} state - The card's state
@@ -784,7 +805,9 @@
     /**
      * Poster click. Runs the two steps the poster's two click listeners used
      * to run, in the same order: show the overview (desktop), then go to
-     * Jellyfin or open the More Info modal.
+     * Jellyfin or open the More Info modal. A desktop click on a poster that
+     * links to Jellyfin goes there once (both listeners used to navigate,
+     * which could add a second history entry).
      * @param {MouseEvent} e
      * @param {HTMLElement} card
      * @param {Object} state - The card's state
@@ -796,6 +819,7 @@
                 e.preventDefault();
                 e.stopPropagation();
                 goToJellyfinItem(state);
+                return;
             } else if (!state.overview) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -940,11 +964,6 @@
     function bindCardContainer(container) {
         if (boundContainers.has(container)) return;
         boundContainers.add(container);
-        container.addEventListener('click', (e) => {
-            const hit = cardEventTarget(container, e);
-            const link = hit && inCard(hit.card, hit.target, '.jellyseerr-more-info-link');
-            if (link) onTitleLinkClick(e, link, hit.state);
-        }, true);
         container.addEventListener('click', (e) => onCardClick(container, e));
         container.addEventListener('keydown', (e) => onCardKeydown(container, e));
         container.addEventListener('mouseenter', (e) => onCardHoverBoundary(container, e, true), true);

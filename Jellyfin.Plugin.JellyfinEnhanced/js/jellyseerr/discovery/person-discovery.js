@@ -11,7 +11,8 @@
 
     // Cache for person ID mappings (personName -> TMDB personId) and for the
     // Jellyfin person's name and TMDB id (personId -> {name, tmdbId}); both
-    // kept for the tab (see JE.discoveryFilter.createSessionCache).
+    // kept for the tab, per user (see JE.discoveryFilter.createSessionCache:
+    // the person search is answered by Seerr for the signed-in user).
     const personIdCache = JE.discoveryFilter.createSessionCache('person-id',
         (v) => Number.isInteger(v) && v > 0);
     const personInfoCache = JE.discoveryFilter.createSessionCache('person-info',
@@ -28,8 +29,9 @@
      * @param {AbortSignal} [signal]
      */
     async function getPersonInfo(personId, signal) {
-        if (personInfoCache.has(personId)) {
-            return personInfoCache.get(personId);
+        const cache = personInfoCache.scope();
+        if (cache.has(personId)) {
+            return cache.get(personId);
         }
         try {
             if (signal?.aborted) {
@@ -44,7 +46,7 @@
 
             if (response) {
                 // Only the name and TMDB id are used here (and kept for the tab).
-                personInfoCache.set(personId, { name: response.name, tmdbId: response.tmdbId ?? null });
+                cache.set(personId, { name: response.name, tmdbId: response.tmdbId ?? null });
             }
             return response;
         } catch (error) {
@@ -86,8 +88,9 @@
      */
     async function searchTmdbPerson(personName, signal) {
         const cacheKey = personName.toLowerCase().trim();
-        if (personIdCache.has(cacheKey)) {
-            return personIdCache.get(cacheKey);
+        const cache = personIdCache.scope();
+        if (cache.has(cacheKey)) {
+            return cache.get(cacheKey);
         }
 
         try {
@@ -123,7 +126,7 @@
                     if (scored.length === 0) return null;
                     const personId = scored[0].id;
 
-                    personIdCache.set(cacheKey, personId);
+                    cache.set(cacheKey, personId);
                     return personId;
                 }
             }

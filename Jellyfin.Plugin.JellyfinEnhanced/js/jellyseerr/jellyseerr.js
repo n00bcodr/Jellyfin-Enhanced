@@ -54,6 +54,11 @@
         // has settled back on the query.
         /** @type {Array<{results: Array, query: string, rowId: number, epoch: number}>} */
         let unfinishedCollections = [];
+        // While a batch's off-screen cards are still being built (see
+        // loadMoreSearchResults), the promise that settles once they are in
+        // the row; null otherwise.
+        /** @type {Promise<number>|null} */
+        let batchRendering = null;
         let debounceTimeout = null;
         let isJellyseerrActive = false;
         let jellyseerrUserFound = false;
@@ -254,8 +259,22 @@
                 const anchor = prev
                     ? container.querySelector(`.jellyseerr-more-info-link[data-tmdb-id="${prev.id}"][data-media-type="${prev.mediaType}"]`)?.closest('.card')
                     : null;
-                const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
-                if (anchor) anchor.after(card); else container.appendChild(card);
+                if (anchor) {
+                    anchor.after(createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound));
+                } else if (batchRendering) {
+                    // No card to follow, so it goes at the end of the row; a
+                    // batch still being built goes in first (as a batch
+                    // appended in one go would have).
+                    const rowId = collectionRowId;
+                    const append = () => {
+                        if (rowId === collectionRowId && container.isConnected) {
+                            container.appendChild(createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound));
+                        }
+                    };
+                    batchRendering.then(append, append);
+                } else {
+                    container.appendChild(createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound));
+                }
             }
         }
 
@@ -644,10 +663,19 @@
                         // and goes in after them. The load resolves once every
                         // card is in; a new search or a rebuilt row drops the rest.
                         const rowId = collectionRowId;
-                        await slices(itemsContainer, results, createCard, {
+                        const isCurrent = () => rowId === collectionRowId && lastProcessedQuery === query && itemsContainer.isConnected;
+                        const rendering = slices(itemsContainer, results, createCard, {
                             syncCount: JE.discoveryFilter.cardsInView(itemsContainer, { horizontal: true }),
-                            isCurrent: () => rowId === collectionRowId && lastProcessedQuery === query && itemsContainer.isConnected
+                            isCurrent
                         });
+                        batchRendering = rendering;
+                        try {
+                            await rendering;
+                        } finally {
+                            if (batchRendering === rendering) batchRendering = null;
+                        }
+                        // Dropped (new search, row rebuilt): nothing more to do for it.
+                        if (!isCurrent()) return;
                     } else {
                         const fragment = document.createDocumentFragment();
                         results.forEach(item => fragment.appendChild(createCard(item)));

@@ -476,44 +476,90 @@
 
     // ---- Discovery resolution caches kept for the tab --------------------------
     // Which genre, studio or person a Jellyfin page is, and which TMDB genre,
-    // company or person that maps to, is the same for every user and rarely
-    // changes, yet resolving it costs one or two round trips before a
-    // discovery section can fetch its first page. The modules' lookup caches
-    // therefore also live in sessionStorage, per server and for
-    // RESOLUTION_STORAGE_TTL_MS: a reload in the same tab resolves at once.
-    const RESOLUTION_STORAGE_PREFIX = 'je-discovery-resolution:';
+    // company or person that maps to, rarely changes, yet resolving it costs
+    // one or two round trips before a discovery section can fetch its first
+    // page. The modules' lookup caches therefore also live in sessionStorage,
+    // for RESOLUTION_STORAGE_TTL_MS: a reload in the same tab resolves at once.
+    // They are kept per server AND per user: the lookups run as the signed-in
+    // user (library access, Seerr results filtered by the user's policy), so
+    // one user's resolution must never be handed to the next user signing in
+    // in the same tab.
+    const RESOLUTION_STORAGE_PREFIX = 'je-discovery-resolution-v2:';
+    // Entries written per server only (before they were scoped by user):
+    // never read, removed on first use.
+    const RESOLUTION_STORAGE_LEGACY_PREFIX = 'je-discovery-resolution:';
     const RESOLUTION_STORAGE_TTL_MS = 30 * 60 * 1000;
     const RESOLUTION_STORAGE_MAX_ENTRIES = 200;
+    // Stands in for the server id while it is unknown (no Jellyfin server id
+    // is empty): those entries are never written to sessionStorage.
+    const MEMORY_ONLY_SERVER = '';
+    let legacyResolutionStoragePurged = false;
 
     /**
-     * A Map-like lookup cache (has / get / set) whose entries are also kept
-     * in sessionStorage, one entry set per server. Stored entries that are
-     * expired, malformed or rejected by `isValid` are ignored; storage that is
-     * full or unavailable leaves the cache working from memory.
+     * Removes the resolution entries stored under the old server-only keys
+     * (once per page load).
+     */
+    function purgeLegacyResolutionStorage() {
+        if (legacyResolutionStoragePurged) return;
+        legacyResolutionStoragePurged = true;
+        try {
+            for (let i = sessionStorage.length - 1; i >= 0; i--) {
+                const key = sessionStorage.key(i);
+                if (key && key.startsWith(RESOLUTION_STORAGE_LEGACY_PREFIX)) sessionStorage.removeItem(key);
+            }
+        } catch (_) {
+            // Storage unavailable: nothing to clean up.
+        }
+    }
+
+    /**
+     * A lookup cache whose entries are also kept in sessionStorage, one entry
+     * set per server and user. `scope()` binds has / get / set to the user
+     * signed in when it is called: a lookup takes its scope before it awaits
+     * anything, so a result that lands after a user switch is stored for the
+     * user it was fetched for. While no user is known nothing is cached; while
+     * the server is unknown the user's entries stay in memory only. Stored
+     * entries that are expired, malformed or rejected by `isValid` are
+     * ignored; storage that is full or unavailable leaves the cache working
+     * from memory. Only the signed-in user's entries are kept in memory.
      * @param {string} name - Cache name, part of the storage key
      * @param {function(*): boolean} isValid - Whether a stored value is well-formed
-     * @returns {{has: function(string): boolean, get: function(string): *, set: function(string, *): void}}
+     * @returns {{scope: function(): {has: function(string): boolean, get: function(string): *, set: function(string, *): void}}}
      */
     function createSessionCache(name, isValid) {
-        // Storage key -> Map(key -> {value, storedAt}); the null key holds a
-        // memory-only cache while the server is unknown.
-        const caches = new Map();
+        /** @type {string|null} Storage key of the entries held in memory */
+        let memoryKey = null;
+        /** @type {Map<string, {value: *, storedAt: number}>|null} */
+        let memoryEntries = null;
 
-        /** @returns {string|null} sessionStorage key for the current server */
+        /**
+         * Key of the signed-in user's entries: their sessionStorage key, or a
+         * memory-only key (MEMORY_ONLY_SERVER as the server) while the server
+         * is unknown; null while no user is signed in.
+         * @returns {string|null}
+         */
         const storageKey = () => {
-            const serverId = JE.session?.getServerId?.();
-            return serverId ? `${RESOLUTION_STORAGE_PREFIX}${serverId}:${name}` : null;
+            const userId = JE.session?.getUserId?.();
+            if (!userId) return null;
+            const serverId = JE.session?.getServerId?.() || MEMORY_ONLY_SERVER;
+            return `${RESOLUTION_STORAGE_PREFIX}${serverId}:${userId}:${name}`;
         };
+        /**
+         * @param {string} key
+         * @returns {boolean} The key's entries are kept in sessionStorage
+         */
+        const persisted = (key) => !key.startsWith(`${RESOLUTION_STORAGE_PREFIX}${MEMORY_ONLY_SERVER}:`);
 
         /**
          * Reads the stored entries for one storage key, keeping only fresh,
          * well-formed ones.
-         * @param {string|null} key
+         * @param {string} key
          * @returns {Map<string, {value: *, storedAt: number}>}
          */
         const load = (key) => {
             const entries = new Map();
-            if (!key) return entries;
+            if (!persisted(key)) return entries;
+            purgeLegacyResolutionStorage();
             try {
                 const parsed = JSON.parse(sessionStorage.getItem(key) || 'null');
                 const stored = parsed && typeof parsed === 'object' ? parsed.entries : null;
@@ -531,15 +577,22 @@
             return entries;
         };
 
-        /** @returns {{key: (string|null), entries: Map<string, {value: *, storedAt: number}>}} */
-        const current = () => {
-            const key = storageKey();
-            let entries = caches.get(key);
-            if (!entries) {
-                entries = load(key);
-                caches.set(key, entries);
+        /**
+         * The entries for a storage key: the in-memory set when it is the
+         * signed-in user's (loaded on first use, replacing the previous
+         * user's), straight from storage otherwise (a lookup that outlived a
+         * user switch).
+         * @param {string} key
+         * @returns {Map<string, {value: *, storedAt: number}>}
+         */
+        const entriesFor = (key) => {
+            if (key === memoryKey && memoryEntries) return memoryEntries;
+            const entries = load(key);
+            if (key === storageKey()) {
+                memoryKey = key;
+                memoryEntries = entries;
             }
-            return { key, entries };
+            return entries;
         };
 
         /**
@@ -555,34 +608,45 @@
             return false;
         };
 
-        return {
-            has(k) {
-                return fresh(current().entries, String(k));
-            },
-            get(k) {
-                const { entries } = current();
-                return fresh(entries, String(k)) ? entries.get(String(k)).value : undefined;
-            },
-            set(k, value) {
-                const { key, entries } = current();
-                entries.delete(String(k));
-                entries.set(String(k), { value, storedAt: Date.now() });
-                // Oldest first (insertion order): drop the oldest over the cap.
-                while (entries.size > RESOLUTION_STORAGE_MAX_ENTRIES) {
-                    entries.delete(entries.keys().next().value);
+        /**
+         * has / get / set for the user signed in now.
+         * @returns {{has: function(string): boolean, get: function(string): *, set: function(string, *): void}}
+         */
+        const scope = () => {
+            const key = storageKey();
+            return {
+                has(k) {
+                    return !!key && fresh(entriesFor(key), String(k));
+                },
+                get(k) {
+                    if (!key) return undefined;
+                    const entries = entriesFor(key);
+                    return fresh(entries, String(k)) ? entries.get(String(k)).value : undefined;
+                },
+                set(k, value) {
+                    if (!key) return;
+                    const entries = entriesFor(key);
+                    entries.delete(String(k));
+                    entries.set(String(k), { value, storedAt: Date.now() });
+                    // Oldest first (insertion order): drop the oldest over the cap.
+                    while (entries.size > RESOLUTION_STORAGE_MAX_ENTRIES) {
+                        entries.delete(entries.keys().next().value);
+                    }
+                    if (!persisted(key) || !isValid(value)) return;
+                    try {
+                        const stored = {};
+                        entries.forEach((entry, entryKey) => {
+                            if (isValid(entry.value)) stored[entryKey] = entry;
+                        });
+                        sessionStorage.setItem(key, JSON.stringify({ entries: stored }));
+                    } catch (_) {
+                        // Storage full or unavailable: the cache keeps working from memory.
+                    }
                 }
-                if (!key || !isValid(value)) return;
-                try {
-                    const stored = {};
-                    entries.forEach((entry, entryKey) => {
-                        if (isValid(entry.value)) stored[entryKey] = entry;
-                    });
-                    sessionStorage.setItem(key, JSON.stringify({ entries: stored }));
-                } catch (_) {
-                    // Storage full or unavailable: the cache keeps working from memory.
-                }
-            }
+            };
         };
+
+        return { scope };
     }
 
     /**
@@ -715,29 +779,49 @@
     }
 
     /**
+     * The viewport box of the first of `elements` that has a size.
+     * @param {Array<Element|null>} elements - Candidates, innermost first
+     * @returns {DOMRect|null} Null when none is laid out with a size
+     */
+    function firstSizedBox(elements) {
+        for (const el of elements) {
+            if (!el) continue;
+            const box = el.getBoundingClientRect();
+            if (box.width > 0 && box.height > 0) return box;
+        }
+        return null;
+    }
+
+    /**
      * How many cards appended to the end of a container would land on screen
      * or within half a screen past its edge: the part of a batch that must be
-     * appended at once so nothing pops in where the viewer is looking.
+     * appended at once so nothing pops in where the viewer is looking. While
+     * the container holds no card to measure (e.g. filtering removed every
+     * card of the first page), there is no telling how many cards cover the
+     * screen, so a container in view takes the whole batch at once.
      * @param {HTMLElement} container - Element holding the .card elements
      * @param {object} [options]
      * @param {boolean} [options.horizontal=false] - A horizontal row (cards extend to the right)
-     * @returns {number}
+     * @returns {number} May be Infinity (every card of the batch)
      */
     function cardsInView(container, options = {}) {
         const scroll = JE.seamlessScroll;
         if (!scroll?.cardsNeeded || !container.isConnected) return 0;
         const rect = container.getBoundingClientRect();
         if (options.horizontal) {
-            // A row above or below the screen shows none of its new cards.
-            if (rect.bottom <= 0 || rect.top >= window.innerHeight || rect.height === 0) return 0;
+            // A row above or below the screen shows none of its new cards. An
+            // empty track measures zero high while its row (header, scroller)
+            // is on screen: judge the row by its scroller or section then.
+            const row = firstSizedBox([container, container.closest('.emby-scroller'), container.closest('.verticalSection')]);
+            if (!row || row.bottom <= 0 || row.top >= window.innerHeight) return 0;
             let last = container.lastElementChild;
             while (last && !last.classList.contains('card')) last = last.previousElementSibling;
             const end = last ? last.getBoundingClientRect().right : rect.left;
             const gapPx = window.innerWidth * 1.5 - end;
-            return gapPx > 0 ? scroll.cardsNeeded(container, { deficitPx: gapPx, horizontal: true }, 20) : 0;
+            return gapPx > 0 ? scroll.cardsNeeded(container, { deficitPx: gapPx, horizontal: true }, Infinity) : 0;
         }
         const gapPx = window.innerHeight * 1.5 - rect.bottom;
-        return gapPx > 0 ? scroll.cardsNeeded(container, { deficitPx: gapPx }, 40) : 0;
+        return gapPx > 0 ? scroll.cardsNeeded(container, { deficitPx: gapPx }, Infinity) : 0;
     }
 
     /**
@@ -745,7 +829,10 @@
      * `syncCount` (the ones in view) at once, the rest built in short slices
      * across tasks and appended together at the end. The returned promise
      * settles once every card is in, so a caller reporting to the scroll
-     * engine measures the whole batch.
+     * engine measures the whole batch. A card that fails to build rejects
+     * the promise with the batch's cards taken out again (a batch built in
+     * one go added nothing either); a dropped batch keeps the cards already
+     * appended. Either way the posters of the cards left out are released.
      * @param {HTMLElement} container
      * @param {Array} items - Items to render, in order
      * @param {function(Object): (HTMLElement|null)} createCard - Builds one item's card
@@ -779,25 +866,43 @@
             return count;
         };
 
-        let appended = 0;
-        if (syncCount > 0) {
-            const visible = document.createDocumentFragment();
-            appended = build(visible, syncCount, 0);
-            if (appended > 0) container.appendChild(visible);
-        }
-        const rest = document.createDocumentFragment();
-        let built = build(rest, 0, BUILD_SLICE_MS);
-        while (index < items.length) {
-            await yieldToBrowser();
-            if (!isCurrent()) {
-                // Dropped: stop watching the posters of the cards built so far.
-                JE.jellyseerrUI?.releasePosters?.(rest);
-                return appended;
+        // Cards built but not in the container yet.
+        let pending = document.createDocumentFragment();
+        // The cards appended at once.
+        let syncCards = [];
+        let settled = false;
+        try {
+            let appended = 0;
+            if (syncCount > 0) {
+                appended = build(pending, syncCount, 0);
+                if (appended > 0) {
+                    syncCards = Array.from(pending.children);
+                    container.appendChild(pending);
+                }
+                pending = document.createDocumentFragment();
             }
-            built += build(rest, 1, BUILD_SLICE_MS);
+            let built = build(pending, 0, BUILD_SLICE_MS);
+            while (index < items.length) {
+                await yieldToBrowser();
+                if (!isCurrent()) {
+                    // Dropped: the cards built so far are released below.
+                    settled = true;
+                    return appended;
+                }
+                built += build(pending, 1, BUILD_SLICE_MS);
+            }
+            if (built > 0) container.appendChild(pending);
+            settled = true;
+            return appended + built;
+        } finally {
+            // Stop watching the posters of cards that never made it in (the
+            // poster sweep leaves cards inside a fragment alone).
+            if (pending.firstChild) JE.jellyseerrUI?.releasePosters?.(pending);
+            if (!settled && syncCards.length > 0) {
+                syncCards.forEach(card => card.remove());
+                JE.jellyseerrUI?.releasePosters?.();
+            }
         }
-        if (built > 0) container.appendChild(rest);
-        return appended + built;
     }
 
     /**

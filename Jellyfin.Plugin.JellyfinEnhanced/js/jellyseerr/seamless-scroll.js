@@ -39,8 +39,8 @@
         horizontalPollMs: 400,
         // ...until this many polls in a row found nothing to load (the row is
         // full, off screen, under a modal or paused). Any scroll, wheel, swipe,
-        // key, focus, press or resize — and anything that asks for a fill —
-        // starts the poll again.
+        // key, focus, press or resize, a card hidden or added / removed — and
+        // anything that asks for a fill — starts the poll again.
         horizontalPollIdleLimit: 3,
 
         // Safety valve against hammering Seerr/TMDB: after this many
@@ -583,6 +583,18 @@
             // translate the track) only re-arms the poll: like the poll always
             // did, it fills on its next tick, not on the press itself.
             listen(section, 'pointerdown', armPoll, { passive: true, capture: true });
+            // The row can also shrink with no input on it: a card hidden through
+            // the hide dialog (confirmed long after the press), or cards taken
+            // out of the track. Re-arm the poll then too, so it refills on its
+            // next tick as the always-running poll did.
+            listen(window, 'je-hidden-content-changed', armPoll);
+            const track = section.querySelector(trackSelector);
+            if (track && typeof MutationObserver !== 'undefined') {
+                // The track's own children only: no subtree, no attributes.
+                const trackObserver = new MutationObserver(() => armPoll());
+                trackObserver.observe(track, { childList: true });
+                listeners.push(() => trackObserver.disconnect());
+            }
             // touchmove: a swipe that starts on a card is still reading the row.
             ['scroll', 'wheel', 'touchstart', 'touchmove', 'keydown', 'focusin', 'pointerdown'].forEach(type =>
                 listen(section, type, onEngage, { passive: true, capture: true }));

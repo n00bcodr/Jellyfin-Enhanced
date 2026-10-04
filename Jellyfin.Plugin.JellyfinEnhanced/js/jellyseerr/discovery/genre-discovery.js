@@ -7,8 +7,8 @@
 (function(JE) {
     'use strict';
 
-    // Jellyfin genre id -> genre info ({id, name, type}); kept for the tab
-    // (see JE.discoveryFilter.createSessionCache).
+    // Jellyfin genre id -> genre info ({id, name, type}); kept for the tab,
+    // per user (see JE.discoveryFilter.createSessionCache).
     const genreInfoCache = JE.discoveryFilter.createSessionCache('genre-info',
         (v) => !!v && typeof v === 'object' && typeof v.name === 'string');
 
@@ -69,8 +69,9 @@
      * @returns {Promise<Object|null>} Genre info object or null
      */
     async function getGenreInfo(genreId, signal) {
-        if (genreInfoCache.has(genreId)) {
-            return genreInfoCache.get(genreId);
+        const cache = genreInfoCache.scope();
+        if (cache.has(genreId)) {
+            return cache.get(genreId);
         }
         try {
             if (signal?.aborted) {
@@ -84,7 +85,7 @@
             }
 
             if (response) {
-                genreInfoCache.set(genreId, response);
+                cache.set(genreId, response);
             }
             return response;
         } catch (error) {
