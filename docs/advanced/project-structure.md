@@ -49,7 +49,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   │                                 # SeerrParentalFilter, MaintenanceMode*,
 │   │                                 # TmdbResponseCache, TmdbCompanyTvDiscover,
 │   │                                 # ItemStatsService, ScriptInjectionStartupFilter,
-│   │                                 # ClientScriptBundle, …)
+│   │                                 # ClientScriptBundle, MovieCollectionsBatch, …)
 │   ├── Identity/
 │   │   └── RequestIdentityService.cs
 │   ├── PosterTags/                   # Native Poster Tags (experimental)
@@ -328,6 +328,8 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`SpoilerUserResolver.cs`**: Loads per-user Spoiler Guard state for the requesting user identified by `RequestIdentityService`.
 
 * **`/Services/ClientScriptBundle.cs`**: Builds and caches the component bundle (`/JellyfinEnhanced/bundle.js`) and its index source map from the embedded `js/component-scripts.json` manifest; also the source of the ordered list returned by `/bootstrap`.
+
+* **`/Services/MovieCollectionsBatch.cs`**: Id parsing and lookup scheduling for `GET /JellyfinEnhanced/jellyseerr/movie-collections`, the Seerr search row's one-request collection lookup for a batch of movies (Seerr's movie detail first, TMDB when Seerr names no collection).
 
 * **`/Services/PosterTags/`**: Native Poster Tags (experimental) — draws each user's poster tags into Primary images for native apps that don't run the web overlays. Off unless `NativePosterTagsEnabled` is set.
     * **`PosterTagModel.cs`**: The semantic layout passed from resolution to rendering — tag groups, their corners and stack order, and the tags themselves. Visual details belong to the renderer.
