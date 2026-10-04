@@ -83,17 +83,22 @@ const css = `
             align-items: center;
             justify-content: center;
             transition: all 0.2s;
-            width: 40px;
-            height: 40px;
+            width: 44px;
+            height: 44px;
             z-index: 100;
+            top: max(0.75rem, env(safe-area-inset-top));
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
         }
 
         .je-more-info-modal .modal-refresh {
-            right: 5.5rem;
+            right: 4.25rem;
         }
 
         .je-more-info-modal .modal-close {
-            right: 1.5rem;
+            right: 1rem;
         }
 
         .je-more-info-modal .modal-refresh:hover:not(:disabled),
@@ -124,9 +129,9 @@ const css = `
 
         .je-more-info-modal .modal-backdrop {
             position: relative;
-            height: 300px;
+            height: clamp(200px, 34vw, 360px);
             background-size: cover;
-            background-position: center calc(-50px);
+            background-position: center 22%;
             background-repeat: no-repeat;
             flex-shrink: 0;
         }
@@ -134,13 +139,13 @@ const css = `
         .je-more-info-modal .je-modal-backdrop-overlay {
             position: absolute;
             inset: 0;
-            background: linear-gradient(to bottom, transparent 0%, #0f172a 100%);
+            background: linear-gradient(to bottom, rgba(15, 23, 42, 0.45) 0%, rgba(15, 23, 42, 0) 28%, rgba(15, 23, 42, 0.55) 62%, rgba(15, 23, 42, 0.92) 86%, #0f172a 100%);
         }
 
         .je-more-info-modal .modal-content {
             position: relative;
             padding: 0 2rem 1.5rem;
-            margin-top: -80px;
+            margin-top: -90px;
             color: white;
             flex: 1;
             overflow-y: auto;
@@ -188,10 +193,10 @@ const css = `
         }
 
         .je-more-info-modal .title {
-            font-size: 2.5rem;
+            font-size: clamp(1.6rem, 3.4vw, 2.4rem);
             font-weight: 700;
-            margin: 0 0 0.25rem;
-            line-height: 1.2;
+            margin: 0;
+            line-height: 1.15;
         }
 
         .je-more-info-modal .title-row {
@@ -211,31 +216,50 @@ const css = `
         }
 
         .je-more-info-modal .year {
-            font-weight: 400;
-            opacity: 0.7;
-            font-size: 2rem;
+            font-weight: 500;
+            opacity: 0.55;
+            font-size: 0.55em;
+            margin-left: 0.2em;
+            vertical-align: 0.12em;
         }
 
         .je-more-info-modal .meta-info {
             display: flex;
-            gap: 1rem;
-            margin-bottom: 1rem;
-            margin-top: 1rem;
-            font-size: 1rem;
+            flex-wrap: wrap;
+            gap: 0.35rem 0;
+            margin: 0.6rem 0 0.75rem;
+            font-size: 0.95rem;
             align-items: center;
         }
 
+        .je-more-info-modal .meta-info > * + *::before {
+            content: "\\00b7";
+            margin: 0 0.6em;
+            opacity: 0.5;
+        }
+
         .je-more-info-modal .rating-badge {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 0.25rem 0.5rem;
+            padding: 0.25rem 0.45rem;
             border-radius: 4px;
+            font-size: 0.8rem;
+            line-height: 1;
             font-weight: 600;
+        }
+
+        /* Plain outline unless Colored Ratings colours it via css/ratings.css */
+        .je-more-info-modal .rating-badge:not(.mediaInfoOfficialRating) {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.25);
         }
 
         .je-more-info-modal .runtime,
         .je-more-info-modal .genres {
             opacity: 0.8;
             width: fit-content;
+        }
+
+        .je-more-info-modal .runtime {
+            white-space: nowrap;
         }
 
         .je-more-info-modal .tagline {
@@ -1122,11 +1146,6 @@ const css = `
         }
 
         @media (max-width: 768px) {
-            .je-more-info-modal .modal-backdrop {
-                height: 200px;
-                background-position: center;
-            }
-
             .je-more-info-modal .modal-content {
                 padding: 0 1rem 1rem;
                 margin-top: -60px;
@@ -1139,10 +1158,6 @@ const css = `
 
             .je-more-info-modal .header-poster {
                 width: 120px;
-            }
-
-            .je-more-info-modal .title {
-                font-size: 1.75rem;
             }
 
             .je-more-info-modal .crew-section {
@@ -1180,6 +1195,209 @@ const css = `
             .je-download-meta {
                 font-size: 0.65rem;
                 gap: 0.25rem;
+            }
+        }
+
+        /* Layout polish: header toolbar, section rhythm, cast and keywords */
+        .je-more-info-modal .header-info {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            column-gap: 0.6rem;
+            row-gap: 0.5rem;
+            align-content: flex-start;
+        }
+
+        .je-more-info-modal .header-info > * {
+            flex: 0 0 100%;
+            min-width: 0;
+        }
+
+        .je-more-info-modal .header-info > .je-more-info-actions,
+        .je-more-info-modal .header-info > .je-more-info-secondary-actions {
+            flex: 0 0 auto;
+        }
+
+        .je-more-info-modal .je-more-info-actions .jellyseerr-request-button,
+        .je-more-info-modal .je-more-info-actions .jellyseerr-split-arrow {
+            min-height: 40px;
+            box-sizing: border-box;
+        }
+
+        .je-more-info-modal .je-spoiler-pending-btn {
+            min-height: 40px;
+            box-sizing: border-box;
+            border-radius: 8px;
+            padding: 0 0.9rem;
+            font-size: 0.85rem;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            color: #fff;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .je-more-info-modal .je-spoiler-pending-btn .material-icons {
+            font-size: 1.1rem;
+        }
+
+        .je-more-info-modal .je-spoiler-pending-btn:hover {
+            background: rgba(255, 255, 255, 0.16);
+        }
+
+        .je-more-info-modal .modal-left > div {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+
+        .je-more-info-modal .modal-left > div + div {
+            margin-top: 1.75rem;
+        }
+
+        .je-more-info-modal .modal-left > div > h3 {
+            font-size: 1.05rem;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+            margin: 0 0 0.7rem;
+            opacity: 0.95;
+        }
+
+        .je-more-info-modal .cast-member {
+            width: 92px;
+        }
+
+        .je-more-info-modal .person-name,
+        .je-more-info-modal .person-character {
+            white-space: normal;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            line-height: 1.25;
+            text-align: center;
+            overflow-wrap: anywhere;
+        }
+
+        .je-more-info-modal .person-name {
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+        }
+
+        .je-more-info-modal .person-character {
+            font-size: 0.72rem;
+            opacity: 0.6;
+            margin-top: 0.15rem;
+        }
+
+        .je-more-info-modal .keywords-grid {
+            gap: 0.4rem;
+        }
+
+        .je-more-info-modal .keyword {
+            font-size: 0.78rem;
+            padding: 0.25rem 0.65rem;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        /* Single column once the modal itself (not the screen) gets narrow */
+        .je-more-info-modal .modal-container {
+            container-type: inline-size;
+        }
+
+        @container (max-width: 760px) {
+            .je-more-info-modal .modal-main {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+
+            .je-more-info-modal .modal-right {
+                width: 100%;
+            }
+
+            .je-more-info-right-panel {
+                position: static;
+                max-height: none;
+            }
+
+            .je-more-info-modal .modal-content {
+                padding: 0 1.25rem 1.25rem;
+            }
+
+            .je-more-info-modal .header-poster {
+                width: 110px;
+                flex-shrink: 0;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .je-more-info-modal .modal-container {
+                max-width: 100vw;
+                height: 100dvh;
+                max-height: 100dvh;
+                border-radius: 0;
+                box-shadow: none;
+            }
+
+            .je-more-info-modal .modal-content {
+                padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+            }
+
+            .je-more-info-modal .modal-refresh,
+            .je-more-info-modal .modal-close {
+                width: 38px;
+                height: 38px;
+            }
+
+            .je-more-info-modal .modal-close {
+                right: 0.75rem;
+            }
+
+            .je-more-info-modal .modal-refresh {
+                right: 3.5rem;
+            }
+
+            .je-more-info-modal .meta-info .genres {
+                flex-basis: 100%;
+                margin-top: 0.1rem;
+            }
+
+            .je-more-info-modal .meta-info .genres::before {
+                display: none;
+            }
+
+            .je-more-info-modal .je-more-info-actions .jellyseerr-request-button,
+            .je-more-info-modal .je-more-info-actions .jellyseerr-split-arrow {
+                min-height: 34px;
+                font-size: 0.8rem;
+                padding-top: 0;
+                padding-bottom: 0;
+            }
+
+            .je-more-info-modal .je-more-info-actions .jellyseerr-request-button {
+                padding-left: 0.75rem;
+                padding-right: 0.75rem;
+                gap: 0.35rem;
+            }
+
+            .je-more-info-modal .je-more-info-actions .jellyseerr-request-button .material-icons,
+            .je-more-info-modal .je-more-info-actions .jellyseerr-request-button svg {
+                font-size: 1.1rem;
+                width: 1.1rem;
+                height: 1.1rem;
+            }
+
+            /* Icon-only on phones so it shares a row with Request */
+            .je-more-info-modal .je-spoiler-pending-btn {
+                min-height: 34px;
+                width: 34px;
+                padding: 0;
+                justify-content: center;
+            }
+
+            .je-more-info-modal .je-spoiler-pending-btn > span:not(.material-icons) {
+                display: none;
             }
         }
     `;

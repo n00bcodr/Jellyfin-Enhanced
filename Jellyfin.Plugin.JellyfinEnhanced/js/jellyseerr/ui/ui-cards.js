@@ -330,7 +330,9 @@
      * @returns {HTMLElement} - Card element.
      */
     function createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound) {
-        const year = item.releaseDate?.substring(0, 4) || item.firstAirDate?.substring(0, 4) || 'N/A';
+        // Collections have no year or rating: show just the Seerr icon instead of N/A.
+        const isCollection = item.mediaType === 'collection';
+        const year = item.releaseDate?.substring(0, 4) || item.firstAirDate?.substring(0, 4) || (isCollection ? '' : 'N/A');
         // validate posterPath before interpolating into a CSS
         // url() context. Anything other than a leading-slash relative path
         // (TMDB always returns this shape, e.g. "/abc.jpg") is rejected so a
@@ -338,7 +340,7 @@
         const posterUrl = internal.isSafeTmdbImagePath(item.posterPath)
             ? `https://image.tmdb.org/t/p/w400${item.posterPath}`
             : JE.cdn.url('ibb', 'fdbkXQdP/jellyseerr-poster-not-found.png');
-        const rating = item.voteAverage ? item.voteAverage.toFixed(1) : 'N/A';
+        const rating = item.voteAverage ? item.voteAverage.toFixed(1) : (isCollection ? '' : 'N/A');
         // Escape API-sourced values before interpolation into search card HTML
         const titleText = escapeHtml(item.title || item.name);
         // Resolve Seerr URL based on mappings or fallback to base URL
@@ -398,8 +400,8 @@
                 </div>
                 <div class="cardText cardTextCentered cardText-secondary jellyseerr-meta">
                     <img src="${JE.cdn.selfhst('svg/seerr.svg')}" class="jellyseerr-icon-on-card" alt="Seerr"/>
-                    <bdi>${year}</bdi>
-                    <div class="jellyseerr-rating">${icons.star}<span>${rating}</span></div>
+                    ${year ? `<bdi>${year}</bdi>` : ''}
+                    ${rating ? `<div class="jellyseerr-rating">${icons.star}<span>${rating}</span></div>` : ''}
                 </div>
             </div>`;
 
