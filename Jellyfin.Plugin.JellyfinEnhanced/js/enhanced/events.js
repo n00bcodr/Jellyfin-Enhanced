@@ -372,6 +372,37 @@
             document.addEventListener('touchcancel', videoPageCheck(JE.handleLongPressCancel), { capture: true, passive: false });
         }
 
+        // Auto PiP only closes a PiP window it opened itself. Chromium browsers (Edge, Chrome) can
+        // open their own automatic PiP on tab switch and close it again when the tab returns;
+        // calling exitPictureInPicture() on that window races the browser's close and leaves the
+        // player dark with audio only (#910).
+        let autoPipVideo = null;
+
+        /**
+         * Whether the video can enter PiP right now (avoids InvalidStateError before metadata loads).
+         * @param {HTMLVideoElement} video The player's video element.
+         * @returns {boolean} True if a PiP request can succeed.
+         */
+        const canAutoPip = (video) => document.pictureInPictureEnabled
+            && !video.disablePictureInPicture
+            && video.readyState >= HTMLMediaElement.HAVE_METADATA;
+
+        /**
+         * Leaves PiP if the current PiP window is the one Auto PiP opened.
+         */
+        const exitAutoPip = () => {
+            const pipVideo = autoPipVideo;
+            autoPipVideo = null;
+            if (pipVideo && document.pictureInPictureElement === pipVideo) {
+                document.exitPictureInPicture().catch(err => console.error("🪼 Jellyfin Enhanced: Auto PiP Error:", err));
+            }
+        };
+
+        // Forget our window once it closes by any route (PiP "back to tab" button, browser, player stop).
+        document.addEventListener('leavepictureinpicture', (e) => {
+            if (e.target === autoPipVideo) autoPipVideo = null;
+        }, true);
+
         // Listeners for tab visibility (auto-pause/resume/PiP)
         document.addEventListener('visibilitychange', () => {
             const video = document.querySelector('video');
@@ -384,17 +415,26 @@
                     video.pause();
                     video.dataset.wasPlayingBeforeHidden = 'true';
                 }
-                if (JE.currentSettings.autoPipEnabled && !document.pictureInPictureElement) {
-                    video.requestPictureInPicture().catch(err => console.error("🪼 Jellyfin Enhanced: Auto PiP Error:", err));
+                if (JE.currentSettings.autoPipEnabled && !document.pictureInPictureElement && canAutoPip(video)) {
+                    video.requestPictureInPicture().then(() => {
+                        autoPipVideo = video;
+                        // The tab came back before the window finished opening.
+                        if (!document.hidden) exitAutoPip();
+                    }).catch(err => {
+                        // Expected in Chromium without a user gesture; the browser may open its own PiP instead.
+                        if (err && err.name === 'NotAllowedError') {
+                            console.debug("🪼 Jellyfin Enhanced: Auto PiP not allowed by the browser:", err.message);
+                        } else {
+                            console.error("🪼 Jellyfin Enhanced: Auto PiP Error:", err);
+                        }
+                    });
                 }
             } else {
                 if (video.paused && video.dataset.wasPlayingBeforeHidden === 'true' && JE.currentSettings.autoResumeEnabled) {
                     video.play();
                 }
                 delete video.dataset.wasPlayingBeforeHidden;
-                if (JE.currentSettings.autoPipEnabled && document.pictureInPictureElement) {
-                    document.exitPictureInPicture().catch(err => console.error("🪼 Jellyfin Enhanced: Auto PiP Error:", err));
-                }
+                exitAutoPip();
             }
         });
     };
