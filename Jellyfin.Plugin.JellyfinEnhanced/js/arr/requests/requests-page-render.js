@@ -197,7 +197,7 @@
                     </div>
                 `;
         } else {
-          html += `<div class="je-downloads-grid">`;
+          html += `<div class="je-downloads-grid je-requests-grid">`;
           filteredRequests.forEach((item) => {
             html += renderRequestCard(item);
           });
@@ -247,7 +247,7 @@
           </div>
         `;
       } else {
-        html += `<div class="je-downloads-grid">`;
+        html += `<div class="je-downloads-grid je-issues-grid">`;
         state.issues.forEach((issue) => {
           html += renderIssueCard(issue);
         });
@@ -285,7 +285,7 @@
           </div>
         `;
       } else {
-        html += `<div class="je-downloads-grid">`;
+        html += `<div class="je-downloads-grid je-history-grid">`;
         state.history.forEach((item) => {
           html += renderHistoryCard(item);
         });
