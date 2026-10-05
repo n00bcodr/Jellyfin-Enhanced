@@ -256,7 +256,7 @@ Intelligent playback features for better viewing experience.
 - **Auto-resume** - Resume when returning to tab
 - **Auto-skip intros/outros** - Seamless binge-watching, driven by Jellyfin's own media segments (requires a segment provider such as Intro Skipper)
 - **Playback speed control** - Adjust speed with keyboard shortcuts
-- **Auto Picture-in-Picture** - Enter PiP mode when switching tabs
+- **Auto Picture-in-Picture** - Enter PiP mode when switching tabs and leave it when you come back. Browsers that open their own automatic PiP on tab switch (such as Edge and Chrome) keep control of that window; JE only closes a PiP window it opened itself
 
 **Configuration:**
 Enable/disable in Enhanced panel → Settings tab
