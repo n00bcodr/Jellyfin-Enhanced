@@ -119,15 +119,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         /// <summary>
         /// Variant canonicalization: language+variant aliases (zh-hakka -> hak, art-lojban -> jbo),
         /// then the language-independent ones (heploc -> alalc97, lojban dropped; baku1926 becomes the
-        /// Baku script only when it is the tag's sole subtag).
+        /// Baku script when no script or region is present after language alias expansion).
         /// </summary>
         private static List<string>? ApplyVariantAliases(string originalLanguage, List<string> variants, ref string language, ref string? script, ref string? region)
         {
-            var soleSubtag = variants.Count == 1 && script is null && region is null;
+            var canUseVariantScript = script is null && region is null;
             var result = new List<string>(variants.Count);
             foreach (var variant in variants)
             {
-                if (VariantAliases.TryGetValue(originalLanguage + "-" + variant, out var pairAlias))
+                if (variant != "baku1926" && VariantAliases.TryGetValue(originalLanguage + "-" + variant, out var pairAlias))
                 {
                     // Intl writes a kept posix variant as the -u-va-posix extension (prs-posix -> fa-AF-u-va-posix).
                     if (EndsWithAsciiIgnoreCase(pairAlias, PosixExtension))
@@ -147,8 +147,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 }
                 else if (replacement.Length == 4 && char.IsAsciiLetterUpper(replacement[0]))
                 {
-                    if (soleSubtag) script = replacement;
-                    else result.Add(variant);
+                    if (canUseVariantScript)
+                    {
+                        // ICU consumes the complete variant sequence when promoting Baku
+                        // to a script. An alias-provided script/region prevents promotion.
+                        script = replacement;
+                        return null;
+                    }
+
+                    result.Add(variant);
                 }
                 else if (replacement.Length > 0)
                 {

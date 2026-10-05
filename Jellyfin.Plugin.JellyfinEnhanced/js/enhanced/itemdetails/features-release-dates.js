@@ -225,7 +225,13 @@
         chip.style.gap = '0.3em';
         chip.style.whiteSpace = 'nowrap';
         chip.style.margin = '0 1em 0 0 !important';
-        chip.innerHTML = `<span class="je-release-date-icon" style="font-size: inherit;">${info.icon}</span><span>${formatReleaseDate(info.date)}</span>`;
+        const icon = document.createElement('span');
+        icon.className = 'je-release-date-icon';
+        icon.style.fontSize = 'inherit';
+        icon.textContent = info.icon;
+        const date = document.createElement('span');
+        date.textContent = formatReleaseDate(info.date);
+        chip.replaceChildren(icon, date);
     }
 
     // Each date is its own flex sibling (like every other stat chip in this

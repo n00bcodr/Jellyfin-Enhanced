@@ -28,6 +28,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly Logger _logger;
         private readonly Dictionary<string, (List<RequestItemWithUser> Items, DateTime CachedAt)> _requestsCache = new();
         private readonly object _requestsCacheLock = new();
+        private readonly object _subscriptionLock = new();
+        private bool _subscribed;
         private readonly ConcurrentDictionary<string, Task<List<RequestItemWithUser>?>> _requestsInFlight = new();
 
         public WatchlistMonitor(
@@ -74,8 +76,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             // _logger.Info("[Watchlist] Initializing library event monitoring");
-            _libraryManager.ItemAdded += OnItemAdded;
-            _libraryManager.ItemUpdated += OnItemUpdated;
+            lock (_subscriptionLock)
+            {
+                if (_subscribed) return;
+                _libraryManager.ItemAdded += OnItemAdded;
+                _libraryManager.ItemUpdated += OnItemUpdated;
+                _subscribed = true;
+            }
             _logger.Info("[Watchlist] Successfully subscribed to library ItemAdded and ItemUpdated events");
         }
 
@@ -406,8 +413,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public void Dispose()
         {
             _logger.Info("[Watchlist] Unsubscribing from library events");
-            _libraryManager.ItemAdded -= OnItemAdded;
-            _libraryManager.ItemUpdated -= OnItemUpdated;
+            lock (_subscriptionLock)
+            {
+                _libraryManager.ItemAdded -= OnItemAdded;
+                _libraryManager.ItemUpdated -= OnItemUpdated;
+                _subscribed = false;
+            }
             GC.SuppressFinalize(this);
         }
 

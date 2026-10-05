@@ -29,10 +29,11 @@
         if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
 
         const key = e.key;
-        const combo = (e.shiftKey ? 'Shift+' : '') +
-                      (e.metaKey ? 'Meta+' : '') +
+        // Match the modifier order persisted by the shortcut editor.
+        const combo = (e.metaKey ? 'Meta+' : '') +
                       (e.ctrlKey ? 'Ctrl+' : '') +
                       (e.altKey ? 'Alt+' : '') +
+                      (e.shiftKey ? 'Shift+' : '') +
                       (key.match(/^[a-zA-Z]$/) ? key.toUpperCase() : key);
 
         const video = document.querySelector('video');

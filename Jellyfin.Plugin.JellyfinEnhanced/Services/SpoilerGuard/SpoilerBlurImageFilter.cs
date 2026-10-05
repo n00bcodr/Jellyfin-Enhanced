@@ -628,6 +628,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var executed = await next().ConfigureAwait(false);
             if (executed.Canceled || executed.Exception != null) return;
 
+            var originalResult = executed.Result;
             try
             {
                 if (spoilerMode == "hide")
@@ -663,6 +664,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         _logger.Error($"Spoiler Guard: fail-closed fallback assignment failed for {itemId}: {fallbackEx.Message}");
                     }
+                }
+            }
+            finally
+            {
+                // MVC normally disposes FileStreamResult streams while executing the
+                // result. Replacing that result transfers ownership to this filter;
+                // otherwise every protected stream response leaks its file handle.
+                if (!ReferenceEquals(originalResult, executed.Result) && originalResult is FileStreamResult streamResult)
+                {
+                    try { await streamResult.FileStream.DisposeAsync().ConfigureAwait(false); }
+                    catch (Exception ex) { _logger.Warning($"Spoiler Guard source stream cleanup failed: {ex.Message}"); }
                 }
             }
         }

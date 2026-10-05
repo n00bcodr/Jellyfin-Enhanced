@@ -1,0 +1,2294 @@
+{
+  "scope": "GitHub issues/PRs >=650 in fetched public snapshot; title triage all records, body excerpts for candidates, selected detailed source/test proof only",
+  "counts": {
+    "environment-gap": 2,
+    "not-selected-feature-request": 45,
+    "not-assessed": 141,
+    "backend-proof-see-coordinating-audit": 7,
+    "existing-related-assertions": 8,
+    "not-selected-maintenance": 41,
+    "not-selected-documentation": 5,
+    "existing-test-proven": 1,
+    "new-test-proven": 2,
+    "partial-related-proof": 1
+  },
+  "records": [
+    {
+      "number": 910,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/910",
+      "title": "🐛[BUG] Auto PiP: video stuck in \"Playing in picture-in-picture\" state (audio only) when returning to the tab",
+      "state": "open",
+      "triage": "environment-gap",
+      "note": "Requires actual Edge Picture-in-Picture/video state on Windows, user activation and repeated visibility switches; jsdom or mobile viewport is insufficient."
+    },
+    {
+      "number": 909,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/909",
+      "title": "➕[Feature Request] Be able to only activate star ratings without revies",
+      "state": "open",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 908,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/908",
+      "title": "fix(recommendations): ship studio/network logos instead of fetching them",
+      "state": "open",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 907,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/907",
+      "title": "➕[Feature Request] Dismissable Banner",
+      "state": "open",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 906,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/906",
+      "title": "Add Jellium Desktop to excluded clients for native poster tags",
+      "state": "closed",
+      "triage": "backend-proof-see-coordinating-audit",
+      "note": "Selected fault detection demonstrated; see history-audit.md for exact test, prior-suite versus new-test distinction, and partial/backend-only limitations."
+    },
+    {
+      "number": 905,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/905",
+      "title": "🐛[BUG] Jellium Desktop shows native poster tags",
+      "state": "closed",
+      "triage": "backend-proof-see-coordinating-audit",
+      "note": "Selected fault detection demonstrated; see history-audit.md for exact test, prior-suite versus new-test distinction, and partial/backend-only limitations."
+    },
+    {
+      "number": 904,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/904",
+      "title": "fix(ui): scope JE's Material Symbols rules to JE-private classes so theme and plugin icons keep the full font",
+      "state": "closed",
+      "triage": "existing-related-assertions",
+      "note": "Same stylesheet test covers ui-styles only; does not assert every downstream genre/people/reviews/calendar/config stylesheet or actual theme glyphs."
+    },
+    {
+      "number": 903,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/903",
+      "title": "➕[Feature Request] Allow the option of the flags to be Name plates for Sub and/or dub depending on priorady language",
+      "state": "open",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 902,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/902",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 901,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/901",
+      "title": "fix(tabs): native Home tabs coexist with Custom Tabs (positions, stable links, live reconciliation)",
+      "state": "closed",
+      "triage": "existing-related-assertions",
+      "note": "bootstrap-native-tabs tests assert reservations, late claims, placeholders, stale deep links, user choice, failed lookup; actual Custom Tabs host compatibility matrix not repeated."
+    },
+    {
+      "number": 900,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/900",
+      "title": "🐛[BUG] Advanced request options shown to users without REQUEST_ADVANCED despite audit flagging them",
+      "state": "closed",
+      "triage": "backend-proof-see-coordinating-audit",
+      "note": "Selected fault detection demonstrated; see history-audit.md for exact test, prior-suite versus new-test distinction, and partial/backend-only limitations."
+    },
+    {
+      "number": 899,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/899",
+      "title": "🐛[BUG] Header tray is injected inside the Moonfin button, so clicking Random also opens Moonfin",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Existing foreign-header-button test does not reconstruct Moonfin button as candidate host or assert parent click isolation."
+    },
+    {
+      "number": 898,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/898",
+      "title": "➕[Feature Request]",
+      "state": "open",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 897,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/897",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 896,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/896",
+      "title": "docs(readme): showcase README with screenshots, recordings and a fact-checked feature tour",
+      "state": "closed",
+      "triage": "not-selected-documentation",
+      "note": "Documentation scope; runtime regression not established."
+    },
+    {
+      "number": 895,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/895",
+      "title": "fix(ui): give JE's Material Symbols subsets private font names so themes keep the full icon set",
+      "state": "closed",
+      "triage": "existing-related-assertions",
+      "note": "bootstrap-header font stylesheet test asserts public/full and private/subset separation; browser glyph failure under Jellyfish not reproduced."
+    },
+    {
+      "number": 894,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/894",
+      "title": "feat(tags): native poster tags for clients without the web UI (experimental)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 893,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/893",
+      "title": "🐛[BUG]Mobile and WebOS Prompt Seer Login",
+      "state": "closed",
+      "triage": "environment-gap",
+      "note": "Mobile/webOS unexpected Seerr login requires host/plugin/client setup and routing reproduction; no physical-client validation."
+    },
+    {
+      "number": 891,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/891",
+      "title": "perf: faster startup, browser-cached tag cache, faster details pages and smoother UI",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 890,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/890",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 889,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/889",
+      "title": "fix(config): don't show Custom Tabs sync alert when Custom Tabs isn't installed",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 888,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/888",
+      "title": "🐛[BUG] A repeated msg shows when missing an integration if you save ",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 887,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/887",
+      "title": "feat(media-tags): age rating badges, rating tag scope, preferred audio language, full-series language flags, and a tidier Media Tags fieldset",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 886,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/886",
+      "title": "chore(ci)(deps): bump the github-actions group with 4 updates",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 885,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/885",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 884,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/884",
+      "title": "fix(settings): resolve casing mismatch when merging server plugin defaults",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 883,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/883",
+      "title": "feat(language-tags): distinguish full-series languages from partial ones on series and season cards",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 882,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/882",
+      "title": "feat(subtitles): text effect presets (outline / drop shadow)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 881,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/881",
+      "title": "feat(seerr): All | Movies | Series on studio and network pages (Recommendations tiles and \"More from\")",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 880,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/880",
+      "title": "feat(maintenance): countdown, playback reminders and daily scheduled window",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 879,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/879",
+      "title": "feat(quality-tags): preferred audio language for the sound tag (#433)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 878,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/878",
+      "title": "feat(tags): add Age Rating Tags poster overlay (FSK / MPAA / TV ratings)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 877,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/877",
+      "title": "feat(spoiler-guard): auto-enable on library add, scoped by content type and library",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 876,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/876",
+      "title": "feat(random-button): scope Random to a playlist or collection (#794)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 875,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/875",
+      "title": "feat(rating-tags): scope rating tags by item type and home row",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 874,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/874",
+      "title": "feat(seerr): manual TVDB match for series TMDB cannot auto-match (#653)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 873,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/873",
+      "title": "fix(url-guard): allow Podman's host.containers.internal link-local mapping",
+      "state": "closed",
+      "triage": "backend-proof-see-coordinating-audit",
+      "note": "Selected fault detection demonstrated; see history-audit.md for exact test, prior-suite versus new-test distinction, and partial/backend-only limitations."
+    },
+    {
+      "number": 872,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/872",
+      "title": "🐛[BUG] 404 Not Found errors on static assets (fonts/branding)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 871,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/871",
+      "title": "🐛[BUG] AniSearch provider displays undefined",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 870,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/870",
+      "title": "perf: cut JE request volume (TMDB cache, batched lookups, request priority)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 869,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/869",
+      "title": "perf(requests): look up Radarr/Sonarr links for the whole page in one request",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 868,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/868",
+      "title": "perf(reviews): fetch rating chips for a whole page in one request",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 867,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/867",
+      "title": "🐛[BUG] Issues on 12.1",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 866,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/866",
+      "title": "perf(people-tags): look up the whole cast in one request and share it across episodes",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 865,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/865",
+      "title": "perf(api): cap JE at 4 requests and queue decorative lookups at low priority",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 864,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/864",
+      "title": "perf(seerr): load provider icons only for on-screen cards, in one batched request",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 863,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/863",
+      "title": "perf(tmdb): cache TMDB responses on the server and in the browser",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 862,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/862",
+      "title": "fix(custom-icons): match Segment Editor's real dashboard link",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 861,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/861",
+      "title": "🐛[BUG] rejects local container url",
+      "state": "closed",
+      "triage": "backend-proof-see-coordinating-audit",
+      "note": "Selected fault detection demonstrated; see history-audit.md for exact test, prior-suite versus new-test distinction, and partial/backend-only limitations."
+    },
+    {
+      "number": 860,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/860",
+      "title": "feat(jellyseerr-search): support \"Title (YYYY)\" year filtering in search",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 859,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/859",
+      "title": "🐛[BUG] Search icon triggers nav drawer to open on first click (new v12 UI only)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 858,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/858",
+      "title": "Add option to exclude library items from Seerr search results",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 857,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/857",
+      "title": "➕[Feature Request] Add Age Ratings (FSK / MPAA) as poster overlays",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 856,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/856",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 855,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/855",
+      "title": "fix(tags): select stream-bearing episodes consistently for series tags",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 854,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/854",
+      "title": "fix(branding): serve uploaded SVG images with the correct content type",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 853,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/853",
+      "title": "🐛[BUG]",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 852,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/852",
+      "title": "Icon Transparent / custom branding doesn't apply on Jellyfin 12.x (header logo is no longer an <img> element)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 851,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/851",
+      "title": "fix(custom-icons): serve the Moonbase icon at the size it is drawn",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 850,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/850",
+      "title": "➕[Feature Request] Notification sending functionality",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 849,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/849",
+      "title": "➕[Feature Request] Native functionality such as Custom Tabs",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 848,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/848",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 847,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/847",
+      "title": "chore(ci)(deps): bump the github-actions group with 4 updates",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 846,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/846",
+      "title": "[BUG] Episode air-date badge ignores the series display order (Primal)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 845,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/845",
+      "title": "fix: defer inactive Home tabs and stop stale Activity polling",
+      "state": "closed",
+      "triage": "existing-related-assertions",
+      "note": "pages-activity stopped-pending-load test asserts no restarted polling; page-visibility helpers covered elsewhere; all tab integrations not proven."
+    },
+    {
+      "number": 844,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/844",
+      "title": "fix: keep JE header shortcuts on a single row",
+      "state": "closed",
+      "triage": "existing-related-assertions",
+      "note": "bootstrap-header tests assert overflow dispatch and preserved foreign nodes using injected geometry; no actual narrow-header visual reversal."
+    },
+    {
+      "number": 843,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/843",
+      "title": "fix(details): preserve IETF languages for selected versions",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "features-media-info tests region projection without selecting a version, and separately test selected-source fallback. They do not combine regional metadata with a selected source: the exact reported regression is unproven."
+    },
+    {
+      "number": 842,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/842",
+      "title": "feat(custom-icons): add Moonbase to supported plugins",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 841,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/841",
+      "title": "feat(reviews): optional Jellyfin rating mirror and admin list-all endpoint",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 840,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/840",
+      "title": "🐛[BUG] Active Sessions button not visible during playback in Jellyfin 12",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 839,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/839",
+      "title": "feat(random-button): roulette spin over on-page cards + autoplay of the pick",
+      "state": "open",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 838,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/838",
+      "title": "[BUG] Details-page audio language shows zxx instead of No dialogue",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 837,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/837",
+      "title": "🐛[BUG] Continue Watching Issue Regression",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 836,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/836",
+      "title": "🐛[BUG] Incorrect Australia Rating Colours",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 835,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/835",
+      "title": "🐛[BUG] Global Shortcuts work, but Player Shortcuts don't work",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 834,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/834",
+      "title": "➕[Feature Request] Support for SeerrNG (fork of Seerr with added books and music functionality)",
+      "state": "open",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 833,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/833",
+      "title": "[Bug] Activity feed requests missing optional user avatars and produces repeated HTTP 404 errors",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Activity render tests do not establish zero avatar requests for every missing-image DTO; reproduce dedicated report before claiming caught."
+    },
+    {
+      "number": 832,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/832",
+      "title": "chore(ci)(deps): bump the github-actions group with 3 updates",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 831,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/831",
+      "title": "🐛[BUG] Home nav bar splits into multiple rows rather than scrolling horizontally",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 830,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/830",
+      "title": "➕[Feature Request] independence of google fonts?",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 829,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/829",
+      "title": "🐛[BUG] Performance improvements",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 828,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/828",
+      "title": "fix: continue watching/next up removal not closing",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 827,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/827",
+      "title": "🐛[BUG] Remove from Continue Watching succeeds but leaves the action sheet open",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 826,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/826",
+      "title": "➕[Feature Request] Spoiler guard toggle next up image replacement",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 825,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/825",
+      "title": "fix(cdn): continue asset refresh after request timeouts",
+      "state": "closed",
+      "triage": "backend-proof-see-coordinating-audit",
+      "note": "Selected fault detection demonstrated; see history-audit.md for exact test, prior-suite versus new-test distinction, and partial/backend-only limitations."
+    },
+    {
+      "number": 824,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/824",
+      "title": "fix(analytics): refresh reports after build or host changes",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 823,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/823",
+      "title": "🐛[BUG] Refresh CDN Assets is cancelled when one upstream host times out (FetchAsync re-throws its own HttpClient timeout)",
+      "state": "closed",
+      "triage": "backend-proof-see-coordinating-audit",
+      "note": "Selected fault detection demonstrated; see history-audit.md for exact test, prior-suite versus new-test distinction, and partial/backend-only limitations."
+    },
+    {
+      "number": 822,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/822",
+      "title": "➕[Feature Request] Per-user audio language content filtering",
+      "state": "open",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 821,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/821",
+      "title": "feat(custom-icons): add Jellyfin Helper to supported plugins",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 820,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/820",
+      "title": "➕[Feature Request] Support for 576p quality tags",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 819,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/819",
+      "title": "Details page: file size and audio languages follow the selected version",
+      "state": "closed",
+      "triage": "existing-related-assertions",
+      "note": "features-media-info tests cover per-source filesize/audio and late user responses; not a historical reversal."
+    },
+    {
+      "number": 818,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/818",
+      "title": "Native Watchlist Tab",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 817,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/817",
+      "title": "🐛[BUG] media quality tags do not show up on all media (Fixed)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 816,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/816",
+      "title": "🐛[BUG] Won't let me use Jellyfin default subtitles settings",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 815,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/815",
+      "title": "🐛[BUG] Jellyfin-12 not working correctly",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 814,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/814",
+      "title": "fix(activity): reduce feed query cost and protect history writes",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 813,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/813",
+      "title": "Correcting and improving my Catalan activity icons tl",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 812,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/812",
+      "title": "Revert #798: restore protected request avatar proxying",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 811,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/811",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 810,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/810",
+      "title": "fix(custom tabs): defer tab-hosted content until its tab is active",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 809,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/809",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 808,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/808",
+      "title": "chore(ci)(deps): bump the github-actions group with 3 updates",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 807,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/807",
+      "title": "feat(jellyseerr): seamless scrolling and users' parental ratings on Seerr surfaces",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 806,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/806",
+      "title": "➕[Feature Request] Add a media tag for HDR content",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 805,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/805",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 804,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/804",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 803,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/803",
+      "title": "fix(language tags): show a \"no dialogue\" badge for zxx instead of no flag",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 802,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/802",
+      "title": "🐛[BUG]  Awards Banner material icon not rendering.",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 801,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/801",
+      "title": "➕ [Feature Request] Enable guard per library or content type",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 800,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/800",
+      "title": "docs: unify manifest URLs and validate legacy releases",
+      "state": "closed",
+      "triage": "not-selected-documentation",
+      "note": "Documentation scope; runtime regression not established."
+    },
+    {
+      "number": 799,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/799",
+      "title": "feat: deduplicate plugin revisions and expose build/host diagnostics",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 798,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/798",
+      "title": "fix Jellyseerr avatars for locally-created users (400 from proxy/avatar)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 797,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/797",
+      "title": "🐛[BUG] Tags show even when disabled",
+      "state": "closed",
+      "triage": "existing-related-assertions",
+      "note": "bootstrap-settings-panel asserts quality disabling removes overlays; core renderer disabled contract tested; original mixed server/user settings incident not reproduced."
+    },
+    {
+      "number": 796,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/796",
+      "title": "chore(ci)(deps): bump the github-actions group with 4 updates",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 795,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/795",
+      "title": "fix: search page removeChild crash — stop mutating React-owned no-results message",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "No React reconciliation harness in current tests; DOM-only search tests cannot prove this React-owned text-node crash would be caught."
+    },
+    {
+      "number": 794,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/794",
+      "title": "➕[Feature Request] Random button for a limited set of movies/TV shows",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 793,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/793",
+      "title": "🐛[BUG] Letterboxd text and icon gone after enabling Metadata Icons (Druidblack)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 792,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/792",
+      "title": "fix: make Seerr search React-safe and responsive",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Alternative proposed search fix; PR795 documents feature loss despite crash avoidance. Do not equate closed PR with accepted fix."
+    },
+    {
+      "number": 791,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/791",
+      "title": "Add opt-in community usage analytics",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 790,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/790",
+      "title": "fix(tags): preserve Matroska LanguageBCP47 regions",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 789,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/789",
+      "title": "🐛[BUG] Language Tags lose Matroska LanguageIETF/BCP-47 regional variants before flag resolution",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 787,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/787",
+      "title": "🐛[BUG] Possible issue with search + \"Media Tags\" on searched items",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 786,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/786",
+      "title": "🐛[BUG] \"Media Tags\" show on playlist covers",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 785,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/785",
+      "title": "➕[Feature Request] Hide child collections",
+      "state": "open",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 784,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/784",
+      "title": "➕[Feature Request] Changing order of Jellyfin vs Seerr results when searching",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 783,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/783",
+      "title": "tag-cache: no-store forces a full 3 MiB re-download on every page load — drop NoStore, add a body-hash ETag/304",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 782,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/782",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 781,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/781",
+      "title": "The client rewrites an unchanged `settings.json` on every item-detail view (reviews `toggle` write-back), and the `isAdmin` write-back can never converge because `UserSettings` has no `IsAdmin` property",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 780,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/780",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 779,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/779",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 778,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/778",
+      "title": "feat: enable quality tags in Home Videos and Photos libraries",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 777,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/777",
+      "title": "chore(ci)(deps): bump the github-actions group with 3 updates",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 776,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/776",
+      "title": "Anime episodes from Shoko in calendar",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 775,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/775",
+      "title": "➕[Feature Request]  Allow Quality Tags in Home Videos and Photos Library",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 774,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/774",
+      "title": "🐛[BUG] Bookmark pins appear in the timeline of all episodes of the show",
+      "state": "closed",
+      "triage": "existing-test-proven",
+      "note": "Existing episode provider fallback test detects removal of the episode/season filtering hunk from 9acc883b. Does not prove actual player timeline/backfill end to end."
+    },
+    {
+      "number": 773,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/773",
+      "title": "🐛[BUG] Seerr integration search is crashing client",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 772,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/772",
+      "title": "🐛[BUG] Movie version selector showing \"undefined\" with Spoiler Guard enabled",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 771,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/771",
+      "title": "🐛[BUG] Subtitles location is higher than in the settings",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 770,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/770",
+      "title": "➕[Feature Request] Ability to filter by All | Movies | Series in the Studios and Networks pages from Seerr Recommendations",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 769,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/769",
+      "title": "➕[Feature Request] Custom subtitle fonts & subtitle outline/drop shadow",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 768,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/768",
+      "title": "➕[Feature Request] Root Folder Size Preview",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 767,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/767",
+      "title": "🐛[BUG] Jellyfin Enhanced blocks Seerr requests when REQUEST_ADVANCED permission is missing",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 766,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/766",
+      "title": "🐛[BUG] Subtitle backgrounds overlap",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 765,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/765",
+      "title": "🐛[BUG] Ultra-wide 1080p files show a 4K Quality Tag",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 764,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/764",
+      "title": "chore(ci)(deps): bump the github-actions group with 5 updates",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 763,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/763",
+      "title": "➕[Feature Request] text size change",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 762,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/762",
+      "title": "feat(spoiler-guard): advanced per-category reveals for the next unwatched episode and current season",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 761,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/761",
+      "title": "fix: honour \"Remove from Continue Watching\" on Home Screen Sections rows",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 760,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/760",
+      "title": "➕[Feature Request] Language Flag Filters",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 759,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/759",
+      "title": "➕[Feature Request] Discuss with SeerrFin team to merge / integrate their changes into Jellyfin-Enhanced",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 758,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/758",
+      "title": "🐛[BUG] disable custom subtitles renders black bar behind subtitles on ios app",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 756,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/756",
+      "title": "🐛[BUG] UI elements not appearing",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 755,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/755",
+      "title": "🐛[BUG] Recommendations Seerr page remains over the Home screen after navigating back",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 754,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/754",
+      "title": "Requests settings page appears under Plugin Settings when \"Use Plugin Pages for Requests\" is enabled",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 753,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/753",
+      "title": "chore(ci)(deps): bump the github-actions group with 4 updates",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 752,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/752",
+      "title": "➕ have an option to have full list in Elsewhere, and/or adding ones not on the list",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 750,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/750",
+      "title": "🐛[BUG] Element removed from continue watching reappear after refresh",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 749,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/749",
+      "title": "Fix German FSK rating colors",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 748,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/748",
+      "title": "Add official German FSK colors and normalization",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 747,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/747",
+      "title": "🐛[BUG] Reviews not visible on Jellyfin Android 2.6.3",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 746,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/746",
+      "title": "🐛[BUG] Recommendations page shows watchlistpage instead",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 744,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/744",
+      "title": "feat(player): auto-skip intros/outros from Jellyfin's media segments",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 743,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/743",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 742,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/742",
+      "title": "Player shortcuts without opening panels (API-driven track cycling, aspect ratio, playback info, segment skip)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 741,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/741",
+      "title": "🐛[BUG] Incorrect subtitle positioning and oversized subtitle background",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 740,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/740",
+      "title": "fix: re-scope all per-user state when switching users without a page reload",
+      "state": "closed",
+      "triage": "existing-related-assertions",
+      "note": "Bootstrap/session/bookmark/hidden/Seerr cache tests exercise account switching and stale replies; no complete reversal of this multi-feature PR."
+    },
+    {
+      "number": 739,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/739",
+      "title": "fix(tags): preserve explicit language regions in flag resolution (pt-BR, es-419, zh-Hant…)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 738,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/738",
+      "title": "fix(player): harden OSD track cycling (waits for the menu, stops matching English UI text)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 737,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/737",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 736,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/736",
+      "title": "➕[Feature Request] Change Spoiler Guard Filters For \"Next Episode.\"",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 734,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/734",
+      "title": "chore(ci)(deps): bump actions/stale from 10.4.0 to 11.0.0",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 733,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/733",
+      "title": "chore(ci)(deps): bump the github-actions group across 1 directory with 3 updates",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 732,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/732",
+      "title": "🐛[BUG] 8K vidoes showing as 1080p in quality tag",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 731,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/731",
+      "title": "➕[Feature Request] Download subtitle files to pc",
+      "state": "open",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 730,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/730",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 729,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/729",
+      "title": "fix(i18n): validate {{icon:xxx}} placeholders and fix Norwegian typo",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 728,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/728",
+      "title": "Translations update from Hosted Weblate",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 727,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/727",
+      "title": "feat(i18n): add Finnish and Ukrainian locales, sync pending Weblate translations",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 726,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/726",
+      "title": "🐛[BUG] New translations are not added to repo from Weblate",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 723,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/723",
+      "title": "refactor: modularize the client by feature",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 722,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/722",
+      "title": "feat(panel): searchable section navigation for the user settings panel",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 721,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/721",
+      "title": "fix: Seerr results row cannot be touch-scrolled on phones",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 720,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/720",
+      "title": "chore(ci)(deps): bump the github-actions group with 6 updates",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 719,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/719",
+      "title": "cant find custom branding on jellyfin 10.11.11",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 718,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/718",
+      "title": "🐛[BUG] Preventing user accounts from being disabled during maintenance mode does not work",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 717,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/717",
+      "title": "➕[Feature Request] Improve Download Status Tracking and Add Download History for Request Page",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 716,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/716",
+      "title": "🐛[BUG] Auto-Skip doesn't trigger during media segment.",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 715,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/715",
+      "title": "🐛[BUG] - Rotten Tomatoes rating tag adds a zero if rating is a single digit",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 714,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/714",
+      "title": "🐛[BUG]UI settings overlap",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 713,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/713",
+      "title": "fix(tags): memory-bounded tag cache builds + honor Server-Side Tag Cache setting (startup OOM crash loop)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 712,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/712",
+      "title": "chore(ci)(deps): bump actions/setup-dotnet from 5.4.0 to 6.0.0",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 711,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/711",
+      "title": "chore(ci)(deps): bump actions/setup-node from 6.4.0 to 7.0.0",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 710,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/710",
+      "title": "chore(ci)(deps): bump actions/setup-python from 6.3.0 to 7.0.0",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 709,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/709",
+      "title": "chore(ci)(deps): bump the github-actions group with 3 updates",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 708,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/708",
+      "title": "Startup tag-cache full build OOM-kills the server on very large libraries; TagCacheServerMode=false does not prevent it",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 707,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/707",
+      "title": "➕[Feature Request] include seerr in *arr UI Links",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 706,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/706",
+      "title": "🐛[BUG] Seerr won't scroll in search",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 705,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/705",
+      "title": "🐛[BUG] \"Cycle Subtitle Tracks\" keyboard shortcut doesn't work",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 704,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/704",
+      "title": "fix(tag-cache): stop re-saving the whole cache on no-op library events",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 703,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/703",
+      "title": "chore(ci)(deps): bump the github-actions group with 6 updates",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 702,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/702",
+      "title": "➕[Feature Request] Shortcut for \"Start Now\" button at episode end",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 701,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/701",
+      "title": "➕[Feature Request] Disable certain hotkeys",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 700,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/700",
+      "title": "feat(spoiler-guard): per-user image identity tags for native clients",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 699,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/699",
+      "title": "Bump SkiaSharp from 3.116.1 to 4.150.0",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 698,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/698",
+      "title": "➕[Feature Request] Automatically translate TMDb reviews to the user's Jellyfin language",
+      "state": "open",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 697,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/697",
+      "title": "Bump SkiaSharp from 3.116.1 to 4.148.0",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 696,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/696",
+      "title": "chore(ci)(deps): bump the github-actions group with 4 updates",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 695,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/695",
+      "title": "🐛[BUG] When Seerr integration is enabled, a request to search endpoint is never stopped once you search anything",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 694,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/694",
+      "title": "Fix MutationObserver leak in addUserPreferencesLink (one observer piled up per navigation)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 693,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/693",
+      "title": "🐛[BUG] MutationObservers from addUserPreferencesLink pile up on every navigation, UI gets slower over time",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 692,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/692",
+      "title": "feat: serve third-party assets from a local CDN cache (+ off-thread tag-cache updates)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 691,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/691",
+      "title": "feat(spoiler-guard): per-user opt-in spoiler protection for unwatched content (Jellyfin 10.11 + 12)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 690,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/690",
+      "title": "🐛[BUG] Auto-Skip ignores IntroSkipper offsets",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 689,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/689",
+      "title": "➕[Feature Request] Make Sonarr configuration optional for the Requests Page",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 688,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/688",
+      "title": "➕[Feature Request] - Maintenance Mode Reminders",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 687,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/687",
+      "title": "➕[Feature Request] - Maintenance Mode Home Page Banner",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 686,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/686",
+      "title": "➕[Feature Request] - Maintenance Mode Automations",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 685,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/685",
+      "title": "feat: reliable Remove from Continue Watching + add Remove from Next Up (multi-select & confirm)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 684,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/684",
+      "title": "Admin visibility and management of user-hidden content + bug fixes",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 683,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/683",
+      "title": "chore(ci)(deps): bump actions/cache from 5.0.5 to 6.1.0",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 682,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/682",
+      "title": "chore(ci)(deps): bump the github-actions group with 2 updates",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 681,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/681",
+      "title": "feat: Jellyfin 12 compatibility",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 680,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/680",
+      "title": "➕[Feature Request] Add Leterboxd link for people",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 679,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/679",
+      "title": "🐛[BUG] Jellyseer Request integration tab using Custom Tab shows up blank",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 678,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/678",
+      "title": "🐛[BUG] Random Dice does not go away when Disabled",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 677,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/677",
+      "title": "🐛[BUG] v12 - Random Button and Active Sessions button are not added",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 676,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/676",
+      "title": "🐛[BUG] Request More button dissapeared",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 675,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/675",
+      "title": "feat(seerr): Jellyfin 12 compatibility for the Seerr integration",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 674,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/674",
+      "title": "Merge main",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 673,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/673",
+      "title": "feat: Jellyfin 12 (.NET 10) support; drop the File Transformation dependency",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 672,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/672",
+      "title": "feat: Jellyfin 12 (.NET 10) compatibility",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 671,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/671",
+      "title": "chore(ci)(deps): bump actions/checkout from 6.0.3 to 7.0.0",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 670,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/670",
+      "title": "chore(ci)(deps): bump trufflesecurity/trufflehog from 3.95.5 to 3.95.6 in the github-actions group",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 669,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/669",
+      "title": "➕[Feature Request] See what content users have hidden.",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 668,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/668",
+      "title": "docs: API overhaul",
+      "state": "closed",
+      "triage": "not-selected-documentation",
+      "note": "Documentation scope; runtime regression not established."
+    },
+    {
+      "number": 667,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/667",
+      "title": "🐛[BUG] Seerr integration broken when EnableLegacyAuthorization=false (Jellyfin 10.11+ / all of 10.12+)",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 666,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/666",
+      "title": "docs: Formatting fixes",
+      "state": "closed",
+      "triage": "not-selected-documentation",
+      "note": "Documentation scope; runtime regression not established."
+    },
+    {
+      "number": 665,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/665",
+      "title": "➕[Feature Request] Reclaimerr Integration: Delete & Protection Request Support",
+      "state": "open",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 664,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/664",
+      "title": "README: fix: Seerr URL",
+      "state": "closed",
+      "triage": "not-selected-documentation",
+      "note": "Documentation scope; runtime regression not established."
+    },
+    {
+      "number": 663,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/663",
+      "title": "🐛[BUG]  Enable \"Remove from Continue Watching\" doesn't show the option on applicable items",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 662,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/662",
+      "title": "🐛[BUG] Android mobile app shows blank",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 661,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/661",
+      "title": "➕[Feature Request] Digital Release /Airing Date display option",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 660,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/660",
+      "title": "➕[Feature Request] Quality Tag reload or reset",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 659,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/659",
+      "title": "🐛[BUG] Audio channel tag shows `2.0`/nothing instead of `5.1` when stereo is the first/default audio stream",
+      "state": "closed",
+      "triage": "new-test-proven",
+      "note": "Real quality rendering test now covers stereo-first order; precise historical getChannelTag function restored and detected."
+    },
+    {
+      "number": 658,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/658",
+      "title": "fix: duplicate approval notifications and un-approvable pending requests on available shows",
+      "state": "closed",
+      "triage": "new-test-proven",
+      "note": "Both actual rendering defects were missing in existing browser unit tests; added pending-season and repeated-render tests; historical predicate/faithful unguarded binding faults killed."
+    },
+    {
+      "number": 657,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/657",
+      "title": "🐛 [BUG] Back button must be pressed three times to navigate back",
+      "state": "closed",
+      "triage": "partial-related-proof",
+      "note": "New PR658 test proves one showItem dispatch after repeated renders; actual browser history/back button report not reproduced."
+    },
+    {
+      "number": 656,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/656",
+      "title": "[Clarification] JF-Seerr Watchlist synch",
+      "state": "open",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 655,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/655",
+      "title": "🐛[BUG] New TV show season unable to be downloaded: marked as available",
+      "state": "closed",
+      "triage": "not-assessed",
+      "note": "Candidate behavior/change identified by title and available body excerpt; no test sensitivity claim. Full comments/patch/reproduction mapping remains."
+    },
+    {
+      "number": 654,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/654",
+      "title": "➕[Feature Request] Add Awards to Item Details pages",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 653,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/653",
+      "title": "➕[Feature Request] Request series with no auto match",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 652,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/652",
+      "title": "➕[Feature Request] Remove from next up",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    },
+    {
+      "number": 651,
+      "kind": "pull-request",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/651",
+      "title": "chore(ci)(deps): bump the github-actions group with 3 updates",
+      "state": "closed",
+      "triage": "not-selected-maintenance",
+      "note": "Dependency/translation maintenance; no specific JE behavioral regression established in this triage."
+    },
+    {
+      "number": 650,
+      "kind": "issue",
+      "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/650",
+      "title": "➕[Feature Request] Approve requests on jellyfin",
+      "state": "closed",
+      "triage": "not-selected-feature-request",
+      "note": "Requested functionality; not treated as a confirmed historical regression. Implemented behavior still belongs in general coverage inventory."
+    }
+  ]
+}

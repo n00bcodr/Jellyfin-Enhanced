@@ -9,6 +9,8 @@
              BrandingAssetStartupFilter) uses only standard ASP.NET, so it works on
              both runtimes. -->
         <JellyfinTarget Condition="'$(JellyfinTarget)' == ''">jf12</JellyfinTarget>
+        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+        <NuGetLockFilePath>$(MSBuildProjectDirectory)/packages.$(JellyfinTarget).lock.json</NuGetLockFilePath>
 
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
@@ -64,9 +66,10 @@
     </ItemGroup>
 
     <ItemGroup>
-      <!-- scripts/poster-tags-harness (parity/perf harness, not shipped) drives the renderer's internal layout API. -->
+      <!-- tests/poster/rendering (parity/perf harness, not shipped) drives the renderer's internal layout API. -->
       <InternalsVisibleTo Include="PosterTagsHarness" />
-      <!-- scripts/poster-tags-pipeline-harness (pipeline checks, not shipped) times the image filter's file-settle wait. -->
+      <InternalsVisibleTo Include="JE.Tests" />
+      <!-- tests/poster/pipeline (pipeline checks, not shipped) times the image filter's file-settle wait. -->
       <InternalsVisibleTo Include="PosterTagsPipelineHarness" />
     </ItemGroup>
 

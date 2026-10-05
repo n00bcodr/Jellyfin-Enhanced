@@ -320,6 +320,8 @@
      * @param {HTMLElement} container The DOM element to append the info to.
      */
     async function displayItemSize(itemId, container, mediaSourceId = null) {
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const isCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
         const cacheKey = `${itemId}|${mediaSourceId || ''}`;
         const existing = container.querySelector('.mediaInfoItem-fileSize');
         if (existing) {
@@ -369,6 +371,7 @@
             try {
                 const itemResult = await statsPromise;
                 await nextFrame();
+                if (!isCurrent()) return;
                 const totalSize = itemResult?.size ?? 0;
 
                 if (totalSize > 0) {
@@ -380,6 +383,7 @@
                     fileSizeCache.set(cacheKey, { size: null, unavailable: true, ts: now });
                 }
             } catch (error) {
+                if (!isCurrent()) return;
                 console.error('🪼 Jellyfin Enhanced: Error fetching item size for ID %s:', itemId, error);
                 // Keep placeholder with dash to prevent repeated calls
                 renderUnavailable();
@@ -546,6 +550,8 @@
      * @param {HTMLElement} container The DOM element to append the info to.
      */
     async function displayAudioLanguages(itemId, container, mediaSourceId = null) {
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const isCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
         const cacheKey = `${itemId}|${mediaSourceId || ''}`;
         // show itemMiscInfo if hidden like on season pages
         if (container.classList.contains('hide')) {
@@ -698,11 +704,11 @@
         // The lookups start right away (they cost the main thread nothing
         // while in flight); the chip is built in the next animation frame so
         // its small DOM write lands with that frame's own layout pass.
-        const renderUnavailableInFrame = () => nextFrame().then(() => { if (placeholder.isConnected) renderUnavailable(); });
+        const renderUnavailableInFrame = () => nextFrame().then(() => { if (isCurrent() && placeholder.isConnected) renderUnavailable(); });
         const renderLanguagesInFrame = async (languages) => {
             const tagMap = await loadLanguageTagMap(itemId, languages);
             await nextFrame();
-            if (placeholder.isConnected) renderLanguages(languages, tagMap);
+            if (isCurrent() && placeholder.isConnected) renderLanguages(languages, tagMap);
         };
         const performFetch = async () => {
             // Check cache first
@@ -716,7 +722,7 @@
                 }
                 // Render from cache
                 const tagMap = await loadLanguageTagMap(itemId, cached.languages);
-                if (placeholder.isConnected) renderLanguages(cached.languages, tagMap);
+                if (isCurrent() && placeholder.isConnected) renderLanguages(cached.languages, tagMap);
                 return;
             }
 
@@ -737,6 +743,7 @@
                         ? await JE.helpers.getItemCached(itemId, { userId })
                         : await ApiClient.getItem(userId, itemId));
 
+                if (!isCurrent()) return;
                 let sourceItem = item;
 
                 // For Series/Season, fetch the first episode to get language info.
@@ -748,11 +755,13 @@
                         item.Id,
                         item.FirstEpisode?.Id
                     );
+                    if (!isCurrent()) return;
                     if (episode) {
                         sourceItem = episode;
                     } else {
                         // No episodes found
                         await renderUnavailableInFrame();
+                        if (!isCurrent()) return;
                         audioLanguageCache.set(cacheKey, { languages: [], unavailable: true, ts: Date.now() });
                         return;
                     }
@@ -794,14 +803,18 @@
                 if (uniqueLanguages.length > 0) {
                     await renderLanguagesInFrame(uniqueLanguages);
                     // Cache the successful result
+                    if (!isCurrent()) return;
                     audioLanguageCache.set(cacheKey, { languages: uniqueLanguages, unavailable: false, ts: Date.now() });
                 } else {
                     await renderUnavailableInFrame();
+                    if (!isCurrent()) return;
                     audioLanguageCache.set(cacheKey, { languages: [], unavailable: true, ts: Date.now() });
                 }
             } catch (error) {
+                if (!isCurrent()) return;
                 console.error('🪼 Jellyfin Enhanced: Error fetching audio languages for %s:', itemId, error);
                 await renderUnavailableInFrame();
+                if (!isCurrent()) return;
                 audioLanguageCache.set(cacheKey, { languages: [], unavailable: true, ts: Date.now() });
             }
         };

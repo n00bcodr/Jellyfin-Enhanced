@@ -107,6 +107,11 @@
                 const item = JE.helpers?.getItemCached
                     ? await JE.helpers.getItemCached(itemId)
                     : await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
+                // The SPA can reuse this detail DOM while the lookup is pending.
+                // Never attach the previous item's link to the new route/page.
+                const currentItemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+                if (currentItemId !== itemId || !anchorElement.isConnected ||
+                    document.querySelector('#itemDetailPage:not(.hide)') !== visiblePage) return;
                 if (!item?.Type) {
                     processedItemIds.add(itemId);
                     return;

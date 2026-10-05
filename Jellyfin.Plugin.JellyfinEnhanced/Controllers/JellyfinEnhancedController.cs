@@ -4654,6 +4654,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return false;
             }
 
+            // The allowlist is case-insensitive, but the middleware and status endpoint
+            // use fixed lowercase names. Normalize accepted aliases on case-sensitive hosts.
+            normalizedFileName = normalizedFileName.ToLowerInvariant();
             var fullBrandingDir = Path.GetFullPath(brandingDir);
             var candidateFilePath = Path.GetFullPath(Path.Combine(fullBrandingDir, normalizedFileName));
             var candidateDirectory = Path.GetDirectoryName(candidateFilePath);

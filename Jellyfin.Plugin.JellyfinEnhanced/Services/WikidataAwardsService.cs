@@ -380,6 +380,8 @@ SELECT ?award ?awardLabel ?result ?year ?workLabel WHERE {{
 
                 foreach (var kvp in data.Items)
                 {
+                    if (kvp.Value == null || kvp.Value.FetchedAtUnixMs < DateTimeOffset.MinValue.ToUnixTimeMilliseconds()
+                        || kvp.Value.FetchedAtUnixMs > DateTimeOffset.MaxValue.ToUnixTimeMilliseconds()) continue;
                     _cache[kvp.Key] = kvp.Value;
                 }
                 _logger.Info($"[Awards] Loaded {_cache.Count} entries from disk");

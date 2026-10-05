@@ -707,7 +707,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     data = JsonSerializer.Deserialize<DiskFormat>(stream);
                 }
 
-                if (data == null || data.V != DiskSchemaVersion)
+                if (data == null || data.V != DiskSchemaVersion || data.Entries == null)
                 {
                     return;
                 }
@@ -720,6 +720,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // that order and lets the size cap drop the oldest.
                     foreach (var entry in data.Entries)
                     {
+                        // Cache files are disposable input: ignore corrupt records rather
+                        // than preventing plugin startup or losing later valid entries.
+                        if (entry == null || entry.C == null
+                            || entry.E < DateTimeOffset.MinValue.ToUnixTimeMilliseconds()
+                            || entry.E > DateTimeOffset.MaxValue.ToUnixTimeMilliseconds())
+                        {
+                            continue;
+                        }
+
                         var expiresAt = DateTimeOffset.FromUnixTimeMilliseconds(entry.E);
                         if (expiresAt <= now || string.IsNullOrEmpty(entry.K) || _entries.ContainsKey(entry.K))
                         {

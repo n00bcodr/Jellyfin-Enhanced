@@ -558,6 +558,9 @@
      * @param {*} data
      */
     function setCache(key, data) {
+        // Refresh an existing key without evicting an unrelated entry. Deleting
+        // first also moves the refreshed response to the newest LRU position.
+        responseCache.delete(key);
         // Evict oldest entries if at capacity
         if (responseCache.size >= CONFIG.cache.maxEntries) {
             const oldestKey = responseCache.keys().next().value;

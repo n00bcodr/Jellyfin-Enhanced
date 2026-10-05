@@ -1,0 +1,57 @@
+[
+  {
+    "name": "issue-823-cdn-timeout",
+    "layer": "backend",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/CdnAssetService.cs",
+    "before": "catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)",
+    "after": "catch (OperationCanceledException)",
+    "test": "FullKnownAssetRefreshContinuesAfterHttpTimeoutAndReportsCompletion",
+    "assertion": "TaskCanceledException",
+    "sources": [
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/823",
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/825"
+    ],
+    "evidence": "exact reversal of the production catch-filter change in PR #825"
+  },
+  {
+    "name": "issue-861-podman-alias",
+    "layer": "backend",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/ArrUrlGuard.cs",
+    "before": "var allowLinkLocal = _containerHostAliases.Contains(host);",
+    "after": "var allowLinkLocal = false;",
+    "test": "ContainerAliasesPermitPodmanLinkLocalWithoutPermittingCloudMetadata",
+    "assertion": "Assert.Equal",
+    "sources": [
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/861",
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/873"
+    ],
+    "evidence": "representative restoration of pre-fix rejection; retains the new policy helper so current tests compile, no actual Podman host"
+  },
+  {
+    "name": "issue-905-jellium-exclusion",
+    "layer": "backend",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/NativeClientPolicy.cs",
+    "before": "            \"Jellium Desktop\",\n",
+    "after": "",
+    "test": "ReportedDesktopShellMustNotReceiveNativeTags",
+    "assertion": "Assert.Equal",
+    "sources": [
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/905",
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/906"
+    ],
+    "evidence": "exact reversal of the production exclusion-list change in PR #906"
+  },
+  {
+    "name": "issue-900-advanced-payload",
+    "layer": "backend",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+    "before": "content = StripAdvancedRequestOptions(content);",
+    "after": "content = content; // reproduce missing filtering",
+    "test": "RequestsUsePrincipalIdentityPreserveSeasonSelectionAndGateAdvancedOptions",
+    "assertion": "Assert.Equal",
+    "sources": [
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/900"
+    ],
+    "evidence": "representative fault: unauthorized advanced fields reach upstream; UI visibility must be assessed separately"
+  }
+]

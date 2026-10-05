@@ -1,0 +1,61 @@
+[
+  {
+    "name": "history551-avatar-basepath",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/helpers.js",
+    "before": "fetch(ApiClient.getUrl(avatarUrl), { headers: getAvatarAuthHeaders() })",
+    "after": "fetch(avatarUrl, { headers: getAvatarAuthHeaders() })",
+    "test": "history551 protected avatars preserve the configured Jellyfin base path and authorization",
+    "sources": [
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/551",
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/550"
+    ],
+    "evidence": "exact-reversal of 8310d8c1 call expression, now relocated to helpers.js",
+    "layer": "frontend",
+    "test_file": "tests/frontend/regressions/history-middle.test.mjs",
+    "assertion": "ERR_ASSERTION"
+  },
+  {
+    "name": "history504-avatar-dedup",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/helpers.js",
+    "before": "if (avatarFetchPromises.has(avatarUrl)) return avatarFetchPromises.get(avatarUrl);",
+    "after": "/* historical defect: duplicate simultaneous avatar downloads */",
+    "test": "history504 repeated and concurrent avatar rendering downloads one blob and releases it",
+    "sources": [
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/504"
+    ],
+    "evidence": "representative removal of in-flight deduplication; original fix later relocated",
+    "layer": "frontend",
+    "test_file": "tests/frontend/regressions/history-middle.test.mjs",
+    "assertion": "ERR_ASSERTION"
+  },
+  {
+    "name": "history414-native-cue",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/subtitles.js",
+    "before": "let styleElement = document.getElementById('je-html-videoplayer-cuestyle');",
+    "after": "let styleElement = document.getElementById('htmlvideoplayer-cuestyle');",
+    "test": "history414 legacy cue stylesheet survives custom subtitle enable and disable",
+    "sources": [
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/414",
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/413"
+    ],
+    "evidence": "representative restoration of original defect: JE overwrites Jellyfin native cue stylesheet",
+    "layer": "frontend",
+    "test_file": "tests/frontend/regressions/history-middle.test.mjs",
+    "assertion": "ERR_ASSERTION"
+  },
+  {
+    "name": "history519-primary-locale",
+    "layer": "frontend",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/translations.js",
+    "before": "        if (normalizedLang) {\n            langCodes.push(normalizedLang);\n        }\n",
+    "after": "",
+    "test": "translations normalize per-user language and cache the bundled Unicode response",
+    "test_file": "tests/frontend/core/core-translations.test.mjs",
+    "assertion": "ERR_ASSERTION",
+    "sources": [
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/519",
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/513"
+    ],
+    "evidence": "exact-reversal of primary-language insertion in 7bb7f540; existing test"
+  }
+]

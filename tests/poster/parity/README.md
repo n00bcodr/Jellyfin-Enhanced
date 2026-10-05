@@ -1,0 +1,7 @@
+# Poster resolver parity
+
+Run `node tests/poster/parity/run.mjs --offline` with Node 26.2.0 and .NET 10 installed. The language/casing oracle uses ICU 78.3, CLDR 48 and Unicode 17, matching the generated production tables; another ICU version can legitimately differ and must be reviewed rather than silently accepted. This generates disposable inputs under ignored `data/`, evaluates the actual JavaScript tag modules and the C# resolver, and compares their results across 39 synthetic setting profiles and 101 metadata fixtures. The additional empty synthetic administrator profile verifies the no-items case. No server or credentials are required. The run also compares language display names and Unicode casing. Any mismatch returns a nonzero exit code.
+
+Offline mode replaces `data/inputs`; do not use that directory to retain live-server captures. Existing live-server mode and `--skip-fetch` remain available. Offline parity tests resolution behavior in the existing sandbox, not browser pixels or native-client request handling.
+
+`python tests/runner/poster.py` additionally runs pipeline checks and embedded rendering asset checks against both supported Skia library lines. Artifacts default to `artifacts/regression/poster`. Native checks require Linux Skia/font dependencies and .NET 10 runtime compatible with the plugin's selected Jellyfin package.

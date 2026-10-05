@@ -59,18 +59,26 @@
     }
   }
 
-  const itemDetailsCache = { itemId: null, data: null, pending: null };
+  let itemDetailsCache = null;
 
   /**
    * Fetch full item details including TMDB/TVDB IDs (cached per item for a few seconds)
    */
   async function fetchItemDetails(itemId) {
-    if (itemDetailsCache.itemId === itemId && itemDetailsCache.data) {
-      return itemDetailsCache.data;
+    const owner = JE.userConfig;
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
+    if (!itemDetailsCache || itemDetailsCache.owner !== owner
+        || itemDetailsCache.epoch !== epoch || itemDetailsCache.itemId !== itemId) {
+      itemDetailsCache = { owner, epoch, itemId, data: null, pending: null };
+    }
+    // Keep each in-flight lookup attached to its original owner and item.
+    const cache = itemDetailsCache;
+    if (cache.itemId === itemId && cache.data) {
+      return cache.data;
     }
 
-    if (itemDetailsCache.pending && itemDetailsCache.itemId === itemId) {
-      return itemDetailsCache.pending;
+    if (cache.pending && cache.itemId === itemId) {
+      return cache.pending;
     }
 
     const fetchPromise = (async () => {
@@ -87,6 +95,7 @@
           dataType: 'json'
         });
 
+        if (JE.userConfig !== owner || (JE.session && !JE.session.isCurrent(epoch))) return null;
         const item = result?.Items?.[0];
         if (!item) return null;
 
@@ -141,18 +150,18 @@
           episodeNumber
         };
 
-        itemDetailsCache.data = details;
+        cache.data = details;
         return details;
       } catch (e) {
         console.warn(`${logPrefix} Error fetching item details:`, e);
         return null;
       } finally {
-        itemDetailsCache.pending = null;
+        cache.pending = null;
       }
     })();
 
-    itemDetailsCache.itemId = itemId;
-    itemDetailsCache.pending = fetchPromise;
+    cache.itemId = itemId;
+    cache.pending = fetchPromise;
     return fetchPromise;
   }
 
@@ -215,6 +224,10 @@
    * Add a new bookmark
    */
   async function addBookmark(timestamp, label = '') {
+    const owner = JE.userConfig;
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
+    const isCurrentOwner = () => JE.userConfig === owner
+      && (!JE.session || JE.session.isCurrent(epoch));
     const itemData = getCurrentItemData();
     if (!itemData) {
       JE.toast(JE.t('toast_bookmark_no_item'), 3000);
@@ -223,6 +236,7 @@
 
     // Fetch full details
     const details = await fetchItemDetails(itemData.itemId);
+    if (!isCurrentOwner()) return null;
     if (!details) {
       JE.toast(JE.t('toast_bookmark_fetch_failed'), 3000);
       return null;
@@ -247,23 +261,24 @@
     };
 
     // Initialize bookmark structure if needed
-    if (!JE.userConfig.bookmark) {
-      JE.userConfig.bookmark = { bookmarks: {} };
+    if (!owner.bookmark) {
+      owner.bookmark = { bookmarks: {} };
     }
-    if (!JE.userConfig.bookmark.bookmarks) {
-      JE.userConfig.bookmark.bookmarks = {};
+    if (!owner.bookmark.bookmarks) {
+      owner.bookmark.bookmarks = {};
     }
 
-    JE.userConfig.bookmark.bookmarks[bookmarkId] = bookmark;
+    const bookmarks = owner.bookmark.bookmarks;
+    bookmarks[bookmarkId] = bookmark;
 
     try {
-      await JE.saveUserSettings('bookmark.json', JE.userConfig.bookmark);
+      await JE.saveUserSettings('bookmark.json', owner.bookmark);
       console.log(`${logPrefix} Bookmark added:`, bookmarkId, bookmark);
-      emitBookmarksUpdated('add');
+      if (isCurrentOwner()) emitBookmarksUpdated('add');
       return { id: bookmarkId, ...bookmark };
     } catch (e) {
       console.error(`${logPrefix} Failed to save bookmark:`, e);
-      delete JE.userConfig.bookmark.bookmarks[bookmarkId];
+      delete bookmarks[bookmarkId];
       throw e;
     }
   }
@@ -272,20 +287,29 @@
    * Update an existing bookmark
    */
   async function updateBookmark(bookmarkId, updates) {
+    const owner = JE.userConfig;
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
+    const isCurrentOwner = () => JE.userConfig === owner
+      && (!JE.session || JE.session.isCurrent(epoch));
     if (!JE.userConfig?.bookmark?.bookmarks?.[bookmarkId]) {
       console.warn(`${logPrefix} Bookmark not found:`, bookmarkId);
       return false;
     }
 
-    const bookmark = JE.userConfig.bookmark.bookmarks[bookmarkId];
-    Object.assign(bookmark, updates, { updatedAt: new Date().toISOString() });
+    const bookmarks = owner.bookmark.bookmarks;
+    const original = bookmarks[bookmarkId];
+    const bookmark = { ...original, ...updates, updatedAt: new Date().toISOString() };
+    bookmarks[bookmarkId] = bookmark;
 
     try {
-      await JE.saveUserSettings('bookmark.json', JE.userConfig.bookmark);
+      await JE.saveUserSettings('bookmark.json', owner.bookmark);
       console.log(`${logPrefix} Bookmark updated:`, bookmarkId);
-      emitBookmarksUpdated('update');
+      if (isCurrentOwner()) emitBookmarksUpdated('update');
       return true;
     } catch (e) {
+      if (bookmarks[bookmarkId] === bookmark) {
+        bookmarks[bookmarkId] = original;
+      }
       console.error(`${logPrefix} Failed to update bookmark:`, e);
       return false;
     }
@@ -295,19 +319,28 @@
    * Delete a bookmark
    */
   async function deleteBookmark(bookmarkId) {
+    const owner = JE.userConfig;
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
+    const isCurrentOwner = () => JE.userConfig === owner
+      && (!JE.session || JE.session.isCurrent(epoch));
     if (!JE.userConfig?.bookmark?.bookmarks?.[bookmarkId]) {
       console.warn(`${logPrefix} Bookmark not found:`, bookmarkId);
       return false;
     }
 
-    delete JE.userConfig.bookmark.bookmarks[bookmarkId];
+    const bookmarks = owner.bookmark.bookmarks;
+    const original = bookmarks[bookmarkId];
+    delete bookmarks[bookmarkId];
 
     try {
-      await JE.saveUserSettings('bookmark.json', JE.userConfig.bookmark);
+      await JE.saveUserSettings('bookmark.json', owner.bookmark);
       console.log(`${logPrefix} Bookmark deleted:`, bookmarkId);
-      emitBookmarksUpdated('delete');
+      if (isCurrentOwner()) emitBookmarksUpdated('delete');
       return true;
     } catch (e) {
+      if (!Object.prototype.hasOwnProperty.call(bookmarks, bookmarkId)) {
+        bookmarks[bookmarkId] = original;
+      }
       console.error(`${logPrefix} Failed to delete bookmark:`, e);
       return false;
     }
@@ -318,6 +351,11 @@
    * Creates duplicates with new item ID, keeps old ones
    */
   async function syncBookmarks(oldBookmarks, newItemDetails, timeOffset = 0) {
+    const owner = JE.userConfig;
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
+    const isCurrentOwner = () => JE.userConfig === owner
+      && (!JE.session || JE.session.isCurrent(epoch));
+    const bookmarks = owner.bookmark.bookmarks;
     const synced = [];
     const now = new Date().toISOString();
 
@@ -340,19 +378,19 @@
         episodeNumber: newItemDetails.episodeNumber ?? null
       };
 
-      JE.userConfig.bookmark.bookmarks[newBookmarkId] = newBookmark;
+      bookmarks[newBookmarkId] = newBookmark;
       synced.push({ id: newBookmarkId, ...newBookmark });
     }
 
     try {
-      await JE.saveUserSettings('bookmark.json', JE.userConfig.bookmark);
+      await JE.saveUserSettings('bookmark.json', owner.bookmark);
       console.log(`${logPrefix} Synced ${synced.length} bookmarks to new item ID`);
-      emitBookmarksUpdated('sync');
+      if (isCurrentOwner()) emitBookmarksUpdated('sync');
       return synced;
     } catch (e) {
       console.error(`${logPrefix} Failed to sync bookmarks:`, e);
       // Rollback
-      synced.forEach(bm => delete JE.userConfig.bookmark.bookmarks[bm.id]);
+      synced.forEach(bm => delete bookmarks[bm.id]);
       throw e;
     }
   }

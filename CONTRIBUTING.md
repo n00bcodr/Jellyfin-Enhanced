@@ -159,7 +159,7 @@ Adding a client module:
 
 ## ✅ CI Checks
 
-Every PR runs a few automated checks (GitHub Actions, `.github/workflows/`). There are no automated tests to run locally - these are all static checks:
+Pull requests run automated backend regressions for both Jellyfin targets, JavaScript behavioral tests with coverage, and browser tests, alongside the static checks below. See [Regression testing](tests/README.md) for setup, commands, reports, and current coverage gaps.
 
 | Check | What it does | Reproduce locally |
 |---|---|---|
@@ -172,7 +172,9 @@ Two more workflows exist but aren't part of the PR gate: **Check Unused Translat
 
 ## 🧪 Testing
 
-Before submitting a PR, ensure you've tested:
+After installing the prerequisites in [Regression testing](tests/README.md), run `python3 tests/run.py fast` for local feedback or `python3 tests/run.py all` for the complete suite. The full run includes disposable real Jellyfin hosts; it never uses your personal server. Automated coverage is recorded in the [coverage matrix](tests/docs/coverage-matrix.md).
+
+For behavior outside automated coverage, also verify:
 
 - [ ] Feature works as expected
 - [ ] No console errors

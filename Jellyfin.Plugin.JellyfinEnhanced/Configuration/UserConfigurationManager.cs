@@ -608,14 +608,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
             try
             {
-                var parsed = JsonConvert.DeserializeObject<AllReviewsStore>(json);
-                if (parsed == null)
+                // Missing/null collections and null rows are corruption, not an
+                // empty store. Do not let a subsequent write erase evidence.
+                var parsed = new AllReviewsStore { Reviews = null! };
+                JsonConvert.PopulateObject(json, parsed, new JsonSerializerSettings { CheckAdditionalContent = true });
+                if (parsed.Reviews == null || parsed.Reviews.Values.Any(review => review == null))
                 {
                     if (throwOnCorruption)
                     {
-                        _logger.Error("reviews.json deserialized to null; refusing to write over it.");
+                        _logger.Error("reviews.json contains an invalid review store; refusing to write over it.");
                         BackupCorruptFileUnlocked(filePath);
-                        throw new InvalidDataException("reviews.json deserialized to null.");
+                        throw new InvalidDataException("reviews.json contains an invalid review store.");
                     }
                     return new AllReviewsStore();
                 }

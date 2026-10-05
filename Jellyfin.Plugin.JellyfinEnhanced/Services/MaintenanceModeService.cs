@@ -85,16 +85,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static bool IsExpired(MaintenanceState state)
             => state.IsActive && state.EndsAt.HasValue && DateTime.UtcNow >= state.EndsAt.Value;
 
+        private static bool HasPendingRestores(MaintenanceState state)
+            => state.AccountDisabledUserIds.Count > 0 || state.RemoteDisabledUserIds.Count > 0;
+
         /// <summary>
         /// Same expiry check as <see cref="GetStatus"/>, but awaits the disable so the caller
         /// (the schedule tick) sees the settled state instead of racing the background restore.
         /// </summary>
         public async Task<MaintenanceState> ExpireIfDueAsync()
         {
-            if (IsExpired(LoadState()))
+            var current = LoadState();
+            if (IsExpired(current) || (!current.IsActive && HasPendingRestores(current)))
             {
                 // Re-checked under the gate: an admin may have re-enabled with a new end time meanwhile.
-                await DisableCoreAsync(IsExpired, "Timed window reached its end", false).ConfigureAwait(false);
+                await DisableCoreAsync(state => IsExpired(state) || !state.IsActive, "Timed window reached its end or restoration pending", false).ConfigureAwait(false);
             }
             return LoadState();
         }
@@ -147,6 +151,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             action ??= "disable_accounts";
 
             var currentState = LoadState();
+            if (!currentState.IsActive && HasPendingRestores(currentState))
+            {
+                await RestoreUsersAsync(currentState).ConfigureAwait(false);
+                if (HasPendingRestores(currentState))
+                    throw new InvalidOperationException("Previous maintenance policy restoration is still pending; retry before opening a new window.");
+            }
             if (currentState.IsActive)
             {
                 bool sameAction = currentState.Action == action;
@@ -194,7 +204,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Undo whatever this instance previously applied, then fall through to re-apply
                 // fresh against the new action/target below.
                 _logger.Info("[Maintenance] Action/targets changed while active - reconciling.");
+                // Until restoration completes this is a pending transition, not
+                // a fully applied active window. A retry of the old selection
+                // must reapply it rather than take the same-target shortcut.
+                currentState.IsActive = false;
+                SaveState(currentState);
                 await RestoreUsersAsync(currentState).ConfigureAwait(false);
+                if (HasPendingRestores(currentState))
+                    throw new InvalidOperationException("Maintenance policy restoration failed; previous targets are retained for retry.");
             }
 
             bool doAccounts = action == "disable_accounts" || action == "both";
@@ -222,6 +239,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var accountDisabled = new List<string>();
             var remoteDisabled  = new List<string>();
 
+            // Refuse policy mutations if the restoration journal is already
+            // unwritable. Host policy commits and this file cannot share a
+            // transaction, but an existing filesystem failure is detectable.
+            SaveState(currentState);
+
             foreach (var user in targetUsers)
             {
                 try
@@ -230,24 +252,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if (dto.Policy == null) continue;
 
                     bool changed = false;
+                    bool accountChanged = false;
+                    bool remoteChanged = false;
 
                     if (doAccounts && !dto.Policy.IsDisabled)
                     {
                         dto.Policy.IsDisabled = true;
-                        accountDisabled.Add(user.Id.ToString());
+                        accountChanged = true;
                         changed = true;
                     }
 
                     if (doRemote && dto.Policy.EnableRemoteAccess)
                     {
                         dto.Policy.EnableRemoteAccess = false;
-                        remoteDisabled.Add(user.Id.ToString());
+                        remoteChanged = true;
                         changed = true;
                     }
 
                     if (changed)
                     {
                         await _userManager.UpdatePolicyAsync(user.Id, dto.Policy).ConfigureAwait(false);
+                        // Only restore changes the policy store actually accepted.
+                        // A failed update must not grant access on a later disable.
+                        if (accountChanged) accountDisabled.Add(user.Id.ToString());
+                        if (remoteChanged) remoteDisabled.Add(user.Id.ToString());
                         _logger.Info($"[Maintenance] Updated user '{user.Username}'" +
                             $"{(doAccounts && accountDisabled.Contains(user.Id.ToString()) ? " (account disabled)" : "")}" +
                             $"{(doRemote  && remoteDisabled.Contains(user.Id.ToString())  ? " (remote disabled)"  : "")}");
@@ -314,16 +342,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var state = LoadState();
                 if (!state.IsActive)
                 {
+                    if (HasPendingRestores(state))
+                        await RestoreUsersAsync(state).ConfigureAwait(false);
                     _logger.Info("[Maintenance] Already inactive - skipping disable.");
                     return;
                 }
                 if (!shouldDisable(state)) return;
                 if (reason != null) _logger.Info($"[Maintenance] {reason} - disabling.");
-                SaveState(new MaintenanceState
-                {
-                    IsActive = false,
-                    SkippedScheduledWindowEnd = explicitEnd && state.Source == "schedule" ? state.EndsAt : null
-                });
+                // Persist restoration intent before touching policies. Failed users
+                // remain on this inactive state so the next tick/restart retries.
+                state.IsActive = false;
+                state.SkippedScheduledWindowEnd = explicitEnd && state.Source == "schedule" ? state.EndsAt : null;
+                SaveState(state);
 
                 // A timed manual window that ran out must also clear the admin toggle, or the config
                 // page would still show it checked and the next save would re-enable it. Cleared before
@@ -493,25 +523,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             foreach (var idStr in allIds)
             {
-                if (!Guid.TryParse(idStr, out var userId)) continue;
+                if (!Guid.TryParse(idStr, out var userId))
+                {
+                    state.AccountDisabledUserIds.Remove(idStr);
+                    state.RemoteDisabledUserIds.Remove(idStr);
+                    SaveState(state);
+                    continue;
+                }
                 try
                 {
                     var user = _userManager.GetUserById(userId);
-                    if (user == null) continue;
+                    if (user != null)
+                    {
+                        var dto = _userManager.GetUserDto(user, string.Empty);
+                        if (dto.Policy == null) continue;
 
-                    var dto = _userManager.GetUserDto(user, string.Empty);
-                    if (dto.Policy == null) continue;
+                        if (accountSet.Contains(idStr)) dto.Policy.IsDisabled = false;
+                        if (remoteSet.Contains(idStr))  dto.Policy.EnableRemoteAccess = true;
 
-                    if (accountSet.Contains(idStr)) dto.Policy.IsDisabled = false;
-                    if (remoteSet.Contains(idStr))  dto.Policy.EnableRemoteAccess = true;
-
-                    await _userManager.UpdatePolicyAsync(userId, dto.Policy).ConfigureAwait(false);
-                    _logger.Info($"[Maintenance] Restored user '{user.Username}'");
+                        await _userManager.UpdatePolicyAsync(userId, dto.Policy).ConfigureAwait(false);
+                        _logger.Info($"[Maintenance] Restored user '{user.Username}'");
+                    }
                 }
                 catch (Exception ex)
                 {
                     _logger.Error($"[Maintenance] Failed to restore user {idStr}: {ex.Message}");
+                    continue;
                 }
+                // Persistence failures must abort the transition, not be swallowed
+                // as policy failures and allow a new window to replace old intent.
+                state.AccountDisabledUserIds.Remove(idStr);
+                state.RemoteDisabledUserIds.Remove(idStr);
+                SaveState(state);
             }
         }
 
@@ -526,7 +569,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private MaintenanceState LoadState()
         {
             var cached = _cached;
-            if (cached != null) return cached;
+            if (cached != null) return CopyState(cached);
             try
             {
                 if (File.Exists(_stateFilePath))
@@ -540,20 +583,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _logger.Error($"[Maintenance] Failed to load state: {ex.Message}");
             }
             cached ??= new MaintenanceState();
+            cached.AccountDisabledUserIds = (cached.AccountDisabledUserIds ?? new()).Distinct().ToList();
+            cached.RemoteDisabledUserIds = (cached.RemoteDisabledUserIds ?? new()).Distinct().ToList();
             _cached = cached;
-            return cached;
+            return CopyState(cached);
         }
+
+        // Callers stage mutations privately; a failed disk checkpoint must not
+        // silently change the authoritative cached state.
+        private static MaintenanceState CopyState(MaintenanceState state) => new()
+        {
+            IsActive = state.IsActive, Message = state.Message, NotificationMessage = state.NotificationMessage,
+            Action = state.Action, Source = state.Source, StartedAt = state.StartedAt, EndsAt = state.EndsAt,
+            RequestedDurationMinutes = state.RequestedDurationMinutes,
+            AccountDisabledUserIds = new(state.AccountDisabledUserIds),
+            RemoteDisabledUserIds = new(state.RemoteDisabledUserIds),
+            RequestedAffectedUserIds = state.RequestedAffectedUserIds == null ? null : new(state.RequestedAffectedUserIds),
+            SkippedScheduledWindowEnd = state.SkippedScheduledWindowEnd
+        };
 
         private void SaveState(MaintenanceState state)
         {
-            _cached = state;
+            var temporaryPath = _stateFilePath + ".tmp." + Guid.NewGuid().ToString("N");
             try
             {
-                File.WriteAllText(_stateFilePath, JsonConvert.SerializeObject(state, Formatting.Indented));
+                File.WriteAllText(temporaryPath, JsonConvert.SerializeObject(state, Formatting.Indented));
+                File.Move(temporaryPath, _stateFilePath, overwrite: true);
+                _cached = CopyState(state);
             }
             catch (Exception ex)
             {
                 _logger.Error($"[Maintenance] Failed to save state: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
             }
         }
     }
