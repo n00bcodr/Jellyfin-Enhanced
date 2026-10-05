@@ -494,7 +494,9 @@
          * Renders the next chunk of the client-paged list like renderChunk, but
          * through JE.discoveryFilter.appendCards: the cards in view at once, the
          * rest built in short slices and appended after them. The chunk counts
-         * as consumed up front, so pagination state is the same as renderChunk's.
+         * as consumed only once it is in, as renderChunk's does: a card that
+         * fails to build takes the chunk's cards out again, so the retry renders
+         * the same chunk instead of skipping it.
          * @param {HTMLElement|null} itemsContainer
          * @param {string} mode - Current filter mode
          * @param {number} chunkSize - How many items to render
@@ -511,13 +513,14 @@
                 return;
             }
 
+            const epoch = renderEpoch;
+            const isCurrent = () => epoch === renderEpoch && !signal?.aborted;
+            await JE.discoveryFilter.appendCards(itemsContainer, nextChunk, { cardClass, isCurrent });
+            // A reset (filter / sort change) or navigation during the build owns
+            // the pagination state now.
+            if (!isCurrent()) return;
             renderedCount += nextChunk.length;
             hasMorePages = renderedCount < currentPagedResults.length;
-            const epoch = renderEpoch;
-            await JE.discoveryFilter.appendCards(itemsContainer, nextChunk, {
-                cardClass,
-                isCurrent: () => epoch === renderEpoch && !signal?.aborted
-            });
         }
 
         /**
