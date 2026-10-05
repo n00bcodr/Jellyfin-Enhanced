@@ -466,6 +466,7 @@
     "requests_requests": "Sol·licituds",
     "requests_no_active_downloads": "No hi ha descàrregues actives",
     "requests_coming_soon": "Pròximament",
+    "requests_orphaned": "Orfe",
     "requests_today": "avui",
     "requests_tomorrow": "demà",
     "requests_in_days": "en {days} dies",

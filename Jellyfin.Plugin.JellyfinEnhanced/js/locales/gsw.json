@@ -471,6 +471,7 @@
     "requests_requests": "Aafrage",
     "requests_no_active_downloads": "Kei aktivi Downloads",
     "requests_coming_soon": "Chunt bald",
+    "requests_orphaned": "Verwaist",
     "requests_today": "hüt",
     "requests_tomorrow": "morn",
     "requests_in_days": "i {days} Täg",

@@ -466,6 +466,7 @@
     "requests_requests": "Demands",
     "requests_no_active_downloads": "No active plunderin' in progress",
     "requests_coming_soon": "Arrivin' Soon",
+    "requests_orphaned": "Marooned",
     "requests_today": "this very day",
     "requests_tomorrow": "on th' morrow",
     "requests_in_days": "in {days} days hence",

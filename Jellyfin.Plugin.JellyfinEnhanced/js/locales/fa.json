@@ -466,6 +466,7 @@
     "requests_requests": "درخواست‌ها",
     "requests_no_active_downloads": "هیچ دانلودی در حال اجرا نیست",
     "requests_coming_soon": "به زودی",
+    "requests_orphaned": "بدون پیوند",
     "requests_today": "امروز",
     "requests_tomorrow": "فردا",
     "requests_in_days": "در {days} روز",

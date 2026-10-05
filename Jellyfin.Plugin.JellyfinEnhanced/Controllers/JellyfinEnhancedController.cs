@@ -10317,6 +10317,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var results = data["results"] as JArray;
                 if (results != null)
                 {
+                    var requestAborted = HttpContext.RequestAborted;
                     // Enrich all requests in parallel for better performance
                     var enrichmentTasks = results.Select(async req =>
                     {
@@ -10415,6 +10416,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 : createdAtToken.ToString();
                         }
 
+                        var tvdbId = media?["tvdbId"]?.Value<int?>();
+                        var isOrphaned = IsOrphanedRequest(mediaStatus, createdAtStr)
+                            && await IsMissingFromArrAsync(type, tmdbId, tvdbId, requestAborted);
+
                         return new
                         {
                             id = req["id"]?.Value<int>(),
@@ -10426,7 +10431,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             // TV only — Sonarr identifies series by TVDB id, not TMDB id, so
                             // this is what the Requests page needs to build an "Open in Sonarr"
                             // link via /arr/series-slugs.
-                            tvdbId = media?["tvdbId"]?.Value<int?>(),
+                            tvdbId = tvdbId,
                             mediaStatus = mediaStatus,
                             // Raw Seerr request status (1=Pending, 2=Approved, 3=Declined,
                             // 4=Failed, 5=Completed). Exposed separately from mediaStatus
@@ -10443,7 +10448,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             theatricalReleaseDate = theatricalReleaseDate,
                             initialAirDate = initialAirDate,
                             nextAirDate = nextAirDate,
-                            isComingSoon = IsComingSoonRequest(mediaStatus, type, nextAirDate, digitalReleaseDate, theatricalReleaseDate)
+                            isComingSoon = IsComingSoonRequest(mediaStatus, type, nextAirDate, digitalReleaseDate, theatricalReleaseDate),
+                            isOrphaned = isOrphaned
                         };
                     }).ToList();
 
@@ -10453,7 +10459,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     if (isComingSoonFilter)
                     {
                         enrichedRequests = enrichedRequests
-                            .Where(r => r.isComingSoon)
+                            .Where(r => r.isComingSoon && !r.isOrphaned)
                             .OrderBy(r =>
                             {
                                 // Sort by the earliest future date
@@ -10483,7 +10489,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
                     else if (splitsProcessing)
                     {
-                        enrichedRequests = enrichedRequests.Where(r => !r.isComingSoon).ToArray();
+                        enrichedRequests = enrichedRequests.Where(r => !r.isComingSoon && !r.isOrphaned).ToArray();
                     }
 
                     if (splitsProcessing)
@@ -10530,6 +10536,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     totalResults = 0,
                 });
             }
+        }
+
+        private static readonly ConcurrentDictionary<string, (bool Missing, DateTime Expires)> OrphanCheckCache = new();
+
+        // True only when every enabled Radarr/Sonarr instance answered and none has the title.
+        private async Task<bool> IsMissingFromArrAsync(string? type, int? tmdbId, int? tvdbId, CancellationToken ct)
+        {
+            var isTv = type == "tv";
+            var id = isTv ? tvdbId : tmdbId;
+            if (!id.HasValue || id <= 0) return false;
+
+            var key = $"{(isTv ? "tv" : "movie")}:{id}";
+            if (OrphanCheckCache.TryGetValue(key, out var cached) && cached.Expires > DateTime.UtcNow) return cached.Missing;
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null) return false;
+            var instances = isTv ? config.GetEnabledSonarrInstances() : config.GetEnabledRadarrInstances();
+            if (instances.Count == 0) return false;
+
+            var outcomes = await Task.WhenAll(instances.Select(i => isTv
+                ? FetchSeriesInfoFromInstance(i, id.Value, ct)
+                : FetchMovieInfoFromInstance(i, id.Value, ct)));
+            var missing = outcomes.All(o => o.Error == null && o.Match == null);
+            OrphanCheckCache[key] = (missing, DateTime.UtcNow.AddMinutes(5));
+            return missing;
+        }
+
+        // Approved, not yet available, and older than the grace period (10 min) for Radarr to pick it up.
+        private static bool IsOrphanedRequest(string? mediaStatus, string? createdAt)
+        {
+            if (mediaStatus != "Approved" && mediaStatus != "Processing") return false;
+            return DateTimeOffset.TryParse(createdAt, out var created) && created < DateTimeOffset.UtcNow.AddMinutes(-10);
         }
 
         // Coming soon: approved or processing with a future release date. Processing lists the rest.

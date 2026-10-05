@@ -395,6 +395,7 @@
     "feature_people_tags": "Теги користувачів",
     "hidden_content_button_section_title": "Видимість кнопки приховування",
     "requests_coming_soon": "Скоро",
+    "requests_orphaned": "Осиротілий",
     "hidden_content_admin_add_none": "Немає відповідних назв.",
     "requests_unknown": "Невідомо",
     "reviews_admin_delete_confirm": "Видалити відгук від {user}? Цю дію не можна скасувати.",

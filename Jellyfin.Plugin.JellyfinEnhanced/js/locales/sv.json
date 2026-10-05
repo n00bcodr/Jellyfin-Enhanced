@@ -466,6 +466,7 @@
     "requests_requests": "Förfrågningar",
     "requests_no_active_downloads": "Inga aktiva hämtningar",
     "requests_coming_soon": "Kommer snart",
+    "requests_orphaned": "Föräldralös",
     "requests_today": "idag",
     "requests_tomorrow": "imorgon",
     "requests_in_days": "om {days} dagar",

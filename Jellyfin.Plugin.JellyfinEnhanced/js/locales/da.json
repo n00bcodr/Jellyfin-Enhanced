@@ -454,6 +454,7 @@
     "requests_requests": "Anmodninger",
     "requests_no_active_downloads": "Ingen aktive downloads",
     "requests_coming_soon": "Kommer snart",
+    "requests_orphaned": "Forældreløs",
     "requests_today": "i dag",
     "requests_tomorrow": "i morgen",
     "requests_in_days": "om {days} dage",
