@@ -42,7 +42,7 @@
       <!--
         Spoiler Blur uses SkiaSharp for the Gaussian blur. Jellyfin ships SkiaSharp.dll in /usr/lib/jellyfin/bin/ as its own thumbnail engine, so we compile against the package but exclude the runtime asset (Private=false + ExcludeAssets=runtime). The host's already-loaded copy wins. This keeps the plugin DLL deployment a single file with no native deps.
       -->
-      <PackageReference Include="SkiaSharp" Version="3.116.1" PrivateAssets="all">
+      <PackageReference Include="SkiaSharp" Version="4.153.1" PrivateAssets="all">
         <ExcludeAssets>runtime</ExcludeAssets>
       </PackageReference>
       <!--
@@ -50,7 +50,7 @@
         HarfBuzzSharp next to SkiaSharp on both 10.11 and 12, so it is referenced the same way: compile-only, the
         host's copy is used at runtime. The renderer falls back to unshaped text if a host lacks it.
       -->
-      <PackageReference Include="SkiaSharp.HarfBuzz" Version="3.116.1" PrivateAssets="all">
+      <PackageReference Include="SkiaSharp.HarfBuzz" Version="4.153.1" PrivateAssets="all">
         <ExcludeAssets>runtime</ExcludeAssets>
       </PackageReference>
     </ItemGroup>
