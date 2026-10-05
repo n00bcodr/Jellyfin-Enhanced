@@ -10,6 +10,7 @@
 
   const state = P.state;
   const renderPage = P.renderPage;
+  const renderSection = P.renderSection;
   const fetchRequests = P.fetchRequests;
   const fetchIssues = P.fetchIssues;
   const fetchHistory = P.fetchHistory;
@@ -37,7 +38,7 @@
   function filterRequests(filter) {
     state.requestsFilter = filter;
     state.requestsPage = 1;
-    fetchRequests().then(() => renderPage());
+    fetchRequests().then(() => renderSection("requests"));
   }
 
   function filterIssues(filter) {
@@ -45,7 +46,7 @@
     if (state.issuesFilter === filter) return;
     state.issuesFilter = filter;
     state.issuesPage = 1;
-    fetchIssues().then(() => renderPage());
+    fetchIssues().then(() => renderSection("issues"));
   }
 
   /**
@@ -54,7 +55,7 @@
   function nextPage() {
     if (state.requestsPage < state.requestsTotalPages) {
       state.requestsPage++;
-      fetchRequests().then(() => renderPage());
+      fetchRequests().then(() => renderSection("requests"));
     }
   }
 
@@ -64,35 +65,35 @@
   function prevPage() {
     if (state.requestsPage > 1) {
       state.requestsPage--;
-      fetchRequests().then(() => renderPage());
+      fetchRequests().then(() => renderSection("requests"));
     }
   }
 
   function nextIssuesPage() {
     if (state.issuesPage < state.issuesTotalPages) {
       state.issuesPage++;
-      fetchIssues().then(() => renderPage());
+      fetchIssues().then(() => renderSection("issues"));
     }
   }
 
   function prevIssuesPage() {
     if (state.issuesPage > 1) {
       state.issuesPage--;
-      fetchIssues().then(() => renderPage());
+      fetchIssues().then(() => renderSection("issues"));
     }
   }
 
   function nextHistoryPage() {
     if (state.historyPage < state.historyTotalPages) {
       state.historyPage++;
-      fetchHistory().then(() => renderPage());
+      fetchHistory().then(() => renderSection("history"));
     }
   }
 
   function prevHistoryPage() {
     if (state.historyPage > 1) {
       state.historyPage--;
-      fetchHistory().then(() => renderPage());
+      fetchHistory().then(() => renderSection("history"));
     }
   }
 

@@ -169,7 +169,7 @@
         const { grid, sizeKey } = PAGED_LISTS[list];
         return state[sizeKey] && document.querySelector(grid) && getPageSize(list) !== state[sizeKey];
       });
-      if (stale.length) Promise.all(stale.map((list) => refetchers[list]())).then(() => renderPage());
+      if (stale.length) Promise.all(stale.map((list) => refetchers[list]())).then(() => stale.forEach((list) => P.renderSection(list)));
     }, 250);
   });
 

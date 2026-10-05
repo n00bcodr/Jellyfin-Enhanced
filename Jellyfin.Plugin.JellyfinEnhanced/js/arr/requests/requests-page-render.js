@@ -24,6 +24,175 @@
   const loadAllData = P.loadAllData;
   const handleRequestAction = P.handleRequestAction;
 
+  function buildRequestsSection() {
+    let html = "";
+    // Requests Section
+    if (JE.pluginConfig?.JellyseerrEnabled) {
+      html += `<div class="je-downloads-section je-requests-section">`;
+      const labelRequests = (JE.t && JE.t('requests_requests')) || 'Requests';
+      html += `<h2><span class="je-msym-rounded je-section-icon" aria-hidden="true">playlist_add_check</span>${labelRequests}</h2>`;
+
+        // Filter tabs
+        const labelAll = (JE.t && JE.t('jellyseerr_discover_all')) || 'All';
+        const labelPending = (JE.t && JE.t('jellyseerr_btn_pending')) || 'Pending Approval';
+        const labelProcessing = (JE.t && JE.t('jellyseerr_btn_processing')) || 'Processing';
+        const labelAvailable = (JE.t && JE.t('jellyseerr_btn_available')) || 'Available';
+        const labelComingSoon = (JE.t && JE.t('requests_coming_soon')) || 'Coming Soon';
+
+        html += `
+            <div class="je-requests-tabs">
+              <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "all" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('all')">${labelAll}</button>
+              <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "pending" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('pending')">${labelPending}</button>
+              <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "processing" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('processing')">${labelProcessing}</button>
+              <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "comingsoon" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('comingsoon')">${labelComingSoon}</button>
+              <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "available" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('available')">${labelAvailable}</button>
+            </div>
+          `;
+
+      if (state.isLoading && state.requests.length === 0) {
+        html += `<div class="je-loading">...</div>`;
+      } else if (state.requests.length === 0) {
+        html += `
+                    <div class="je-empty-state">
+                        <div>${JE.t?.("requests_no_requests_found") || "No requests found"}</div>
+                    </div>
+                `;
+      } else {
+        // Apply client-side filtering only for Processing tab (exclude Partially Available)
+        let filteredRequests = state.requests;
+        if (JE.hiddenContent) filteredRequests = JE.hiddenContent.filterRequestItems(filteredRequests);
+        if (state.requestsFilter === "processing") {
+          // Exclude "Partially Available" items from Processing tab
+          filteredRequests = filteredRequests.filter(item => {
+            return item.mediaStatus !== "Partially Available";
+          });
+        }
+
+        if (filteredRequests.length === 0) {
+          html += `
+                    <div class="je-empty-state">
+                        <div>${JE.t?.("requests_no_requests_found") || "No requests found"}</div>
+                    </div>
+                `;
+        } else {
+          html += `<div class="je-downloads-grid je-requests-grid">`;
+          filteredRequests.forEach((item) => {
+            html += renderRequestCard(item);
+          });
+          html += `</div>`;
+
+          // Pagination
+          if (state.requestsTotalPages > 1) {
+            html += `
+                        <div class="je-pagination">
+                            <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.prevPage()" ${state.requestsPage <= 1 ? "disabled" : ""}><span class="material-icons">chevron_left</span></button>
+                            <span>${state.requestsPage} / ${state.requestsTotalPages}</span>
+                            <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.nextPage()" ${state.requestsPage >= state.requestsTotalPages ? "disabled" : ""}><span class="material-icons">chevron_right</span></button>
+                        </div>
+                    `;
+          }
+        }
+      }
+      html += `</div>`;
+    }
+    return html;
+  }
+
+  function buildIssuesSection() {
+    let html = "";
+    if (JE.pluginConfig?.JellyseerrEnabled && JE.pluginConfig?.DownloadsPageShowIssues) {
+      html += `<div class="je-downloads-section je-issues-section">`;
+      const labelIssues = (JE.t && JE.t('jellyseerr_existing_issues')) || 'Issues';
+      html += `<h2><span class="je-msym-rounded je-section-icon" aria-hidden="true">warning</span>${labelIssues}</h2>`;
+
+      const labelOpen = (JE.t && JE.t('jellyseerr_issue_open')) || 'Open';
+      const labelResolved = (JE.t && JE.t('jellyseerr_issue_resolved')) || 'Resolved';
+      html += `
+        <div class="je-issues-tabs">
+          <button is="emby-button" type="button" class="je-issues-tab emby-button ${state.issuesFilter === "open" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterIssues('open')">${labelOpen}</button>
+          <button is="emby-button" type="button" class="je-issues-tab emby-button ${state.issuesFilter === "resolved" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterIssues('resolved')">${labelResolved}</button>
+        </div>
+      `;
+
+      if (state.isLoading && state.issues.length === 0) {
+        html += `<div class="je-loading">...</div>`;
+      } else if (state.issuesError) {
+        html += `
+          <div class="je-empty-state">
+            <div>${JE.t?.("jellyseerr_load_issues_error") || "Unable to load issues"}</div>
+          </div>
+        `;
+      } else if (state.issues.length === 0) {
+        html += `
+          <div class="je-empty-state">
+            <div>${JE.t?.("jellyseerr_no_issues_yet") || "No issues found"}</div>
+          </div>
+        `;
+      } else {
+        html += `<div class="je-downloads-grid je-issues-grid">`;
+        state.issues.forEach((issue) => {
+          html += renderIssueCard(issue);
+        });
+        html += `</div>`;
+
+        if (state.issuesTotalPages > 1) {
+          html += `
+            <div class="je-pagination">
+              <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.prevIssuesPage()" ${state.issuesPage <= 1 ? "disabled" : ""}><span class="material-icons">chevron_left</span></button>
+              <span>${state.issuesPage} / ${state.issuesTotalPages}</span>
+              <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.nextIssuesPage()" ${state.issuesPage >= state.issuesTotalPages ? "disabled" : ""}><span class="material-icons">chevron_right</span></button>
+            </div>
+          `;
+        }
+      }
+
+      html += `</div>`;
+    }
+    return html;
+  }
+
+  function buildHistorySection() {
+    let html = "";
+    // History Section - only shows if enabled and visible to the current user
+    if (JE.pluginConfig?.ShowDownloadsInRequests !== false
+      && JE.pluginConfig?.DownloadsShowHistory !== false
+      && state.historyVisible !== false) {
+      html += `<div class="je-downloads-section je-history-section">`;
+      const labelHistory = (JE.t && JE.t('requests_history')) || 'History';
+      html += `<h2><span class="je-msym-rounded je-section-icon" aria-hidden="true">history</span>${labelHistory}</h2>`;
+
+      if (state.isLoading && state.history.length === 0) {
+        html += `<div class="je-loading">...</div>`;
+      } else if (state.history.length === 0) {
+        const labelNoHistory = (JE.t && JE.t('requests_no_history_found')) || 'No history found';
+        html += `
+          <div class="je-empty-state">
+            <div>${labelNoHistory}</div>
+          </div>
+        `;
+      } else {
+        html += `<div class="je-downloads-grid je-history-grid">`;
+        state.history.forEach((item) => {
+          html += renderHistoryCard(item);
+        });
+        html += `</div>`;
+
+        if (state.historyTotalPages > 1) {
+          html += `
+            <div class="je-pagination">
+              <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.prevHistoryPage()" ${state.historyPage <= 1 ? "disabled" : ""}><span class="material-icons">chevron_left</span></button>
+              <span>${state.historyPage} / ${state.historyTotalPages}</span>
+              <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.nextHistoryPage()" ${state.historyPage >= state.historyTotalPages ? "disabled" : ""}><span class="material-icons">chevron_right</span></button>
+            </div>
+          `;
+        }
+      }
+
+      html += `</div>`;
+    }
+    return html;
+  }
+
   /**
    * Render the full page.
    * @param {HTMLElement} [targetContainer] - Optional container to render into
@@ -55,7 +224,7 @@
 
     html += `
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1em;">
-        <h2 style="margin: 0.5em 0 0 0;">${labelActiveDownloads}</h2>
+        <h2 style="margin: 0.5em 0 0 0;"><span class="je-msym-rounded je-section-icon" aria-hidden="true">download</span>${labelActiveDownloads}</h2>
         <button class="je-refresh-btn emby-button" style="background: transparent; border: 1px solid rgba(255,255,255,0.3); color: inherit; padding: 0.5em; border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 0.5em; opacity: 0.8; transition: all 0.2s;">
           <span class="material-icons" style="font-size: 18px;">refresh</span>
         </button>
@@ -148,162 +317,9 @@
     html += `</div>`;
     }
 
-    // Requests Section
-    if (JE.pluginConfig?.JellyseerrEnabled) {
-      html += `<div class="je-downloads-section je-requests-section">`;
-      const labelRequests = (JE.t && JE.t('requests_requests')) || 'Requests';
-      html += `<h2>${labelRequests}</h2>`;
-
-        // Filter tabs
-        const labelAll = (JE.t && JE.t('jellyseerr_discover_all')) || 'All';
-        const labelPending = (JE.t && JE.t('jellyseerr_btn_pending')) || 'Pending Approval';
-        const labelProcessing = (JE.t && JE.t('jellyseerr_btn_processing')) || 'Processing';
-        const labelAvailable = (JE.t && JE.t('jellyseerr_btn_available')) || 'Available';
-        const labelComingSoon = (JE.t && JE.t('requests_coming_soon')) || 'Coming Soon';
-
-        html += `
-            <div class="je-requests-tabs">
-              <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "all" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('all')">${labelAll}</button>
-              <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "pending" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('pending')">${labelPending}</button>
-              <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "processing" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('processing')">${labelProcessing}</button>
-              <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "comingsoon" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('comingsoon')">${labelComingSoon}</button>
-              <button is="emby-button" type="button" class="je-requests-tab emby-button ${state.requestsFilter === "available" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterRequests('available')">${labelAvailable}</button>
-            </div>
-          `;
-
-      if (state.isLoading && state.requests.length === 0) {
-        html += `<div class="je-loading">...</div>`;
-      } else if (state.requests.length === 0) {
-        html += `
-                    <div class="je-empty-state">
-                        <div>${JE.t?.("requests_no_requests_found") || "No requests found"}</div>
-                    </div>
-                `;
-      } else {
-        // Apply client-side filtering only for Processing tab (exclude Partially Available)
-        let filteredRequests = state.requests;
-        if (JE.hiddenContent) filteredRequests = JE.hiddenContent.filterRequestItems(filteredRequests);
-        if (state.requestsFilter === "processing") {
-          // Exclude "Partially Available" items from Processing tab
-          filteredRequests = filteredRequests.filter(item => {
-            return item.mediaStatus !== "Partially Available";
-          });
-        }
-
-        if (filteredRequests.length === 0) {
-          html += `
-                    <div class="je-empty-state">
-                        <div>${JE.t?.("requests_no_requests_found") || "No requests found"}</div>
-                    </div>
-                `;
-        } else {
-          html += `<div class="je-downloads-grid je-requests-grid">`;
-          filteredRequests.forEach((item) => {
-            html += renderRequestCard(item);
-          });
-          html += `</div>`;
-
-          // Pagination
-          if (state.requestsTotalPages > 1) {
-            html += `
-                        <div class="je-pagination">
-                            <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.prevPage()" ${state.requestsPage <= 1 ? "disabled" : ""}><span class="material-icons">chevron_left</span></button>
-                            <span>${state.requestsPage} / ${state.requestsTotalPages}</span>
-                            <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.nextPage()" ${state.requestsPage >= state.requestsTotalPages ? "disabled" : ""}><span class="material-icons">chevron_right</span></button>
-                        </div>
-                    `;
-          }
-        }
-      }
-      html += `</div>`;
-    }
-
-    if (JE.pluginConfig?.JellyseerrEnabled && JE.pluginConfig?.DownloadsPageShowIssues) {
-      html += `<div class="je-downloads-section je-issues-section">`;
-      const labelIssues = (JE.t && JE.t('jellyseerr_existing_issues')) || 'Issues';
-      html += `<h2>${labelIssues}</h2>`;
-
-      const labelOpen = (JE.t && JE.t('jellyseerr_issue_open')) || 'Open';
-      const labelResolved = (JE.t && JE.t('jellyseerr_issue_resolved')) || 'Resolved';
-      html += `
-        <div class="je-issues-tabs">
-          <button is="emby-button" type="button" class="je-issues-tab emby-button ${state.issuesFilter === "open" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterIssues('open')">${labelOpen}</button>
-          <button is="emby-button" type="button" class="je-issues-tab emby-button ${state.issuesFilter === "resolved" ? "active" : ""}" onclick="window.JellyfinEnhanced.downloadsPage.filterIssues('resolved')">${labelResolved}</button>
-        </div>
-      `;
-
-      if (state.isLoading && state.issues.length === 0) {
-        html += `<div class="je-loading">...</div>`;
-      } else if (state.issuesError) {
-        html += `
-          <div class="je-empty-state">
-            <div>${JE.t?.("jellyseerr_load_issues_error") || "Unable to load issues"}</div>
-          </div>
-        `;
-      } else if (state.issues.length === 0) {
-        html += `
-          <div class="je-empty-state">
-            <div>${JE.t?.("jellyseerr_no_issues_yet") || "No issues found"}</div>
-          </div>
-        `;
-      } else {
-        html += `<div class="je-downloads-grid je-issues-grid">`;
-        state.issues.forEach((issue) => {
-          html += renderIssueCard(issue);
-        });
-        html += `</div>`;
-
-        if (state.issuesTotalPages > 1) {
-          html += `
-            <div class="je-pagination">
-              <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.prevIssuesPage()" ${state.issuesPage <= 1 ? "disabled" : ""}><span class="material-icons">chevron_left</span></button>
-              <span>${state.issuesPage} / ${state.issuesTotalPages}</span>
-              <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.nextIssuesPage()" ${state.issuesPage >= state.issuesTotalPages ? "disabled" : ""}><span class="material-icons">chevron_right</span></button>
-            </div>
-          `;
-        }
-      }
-
-      html += `</div>`;
-    }
-
-    // History Section - only shows if enabled and visible to the current user
-    if (JE.pluginConfig?.ShowDownloadsInRequests !== false
-      && JE.pluginConfig?.DownloadsShowHistory !== false
-      && state.historyVisible !== false) {
-      html += `<div class="je-downloads-section je-history-section">`;
-      const labelHistory = (JE.t && JE.t('requests_history')) || 'History';
-      html += `<h2>${labelHistory}</h2>`;
-
-      if (state.isLoading && state.history.length === 0) {
-        html += `<div class="je-loading">...</div>`;
-      } else if (state.history.length === 0) {
-        const labelNoHistory = (JE.t && JE.t('requests_no_history_found')) || 'No history found';
-        html += `
-          <div class="je-empty-state">
-            <div>${labelNoHistory}</div>
-          </div>
-        `;
-      } else {
-        html += `<div class="je-downloads-grid je-history-grid">`;
-        state.history.forEach((item) => {
-          html += renderHistoryCard(item);
-        });
-        html += `</div>`;
-
-        if (state.historyTotalPages > 1) {
-          html += `
-            <div class="je-pagination">
-              <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.prevHistoryPage()" ${state.historyPage <= 1 ? "disabled" : ""}><span class="material-icons">chevron_left</span></button>
-              <span>${state.historyPage} / ${state.historyTotalPages}</span>
-              <button is="emby-button" type="button" class="emby-button" onclick="window.JellyfinEnhanced.downloadsPage.nextHistoryPage()" ${state.historyPage >= state.historyTotalPages ? "disabled" : ""}><span class="material-icons">chevron_right</span></button>
-            </div>
-          `;
-        }
-      }
-
-      html += `</div>`;
-    }
+    html += buildRequestsSection();
+    html += buildIssuesSection();
+    html += buildHistorySection();
 
     clearAvatarObjectUrlCache();
     container.innerHTML = html; // existing pattern from upstream — html built from escapeHtml'd values
@@ -480,6 +496,41 @@
     return page;
   }
 
+  const SECTIONS = {
+    requests: { selector: ".je-requests-section", build: buildRequestsSection },
+    issues: { selector: ".je-issues-section", build: buildIssuesSection },
+    history: { selector: ".je-history-section", build: buildHistorySection },
+  };
+
+  /**
+   * Re-render one list in place (after its filter or page changed), leaving the
+   * rest of the page, with its loaded images, untouched.
+   * @param {"requests"|"issues"|"history"} name
+   */
+  function renderSection(name) {
+    const container = state._customTabContainer && document.contains(state._customTabContainer)
+      && window.location.hash.indexOf('userpluginsettings') === -1
+      ? state._customTabContainer
+      : document.getElementById("je-downloads-container");
+    const current = container?.querySelector(SECTIONS[name].selector);
+    if (!current) {
+      renderPage();
+      return;
+    }
+
+    const template = document.createElement("template");
+    template.innerHTML = SECTIONS[name].build();
+    const next = template.content.firstElementChild;
+    if (!next) {
+      current.remove();
+      return;
+    }
+    current.replaceWith(next);
+    hydrateAvatarImages(next);
+    hydrateExternalLinks(next);
+  }
+
   P.renderPage = renderPage;
+  P.renderSection = renderSection;
   P.createPageContainer = createPageContainer;
 })();

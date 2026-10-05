@@ -94,7 +94,7 @@
       btn.tabIndex = -1;
       btn.setAttribute('aria-hidden', 'true');
       const icon = document.createElement('span');
-      icon.className = 'material-icons';
+      icon.className = 'je-msym-rounded';
       icon.setAttribute('aria-hidden', 'true');
       icon.textContent = `chevron_${dir}`;
       btn.appendChild(icon);

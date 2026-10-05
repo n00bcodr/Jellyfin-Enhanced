@@ -13,6 +13,23 @@
 
   // CSS Styles - minimal styling to fit Jellyfin's theme
   const CSS_STYLES = `
+        .je-msym-rounded {
+            font-family: 'JE Material Symbols Rounded';
+            font-weight: normal;
+            font-style: normal;
+            font-size: 24px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            -webkit-font-feature-settings: 'liga';
+            -moz-font-feature-settings: 'liga';
+            font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+        }
         .je-downloads-page {
             padding: 2em;
             max-width: 85vw;
@@ -24,8 +41,17 @@
             margin-bottom: 2em;
         }
         .je-downloads-section h2 {
+            display: flex;
+            align-items: center;
+            gap: 0.5em;
             font-size: 1.5em;
             margin-bottom: 1em;
+        }
+        .je-downloads-section h2 .je-section-icon {
+            font-size: 1.15em;
+            /* centred on the lowercase letters rather than the capitals */
+            position: relative;
+            top: 0.06em;
         }
         .je-downloads-grid {
           display: grid;
