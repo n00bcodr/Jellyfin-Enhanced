@@ -36,8 +36,9 @@
 
   var style = document.createElement('style');
   style.textContent = [
-    '.backgroundContainer.withBackdrop:has(~ .mainAnimatedPages #indexPage .tabContent.is-active .jellyfinenhanced.recommendations) {',
+    '.backgroundContainer.withBackdrop:has(~ * #indexPage .tabContent.is-active .jellyfinenhanced.recommendations) {',
     '  background: rgba(0, 0, 0, 0.7) !important;',
+    '  opacity: 1 !important;',
     '}'
   ].join('\n');
   document.head.appendChild(style);

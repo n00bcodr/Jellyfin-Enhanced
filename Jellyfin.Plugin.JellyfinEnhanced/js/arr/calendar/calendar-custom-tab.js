@@ -39,8 +39,9 @@
     '.jellyfinenhanced.calendar {',
     '  padding: 12px 3vw;',
     '}',
-    '.backgroundContainer.withBackdrop:has(~ .mainAnimatedPages #indexPage .tabContent.is-active .jellyfinenhanced.calendar) {',
+    '.backgroundContainer.withBackdrop:has(~ * #indexPage .tabContent.is-active .jellyfinenhanced.calendar) {',
     '  background: rgba(0, 0, 0, 0.7) !important;',
+    '  opacity: 1 !important;',
     '}'
   ].join('\n');
   document.head.appendChild(style);
