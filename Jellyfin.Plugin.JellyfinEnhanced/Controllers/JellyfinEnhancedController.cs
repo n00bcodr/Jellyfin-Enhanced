@@ -10217,6 +10217,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Build filter parameter
                 // "comingsoon" is a custom filter - fetch processing items and filter server-side
                 var isComingSoonFilter = string.Equals(filter, "comingsoon", StringComparison.OrdinalIgnoreCase);
+                // Processing and Coming Soon split one Seerr list: fetch it whole and page it here.
+                var splitsProcessing = isComingSoonFilter || string.Equals(filter, "processing", StringComparison.OrdinalIgnoreCase);
+                var seerrTake = splitsProcessing ? 500 : take;
+                var seerrSkip = splitsProcessing ? 0 : skip;
                 var filterParam = filter?.ToLower() switch
                 {
                     "pending" => "&filter=pending",
@@ -10241,7 +10245,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 Helpers.Jellyseerr.SeerrError? lastError = null;
                 foreach (var candidateUrl in allUrls)
                 {
-                    var requestsUri = $"{candidateUrl}/api/v1/request?take={take}&skip={skip}{filterParam}";
+                    var requestsUri = $"{candidateUrl}/api/v1/request?take={seerrTake}&skip={seerrSkip}{filterParam}";
                     try
                     {
                         using var requestsRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
@@ -10309,6 +10313,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var data = JObject.Parse(json!);
 
                 var requests = new List<object>();
+                int? splitTotal = null;
                 var results = data["results"] as JArray;
                 if (results != null)
                 {
@@ -10437,7 +10442,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             digitalReleaseDate = digitalReleaseDate,
                             theatricalReleaseDate = theatricalReleaseDate,
                             initialAirDate = initialAirDate,
-                            nextAirDate = nextAirDate
+                            nextAirDate = nextAirDate,
+                            isComingSoon = IsComingSoonRequest(mediaStatus, type, nextAirDate, digitalReleaseDate, theatricalReleaseDate)
                         };
                     }).ToList();
 
@@ -10446,42 +10452,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // Apply server-side filtering for "comingsoon"
                     if (isComingSoonFilter)
                     {
-                        var today = DateTime.UtcNow.Date;
                         enrichedRequests = enrichedRequests
-                            .Where(r =>
-                            {
-                                var status = (r.mediaStatus ?? "").ToLower();
-                                var itemType = r.type;
-
-                                // For TV shows: include if has future nextAirDate
-                                // (can be processing, approved, or even partially available with upcoming episodes)
-                                if (itemType == "tv")
-                                {
-                                    var airDate = r.nextAirDate;
-                                    if (!string.IsNullOrEmpty(airDate) && DateTime.TryParse(airDate, out var ad) && ad.Date > today)
-                                    {
-                                        // Include processing, approved, or partially available TV shows with upcoming episodes
-                                        return status == "processing" || status == "approved" || status == "partially available";
-                                    }
-                                    return false;
-                                }
-
-                                // For movies: check digital or theatrical release dates
-                                // Only include processing or approved movies
-                                if (status != "processing" && status != "approved")
-                                    return false;
-
-                                var digitalDate = r.digitalReleaseDate;
-                                var theatricalDate = r.theatricalReleaseDate;
-
-                                // Check if has a future release date
-                                if (!string.IsNullOrEmpty(digitalDate) && DateTime.TryParse(digitalDate, out var dd) && dd.Date > today)
-                                    return true;
-                                if (!string.IsNullOrEmpty(theatricalDate) && DateTime.TryParse(theatricalDate, out var td) && td.Date > today)
-                                    return true;
-
-                                return false;
-                            })
+                            .Where(r => r.isComingSoon)
                             .OrderBy(r =>
                             {
                                 // Sort by the earliest future date
@@ -10509,12 +10481,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             })
                             .ToArray();
                     }
+                    else if (splitsProcessing)
+                    {
+                        enrichedRequests = enrichedRequests.Where(r => !r.isComingSoon).ToArray();
+                    }
+
+                    if (splitsProcessing)
+                    {
+                        splitTotal = enrichedRequests.Length;
+                        enrichedRequests = enrichedRequests.Skip(skip).Take(take).ToArray();
+                    }
 
                     requests.AddRange(enrichedRequests);
                 }
 
                 var pageInfo = data["pageInfo"] as JObject;
-                var totalResults = isComingSoonFilter ? requests.Count : (pageInfo?["results"]?.Value<int>() ?? 0);
+                var totalResults = splitsProcessing ? (splitTotal ?? 0) : (pageInfo?["results"]?.Value<int>() ?? 0);
                 var totalPages = (int)Math.Ceiling((double)totalResults / take);
 
                 var canApproveRequests = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
@@ -10548,6 +10530,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     totalResults = 0,
                 });
             }
+        }
+
+        // Coming soon: approved or processing with a future release date. Processing lists the rest.
+        private static bool IsComingSoonRequest(string? status, string? type, string? nextAirDate, string? digitalReleaseDate, string? theatricalReleaseDate)
+        {
+            var today = DateTime.UtcNow.Date;
+            static bool IsFuture(string? value, DateTime day) => !string.IsNullOrEmpty(value) && DateTime.TryParse(value, out var date) && date.Date > day;
+
+            var normalized = (status ?? "").ToLower();
+            if (type == "tv")
+            {
+                return IsFuture(nextAirDate, today)
+                    && (normalized == "processing" || normalized == "approved" || normalized == "partially available");
+            }
+
+            if (normalized != "processing" && normalized != "approved") return false;
+            return IsFuture(digitalReleaseDate, today) || IsFuture(theatricalReleaseDate, today);
         }
 
         [HttpPost("arr/requests/{requestId}/approve")]
