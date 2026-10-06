@@ -75,11 +75,13 @@ public class PosterBlurFilterTests
         Assert.False(http.Response.Headers.ContainsKey("ETag")); Assert.False(http.Response.Headers.ContainsKey("Last-Modified"));
         Assert.Equal(true,http.Items[SpoilerBlurImageFilter.NoStoreHttpContextItem]);
     }
+    // "hide" is the default mode: with no safe parent art a directly guarded movie falls back to a blur.
     [Theory]
-    [InlineData("Primary")][InlineData("Thumb")][InlineData("Screenshot")][InlineData("Chapter")]
-    public async Task Protected_movie_surfaces_replace_pixels_and_scrub_shared_cache_headers(string type)
+    [InlineData("Primary","blur")][InlineData("Thumb","blur")][InlineData("Screenshot","blur")][InlineData("Chapter","blur")]
+    [InlineData("Primary","hide")][InlineData("Thumb","hide")][InlineData("Screenshot","hide")][InlineData("Chapter","hide")]
+    public async Task Protected_movie_surfaces_replace_pixels_and_scrub_shared_cache_headers(string type,string mode)
     {
-        using var f=new Fixture(); var bytes=PosterBlurTests.Source();
+        using var f=new Fixture(); f.Plugin.Plugin.Configuration.SpoilerBlurMode=mode; var bytes=PosterBlurTests.Source();
         var (executed,http)=await f.Run(new FileContentResult(bytes,"image/png"),type);
         var result=Assert.IsType<FileContentResult>(executed.Result);Assert.Equal("image/jpeg",result.ContentType);Assert.NotEqual(bytes,result.FileContents);
         using var image=SKBitmap.Decode(result.FileContents);Assert.Equal(96,image.Width);Private(http,type=="Chapter");
@@ -107,10 +109,11 @@ public class PosterBlurFilterTests
         f.UserData.Setup(u=>u.GetUserData(f.User,f.Movie)).Returns(new UserItemData{Key="movie",Played=watched});
         var original=new FileContentResult(PosterBlurTests.Source(),"image/png");var(executed,http)=await f.Run(original,type);Assert.Same(original,executed.Result);Private(http);
     }
-    [Fact]
-    public async Task Head_preserves_body_result_but_scrubs_cache()
+    [Theory]
+    [InlineData("blur")][InlineData("hide")]
+    public async Task Head_preserves_body_result_but_scrubs_cache(string mode)
     {
-        using var f=new Fixture();var original=new FileContentResult(PosterBlurTests.Source(),"image/png");var(executed,http)=await f.Run(original,method:"HEAD");Assert.Same(original,executed.Result);Private(http);
+        using var f=new Fixture();f.Plugin.Plugin.Configuration.SpoilerBlurMode=mode;var original=new FileContentResult(PosterBlurTests.Source(),"image/png");var(executed,http)=await f.Run(original,method:"HEAD");Assert.Same(original,executed.Result);Private(http);
     }
     [Theory]
     [InlineData("Logo","Image","GetItemImage")][InlineData("Primary","Items","GetItems")][InlineData("Primary","Image","OtherAction")]
@@ -132,6 +135,9 @@ public class PosterBlurFilterTests
         var(second,_)=await f.Run(new FileContentResult(PosterBlurTests.Source(32,64),"image/png"),query:"?maxHeight=64");
         using var a=SKBitmap.Decode(Assert.IsType<FileContentResult>(first.Result).FileContents);using var b=SKBitmap.Decode(Assert.IsType<FileContentResult>(second.Result).FileContents);
         Assert.Equal(64,a.Width);Assert.Equal(32,b.Width);Assert.Equal(64,b.Height);
+        // Same parameter, different value: the value is part of the key too.
+        var(third,_)=await f.Run(new FileContentResult(PosterBlurTests.Source(32,16),"image/png"),query:"?maxWidth=32");
+        using var c=SKBitmap.Decode(Assert.IsType<FileContentResult>(third.Result).FileContents);Assert.Equal(32,c.Width);Assert.Equal(16,c.Height);
     }
     [Theory]
     [InlineData(99L,true)][InlineData(100L,false)][InlineData(101L,false)]
@@ -152,10 +158,11 @@ public class PosterBlurFilterTests
         Assert.Same(original,executed.Result);Assert.Equal("original",http.Response.Headers.ETag.ToString());
     }
     [Theory]
-    [InlineData("stream")][InlineData("physical")][InlineData("virtual")]
-    public async Task All_supported_file_result_shapes_are_protected(string shape)
+    [InlineData("stream","blur")][InlineData("physical","blur")][InlineData("virtual","blur")]
+    [InlineData("stream","hide")][InlineData("physical","hide")][InlineData("virtual","hide")]
+    public async Task All_supported_file_result_shapes_are_protected(string shape,string mode)
     {
-        using var f=new Fixture();var bytes=PosterBlurTests.Source();var path=Path.Combine(f.Plugin.Core.Root,"spoiler.png");await File.WriteAllBytesAsync(path,bytes);
+        using var f=new Fixture();f.Plugin.Plugin.Configuration.SpoilerBlurMode=mode;var bytes=PosterBlurTests.Source();var path=Path.Combine(f.Plugin.Core.Root,"spoiler.png");await File.WriteAllBytesAsync(path,bytes);
         using var stream=new MemoryStream(bytes);
         IActionResult original=shape switch {"stream"=>new FileStreamResult(stream,"image/png"),"physical"=>new PhysicalFileResult(path,"image/png"),_=>new VirtualFileResult(path,"image/png")};
         var(executed,http)=await f.Run(original);var result=Assert.IsType<FileContentResult>(executed.Result);Assert.NotEqual(bytes,result.FileContents);Private(http);
