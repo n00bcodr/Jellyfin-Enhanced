@@ -50,7 +50,7 @@ test('episode provider fallback excludes other episodes and seasons but retains 
 test('bookmark update/delete persist and emit only successful changes',async t=>{
   const saved=[]; const h=setup(t,{one:{itemId:'item',label:'old'}},async(file,data)=>saved.push([file,plain(data)]));
   assert.equal(await h.api.update('missing',{}),false);
-  assert.equal(await h.api.delete('missing'),false);
+  assert.equal(await h.api.delete('missing'),null);
   assert.equal(saved.length,0);
   assert.equal(await h.api.update('one',{label:'new'}),true);
   assert.equal(saved[0][0],'bookmark.json');
@@ -233,7 +233,7 @@ test('player bookmark modal reports a failed edit or delete instead of success',
   assert.equal(h.JE.userConfig.bookmark.bookmarks.one.label,'old');
 });
 
-// Episode backfill and delete-all share the per-owner queue, so
+// Episode backfill, delete-all and repeated deletes share the per-owner queue, so
 // memory always ends equal to what the server last accepted.
 const episodeLookup=(season,episode,tvdb)=>({Items:[{Id:'episode',Type:'Episode',ParentIndexNumber:season,IndexNumber:episode,ProviderIds:tvdb?{Tvdb:tvdb}:{}}]});
 const ticks=async(count=10)=>{for(let i=0;i<count;i++)await new Promise(done=>setImmediate(done));};
@@ -301,4 +301,52 @@ test('library delete-all reports a failed save and keeps every bookmark',async t
   assert.deepEqual(h.toasts,['bookmark_delete_failed']);
   assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks).sort(),['a','b']);
   assert.equal(button.disabled,false);
+});
+test('a repeated delete of the same bookmark reports nothing to delete rather than a failure',async t=>{
+  const saves=controlledSaves();const h=setup(t,{a:{itemId:'one'},b:{itemId:'gone-1'},c:{itemId:'gone-2'}},saves.save);
+  const first=h.api.delete('a'),second=h.api.delete('a');
+  (await saves.next(1)).resolve();
+  assert.deepEqual([await first,await second],[true,null]);
+  assert.equal(saves.calls.length,1);
+  // Cleanup counts a record that vanished before its delete (b, removed while gone-2 was
+  // checked) as neither removed nor an error.
+  h.window.ApiClient.getItem=async(user,id)=>{if(id==='gone-2')delete h.JE.userConfig.bookmark.bookmarks.b;throw new Error('404');};
+  const cleanup=h.api.cleanupOrphaned();
+  (await saves.next(2)).resolve();
+  assert.deepEqual(plain(await cleanup),{cleaned:1,errors:0});
+  assert.deepEqual(h.JE.userConfig.bookmark.bookmarks,{});
+});
+test('a delete button for a bookmark already removed elsewhere shows no toast',async t=>{
+  const h=setup(t,{a:{itemId:'one',mediaType:'movie',timestamp:1},b:{itemId:'one',mediaType:'movie',timestamp:2}});
+  const container=await renderLibrary(h);
+  h.document.body.insertAdjacentHTML('beforeend','<div class="videoOsdBottom"><button class="btnUserRating" data-id="one"></button></div>');
+  h.routes.items=async()=>({Items:[{Id:'one',Name:'Movie',Type:'Movie'}]});
+  await h.api.showModal('edit',{id:'b',...h.JE.userConfig.bookmark.bookmarks.b});
+  assert.equal(await h.api.delete('a'),true);assert.equal(await h.api.delete('b'),true);
+  const card=container.querySelector('.btnDeleteBookmark[data-bookmark-id="a"]');
+  const player=h.document.querySelector('.je-bookmark-btn-delete[data-bookmark-id="b"]');
+  card.click();player.click();await ticks();
+  assert.equal(card.disabled,false);assert.equal(player.disabled,false);
+  assert.deepEqual(h.toasts,[]);
+});
+test('library and player delete buttons are disabled while their delete is in flight',async t=>{
+  const saves=controlledSaves();
+  const h=setup(t,{a:{itemId:'one',mediaType:'movie',timestamp:1,label:'x'},b:{itemId:'one',mediaType:'movie',timestamp:2}},saves.save);
+  h.expectConsoleError(/Failed to delete bookmark/);
+  const container=await renderLibrary(h);
+  const card=container.querySelector('.btnDeleteBookmark[data-bookmark-id="a"]');
+  card.click();card.click();assert.equal(card.disabled,true);
+  (await saves.next(1)).resolve();
+  await settle(()=>h.toasts.length===1);await ticks();
+  assert.deepEqual(h.toasts,['toast_bookmark_deleted']);assert.equal(saves.calls.length,1);
+
+  h.document.body.insertAdjacentHTML('beforeend','<div class="videoOsdBottom"><button class="btnUserRating" data-id="one"></button></div>');
+  h.routes.items=async()=>({Items:[{Id:'one',Name:'Movie',Type:'Movie'}]});
+  await h.api.showModal('edit',{id:'b',...h.JE.userConfig.bookmark.bookmarks.b});
+  const player=h.document.querySelector('.je-bookmark-btn-delete[data-bookmark-id="b"]');
+  player.click();player.click();assert.equal(player.disabled,true);
+  (await saves.next(2)).reject(new Error('offline'));
+  await settle(()=>h.toasts.length===2);await ticks();
+  assert.deepEqual(h.toasts,['toast_bookmark_deleted','toast_bookmark_delete_failed']);
+  assert.equal(player.disabled,false);assert.equal(saves.calls.length,2);
 });

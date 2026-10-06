@@ -347,7 +347,11 @@
   }
 
   /**
-   * Delete a bookmark
+   * Delete a bookmark.
+   * @param {string} bookmarkId - The bookmark record ID.
+   * @returns {Promise<boolean|null>} true once the deletion is saved; false when the save
+   *   failed and the record was restored; null when there was nothing to delete (already
+   *   gone, e.g. a double-clicked delete, or the user changed).
    */
   async function deleteBookmark(bookmarkId) {
     const owner = JE.userConfig;
@@ -356,14 +360,14 @@
       && (!JE.session || JE.session.isCurrent(epoch));
     if (!JE.userConfig?.bookmark?.bookmarks?.[bookmarkId]) {
       console.warn(`${logPrefix} Bookmark not found:`, bookmarkId);
-      return false;
+      return null;
     }
 
     return queueBookmarkMutation(owner, async () => {
       // Re-check after any earlier queued mutation: the user or the record may be gone.
       if (!isCurrentOwner() || !owner.bookmark?.bookmarks?.[bookmarkId]) {
         console.warn(`${logPrefix} Bookmark not found:`, bookmarkId);
-        return false;
+        return null;
       }
       const bookmarks = owner.bookmark.bookmarks;
       const original = bookmarks[bookmarkId];
@@ -582,9 +586,11 @@
     // Delete orphaned bookmarks
     for (const bookmarkId of toDelete) {
       try {
-        // deleteBookmark reports a failed save (rolled back) as false.
-        if (await deleteBookmark(bookmarkId)) cleaned++;
-        else errors++;
+        // deleteBookmark reports a failed save (rolled back) as false and an
+        // already-gone record as null, which is neither a removal nor an error.
+        const deleted = await deleteBookmark(bookmarkId);
+        if (deleted) cleaned++;
+        else if (deleted === false) errors++;
       } catch (e) {
         errors++;
       }
@@ -1207,7 +1213,16 @@
     modal.querySelectorAll('.je-bookmark-btn-delete').forEach(btn => {
       btn.addEventListener('click', async () => {
         const bookmarkId = btn.dataset.bookmarkId;
-        if (!await deleteBookmark(bookmarkId)) {
+        btn.disabled = true;
+        let deleted;
+        try {
+          deleted = await deleteBookmark(bookmarkId);
+        } finally {
+          btn.disabled = false;
+        }
+        // null: already gone (e.g. a second click), so neither failure nor success.
+        if (deleted === null) return;
+        if (!deleted) {
           JE.toast(JE.t('toast_bookmark_delete_failed'), 3000);
           return;
         }

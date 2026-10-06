@@ -307,7 +307,16 @@
           // Delete button handler
           deleteBtn.addEventListener('click', async () => {
             const bookmarkId = deleteBtn.dataset.bookmarkId;
-            if (!await JE.bookmarks.delete(bookmarkId)) {
+            deleteBtn.disabled = true;
+            let deleted;
+            try {
+              deleted = await JE.bookmarks.delete(bookmarkId);
+            } finally {
+              deleteBtn.disabled = false;
+            }
+            // null: already gone (e.g. a second click), so neither failure nor success.
+            if (deleted === null) return;
+            if (!deleted) {
               JE.toast(JE.t('toast_bookmark_delete_failed'), 3000);
               return;
             }
