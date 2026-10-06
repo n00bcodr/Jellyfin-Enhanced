@@ -28,8 +28,10 @@
     const movieCollections = new Map();
     const MOVIE_COLLECTIONS_TTL_MS = 30 * 60 * 1000;
     const MOVIE_COLLECTIONS_MAX_ENTRIES = 1000;
-    // Most ids the server answers per request (MovieCollectionsBatch.MaxIds).
-    const MOVIE_COLLECTIONS_MAX_IDS = 100;
+    // Ids per request: the server answers up to 100 (MovieCollectionsBatch.MaxIds),
+    // but 40 keep the query string under ~330 bytes, inside even strict proxy
+    // query-length limits (e.g. 512); a search page (20 results) is one request.
+    const MOVIE_COLLECTIONS_IDS_PER_REQUEST = 40;
     JE.session?.onUserChange('jellyseerr-movie-collections', () => movieCollections.clear());
 
     /**
@@ -370,8 +372,8 @@
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const answered = new Map();
         try {
-            for (let c = 0; c < ids.length; c += MOVIE_COLLECTIONS_MAX_IDS) {
-                const chunk = ids.slice(c, c + MOVIE_COLLECTIONS_MAX_IDS);
+            for (let c = 0; c < ids.length; c += MOVIE_COLLECTIONS_IDS_PER_REQUEST) {
+                const chunk = ids.slice(c, c + MOVIE_COLLECTIONS_IDS_PER_REQUEST);
                 // skipCache: answers are kept per movie below rather than per id set.
                 const data = await get(`/movie-collections?ids=${chunk.join(',')}`, { signal, skipCache: true });
                 Object.entries(data?.results || {}).forEach(([id, collection]) => answered.set(Number(id), collection || null));

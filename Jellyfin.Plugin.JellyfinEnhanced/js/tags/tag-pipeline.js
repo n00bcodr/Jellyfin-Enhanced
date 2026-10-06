@@ -62,7 +62,7 @@
     let loadInFlightEpoch = 0;       // session epoch that load was started for
     let refreshInFlight = null;      // Promise of the running refreshServerCache()
     let lastNavigationRoute = null;  // route key of the last navigation the pipeline acted on (see navigationRoute)
-    let lastNavRefreshAt = 0;        // Date.now() of the last navigation-triggered delta
+    let lastNavRefreshAt = -Infinity; // performance.now() of the last navigation-triggered delta
     let navRefreshTimer = null;      // trailing delta for navigations that fell inside the minimum interval
     let reviewRatings = null;        // Map<"mediaType:tmdbKey", average> from the payload; null = unavailable
     let reviewRatingsRequestedAt = 0; // performance.now() when the request behind reviewRatings started
@@ -663,7 +663,8 @@
     function scheduleNavigationRefresh() {
         // Every tag type is off: nothing reads the cache until one is turned on.
         if (!anyTagTypeEnabled()) return;
-        const now = Date.now();
+        // Monotonic: a system clock change must not stretch the interval.
+        const now = performance.now();
         const elapsed = now - lastNavRefreshAt;
         if (!serverCache || elapsed >= NAV_REFRESH_MIN_INTERVAL_MS) {
             if (navRefreshTimer) { clearTimeout(navRefreshTimer); navRefreshTimer = null; }
@@ -675,9 +676,9 @@
         navRefreshTimer = setTimeout(() => {
             navRefreshTimer = null;
             if (!anyTagTypeEnabled()) return;
-            lastNavRefreshAt = Date.now();
+            lastNavRefreshAt = performance.now();
             refreshServerCache();
-        }, NAV_REFRESH_MIN_INTERVAL_MS - elapsed);
+        }, Math.min(NAV_REFRESH_MIN_INTERVAL_MS, NAV_REFRESH_MIN_INTERVAL_MS - elapsed));
     }
 
     async function refreshServerCacheCore() {

@@ -406,11 +406,11 @@
         /**
          * Appends one batch's collection lookup to the row's chain.
          * @param {{results: Array, query: string, rowId: number, epoch: number}} batch
-         * @param {number} settleAt Time (Date.now) before which it must not start.
+         * @param {number} settleAt Time (performance.now) before which it must not start.
          */
         function queueCollectionLookup(batch, settleAt) {
             collectionQueue = collectionQueue.then(async () => {
-                const wait = settleAt - Date.now();
+                const wait = Math.min(COLLECTION_SETTLE_MS, settleAt - performance.now());
                 if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
                 await lookUpCollections(batch);
             }).catch(() => {});
@@ -560,7 +560,7 @@
                 // stood for COLLECTION_SETTLE_MS, then slot the collection cards
                 // into the existing row. Later batches (infinite scroll) queue
                 // behind this one.
-                collectionsSettleAt = Date.now() + COLLECTION_SETTLE_MS;
+                collectionsSettleAt = performance.now() + COLLECTION_SETTLE_MS;
                 collectionQueue = Promise.resolve();
                 enrichWithCollections(results, query);
             }
