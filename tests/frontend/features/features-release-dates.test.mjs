@@ -40,6 +40,18 @@ test('calendar dates show the same day west of UTC',async t=>{
  episode.api.displayReleaseDate('episode',episode.container);await episode.settle();
  assert.equal(episode.container.textContent.slice('tv_guide'.length),format(2025,2,3));
 });
+test('season chip picks the episode airing today by the local date west of UTC',async t=>{
+ const previous=process.env.TZ;process.env.TZ='America/Los_Angeles';
+ t.after(()=>{if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous;});
+ const episodes=[{air_date:'2025-03-03'},{air_date:'2025-03-10'},{air_date:'2025-03-17'}];
+ const h=setup(t,{item:{Type:'Season',IndexNumber:1,SeriesProviderIds:{Tmdb:'42'}},data:{episodes}});
+ // 20:00 on 10 March in Los Angeles is already 11 March in UTC.
+ const RealDate=h.window.Date,now=new RealDate(2025,2,10,20).getTime();assert.equal(new RealDate(now).toISOString().slice(0,10),'2025-03-11');
+ h.window.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}};
+ h.api.displayReleaseDate('season',h.container);await h.settle();
+ const format=(year,month,day)=>new RealDate(year,month-1,day).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
+ assert.equal(h.container.textContent.slice('tv_guide'.length),format(2025,3,10));
+});
 test('malformed external release date cannot inject HTML into details',async t=>{
  const malicious='<img src=x onerror="alert(1)">';const h=setup(t,{data:{results:[{iso_3166_1:'US',release_dates:[{type:3,release_date:malicious}]}]}});h.api.displayReleaseDate('movie',h.container);await h.settle();assert.equal(h.container.querySelector('img'),null);assert.ok(h.container.textContent.includes(malicious));
 });

@@ -18,8 +18,15 @@
             });
     }
 
+    /**
+     * Today's local calendar date as "YYYY-MM-DD", to compare with TMDB air dates (also
+     * calendar dates). The UTC date would already be tomorrow on a US evening.
+     * @returns {string} The local date.
+     */
     function todayIso() {
-        return new Date().toISOString().slice(0, 10);
+        const now = new Date();
+        const pad = (value) => String(value).padStart(2, '0');
+        return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
     }
 
     /**
