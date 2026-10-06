@@ -385,10 +385,17 @@
   }
 
   /**
-   * Sync bookmarks from old item ID to new item ID
-   * Creates duplicates with new item ID, keeps old ones
+   * Sync bookmarks from old item ID to new item ID.
+   * Creates duplicates with the new item ID and keeps the old ones, unless
+   * `replaceOriginals` is set: then the old records are removed in the same save,
+   * and a failed save restores them along with removing the new copies.
+   * @param {Array<{id?: string}>} oldBookmarks - Bookmarks to copy, with their record IDs.
+   * @param {object} newItemDetails - Item fields for the copies.
+   * @param {number} [timeOffset=0] - Seconds added to each copied timestamp.
+   * @param {{replaceOriginals?: boolean}} [options]
+   * @returns {Promise<Array<object>>} The new bookmarks; rejects if the save fails.
    */
-  async function syncBookmarks(oldBookmarks, newItemDetails, timeOffset = 0) {
+  async function syncBookmarks(oldBookmarks, newItemDetails, timeOffset = 0, { replaceOriginals = false } = {}) {
     const owner = JE.userConfig;
     const epoch = JE.session ? JE.session.getEpoch() : 0;
     const isCurrentOwner = () => JE.userConfig === owner
@@ -397,7 +404,17 @@
       if (!isCurrentOwner()) throw new Error('Bookmark owner changed before sync');
       const bookmarks = owner.bookmark.bookmarks;
       const synced = [];
+      const removed = [];
       const now = new Date().toISOString();
+
+      if (replaceOriginals) {
+        for (const { id } of oldBookmarks) {
+          if (id && Object.prototype.hasOwnProperty.call(bookmarks, id)) {
+            removed.push([id, bookmarks[id]]);
+            delete bookmarks[id];
+          }
+        }
+      }
 
       for (const oldBookmark of oldBookmarks) {
         const newBookmarkId = generateBookmarkId();
@@ -431,6 +448,7 @@
         console.error(`${logPrefix} Failed to sync bookmarks:`, e);
         // Rollback
         synced.forEach(bm => delete bookmarks[bm.id]);
+        removed.forEach(([id, original]) => { bookmarks[id] = original; });
         throw e;
       }
     });

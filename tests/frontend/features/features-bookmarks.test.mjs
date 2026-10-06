@@ -181,3 +181,32 @@ test('a queued bookmark mutation does not run for a user who signed out meanwhil
   assert.deepEqual(await results,[true,false]);
   assert.equal(saves.calls.length,1);assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks),{});
 });
+/** Loads the replacement modal and migrates `group` to the single offered item. */
+async function migrate(h,group){
+  const replacement={Id:'new-item-0000000000000000',Name:'New cut',Type:'Movie',ProviderIds:{Tmdb:'42'}};
+  h.JE.core={api:{fetch:async()=>({Items:[replacement]})}};h.JE.helpers={getItemCached:async()=>replacement};h.window.ApiClient.getImageUrl=()=>'';
+  h.load('enhanced/bookmarks/bookmarks-library-replacements.js');
+  await h.JE.internals.bookmarksLibrary.findAndOfferReplacement(group,h.document.createElement('button'));
+  h.document.querySelector('.replacement-option').click();
+  h.document.querySelector('.je-bookmark-btn-submit').click();
+}
+const orphanGroup=bookmarks=>({details:{itemId:'old-item-0000000000000000',tmdbId:'42',mediaType:'movie',name:'Old cut'},bookmarks:Object.entries(bookmarks).map(([id,bm])=>({id,...bm}))});
+test('failed bookmark migration keeps the old group, and the next save still persists it',async t=>{
+  let fail=true;const saved=[];
+  const h=setup(t,{a:{itemId:'old-item-0000000000000000',timestamp:5,label:'scene'},b:{itemId:'old-item-0000000000000000',timestamp:9},keep:{itemId:'other'}},async(file,data)=>{if(fail)throw new Error('offline');saved.push(plain(data));});
+  h.expectConsoleError(/Failed to sync bookmarks/);h.expectConsoleError(/Migration failed/);
+  const before=plain(h.JE.userConfig.bookmark.bookmarks);
+  await migrate(h,orphanGroup({a:before.a,b:before.b}));
+  await settle(()=>h.toasts.includes('bookmark_migration_failed'));
+  assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks),before);
+  fail=false;assert.equal(await h.api.update('keep',{label:'edited'}),true);
+  assert.deepEqual(Object.keys(saved[0].bookmarks).sort(),['a','b','keep']);
+});
+test('successful bookmark migration replaces the old group in one save',async t=>{
+  const saved=[];const h=setup(t,{a:{itemId:'old-item-0000000000000000',timestamp:5}},async(file,data)=>saved.push(plain(data)));
+  await migrate(h,orphanGroup(h.JE.userConfig.bookmark.bookmarks));
+  await settle(()=>h.toasts.some(message=>message.startsWith('bookmark_migrated')));
+  const records=Object.values(h.JE.userConfig.bookmark.bookmarks);
+  assert.equal(saved.length,1);assert.deepEqual(Object.keys(saved[0].bookmarks),Object.keys(h.JE.userConfig.bookmark.bookmarks));
+  assert.deepEqual(records.map(bm=>[bm.itemId,bm.timestamp,bm.syncedFrom]),[['new-item-0000000000000000',5,'old-item-0000000000000000']]);
+});
