@@ -37,6 +37,8 @@ Run commands from the repository root:
 | `python3 tests/inventory/generate.py` | Regenerate production inventory after source changes |
 | `python3 tests/runner/clean.py` | Install dependencies and run the full suite in a fresh copy of tracked and unignored local files |
 
+The results of the latest complete run are recorded in [validation](validation.md).
+
 `--target jf10`, `--target jf12`, or `--target all` selects backend/host compatibility coverage. A single-target run is not a complete compatibility run. Direct test commands support focused iteration:
 
 ```sh
