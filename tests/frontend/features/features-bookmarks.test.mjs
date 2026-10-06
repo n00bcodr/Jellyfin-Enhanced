@@ -232,3 +232,73 @@ test('player bookmark modal reports a failed edit or delete instead of success',
   assert.deepEqual(h.toasts,['toast_bookmark_save_failed','toast_bookmark_delete_failed']);
   assert.equal(h.JE.userConfig.bookmark.bookmarks.one.label,'old');
 });
+
+// Episode backfill and delete-all share the per-owner queue, so
+// memory always ends equal to what the server last accepted.
+const episodeLookup=(season,episode,tvdb)=>({Items:[{Id:'episode',Type:'Episode',ParentIndexNumber:season,IndexNumber:episode,ProviderIds:tvdb?{Tvdb:tvdb}:{}}]});
+const ticks=async(count=10)=>{for(let i=0;i<count;i++)await new Promise(done=>setImmediate(done));};
+test('episode backfill queued behind a failing delete also saves the restored record',async t=>{
+  const saves=controlledSaves();
+  const h=setup(t,{ep:{itemId:'ep-item',mediaType:'tv',tvdbId:'series'},other:{itemId:'movie',mediaType:'movie'}},saves.save);
+  let lookups=0;h.routes.items=async()=>{lookups++;return episodeLookup(2,5,'episode');};
+  h.expectConsoleError(/Failed to delete bookmark/);
+  const deleting=h.api.delete('other');
+  await saves.next(1);
+  const backfill=h.api.backfillEpisodeMetadata();
+  await settle(()=>lookups===1);await ticks();
+  saves.calls[0].reject(new Error('offline'));
+  assert.equal(await deleting,false);
+  (await saves.next(2)).resolve();await backfill;
+  assert.deepEqual(Object.keys(saves.calls[1].data.bookmarks).sort(),['ep','other']);
+  assert.deepEqual(plain(saves.calls[1].data.bookmarks.ep),{itemId:'ep-item',mediaType:'tv',tvdbId:'episode',seasonNumber:2,episodeNumber:5});
+  assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks),saves.calls[1].data.bookmarks);
+});
+test('episode backfill skips a record deleted meanwhile and rolls back a failed save',async t=>{
+  let fail=false,release;const saved=[];const gate=new Promise(done=>{release=done;});
+  const h=setup(t,{gone:{itemId:'ep-gone',mediaType:'tv'},kept:{itemId:'ep-kept',mediaType:'tv'}},async(file,data)=>{if(fail)throw new Error('offline');saved.push(plain(data));});
+  let lookups=0;h.routes.items=async()=>{if(++lookups===1)await gate;return episodeLookup(1,lookups);};
+  const backfill=h.api.backfillEpisodeMetadata();
+  await settle(()=>lookups===1);
+  assert.equal(await h.api.delete('gone'),true);
+  release();await backfill;
+  assert.deepEqual(saved.map(data=>Object.keys(data.bookmarks)),[['kept'],['kept']]);
+  assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks),{kept:{itemId:'ep-kept',mediaType:'tv',seasonNumber:1,episodeNumber:2}});
+
+  const failing=setup(t,{ep:{itemId:'ep-item',mediaType:'tv',tvdbId:'series'}},async()=>{throw new Error('offline');});
+  failing.routes.items=async()=>episodeLookup(3,4,'episode');
+  await failing.api.backfillEpisodeMetadata();
+  assert.deepEqual(plain(failing.JE.userConfig.bookmark.bookmarks),{ep:{itemId:'ep-item',mediaType:'tv',tvdbId:'series'}});
+});
+test('delete-all runs after queued mutations and restores them when its save fails',async t=>{
+  const saves=controlledSaves();const h=setup(t,{a:{itemId:'one'},b:{itemId:'two',label:'old'}},saves.save);
+  h.expectConsoleError(/Failed to delete all bookmarks/);
+  const deleting=h.api.delete('a'),updating=h.api.update('b',{label:'new'}),clearing=h.api.deleteAll();
+  const clearFailure=assert.rejects(clearing,/offline/);
+  (await saves.next(1)).resolve();
+  (await saves.next(2)).resolve();
+  const clear=await saves.next(3);assert.deepEqual(clear.data.bookmarks,{});
+  clear.reject(new Error('offline'));await clearFailure;
+  assert.deepEqual([await deleting,await updating],[true,true]);
+  assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks),['b']);
+  assert.equal(h.JE.userConfig.bookmark.bookmarks.b.label,'new');
+  assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks),plain(saves.calls[1].data.bookmarks));
+});
+/** Loads the bookmarks library and renders it into a fresh `.sections.bookmarks` container. */
+async function renderLibrary(h){
+  h.JE.helpers={getItemCached:async id=>({Id:id,Name:'Movie',Type:'Movie'}),isActiveTabContainer:()=>false};
+  h.window.ApiClient.getImageUrl=()=>'';h.window.confirm=()=>true;
+  h.load('enhanced/bookmarks/bookmarks-library-render.js');h.load('enhanced/bookmarks/bookmarks-library-items.js');
+  const container=h.document.createElement('div');container.className='sections bookmarks';h.document.body.append(container);
+  await h.JE.internals.bookmarksLibrary.renderBookmarksLibrary(container);
+  return container;
+}
+test('library delete-all reports a failed save and keeps every bookmark',async t=>{
+  const h=setup(t,{a:{itemId:'one',mediaType:'movie',timestamp:1},b:{itemId:'two',mediaType:'movie',timestamp:2}},async()=>{throw new Error('offline');});
+  h.expectConsoleError(/Failed to delete all bookmarks/);h.expectConsoleError(/Delete failed/);
+  const container=await renderLibrary(h);const button=container.querySelector('.btnDeleteAllBookmarks');
+  button.click();assert.equal(button.disabled,true);
+  await settle(()=>h.toasts.length===1);
+  assert.deepEqual(h.toasts,['bookmark_delete_failed']);
+  assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks).sort(),['a','b']);
+  assert.equal(button.disabled,false);
+});

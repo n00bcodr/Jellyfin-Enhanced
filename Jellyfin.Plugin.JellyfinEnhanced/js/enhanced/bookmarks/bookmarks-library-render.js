@@ -258,8 +258,8 @@
       if (label) label.innerHTML = '<span class="material-icons" style="animation: spin 1s linear infinite;">refresh</span>';
 
       try {
-        JE.userConfig.bookmark.bookmarks = {};
-        await JE.saveUserSettings('bookmark.json', JE.userConfig.bookmark);
+        // Queued behind the user's other bookmark mutations; restores them if the save fails.
+        if (!await JE.bookmarks.deleteAll()) return;
         JE.toast(JE.t('bookmark_deleted_all'), 3000);
         renderBookmarksLibrary(container);
       } catch (error) {

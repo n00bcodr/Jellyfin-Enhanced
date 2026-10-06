@@ -385,6 +385,35 @@
   }
 
   /**
+   * Delete every bookmark of the current user, queued behind the user's other mutations.
+   * @returns {Promise<boolean>} true once saved; false if the user changed before it ran.
+   *   Rejects after restoring the previous bookmarks when the save fails.
+   */
+  async function deleteAllBookmarks() {
+    const owner = JE.userConfig;
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
+    const isCurrentOwner = () => JE.userConfig === owner
+      && (!JE.session || JE.session.isCurrent(epoch));
+    return queueBookmarkMutation(owner, async () => {
+      if (!isCurrentOwner()) return false;
+      if (!owner.bookmark) owner.bookmark = { bookmarks: {} };
+      const previous = owner.bookmark.bookmarks;
+      const cleared = {};
+      owner.bookmark.bookmarks = cleared;
+
+      try {
+        await JE.saveUserSettings('bookmark.json', owner.bookmark, { throwOnError: true });
+        console.log(`${logPrefix} All bookmarks deleted`);
+        return true;
+      } catch (e) {
+        if (owner.bookmark.bookmarks === cleared) owner.bookmark.bookmarks = previous;
+        console.error(`${logPrefix} Failed to delete all bookmarks:`, e);
+        throw e;
+      }
+    });
+  }
+
+  /**
    * Sync bookmarks from old item ID to new item ID.
    * Creates duplicates with the new item ID and keeps the old ones, unless
    * `replaceOriginals` is set: then the old records are removed in the same save,
@@ -460,35 +489,58 @@
    * per-episode ID (previously stored as the series-level value).
    */
   async function backfillEpisodeMetadata() {
-    const allBookmarks = JE.userConfig?.bookmark?.bookmarks || {};
+    const owner = JE.userConfig;
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
+    const isCurrentOwner = () => JE.userConfig === owner
+      && (!JE.session || JE.session.isCurrent(epoch));
+    const allBookmarks = owner?.bookmark?.bookmarks || {};
     const candidates = Object.entries(allBookmarks).filter(
       ([, bm]) => bm?.mediaType === 'tv' && bm.itemId && bm.episodeNumber == null
     );
     if (candidates.length === 0) return;
 
-    let changed = false;
-    for (const [, bm] of candidates) {
+    // Look the episodes up first; only the apply and save run in the mutation queue.
+    const found = [];
+    for (const [id, bm] of candidates) {
       try {
         const details = await fetchItemDetails(bm.itemId);
-        if (details?.episodeNumber != null) {
-          bm.seasonNumber = details.seasonNumber;
-          bm.episodeNumber = details.episodeNumber;
-          if (details.tvdbId) bm.tvdbId = details.tvdbId;
-          changed = true;
-        }
+        if (details?.episodeNumber != null) found.push([id, bm.itemId, details]);
       } catch (e) {
         // Item may no longer exist; leave it for cleanupOrphanedBookmarks() to handle
       }
     }
+    if (found.length === 0) return;
 
-    if (changed) {
+    await queueBookmarkMutation(owner, async () => {
+      if (!isCurrentOwner()) return;
+      const bookmarks = owner.bookmark?.bookmarks;
+      if (!bookmarks) return;
+      const applied = [];
+      for (const [id, itemId, details] of found) {
+        // An earlier queued mutation may have deleted, replaced or already filled the record.
+        const original = bookmarks[id];
+        if (!original || original.itemId !== itemId || original.episodeNumber != null) continue;
+        const filled = {
+          ...original,
+          seasonNumber: details.seasonNumber,
+          episodeNumber: details.episodeNumber,
+          ...(details.tvdbId ? { tvdbId: details.tvdbId } : {})
+        };
+        bookmarks[id] = filled;
+        applied.push([id, original, filled]);
+      }
+      if (applied.length === 0) return;
+
       try {
-        await JE.saveUserSettings('bookmark.json', JE.userConfig.bookmark);
-        console.log(`${logPrefix} Backfilled episode metadata for ${candidates.length} bookmark(s)`);
+        await JE.saveUserSettings('bookmark.json', owner.bookmark, { throwOnError: true });
+        console.log(`${logPrefix} Backfilled episode metadata for ${applied.length} bookmark(s)`);
       } catch (e) {
+        applied.forEach(([id, original, filled]) => {
+          if (bookmarks[id] === filled) bookmarks[id] = original;
+        });
         console.warn(`${logPrefix} Failed to save backfilled episode metadata:`, e);
       }
-    }
+    });
   }
 
   /**
@@ -1173,6 +1225,7 @@
     add: addBookmark,
     update: updateBookmark,
     delete: deleteBookmark,
+    deleteAll: deleteAllBookmarks,
     findForItem: findBookmarksForItem,
     showModal: showBookmarkModal,
     updateMarkers: updateBookmarkMarkersForCurrentVideo,
