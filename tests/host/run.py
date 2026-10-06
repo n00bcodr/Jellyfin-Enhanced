@@ -21,6 +21,8 @@ IMAGES = {
     "jf12": "jellyfin/jellyfin:12.0@sha256:baba630419915985442f315f08b0cf46d9f4c8a0cc4bd38e94a6d35751dd5ef5",
 }
 PLUGIN_ID = "f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b"
+# Every container and network carries this label (value: the run's unique name).
+LABEL = "je-regression.run"
 
 
 def command(*args, **kwargs):
@@ -28,6 +30,36 @@ def command(*args, **kwargs):
     if result.returncode:
         raise RuntimeError(f"{args[0]} {args[1] if len(args) > 1 else ''} failed: {result.stdout.strip()}")
     return result.stdout.strip()
+
+
+def owned(*args):
+    """Run a command against this invocation's own resource; a resource that was never created is not an error.
+
+    Returns the output, or None when Docker reports no such object."""
+    result = subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if result.returncode:
+        if "No such" in result.stdout or "not found" in result.stdout:
+            return None
+        raise RuntimeError(f"{' '.join(args[:3])} failed: {result.stdout.strip()}")
+    return result.stdout.strip()
+
+
+def create_network(name):
+    """Create the internal test network on the first free /28, retrying when a concurrent run takes it first."""
+    network_ids = command("docker", "network", "ls", "-q").splitlines()
+    existing = json.loads(command("docker", "network", "inspect", *network_ids))
+    allocated = [ipaddress.ip_network(entry["Subnet"]) for network in existing
+                 for entry in (network.get("IPAM", {}).get("Config") or []) if entry.get("Subnet")]
+    for candidate in ipaddress.ip_network("10.253.0.0/16").subnets(new_prefix=28):
+        if any(candidate.overlaps(used) for used in allocated if used.version == 4):
+            continue
+        result = subprocess.run(["docker", "network", "create", "--internal", "--label", f"{LABEL}={name}",
+                                 "--subnet", str(candidate), name], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if result.returncode == 0:
+            return candidate
+        if "overlap" not in result.stdout.lower():
+            raise RuntimeError(f"docker network create failed: {result.stdout.strip()}")
+    raise RuntimeError("No free 10.253.0.0/16 test subnet for the regression network")
 
 
 class Host:
@@ -75,7 +107,6 @@ def run(target, artifacts, browser=False):
     output.mkdir(parents=True, exist_ok=True)
     name = "je-regression-" + uuid.uuid4().hex[:12]
     host = None
-    network_created = container_created = False
     with tempfile.TemporaryDirectory(prefix=name) as temporary:
         temp = pathlib.Path(temporary)
         temp.chmod(0o755)
@@ -98,22 +129,14 @@ def run(target, artifacts, browser=False):
                 fixture.setsampwidth(2)
                 fixture.setframerate(8000)
                 fixture.writeframes(b"\x00\x00" * 8000)
-            network_ids = command("docker", "network", "ls", "-q").splitlines()
-            existing = json.loads(command("docker", "network", "inspect", *network_ids))
-            allocated = [ipaddress.ip_network(entry["Subnet"]) for network in existing
-                         for entry in (network.get("IPAM", {}).get("Config") or []) if entry.get("Subnet")]
-            subnet = next(candidate for candidate in ipaddress.ip_network("10.253.0.0/16").subnets(new_prefix=28)
-                          if not any(candidate.overlaps(used) for used in allocated if used.version == 4))
-            command("docker", "network", "create", "--internal", "--subnet", str(subnet), name)
-            network_created = True
+            create_network(name)
             (temp / "cache").mkdir()
-            command("docker", "run", "-d", "--name", name, "--network", name,
+            command("docker", "run", "-d", "--name", name, "--label", f"{LABEL}={name}", "--network", name,
                     "--user", f"{os.getuid()}:{os.getgid()}",
                     "--volume", f"{temp / 'cache'}:/cache",
                     "--volume", f"{temp / 'config'}:/config",
                     "--volume", f"{media}:/media:ro", "--env", "JELLYFIN_PublishedServerUrl=http://localhost",
                     IMAGES[target])
-            container_created = True
             inspection = json.loads(command("docker", "inspect", name))[0]
             address = inspection["NetworkSettings"]["Networks"][name]["IPAddress"]
             host = Host("http://" + address + ":8096")
@@ -230,25 +253,23 @@ def run(target, artifacts, browser=False):
             (output / "report.json").write_text(json.dumps({"target": target, "image": IMAGES[target], "passed": host.passed if host else [], "status": "failed", "error": str(error)}, indent=2))
             raise
         finally:
-            # Attempt all cleanup even if log collection or one removal fails.
+            # Attempt all cleanup even if log collection or one removal fails, and
+            # whether or not creation reported success: a create that failed or was
+            # interrupted part-way can still leave the uniquely named resource behind.
             cleanup_errors = []
-            if container_created:
-                try:
-                    logs = command("docker", "logs", name)
+            try:
+                logs = owned("docker", "logs", name)
+                if logs is not None:
                     for value in locals().get("users", []) + ([locals()["admin"]] if "admin" in locals() else []):
                         logs = logs.replace(value["AccessToken"], "[REDACTED]")
                     if "password" in locals():
                         logs = logs.replace(password, "[REDACTED]")
                     (output / "server.log").write_text(logs)
-                except Exception as error:
-                    cleanup_errors.append(str(error))
+            except Exception as error:
+                cleanup_errors.append(str(error))
+            for removal in (("docker", "rm", "-f", name), ("docker", "network", "rm", name)):
                 try:
-                    command("docker", "rm", "-f", name)
-                except Exception as error:
-                    cleanup_errors.append(str(error))
-            if network_created:
-                try:
-                    command("docker", "network", "rm", name)
+                    owned(*removal)
                 except Exception as error:
                     cleanup_errors.append(str(error))
             if cleanup_errors:
