@@ -314,6 +314,9 @@
     const labelBlocklisted = JE.t?.("jellyseerr_btn_blocklisted") || "Blocklisted";
     const labelDeleted = JE.t?.("jellyseerr_btn_deleted") || "Deleted";
     const labelComingSoon = JE.t?.("requests_coming_soon") || "Coming Soon";
+    const labelOrphaned = JE.t?.("requests_orphaned") || "Orphaned";
+
+    if (item?.isOrphaned) return { label: labelOrphaned, className: "je-chip-orphaned" };
 
     // Check for "Coming Soon" status - items with future release dates
     // For TV shows: can be approved, processing, or partially available with upcoming episodes

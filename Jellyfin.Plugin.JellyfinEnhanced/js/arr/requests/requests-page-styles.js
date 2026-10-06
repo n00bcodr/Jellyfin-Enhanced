@@ -13,6 +13,23 @@
 
   // CSS Styles - minimal styling to fit Jellyfin's theme
   const CSS_STYLES = `
+        .je-msym-rounded {
+            font-family: 'JE Material Symbols Rounded';
+            font-weight: normal;
+            font-style: normal;
+            font-size: 24px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            -webkit-font-feature-settings: 'liga';
+            -moz-font-feature-settings: 'liga';
+            font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+        }
         .je-downloads-page {
             padding: 2em;
             max-width: 85vw;
@@ -24,8 +41,17 @@
             margin-bottom: 2em;
         }
         .je-downloads-section h2 {
+            display: flex;
+            align-items: center;
+            gap: 0.5em;
             font-size: 1.5em;
             margin-bottom: 1em;
+        }
+        .je-downloads-section h2 .je-section-icon {
+            font-size: 1.15em;
+            /* centred on the lowercase letters rather than the capitals */
+            position: relative;
+            top: 0.06em;
         }
         .je-downloads-grid {
           display: grid;
@@ -422,6 +448,9 @@
         .je-requests-status-chip.je-chip-blocklisted { background: rgba(245, 158, 11, 0.25); color: #f0f9ff; border-color: rgba(245, 158, 11, 0.5); }
         .je-requests-status-chip.je-chip-deleted { background: rgba(220, 38, 38, 0.22); color: #ffe4e6; border-color: rgba(248, 113, 113, 0.55); }
         .je-requests-status-chip.je-chip-coming-soon { background: rgba(156, 39, 176, 0.25); color: #f0f9ff; border-color: rgba(156, 39, 176, 0.5); }
+        .je-requests-status-chip.je-chip-orphaned { background: rgba(148, 163, 184, 0.14); color: #aab4c4; border: 1px dashed rgba(148, 163, 184, 0.6); }
+        .je-request-card-orphaned { opacity: 0.82; }
+        .je-request-card-orphaned .je-request-poster { filter: grayscale(0.7); }
         .je-release-date-chip {
           display: inline-flex;
           align-items: center;

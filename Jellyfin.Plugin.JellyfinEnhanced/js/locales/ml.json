@@ -471,6 +471,7 @@
     "requests_requests": "അഭ്യർത്ഥനകൾ",
     "requests_no_active_downloads": "സജീവ ഡൗൺലോഡുകളൊന്നുമില്ല",
     "requests_coming_soon": "ഉടൻ വരുന്നു",
+    "requests_orphaned": "അനാഥം",
     "requests_today": "ഇന്ന്",
     "requests_tomorrow": "നാളെ",
     "requests_in_days": "{days} ദിവസത്തിനുള്ളിൽ",

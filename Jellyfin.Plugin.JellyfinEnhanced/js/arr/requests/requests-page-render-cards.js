@@ -139,7 +139,7 @@
     const titleClass = item.jellyfinMediaId ? 'je-request-title je-request-title-link' : 'je-request-title';
 
     return `
-            <div class="je-request-card">
+            <div class="je-request-card${item.isOrphaned ? ' je-request-card-orphaned' : ''}">
                 <div class="je-request-poster-col">
                     ${posterHtml}
                     ${externalLinksHtml}

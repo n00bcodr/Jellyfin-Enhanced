@@ -466,6 +466,7 @@
     "requests_requests": "Запросы",
     "requests_no_active_downloads": "Нет активных загрузок",
     "requests_coming_soon": "Скоро",
+    "requests_orphaned": "Осиротевший",
     "requests_today": "сегодня",
     "requests_tomorrow": "завтра",
     "requests_in_days": "через {days} дней",

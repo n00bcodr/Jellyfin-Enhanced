@@ -1370,7 +1370,7 @@ const css = `
             .je-more-info-modal .je-more-info-actions .jellyseerr-request-button,
             .je-more-info-modal .je-more-info-actions .jellyseerr-split-arrow {
                 min-height: 34px;
-                font-size: 0.8rem;
+                font-size: 0.9rem;
                 padding-top: 0;
                 padding-bottom: 0;
             }
@@ -1381,11 +1381,18 @@ const css = `
                 gap: 0.35rem;
             }
 
-            .je-more-info-modal .je-more-info-actions .jellyseerr-request-button .material-icons,
+            /* !important beats the phone rule in ui-styles.js that shrinks button spans */
+            .je-more-info-modal .je-more-info-actions .jellyseerr-request-button .material-icons {
+                font-size: 1.4rem !important;
+            }
+
             .je-more-info-modal .je-more-info-actions .jellyseerr-request-button svg {
-                font-size: 1.1rem;
-                width: 1.1rem;
-                height: 1.1rem;
+                width: 1.3rem;
+                height: 1.3rem;
+            }
+
+            .je-more-info-modal .je-more-info-actions .jellyseerr-request-button span:not(.material-icons) {
+                font-size: 1em !important;
             }
 
             /* Icon-only on phones so it shares a row with Request */

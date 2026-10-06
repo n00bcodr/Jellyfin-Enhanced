@@ -455,6 +455,7 @@
     "requests_requests": "Requests",
     "requests_no_active_downloads": "No active downloads",
     "requests_coming_soon": "Coming Soon",
+    "requests_orphaned": "Orphaned",
     "requests_today": "today",
     "requests_tomorrow": "tomorrow",
     "requests_in_days": "in {days} days",

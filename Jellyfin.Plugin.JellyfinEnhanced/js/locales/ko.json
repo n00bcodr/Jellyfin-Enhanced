@@ -471,6 +471,7 @@
     "requests_requests": "요청",
     "requests_no_active_downloads": "진행 중인 다운로드 없음",
     "requests_coming_soon": "출시 예정",
+    "requests_orphaned": "연결 끊김",
     "requests_today": "오늘",
     "requests_tomorrow": "내일",
     "requests_in_days": "{days}일 후",

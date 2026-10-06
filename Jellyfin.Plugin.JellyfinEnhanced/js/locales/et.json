@@ -471,6 +471,7 @@
     "requests_requests": "Taotlused",
     "requests_no_active_downloads": "Aktiivseid allalaadimisi pole",
     "requests_coming_soon": "Peagi tulekul",
+    "requests_orphaned": "Orvuks jäänud",
     "requests_today": "täna",
     "requests_tomorrow": "homme",
     "requests_in_days": "{days} päeva pärast",

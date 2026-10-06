@@ -454,6 +454,7 @@
     "requests_requests": "Aanvragen",
     "requests_no_active_downloads": "Geen actieve downloads",
     "requests_coming_soon": "Binnenkort",
+    "requests_orphaned": "Verweesd",
     "requests_today": "vandaag",
     "requests_tomorrow": "morgen",
     "requests_in_days": "over {days} dagen",

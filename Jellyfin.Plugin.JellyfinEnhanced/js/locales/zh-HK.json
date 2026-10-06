@@ -466,6 +466,7 @@
     "requests_requests": "請求",
     "requests_no_active_downloads": "沒有進行中的下載",
     "requests_coming_soon": "即將推出",
+    "requests_orphaned": "孤立",
     "requests_today": "今日",
     "requests_tomorrow": "明天",
     "requests_in_days": "{days} 天後",

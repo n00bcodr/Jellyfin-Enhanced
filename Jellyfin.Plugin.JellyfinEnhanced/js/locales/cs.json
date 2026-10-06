@@ -466,6 +466,7 @@
     "requests_requests": "Požadavky",
     "requests_no_active_downloads": "Žádné aktivní stahování",
     "requests_coming_soon": "Již brzy",
+    "requests_orphaned": "Osiřelé",
     "requests_today": "dnes",
     "requests_tomorrow": "zítra",
     "requests_in_days": "za {days} dní",

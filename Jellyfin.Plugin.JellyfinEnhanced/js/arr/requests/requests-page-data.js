@@ -133,17 +133,62 @@
   const captureEpoch = () => (JE.session ? JE.session.getEpoch() : 0);
   const epochCurrent = (e) => !JE.session || JE.session.isCurrent(e);
 
+  // The three paged lists share one grid layout, so each page holds whole rows.
+  // History's endpoint caps a page at 50 cards.
+  const PAGED_LISTS = {
+    requests: { grid: ".je-requests-grid", sizeKey: "requestsPageSize", max: 200 },
+    issues: { grid: ".je-issues-grid", sizeKey: "issuesPageSize", max: 200 },
+    history: { grid: ".je-history-grid", sizeKey: "historyPageSize", max: 48 },
+  };
+
+  /**
+   * Cards per page for a list: whole rows of its grid, so a wide window never
+   * ends on a partial row. Uses the live column count when the grid is on
+   * screen, otherwise estimates it from the viewport (340px columns, 1.1em gap).
+   * @param {"requests"|"issues"|"history"} list
+   * @returns {number}
+   */
+  function getPageSize(list) {
+    const { grid: selector, max } = PAGED_LISTS[list];
+    const grid = document.querySelector(selector);
+    const columns = grid
+      ? getComputedStyle(grid).gridTemplateColumns.split(" ").length
+      : Math.max(1, Math.floor((window.innerWidth * 0.94 + 16) / 356));
+    const rows = Math.min(Math.max(4, Math.ceil(12 / columns)), Math.floor(max / columns));
+    return columns * Math.max(1, rows);
+  }
+
+  // The window can be resized across a column-count boundary: refetch with the
+  // new page size so the last row stays full.
+  const refetchers = { requests: () => fetchRequests(), issues: () => fetchIssues(), history: () => fetchHistory() };
+  let pageSizeResizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(pageSizeResizeTimer);
+    pageSizeResizeTimer = setTimeout(() => {
+      const stale = Object.keys(PAGED_LISTS).filter((list) => {
+        const { grid, sizeKey } = PAGED_LISTS[list];
+        return state[sizeKey] && document.querySelector(grid) && getPageSize(list) !== state[sizeKey];
+      });
+      if (stale.length) Promise.all(stale.map((list) => refetchers[list]())).then(() => stale.forEach((list) => P.renderSection(list)));
+    }, 250);
+  });
+
   /**
    * Fetch requests from backend
    */
   async function fetchRequests() {
     const epoch = captureEpoch();
     try {
-      const skip = (state.requestsPage - 1) * 20;
+      const pageSize = getPageSize("requests");
+      if (pageSize !== state.requestsPageSize) {
+        state.requestsPageSize = pageSize;
+        state.requestsPage = 1;
+      }
+      const skip = (state.requestsPage - 1) * pageSize;
       const filter = state.requestsFilter !== "all" ? state.requestsFilter : "";
 
       const query = new URLSearchParams({
-        take: "20",
+        take: String(pageSize),
         skip: String(skip),
         filter: filter,
       });
@@ -241,10 +286,15 @@
     if (state.issuesPermissionDenied) return null;
 
     try {
-      const skip = (state.issuesPage - 1) * 20;
+      const pageSize = getPageSize("issues");
+      if (pageSize !== state.issuesPageSize) {
+        state.issuesPageSize = pageSize;
+        state.issuesPage = 1;
+      }
+      const skip = (state.issuesPage - 1) * pageSize;
       const filter = state.issuesFilter || "open";
       const url = ApiClient.getUrl("/JellyfinEnhanced/jellyseerr/issue", {
-        take: 20,
+        take: pageSize,
         skip: skip,
         filter: filter,
         sort: "added",
@@ -303,10 +353,15 @@
 
     const epoch = captureEpoch();
     try {
-      const skip = (state.historyPage - 1) * 20;
+      const pageSize = getPageSize("history");
+      if (pageSize !== state.historyPageSize) {
+        state.historyPageSize = pageSize;
+        state.historyPage = 1;
+      }
+      const skip = (state.historyPage - 1) * pageSize;
 
       const query = new URLSearchParams({
-        take: "20",
+        take: String(pageSize),
         skip: String(skip),
       });
 

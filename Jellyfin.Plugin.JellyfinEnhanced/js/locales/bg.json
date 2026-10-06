@@ -466,6 +466,7 @@
     "requests_requests": "Заявки",
     "requests_no_active_downloads": "Няма активни изтегляния",
     "requests_coming_soon": "Очаквайте скоро",
+    "requests_orphaned": "Без връзка",
     "requests_today": "днес",
     "requests_tomorrow": "утре",
     "requests_in_days": "след {days} дни",

@@ -347,6 +347,7 @@
     "feature_people_tags": "Henkilötagit",
     "hidden_content_button_section_title": "Piilotuspainikkeen näkyvyys",
     "requests_coming_soon": "Tulossa pian",
+    "requests_orphaned": "Orpo",
     "requests_unknown": "Tuntematon",
     "reviews_admin_delete_confirm": "Poista käyttäjän{user} Arvostelu? Toimintoa ei voi perua.",
     "hidden_content_manage_title": "Piilotettu sisältö",

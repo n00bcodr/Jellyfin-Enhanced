@@ -466,6 +466,7 @@
     "requests_requests": "الطلبات",
     "requests_no_active_downloads": "لا توجد تنزيلات نشطة",
     "requests_coming_soon": "قريباً",
+    "requests_orphaned": "غير مرتبط",
     "requests_today": "اليوم",
     "requests_tomorrow": "غداً",
     "requests_in_days": "خلال {days} أيام",

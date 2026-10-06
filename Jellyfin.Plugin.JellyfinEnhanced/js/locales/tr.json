@@ -454,6 +454,7 @@
     "requests_requests": "İstekler",
     "requests_no_active_downloads": "Aktif indirme yok",
     "requests_coming_soon": "Yakında",
+    "requests_orphaned": "Yetim",
     "requests_today": "bugün",
     "requests_tomorrow": "yarın",
     "requests_in_days": "{days} gün içinde",

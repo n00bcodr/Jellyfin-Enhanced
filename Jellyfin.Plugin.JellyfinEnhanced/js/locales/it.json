@@ -466,6 +466,7 @@
     "requests_requests": "Richieste",
     "requests_no_active_downloads": "Nessun download attivo",
     "requests_coming_soon": "In arrivo",
+    "requests_orphaned": "Orfana",
     "requests_today": "oggi",
     "requests_tomorrow": "domani",
     "requests_in_days": "fra {days} giorni",

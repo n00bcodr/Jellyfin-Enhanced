@@ -413,6 +413,7 @@
     "feature_people_tags": "תגי אנשים",
     "hidden_content_button_section_title": "נראות כפתור ההסתרה",
     "requests_coming_soon": "בקרוב",
+    "requests_orphaned": "יתומה",
     "requests_unknown": "לא ידוע",
     "reviews_admin_delete_confirm": "למחוק את הביקורת הזו של {user}? לא ניתן לבטל פעולה זו.",
     "hidden_content_manage_title": "תוכן מוסתר",

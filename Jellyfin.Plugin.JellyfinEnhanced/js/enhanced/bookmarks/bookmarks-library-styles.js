@@ -894,8 +894,9 @@
 
   const backdropStyle = document.createElement('style');
   backdropStyle.textContent = [
-    '.backgroundContainer.withBackdrop:has(~ .mainAnimatedPages #indexPage .tabContent.is-active .sections.bookmarks) {',
+    '.backgroundContainer.withBackdrop:has(~ * #indexPage .tabContent.is-active .sections.bookmarks) {',
     '  background: rgba(0, 0, 0, 0.7) !important;',
+    '  opacity: 1 !important;',
     '}'
   ].join('\n');
   document.head.appendChild(backdropStyle);
