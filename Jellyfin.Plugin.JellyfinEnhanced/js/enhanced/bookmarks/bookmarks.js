@@ -530,8 +530,9 @@
     // Delete orphaned bookmarks
     for (const bookmarkId of toDelete) {
       try {
-        await deleteBookmark(bookmarkId);
-        cleaned++;
+        // deleteBookmark reports a failed save (rolled back) as false.
+        if (await deleteBookmark(bookmarkId)) cleaned++;
+        else errors++;
       } catch (e) {
         errors++;
       }
@@ -1117,11 +1118,16 @@
 
       try {
         if (isEdit) {
-          await updateBookmark(existingBookmark.id, { label: labelInput });
-           JE.toast(JE.t('toast_bookmark_updated'), 2000);
+          // A failed save is rolled back and reported as false.
+          if (!await updateBookmark(existingBookmark.id, { label: labelInput })) {
+            JE.toast(JE.t('toast_bookmark_save_failed'), 3000);
+            return;
+          }
+          JE.toast(JE.t('toast_bookmark_updated'), 2000);
         } else {
-          await addBookmark(timestamp, labelInput);
-           JE.toast(JE.t('toast_bookmark_updated'), 2000);
+          // null: no item, or the lookup failed (already reported) or the user changed.
+          if (!await addBookmark(timestamp, labelInput)) return;
+          JE.toast(JE.t('toast_bookmark_updated'), 2000);
         }
 
         // Refresh markers
@@ -1149,7 +1155,10 @@
     modal.querySelectorAll('.je-bookmark-btn-delete').forEach(btn => {
       btn.addEventListener('click', async () => {
         const bookmarkId = btn.dataset.bookmarkId;
-        await deleteBookmark(bookmarkId);
+        if (!await deleteBookmark(bookmarkId)) {
+          JE.toast(JE.t('toast_bookmark_delete_failed'), 3000);
+          return;
+        }
         JE.toast(JE.t('toast_bookmark_deleted'), 2000);
         updateBookmarkMarkersForCurrentVideo();
         closeDialog();

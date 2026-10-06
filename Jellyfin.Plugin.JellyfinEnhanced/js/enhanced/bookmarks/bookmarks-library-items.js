@@ -307,7 +307,10 @@
           // Delete button handler
           deleteBtn.addEventListener('click', async () => {
             const bookmarkId = deleteBtn.dataset.bookmarkId;
-            await JE.bookmarks.delete(bookmarkId);
+            if (!await JE.bookmarks.delete(bookmarkId)) {
+              JE.toast(JE.t('toast_bookmark_delete_failed'), 3000);
+              return;
+            }
             JE.toast(JE.t('toast_bookmark_deleted'), 2000);
 
             // Re-render

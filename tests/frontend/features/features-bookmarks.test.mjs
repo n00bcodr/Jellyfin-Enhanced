@@ -210,3 +210,25 @@ test('successful bookmark migration replaces the old group in one save',async t=
   assert.equal(saved.length,1);assert.deepEqual(Object.keys(saved[0].bookmarks),Object.keys(h.JE.userConfig.bookmark.bookmarks));
   assert.deepEqual(records.map(bm=>[bm.itemId,bm.timestamp,bm.syncedFrom]),[['new-item-0000000000000000',5,'old-item-0000000000000000']]);
 });
+test('orphan cleanup counts only deletes that were saved',async t=>{
+  let fail=true;const h=setup(t,{a:{itemId:'gone'},b:{itemId:'gone'},c:{itemId:'present'}},async()=>{if(fail)throw new Error('offline');});
+  h.window.ApiClient.getItem=async(user,id)=>{if(id==='gone')throw new Error('404');return {Id:id};};
+  h.expectConsoleError(/Failed to delete bookmark/);
+  assert.deepEqual(plain(await h.api.cleanupOrphaned()),{cleaned:0,errors:2});
+  assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks).sort(),['a','b','c']);
+  fail=false;assert.deepEqual(plain(await h.api.cleanupOrphaned()),{cleaned:2,errors:0});
+  assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks),['c']);
+});
+test('player bookmark modal reports a failed edit or delete instead of success',async t=>{
+  const h=setup(t,{one:{itemId:'item',timestamp:5,label:'old'}},async()=>{throw new Error('offline');});
+  h.document.body.innerHTML='<div class="videoOsdBottom"><button class="btnUserRating" data-id="item"></button></div>';
+  h.routes.items=async()=>({Items:[{Id:'item',Name:'Movie',Type:'Movie'}]});
+  h.expectConsoleError(/Failed to update bookmark/);h.expectConsoleError(/Failed to delete bookmark/);
+  await h.api.showModal('edit',{id:'one',...h.JE.userConfig.bookmark.bookmarks.one});
+  h.document.querySelector('.je-bookmark-btn-submit').click();
+  await settle(()=>h.toasts.length===1);
+  h.document.querySelector('.je-bookmark-btn-delete[data-bookmark-id="one"]').click();
+  await settle(()=>h.toasts.length===2);
+  assert.deepEqual(h.toasts,['toast_bookmark_save_failed','toast_bookmark_delete_failed']);
+  assert.equal(h.JE.userConfig.bookmark.bookmarks.one.label,'old');
+});
