@@ -16,6 +16,14 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Separate job: a stale inventory fails this check without skipping the tests.
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: python3 tests/inventory/generate.py --check
+
   backend:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -30,7 +38,6 @@ jobs:
           dotnet-version: |
             9.0.x
             10.0.x
-      - run: python3 tests/inventory/generate.py --check
       - run: python3 tests/run.py backend --target ${{ matrix.target }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()

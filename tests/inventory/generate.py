@@ -2,7 +2,9 @@
 """Inventory production surfaces for coverage review; this is not a behavioral test.
 
 Extraction is deliberately conservative and lexical (not a C# parser). The output
-retains paths/line numbers so reviewers can inspect overloads and attributes.
+keeps file paths but no line numbers, line counts or locale key counts, so it only
+changes when a production file, route, setting, scheduled task or storage reference
+is added, removed or renamed (not on every edit or translation update).
 Run with --check in CI to detect an inventory needing regeneration.
 """
 import argparse
@@ -16,10 +18,6 @@ PRODUCTION = ROOT / 'Jellyfin.Plugin.JellyfinEnhanced'
 OUTPUT = ROOT / 'tests/docs/production-inventory.json'
 
 
-def line_number(text, offset):
-    return text.count('\n', 0, offset) + 1
-
-
 def inventory():
     project = ET.parse(PRODUCTION / 'JellyfinEnhanced.csproj')
     targets = []
@@ -28,7 +26,7 @@ def inventory():
         if selector and group.findtext('TargetFramework'):
             targets.append({'selector': selector[1], 'framework': group.findtext('TargetFramework'),
                             'jellyfin_reference': group.findtext('JellyfinVersion')})
-    result = {'schema_version': 1,
+    result = {'schema_version': 2,
               'extraction': 'Lexical inventory only; entries do not imply behavioral coverage. Public property types/defaults and route attributes require semantic review.',
               'build_targets': targets,
               'files': [], 'routes': [], 'configuration_properties': [],
@@ -41,7 +39,7 @@ def inventory():
             continue
         text = path.read_text(encoding='utf-8-sig')
         category = path.relative_to(PRODUCTION).parts[0]
-        result['files'].append({'path': relative, 'category': category, 'lines': len(text.splitlines())})
+        result['files'].append({'path': relative, 'category': category})
         if category == 'Controllers' and path.suffix == '.cs':
             for match in re.finditer(r'\[Http(Get|Post|Put|Delete|Patch|Head|Options)\("([^"\n]*)"\)\]', text):
                 tail = text[match.end():]
@@ -49,7 +47,6 @@ def inventory():
                 attributes = tail[:method.start()] if method else ''
                 result['routes'].append({'verb': match[1].upper(), 'path': '/JellyfinEnhanced/' + match[2],
                                          'method': method[1] if method else None, 'file': relative,
-                                         'line': line_number(text, match.start()),
                                          'following_attributes': re.findall(r'\[([^\n]+)\]', attributes)})
         if category == 'Configuration' and path.suffix == '.cs':
             classes = list(re.finditer(r'\bclass\s+(\w+)', text))
@@ -59,16 +56,17 @@ def inventory():
                 result['configuration_properties'].append({'class': preceding[-1][1] if preceding else None,
                     'name': match[2], 'type': match[1].strip(), 'initializer': match[3],
                     'constructor_assignment': constructor[1] if constructor else None,
-                    'file': relative, 'line': line_number(text, match.start())})
+                    'file': relative})
         if path.suffix in ('.cs', '.js'):
-            for match in re.finditer(r'''["']([^"'\n]{1,180}\.(?:json|xml|db|sqlite))["']''', text):
-                result['storage_references'].append({'literal': match[1], 'file': relative, 'line': line_number(text, match.start())})
+            # One entry per literal and file: repeating a known reference is not a new one.
+            literals = sorted({match[1] for match in re.finditer(r'''["']([^"'\n]{1,180}\.(?:json|xml|db|sqlite))["']''', text)})
+            result['storage_references'].extend({'literal': literal, 'file': relative} for literal in literals)
         if category == 'ScheduledTasks' and re.search(r':\s*IScheduledTask', text):
             result['scheduled_tasks'].append({'file': relative, 'class': path.stem,
                 'key': next(iter(re.findall(r'\bKey\s*=>\s*"([^"]+)"', text)), None)})
         if 'js/locales/' in relative and path.suffix == '.json':
-            content = json.loads(text)
-            result['locales'].append({'file': relative, 'top_level_keys': len(content)})
+            json.loads(text)  # a malformed locale still fails generation
+            result['locales'].append({'file': relative})
     result['counts'] = {key: len(value) for key, value in result.items() if isinstance(value, list)}
     return json.dumps(result, indent=2, ensure_ascii=False) + '\n'
 

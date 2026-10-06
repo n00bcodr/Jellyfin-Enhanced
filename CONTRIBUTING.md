@@ -167,6 +167,7 @@ Pull requests run automated backend regressions for both Jellyfin targets, JavaS
 | **Dependency Review** | Flags newly-introduced dependencies with known vulnerabilities or incompatible licenses | Only relevant if your PR changes `.csproj` package references |
 | **Security Scan** | Scans the diff for accidentally-committed secrets (API keys, tokens, credentials) with TruffleHog | `git diff` your changes yourself before pushing if you're unsure |
 | **Translation Checks** | For any locale file you touched under `js/locales/`, verifies it has valid JSON and the same key set as `en.json` (no missing/extra keys) | Diff your changed locale file's keys against `js/locales/en.json` by hand, or just keep the two in sync as you edit |
+| **Production inventory** | Part of the regression workflow: fails when `tests/docs/production-inventory.json` no longer lists the plugin's files, HTTP routes, configuration properties, scheduled tasks, locale files or storage literals. Ordinary edits and translation updates don't change it; adding, removing or renaming one of those does | Run `python3 tests/inventory/generate.py` and commit the regenerated file (`--check` only verifies it) |
 
 Two more workflows exist but aren't part of the PR gate: **Check Unused Translation Keys** and **OpenSSF Scorecard** are both maintainer-triggered/scheduled, not run against your PR - a scorecard badge or unused-key report you might see elsewhere in the repo isn't something your PR needs to pass.
 
