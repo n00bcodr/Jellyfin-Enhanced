@@ -11,6 +11,28 @@ namespace JE.Tests;
 [Collection("Plugin singleton")]
 public class ApiConfigurationTests
 {
+    /// <summary>
+    /// Fills every secret-like string setting (*ApiKey, *API_KEY, *Secret, *Token, *Password) and each
+    /// Sonarr/Radarr instance key with a "SECRET_" sentinel. Neither config payload may contain any of
+    /// them: the private (admin) payload is documented as topology only, with no API keys.
+    /// </summary>
+    private static IReadOnlyList<string> SeedSecrets(Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration config)
+    {
+        var seeded = new List<string>();
+        foreach (var property in config.GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+        {
+            if (property.PropertyType != typeof(string) || !property.CanWrite
+                || !System.Text.RegularExpressions.Regex.IsMatch(property.Name, "(ApiKey|API_KEY|Secret|Token|Password)$")) continue;
+            property.SetValue(config, "SECRET_" + property.Name + "_SENTINEL");
+            seeded.Add(property.Name);
+        }
+        config.SonarrInstances = "[{\"Name\":\"Main\",\"Url\":\"http://private-sonarr-instance.invalid\",\"ApiKey\":\"SECRET_SONARR_INSTANCE_SENTINEL\",\"Enabled\":true}]";
+        config.RadarrInstances = "[{\"Name\":\"Main\",\"Url\":\"http://private-radarr-instance.invalid\",\"ApiKey\":\"SECRET_RADARR_INSTANCE_SENTINEL\",\"Enabled\":true}]";
+        // The known keys must be among them, or the name filter has silently stopped matching.
+        Assert.Superset(new HashSet<string> { "TMDB_API_KEY", "MdblistApiKey", "JellyseerrApiKey", "ShokoApiKey", "SonarrApiKey", "RadarrApiKey", "AnalyticsInstallSecret" }, seeded.ToHashSet());
+        return seeded;
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
@@ -19,11 +41,7 @@ public class ApiConfigurationTests
     {
         using var fixture = new ApiPluginFixture();
         var config = fixture.Plugin.Configuration;
-        config.TMDB_API_KEY = "SECRET_TMDB_SENTINEL";
-        config.MdblistApiKey = "SECRET_MDBLIST_SENTINEL";
-        config.JellyseerrApiKey = "SECRET_SEERR_SENTINEL";
-        config.SonarrApiKey = "SECRET_SONARR_SENTINEL";
-        config.RadarrApiKey = "SECRET_RADARR_SENTINEL";
+        SeedSecrets(config);
         config.JellyseerrUrls = "http://private-seerr.invalid:5055";
         config.JellyseerrUrlMappings = "private-mapping-sentinel";
         config.SonarrUrl = "http://private-sonarr.invalid:8989";
@@ -50,14 +68,17 @@ public class ApiConfigurationTests
     {
         using var fixture = new ApiPluginFixture();
         fixture.Plugin.Configuration.SonarrUrl = "http://private-sonarr.invalid:8989";
-        fixture.Plugin.Configuration.SonarrApiKey = "SECRET_SONARR_SENTINEL";
-        fixture.Plugin.Configuration.RadarrApiKey = "SECRET_RADARR_SENTINEL";
-        fixture.Plugin.Configuration.TMDB_API_KEY = "SECRET_TMDB_SENTINEL";
+        SeedSecrets(fixture.Plugin.Configuration);
         var controller = ApiAssetTests.Controller(fixture.Core, Mock.Of<IUserManager>());
         controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, admin ? "Administrator" : "User")], "test"));
         var json = JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPrivateConfig()).Value);
         Assert.DoesNotContain("SECRET_", json);
-        if (admin) Assert.Contains("private-sonarr", json);
+        if (admin)
+        {
+            Assert.Contains("private-sonarr", json);
+            Assert.Contains("private-sonarr-instance", json);
+            Assert.Contains("private-radarr-instance", json);
+        }
         else Assert.Equal("{}", json);
     }
 
