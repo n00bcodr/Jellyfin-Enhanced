@@ -49,7 +49,7 @@ public class PrivacyFieldFilterTests
             Id = Guid.NewGuid(), SeriesId = Series, Type = BaseItemKind.Episode,
             Name = "Secret ending", Overview = "Secret plot", OriginalTitle = "Secret original", Path = "/Secret.mkv",
             ParentIndexNumber = 2, IndexNumber = 3, UserData = new UserItemDataDto { Key = "test", Played = played },
-            Tags = ["Secret tag"], CommunityRating = 9,
+            Tags = ["Secret tag"], CommunityRating = 9, CriticRating = 80, SortName = "Secret sort",
         };
         public async Task<object?> Invoke(object value, string controller = "Items", string action = "GetItems", Guid? user = null)
         {
@@ -90,7 +90,11 @@ public class PrivacyFieldFilterTests
         var query = new QueryResult<BaseItemDto> { Items = [hidden, watched, outside], TotalRecordCount = 25, StartIndex = 4 };
         Assert.Same(query, await f.Invoke(query));
         Assert.Equal("Season 2, Episode 3", hidden.Name);
+        Assert.Null(hidden.OriginalTitle); Assert.Null(hidden.SortName);
+        Assert.Null(hidden.CommunityRating); Assert.Null(hidden.CriticRating);
         Assert.Equal("Secret ending", watched.Name); Assert.Equal("Secret plot", watched.Overview);
+        Assert.Equal("Secret original", watched.OriginalTitle); Assert.Equal("Secret sort", watched.SortName);
+        Assert.Equal(9, watched.CommunityRating); Assert.Equal(80, watched.CriticRating);
         Assert.Equal("Secret ending", outside.Name); Assert.Equal("Secret plot", outside.Overview);
         Assert.Equal(25, query.TotalRecordCount); Assert.Equal(4, query.StartIndex);
         var other = f.Episode(); await f.Invoke(other, user: Guid.NewGuid());
@@ -102,14 +106,21 @@ public class PrivacyFieldFilterTests
     {
         using var f = new Fixture();
         var dto = f.Episode();
-        dto.MediaStreams = [new MediaStream { IsExternal = true, Path = "/Secret.srt", Title = "Secret", DeliveryUrl = "/Videos/1/Subtitles/0/Stream.srt" },
-            new MediaStream { IsExternal = true, IsExternalUrl = true, Path = "https://provider/Secret.srt", DeliveryUrl = "https://provider/Secret.srt" }];
-        dto.MediaSources = [new MediaSourceInfo { Name = "Secret", Path = "/Secret.mkv", MediaStreams = [new MediaStream { Title = "Secret" }] }];
+        static MediaStream[] Streams() => [new MediaStream { IsExternal = true, Path = "/Secret.srt", Title = "Secret", DeliveryUrl = "/Videos/1/Subtitles/0/Stream.srt" },
+            new MediaStream { IsExternal = true, IsExternalUrl = true, Path = "https://provider/Secret.srt", DeliveryUrl = "https://provider/Secret.srt" },
+            new MediaStream { Title = "Secret" }];
+        dto.MediaStreams = Streams();
+        // Each media source nests its own copy of the streams, scrubbed by the same rules.
+        dto.MediaSources = [new MediaSourceInfo { Name = "Secret", Path = "/Secret.mkv", MediaStreams = Streams() }];
         await f.Invoke(dto, "UserLibrary", "GetItem");
-        Assert.Null(dto.MediaStreams[0].Path); Assert.Null(dto.MediaStreams[0].Title);
-        Assert.Equal("/Videos/1/Subtitles/0/Stream.srt", dto.MediaStreams[0].DeliveryUrl);
-        Assert.Null(dto.MediaStreams[1].DeliveryUrl);
-        Assert.Null(dto.MediaSources[0].Path); Assert.Null(dto.MediaSources[0].Name); Assert.Null(dto.MediaSources[0].MediaStreams[0].Title);
+        foreach (var streams in new[] { dto.MediaStreams, dto.MediaSources[0].MediaStreams })
+        {
+            Assert.Null(streams[0].Path); Assert.Null(streams[0].Title);
+            Assert.Equal("/Videos/1/Subtitles/0/Stream.srt", streams[0].DeliveryUrl);
+            Assert.Null(streams[1].Path); Assert.Null(streams[1].DeliveryUrl);
+            Assert.Null(streams[2].Title);
+        }
+        Assert.Null(dto.MediaSources[0].Path); Assert.Null(dto.MediaSources[0].Name);
     }
 
     [Fact]

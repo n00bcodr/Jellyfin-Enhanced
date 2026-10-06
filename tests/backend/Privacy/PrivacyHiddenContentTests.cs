@@ -72,6 +72,7 @@ public class PrivacyHiddenContentTests
     [InlineData("continuewatching", "GetResumeItems", true)]
     [InlineData("continuewatching", "GetItems", false)]
     [InlineData("homesections", "GetResumeItems", true)]
+    [InlineData("homesections", "GetItems", false)]
     [InlineData("nextup", "GetResumeItems", false)]
     public async Task SurfaceScopesDoNotOverHideLibrary(string scope, string action, bool filtered)
     {
@@ -114,6 +115,9 @@ public class PrivacyHiddenContentTests
         Assert.Empty(Assert.IsType<QueryResult<BaseItemDto>>(await Run(f, user, "Items", "GetResumeItems", Rows(new BaseItemDto { Id = hidden }))).Items);
         settings.Settings.FilterContinueWatching = false; Save(f, user, settings);
         Assert.Single(Assert.IsType<QueryResult<BaseItemDto>>(await Run(f, user, "Items", "GetResumeItems", Rows(new BaseItemDto { Id = hidden }))).Items);
+        // The Continue Watching switch alone never reaches library listings, even for a global hide.
+        Save(f, user, Hide(hidden));
+        Assert.Single(Assert.IsType<QueryResult<BaseItemDto>>(await Run(f, user, "Items", "GetItems", Rows(new BaseItemDto { Id = hidden }))).Items);
     }
     [Theory]
     [InlineData("nextup", 0, true)]

@@ -158,6 +158,14 @@ public sealed class PrivacyIdentityTests : IDisposable
     }
 
     [Fact]
+    public void ARowThatThrowsIsSkippedWithoutHidingLaterMatches()
+    {
+        // A null row throws on its first member access, like a corrupt SessionInfo would.
+        _sessions.SetupGet(x => x.Sessions).Returns(new[] { Session(_bob, "203.0.113.9:8096"), null!, Session(_alice) });
+        Assert.Equal(new[] { _alice }, _identity.Resolve(Context()).Candidates);
+    }
+
+    [Fact]
     public void MarkersAreStableAndUserSpecific()
     {
         Assert.Matches("^[a-f0-9]{12}$", _markers.MintMarker(_alice));
@@ -169,8 +177,20 @@ public sealed class PrivacyIdentityTests : IDisposable
     [InlineData(null)] [InlineData("")] [InlineData("-jeu123456789abc")]
     [InlineData("abc-jeu123456789ab")] [InlineData("abc-jeu123456789ABC")]
     [InlineData("abc-jeu123456789abc-extra")]
+    [InlineData("0123456789abcdef0123456789abcdef")]
     public void MalformedMarkersCannotResolveAsValidSuffix(string? tag)
         => Assert.False(SpoilerIdentityService.TryParseMarker(tag, out _, out _));
+
+    [Fact]
+    public void APlainHexImageTagIsStampedRatherThanMistakenForAMarker()
+    {
+        // Jellyfin image tags are 32 hex characters; only the "-jeu" sentinel marks a stamped tag.
+        const string tag = "0123456789abcdef0123456789abcdef";
+        var marker = _markers.MintMarker(_alice);
+        var stamped = SpoilerIdentityService.AppendMarker(tag, marker);
+        Assert.Equal(tag + "-jeu" + marker, stamped);
+        Assert.Equal(stamped, SpoilerIdentityService.AppendMarker(stamped, marker));
+    }
 
     public void Dispose() => Directory.Delete(_directory, true);
 }
