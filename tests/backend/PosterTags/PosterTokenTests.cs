@@ -68,10 +68,32 @@ public class PosterTokenTests : IDisposable
     }
 
     [Fact]
-    public async Task Concurrent_first_use_shares_one_persisted_secret()
+    public void Concurrent_first_use_shares_one_persisted_secret()
     {
-        var tokens = await Task.WhenAll(Enumerable.Range(0, 16).Select(_ => Task.Run(() => Tokens().Mint(user, item, "s", "r", PosterTagVariantFlags.None, "123abc"))));
+        // The loser has already seen no secret file when the winner creates
+        // one and mints with it; the loser must adopt it, not overwrite it.
+        var winner = Tokens();
+        var loser = Tokens();
+        string? winnerToken = null;
+        loser.BeforeSecretWriteForTest = () => winnerToken = winner.Mint(user, item, "s", "r", PosterTagVariantFlags.None, "123abc");
+        var loserToken = loser.Mint(user, item, "s", "r", PosterTagVariantFlags.None, "123abc");
+        Assert.NotNull(winnerToken);
+        Assert.Equal(winnerToken, loserToken);
+        Assert.Equal(winnerToken, Tokens().Mint(user, item, "s", "r", PosterTagVariantFlags.None, "123abc"));
+        Assert.Empty(Directory.GetFiles(directory, "*.tmp.*"));
+    }
+
+    [Fact]
+    public async Task Racing_first_use_after_every_check_shares_one_secret()
+    {
+        // All instances pass the existence check before any of them writes.
+        const int count = 8;
+        using var allChecked = new Barrier(count);
+        var services = Enumerable.Range(0, count).Select(_ => Tokens()).ToList();
+        foreach (var service in services) service.BeforeSecretWriteForTest = () => allChecked.SignalAndWait(TimeSpan.FromSeconds(10));
+        var tokens = await Task.WhenAll(services.Select(service => Task.Factory.StartNew(() => service.Mint(user, item, "s", "r", PosterTagVariantFlags.None, "123abc"), TaskCreationOptions.LongRunning)));
         Assert.Single(tokens.Distinct());
+        Assert.Equal(tokens[0], Tokens().Mint(user, item, "s", "r", PosterTagVariantFlags.None, "123abc"));
         Assert.Empty(Directory.GetFiles(directory, "*.tmp.*"));
     }
 

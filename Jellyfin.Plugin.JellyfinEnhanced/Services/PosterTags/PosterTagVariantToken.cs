@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using MediaBrowser.Common.Configuration;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
@@ -54,8 +55,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     // client refreshes metadata (no stale composites under a "current" URL).
     //
     // The secret is 32 random bytes in the plugin's data directory, created
-    // atomically with owner-only permissions on first use. Losing it only
-    // resets poster URLs; it grants nothing else.
+    // atomically with owner-only permissions on first use (instances sharing
+    // the directory serialize creation through "<key file>.lock"). Losing it
+    // only resets poster URLs; it grants nothing else.
     public sealed class PosterTagVariantToken
     {
         /// <summary>Data hash used when the tag data is not pinned (weak token).</summary>
@@ -83,6 +85,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _secretPath = secretPath;
             _warn = warn;
         }
+
+        /// <summary>Runs after the first existence check, before the create lock (lets tests force a create race).</summary>
+        internal Action? BeforeSecretWriteForTest { get; set; }
 
         /// <summary>An instance keeping its secret at <paramref name="secretPath"/> (test harness).</summary>
         public static PosterTagVariantToken CreateForPath(string secretPath, Action<string> warn) => new(secretPath, warn);
@@ -164,24 +169,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         {
             try
             {
-                if (File.Exists(_secretPath))
+                var existing = TryReadSecret();
+                if (existing != null) return existing;
+
+                BeforeSecretWriteForTest?.Invoke();
+                // Creating is serialized through an exclusive lock file, and the
+                // secret is re-read under it: another JE instance sharing the config
+                // dir may have created it since the check above and already minted
+                // URLs with it, so a valid secret is never replaced. (File.Move
+                // without overwrite cannot guarantee that: on Unix it checks the
+                // destination and then renames.)
+                using (AcquireCreateLock())
                 {
-                    var existing = File.ReadAllBytes(_secretPath);
-                    if (existing.Length == SecretLength)
+                    existing = TryReadSecret();
+                    if (existing != null) return existing;
+
+                    if (File.Exists(_secretPath))
                     {
-                        TightenPermissions(_secretPath);
-                        return existing;
+                        _warn($"Native poster tags: {SecretFileName} has an unexpected length; replacing it (issued poster URLs fall back to original artwork until clients refresh).");
                     }
 
-                    _warn($"Native poster tags: {SecretFileName} has an unexpected length; replacing it (issued poster URLs fall back to original artwork until clients refresh).");
+                    var fresh = RandomNumberGenerator.GetBytes(SecretLength);
+                    WriteSecretAtomically(fresh);
+                    return fresh;
                 }
-
-                var fresh = RandomNumberGenerator.GetBytes(SecretLength);
-                WriteSecretAtomically(fresh, overwrite: File.Exists(_secretPath));
-                // Another JE instance sharing the config dir may have won the
-                // create race; whatever is on disk now is the shared secret.
-                var onDisk = File.ReadAllBytes(_secretPath);
-                return onDisk.Length == SecretLength ? onDisk : fresh;
             }
             catch (Exception ex)
             {
@@ -192,11 +203,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             }
         }
 
-        // Temp file created owner-only from the start (no window where the
-        // secret is world-readable), flushed, then moved into place.
-        private void WriteSecretAtomically(byte[] secret, bool overwrite)
+        /// <summary>The persisted secret, or null when it is missing or has the wrong length.</summary>
+        private byte[]? TryReadSecret()
+        {
+            if (!File.Exists(_secretPath)) return null;
+            var existing = File.ReadAllBytes(_secretPath);
+            if (existing.Length != SecretLength) return null;
+            TightenPermissions(_secretPath);
+            return existing;
+        }
+
+        // Exclusive across processes as well (FileShare.None takes an flock on
+        // Unix). The lock file is left in place: deleting it while another
+        // instance waits on it would let two creators hold "the" lock.
+        private FileStream AcquireCreateLock()
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_secretPath)!);
+            var options = new FileStreamOptions { Mode = FileMode.OpenOrCreate, Access = FileAccess.ReadWrite, Share = FileShare.None };
+            if (!OperatingSystem.IsWindows())
+            {
+                options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            }
+
+            for (var attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    return new FileStream(_secretPath + ".lock", options);
+                }
+                catch (IOException) when (attempt < 200)
+                {
+                    Thread.Sleep(25);
+                }
+            }
+        }
+
+        // Temp file created owner-only from the start (no window where the
+        // secret is world-readable), flushed, then moved into place. Callers
+        // hold the create lock.
+        private void WriteSecretAtomically(byte[] secret)
+        {
             var temp = _secretPath + ".tmp." + Guid.NewGuid().ToString("N");
             try
             {
@@ -212,14 +258,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                     stream.Flush(true);
                 }
 
-                try
-                {
-                    File.Move(temp, _secretPath, overwrite);
-                }
-                catch (IOException) when (!overwrite && File.Exists(_secretPath))
-                {
-                    // Lost a create race: keep the winner's secret.
-                }
+                File.Move(temp, _secretPath, overwrite: true);
             }
             finally
             {
