@@ -78,10 +78,24 @@ public class PrivacyAutoEnableTests
         if (expected) Assert.Equal("Series", saved!.Series[series.Id.ToString("N")].SeriesName);
     }
 
-    [Fact]
-    public async Task PendingPromoterRestoresFromDiskAndPromotesOnlyAccessibleUserOnLibraryEvent()
+    private sealed record PendingSetup(JE.Tests.ApiPluginFixture Fixture, User Alice, User Bob, Series Series, string PendingKey, Mock<ILibraryManager> Library, SpoilerSeerrPendingPromoter Service) : IAsyncDisposable
     {
-        using var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.SpoilerBlurEnabled = true;
+        public UserSpoilerBlur Saved(User user) => Fixture.Core.Manager.GetUserConfiguration<UserSpoilerBlur>(user.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName)!;
+        public async ValueTask DisposeAsync()
+        {
+            try { await Service.StopAsync(CancellationToken.None); }
+            finally
+            {
+                SpoilerSeerrPendingPromoter.UnregisterPending(PendingKey, Alice.Id); SpoilerSeerrPendingPromoter.UnregisterPending(PendingKey, Bob.Id);
+                Fixture.Dispose();
+            }
+        }
+    }
+
+    // Alice and Bob both have the series pending on disk; only Alice can see it.
+    private static PendingSetup SetUpPending()
+    {
+        var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.SpoilerBlurEnabled = true;
         var alice = new User("alice", "default", "default") { Id = Guid.NewGuid() }; var bob = new User("bob", "default", "default") { Id = Guid.NewGuid() };
         var tmdb = Interlocked.Increment(ref _tmdbId).ToString(); var pendingKey = "tv:" + tmdb;
         var series = new Series { Id = Guid.NewGuid(), Name = "Acquired series", ProviderIds = new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase) { ["Tmdb"] = tmdb } };
@@ -91,17 +105,46 @@ public class PrivacyAutoEnableTests
         }
         var users = new Mock<IUserManager>(); users.Setup(x => x.GetUserById(alice.Id)).Returns(alice); users.Setup(x => x.GetUserById(bob.Id)).Returns(bob);
         var library = new Mock<ILibraryManager>(); library.Setup(x => x.GetItemById<BaseItem>(series.Id, alice)).Returns(series); library.Setup(x => x.GetItemById<BaseItem>(series.Id, bob)).Returns((BaseItem?)null);
-        var promoted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        f.Core.Manager.UserConfigurationSaved += (id, file) => { if (id == alice.Id.ToString("N") && file == SpoilerBlurImageFilter.SpoilerBlurFileName) promoted.TrySetResult(); };
-        var service = new SpoilerSeerrPendingPromoter(library.Object, users.Object, f.Core.Manager, f.Core.Paths.Object, f.Core.Logger);
-        try {
-            await service.StartAsync(CancellationToken.None);
-            library.Raise(x => x.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = series });
-            await promoted.Task.WaitAsync(TimeSpan.FromSeconds(15));
-            var savedAlice = f.Core.Manager.GetUserConfiguration<UserSpoilerBlur>(alice.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName)!;
-            var savedBob = f.Core.Manager.GetUserConfiguration<UserSpoilerBlur>(bob.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName)!;
-            Assert.Empty(savedAlice.PendingTmdb); Assert.Equal("Acquired series", savedAlice.Series[series.Id.ToString("N")].SeriesName);
-            Assert.Contains(pendingKey, savedBob.PendingTmdb.Keys); Assert.Empty(savedBob.Series);
-        } finally { await service.StopAsync(CancellationToken.None); SpoilerSeerrPendingPromoter.UnregisterPending(pendingKey, alice.Id); SpoilerSeerrPendingPromoter.UnregisterPending(pendingKey, bob.Id); }
+        var service = new SpoilerSeerrPendingPromoter(library.Object, users.Object, f.Core.Manager, f.Core.Paths.Object, f.Core.Logger) { SweepSettleDelay = TimeSpan.Zero };
+        return new PendingSetup(f, alice, bob, series, pendingKey, library, service);
+    }
+
+    [Fact]
+    public async Task PendingPromoterRestoresFromDiskAndPromotesOnlyAccessibleUserOnLibraryEvent()
+    {
+        await using var p = SetUpPending();
+        await p.Service.StartAsync(CancellationToken.None);
+        p.Library.Raise(x => x.ItemUpdated += null, p.Library.Object, new ItemChangeEventArgs { Item = p.Series });
+        // Every user of the sweep has been handled once it has finished.
+        await p.Service.WaitForSweepsAsync().WaitAsync(TimeSpan.FromSeconds(15));
+        var savedAlice = p.Saved(p.Alice); var savedBob = p.Saved(p.Bob);
+        Assert.Empty(savedAlice.PendingTmdb); Assert.Equal("Acquired series", savedAlice.Series[p.Series.Id.ToString("N")].SeriesName);
+        Assert.Contains(p.PendingKey, savedBob.PendingTmdb.Keys); Assert.Empty(savedBob.Series);
+    }
+
+    [Fact]
+    public async Task PendingPromoterStopWaitsForARunningSweepAndCancelsSettlingOnes()
+    {
+        await using var p = SetUpPending();
+        using var entered = new SemaphoreSlim(0); using var release = new SemaphoreSlim(0);
+        p.Library.Setup(x => x.GetItemById<BaseItem>(p.Series.Id, p.Alice)).Returns(() => { entered.Release(); release.Wait(); return p.Series; });
+        await p.Service.StartAsync(CancellationToken.None);
+        p.Library.Raise(x => x.ItemUpdated += null, p.Library.Object, new ItemChangeEventArgs { Item = p.Series });
+        Assert.True(await entered.WaitAsync(TimeSpan.FromSeconds(15)));
+        var stop = p.Service.StopAsync(CancellationToken.None);
+        await Task.Delay(100);
+        Assert.False(stop.IsCompleted);
+        release.Release();
+        await stop.WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.Empty(p.Saved(p.Alice).PendingTmdb);
+
+        // A sweep still in its settle delay is dropped by StopAsync rather than run later.
+        await using var q = SetUpPending();
+        q.Service.SweepSettleDelay = TimeSpan.FromMinutes(5);
+        await q.Service.StartAsync(CancellationToken.None);
+        q.Library.Raise(x => x.ItemUpdated += null, q.Library.Object, new ItemChangeEventArgs { Item = q.Series });
+        await q.Service.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(15));
+        await q.Service.WaitForSweepsAsync().WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Contains(q.PendingKey, q.Saved(q.Alice).PendingTmdb.Keys);
     }
 }
