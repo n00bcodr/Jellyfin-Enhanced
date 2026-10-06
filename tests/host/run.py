@@ -46,10 +46,15 @@ def owned(*args):
 
 def create_network(name):
     """Create the internal test network on the first free /28, retrying when a concurrent run takes it first."""
-    network_ids = command("docker", "network", "ls", "-q").splitlines()
-    existing = json.loads(command("docker", "network", "inspect", *network_ids))
-    allocated = [ipaddress.ip_network(entry["Subnet"]) for network in existing
-                 for entry in (network.get("IPAM", {}).get("Config") or []) if entry.get("Subnet")]
+    allocated = []
+    for network_id in command("docker", "network", "ls", "-q").splitlines():
+        # One at a time: a network another process removes after the listing is simply gone,
+        # rather than failing a multi-ID inspect.
+        details = owned("docker", "network", "inspect", network_id)
+        if details is None:
+            continue
+        allocated.extend(ipaddress.ip_network(entry["Subnet"]) for network in json.loads(details)
+                         for entry in (network.get("IPAM", {}).get("Config") or []) if entry.get("Subnet"))
     for candidate in ipaddress.ip_network("10.253.0.0/16").subnets(new_prefix=28):
         if any(candidate.overlaps(used) for used in allocated if used.version == 4):
             continue

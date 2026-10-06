@@ -93,6 +93,33 @@ class RegressionToolingTests(unittest.TestCase):
         self.assertEqual(0, found.returncode, found.stderr)
         self.assertEqual([str(spec)], json.loads(found.stdout))
 
+    def test_host_network_scan_tolerates_a_network_removed_after_listing(self):
+        import importlib.util
+        from types import SimpleNamespace
+        spec = importlib.util.spec_from_file_location('je_host_run', ROOT / 'tests/host/run.py')
+        host = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(host)
+        calls = []
+        networks = {'used': '10.253.0.0/28', 'other': '172.17.0.0/16'}
+
+        def docker(args, **_):
+            args = list(args)
+            calls.append(args[1:])
+            if args[1:3] == ['network', 'ls']:
+                return SimpleNamespace(returncode=0, stdout='used\ngone\nother\n')
+            if args[1:3] == ['network', 'inspect']:
+                ids = args[3:]
+                if 'gone' in ids:
+                    return SimpleNamespace(returncode=1, stdout='Error response from daemon: network gone not found')
+                return SimpleNamespace(returncode=0, stdout=json.dumps([{'IPAM': {'Config': [{'Subnet': networks[i]}]}} for i in ids]))
+            if args[1:3] == ['network', 'create']:
+                return SimpleNamespace(returncode=0, stdout='created')
+            raise AssertionError(f'unexpected docker call {args}')
+
+        host.subprocess = SimpleNamespace(run=docker, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT)
+        self.assertEqual('10.253.0.16/28', str(host.create_network('je-regression-test')))
+        self.assertTrue(all(len(call) <= 3 for call in calls if call[:2] == ['network', 'inspect']), calls)
+
 
 if __name__ == '__main__':
     unittest.main()
