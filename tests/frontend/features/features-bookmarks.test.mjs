@@ -7,20 +7,27 @@ import { createHarness, plain } from '../helpers/harness.mjs';
  * ApiClient.ajax (reject it to fail the save); `routes.items` answers item lookups.
  */
 function setup(t, bookmarks = {}, save = async()=>{}) {
-  const events=[];
+  const events=[],toasts=[];
   const routes={save,items:null};
   const ajax=request=>{
     if(request.type==='POST'&&request.url.includes('/JellyfinEnhanced/user-settings/user-a/'))return routes.save(request.url.split('/').pop(),JSON.parse(request.data));
     if(routes.items)return routes.items(request);
     throw new Error(`Unexpected request: ${request.url}`);
   };
-  const h=createHarness({JE:{pluginConfig:{BookmarksEnabled:true},userConfig:{bookmark:{bookmarks}},t:key=>key,toast:()=>{}},apiClient:{ajax}});
+  const h=createHarness({JE:{pluginConfig:{BookmarksEnabled:true},userConfig:{bookmark:{bookmarks}},t:key=>key,toast:message=>toasts.push(message),escapeHtml:value=>String(value)},apiClient:{ajax}});
   t.after(()=>h.close());
   h.document.addEventListener('je-bookmarks-updated',e=>events.push(e.detail.reason));
   h.load('enhanced/config.js');
   h.load('enhanced/bookmarks/bookmarks.js');
-  return {...h,events,routes,api:h.JE.bookmarks};
+  return {...h,events,toasts,routes,api:h.JE.bookmarks};
 }
+/** Answers each user-settings save with a promise the test settles, in call order. */
+function controlledSaves(){
+  const calls=[];
+  return {calls,save:(file,data)=>new Promise((resolve,reject)=>calls.push({data,resolve,reject})),
+    async next(count){for(let i=0;calls.length<count&&i<200;i++)await new Promise(done=>setImmediate(done));assert.equal(calls.length,count);return calls[count-1];}};
+}
+const settle=async(until,limit=200)=>{for(let i=0;!until()&&i<limit;i++)await new Promise(done=>setImmediate(done));assert.ok(until(),'condition never became true');};
 test('bookmarks remain inactive when feature is disabled',t=>{
   const h=createHarness({JE:{pluginConfig:{BookmarksEnabled:false}}});t.after(()=>h.close());
   h.load('enhanced/bookmarks/bookmarks.js');
@@ -136,4 +143,41 @@ test('bookmark metadata cached for one user is fetched again after account switc
 test('stale episode metadata cannot start a secondary series lookup as the old user',async t=>{
  let resolve,calls=0;const h=setup(t);h.document.body.innerHTML='<div class="videoOsdBottom"><button class="btnUserRating" data-id="episode"></button></div>';
  h.routes.items=()=>{calls++;return new Promise(r=>{resolve=r;});};const pending=h.api.add(5);h.JE.userConfig={};resolve({Items:[{Id:'episode',Type:'Episode',SeriesId:'private-series'}]});assert.equal(await pending,null);assert.equal(calls,1);
+});
+
+// Overlapping mutations: the first save fails and the second succeeds. Memory must end
+// equal to what the server holds, or the next save resurrects or drops a bookmark.
+test('overlapping bookmark deletes cannot resurrect a record the server no longer has',async t=>{
+  const saves=controlledSaves();const h=setup(t,{a:{itemId:'one'},b:{itemId:'two'}},saves.save);
+  h.expectConsoleError(/Failed to delete bookmark/);
+  const first=h.api.delete('a'),second=h.api.delete('b');
+  (await saves.next(1)).reject(new Error('offline'));
+  (await saves.next(2)).resolve();
+  assert.deepEqual([await first,await second],[false,true]);
+  assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks),['a']);
+  assert.deepEqual(Object.keys(saves.calls[1].data.bookmarks),['a']);
+  assert.deepEqual(h.events,['delete']);
+});
+test('overlapping bookmark adds leave memory equal to the saved set',async t=>{
+  const saves=controlledSaves();const h=setup(t,{},saves.save);
+  h.document.body.innerHTML='<div class="videoOsdBottom"><button class="btnUserRating" data-id="item"></button></div>';
+  h.routes.items=async()=>({Items:[{Id:'item',Name:'Movie',Type:'Movie'}]});
+  h.expectConsoleError(/Failed to save bookmark/);
+  const first=h.api.add(1),second=h.api.add(2);const firstFailure=assert.rejects(first,/offline/);
+  (await saves.next(1)).reject(new Error('offline'));
+  (await saves.next(2)).resolve();
+  await firstFailure;const added=await second;
+  assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks),[added.id]);
+  assert.deepEqual(Object.keys(saves.calls[1].data.bookmarks),[added.id]);
+  assert.equal(h.JE.userConfig.bookmark.bookmarks[added.id].timestamp,2);
+});
+test('a queued bookmark mutation does not run for a user who signed out meanwhile',async t=>{
+  const saves=controlledSaves();const h=setup(t,{a:{itemId:'one'},b:{itemId:'two'}},saves.save);
+  const first=h.api.delete('a'),second=h.api.update('b',{label:'later'});
+  (await saves.next(1)).resolve();
+  h.JE.userConfig={bookmark:{bookmarks:{}}};
+  // Settle any save a regression issues for the signed-out user, so it fails rather than hangs.
+  const results=Promise.all([first,second]);for(let i=0;i<10;i++)await new Promise(done=>setImmediate(done));saves.calls.slice(1).forEach(call=>call.resolve());
+  assert.deepEqual(await results,[true,false]);
+  assert.equal(saves.calls.length,1);assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks),{});
 });
