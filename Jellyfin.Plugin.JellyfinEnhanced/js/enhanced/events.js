@@ -44,6 +44,10 @@
         return MODIFIER_ORDER.filter(name => modifiers.has(name)).map(name => name + '+').join('') + key;
     }
 
+    // The shortcut editor's conflict check compares bindings the same way.
+    JE.internals = JE.internals || {};
+    JE.internals.canonicalCombo = canonicalCombo;
+
     /**
      * The active shortcuts with every combo canonicalised (see canonicalCombo).
      * @returns {Object<string, *>} Action name to canonical combo.

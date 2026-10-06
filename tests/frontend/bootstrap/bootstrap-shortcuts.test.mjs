@@ -68,6 +68,16 @@ for (const [stored, key, modifiers] of [['Shift+Ctrl+Z', 'Z', { ctrlKey: true, s
   });
 }
 
+// The conflict check must see a stored binding the key listener would fire for the same press.
+for (const stored of ['Shift+Ctrl+S', 'Ctrl+Shift+s']) {
+  test(`shortcut editor rejects a combo that collides with stored ${stored}`, t => {
+    const h = setup(t); h.JE.state.activeShortcuts.CycleSubtitleTracks = stored;
+    h.key.focus(); h.press(h.key, 'S', { ctrlKey: true, shiftKey: true });
+    assert.equal(h.JE.state.activeShortcuts.CycleAudioTracks, 'A'); assert.equal(h.saves.length, 0);
+    assert.ok(h.key.classList.contains('shake-error'));
+  });
+}
+
 test('administrator disabling shortcuts leaves panel key available but player bindings inactive', t => {
   const h = setup(t, true); h.JE.initializeEnhancedScript();
   h.press(h.document.body, 'a'); h.press(h.document.body, '?');
