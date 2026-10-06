@@ -83,9 +83,14 @@ public class PrivacyAutoEnableTests
         public UserSpoilerBlur Saved(User user) => Fixture.Core.Manager.GetUserConfiguration<UserSpoilerBlur>(user.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName)!;
         public async ValueTask DisposeAsync()
         {
-            // Bounded: a regression that leaves a sweep running must fail its test, not hang the run.
+            // Bounded so a stuck sweep cannot hang the run. StopAsync swallows the host giving up,
+            // so a sweep still running after it is caught by the zero-wait check instead.
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            try { await Service.StopAsync(timeout.Token); }
+            try
+            {
+                await Service.StopAsync(timeout.Token);
+                await Service.WaitForSweepsAsync().WaitAsync(TimeSpan.Zero);
+            }
             finally
             {
                 SpoilerSeerrPendingPromoter.UnregisterPending(PendingKey, Alice.Id); SpoilerSeerrPendingPromoter.UnregisterPending(PendingKey, Bob.Id);
