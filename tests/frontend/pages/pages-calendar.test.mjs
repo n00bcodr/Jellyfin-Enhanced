@@ -24,11 +24,13 @@ test('calendar migrates legacy preference once and isolates subsequent users', t
   h.P.loadSettings();
   assert.equal(h.P.state.settings.showUnmonitored, true);
   assert.equal(h.window.localStorage.getItem('je.calendar.showUnmonitored'), null);
-  h.P.setStoredShowUnmonitored(false);
+  // User 0 keeps the non-default true, so reading its key after the switch would show.
+  assert.equal(h.window.localStorage.getItem('je.calendar.showUnmonitored:user-0'), 'true');
   h.switchUser(); h.P.loadSettings();
   assert.equal(h.P.state.settings.showUnmonitored, false);
-  h.P.setStoredShowUnmonitored(true);
-  assert.equal(h.window.localStorage.getItem('je.calendar.showUnmonitored:user-0'), 'false');
+  h.P.setStoredShowUnmonitored(false);
+  assert.equal(h.window.localStorage.getItem('je.calendar.showUnmonitored:user-1'), 'false');
+  assert.equal(h.window.localStorage.getItem('je.calendar.showUnmonitored:user-0'), 'true');
 });
 
 test('calendar mandatory requests filter cannot be bypassed by inverted interactive filters', t => {

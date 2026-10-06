@@ -20,7 +20,15 @@ test('tag pipeline drops removed cards while a lookup is pending',async t=>{
  const h=setup(t);h.scan();h.fetch();h.document.querySelector('.card').remove();h.response.resolve({Items:[{Id:'aabb',Type:'Movie'}]});await settle();assert.equal(h.rendered.length,0);
 });
 test('tag pipeline rejects a late previous-user batch after identity reset',async t=>{
- const h=setup(t);h.scan();h.fetch();h.changes.get('tag-pipeline')({userId:'b'});h.response.resolve({Items:[{Id:'aabb',Type:'Movie',Genres:['private']} ]});await settle();assert.equal(h.rendered.length,0);assert.equal(h.JE.tagPipeline.peekReviewRatings(),null);
+ const h=setup(t);h.scan();h.fetch();h.changes.get('tag-pipeline')({userId:'b'});h.response.resolve({Items:[{Id:'aabb',Type:'Movie',Genres:['private']} ]});await settle();assert.equal(h.rendered.length,0);
+});
+test('identity reset drops the previous user\'s review ratings',async t=>{
+ const changes=new Map();
+ const h=createHarness({globals:{requestIdleCallback:()=>{}},apiClient:{ajax:async()=>({reviewRatings:{'movie:42':{average:4.5}},items:{},count:0})},JE:{pluginConfig:{TagCacheServerMode:true},currentSettings:{},core:{tagRenderer:{applyCornerStacking(){},scheduleCornerStacking(){}}},
+  session:{getUserId:()=>'user-a',getServerId:()=>'server-a',getEpoch:()=>0,isCurrent:()=>true,onUserChange:(id,fn)=>changes.set(id,fn)}}});t.after(()=>h.close());
+ h.load('tags/tag-pipeline.js');await h.JE.tagPipeline.invalidateServerCache();
+ assert.equal(h.JE.tagPipeline.peekReviewRatings()?.get('movie:42'),4.5);
+ changes.get('tag-pipeline')({userId:'b'});assert.equal(h.JE.tagPipeline.peekReviewRatings(),null);
 });
 test('tag pipeline skips hidden/admin/nonmedia cards without transport',t=>{
  const h=setup(t,`<div id="pluginsPage">${card}</div>${card.replace('class="card"','class="card je-hidden"')}${card.replace('data-type="Movie"','data-type="Person"')}`);h.scan();h.fetch();assert.equal(h.calls.length,0);assert.equal(h.rendered.length,0);
