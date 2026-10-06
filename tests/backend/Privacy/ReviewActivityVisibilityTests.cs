@@ -73,7 +73,12 @@ public class ReviewActivityVisibilityTests
 #if NET9_0
         library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns<InternalItemsQuery>(query => query.User == null ? [] : allowedIds);
 #else
-        library.Setup(x => x.ConfigureUserAccess(It.IsAny<InternalItemsQuery>(), It.IsAny<User>())).Callback<InternalItemsQuery, User>((query, user) => scopedTo[query] = user);
+        // Like Jellyfin 12's AddUserToQuery, the library scope only applies while ItemIds is
+        // still empty; configuring access after narrowing to the page leaves the query unscoped.
+        library.Setup(x => x.ConfigureUserAccess(It.IsAny<InternalItemsQuery>(), It.IsAny<User>())).Callback<InternalItemsQuery, User>((query, user) =>
+        {
+            if (query.ItemIds.Length == 0) scopedTo[query] = user;
+        });
         library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns<InternalItemsQuery>(query => scopedTo.ContainsKey(query) ? allowedIds : []);
 #endif
         library.Setup(x => x.GetItemById(allowed)).Returns(new Movie { Id = allowed, Name = "Visible movie" });
