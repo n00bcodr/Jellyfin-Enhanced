@@ -34,15 +34,20 @@ test('disabled filtering and search default preserve cards; image-editor cards a
 });
 test('hidden requests/calendar normalize IDs and respect surface settings',t=>{
  const h=setup(t,{items:{a:{itemId:'AA-BB',tmdbId:42,name:'Show (US)'},scoped:{itemId:'scoped',tmdbId:55,hideScope:'nextup'}}});
- assert.deepEqual(Array.from(h.api.filterRequestItems([{tmdbId:42},{jellyfinMediaId:'aabb'},{tmdbId:55}]),x=>x.tmdbId),[55]);
+ assert.deepEqual(Array.from(h.api.filterRequestItems([{tmdbId:42},{jellyfinMediaId:'AA-BB'},{tmdbId:55}]),x=>x.tmdbId),[55]);
  assert.equal(h.api.filterCalendarEvents([{title:'Show'},{title:'Visible'},{itemId:'AA-BB'}]).length,1);
  h.api.getHiddenData().settings.filterRequests=false;
  assert.equal(h.api.filterRequestItems([{tmdbId:42}]).length,1);
+ h.api.getHiddenData().settings.filterCalendar=false;
+ assert.equal(h.api.filterCalendarEvents([{title:'Show'},{tmdbId:42},{itemId:'AA-BB'}]).length,3);
 });
 test('switching users clears previous hidden DOM marks and cached policy',t=>{
- const h=setup(t,{items:{a:{itemId:'a'}},html:'<div class="card" data-id="a"></div>'});
- h.api.filterNativeCards();h.flush();h.switchUser();
+ const h=setup(t,{items:{a:{itemId:'a',tmdbId:42}},html:'<div class="card" data-id="a"></div>'});
+ h.api.filterNativeCards();h.flush();assert.equal(h.api.getHiddenCount(),1);assert.equal(h.api.filterRequestItems([{tmdbId:42}]).length,0);
+ h.switchUser();
  const card=h.document.querySelector('.card');assert.equal(card.classList.contains('je-hidden'),false);assert.equal(card.hasAttribute('data-je-hidden-checked'),false);assert.equal(h.api.hiddenIdSet.size,0);
+ // The incoming user sees none of the previous user's hidden IDs, TMDB IDs or items.
+ assert.equal(h.api.filterRequestItems([{tmdbId:42}]).length,1);assert.equal(h.api.getHiddenCount(),0);assert.equal(h.api.isHiddenOnSurface('a','library'),false);
 });
 test('old-user hidden-content refresh cannot overwrite incoming preferences',async t=>{
  const pending=deferred();const h=setup(t,{ajax:()=>pending.promise});
