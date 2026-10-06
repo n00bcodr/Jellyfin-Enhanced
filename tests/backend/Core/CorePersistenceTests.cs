@@ -124,7 +124,8 @@ public class CorePersistenceTests
     {
         using var f = new CoreFixture();
         f.Logger.Warning("untrusted\r\n[INFO] forged");
-        var lines = File.ReadAllLines(f.Logger.CurrentLogFilePath);
+        // The file name carries the date; whichever file the line landed in, it is the only one.
+        var lines = File.ReadAllLines(Assert.Single(Directory.GetFiles(f.Root, "*.log")));
         Assert.Single(lines);
         Assert.Contains("untrusted\\r\\n[INFO] forged", lines[0]);
     }

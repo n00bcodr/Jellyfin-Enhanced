@@ -71,8 +71,12 @@ public class CoreUsageTests
         try
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("th-TH");
+            // Read the date on both sides so a run crossing UTC midnight still passes.
+            var before = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             using var service = new UsageEventCounterService(f.Paths.Object, f.Logger);
-            Assert.Equal(DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), service.GetSnapshot().PeriodStart);
+            var period = service.GetSnapshot().PeriodStart;
+            var after = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            Assert.Contains(period, new[] { before, after });
         }
         finally { CultureInfo.CurrentCulture = old; }
     }

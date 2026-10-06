@@ -200,6 +200,7 @@ public class TaskRegressionTests
         config.JellyseerrEnabled = true;
         config.JellyseerrAutoImportUsers = true;
         config.SyncJellyfinWatchlistToSeerr = true;
+        config.SyncJellyseerrWatchlist = true;
         config.AddRequestedMediaToWatchlist = true;
         config.JellyseerrUrls = url;
         config.JellyseerrApiKey = apiKey;
@@ -214,4 +215,43 @@ public class TaskRegressionTests
         }
     }
 
+    [Theory]
+    [InlineData(false)][InlineData(true)]
+    public async Task SeerrMasterSwitchAloneKeepsSeerrTasksIdle(bool seerrEnabled)
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        // Every task flag on and valid credentials: only the master switch differs.
+        config.JellyseerrEnabled = seerrEnabled;
+        config.JellyseerrAutoImportUsers = true;
+        config.SyncJellyfinWatchlistToSeerr = true;
+        config.SyncJellyseerrWatchlist = true;
+        config.JellyseerrUrls = "http://seerr.test";
+        config.JellyseerrApiKey = "seerr-key";
+        foreach (var name in new[] { "import", "export", "watchlist" })
+        {
+            var library = new Mock<ILibraryManager>(); var users = new Mock<IUserManager>();
+            var data = new Mock<IUserDataManager>(); var http = new Mock<IHttpClientFactory>();
+            IScheduledTask task = name switch
+            {
+                "import" => new JellyseerrUserImportTask(users.Object, http.Object, f.Core.Logger),
+                "export" => new JellyfinToSeerrWatchlistSyncTask(library.Object, users.Object, data.Object, http.Object, f.Core.Manager, f.Core.Logger),
+                _ => new JellyseerrWatchlistSyncTask(library.Object, users.Object, data.Object, http.Object, f.Core.Manager, f.Core.Logger),
+            };
+            var progress = new ProgressLog();
+            try { await task.ExecuteAsync(progress, default); }
+            catch (Exception) when (seerrEnabled) { /* the unconfigured fakes may fail a running task */ }
+            var touched = library.Invocations.Count + users.Invocations.Count + data.Invocations.Count + http.Invocations.Count;
+            if (seerrEnabled)
+            {
+                // Control: with the switch on, the same setup reaches the task's dependencies.
+                Assert.True(touched > 0, name + " never ran with Seerr enabled");
+            }
+            else
+            {
+                Assert.Equal(0, touched);
+                Assert.Equal(100, Assert.Single(progress.Values));
+            }
+        }
+    }
 }

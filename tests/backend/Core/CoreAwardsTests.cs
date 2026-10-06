@@ -10,12 +10,17 @@ public class CoreAwardsTests
     private sealed class Handler(string body, HttpStatusCode status = HttpStatusCode.OK) : HttpMessageHandler
     {
         public int Calls;
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        /// <summary>When set, every request waits for it, so concurrent callers overlap for real.</summary>
+        public TaskCompletionSource? Release;
+        public readonly SemaphoreSlim Entered = new(0);
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref Calls);
             Assert.Equal("query.wikidata.org", request.RequestUri!.Host);
             Assert.Contains("application/sparql-results+json", request.Headers.Accept.ToString());
-            return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+            Entered.Release();
+            if (Release != null) await Release.Task.WaitAsync(cancellationToken);
+            return new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
         }
     }
     private static Mock<IHttpClientFactory> Factory(Handler handler)
@@ -29,11 +34,16 @@ public class CoreAwardsTests
     public async Task ConfirmedEmptyResultCoalescesAndPersistsAcrossRestart()
     {
         using var f = new CoreFixture();
-        using var handler = new Handler("{\"results\":{\"bindings\":[]}}");
+        using var handler = new Handler("{\"results\":{\"bindings\":[]}}") { Release = new(TaskCreationOptions.RunContinuationsAsynchronously) };
         var factory = Factory(handler);
         using (var service = new WikidataAwardsService(factory.Object, f.Paths.Object, f.Logger))
         {
-            var results = await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => service.GetAwardsAsync("movie", "123", default)));
+            // Hold the first request open while the other 19 callers arrive; none may start its own.
+            var pending = Enumerable.Range(0, 20).Select(_ => service.GetAwardsAsync("movie", "123", default)).ToArray();
+            Assert.True(await handler.Entered.WaitAsync(TimeSpan.FromSeconds(15)));
+            Assert.False(await handler.Entered.WaitAsync(TimeSpan.FromMilliseconds(250)));
+            handler.Release.SetResult();
+            var results = await Task.WhenAll(pending);
             Assert.All(results, r => { Assert.False(r.Found); Assert.True(r.Confirmed); });
             Assert.Equal(1, handler.Calls);
         }

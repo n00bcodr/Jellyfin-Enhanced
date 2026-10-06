@@ -22,7 +22,10 @@ public class IntegrationTmdbTests
         await cache.GetAsync("search/tv", "?query=a", "key", default);
         await cache.GetAsync("search/movie", "?query=a", "other", default);
         Assert.Equal(4, transport.Calls);
-        clock.Now += TimeSpan.FromMinutes(30);
+        clock.Now += TimeSpan.FromMinutes(30) - TimeSpan.FromTicks(1);
+        Assert.Same(first, await cache.GetAsync("search/movie", "?query=a", "key", default));
+        Assert.Equal(4, transport.Calls);
+        clock.Now += TimeSpan.FromTicks(1);
         Assert.NotSame(first, await cache.GetAsync("search/movie", "?query=a", "key", default));
         Assert.Equal(5, transport.Calls);
     }

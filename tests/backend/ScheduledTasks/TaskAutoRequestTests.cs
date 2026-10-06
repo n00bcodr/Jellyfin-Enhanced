@@ -79,15 +79,31 @@ public class TaskAutoRequestTests
     }
 
     [Theory]
-    [InlineData(false, true)][InlineData(true, false)]
+    [InlineData(false, true)][InlineData(true, false)][InlineData(true, true)]
     public async Task DisabledAutomaticRequestsDoNotConsultUsersOrNetwork(bool feature, bool seerr)
     {
         using var f = new ApiPluginFixture();
-        f.Plugin.Configuration.AutoMovieRequestEnabled = feature;
-        f.Plugin.Configuration.AutoSeasonRequestEnabled = feature;
-        f.Plugin.Configuration.JellyseerrEnabled = seerr;
-        await new AutoMovieRequestService(null!, f.Core.Logger, null!, null!).CheckMovieForCollectionRequestAsync(new Movie(), Guid.NewGuid());
-        await new AutoSeasonRequestService(null!, f.Core.Logger, null!, null!, null!).CheckEpisodeCompletionAsync(new Episode(), Guid.NewGuid());
+        var config = f.Plugin.Configuration;
+        config.AutoMovieRequestEnabled = feature;
+        config.AutoSeasonRequestEnabled = feature;
+        config.JellyseerrEnabled = seerr;
+        // Everything else a request needs is configured, so only the switches can stop it.
+        config.TMDB_API_KEY = "test-tmdb";
+        config.JellyseerrUrls = "http://seerr.test";
+        config.JellyseerrApiKey = "test-seerr";
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var users = new Mock<IUserManager>();
+        users.Setup(u => u.GetUserById(user.Id)).Returns(user);
+        using var transport = new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}", 404)));
+        var movie = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
+        await new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!).CheckMovieForCollectionRequestAsync(movie, user.Id);
+        var movieCalls = transport.Calls;
+        await new AutoSeasonRequestService(transport, f.Core.Logger, users.Object, null!, null!).CheckEpisodeCompletionAsync(new Episode(), user.Id);
+        var enabled = feature && seerr;
+        // The enabled control proves this setup reaches the user lookup and the TMDB request.
+        users.Verify(u => u.GetUserById(user.Id), enabled ? Times.Exactly(2) : Times.Never());
+        Assert.Equal(enabled ? 1 : 0, movieCalls);
+        Assert.Equal(movieCalls, transport.Calls);
     }
     [Theory]
     [InlineData(7, 10, 1, false, 0)]

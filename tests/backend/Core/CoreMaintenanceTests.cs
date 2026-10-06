@@ -82,6 +82,16 @@ public class CoreMaintenanceTests
         Assert.True(f.Policies[f.Alice.Id].EnableRemoteAccess);
         Assert.Empty(f.Service.GetStatus().AccountDisabledUserIds);
         Assert.Empty(f.Service.GetStatus().RemoteDisabledUserIds);
+        // A selection with no valid id at all must not fall back to "every user".
+        await f.Service.EnableAsync("", 0, "both", ["invalid"]);
+        Assert.True(f.Service.GetStatus().IsActive);
+        Assert.False(f.Policies[f.Alice.Id].IsDisabled);
+        Assert.True(f.Policies[f.Alice.Id].EnableRemoteAccess);
+        Assert.True(f.Policies[f.Restricted.Id].IsDisabled);
+        Assert.False(f.Policies[f.Restricted.Id].EnableRemoteAccess);
+        Assert.False(f.Policies[f.Admin.Id].IsDisabled);
+        Assert.Empty(f.Service.GetStatus().AccountDisabledUserIds);
+        Assert.Empty(f.Service.GetStatus().RemoteDisabledUserIds);
     }
 
     [Fact]
