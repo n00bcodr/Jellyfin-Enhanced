@@ -162,8 +162,10 @@ public class TaskRegressionTests
         using var f = new ApiPluginFixture();
         var config = f.Plugin.Configuration;
         config.AnalyticsEnabled = consent;
-        config.AnalyticsLastReportedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        config.AnalyticsLastReportedPluginVersion = f.Plugin.Version.ToString();
+        // Without consent the report is overdue and the version changed, so only consent stops it;
+        // with consent nothing is due yet.
+        config.AnalyticsLastReportedAt = DateTimeOffset.UtcNow.AddDays(consent ? 0 : -60).ToUnixTimeMilliseconds();
+        config.AnalyticsLastReportedPluginVersion = consent ? f.Plugin.Version.ToString() : "older";
         config.AnalyticsLastReportedJellyfinTarget = HostCompatibilityService.BuiltFor;
         config.AnalyticsLastReportedJellyfinVersion = "test-host";
         var host = new Mock<MediaBrowser.Controller.IServerApplicationHost>();

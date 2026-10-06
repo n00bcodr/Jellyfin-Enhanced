@@ -48,6 +48,29 @@ public class IntegrationAnalyticsTests
     }
 
     [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 2)]
+    public async Task OnlyConsentLetsAnOverdueOrForcedReportReachTheNetwork(bool consent, int expectedCalls)
+    {
+        using var f = new ApiPluginFixture();
+        var c = f.Plugin.Configuration;
+        c.AnalyticsEnabled = consent;
+        c.AnalyticsInstallId = "server-id"; c.AnalyticsInstallSecret = "server-secret";
+        // Overdue and every version changed: only consent can stop the scheduled report.
+        c.AnalyticsLastReportedAt = DateTimeOffset.UtcNow.AddDays(-60).ToUnixTimeMilliseconds();
+        c.AnalyticsLastReportedPluginVersion = "older";
+        c.AnalyticsLastReportedJellyfinTarget = "older-target";
+        c.AnalyticsLastReportedJellyfinVersion = "older-host";
+        using var counters = new UsageEventCounterService(f.Core.Paths.Object, f.Core.Logger);
+        using var transport = new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response()));
+        var service = Service(f, counters, transport);
+        await service.ReportIfDueAsync(default);
+        Assert.Equal(consent ? 1 : 0, transport.Calls);
+        await service.ForceSendAsync(default);
+        Assert.Equal(expectedCalls, transport.Calls);
+    }
+
+    [Theory]
     [InlineData(200)][InlineData(403)][InlineData(429)][InlineData(500)]
     public async Task OnlyAcknowledgedReportAdvancesCheckpointAndSubtractsExactlySentCounters(int status)
     {
