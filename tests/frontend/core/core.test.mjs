@@ -148,12 +148,17 @@ test('user switch cancels queued writes before they can use new credentials', as
 
 test('aborted queued requests release their place without consuming transport', async t => {
   const pending = deferred(); let calls = 0;
-  const { JE,window } = setup(t,{fetch:()=>{calls++; return pending.promise;}});
+  const { JE,window } = setup(t,{fetch:()=>{calls++; return calls===1?pending.promise:Promise.resolve(jsonResponse({ok:true}));}});
   JE.core.api.manager.CONFIG.concurrency.maxConcurrent=1;
   const running=JE.core.api.fetch('/one'); const controller=new window.AbortController();
   const queued=JE.core.api.fetch('/two',{signal:controller.signal});
   const rejected=assert.rejects(queued,{name:'AbortError'}); controller.abort(); await rejected;
   pending.resolve(jsonResponse({})); await running; assert.equal(calls,1);
+  // The aborted entry must have left the queue: otherwise it takes the freed slot and never returns it.
+  const third=JE.core.api.fetch('/three');
+  const outcome=await Promise.race([third,new Promise(done=>setTimeout(()=>done('hung'),1000))]);
+  assert.notEqual(outcome,'hung','a later request must still get a slot');
+  assert.equal(calls,2);
 });
 
 for (const status of [400,401,403,404]) test(`HTTP ${status} does not retry`,async t=>{

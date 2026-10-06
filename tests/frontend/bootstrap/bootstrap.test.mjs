@@ -209,3 +209,30 @@ test('late bootstrap for previous identity cannot restore private config or book
   assert.equal(h.plugin.pluginConfig.SonarrUrl, undefined);
   assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'user-c': { name: 'user-c' } });
 });
+
+// The per-endpoint fallback (a bootstrap naming another user) has its own late-response guards.
+for (const late of ['private-config', 'settings']) test(`per-endpoint fallback drops a late ${late} response from the previous identity`, async t => {
+  const stale = deferred();
+  let bWaiting = false;
+  const h = setup(t, { ajax: async path => {
+    if (path.endsWith('/bootstrap')) return payload({ UserId: 'user-a' });
+    if (path.endsWith('/private-config')) {
+      if (late === 'private-config' && h.plugin.session.getUserId() === 'user-b') { bWaiting = true; return stale.promise; }
+      return {};
+    }
+    if (path === '/JellyfinEnhanced/user-settings/user-b/bookmark.json' && late === 'settings') { bWaiting = true; return stale.promise; }
+    if (path === '/JellyfinEnhanced/user-settings/user-c/bookmark.json') return { Bookmarks: { 'user-c': { Name: 'user-c' } } };
+    if (/^\/JellyfinEnhanced\/user-settings\/user-[bc]\//.test(path)) return {};
+    throw new Error(`Unexpected endpoint ${path}`);
+  } });
+  await until(() => h.plugin.initialized);
+  h.switchUser('user-b');
+  await until(() => bWaiting);
+  const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
+  h.switchUser('user-c');
+  await loaded;
+  stale.resolve(late === 'private-config' ? { SonarrUrl: 'secret' } : { Bookmarks: { stolen: {} } });
+  for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.plugin.pluginConfig.SonarrUrl, undefined);
+  assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'user-c': { name: 'user-c' } });
+});

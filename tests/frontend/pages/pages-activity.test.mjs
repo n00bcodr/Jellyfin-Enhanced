@@ -23,6 +23,20 @@ test('activity renders separated watch and chronological review/favorite section
   assert.equal(h.document.querySelector('.je-activity-progress-fill').style.width,'42%');
   h.document.querySelector('.je-activity-item-name').click();assert.equal(h.window.location.hash,'#!/details?id=Partial');
 });
+test('activity escapes user and item names in every section, active streams included',async t=>{
+  const hostile=label=>`<img src=x data-from="${label}"><script>${label}</script>`;
+  const row=(type,label,extra={})=>({ActivityType:type,UserId:'u',UserName:hostile(`${label}-user`),Timestamp:0,Item:{Id:label,Name:hostile(`${label}-item`)},...extra});
+  const session={UserId:'u',UserName:hostile('stream-user'),PlayState:{PositionTicks:50},NowPlayingItem:{Id:'stream',Name:hostile('stream-item'),RunTimeTicks:100}};
+  const h=setup(t,{config:{ActiveStreamsEnabled:true,ActivityFeedShowActiveStreams:true},api:async path=>path==='/active-streams/sessions'?[session]
+    :{items:[row('Watched','partial',{Progress:0.5}),row('Watched','complete',{Completed:true}),row('Reviewed','review',{Rating:4,Content:'fine'}),row('Favorited','favorite')]}});
+  await h.P.renderForCustomTab(h.host);
+  assert.equal(h.document.querySelectorAll('.je-activity-section').length,3);
+  assert.equal(h.document.querySelector('img[data-from]'),null);assert.equal(h.document.querySelector('script'),null);
+  const labels=['stream','partial','complete','review','favorite'];
+  assert.deepEqual([...h.document.querySelectorAll('.je-activity-user')].map(n=>n.textContent),labels.map(label=>hostile(`${label}-user`)));
+  assert.deepEqual([...h.document.querySelectorAll('.je-activity-item-name')].map(n=>n.textContent),labels.map(label=>hostile(`${label}-item`)));
+  h.P.stopPolling();
+});
 test('activity empty and failed responses show explicit state and refresh recovers',async t=>{
   let failing=true;const h=setup(t,{api:async()=>{if(failing)throw Error('offline');return {items:[]};}});
   await h.P.renderForCustomTab(h.host);assert.equal(h.document.querySelectorAll('.je-activity-error').length,2);

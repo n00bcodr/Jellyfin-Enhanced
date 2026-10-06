@@ -26,7 +26,7 @@ function header(t, width = 170) {
     const button = h.document.createElement('button'); button.id = id; button.className = 'headerButton'; button.title = `<${id}>`;
     button.innerHTML = `<span id="${id}-icon" class="material-icons">event</span>`; tray.appendChild(button);
   }
-  return { ...h, tray, resize(next) { width = next; h.window.dispatchEvent(new h.window.Event('resize')); }, logout() { signedIn = false; reset(); } };
+  return { ...h, tray, resize(next) { width = next; h.window.dispatchEvent(new h.window.Event('resize')); }, logout() { signedIn = false; reset(); }, login() { signedIn = true; } };
 }
 
 test('narrow header preserves foreign plugin buttons and forwards overflow actions to mounted originals', async t => {
@@ -62,6 +62,12 @@ test('identity reset discards previous user actions and signed-out tray access',
   assert.equal(h.document.getElementById('requests'), null);
   assert.equal(h.document.querySelector('.je-launcher-action'), null);
   assert.ok(h.document.getElementById('foreign'));
+  // The next user reuses the tray element: it must come back holding only the launcher.
+  h.login();
+  const next = h.JE.headerActions.getTray();
+  assert.equal(next, h.tray);
+  for (const id of ['randomItemButton', 'calendar', 'requests', 'bookmarks']) assert.equal(next.querySelector(`#${id}`), null, id);
+  assert.deepEqual([...next.children].map(child => child.id), ['je-header-launcher']);
 });
 
 test('injected icon stylesheet keeps public full fonts distinct from JE subsets and respects theme classes', t => {

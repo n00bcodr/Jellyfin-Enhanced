@@ -95,12 +95,22 @@ test('calendar requests paginate, normalize type, deduplicate and load only once
   assert.deepEqual([...h.P.state.requestedItems],['tv:7','movie:8']);
   assert.equal(calls.length,2); assert.equal(new URL(calls[1],'http://test').searchParams.get('skip'),'200');
   assert.equal(new URL(calls[0],'http://test').searchParams.get('userOnly'),'true');
+  // The next user starts empty and loads their own requests.
+  h.switchUser();
+  assert.equal(h.P.state.requestedItems.size,0); assert.equal(h.P.state.requestedLoaded,false);
+  await h.P.ensureRequestData(); assert.equal(calls.length,4);
 });
 
 test('calendar pending requests cannot install previous account state', async t => {
-  const pending=deferred(); const h=setup(t,{pluginConfig:{JellyseerrEnabled:true},core:{api:{plugin:()=>pending.promise}}});
-  const run=h.P.ensureRequestData(); h.switchUser(); pending.resolve({requests:[{type:'movie',tmdbId:1}]}); await run;
-  assert.equal(h.P.state.requestedItems.size,0); assert.equal(h.P.state.requestedLoaded,false);
+  const pending=deferred(); let calls=0;
+  const h=setup(t,{pluginConfig:{JellyseerrEnabled:true},core:{api:{plugin:()=>++calls===1?pending.promise:Promise.resolve({requests:[{type:'movie',tmdbId:2}]})}}});
+  const run=h.P.ensureRequestData(); h.switchUser();
+  // The previous user's in-flight load must not block the new user's.
+  assert.equal(h.P.state.requestedLoading,false);
+  await h.P.ensureRequestData(); assert.equal(calls,2);
+  assert.deepEqual([...h.P.state.requestedItems],['movie:2']);
+  pending.resolve({requests:[{type:'movie',tmdbId:1}]}); await run;
+  assert.deepEqual([...h.P.state.requestedItems],['movie:2']);
 });
 
 test('calendar Shoko lookup tries episode then series after a missing match and supports series preference', async t=>{
