@@ -118,12 +118,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
         /// <summary>
         /// Variant canonicalization: language+variant aliases (zh-hakka -> hak, art-lojban -> jbo),
-        /// then the language-independent ones (heploc -> alalc97, lojban dropped; baku1926 becomes the
-        /// Baku script when no script or region is present after language alias expansion).
+        /// then the language-independent ones (heploc -> alalc97, lojban dropped, aaland fills an empty
+        /// region with AX; baku1926 becomes the Baku script when no script or region is present after
+        /// language alias expansion and no other variant becomes alalc97 or a region).
         /// </summary>
         private static List<string>? ApplyVariantAliases(string originalLanguage, List<string> variants, ref string language, ref string? script, ref string? region)
         {
-            var canUseVariantScript = script is null && region is null;
+            var canUseVariantScript = script is null && region is null && !variants.Exists(BlocksVariantScript);
             var result = new List<string>(variants.Count);
             foreach (var variant in variants)
             {
@@ -145,6 +146,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 {
                     result.Add(variant); // posix stays a variant, named "Computer"
                 }
+                else if (IsRegionSubtag(replacement))
+                {
+                    // A region alias fills an empty region and is otherwise dropped (en-US-aaland -> en-US).
+                    region ??= replacement;
+                }
                 else if (replacement.Length == 4 && char.IsAsciiLetterUpper(replacement[0]))
                 {
                     if (canUseVariantScript)
@@ -165,6 +171,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
             return result.Count == 0 ? null : result;
         }
+
+        /// <summary>
+        /// True for a variant that keeps ICU from promoting baku1926 to the Baku script: one that is or
+        /// becomes alalc97 (heploc), or one that becomes a region (aaland). The tag then keeps
+        /// baku1926 as a variant ("az-baku1926-heploc" is "Azerbaijani (ALALC97_BAKU1926)").
+        /// </summary>
+        private static bool BlocksVariantScript(string variant)
+        {
+            if (variant == "alalc97") return true;
+            return GenericVariantAliases.TryGetValue(variant, out var replacement)
+                && (replacement == "alalc97" || IsRegionSubtag(replacement));
+        }
+
+        /// <summary>True for a canonical region subtag: two upper-case letters or three digits.</summary>
+        private static bool IsRegionSubtag(string subtag)
+            => (subtag.Length == 2 && char.IsAsciiLetterUpper(subtag[0]) && char.IsAsciiLetterUpper(subtag[1]))
+                || (subtag.Length == 3 && char.IsAsciiDigit(subtag[0]) && char.IsAsciiDigit(subtag[1]) && char.IsAsciiDigit(subtag[2]));
 
         /// <summary>
         /// The canonical base language Intl.getCanonicalLocales gives a 2-3 letter code

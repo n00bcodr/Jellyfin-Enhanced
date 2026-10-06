@@ -32,7 +32,7 @@ for (const a of A) {
         }
     }
 }
-const variants = ['1901', '1994', 'valencia', 'posix', 'lojban', 'arevela', 'arevmda', 'heploc', 'baku1926', 'pinyin', 'scouse', 'rozaj', 'biske', 'guoyu', 'hakka', 'xiang', 'gaulish', 'abcde', 'fonipa'];
+const variants = ['1901', '1994', 'valencia', 'posix', 'lojban', 'arevela', 'arevmda', 'heploc', 'baku1926', 'pinyin', 'scouse', 'rozaj', 'biske', 'guoyu', 'hakka', 'xiang', 'gaulish', 'abcde', 'fonipa', 'aaland'];
 for (const lang of ['en', 'de', 'ca', 'sl', 'zh', 'hy', 'arm', 'art', 'cel', 'prs', 'cnr', 'bh', 'tw', 'sh', 'iw', 'aa', 'und', 'xyz', 'sr', 'az', 'ja']) {
     for (const variant of variants) {
         codes.add(`${lang}-${variant}`);
@@ -73,6 +73,14 @@ for (const code of ['pt_BR', 'root', 'e', 'en--us', '-en', 'en-', 'x-klingon', '
     'abcdefghi', 'english', 'English', 'EN-US', 'En-Us', 'sgn-be-fr', 'art-lojban', 'en-gb-oed', 'de-1901-1901', 'en-abcde', 'en-us-abcde-fghij',
     'zh-hant-abcde', 'en-1abc', 'en-12ab', 'en-latn-us-abcde', ' en', 'en ', '', 'eng-', 'q', '123', 'en-123', 'en-12', 'en-1234']) {
     codes.add(code);
+}
+
+// baku1926 becomes the Baku script only when no other variant becomes alalc97 or a region.
+for (const lang of ['az', 'tk', 'en', 'sh', 'prs', 'sgn', 'und']) {
+    for (const tail of ['baku1926-heploc', 'heploc-baku1926', 'baku1926-alalc97', 'alalc97-baku1926', 'baku1926-aaland', 'aaland-baku1926',
+        'baku1926-aaland-heploc', 'baku1926-heploc-fonipa', 'baku1926-fonipa', 'US-baku1926-heploc', 'Latn-baku1926-heploc']) {
+        codes.add(`${lang}-${tail}`);
+    }
 }
 
 const expected = {};

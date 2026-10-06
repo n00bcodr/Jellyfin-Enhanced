@@ -207,6 +207,17 @@ public class PosterRegressionTests
     [InlineData("prs-baku1926", "Dari (Unified Turkic Latin Alphabet)")]
     [InlineData("sh-baku1926", "Serbian (Latin, Unified Turkic Latin Alphabet)")]
     [InlineData("cnr-baku1926-scouse", "Montenegrin (BAKU1926_SCOUSE)")]
+    // Baku is not promoted to a script beside a variant that maps to alalc97 or to a region.
+    [InlineData("az-baku1926-heploc", "Azerbaijani (ALALC97_BAKU1926)")]
+    [InlineData("tk-baku1926-heploc", "Turkmen (ALALC97_BAKU1926)")]
+    [InlineData("az-heploc-baku1926", "Azerbaijani (ALALC97_BAKU1926)")]
+    [InlineData("az-baku1926-alalc97", "Azerbaijani (ALALC97_BAKU1926)")]
+    [InlineData("az-baku1926-heploc-fonipa", "Azerbaijani (ALALC97_BAKU1926_FONIPA)")]
+    [InlineData("az-baku1926-aaland", "Azerbaijani (Åland Islands, Unified Turkic Latin Alphabet)")]
+    [InlineData("az-aaland-baku1926", "Azerbaijani (Åland Islands, Unified Turkic Latin Alphabet)")]
+    [InlineData("az-baku1926-aaland-heploc", "Azerbaijani (Åland Islands, ALALC97_BAKU1926)")]
+    [InlineData("az-baku1926-fonipa", "Azerbaijani (Baku)")]
+    [InlineData("az-aaland", "Azerbaijani (Åland Islands)")]
     public void Language_name_variant_aliases_match_browser_display_names(string code, string expected)
     {
         Assert.Equal(expected, Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution.LanguageNames.Of(code));

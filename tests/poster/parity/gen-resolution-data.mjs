@@ -163,15 +163,16 @@ const languageRegionAliases = new Map(await scanInWorkers('languageRegion', allC
 
 // 8. Variant subtags: IANA-registered variants (vendored list, language-subtag-registry
 //    2023-10-16) plus CLDR's "posix". Names as used inside a language name, the
-//    language-independent variant aliases (und-heploc -> und-alalc97, und-lojban -> und),
-//    and the language+variant pairs Intl canonicalizes beyond those (art-lojban -> jbo).
+//    language-independent variant aliases (und-heploc -> und-alalc97, und-lojban -> und,
+//    CLDR's und-aaland -> und-AX region alias), and the language+variant pairs Intl
+//    canonicalizes beyond those (art-lojban -> jbo).
 const VARIANTS = ('1606nict 1694acad 1901 1959acad 1994 1996 abl1943 akuapem alalc97 aluku ao1990 aranes arevela arevmda arkaika asante ' +
     'auvern baku1926 balanka barla basiceng bauddha bciav bcizbl biscayan biske blasl bohoric boont bornholm cisaup colb1945 cornu creiss ' +
     'dajnko ekavsk emodeng fonipa fonkirsh fonnapa fonupa fonxsamp gallo gascon grclass grital grmistr hepburn heploc hognorsk hsistemo ' +
     'ijekavsk itihasa ivanchov jauer jyutping kkcor kociewie kscor laukika lemosin lengadoc lipaw ltg1929 ltg2007 luna1918 metelko monoton ' +
     'ndyuka nedis newfound nicard njiva nulik osojs oxendict pahawh2 pahawh3 pahawh4 pamaka peano petr1708 pinyin polyton provenc puter ' +
     'rigik rozaj rumgr scotland scouse simple solba sotav spanglis surmiran sursilv sutsilv synnejyl tarask tongyong tunumiit uccor ucrcor ' +
-    'ulster unifon vaidika valencia vallader vecdruka vivaraup wadegile xsistemo posix lojban guoyu hakka xiang gaulish').split(' ');
+    'ulster unifon vaidika valencia vallader vecdruka vivaraup wadegile xsistemo posix lojban guoyu hakka xiang gaulish aaland').split(' ');
 const variantNames = new Map();
 const genericVariantAliases = new Map();
 const VARIANT_PREFIX = `${ROOT_PREFIX}${contextName('ZZ')}, `;
