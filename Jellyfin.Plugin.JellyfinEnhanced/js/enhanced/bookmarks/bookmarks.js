@@ -272,7 +272,7 @@
     bookmarks[bookmarkId] = bookmark;
 
     try {
-      await JE.saveUserSettings('bookmark.json', owner.bookmark);
+      await JE.saveUserSettings('bookmark.json', owner.bookmark, { throwOnError: true });
       console.log(`${logPrefix} Bookmark added:`, bookmarkId, bookmark);
       if (isCurrentOwner()) emitBookmarksUpdated('add');
       return { id: bookmarkId, ...bookmark };
@@ -302,7 +302,7 @@
     bookmarks[bookmarkId] = bookmark;
 
     try {
-      await JE.saveUserSettings('bookmark.json', owner.bookmark);
+      await JE.saveUserSettings('bookmark.json', owner.bookmark, { throwOnError: true });
       console.log(`${logPrefix} Bookmark updated:`, bookmarkId);
       if (isCurrentOwner()) emitBookmarksUpdated('update');
       return true;
@@ -333,7 +333,7 @@
     delete bookmarks[bookmarkId];
 
     try {
-      await JE.saveUserSettings('bookmark.json', owner.bookmark);
+      await JE.saveUserSettings('bookmark.json', owner.bookmark, { throwOnError: true });
       console.log(`${logPrefix} Bookmark deleted:`, bookmarkId);
       if (isCurrentOwner()) emitBookmarksUpdated('delete');
       return true;
@@ -383,7 +383,7 @@
     }
 
     try {
-      await JE.saveUserSettings('bookmark.json', owner.bookmark);
+      await JE.saveUserSettings('bookmark.json', owner.bookmark, { throwOnError: true });
       console.log(`${logPrefix} Synced ${synced.length} bookmarks to new item ID`);
       if (isCurrentOwner()) emitBookmarksUpdated('sync');
       return synced;
