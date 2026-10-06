@@ -2,9 +2,16 @@
 """Inventory production surfaces for coverage review; this is not a behavioral test.
 
 Extraction is deliberately conservative and lexical (not a C# parser). The output
-keeps file paths but no line numbers, line counts or locale key counts, so it only
-changes when a production file, route, setting, scheduled task or storage reference
-is added, removed or renamed (not on every edit or translation update).
+keeps file paths but no line numbers, line counts or locale key counts, so ordinary
+edits and translation updates leave it unchanged. It changes when any of these does:
+- a production .cs/.js/.html/.css/.json file or locale file is added, removed or renamed;
+- an HTTP route's verb, path or method name, or the attributes between the route and
+  its method (such as [Authorize] policies);
+- a Configuration property's name, type, initializer (default value) or constructor
+  assignment;
+- a scheduled task (any class implementing IScheduledTask) or its Key;
+- a .json/.xml/.db/.sqlite storage literal in a .cs or .js file;
+- a build target's selector, TargetFramework or JellyfinVersion in JellyfinEnhanced.csproj.
 Run with --check in CI to detect an inventory needing regeneration.
 """
 import argparse
@@ -61,9 +68,11 @@ def inventory():
             # One entry per literal and file: repeating a known reference is not a new one.
             literals = sorted({match[1] for match in re.finditer(r'''["']([^"'\n]{1,180}\.(?:json|xml|db|sqlite))["']''', text)})
             result['storage_references'].extend({'literal': literal, 'file': relative} for literal in literals)
-        if category == 'ScheduledTasks' and re.search(r':\s*IScheduledTask', text):
-            result['scheduled_tasks'].append({'file': relative, 'class': path.stem,
-                'key': next(iter(re.findall(r'\bKey\s*=>\s*"([^"]+)"', text)), None)})
+        # Any plugin class implementing IScheduledTask, wherever it lives (Services/StartupService.cs too).
+        if path.suffix == '.cs':
+            for task in re.finditer(r'\bclass\s+(\w+)[^{;]*?:[^{;]*?\bIScheduledTask\b', text):
+                result['scheduled_tasks'].append({'file': relative, 'class': task[1],
+                    'key': next(iter(re.findall(r'\bKey\s*=>\s*"([^"]+)"', text)), None)})
         if 'js/locales/' in relative and path.suffix == '.json':
             json.loads(text)  # a malformed locale still fails generation
             result['locales'].append({'file': relative})

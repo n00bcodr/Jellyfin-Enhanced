@@ -7240,6 +7240,11 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/SpoilerApplyExistingTitlesTask.cs",
       "class": "SpoilerApplyExistingTitlesTask",
       "key": "JellyfinEnhancedSpoilerApplyExistingTitles"
+    },
+    {
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/StartupService.cs",
+      "class": "StartupService",
+      "key": "JellyfinEnhancedStartup"
     }
   ],
   "locales": [
@@ -7349,7 +7354,7 @@
     "routes": 167,
     "configuration_properties": 501,
     "storage_references": 64,
-    "scheduled_tasks": 12,
+    "scheduled_tasks": 13,
     "locales": 33
   }
 }
