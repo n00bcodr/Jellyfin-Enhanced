@@ -26,15 +26,15 @@ All stages passed with no failed or skipped tests.
 | --- | --- |
 | Plugin build, jf12 (.NET 10) and jf10 (.NET 9) | 0 warnings, 0 errors |
 | Inventory freshness | Current |
-| Tooling false-green checks | 8 passed |
-| Backend, Jellyfin 10.11 / .NET 9 | 717 passed |
-| Backend, Jellyfin 12 / .NET 10 | 717 passed |
-| Backend coverage | jf10 48.30% lines / 36.27% branches; jf12 48.31% / 36.30% (floors 47% / 35%) |
-| Frontend, instrumented production modules | 344 passed |
-| Frontend coverage | 29.47% statements, 21.30% branches, 30.27% functions, 30.95% lines (floors 28% / 20% / 29% / 30%) |
+| Tooling false-green checks | 9 passed |
+| Backend, Jellyfin 10.11 / .NET 9 | 730 passed |
+| Backend, Jellyfin 12 / .NET 10 | 730 passed |
+| Backend coverage | jf10 48.42% lines / 36.48% branches; jf12 48.43% / 36.51% (floors 47% / 35%) |
+| Frontend, instrumented production modules | 360 passed (Node 26.2.0 and the CI's Node 22.14.0) |
+| Frontend coverage | 30.44% statements, 22.08% branches, 31.24% functions, 32.01% lines (floors 28% / 20% / 29% / 30%) |
 | Browser, Chromium desktop/mobile and Firefox | 39 passed, including 3 unchanged visual baselines |
 | Native poster pipeline | 140 checks passed |
-| JavaScript/C# poster parity | 40 profiles × 101 fixtures matched; 115,556 language names and 31,676 casing strings matched (Node 26.2.0, ICU 78.3) |
+| JavaScript/C# poster parity | 39 setting profiles × 101 fixtures matched, plus one empty-profile check; 115,960 language names and 31,676 casing strings matched (Node 26.2.0, ICU 78.3) |
 | Native assets | 253 flags decoded and HarfBuzz shaping passed on Skia 3.116.1 and 3.119.4 |
 | Mutation checks, jf12 | 4 of 4 faults detected, with passing baseline and restored runs |
 | Historical fault replay | 13 historical faults (9 JavaScript, 4 backend on each target): all 17 experiments detected the fault and passed again once restored |

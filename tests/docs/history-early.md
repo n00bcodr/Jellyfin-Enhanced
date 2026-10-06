@@ -45,4 +45,4 @@ python3 tests/runner/mutations.py --layer frontend \
   --artifacts artifacts/history-audit/early-mutations
 ```
 
-The behavioral run passed 3/3 tests, with no skipped tests. The mutation run passed its baseline/failure/restoration checks and exited 0. Detailed logs and JSON are under the artifact directory; the manifest is retained with the test sources for repeatability. The full integrated suite is the coordinator's validation responsibility. Nothing was committed, pushed, or posted upstream.
+The behavioral run passed 3/3 tests, with no skipped tests. The mutation run passed its baseline/failure/restoration checks and exited 0. Detailed logs and JSON are under the artifact directory; the manifest is retained with the test sources for repeatability.

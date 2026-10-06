@@ -55,4 +55,4 @@ See [all commands and prerequisites](docs/README.md), the [coverage matrix](docs
 - Keep new runner code in `runner/`, with meaningful failure-handling tests in `runner/tests/`. CI, documentation and npm scripts should use the shared entry points rather than duplicating suite lists.
 - Keep reports, coverage, traces and generated media out of source. Update the coverage matrix for new behavior; update historical manifests if moving a test they select. Review visual diffs before accepting baselines.
 
-The directory structure makes the suite easier to maintain; it does not imply complete behavioral coverage. Remaining gaps and known branch-specific failures stay documented.
+The directory structure makes the suite easier to maintain; it does not imply complete behavioral coverage. Remaining gaps are listed in the [coverage matrix](docs/coverage-matrix.md).
