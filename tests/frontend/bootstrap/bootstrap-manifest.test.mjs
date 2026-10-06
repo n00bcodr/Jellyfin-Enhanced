@@ -26,6 +26,8 @@ test('every manifest module loads in bundle order without load-time errors', asy
   for (const path of manifest) {
     try { h.load(path); } catch (error) { failures.push(`${path}: ${error?.message ?? error}`); }
   }
-  await new Promise(done => setImmediate(done));
+  // Let deferred startup work (timers, promise chains) run inside the window, so an error it
+  // throws is reported by close() instead of being lost when the realm is torn down.
+  await new Promise(done => setTimeout(done, 300));
   assert.deepEqual(failures, []);
 });
