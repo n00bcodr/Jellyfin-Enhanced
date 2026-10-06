@@ -17,3 +17,11 @@ export function discoverTests(directory = frontendRoot) {
   if (!files.length) throw new Error(`No frontend tests discovered under ${directory}`);
   return files;
 }
+
+/** A hung test fails on its own instead of stalling the whole run. */
+export const testArguments = ['--test-timeout=20000'];
+
+/** Dates and locale-formatted text must not depend on the machine running the tests. */
+export function testEnvironment(extra = {}) {
+  return { ...process.env, TZ: 'UTC', LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8', ...extra };
+}

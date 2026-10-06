@@ -35,8 +35,18 @@ DOM observer fix: a normal subscriber left at the start of the queue prevented
 remaining high-priority subscribers from running before paint.
 
 Unexpected console errors fail teardown; negative tests must explicitly allow
-only their expected diagnostic with `h.expectConsoleError(/specific message/)`.
-Unexpected default fetch calls fail teardown even when production catches them.
+only their expected diagnostic with `h.expectConsoleError(/specific message/)`,
+and teardown also fails if that expected error never happened. Use
+`h.allowConsoleError(...)` only for a diagnostic that legitimately may or may
+not occur. Unexpected default fetch calls fail teardown even when production
+catches them.
+
+`h.load()` wraps each file exactly as the production bundle does
+(`Services/ClientScriptBundle.cs`), and `bootstrap/bootstrap-manifest.test.mjs`
+loads every `js/component-scripts.json` entry in manifest order, so a module that
+needs another file's top-level declarations, or a module later in the manifest,
+while it loads fails here. Both runners
+pin `TZ=UTC` and an `en_US.UTF-8` locale and give each test a 20 second timeout.
 
 Specs are grouped by feature under `bootstrap/`, `core/`, `features/`, `pages/`,
 `requests/`, and `regressions/`. Both runners discover nested `*.test.mjs` files

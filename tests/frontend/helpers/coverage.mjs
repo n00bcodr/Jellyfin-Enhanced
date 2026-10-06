@@ -5,14 +5,14 @@ import coverage from 'istanbul-lib-coverage';
 import { createInstrumenter } from 'istanbul-lib-instrument';
 import { createContext } from 'istanbul-lib-report';
 import reports from 'istanbul-reports';
-import { discoverTests, repositoryRoot } from './discovery.mjs';
+import { discoverTests, repositoryRoot, testArguments, testEnvironment } from './discovery.mjs';
 process.chdir(repositoryRoot);
 const out = resolve('artifacts/frontend-coverage');
 const raw = join(out, 'raw');
 rmSync(out, { recursive: true, force: true });
 mkdirSync(raw, { recursive: true });
 const files = discoverTests();
-const result = spawnSync(process.execPath, ['--test', ...files], { stdio: 'inherit', env: { ...process.env, JE_COVERAGE_DIR: raw } });
+const result = spawnSync(process.execPath, ['--test', ...testArguments, ...files], { stdio: 'inherit', env: testEnvironment({ JE_COVERAGE_DIR: raw }) });
 const map = coverage.createCoverageMap({});
 // Include every production JS module, including those never loaded by a test.
 function inventory(dir) {

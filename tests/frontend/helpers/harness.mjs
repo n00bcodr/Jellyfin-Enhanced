@@ -15,13 +15,14 @@ if (process.env.JE_COVERAGE_DIR) process.on('exit', () => {
 /** Load real classic-script modules into a fresh browser realm; no network is permitted by default. */
 export function createHarness({ html = '', url = 'http://jellyfin.test/web/index.html#!/home', JE = {}, apiClient = {}, fetch, globals = {}, expectedConsoleErrors = [] } = {}) {
   const errors = [];
-  const allowedErrors = [...expectedConsoleErrors];
+  // Expected errors must occur before close(); optional ones (allowConsoleError) may.
+  const allowedErrors = expectedConsoleErrors.map(pattern => ({ pattern, required: true, matched: false }));
   const virtualConsole = new VirtualConsole();
   virtualConsole.on('error', (...args) => {
     const message = args.map(String).join(' ');
-    if (!allowedErrors.some(pattern => typeof pattern === 'string' ? message.includes(pattern) : pattern.test(message))) {
-      errors.push(new Error(`Unexpected console.error: ${message}`));
-    }
+    const matches = allowedErrors.filter(({ pattern }) => typeof pattern === 'string' ? message.includes(pattern) : pattern.test(message));
+    for (const expected of matches) expected.matched = true;
+    if (!matches.length) errors.push(new Error(`Unexpected console.error: ${message}`));
   });
   virtualConsole.on('jsdomError', error => errors.push(error));
   const dom = new JSDOM(`<!doctype html><html><body>${html}</body></html>`, {
@@ -46,17 +47,26 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
   window.addEventListener('unhandledrejection', event => errors.push(event.reason));
   return {
     window, document: window.document, JE, errors,
-    expectConsoleError(pattern) { allowedErrors.push(pattern); },
+    /** Declares a console.error the test must produce; close() fails if none matched. */
+    expectConsoleError(pattern) { allowedErrors.push({ pattern, required: true, matched: false }); },
+    /** Tolerates a console.error that may or may not happen (timing-dependent diagnostics). */
+    allowConsoleError(pattern) { allowedErrors.push({ pattern, required: false, matched: false }); },
     load(path) {
       const file = resolve(jsRoot, path);
       let source = readFileSync(file, 'utf8');
       if (process.env.JE_COVERAGE_DIR) source = createInstrumenter().instrumentSync(source, file);
-      window.eval(`${source}\n//# sourceURL=${file}`);
+      // Run each file the way Services/ClientScriptBundle.cs packages it: the file body
+      // inside its own function, called as an element of the module array. Top-level
+      // declarations therefore stay file-local, exactly as in production.
+      window.eval(`[function () {\n${source}\n}][0]();\n//# sourceURL=${file}`);
       return JE;
     },
     close() {
       if (window.__coverage__) collected.merge(window.__coverage__);
       window.close();
+      for (const { pattern, required, matched } of allowedErrors) {
+        if (required && !matched) errors.push(new Error(`Expected console.error never happened: ${pattern}`));
+      }
       if (errors.length) throw new AggregateError(errors, 'Unexpected browser errors');
     }
   };
