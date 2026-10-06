@@ -67,7 +67,15 @@ public class ReviewActivityVisibilityTests
         var viewer = User(); var author = User(); var blocked = Guid.NewGuid(); var allowed = Guid.NewGuid();
         var library = new Mock<ILibraryManager>(); var users = new Mock<IUserManager>(); var repository = new Mock<IItemRepository>();
         var allowedIds = new[] { allowed };
-        library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(() => allowedIds);
+        // Library items are only visible to a query scoped to a user: on Jellyfin 12 by
+        // ConfigureUserAccess(query, user), on 10.11 by the user-bound recursive query.
+        var scopedTo = new Dictionary<InternalItemsQuery, User>(ReferenceEqualityComparer.Instance);
+#if NET9_0
+        library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns<InternalItemsQuery>(query => query.User == null ? [] : allowedIds);
+#else
+        library.Setup(x => x.ConfigureUserAccess(It.IsAny<InternalItemsQuery>(), It.IsAny<User>())).Callback<InternalItemsQuery, User>((query, user) => scopedTo[query] = user);
+        library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns<InternalItemsQuery>(query => scopedTo.ContainsKey(query) ? allowedIds : []);
+#endif
         library.Setup(x => x.GetItemById(allowed)).Returns(new Movie { Id = allowed, Name = "Visible movie" });
         users.Setup(x => x.GetUserById(author.Id)).Returns(author);
         var builder = new ActivityFeedBuilder(library.Object,users.Object,repository.Object,env.Logger);
@@ -77,11 +85,18 @@ public class ReviewActivityVisibilityTests
         var row = Assert.Single(builder.Build(entries, [], viewer, false, config, 1));
         Assert.Equal("author",row.UserName); Assert.True(row.Completed); Assert.Equal(1,row.Progress);
         library.Verify(x => x.GetItemById(blocked), Times.Never);
+#if !NET9_0
+        Assert.Contains(viewer, scopedTo.Values);
+#endif
         allowedIds = [];
         Assert.Empty(builder.Build(entries, [], User(), false, config, 1));
-        allowedIds = [allowed]; author.SetPermission(PermissionKind.IsHidden,true);
+        // A later request sees the author's new state from a fresh lookup (a new User object),
+        // not an author resolved for an earlier request.
+        allowedIds = [allowed];
+        var hiddenAuthor = User(author.Id); hiddenAuthor.SetPermission(PermissionKind.IsHidden,true);
+        users.Setup(x => x.GetUserById(author.Id)).Returns(hiddenAuthor);
         Assert.Empty(builder.Build(entries, [], viewer, false, config, 1));
-        Assert.Single(builder.Build(entries, [], author, false, config, 1));
+        Assert.Single(builder.Build(entries, [], hiddenAuthor, false, config, 1));
         Assert.Single(builder.Build(entries, [], viewer, true, config, 1));
     }
 
