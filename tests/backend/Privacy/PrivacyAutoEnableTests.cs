@@ -83,7 +83,9 @@ public class PrivacyAutoEnableTests
         public UserSpoilerBlur Saved(User user) => Fixture.Core.Manager.GetUserConfiguration<UserSpoilerBlur>(user.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName)!;
         public async ValueTask DisposeAsync()
         {
-            try { await Service.StopAsync(CancellationToken.None); }
+            // Bounded: a regression that leaves a sweep running must fail its test, not hang the run.
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            try { await Service.StopAsync(timeout.Token); }
             finally
             {
                 SpoilerSeerrPendingPromoter.UnregisterPending(PendingKey, Alice.Id); SpoilerSeerrPendingPromoter.UnregisterPending(PendingKey, Bob.Id);
@@ -132,9 +134,16 @@ public class PrivacyAutoEnableTests
         p.Library.Raise(x => x.ItemUpdated += null, p.Library.Object, new ItemChangeEventArgs { Item = p.Series });
         Assert.True(await entered.WaitAsync(TimeSpan.FromSeconds(15)));
         var stop = p.Service.StopAsync(CancellationToken.None);
-        await Task.Delay(100);
-        Assert.False(stop.IsCompleted);
-        release.Release();
+        try
+        {
+            await Task.Delay(100);
+            Assert.False(stop.IsCompleted);
+        }
+        finally
+        {
+            // Always unblock the sweep, even when the assertion fails.
+            release.Release();
+        }
         await stop.WaitAsync(TimeSpan.FromSeconds(15));
         Assert.Empty(p.Saved(p.Alice).PendingTmdb);
 
