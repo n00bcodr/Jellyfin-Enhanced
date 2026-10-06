@@ -38,6 +38,24 @@ jobs:
           dotnet-version: |
             9.0.x
             10.0.x
+      # Dependabot bumps package versions but cannot update the per-target lock files
+      # (packages.jf10/jf12.lock.json), so the locked restore below would stop with NU1004.
+      # Regenerate this target's lock files and fail with the fix instead.
+      - name: Check NuGet lock files (Dependabot)
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          for project in Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj tests/backend/JE.Tests.csproj; do
+            dotnet restore "$project" -p:JellyfinTarget="$TARGET" --force-evaluate
+          done
+          if ! git diff --quiet -- '*.lock.json'; then
+            git --no-pager diff -- '*.lock.json'
+            echo "::error::The $TARGET NuGet lock files are out of date after this dependency update. Regenerate both targets' lock files as described in CONTRIBUTING.md (NuGet lock files) and push them to this branch."
+            exit 1
+          fi
       - run: python3 tests/run.py backend --target ${{ matrix.target }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
