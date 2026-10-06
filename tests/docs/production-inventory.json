@@ -7117,10 +7117,6 @@
     },
     {
       "literal": "bookmark.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/bookmarks/bookmarks-library-render.js"
-    },
-    {
-      "literal": "bookmark.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/bookmarks/bookmarks.js"
     },
     {
@@ -7353,7 +7349,7 @@
     "files": 339,
     "routes": 167,
     "configuration_properties": 501,
-    "storage_references": 64,
+    "storage_references": 63,
     "scheduled_tasks": 13,
     "locales": 33
   }

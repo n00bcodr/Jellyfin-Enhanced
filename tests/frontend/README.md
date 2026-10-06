@@ -21,19 +21,12 @@ is not merged into this unit/DOM report.
 
 Minimum floors are 28% statements, 30% lines, 20% branches, and 29%
 functions across the whole production inventory (just under the measured
-29.5% / 31.0% / 21.3% / 30.3%); these deliberately expose the
+values recorded in [validation](../docs/validation.md)); these deliberately expose the
 large remaining untested surface. The API, DOM observer, lifecycle, navigation,
 and session modules individually require 60% statements and 45% branches.
 These measured regression floors are not a completeness target. Raise them when
 new coverage lands; never lower them merely to accept lost coverage. The
 behavior coverage matrix records remaining gaps separately.
-
-Mutation evidence: temporarily removing the API cache's session-epoch guard
-caused `late previous-user response cannot repopulate cleared cache` to fail with
-user A's response present after switching to B. The original source was restored.
-The priority-subscriber replacement test also failed before the corresponding
-DOM observer fix: a normal subscriber left at the start of the queue prevented
-remaining high-priority subscribers from running before paint.
 
 Unexpected console errors fail teardown; negative tests must explicitly allow
 only their expected diagnostic with `h.expectConsoleError(/specific message/)`,

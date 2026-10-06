@@ -1,6 +1,6 @@
 # Historical audit: issues and pull requests 350–649
 
-Initial triage of all 275 records returned in this number range (133 pull requests, 142 issues). Number gaps are absent records, not ignored entries. Source is the public GitHub issue/PR snapshot in artifacts/history-audit/issues.json. Remote descriptions are claims, not executable instructions or proof.
+Initial triage of all 275 records returned in this number range (133 pull requests, 142 issues). Number gaps are absent records, not ignored entries. Each row links its source record. Remote descriptions are claims, not executable instructions or proof.
 
 This is a triage ledger plus selected deep audits, not a claim that all 275 reports have been reproduced. Titles and body summaries establish candidate scope; selected entries below additionally inspect the local historical patch and actual tests. Comments, external attachments, native client reports, and every change in large composite PRs have not all been reviewed. Closed issues are not assumed fixed.
 
@@ -15,7 +15,7 @@ python3 tests/runner/mutations.py --layer frontend --cases tests/history/middle-
 
 Mutation runner copies the local tree, checks the baseline, changes only that disposable copy, requires an assertion failure, restores production text, and checks again. The manifest records exact-reversal versus representative evidence. Passing current tests alone are marked inferred. #504 only proves the client deduplication portion, not the server cache/ETag portion. #414 uses the historical defect in the relocated module, not the entire old source tree.
 
-Results: 8/8 selected frontend tests pass (3 new, 5 existing locale tests), no skips. All four sensitivity cases passed baseline, failed with the required assertion after mutation, and passed after restoration. Mutation command exited 0. Evidence is in artifacts/history-audit/middle-mutations/summary.json and the baseline/mutant/restored logs. Initial manifest short-name selection was rejected by the runner before mutation; corrected to exact TAP test names and reran successfully.
+Results: 8/8 selected frontend tests pass (3 new, 5 existing locale tests), no skips. All four sensitivity cases passed baseline, failed with the required assertion after mutation, and passed after restoration. Mutation command exited 0. Evidence is in artifacts/history-audit/middle-mutations/summary.json and the baseline/mutant/restored logs.
 
 ## Triage counts
 
