@@ -68,8 +68,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // backed up once rather than on every status read.
         private volatile string? _reportedLoadFailure;
 
+        // A restore that keeps failing leaves users locked out, so the schedule tick keeps retrying it,
+        // but with backoff: the first retry runs on the next tick, then the wait doubles from 30 s up
+        // to an hour. Tracked in memory only; a restart retries at once. Each failure streak is logged
+        // at Error once, later attempts at Warning (per-user detail at Debug).
+        private static readonly TimeSpan RestoreRetryBaseDelay = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan RestoreRetryMaxDelay = TimeSpan.FromHours(1);
+        private readonly TimeProvider _timeProvider;
+        // Consecutive restore attempts that left a user unrestored; changed under _gate.
+        private int _restoreFailureStreak;
+        // UTC ticks before which the schedule tick skips the pending-restore retry; 0 = retry now.
+        private long _restoreRetryNotBeforeTicks;
+
         public MaintenanceModeService(IUserManager userManager, ISessionManager sessionManager, IApplicationPaths appPaths, Logger logger)
+            : this(userManager, sessionManager, appPaths, logger, TimeProvider.System)
         {
+        }
+
+        internal MaintenanceModeService(IUserManager userManager, ISessionManager sessionManager, IApplicationPaths appPaths, Logger logger, TimeProvider timeProvider)
+        {
+            _timeProvider = timeProvider;
             _userManager = userManager;
             _sessionManager = sessionManager;
             _logger = logger;
@@ -102,7 +120,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public async Task<MaintenanceState> ExpireIfDueAsync()
         {
             var current = LoadState();
-            if (IsExpired(current) || (!current.IsActive && HasPendingRestores(current)))
+            // A window that ran out always ends; a pending restore waits out its retry backoff.
+            var retryDue = _timeProvider.GetUtcNow().UtcTicks >= Interlocked.Read(ref _restoreRetryNotBeforeTicks);
+            if (IsExpired(current) || (!current.IsActive && HasPendingRestores(current) && retryDue))
             {
                 // Re-checked under the gate: an admin may have re-enabled with a new end time meanwhile.
                 await DisableCoreAsync(state => IsExpired(state) || !state.IsActive, "Timed window reached its end or restoration pending", false).ConfigureAwait(false);
@@ -538,6 +558,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 .Union(state.RemoteDisabledUserIds)
                 .Distinct()
                 .ToList();
+            var failed = 0;
 
             var accountSet = new HashSet<string>(state.AccountDisabledUserIds);
             var remoteSet  = new HashSet<string>(state.RemoteDisabledUserIds);
@@ -579,7 +600,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error($"[Maintenance] Failed to restore user {idStr}: {ex.Message}");
+                    failed++;
+                    var message = $"[Maintenance] Failed to restore user {idStr}: {ex.Message}";
+                    if (_restoreFailureStreak == 0) _logger.Error(message);
+                    else _logger.Debug(message);
                     continue;
                 }
                 // On the enable path persistence failures abort the transition rather
@@ -588,6 +612,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 state.RemoteDisabledUserIds.Remove(idStr);
                 Checkpoint(state, failOpen);
             }
+
+            RecordRestoreOutcome(failed);
+        }
+
+        /// <summary>
+        /// Updates the restore failure streak and the next automatic retry time after a restore pass.
+        /// A clean pass resets both; a failing one doubles the wait (none for the first retry, then
+        /// 30 s up to an hour) and, after the first failure of the streak, logs one Warning.
+        /// </summary>
+        /// <param name="failed">Users this pass could not restore.</param>
+        private void RecordRestoreOutcome(int failed)
+        {
+            if (failed == 0)
+            {
+                _restoreFailureStreak = 0;
+                Interlocked.Exchange(ref _restoreRetryNotBeforeTicks, 0);
+                return;
+            }
+
+            _restoreFailureStreak++;
+            var delay = TimeSpan.Zero;
+            if (_restoreFailureStreak > 1)
+            {
+                var doublings = Math.Min(_restoreFailureStreak - 2, 20);
+                delay = TimeSpan.FromTicks(Math.Min(RestoreRetryBaseDelay.Ticks << doublings, RestoreRetryMaxDelay.Ticks));
+                _logger.Warning($"[Maintenance] {failed} user(s) still could not be restored (attempt {_restoreFailureStreak}); " +
+                    $"retrying in {delay.TotalMinutes.ToString("0.#", CultureInfo.InvariantCulture)} min.");
+            }
+
+            Interlocked.Exchange(ref _restoreRetryNotBeforeTicks, (_timeProvider.GetUtcNow() + delay).UtcTicks);
         }
 
         /// <summary>

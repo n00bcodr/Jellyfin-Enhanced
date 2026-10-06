@@ -416,6 +416,66 @@ public class CoreMaintenanceTests
         Directory.CreateDirectory(StatePath(f));
     }
 
+    private sealed class Clock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    private static int CountLogLines(Fixture f, string level, string text)
+        => Directory.GetFiles(f.Core.Root, "JellyfinEnhanced_*.log")
+            .SelectMany(File.ReadAllLines)
+            .Count(line => line.Contains("[" + level + "]", StringComparison.Ordinal) && line.Contains(text, StringComparison.Ordinal));
+
+    [Fact]
+    public async Task PersistentRestoreFailureRetriesWithCappedBackoffAndLogsErrorOncePerStreak()
+    {
+        using var f = new Fixture();
+        await f.Service.EnableAsync("", 0, "both", [f.Alice.Id.ToString()]);
+        var attempts = 0;
+        f.Users.Setup(x => x.UpdatePolicyAsync(f.Alice.Id, It.IsAny<UserPolicy>())).Returns<Guid, UserPolicy>((_, _) =>
+        {
+            attempts++;
+            throw new IOException("policy store unavailable");
+        });
+        var clock = new Clock();
+        var service = new MaintenanceModeService(f.Users.Object, f.Sessions.Object, f.Core.Paths.Object, f.Core.Logger, clock);
+        await service.DisableAsync();
+        Assert.Equal(1, attempts);
+        // The first retry runs on the next tick; after that the wait doubles from 30 s up to an hour.
+        await service.ExpireIfDueAsync();
+        Assert.Equal(2, attempts);
+        var expected = 2;
+        foreach (var seconds in new[] { 30, 60, 120, 240, 480, 960, 1920, 3600, 3600 })
+        {
+            clock.Now += TimeSpan.FromSeconds(seconds - 1);
+            await service.ExpireIfDueAsync();
+            Assert.Equal(expected, attempts);
+            clock.Now += TimeSpan.FromSeconds(1);
+            await service.ExpireIfDueAsync();
+            Assert.Equal(++expected, attempts);
+        }
+
+        // An admin ending maintenance again does not wait for the backoff.
+        await service.DisableAsync();
+        Assert.Equal(++expected, attempts);
+        Assert.Equal(1, CountLogLines(f, "ERROR", "Failed to restore user"));
+        Assert.Equal(expected - 1, CountLogLines(f, "WARN", "still could not be restored"));
+        Assert.Contains(f.Alice.Id.ToString(), service.GetStatus().AccountDisabledUserIds);
+
+        // Success ends the streak: the user is restored and the next failure is an Error again.
+        StorePoliciesNormally(f, f.Alice.Id);
+        clock.Now += TimeSpan.FromHours(1);
+        await service.ExpireIfDueAsync();
+        Assert.False(f.Policies[f.Alice.Id].IsDisabled);
+        Assert.Empty(service.GetStatus().AccountDisabledUserIds);
+        await service.EnableAsync("", 0, "both", [f.Alice.Id.ToString()]);
+        f.Users.Setup(x => x.UpdatePolicyAsync(f.Alice.Id, It.IsAny<UserPolicy>())).ThrowsAsync(new IOException("policy store unavailable"));
+        await service.DisableAsync();
+        await service.ExpireIfDueAsync();
+        Assert.Equal(2, CountLogLines(f, "ERROR", "Failed to restore user"));
+    }
+
     private static void StorePoliciesNormally(Fixture f, Guid id)
         => f.Users.Setup(x => x.UpdatePolicyAsync(id, It.IsAny<UserPolicy>()))
             .Callback<Guid, UserPolicy>((user, policy) => f.Policies[user] = JsonConvert.DeserializeObject<UserPolicy>(JsonConvert.SerializeObject(policy))!)
