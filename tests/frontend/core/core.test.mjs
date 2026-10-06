@@ -122,6 +122,19 @@ test('late previous-user response cannot repopulate cleared cache', async t => {
   assert.equal(JE.core.api.manager.getCached('private'),null); assert.equal(JE.core.api.manager.getCached('old'),null);
 });
 
+test('a request made after a user switch never joins the previous user\'s in-flight request', async t => {
+  let user = 'a'; const responses = [];
+  const { JE } = setup(t, { apiClient: { getCurrentUserId: () => user }, fetch: () => { const response = deferred(); responses.push(response); return response.promise; } });
+  const old = JE.core.api.fetch('/private').catch(() => null);
+  await new Promise(done => setImmediate(done));
+  user = 'b'; JE.session.checkNow('test');
+  const fresh = JE.core.api.fetch('/private');
+  await new Promise(done => setImmediate(done));
+  assert.equal(responses.length, 2);
+  responses[0].resolve(jsonResponse({ owner: 'a' })); responses[1].resolve(jsonResponse({ owner: 'b' }));
+  assert.equal((await fresh).owner, 'b'); await old;
+});
+
 test('user switch cancels queued writes before they can use new credentials', async t => {
   let user = 'a', calls = 0; const pending = deferred();
   const { JE } = setup(t, { apiClient: { getCurrentUserId: () => user }, fetch: () => { calls++; return pending.promise; } });

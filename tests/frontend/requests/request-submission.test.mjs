@@ -74,6 +74,16 @@ test('late status response from previous user cannot grant advanced options to n
   await h.api.checkUserStatus(); assert.equal(reads, 2); assert.equal(h.api.shouldShowAdvanced(), false);
 });
 
+test('late status failure from previous user is neither cached nor shown to next user', async t => {
+  const pending = deferred(); let reads = 0;
+  const h = setup(t, { get: () => ++reads === 1 ? pending.promise : Promise.resolve({ active: true, userFound: true }) });
+  const first = h.api.checkUserStatus(); h.switchUser();
+  pending.reject({ responseJSON: { code: 'blocked' } });
+  assert.equal((await first).reason, 'blocked');
+  assert.equal(h.toasts.length, 0);
+  assert.equal((await h.api.checkUserStatus()).active, true); assert.equal(reads, 2);
+});
+
 test('status banners escape upstream HTML and reset on user switch', t => {
   const h = setup(t); const status = { reason: 'blocked', message: '<img src=x onerror=evil()>' };
   h.api.surfaceUserStatusBanner(status); h.api.surfaceUserStatusBanner(status);

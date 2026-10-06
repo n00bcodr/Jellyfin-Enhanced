@@ -172,6 +172,25 @@ for (const expired of [false, true]) test(`maintenance banner treats message as 
   assert.equal(h.scripts.filter(s => s.src.includes('/extras/login-image.js')).length, 1);
 });
 
+test('after a switch, a bootstrap answered for another user is replaced by the new user\'s own data', async t => {
+  // A misrouted or cached bootstrap still names the previous user: reload per endpoint instead.
+  let current = 'user-a';
+  const h = setup(t, { ajax: async path => {
+    if (path.endsWith('/bootstrap')) return payload({ UserId: 'user-a', PrivateConfig: { SonarrUrl: 'secret' }, UserSettings: { Bookmark: { Bookmarks: { [current === 'user-a' ? 'user-a' : 'stolen']: {} } } } });
+    if (path === '/JellyfinEnhanced/user-settings/user-b/bookmark.json') return { Bookmarks: { 'user-b': { Name: 'user-b' } } };
+    if (path.startsWith('/JellyfinEnhanced/user-settings/user-b/') || path.endsWith('/private-config')) return {};
+    throw new Error(`Unexpected endpoint ${path}`);
+  } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.plugin.pluginConfig.SonarrUrl, 'secret');
+  const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
+  current = 'user-b'; h.switchUser('user-b');
+  await loaded;
+  assert.equal(h.plugin.pluginConfig.SonarrUrl, undefined);
+  assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'user-b': { name: 'user-b' } });
+  assert.ok(h.calls.includes('/JellyfinEnhanced/user-settings/user-b/bookmark.json'));
+});
+
 test('late bootstrap for previous identity cannot restore private config or bookmarks', async t => {
   const stale = deferred();
   let bStarted = false;

@@ -42,11 +42,8 @@ public class PrivacyFieldFilterTests
             state.Series[Series.ToString("N")] = new();
             Save(state);
         }
-        public void Save(UserSpoilerBlur state)
-        {
-            Plugin.Core.Manager.SaveUserConfiguration(User.ToString("N"), "spoilerblur.json", state);
-            SpoilerUserResolver.InvalidateUser(User.ToString("N"));
-        }
+        // The production save path drops the resolver's cached state itself (see the test below).
+        public void Save(UserSpoilerBlur state) => Plugin.Core.Manager.SaveUserConfiguration(User.ToString("N"), "spoilerblur.json", state);
         public BaseItemDto Episode(bool played = false) => new()
         {
             Id = Guid.NewGuid(), SeriesId = Series, Type = BaseItemKind.Episode,
@@ -113,6 +110,22 @@ public class PrivacyFieldFilterTests
         Assert.Equal("/Videos/1/Subtitles/0/Stream.srt", dto.MediaStreams[0].DeliveryUrl);
         Assert.Null(dto.MediaStreams[1].DeliveryUrl);
         Assert.Null(dto.MediaSources[0].Path); Assert.Null(dto.MediaSources[0].Name); Assert.Null(dto.MediaSources[0].MediaStreams[0].Title);
+    }
+
+    [Fact]
+    public async Task SavingSpoilerStateReplacesTheCachedStateForTheNextRequest()
+    {
+        using var f = new Fixture();
+        var id = Guid.NewGuid();
+        BaseItemDto Movie() => new() { Id = id, Type = BaseItemKind.Movie, Name = "Movie name", Overview = "Secret plot", UserData = new UserItemDataDto { Key = "test" } };
+        // This request caches the user's state, in which the movie is not protected.
+        var before = Movie(); await f.Invoke(before);
+        Assert.Equal("Secret plot", before.Overview);
+        Assert.True(SpoilerUserResolver.IsUserStateCachedForTest(f.User.ToString("N")));
+        var state = new UserSpoilerBlur(); state.Series[f.Series.ToString("N")] = new(); state.Movies[id.ToString("N")] = new();
+        f.Save(state);
+        var after = Movie(); await f.Invoke(after);
+        Assert.NotEqual("Secret plot", after.Overview);
     }
 
     [Fact]
