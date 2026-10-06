@@ -14,6 +14,9 @@ test('theme selection stores local CDN CSS only for current user and default rem
  select.value='Default';select.dispatchEvent(new h.window.Event('change'));assert.equal(h.window.localStorage.getItem('user-a-customCss'),null);
 });
 test('daily-theme preference toggles accessibly without rerolling an already selected day',t=>{
- const h=setup(t);h.window.localStorage.setItem('user-a-lastRandomThemeDate',new Date().toISOString().split('T')[0]);h.JE.initializeThemeSelector();h.change();h.flush(100);const button=h.document.querySelector('#random-theme-button');
+ // Pin the page's clock one millisecond before UTC midnight, so the stored day and the day the page computes cannot differ.
+ const h=setup(t);const RealDate=h.window.Date,now=RealDate.UTC(2026,0,1,23,59,59,999);
+ h.window.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}};
+ h.window.localStorage.setItem('user-a-lastRandomThemeDate',new h.window.Date().toISOString().split('T')[0]);h.JE.initializeThemeSelector();h.change();h.flush(100);const button=h.document.querySelector('#random-theme-button');
  assert.equal(button.getAttribute('aria-pressed'),'false');button.click();assert.equal(button.getAttribute('aria-pressed'),'true');assert.equal(h.window.localStorage.getItem('user-a-randomThemeEnabled'),'true');button.click();assert.equal(button.getAttribute('aria-pressed'),'false');
 });
