@@ -5,7 +5,7 @@ function setup(t,config={}){
  const saved=[], renderers=new Map(), changes=new Map();let scans=0;
  const h=createHarness({html:'<div class="card"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div></div>',JE:{currentSettings:{tags:true},pluginConfig:config,session:{getUserId:()=> 'a',getServerId:()=> 's',onUserChange:(name,fn)=>changes.set(name,fn)},_cacheManager:{register:fn=>saved.push(fn),markDirty(){}},tagPipeline:{registerRenderer:(name,r)=>renderers.set(name,r),getRenderer:name=>renderers.get(name),clearProcessed(){},scheduleScan:()=>scans++}}});
  t.after(()=>h.close());h.load('core/ui-kit.js');h.load('core/tag-renderer-base.js');
- const spec={logPrefix:'test',settingKey:'tags',containerClass:'test-overlay',taggedAttr:'jeTestTagged',styleId:'test-tag-css',buildCss:()=>'.test-overlay{color:red}',position:{userKey:'position',pluginKey:'Position',fallback:'top-right'},cache:{key:'test-v2',legacyPrefix:'test',hotBucket:'test',pruneOnSave:true},pipeline:{render(ctx,el,item){const overlay=h.document.createElement('div');overlay.className='test-overlay';overlay.innerHTML='<span></span>';ctx.commitOverlay(el,overlay);}}};
+ const spec={logPrefix:'test',settingKey:'tags',containerClass:'test-overlay',taggedAttr:'jeTestTagged',styleId:'test-tag-css',buildCss:()=>'.test-overlay{color:red}',position:{userKey:'position',pluginKey:'Position',fallback:'top-right'},cache:{key:'test-v2',legacyPrefix:'oldtest',hotBucket:'test',pruneOnSave:true},pipeline:{render(ctx,el,item){const overlay=h.document.createElement('div');overlay.className='test-overlay';overlay.innerHTML='<span></span>';ctx.commitOverlay(el,overlay);}}};
  return Object.assign(h,{spec,saved,renderers,changes,scans:()=>scans,register:()=>h.JE.core.tagRenderer.register('test',spec),host:h.document.querySelector('.je-tag-host')});
 }
 test('tag registration preserves enabled contract, hooks and real overlay DOM',t=>{
@@ -28,9 +28,22 @@ test('tag cache rejects previous-owner data and clears hot/persistent state on u
 });
 test('tag cache honors TTL pruning, legacy cleanup and server clear timestamp',t=>{
  const h=setup(t,{TagCacheServerMode:false,TagsCacheTtlDays:1});const store=h.window.localStorage;
- store.setItem('test-old','{}');store.setItem('test-v2:identity-owner','s:a');store.setItem('test-v2',JSON.stringify({old:{timestamp:0},fresh:{timestamp:Date.now()}}));
- const ctx=h.register();h.saved[0]();assert.equal(ctx.getPersistent('old'),undefined);assert.ok(ctx.getPersistent('fresh'));assert.equal(store.getItem('test-old'),null);
+ store.setItem('oldtest-v1','{}');store.setItem('oldtest','{}');store.setItem('oldtestTimestamp','1');store.setItem('test-v2:identity-owner','s:a');store.setItem('test-v2',JSON.stringify({old:{timestamp:0},fresh:{timestamp:Date.now()}}));
+ const ctx=h.register();h.saved[0]();assert.equal(ctx.getPersistent('old'),undefined);assert.ok(ctx.getPersistent('fresh'));
+ for(const key of ['oldtest-v1','oldtest','oldtestTimestamp'])assert.equal(store.getItem(key),null,key);
+ h.register();assert.ok(ctx.getPersistent('fresh'),'a plain re-register (page reload) keeps the cache');
  h.JE.pluginConfig.ClearLocalStorageTimestamp=Date.now();h.register();assert.equal(ctx.getPersistent('fresh'),undefined);assert.equal(ctx.hot.size,0);
+ assert.equal(store.getItem('test-v2'),null);assert.equal(store.getItem('test-v2Timestamp'),String(h.JE.pluginConfig.ClearLocalStorageTimestamp));
+});
+test('legacy sweep keeps the current cache and owner keys when they share the legacy stem',t=>{
+ // Language tags: current "…languageTagsCache-v2" starts with the legacy "…languageTagsCache-" stem.
+ const h=setup(t,{TagCacheServerMode:false});h.spec.cache={key:'JellyfinEnhanced-languageTagsCache-v2',legacyPrefix:['JellyfinEnhanced-languageTagsCache','languageTagsCache'],hotBucket:'language'};
+ const store=h.window.localStorage;store.setItem('JellyfinEnhanced-languageTagsCache','{}');store.setItem('languageTagsCache-x','{}');
+ const ctx=h.register();ctx.setPersistent('fresh',{timestamp:Date.now()});h.saved[0]();
+ assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache'),null);assert.equal(store.getItem('languageTagsCache-x'),null);
+ assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache-v2:identity-owner'),'s:a');
+ h.register();assert.ok(ctx.getPersistent('fresh'),'reload must not drop the language cache');
+ assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache-v2:identity-owner'),'s:a');
 });
 test('tag search/admin exclusions apply to sibling render hosts',t=>{
  const h=setup(t,{DisableTagsOnSearchPage:true});const ctx=h.register();assert.equal(ctx.shouldIgnore(h.host),false);
