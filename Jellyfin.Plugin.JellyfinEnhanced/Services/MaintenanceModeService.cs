@@ -80,6 +80,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // UTC ticks before which the schedule tick skips the pending-restore retry; 0 = retry now.
         private long _restoreRetryNotBeforeTicks;
 
+        // Set when a fail-open checkpoint (or the enable journal) could not be written, so the file is
+        // behind the in-memory state. A stale active journal left there would act again after a
+        // restart, so the schedule tick keeps rewriting the in-memory state, with the same backoff as
+        // restores, until a save lands. Every successful save clears it. Changed under _gate.
+        private volatile bool _journalDirty;
+        // Consecutive tick rewrites of a dirty journal that failed; changed under _gate.
+        private int _journalFailureStreak;
+        // UTC ticks before which the schedule tick skips the dirty-journal rewrite; 0 = retry now.
+        private long _journalRetryNotBeforeTicks;
+
         public MaintenanceModeService(IUserManager userManager, ISessionManager sessionManager, IApplicationPaths appPaths, Logger logger)
             : this(userManager, sessionManager, appPaths, logger, TimeProvider.System)
         {
@@ -119,6 +129,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public async Task<MaintenanceState> ExpireIfDueAsync()
         {
+            if (_journalDirty) await RetryDirtyJournalAsync().ConfigureAwait(false);
             var current = LoadState();
             // A window that ran out always ends; a pending restore waits out its retry backoff.
             var retryDue = _timeProvider.GetUtcNow().UtcTicks >= Interlocked.Read(ref _restoreRetryNotBeforeTicks);
@@ -635,13 +646,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var delay = TimeSpan.Zero;
             if (_restoreFailureStreak > 1)
             {
-                var doublings = Math.Min(_restoreFailureStreak - 2, 20);
-                delay = TimeSpan.FromTicks(Math.Min(RestoreRetryBaseDelay.Ticks << doublings, RestoreRetryMaxDelay.Ticks));
+                delay = RetryDelay(_restoreFailureStreak - 2);
                 _logger.Warning($"[Maintenance] {failed} user(s) still could not be restored (attempt {_restoreFailureStreak}); " +
                     $"retrying in {delay.TotalMinutes.ToString("0.#", CultureInfo.InvariantCulture)} min.");
             }
 
             Interlocked.Exchange(ref _restoreRetryNotBeforeTicks, (_timeProvider.GetUtcNow() + delay).UtcTicks);
+        }
+
+        /// <summary>The retry wait after <paramref name="doublings"/> doublings of 30 s, capped at an hour.</summary>
+        private static TimeSpan RetryDelay(int doublings)
+            => TimeSpan.FromTicks(Math.Min(RestoreRetryBaseDelay.Ticks << Math.Min(doublings, 20), RestoreRetryMaxDelay.Ticks));
+
+        /// <summary>
+        /// Rewrites the in-memory state after a fail-open checkpoint could not save it, so a stale
+        /// journal on disk cannot re-disable or re-restore users after a restart. The first rewrite
+        /// runs on the next tick, then the wait doubles from 30 s up to an hour. The original write
+        /// failure was already logged at Error, so each failed rewrite logs one Warning.
+        /// </summary>
+        private async Task RetryDirtyJournalAsync()
+        {
+            if (_timeProvider.GetUtcNow().UtcTicks < Interlocked.Read(ref _journalRetryNotBeforeTicks)) return;
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var cached = _cached;
+                if (!_journalDirty || cached == null) return;
+                try
+                {
+                    WriteState(cached);
+                }
+                catch (Exception ex)
+                {
+                    _journalFailureStreak++;
+                    var delay = RetryDelay(_journalFailureStreak - 1);
+                    Interlocked.Exchange(ref _journalRetryNotBeforeTicks, (_timeProvider.GetUtcNow() + delay).UtcTicks);
+                    _logger.Warning($"[Maintenance] The maintenance state still could not be saved (attempt {_journalFailureStreak}): {ex.Message}; " +
+                        $"retrying in {delay.TotalMinutes.ToString("0.#", CultureInfo.InvariantCulture)} min.");
+                    return;
+                }
+                _logger.Info("[Maintenance] Saved the maintenance state that a failed write had left only in memory.");
+            }
+            finally
+            {
+                _gate.Release();
+            }
         }
 
         /// <summary>
@@ -775,6 +824,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             catch (Exception) when (failOpen)
             {
                 _cached = CopyState(state);
+                _journalDirty = true;
             }
         }
 
@@ -791,11 +841,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             catch (Exception)
             {
                 _cached = CopyState(state);
+                _journalDirty = true;
                 throw;
             }
         }
 
         private void SaveState(MaintenanceState state)
+        {
+            try
+            {
+                WriteState(state);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"[Maintenance] Failed to save state: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Atomically replaces the state file and the cache with <paramref name="state"/>, and ends any
+        /// dirty-journal retry. Throws without logging; <see cref="SaveState"/> logs for its callers.
+        /// </summary>
+        private void WriteState(MaintenanceState state)
         {
             var loadError = _stateLoadError;
             if (loadError != null)
@@ -810,11 +878,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 File.WriteAllText(temporaryPath, JsonConvert.SerializeObject(state, Formatting.Indented));
                 File.Move(temporaryPath, _stateFilePath, overwrite: true);
                 _cached = CopyState(state);
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"[Maintenance] Failed to save state: {ex.Message}");
-                throw;
+                _journalDirty = false;
+                _journalFailureStreak = 0;
+                Interlocked.Exchange(ref _journalRetryNotBeforeTicks, 0);
             }
             finally
             {

@@ -476,6 +476,72 @@ public class CoreMaintenanceTests
         Assert.Equal(2, CountLogLines(f, "ERROR", "Failed to restore user"));
     }
 
+    [Fact]
+    public async Task RestoreThatCouldNotBeSavedIsRewrittenByTheTickOnceTheDiskRecovers()
+    {
+        using var f = new Fixture();
+        var clock = new Clock();
+        var service = new MaintenanceModeService(f.Users.Object, f.Sessions.Object, f.Core.Paths.Object, f.Core.Logger, clock);
+        await service.EnableAsync("", 0, "both", [f.Alice.Id.ToString()]);
+        var activeJournal = File.ReadAllText(StatePath(f));
+        BreakStateFile(f);
+        await service.DisableAsync();
+        // Restored, but only memory knows: nothing is pending, so no restore retry would save it.
+        Assert.False(f.Policies[f.Alice.Id].IsDisabled);
+        Assert.False(service.GetStatus().IsActive);
+        Assert.Empty(service.GetStatus().AccountDisabledUserIds);
+
+        // While the disk stays broken the tick rewrites with the restore backoff, one Warning each.
+        await service.ExpireIfDueAsync();
+        Assert.Equal(1, CountLogLines(f, "WARN", "still could not be saved"));
+        clock.Now += TimeSpan.FromSeconds(29);
+        await service.ExpireIfDueAsync();
+        Assert.Equal(1, CountLogLines(f, "WARN", "still could not be saved"));
+        clock.Now += TimeSpan.FromSeconds(1);
+        await service.ExpireIfDueAsync();
+        Assert.Equal(2, CountLogLines(f, "WARN", "still could not be saved"));
+
+        // The disk recovers still holding the active journal, which a restart would act on again.
+        Directory.Delete(StatePath(f));
+        File.WriteAllText(StatePath(f), activeJournal);
+        Assert.True(f.Reopen().GetStatus().IsActive);
+        clock.Now += TimeSpan.FromSeconds(60);
+        await service.ExpireIfDueAsync();
+        var onDisk = JsonConvert.DeserializeObject<MaintenanceState>(File.ReadAllText(StatePath(f)))!;
+        Assert.False(onDisk.IsActive);
+        Assert.Empty(onDisk.AccountDisabledUserIds);
+        Assert.Empty(onDisk.RemoteDisabledUserIds);
+        Assert.False(f.Reopen().GetStatus().IsActive);
+        Assert.Equal(1, CountLogLines(f, "INFO", "failed write had left only in memory"));
+
+        // Clean again: later ticks leave the file alone.
+        File.WriteAllText(StatePath(f), activeJournal);
+        await service.ExpireIfDueAsync();
+        Assert.Equal(activeJournal, File.ReadAllText(StatePath(f)));
+    }
+
+    [Fact]
+    public async Task EnableJournalThatCouldNotBeSavedReachesTheDiskEvenWhileItsRestoreKeepsFailing()
+    {
+        using var f = new Fixture();
+        f.Users.Setup(x => x.UpdatePolicyAsync(f.Alice.Id, It.IsAny<UserPolicy>())).Returns<Guid, UserPolicy>((id, policy) =>
+        {
+            f.Policies[id] = policy;
+            BreakStateFile(f);
+            return Task.CompletedTask;
+        });
+        await Assert.ThrowsAnyAsync<IOException>(() => f.Service.EnableAsync("", 0, "both", [f.Alice.Id.ToString()]));
+        Assert.True(f.Policies[f.Alice.Id].IsDisabled);
+        // Alice is disabled but only memory lists her; her restore now fails, so no checkpoint saves it.
+        f.Users.Setup(x => x.UpdatePolicyAsync(f.Alice.Id, It.IsAny<UserPolicy>())).ThrowsAsync(new IOException("policy store unavailable"));
+        Directory.Delete(StatePath(f));
+        await f.Service.ExpireIfDueAsync();
+        Assert.True(f.Policies[f.Alice.Id].IsDisabled);
+        var onDisk = f.Reopen().GetStatus();
+        Assert.False(onDisk.IsActive);
+        Assert.Equal([f.Alice.Id.ToString()], onDisk.AccountDisabledUserIds);
+    }
+
     private static void StorePoliciesNormally(Fixture f, Guid id)
         => f.Users.Setup(x => x.UpdatePolicyAsync(id, It.IsAny<UserPolicy>()))
             .Callback<Guid, UserPolicy>((user, policy) => f.Policies[user] = JsonConvert.DeserializeObject<UserPolicy>(JsonConvert.SerializeObject(policy))!)
