@@ -55,6 +55,19 @@ test('editor-created combined-modifier shortcut executes through actual playback
   assert.deepEqual(h.actions, ['audio']);
 });
 
+// Admin-typed bindings may list modifiers in any order; they must keep matching the runtime combo.
+for (const [stored, key, modifiers] of [['Shift+Ctrl+Z', 'Z', { ctrlKey: true, shiftKey: true }], ['Ctrl+Shift+z', 'Z', { ctrlKey: true, shiftKey: true }],
+  ['Shift+Alt+Meta+Ctrl+Q', 'Q', { metaKey: true, ctrlKey: true, altKey: true, shiftKey: true }], ['Ctrl++', '+', { ctrlKey: true }]]) {
+  test(`stored shortcut ${stored} matches whatever its modifier order`, t => {
+    const h = setup(t); h.JE.state.activeShortcuts.CycleAudioTracks = stored;
+    h.JE.initializeEnhancedScript(); h.document.body.focus();
+    h.press(h.document.body, key, { ...modifiers, altKey: !modifiers.altKey });
+    assert.deepEqual(h.actions, []);
+    h.press(h.document.body, key, modifiers);
+    assert.deepEqual(h.actions, ['audio']);
+  });
+}
+
 test('administrator disabling shortcuts leaves panel key available but player bindings inactive', t => {
   const h = setup(t, true); h.JE.initializeEnhancedScript();
   h.press(h.document.body, 'a'); h.press(h.document.body, '?');
