@@ -175,17 +175,60 @@ public class CoreMaintenanceTests
     }
 
     [Fact]
-    public async Task FailedReconcileCannotOverwritePreviousRestorationIntent()
+    public async Task FailedReconcileCarriesPreviousRestorationIntentIntoTheNewWindow()
     {
         using var f = new Fixture();
         await f.Service.EnableAsync("", 0, "both", [f.Alice.Id.ToString()]);
         f.Users.Setup(x => x.UpdatePolicyAsync(f.Alice.Id, It.IsAny<UserPolicy>())).ThrowsAsync(new IOException("policy store unavailable"));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => f.Service.EnableAsync("new", 0, "none", null));
-        Assert.Contains(f.Alice.Id.ToString(), f.Service.GetStatus().AccountDisabledUserIds);
-        Assert.Equal("both", f.Reopen().GetStatus().Action);
+        await f.Service.EnableAsync("new", 0, "none", null);
+        var state = f.Reopen().GetStatus();
+        Assert.True(state.IsActive);
+        Assert.Equal("none", state.Action);
+        Assert.Contains(f.Alice.Id.ToString(), state.AccountDisabledUserIds);
+        Assert.Contains(f.Alice.Id.ToString(), state.RemoteDisabledUserIds);
+        StorePoliciesNormally(f, f.Alice.Id);
         await f.Service.DisableAsync();
-        await Assert.ThrowsAsync<InvalidOperationException>(() => f.Service.EnableAsync("new", 0, "none", null));
+        Assert.False(f.Policies[f.Alice.Id].IsDisabled);
+        Assert.True(f.Policies[f.Alice.Id].EnableRemoteAccess);
+        Assert.Empty(f.Reopen().GetStatus().AccountDisabledUserIds);
+        Assert.Empty(f.Reopen().GetStatus().RemoteDisabledUserIds);
+    }
+
+    [Fact]
+    public async Task PersistentRestoreFailureDoesNotBlockLaterWindowsAndIsRetriedWhenTheyEnd()
+    {
+        using var f = new Fixture();
+        await f.Service.EnableAsync("", 0, "both", [f.Alice.Id.ToString()]);
+        f.Users.Setup(x => x.UpdatePolicyAsync(f.Alice.Id, It.IsAny<UserPolicy>())).ThrowsAsync(new IOException("policy store unavailable"));
+        await f.Service.DisableAsync();
+        Assert.False(f.Service.GetStatus().IsActive);
+        Assert.Contains(f.Alice.Id.ToString(), f.Service.GetStatus().AccountDisabledUserIds);
+        // Retried and still failing: the new window opens anyway and keeps the pending restore.
+        await f.Service.EnableAsync("next", 0, "disable_remote", null);
+        Assert.True(f.Service.GetStatus().IsActive);
         Assert.Contains(f.Alice.Id.ToString(), f.Reopen().GetStatus().AccountDisabledUserIds);
+        StorePoliciesNormally(f, f.Alice.Id);
+        await f.Service.DisableAsync();
+        Assert.False(f.Policies[f.Alice.Id].IsDisabled);
+        Assert.True(f.Policies[f.Alice.Id].EnableRemoteAccess);
+        Assert.True(f.Policies[f.Restricted.Id].IsDisabled);
+        Assert.Empty(f.Reopen().GetStatus().AccountDisabledUserIds);
+        Assert.Empty(f.Reopen().GetStatus().RemoteDisabledUserIds);
+    }
+
+    [Fact]
+    public async Task DeletedUsersAndUsersWithoutPolicyAreDroppedFromTheRestoreList()
+    {
+        using var f = new Fixture();
+        f.Policies[f.Restricted.Id] = new UserPolicy { IsDisabled = false, EnableRemoteAccess = true };
+        await f.Service.EnableAsync("", 0, "both", null);
+        Assert.Equal(2, f.Service.GetStatus().AccountDisabledUserIds.Count);
+        f.Users.Setup(x => x.GetUserById(f.Alice.Id)).Returns((User?)null);
+        f.Users.Setup(x => x.GetUserDto(f.Restricted, It.IsAny<string>())).Returns(() => new UserDto { Id = f.Restricted.Id, Policy = null! });
+        await f.Service.DisableAsync();
+        Assert.Empty(f.Service.GetStatus().AccountDisabledUserIds);
+        Assert.Empty(f.Service.GetStatus().RemoteDisabledUserIds);
+        Assert.Empty(f.Reopen().GetStatus().AccountDisabledUserIds);
     }
 
     [Fact]
@@ -213,8 +256,9 @@ public class CoreMaintenanceTests
             f.Policies[id] = policy;
             return Task.CompletedTask;
         });
-        await Assert.ThrowsAsync<InvalidOperationException>(() => f.Service.EnableAsync("", 0, "none", null));
+        await f.Service.EnableAsync("", 0, "none", null);
         Assert.False(f.Policies[f.Restricted.Id].IsDisabled);
+        Assert.Equal([f.Alice.Id.ToString()], f.Service.GetStatus().AccountDisabledUserIds);
         fail = false;
         await f.Service.EnableAsync("", 0, "both", null);
         Assert.True(f.Policies[f.Alice.Id].IsDisabled);
@@ -223,17 +267,117 @@ public class CoreMaintenanceTests
     }
 
     [Fact]
-    public async Task StateWriteFailureIsReportedBeforeRestoringPolicies()
+    public async Task UnwritableStateStillRestoresPoliciesOnDisableAndKeepsFailuresPendingInMemory()
     {
         using var f = new Fixture();
+        f.Policies[f.Restricted.Id] = new UserPolicy { IsDisabled = false, EnableRemoteAccess = true };
         await f.Service.EnableAsync("", 0, "both", null);
-        var statePath = Path.Combine(f.Core.ConfigRoot, "maintenance-state.json");
-        File.Delete(statePath);
-        Directory.CreateDirectory(statePath);
-        await Assert.ThrowsAnyAsync<IOException>(() => f.Service.DisableAsync());
-        Assert.True(f.Policies[f.Alice.Id].IsDisabled);
-        Assert.True(f.Service.GetStatus().IsActive);
+        BreakStateFile(f);
+        f.Users.Setup(x => x.UpdatePolicyAsync(f.Restricted.Id, It.IsAny<UserPolicy>())).ThrowsAsync(new IOException("policy store unavailable"));
+        await f.Service.DisableAsync();
+        Assert.False(f.Service.GetStatus().IsActive);
+        Assert.False(f.Policies[f.Alice.Id].IsDisabled);
+        Assert.True(f.Policies[f.Alice.Id].EnableRemoteAccess);
+        Assert.Equal([f.Restricted.Id.ToString()], f.Service.GetStatus().AccountDisabledUserIds);
+        Assert.Equal([f.Restricted.Id.ToString()], f.Service.GetStatus().RemoteDisabledUserIds);
+        // The expiry tick retries from memory while the file is still unwritable.
+        StorePoliciesNormally(f, f.Restricted.Id);
+        await f.Service.ExpireIfDueAsync();
+        Assert.False(f.Policies[f.Restricted.Id].IsDisabled);
+        Assert.Empty(f.Service.GetStatus().AccountDisabledUserIds);
+        Assert.Empty(f.Service.GetStatus().RemoteDisabledUserIds);
         Assert.Empty(Directory.GetFiles(f.Core.ConfigRoot, "maintenance-state.json.tmp.*"));
+        // Only enable refuses an unwritable journal, before touching anyone.
+        await Assert.ThrowsAnyAsync<IOException>(() => f.Service.EnableAsync("", 0, "both", null));
+        Assert.False(f.Policies[f.Alice.Id].IsDisabled);
+        Assert.False(f.Service.GetStatus().IsActive);
+    }
+
+    [Fact]
+    public async Task EnableJournalFailureKeepsDisabledUserForRestorationAndStopsDisablingOthers()
+    {
+        using var f = new Fixture();
+        f.Policies[f.Restricted.Id] = new UserPolicy { IsDisabled = false, EnableRemoteAccess = true };
+        f.Users.Setup(x => x.UpdatePolicyAsync(f.Alice.Id, It.IsAny<UserPolicy>())).Returns<Guid, UserPolicy>((id, policy) =>
+        {
+            f.Policies[id] = policy;
+            BreakStateFile(f);
+            return Task.CompletedTask;
+        });
+        await Assert.ThrowsAnyAsync<IOException>(() => f.Service.EnableAsync("", 0, "both", null));
+        Assert.True(f.Policies[f.Alice.Id].IsDisabled);
+        Assert.False(f.Policies[f.Restricted.Id].IsDisabled);
+        var state = f.Service.GetStatus();
+        Assert.False(state.IsActive);
+        Assert.Equal([f.Alice.Id.ToString()], state.AccountDisabledUserIds);
+        Assert.Equal([f.Alice.Id.ToString()], state.RemoteDisabledUserIds);
+        StorePoliciesNormally(f, f.Alice.Id);
+        await f.Service.ExpireIfDueAsync();
+        Assert.False(f.Policies[f.Alice.Id].IsDisabled);
+        Assert.True(f.Policies[f.Alice.Id].EnableRemoteAccess);
+        Assert.Empty(f.Service.GetStatus().AccountDisabledUserIds);
+    }
+
+    [Fact]
+    public async Task EnableJournalsEachDisabledUserBeforeTouchingTheNext()
+    {
+        using var f = new Fixture();
+        f.Policies[f.Restricted.Id] = new UserPolicy { IsDisabled = false, EnableRemoteAccess = true };
+        MaintenanceState? onDiskBeforeRestricted = null;
+        f.Users.Setup(x => x.UpdatePolicyAsync(f.Restricted.Id, It.IsAny<UserPolicy>())).Returns<Guid, UserPolicy>((id, policy) =>
+        {
+            onDiskBeforeRestricted = JsonConvert.DeserializeObject<MaintenanceState>(File.ReadAllText(StatePath(f)));
+            f.Policies[id] = policy;
+            return Task.CompletedTask;
+        });
+        await f.Service.EnableAsync("", 0, "both", null);
+        Assert.NotNull(onDiskBeforeRestricted);
+        Assert.False(onDiskBeforeRestricted!.IsActive);
+        Assert.Equal([f.Alice.Id.ToString()], onDiskBeforeRestricted.AccountDisabledUserIds);
+        Assert.Equal([f.Alice.Id.ToString()], onDiskBeforeRestricted.RemoteDisabledUserIds);
+        Assert.True(f.Service.GetStatus().IsActive);
+        Assert.Equal(2, f.Reopen().GetStatus().AccountDisabledUserIds.Count);
+    }
+
+    [Theory]
+    [InlineData("{\"IsActive\":true,\"AccountDisabledUserIds\":[\"")]
+    [InlineData("")]
+    [InlineData("null")]
+    public async Task CorruptStateIsBackedUpNeverOverwrittenAndBlocksEnableUntilRemoved(string content)
+    {
+        using var f = new Fixture();
+        File.WriteAllText(StatePath(f), content);
+        var reopened = f.Reopen();
+        Assert.False(reopened.GetStatus().IsActive);
+        Assert.False(reopened.GetStatus().IsActive);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => reopened.EnableAsync("", 0, "both", null));
+        await reopened.DisableAsync();
+        await reopened.ExpireIfDueAsync();
+        Assert.False(f.Policies[f.Alice.Id].IsDisabled);
+        Assert.Equal(content, File.ReadAllText(StatePath(f)));
+        var backup = Assert.Single(Directory.GetFiles(f.Core.ConfigRoot, "maintenance-state.json.corrupt-*"));
+        Assert.Equal(content, File.ReadAllText(backup));
+        File.Delete(StatePath(f));
+        await reopened.EnableAsync("", 0, "both", null);
+        Assert.True(f.Policies[f.Alice.Id].IsDisabled);
+        Assert.True(f.Reopen().GetStatus().IsActive);
+    }
+
+    [Fact]
+    public async Task UnreadableStateIsNotCachedAsEmpty()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        using var f = new Fixture();
+        // A self-referencing link exists but every read fails, even for root.
+        File.CreateSymbolicLink(StatePath(f), StatePath(f));
+        var reopened = f.Reopen();
+        Assert.False(reopened.GetStatus().IsActive);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => reopened.EnableAsync("", 0, "both", null));
+        Assert.False(f.Policies[f.Alice.Id].IsDisabled);
+        File.Delete(StatePath(f));
+        File.WriteAllText(StatePath(f), JsonConvert.SerializeObject(new MaintenanceState { IsActive = true, Message = "readable again", Action = "none" }));
+        Assert.True(reopened.GetStatus().IsActive);
+        Assert.Equal("readable again", reopened.GetStatus().Message);
     }
 
     [Fact]
@@ -241,12 +385,10 @@ public class CoreMaintenanceTests
     {
         using var f = new Fixture();
         await f.Service.EnableAsync("", 0, "both", [f.Alice.Id.ToString()]);
-        var statePath = Path.Combine(f.Core.ConfigRoot, "maintenance-state.json");
         f.Users.Setup(x => x.UpdatePolicyAsync(f.Alice.Id, It.IsAny<UserPolicy>())).Returns<Guid, UserPolicy>((id, policy) =>
         {
             f.Policies[id] = policy;
-            File.Delete(statePath);
-            Directory.CreateDirectory(statePath);
+            BreakStateFile(f);
             return Task.CompletedTask;
         });
         await Assert.ThrowsAnyAsync<IOException>(() => f.Service.EnableAsync("new", 0, "none", null));
@@ -254,6 +396,20 @@ public class CoreMaintenanceTests
         Assert.Equal("both", f.Service.GetStatus().Action);
         Assert.False(f.Service.GetStatus().IsActive);
     }
+
+    private static string StatePath(Fixture f) => Path.Combine(f.Core.ConfigRoot, "maintenance-state.json");
+
+    // A directory in place of the state file makes every later atomic replace fail.
+    private static void BreakStateFile(Fixture f)
+    {
+        File.Delete(StatePath(f));
+        Directory.CreateDirectory(StatePath(f));
+    }
+
+    private static void StorePoliciesNormally(Fixture f, Guid id)
+        => f.Users.Setup(x => x.UpdatePolicyAsync(id, It.IsAny<UserPolicy>()))
+            .Callback<Guid, UserPolicy>((user, policy) => f.Policies[user] = JsonConvert.DeserializeObject<UserPolicy>(JsonConvert.SerializeObject(policy))!)
+            .Returns(Task.CompletedTask);
 
     [Theory]
     [InlineData("00:00", "08:00", true)][InlineData("22:00", "06:00", true)]
