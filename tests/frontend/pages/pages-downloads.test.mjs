@@ -46,10 +46,16 @@ test('downloads issues hydrate alternate metadata shapes and reuse cache only wi
   assert.equal(calls[0].headers['X-Jellyfin-User-Id'],'user-a');
   h.switchUser();await h.P.fetchIssues();assert.equal(calls.length,5);
 });
-test('downloads disabled optional sources clear stale state without network',async t=>{
-  const h=setup(t,{config:{DownloadsShowHistory:false,DownloadsPageShowIssues:false}});h.P.state.history=[{}];h.P.state.issues=[{}];await h.P.fetchHistory();await h.P.fetchIssues();
-  assert.equal(h.P.state.history.length,0);assert.equal(h.P.state.historyVisible,false);assert.equal(h.P.state.issues.length,0);assert.equal(h.calls.length,0);
-});
+// History goes through JE.core.api.plugin (h.calls); issues through ApiClient.ajax, counted separately.
+for(const enabled of [false,true]){
+  test(`downloads ${enabled?'enabled':'disabled'} optional sources ${enabled?'are fetched':'clear stale state without network'}`,async t=>{
+    let ajaxCalls=0;const h=setup(t,{config:{DownloadsShowHistory:enabled,DownloadsPageShowIssues:enabled},ajax:async()=>{ajaxCalls++;return {results:[]};}});
+    h.P.state.history=[{}];h.P.state.issues=[{}];await h.P.fetchHistory();await h.P.fetchIssues();
+    assert.equal(h.P.state.history.length,0);assert.equal(h.P.state.issues.length,0);
+    if(enabled){assert.ok(ajaxCalls>=1);assert.ok(h.calls.some(([path])=>path.startsWith('/arr/history')));}
+    else{assert.equal(h.P.state.historyVisible,false);assert.equal(ajaxCalls,0);assert.equal(h.calls.length,0);}
+  });
+}
 test('downloads approval uses a single non-retried mutation then refreshes permission and data',async t=>{
   const h=setup(t,{api:async()=>({requests:[],canApproveRequests:false})});h.document.body.innerHTML='<button data-request-id="17"><span class="material-icons">check</span></button>';
   await h.P.handleRequestAction(h.document.querySelector('button'),'approve');assert.equal(h.calls[0][0],'/arr/requests/17/approve');assert.deepEqual(plain(h.calls[0][1]),{method:'POST',skipRetry:true});assert.equal(h.calls.length,2);assert.equal(h.P.state.canApproveRequests,false);
