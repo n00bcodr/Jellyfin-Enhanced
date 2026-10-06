@@ -161,17 +161,46 @@ public class PosterRegressionTests
     [Fact]
     public void Cache_budget_eviction_and_disabling_preserve_pixels()
     {
-        using var cached = new PosterTagRenderer(1024);
-        using var uncached = new PosterTagRenderer(0);
+        // Distinct chip texts give distinct tiles. Measure each tile, then use a budget that holds
+        // three of the largest but not all eight, so the cache both keeps tiles and has to evict.
+        var texts = new[] { "4K", "1080p", "720p", "480p", "HDR", "SDR", "DV", "8K" };
+        static PosterTagLayout Chip(string text) => new([new(PosterTagGroup.Quality, PosterTagCorner.TopLeft, [new QualityTag(text, "resolution")])], false, false);
         using var source = Poster();
-        foreach (var corner in Enum.GetValues<PosterTagCorner>())
+        var tileBytes = new List<long>();
+        using (var probe = new PosterTagRenderer(1L << 40))
         {
-            using var first = cached.Render(source, Layout(corner));
-            using var second = uncached.Render(source, Layout(corner));
+            foreach (var text in texts)
+            {
+                var before = probe.TileCacheBytes;
+                using var _ = probe.Render(source, Chip(text));
+                tileBytes.Add(probe.TileCacheBytes - before);
+            }
+            Assert.Equal(texts.Length, probe.TileCacheCount);
+        }
+        Assert.All(tileBytes, size => Assert.True(size > 0));
+        var budget = 3 * tileBytes.Max();
+        Assert.True(tileBytes.Sum() > budget);
+
+        using var cached = new PosterTagRenderer(budget);
+        using var uncached = new PosterTagRenderer(0);
+        foreach (var text in texts)
+        {
+            using var first = cached.Render(source, Chip(text));
+            using var second = uncached.Render(source, Chip(text));
             Assert.Equal(first!.Pixels, second!.Pixels);
-            Assert.InRange(cached.TileCacheBytes, 0, 1024);
+            Assert.InRange(cached.TileCacheCount, 1, texts.Length);
+            Assert.InRange(cached.TileCacheBytes, 1, budget);
             Assert.Equal(0, uncached.TileCacheCount);
         }
+        Assert.InRange(cached.TileCacheCount, 3, texts.Length - 1);
+
+        // A cached tile still draws the same pixels.
+        using (var again = cached.Render(source, Chip(texts[^1])))
+        using (var reference = uncached.Render(source, Chip(texts[^1])))
+        {
+            Assert.Equal(reference!.Pixels, again!.Pixels);
+        }
+
         cached.ClearTileCache();
         Assert.Equal(0, cached.TileCacheCount);
         Assert.Equal(0, cached.TileCacheBytes);
