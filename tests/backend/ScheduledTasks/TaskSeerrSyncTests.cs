@@ -100,8 +100,11 @@ public class TaskSeerrSyncTests
         var library = new Mock<ILibraryManager>();
         library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new BaseItem[] { movie, otherUsersMovie });
         var userData = new UserItemData { Key = "movie", Likes = false };
-        var data = new Mock<IUserDataManager>(MockBehavior.Strict);
+        // Loose, so a regression that processes the other user's request would reach these
+        // calls instead of throwing inside the task's per-item catch.
+        var data = new Mock<IUserDataManager>();
         data.Setup(d => d.GetUserData(allowed, movie)).Returns(userData);
+        data.Setup(d => d.GetUserData(allowed, otherUsersMovie)).Returns(new UserItemData { Key = "other", Likes = false });
         var writes = 0;
         data.Setup(d => d.SaveUserData(allowed, movie, userData, MediaBrowser.Model.Entities.UserDataSaveReason.UpdateUserRating, It.IsAny<CancellationToken>())).Callback(() => writes++);
         var identities = new List<string>();
@@ -143,6 +146,10 @@ public class TaskSeerrSyncTests
         Assert.NotEmpty(identities);
         Assert.All(identities, id => Assert.Equal("27", id));
         Assert.Empty(f.Core.Manager.GetProcessedWatchlistItems(blocked.Id).Items);
+        // The blocked user's request for 456 never touches the allowed user's data.
+        data.Verify(d => d.GetUserData(It.IsAny<User>(), otherUsersMovie), Times.Never);
+        data.Verify(d => d.SaveUserData(It.IsAny<User>(), otherUsersMovie, It.IsAny<UserItemData>(), It.IsAny<MediaBrowser.Model.Entities.UserDataSaveReason>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.DoesNotContain(f.Core.Manager.GetProcessedWatchlistItems(allowed.Id).Items, item => item.TmdbId == 456);
         Assert.Equal(100, progress.Values.Last());
     }
 }

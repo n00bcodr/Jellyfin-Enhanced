@@ -130,7 +130,8 @@ public class IntegrationArrTests
         {
             "network" => throw new HttpRequestException("offline"),
             "timeout" => throw new TaskCanceledException("timeout"),
-            "status" => Task.FromResult(IntegrationTransport.Response("{}", 503)),
+            // A valid empty list, so only the status check can stop the second request.
+            "status" => Task.FromResult(IntegrationTransport.Response("[]", 503)),
             _ => Task.FromResult(IntegrationTransport.Response("{"))
         });
         Assert.Empty(await new RadarrService(transport, env.Logger).GetMovieTagsByTmdbId("http://127.0.0.1", "key"));

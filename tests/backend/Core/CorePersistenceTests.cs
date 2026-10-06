@@ -78,6 +78,42 @@ public class CorePersistenceTests
         Assert.False(f.Manager.UserConfigurationExists(User, "unused.json"));
     }
 
+    public class Payload { public int Version { get; set; } public List<string> Items { get; set; } = new(); }
+
+    [Fact]
+    public async Task ConcurrentStrictReadsNeverSeeAHalfWrittenSave()
+    {
+        using var f = new CoreFixture();
+        // Large enough that each write takes a while, so a non-atomic save would be read half-written.
+        static Payload Make(int version) => new() { Version = version, Items = Enumerable.Range(0, 20000).Select(i => $"item-{version}-{i}-padding-padding-padding").ToList() };
+        f.Manager.SaveUserConfiguration(User, "payload.json", Make(0));
+        using var done = new CancellationTokenSource();
+        var reads = 0;
+        var reader = Task.Run(() =>
+        {
+            while (!done.IsCancellationRequested)
+            {
+                // A torn read throws here (and would quarantine the user's valid file).
+                var read = f.Manager.GetUserConfigurationStrict<Payload>(User, "payload.json");
+                Assert.Equal(20000, read.Items.Count);
+                Assert.Equal($"item-{read.Version}-19999-padding-padding-padding", read.Items[^1]);
+                reads++;
+            }
+        });
+        try
+        {
+            for (var version = 1; version <= 30 && !reader.IsCompleted; version++) f.Manager.SaveUserConfiguration(User, "payload.json", Make(version));
+        }
+        finally
+        {
+            done.Cancel();
+        }
+        await reader;
+        Assert.True(reads > 0);
+        Assert.Empty(Directory.GetFiles(f.ConfigRoot, "*.corrupt-*", SearchOption.AllDirectories));
+        Assert.Equal(30, f.Manager.GetUserConfigurationStrict<Payload>(User, "payload.json").Version);
+    }
+
     [Fact]
     public void SaveSupportsJsonElementAndSubscriberFailuresDoNotLoseData()
     {

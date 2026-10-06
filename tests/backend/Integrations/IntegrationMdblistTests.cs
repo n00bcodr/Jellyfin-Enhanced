@@ -93,3 +93,27 @@ public class IntegrationMdblistTests
         Assert.Null(MdblistService.GetCommunityRating(new()));
     }
 }
+
+[Collection("Plugin singleton")]
+public class IntegrationMdblistSavedKeyTests
+{
+    [Fact]
+    public async Task TestingAnUnsavedKeyBypassesTheSavedKeysCachedStatus()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.MdblistApiKey = "saved";
+        using var transport = new IntegrationTransport((request, _) => Task.FromResult(IntegrationTransport.Response(
+            request.RequestUri!.Query.Contains("apikey=saved", StringComparison.Ordinal)
+                ? "{\"plan\":\"free\",\"rate_limit\":100,\"rate_limit_remaining\":7}"
+                : "{\"plan\":\"supporter\",\"rate_limit\":1000,\"rate_limit_remaining\":42}")));
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        Assert.Equal(7, (await service.GetAccountStatusAsync(default))!.RateLimitRemaining);
+        Assert.Equal(7, (await service.GetAccountStatusAsync(default))!.RateLimitRemaining);
+        Assert.Equal(1, transport.Calls); // the saved key's status is cached
+        var tested = await service.GetAccountStatusAsync(default, apiKeyOverride: "unsaved");
+        Assert.Equal(42, tested!.RateLimitRemaining);
+        Assert.Equal("supporter", tested.Plan);
+        Assert.Equal(2, transport.Calls);
+        Assert.Equal(7, service.RemainingQuota());
+    }
+}
