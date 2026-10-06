@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
 using Jellyfin.Database.Implementations;
@@ -150,6 +151,39 @@ public class IntegrationCalendarTests
         Assert.Equal(new[] { "Radarr", "Shoko", "Sonarr" }, result.Events.Select(e => e.Source).OrderBy(x => x));
         Assert.Equal(0, result.Errors.GetArrayLength());
         Assert.Equal(3, transport.Calls);
+    }
+
+    [Fact]
+    public async Task RangeIsParsedAndSentAsGregorianDatesUnderNonGregorianCulture()
+    {
+        using var f = new ApiPluginFixture(); Configure(f);
+        f.Plugin.Configuration.SonarrUrl = "http://127.0.0.1/sonarr";
+        f.Plugin.Configuration.SonarrApiKey = "arr-secret";
+        f.Plugin.Configuration.RadarrUrl = "http://127.0.0.1/radarr";
+        f.Plugin.Configuration.RadarrApiKey = "arr-secret";
+        var queries = new List<string>();
+        using var transport = new IntegrationTransport((request, _) =>
+        {
+            lock (queries) queries.Add(request.RequestUri!.AbsolutePath + request.RequestUri.Query);
+            return Task.FromResult(IntegrationTransport.Response(
+                request.RequestUri!.AbsolutePath.Contains("/shoko/") ? "[" + Episode("Episode", 1, 42) + "]" :
+                request.RequestUri.AbsolutePath.Contains("/radarr/") ? "[{\"id\":1,\"title\":\"Movie\",\"digitalRelease\":\"2026-10-10\"}]" :
+                "[{\"airDateUtc\":\"2026-10-10\",\"series\":{\"title\":\"TV\"}}]"));
+        });
+        var old = CultureInfo.CurrentCulture;
+        try
+        {
+            // th-TH uses the Buddhist calendar: culture-sensitive parsing reads 2026 as a Buddhist year.
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("th-TH");
+            var controller = ApiAssetTests.Controller(f.Core, transport, new CalendarDatabase());
+            controller.Request.QueryString = new QueryString("?start=2026-10-01&end=2026-11-01");
+            var result = Unpack(await controller.GetCalendarEvents());
+            Assert.Equal(new[] { "Radarr", "Shoko", "Sonarr" }, result.Events.Select(e => e.Source).OrderBy(x => x));
+            Assert.Equal(0, result.Errors.GetArrayLength());
+        }
+        finally { CultureInfo.CurrentCulture = old; }
+        Assert.Contains(queries, q => q.Contains("/shoko/") && q.Contains("startDate=2026-10-01&endDate=2026-11-01"));
+        Assert.Contains(queries, q => q.Contains("/sonarr/") && q.Contains("start=2026-10-01T00"));
     }
 
     [Theory]

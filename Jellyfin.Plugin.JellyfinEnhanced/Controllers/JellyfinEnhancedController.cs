@@ -10620,7 +10620,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             if (Request.Query.TryGetValue("start", out var startValues))
             {
-                if (DateTime.TryParse(startValues.ToString(), out var parsedStart))
+                // Invariant: under a culture with another calendar (th-TH is Buddhist) "2026-10-05"
+                // would be read as a different year and the range would miss every event.
+                if (DateTime.TryParse(startValues.ToString(), System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var parsedStart))
                 {
                     startDate = parsedStart.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(parsedStart, DateTimeKind.Utc) : parsedStart.ToUniversalTime();
                 }
@@ -10628,7 +10631,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             if (Request.Query.TryGetValue("end", out var endValues))
             {
-                if (DateTime.TryParse(endValues.ToString(), out var parsedEnd))
+                if (DateTime.TryParse(endValues.ToString(), System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var parsedEnd))
                 {
                     endDate = parsedEnd.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(parsedEnd, DateTimeKind.Utc) : parsedEnd.ToUniversalTime();
                 }
@@ -10858,7 +10862,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
                         out var dto))
                 {
-                    return dto.UtcDateTime.ToString("yyyy-MM-dd");
+                    return dto.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
                 }
                 // Fallback: strip everything after the first 10 chars when it
                 // already looks like an ISO date prefix.
@@ -11123,8 +11127,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             ArrInstance instance, DateTime startDate, DateTime endDate,
             HashSet<string> includedTypes, Func<object?, DateTime?> parseDate, CancellationToken ct)
         {
-            var startParam = startDate.ToString("yyyy-MM-dd");
-            var endParam = endDate.ToString("yyyy-MM-dd");
+            var startParam = startDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            var endParam = endDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
             return FetchAndMapAsync<List<ArrItem>>(
                 instance,
                 $"/api/v3/Dashboard/CalendarEpisodes?startDate={startParam}&endDate={endParam}&includeMissing=false&includeRestricted=false",
