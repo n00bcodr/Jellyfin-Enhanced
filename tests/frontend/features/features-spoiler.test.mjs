@@ -37,6 +37,7 @@ test('spoiler state coalesces loading, normalizes IDs, copies preferences and re
   h.switchUser();
   assert.equal(h.state.hasAnyState(),false);
   assert.equal(h.state.isLoaded(),false);
+  assert.deepEqual(Object.keys(h.state.getUserPrefs()),[]);
   await h.state.whenLoaded();
   assert.equal(h.calls.length,2);
 });
