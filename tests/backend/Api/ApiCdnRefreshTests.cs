@@ -26,7 +26,8 @@ public class ApiCdnRefreshTests
             };
             return Task.FromResult(IntegrationTransport.Response("synthetic-asset", type: mime));
         });
-        var service = new CdnAssetService(f.Logger, transport, f.Paths.Object);
+        // The real 2 s pause between award logos is production pacing, not behavior under test.
+        var service = new CdnAssetService(f.Logger, transport, f.Paths.Object) { BurstSensitiveDelay = TimeSpan.Zero };
         var progress = new Reports();
         await service.RefreshKnownAsync(progress, CancellationToken.None);
         Assert.Equal(CdnAssetService.KnownAssets.Count, calls);
