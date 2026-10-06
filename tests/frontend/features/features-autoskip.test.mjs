@@ -33,9 +33,13 @@ test('auto-skip ignores missing end, short segments, unsupported types and rever
  for(const pos of [0,1,2,6]){h.tick(pos);assert.equal(h.video.currentTime,pos);}assert.deepEqual(h.skipped,[]);
 });
 test('old-item segment response cannot seek after playback identity changes',async t=>{
- const first=deferred();const h=await engine(t,{fetchSegments:id=>id==='first'?first.promise:Promise.resolve([])});
- h.setItem('second');h.tick(0);first.resolve([{Type:'Intro',StartTicks:0,EndTicks:200000000}]);await new Promise(done=>setImmediate(done));
- h.tick(1);assert.equal(h.video.currentTime,1);assert.deepEqual(h.skipped,[]);
+ const first=deferred(),second=deferred();const h=await engine(t,{fetchSegments:id=>id==='first'?first.promise:second.promise});
+ const settle=()=>new Promise(done=>setImmediate(done));
+ h.setItem('second');h.tick(0);
+ // The current item's answer lands first; the stale one must not replace it afterwards.
+ second.resolve([]);await settle();
+ first.resolve([{Id:'intro',Type:'Intro',StartTicks:100000000,EndTicks:200000000}]);await settle();
+ h.tick(9);h.tick(10);assert.equal(h.video.currentTime,10);assert.deepEqual(h.skipped,[]);
 });
 test('session resolver coalesces source probes and discards old-source results',async t=>{
  const h=setup(t);const first=deferred();let calls=0;

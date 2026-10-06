@@ -21,9 +21,18 @@ async function setup(t,{item={Id:'item',Type:'Movie',ProviderIds:{Tmdb:'7'}},con
 }
 
 for(const Type of ['Movie','Series','Season','Episode']) {
+  // Season/Episode pages are guarded through their series; the others through their own id.
+  const guardedKey=Type==='Season'||Type==='Episode'?'series':'item';
+  const item={Id:'item',Type,SeriesId:'series',ProviderIds:{Tmdb:'7'},ParentIndexNumber:1,IndexNumber:2};
+  const guard=key=>({whenLoaded:async()=>{},isLoadOk:()=>true,
+    isEnabledFor:id=>Type!=='Movie'&&id===key,isMovieEnabledFor:id=>Type==='Movie'&&id===key});
   test(`reviews suppress guarded ${Type} pages before fetching content`,async t=>{
-    const h=await setup(t,{item:{Id:'item',Type,SeriesId:'series',ProviderIds:{Tmdb:'7'}},config:{SpoilerBlurEnabled:true},spoilerBlur:{whenLoaded:async()=>{},isLoadOk:()=>true,isEnabledFor:()=>true,isMovieEnabledFor:()=>true}});
+    const h=await setup(t,{item,config:{SpoilerBlurEnabled:true},spoilerBlur:guard(guardedKey)});
     assert.equal(h.calls.length,0);assert.equal(h.document.querySelector('.tmdb-reviews-section'),null);
+  });
+  test(`reviews still load on ${Type} pages when only another item is guarded`,async t=>{
+    const h=await setup(t,{item,config:{SpoilerBlurEnabled:true},spoilerBlur:guard('other')});
+    assert.ok(h.calls.length>0);assert.ok(h.document.querySelector('.tmdb-reviews-section'));
   });
 }
 test('reviews fail closed when spoiler state fails to load',async t=>{

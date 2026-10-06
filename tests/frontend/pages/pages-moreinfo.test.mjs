@@ -21,10 +21,14 @@ test('more-info late ratings do not replace ratings of a newer item',async t=>{
   assert.equal(h.state.currentModal.querySelector('[data-mount="ratings"]').textContent,'new');
 });
 test('more-info close removes TV request listeners and navigation dismisses modal',async t=>{
-  const h=setup(t);await h.P.open(1,'tv');const count=h.actions.length;
+  let detailCalls=0;const h=setup(t,{details:async id=>{detailCalls++;return {id};}});await h.P.open(1,'tv');
+  const request=()=>h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-tv-requested',{detail:{tmdbId:1}}));
+  // Control: while open, a request event refreshes the details.
+  request();await nextTurn();assert.equal(detailCalls,2);
+  const count=h.actions.length;
   h.document.dispatchEvent(new h.window.Event('viewshow'));h.runClosing();
-  h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-tv-requested',{detail:{tmdbId:1}}));await nextTurn();
-  assert.equal(h.state.currentModal,null);assert.equal(h.actions.length,count);
+  request();await nextTurn();
+  assert.equal(h.state.currentModal,null);assert.equal(h.actions.length,count);assert.equal(detailCalls,2);
 });
 test('more-info failed data returns a visible error without mounting modal',async t=>{
   const h=setup(t,{details:async()=>null});await h.P.open(1,'movie');assert.equal(h.errors.length,1);assert.equal(h.state.currentModal,null);

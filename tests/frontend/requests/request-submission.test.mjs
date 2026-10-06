@@ -158,8 +158,14 @@ test('quota chips hide unlimited quotas and distinguish warning from restriction
 });
 
 test('disabled quota feature makes no network request', async t => {
-  const h = setup(t, { config: { JellyseerrShowQuotaInfo: false }, get: () => { throw new Error('must not fetch'); } });
+  let gets = 0;
+  const h = setup(t, { config: { JellyseerrShowQuotaInfo: false }, get: async () => { gets++; return { movie: { limit: 1 } }; } });
   assert.equal(await h.api.fetchUserQuota(), null);
+  assert.equal(gets, 0);
+  // Control: the same setup fetches once the feature is on.
+  h.JE.pluginConfig.JellyseerrShowQuotaInfo = true;
+  assert.deepEqual(plain(await h.api.fetchUserQuota()), { movie: { limit: 1 } });
+  assert.equal(gets, 1);
 });
 
 for (const split of [false, true]) for (const succeeds of [true, false]) test(`late request ${succeeds ? 'success' : 'failure'} cannot overwrite a refreshed offline button (split=${split})`, async t => {

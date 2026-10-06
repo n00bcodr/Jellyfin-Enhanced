@@ -13,6 +13,6 @@ test('playback controls without a video show translated feedback',t=>{
 test('percentage seek uses actual duration and last-position tracker is consumed once',t=>{
  const h=setup(t);Object.defineProperty(h.video,'duration',{value:200});h.JE.jumpToPercentage(25);assert.equal(h.video.currentTime,50);h.JE.attachSeekTracker(h.video);h.JE.attachSeekTracker(h.video);h.video.dispatchEvent(new h.window.Event('timeupdate'));h.video.currentTime=100;h.video.dispatchEvent(new h.window.Event('seeking'));h.JE.jumpToLastPosition();assert.equal(h.video.currentTime,50);h.video.currentTime=80;h.JE.jumpToLastPosition();assert.equal(h.video.currentTime,80);
 });
-test('player item identity follows video route then OSD item hint',t=>{
+test('player item identity comes from the video route id',t=>{
  const h=setup(t);h.window.location.hash='#!/video?id=route-item';assert.equal(h.JE.internals.player.getCurrentVideoItemId(),'route-item');
 });

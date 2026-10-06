@@ -21,7 +21,10 @@ test('release-date network failure removes placeholder and logs expected diagnos
  const h=setup(t,{fetch:async()=>jsonResponse({},503)});h.expectConsoleError(/TMDB request failed/);h.api.displayReleaseDate('movie',h.container);await h.settle();assert.equal(h.container.children.length,0);
 });
 test('release response arriving after navigation does not recreate removed chips',async t=>{
- const response=deferred();const h=setup(t,{fetch:()=>response.promise});h.api.displayReleaseDate('movie',h.container);await Promise.resolve();h.container.replaceChildren();response.resolve(jsonResponse({results:[{iso_3166_1:'US',release_dates:[{type:3,release_date:'2025-01-01'}]}]}));await h.settle();assert.equal(h.container.children.length,0);
+ const response=deferred();const h=setup(t,{fetch:()=>response.promise});h.api.displayReleaseDate('movie',h.container);await Promise.resolve();
+ const placeholder=h.container.querySelector('.mediaInfoItem-releaseDate');assert.ok(placeholder);h.container.replaceChildren();
+ response.resolve(jsonResponse({results:[{iso_3166_1:'US',release_dates:[{type:3,release_date:'2025-01-01'}]}]}));await h.settle();
+ assert.equal(h.container.children.length,0);assert.equal(placeholder.childNodes.length,0);assert.equal(placeholder.textContent,'');
 });
 test('calendar dates show the same day west of UTC',async t=>{
  // Runners pin TZ=UTC; switch this process to a zone behind UTC for the duration of the test.
