@@ -207,7 +207,8 @@ public class PosterRegressionTests
     [InlineData("prs-baku1926", "Dari (Unified Turkic Latin Alphabet)")]
     [InlineData("sh-baku1926", "Serbian (Latin, Unified Turkic Latin Alphabet)")]
     [InlineData("cnr-baku1926-scouse", "Montenegrin (BAKU1926_SCOUSE)")]
-    // Baku is not promoted to a script beside a variant that maps to alalc97 or to a region.
+    // A script variant (baku1926, luna1918, ...) becomes the script only when no script or region is
+    // present after aliasing and it sorts first among the remaining variants (alalc97 from heploc counts).
     [InlineData("az-baku1926-heploc", "Azerbaijani (ALALC97_BAKU1926)")]
     [InlineData("tk-baku1926-heploc", "Turkmen (ALALC97_BAKU1926)")]
     [InlineData("az-heploc-baku1926", "Azerbaijani (ALALC97_BAKU1926)")]
@@ -218,6 +219,18 @@ public class PosterRegressionTests
     [InlineData("az-baku1926-aaland-heploc", "Azerbaijani (Åland Islands, ALALC97_BAKU1926)")]
     [InlineData("az-baku1926-fonipa", "Azerbaijani (Baku)")]
     [InlineData("az-aaland", "Azerbaijani (Åland Islands)")]
+    [InlineData("az-baku1926-1994", "Azerbaijani (1994_BAKU1926)")]
+    [InlineData("az-abcde-baku1926", "Azerbaijani (ABCDE_BAKU1926)")]
+    [InlineData("tk-1994-baku1926", "Turkmen (1994_BAKU1926)")]
+    [InlineData("en-baku1926-abcde", "English (ABCDE_BAKU1926)")]
+    [InlineData("az-baku1926-1994-zzzzz", "Azerbaijani (1994_BAKU1926_ZZZZZ)")]
+    [InlineData("az-abcde-baku1926-fonipa", "Azerbaijani (ABCDE_BAKU1926_FONIPA)")]
+    [InlineData("ru-mmmmm-luna1918", "Russian (Luna)")]
+    [InlineData("ru-petr1708-luna1918", "Russian (Luna)")]
+    [InlineData("en-1994-colb1945", "English (1994_COLB1945)")]
+    [InlineData("ru-RU-petr1708", "Russian (Russia, PETR1708)")]
+    // getCanonicalLocales' language+variant aliases (sh-petr1708 -> sr-Petr) never apply to display names.
+    [InlineData("sh-petr1708", "Serbian (Latin, PETR1708)")]
     public void Language_name_variant_aliases_match_browser_display_names(string code, string expected)
     {
         Assert.Equal(expected, Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution.LanguageNames.Of(code));

@@ -75,10 +75,15 @@ for (const code of ['pt_BR', 'root', 'e', 'en--us', '-en', 'en-', 'x-klingon', '
     codes.add(code);
 }
 
-// baku1926 becomes the Baku script only when no other variant becomes alalc97 or a region.
-for (const lang of ['az', 'tk', 'en', 'sh', 'prs', 'sgn', 'und']) {
+// A script variant (baku1926, colb1945, luna1918, petr1708) becomes the script only when no script or
+// region is present after aliasing and it sorts first among the remaining variants.
+for (const lang of ['az', 'tk', 'en', 'ru', 'sh', 'hbs', 'cnr', 'prs', 'drw', 'swc', 'tnf', 'sgn', 'und']) {
     for (const tail of ['baku1926-heploc', 'heploc-baku1926', 'baku1926-alalc97', 'alalc97-baku1926', 'baku1926-aaland', 'aaland-baku1926',
-        'baku1926-aaland-heploc', 'baku1926-heploc-fonipa', 'baku1926-fonipa', 'US-baku1926-heploc', 'Latn-baku1926-heploc']) {
+        'baku1926-aaland-heploc', 'baku1926-heploc-fonipa', 'baku1926-fonipa', 'US-baku1926-heploc', 'Latn-baku1926-heploc',
+        'baku1926-1994', '1994-baku1926', 'abcde-baku1926', 'baku1926-abcde', 'a1234-baku1926', 'bakuzzzz-baku1926', 'baku1926-zzzzz',
+        'baku1926-1994-zzzzz', 'abcde-baku1926-fonipa', 'fonipa-baku1926-1994', 'arevela-baku1926', 'lojban-baku1926',
+        'petr1708', 'abcde-petr1708', 'petr1708-zzzzz', 'luna1918-petr1708', 'petr1708-luna1918', 'mmmmm-luna1918', '1994-luna1918',
+        'luna1918-heploc', 'colb1945', '1994-colb1945', 'baku1926-colb1945', 'colb1945-baku1926', 'US-petr1708', 'Cyrl-petr1708']) {
         codes.add(`${lang}-${tail}`);
     }
 }
