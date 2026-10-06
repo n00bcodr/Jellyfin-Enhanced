@@ -1,18 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness,deferred,plain} from '../helpers/harness.mjs';
-function setup(t,{api=async()=>({}),ajax=async()=>({results:[]}),config={}}={}){
+function setup(t,{api=async()=>({}),ajax=async()=>({results:[]}),config={},html='',globals={}}={}){
   let epoch=0,changed;const notices=[],calls=[];
-  const h=createHarness({JE:{pluginConfig:{JellyseerrEnabled:true,DownloadsPageShowIssues:true,DownloadsShowHistory:true,...config},helpers:{},t:key=>key,toast:message=>notices.push(message),session:{getEpoch:()=>epoch,isCurrent:value=>value===epoch,onUserChange:(_key,fn)=>{changed=fn;}},core:{api:{plugin:async(...args)=>{calls.push(args);return api(...args);}}}},apiClient:{ajax,getUrl:(path,params)=>'http://jellyfin.test'+path+(params?'?'+new URLSearchParams(params):'')}});
+  const h=createHarness({html,globals,JE:{pluginConfig:{JellyseerrEnabled:true,DownloadsPageShowIssues:true,DownloadsShowHistory:true,...config},helpers:{},t:key=>key,toast:message=>notices.push(message),session:{getEpoch:()=>epoch,isCurrent:value=>value===epoch,onUserChange:(_key,fn)=>{changed=fn;}},core:{api:{plugin:async(...args)=>{calls.push(args);return api(...args);}}}},apiClient:{ajax,getUrl:(path,params)=>'http://jellyfin.test'+path+(params?'?'+new URLSearchParams(params):'')}});
   t.after(()=>h.close());h.load('arr/requests/requests-page-data.js');const P=h.JE.internals.requestsPage;const rendered=[];P.renderPage=()=>rendered.push(P.state.isLoading);
   return {...h,P,notices,calls,rendered,switchUser:()=>{epoch++;changed();}};
 }
-test('downloads page loads queue, paginated requests/history and issues while exposing loading lifecycle',async t=>{
-  const h=setup(t,{api:async path=>path==='/arr/queue'?{items:[{id:'download'}]}:path.startsWith('/arr/requests')?{requests:[{id:'request'}],totalPages:4,canApproveRequests:true}:{items:[{id:'history'}],visible:true,totalPages:3}});
-  h.P.state.requestsPage=2;h.P.state.requestsFilter='pending';h.P.state.historyPage=3;
+// Pages hold whole grid rows: with three live columns that is four rows of 12 cards.
+const grids='<div class="je-requests-grid"></div><div class="je-issues-grid"></div><div class="je-history-grid"></div>';
+test('downloads page loads queue, whole-row requests/issues/history pages while exposing loading lifecycle',async t=>{
+  let columns='1fr 1fr 1fr';const ajaxUrls=[];
+  const h=setup(t,{html:grids,globals:{getComputedStyle:()=>({gridTemplateColumns:columns})},ajax:async options=>{ajaxUrls.push(new URL(options.url));return {results:[]};},
+    api:async path=>path==='/arr/queue'?{items:[{id:'download'}]}:path.startsWith('/arr/requests')?{requests:[{id:'request'}],totalPages:4,canApproveRequests:true}:{items:[{id:'history'}],visible:true,totalPages:3}});
+  const page=(prefix,from=0)=>new URL(h.calls.slice(from).find(([p])=>p.startsWith(prefix))[0],'http://test').searchParams;
+  Object.assign(h.P.state,{requestsPageSize:12,issuesPageSize:12,historyPageSize:12,requestsPage:2,requestsFilter:'pending',issuesPage:3,historyPage:3});
   await h.P.loadAllData();assert.deepEqual(h.rendered,[true,false]);assert.equal(h.P.state.downloads[0].id,'download');assert.equal(h.P.state.requests[0].id,'request');assert.equal(h.P.state.history[0].id,'history');assert.equal(h.P.state.canApproveRequests,true);
-  const request=new URL(h.calls.find(([p])=>p.startsWith('/arr/requests'))[0],'http://test');assert.equal(request.searchParams.get('skip'),'20');assert.equal(request.searchParams.get('filter'),'pending');
-  const history=new URL(h.calls.find(([p])=>p.startsWith('/arr/history'))[0],'http://test');assert.equal(history.searchParams.get('skip'),'40');
+  assert.deepEqual([page('/arr/requests').get('skip'),page('/arr/requests').get('take'),page('/arr/requests').get('filter')],['12','12','pending']);
+  assert.deepEqual([ajaxUrls[0].searchParams.get('skip'),ajaxUrls[0].searchParams.get('take')],['24','12']);
+  assert.deepEqual([page('/arr/history').get('skip'),page('/arr/history').get('take')],['24','12']);
+  // A column-count change re-sizes the page and returns to page 1; at 13 columns History drops to three rows under its 48-card cap.
+  columns=Array(13).fill('1fr').join(' ');const before=h.calls.length;await h.P.loadAllData();
+  assert.deepEqual([page('/arr/requests',before).get('skip'),page('/arr/requests',before).get('take'),h.P.state.requestsPage],['0','52',1]);
+  assert.deepEqual([ajaxUrls[1].searchParams.get('skip'),ajaxUrls[1].searchParams.get('take'),h.P.state.issuesPage],['0','52',1]);
+  assert.deepEqual([page('/arr/history',before).get('skip'),page('/arr/history',before).get('take'),h.P.state.historyPage],['0','39',1]);
 });
 test('downloads pending queue, request and history responses cannot restore previous account data or permissions',async t=>{
   const pending=deferred();const h=setup(t,{api:()=>pending.promise,config:{DownloadsPageShowIssues:false}});
