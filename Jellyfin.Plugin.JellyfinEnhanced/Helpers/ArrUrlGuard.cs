@@ -47,6 +47,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
             if (IPAddress.TryParse(host, out var literalIp))
             {
+                // Only the container host aliases may reach 169.254.0.0/16; a literal link-local
+                // URL (e.g. http://169.254.1.2/) is blocked like any other metadata-style address.
                 return !IsBlockedIp(literalIp, allowLinkLocal: false);
             }
 

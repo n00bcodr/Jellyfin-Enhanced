@@ -102,8 +102,12 @@ public class IntegrationArrTests
 
     [Theory]
     [InlineData("http://169.254.169.254/latest")]
+    [InlineData("http://169.254.1.2/")]
     [InlineData("http://100.100.100.200")]
     [InlineData("file:///etc/passwd")]
+    [InlineData("file://server/share")]
+    [InlineData("ftp://127.0.0.1/")]
+    [InlineData("gopher://127.0.0.1/")]
     [InlineData("")]
     public async Task RejectedDestinationsNeverReachTransport(string url)
     {
