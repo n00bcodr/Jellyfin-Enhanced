@@ -19,8 +19,9 @@ scripts are outside this JS coverage report. Reports are written to
 `artifacts/frontend-coverage` (HTML, LCOV, JSON summary). Browser-suite execution
 is not merged into this unit/DOM report.
 
-Minimum floors are 20% statements, 21% lines, 15% branches, and 21%
-functions across the whole production inventory; these deliberately expose the
+Minimum floors are 28% statements, 30% lines, 20% branches, and 29%
+functions across the whole production inventory (just under the measured
+29.5% / 31.0% / 21.3% / 30.3%); these deliberately expose the
 large remaining untested surface. The API, DOM observer, lifecycle, navigation,
 and session modules individually require 60% statements and 45% branches.
 These measured regression floors are not a completeness target. Raise them when

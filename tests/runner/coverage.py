@@ -24,9 +24,9 @@ def main():
     if package is None:
         parser.error('Production plugin is missing from coverage report')
     measured = {kind: round(float(package.attrib[kind + '-rate']) * 100, 4) for kind in ('line', 'branch')}
-    # The integrated baseline exceeded 41% lines / 29% branches. Leave a small
-    # margin across build targets; review and raise floors as coverage improves.
-    floors = {'line': 38.0, 'branch': 27.0}
+    # Just under the measured 48.3% lines / 36.3% branches on both targets.
+    # Raise the floors as coverage improves; never lower them to accept a loss.
+    floors = {'line': 47.0, 'branch': 35.0}
     report = {'measured_percent': measured, 'minimum_percent': floors,
               'source': str(reports[0]), 'exclusions': [],
               'passed': all(measured[kind] >= floor for kind, floor in floors.items())}

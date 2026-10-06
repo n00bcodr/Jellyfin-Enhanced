@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <!-- Parity harness for the native poster tag resolver. Not part of the plugin build:
-         it lives outside Jellyfin.Plugin.JellyfinEnhanced/ and CI only builds the plugin csproj.
-         Run through ../run.mjs. -->
+         it lives outside Jellyfin.Plugin.JellyfinEnhanced/. Run through ../run.mjs, which
+         tests/runner/poster.py (and scheduled/manual CI via tests/run.py poster) invokes. -->
     <PropertyGroup>
         <OutputType>Exe</OutputType>
         <TargetFramework>net10.0</TargetFramework>

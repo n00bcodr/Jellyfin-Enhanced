@@ -34,7 +34,7 @@ for (const format of ['text-summary', 'json-summary', 'lcovonly', 'html']) repor
 // implying that this small percentage is comprehensive behavioral coverage.
 const totals = map.getCoverageSummary();
 let failed = false;
-for (const [metric, minimum] of Object.entries({ statements: 20, branches: 15, functions: 21, lines: 21 })) {
+for (const [metric, minimum] of Object.entries({ statements: 28, branches: 20, functions: 29, lines: 30 })) {
   if (totals[metric].pct < minimum) { console.error(`Global ${metric}: ${totals[metric].pct}% < ${minimum}%`); failed = true; }
 }
 for (const name of ['api-client', 'dom-observer', 'lifecycle', 'navigation', 'session']) {
