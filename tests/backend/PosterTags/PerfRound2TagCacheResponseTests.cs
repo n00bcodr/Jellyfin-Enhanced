@@ -121,6 +121,14 @@ public class PerfRound2TagCacheResponseTests
         return json.RootElement.GetProperty("filterRevision").GetString()!;
     }
 
+    // A delta with nothing changed since the client's copy: no entries at all.
+    private static void AssertEmptyDelta(string body)
+    {
+        using var json = JsonDocument.Parse(body);
+        Assert.Equal(0, json.RootElement.GetProperty("count").GetInt32());
+        Assert.Empty(json.RootElement.GetProperty("items").EnumerateObject());
+    }
+
     [Fact]
     public async Task ExecutedResponsesAndValidatorsRemainUserIsolatedAfterAccessChanges()
     {
@@ -191,6 +199,7 @@ public class PerfRound2TagCacheResponseTests
         Assert.Contains("Second secret", full.Body);
         var delta = await endpoint.Read(endpoint.Alice, since: 200);
         Assert.Equal(200, delta.Status);
+        AssertEmptyDelta(delta.Body);
         Assert.Equal(304, (await endpoint.Read(endpoint.Alice, since: 200, validator: delta.ETag)).Status);
         endpoint.AliceAccess = [endpoint.First];
         endpoint.Cache.InvalidateUserAccess();
@@ -198,7 +207,7 @@ public class PerfRound2TagCacheResponseTests
         Assert.Equal(200, revoked.Status);
         Assert.NotEqual(delta.ETag, revoked.ETag);
         Assert.NotEqual(FilterRevision(delta.Body), FilterRevision(revoked.Body));
-        Assert.DoesNotContain("Second secret", revoked.Body);
+        AssertEmptyDelta(revoked.Body);
     }
 
     [Theory]
