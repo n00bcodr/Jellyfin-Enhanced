@@ -120,8 +120,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
             var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
 
-            // Like the rest of JE, use the first configured URL that answers: the
-            // first one whose user list loads serves the whole pass.
+            // Use the first configured URL that answers, as the Seerr proxy and the
+            // auto-request services do (WatchlistMonitor and the Jellyfin→Seerr sync
+            // task use only the first URL): the first one whose user list loads
+            // serves the whole pass.
             string? jellyseerrUrl = null;
             Dictionary<string, string>? jellyseerrUserMap = null;
             foreach (var url in urls)
