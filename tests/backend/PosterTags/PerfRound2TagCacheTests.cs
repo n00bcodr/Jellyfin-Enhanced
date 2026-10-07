@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Jellyfin.Data.Enums;
+using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
@@ -73,5 +75,48 @@ public class PerfRound2TagCacheTests
         Assert.Equal(unprobedFirst ? "Episode 3" : "Episode 2", builtSeries.StreamData?.ItemName);
         Assert.Equal(unprobedFirst ? new[] { "fra", "deu" } : new[] { "fra", "eng", "deu" }, builtSeries.AudioLanguages);
         Assert.Equal(new[] { "Drama" }, builtSeries.Genres);
+    }
+
+    [Fact]
+    public void QueuedRebuildOfAnUnchangedItemDoesNotTouchTheCache()
+    {
+        // Library scans raise ItemUpdated for items whose tag data did not change; the
+        // rebuild must keep the stored entry (and its LastUpdated, which deltas key on)
+        // instead of reporting a change that re-saves the whole cache.
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var episode = new Episode
+        {
+            Id = Guid.NewGuid(), Name = "Episode", IndexNumber = 1, ParentIndexNumber = 1, SeriesId = Guid.NewGuid(), Genres = ["Drama"], CommunityRating = 8,
+            Sources = [new() { MediaStreams = [new() { Type = MediaStreamType.Audio, Language = "eng" }, new() { Type = MediaStreamType.Video, Height = 1080 }] }]
+        };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemById<BaseItem>(episode.Id)).Returns(episode);
+        var snapshot = Path.Combine(f.Core.ConfigRoot, "tag-cache.json");
+        Directory.CreateDirectory(f.Core.ConfigRoot);
+        File.WriteAllText(snapshot, JsonSerializer.Serialize(new { SchemaVersion = 7, Version = 7, LastModified = 200, LastReconciledUtcTicks = new DateTime(2026, 1, 1).Ticks, Items = new Dictionary<string, TagCacheEntry>() }));
+
+        // Shutdown applies the queued update synchronously: the first rebuild adds the entry...
+        using (var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger))
+        {
+            cache.LoadFromDisk();
+            cache.EnqueueUpdate(episode.Id);
+        }
+        var afterFirst = File.ReadAllText(snapshot);
+        using (var restarted = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger))
+        {
+            restarted.LoadFromDisk();
+            Assert.True(restarted.TryGetEntry(episode.Id, out var added));
+            Assert.Equal(["Drama"], added.Genres!);
+            Assert.True(restarted.LastModified > 200);
+            // ...and the second, with nothing changed, mutates nothing.
+            var (version, modified) = (restarted.Version, restarted.LastModified);
+            restarted.EnqueueUpdate(episode.Id);
+            restarted.Dispose();
+            Assert.Equal((version, modified), (restarted.Version, restarted.LastModified));
+            Assert.True(restarted.TryGetEntry(episode.Id, out var kept));
+            Assert.Same(added, kept);
+        }
+        Assert.Equal(afterFirst, File.ReadAllText(snapshot));
     }
 }

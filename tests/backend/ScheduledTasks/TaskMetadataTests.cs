@@ -21,14 +21,18 @@ public class TaskMetadataTests
         f.Plugin.Configuration.MdblistRatingsEnabled = true;
         f.Plugin.Configuration.MdblistRatingsAutoSyncEnabled = true;
         f.Plugin.Configuration.MdblistRatingsOverwriteExisting = overwrite;
+        // One movie has only a community rating, the other only a critic rating: each existing
+        // value is preserved without overwrite while the missing one is filled.
         var movie = new Movie { Id = Guid.NewGuid(), CommunityRating = 4, ProviderIds = new() { ["Tmdb"] = "123" } };
+        var critic = new Movie { Id = Guid.NewGuid(), CriticRating = 50, ProviderIds = new() { ["Tmdb"] = "124" } };
         var library = new Mock<ILibraryManager>();
-        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new BaseItem[] { movie });
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new BaseItem[] { movie, critic });
         var writes = 0;
-        library.Setup(l => l.UpdateItemAsync(movie, It.IsAny<BaseItem>(), ItemUpdateType.MetadataEdit, It.IsAny<CancellationToken>())).Callback(() => writes++).Returns(Task.CompletedTask);
+        library.Setup(l => l.UpdateItemAsync(It.IsAny<BaseItem>(), It.IsAny<BaseItem>(), ItemUpdateType.MetadataEdit, It.IsAny<CancellationToken>())).Callback(() => writes++).Returns(Task.CompletedTask);
         using var transport = new IntegrationTransport((_, _) => throw new InvalidOperationException("Sync must be offline"));
         using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
-        service.MergeMediaBatchIntoCache("movie", ["123"], new Dictionary<string, MdblistCacheEntry> { ["123"] = new() { Found = true, Confirmed = true, FetchedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Ratings = [new() { Source = "tmdb", Score = 82 }, new() { Source = "tomatoes", Score = 91 }] } });
+        MdblistCacheEntry Ratings() => new() { Found = true, Confirmed = true, FetchedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Ratings = [new() { Source = "tmdb", Score = 82 }, new() { Source = "tomatoes", Score = 91 }] };
+        service.MergeMediaBatchIntoCache("movie", ["123", "124"], new Dictionary<string, MdblistCacheEntry> { ["123"] = Ratings(), ["124"] = Ratings() });
         var previous = BaseItem.LibraryManager;
         BaseItem.LibraryManager = library.Object;
         try
@@ -37,9 +41,11 @@ public class TaskMetadataTests
             await task.ExecuteAsync(new Progress<double>(), default);
             Assert.Equal(overwrite ? 8.2f : 4f, movie.CommunityRating);
             Assert.Equal(91f, movie.CriticRating);
-            Assert.Equal(1, writes);
+            Assert.Equal(8.2f, critic.CommunityRating);
+            Assert.Equal(overwrite ? 91f : 50f, critic.CriticRating);
+            Assert.Equal(2, writes);
             await task.ExecuteAsync(new Progress<double>(), default);
-            Assert.Equal(1, writes);
+            Assert.Equal(2, writes);
             Assert.Equal(0, transport.Calls);
         }
         finally { BaseItem.LibraryManager = previous; }
