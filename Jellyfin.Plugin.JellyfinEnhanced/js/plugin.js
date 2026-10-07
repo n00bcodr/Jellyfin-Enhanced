@@ -424,6 +424,7 @@
             JE.pluginConfig.DownloadsUseCustomTabs = false;
             JE.pluginConfig.RecommendationsUseCustomTabs = false;
             JE.pluginConfig.ActivityFeedUseCustomTabs = false;
+            JE.pluginConfig.CatchUpUseCustomTabs = false;
         }
         if (!hasPluginPages) {
             JE.pluginConfig.BookmarksUsePluginPages = false;

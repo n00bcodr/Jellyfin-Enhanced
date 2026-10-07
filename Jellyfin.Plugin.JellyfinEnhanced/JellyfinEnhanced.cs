@@ -28,6 +28,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
     public class JellyfinEnhanced : BasePlugin<PluginConfiguration>, IHasWebPages
     {
         private readonly IApplicationPaths _applicationPaths;
+        private readonly IServerConfigurationManager _serverConfigurationManager;
         private readonly Logger _logger;
         private readonly Services.AnalyticsReportingService _analyticsReportingService;
         private const string PluginName = "Jellyfin Enhanced";
@@ -42,6 +43,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         {
             Instance = this;
             _applicationPaths = applicationPaths;
+            _serverConfigurationManager = serverConfigurationManager;
             _logger = logger;
             _analyticsReportingService = analyticsReportingService;
             _logger.Info($"{PluginName} v{Version} initialized. Plugin logs will be written to: {_logger.CurrentLogFilePath}");
@@ -269,6 +271,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
                 base.UpdateConfiguration(configuration);
             }
+            CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);
+
             try
             {
                 Controllers.JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
@@ -457,6 +461,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             bool activityFeedExists = config.Value<JArray>("pages")!
                 .Any(x => x.Value<string>("Id") == $"{namespaceName}.ActivityPage");
 
+            bool catchUpExists = config.Value<JArray>("pages")!
+                .Any(x => x.Value<string>("Id") == $"{namespaceName}.CatchUpPage");
+
             bool recommendationsExists = config.Value<JArray>("pages")!
                 .Any(x => x.Value<string>("Id") == $"{namespaceName}.RecommendationsPage");
 
@@ -598,7 +605,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 }
             }
 
+            // Only add the catch up page if it's enabled and using plugin pages
+            if (!catchUpExists && pluginConfig.CatchUpEnabled && pluginConfig.CatchUpUsePluginPages)
+            {
+                config.Value<JArray>("pages")!.Add(new JObject
+                {
+                    { "Id", $"{namespaceName}.CatchUpPage" },
+                    { "Url", $"{(supportsSubUrls ? "" : rootUrl)}/JellyfinEnhanced/catchUpPage" },
+                    { "DisplayText", "Catch Up" },
+                    { "Icon", "style" },
+                    { "Version", pluginPageConfigVersion }
+                });
+            }
+            // Remove the catch up page if it exists but is now disabled or not using plugin pages
+            else if (catchUpExists && (!pluginConfig.CatchUpEnabled || !pluginConfig.CatchUpUsePluginPages))
+            {
+                var catchUpPage = config.Value<JArray>("pages")!
+                    .FirstOrDefault(x => x.Value<string>("Id") == $"{namespaceName}.CatchUpPage");
+                if (catchUpPage != null)
+                {
+                    config.Value<JArray>("pages")!.Remove(catchUpPage);
+                }
+            }
+
             File.WriteAllText(pluginPagesConfig, config.ToString(Formatting.Indented));
+
+            // Plugin Pages 3.0+ can register pages live. Older versions read config.json on restart.
+            var pluginInterface = pluginPagesAssembly?.GetType("Jellyfin.Plugin.PluginPages.PluginInterface");
+            var registerPage = pluginInterface?.GetMethod("RegisterPage");
+            var removePage = pluginInterface?.GetMethod("RemovePage");
+            if (registerPage != null && removePage != null)
+            {
+                try
+                {
+                    foreach (var suffix in new[] { "CalendarPage", "DownloadsPage", "BookmarksPage", "HiddenContentPage", "ActivityPage", "CatchUpPage", "RecommendationsPage" })
+                    {
+                        var id = $"{namespaceName}.{suffix}";
+                        removePage.Invoke(null, new object[] { id });
+                        var page = config.Value<JArray>("pages")!.FirstOrDefault(x => x.Value<string>("Id") == id);
+                        if (page != null)
+                        {
+                            registerPage.Invoke(null, new object[] { page });
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Could not update Plugin Pages live, a restart is needed: {ex.InnerException?.Message ?? ex.Message}");
+                }
+            }
             }
             catch (Exception ex)
             {
@@ -694,6 +749,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 new PluginPageInfo {
                     Name = "activityPage",
                     EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.ActivityPage.html"
+                },
+                new PluginPageInfo {
+                    Name = "catchUpPage",
+                    EmbeddedResourcePath = $"{GetType().Namespace}.PluginPages.CatchUpPage.html"
                 }
             };
         }

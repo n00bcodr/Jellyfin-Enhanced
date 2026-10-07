@@ -351,6 +351,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Admin cross-user view + management; on by default, admins can disable below.
             HiddenContentAdmin = true;
 
+            // Catch Up page: off by default; the activity log is on once the page is enabled.
+            CatchUpEnabled = false;
+            CatchUpUsePluginPages = false;
+            CatchUpUseNativeTab = false;
+            CatchUpUseCustomTabs = false;
+            CatchUpAutoCreateCustomTab = false;
+            CatchUpCustomTabJeOwned = false;
+            CatchUpLogEnabled = true;
+
             // Hidden Content per-user defaults — applied when a user's
             // hidden-content.json is created and via "Apply defaults to all users".
             HiddenContentDefaultEnabled = true;
@@ -958,6 +967,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         // Admin cross-user hidden-content view + management
         public bool HiddenContentAdmin { get; set; }
+
+        // Catch Up page: a swipeable deck for marking titles watched, dismissed or watchlisted
+        public bool CatchUpEnabled { get; set; }
+        public bool CatchUpUsePluginPages { get; set; }
+        public bool CatchUpUseNativeTab { get; set; }
+        public bool CatchUpUseCustomTabs { get; set; }
+        public bool CatchUpAutoCreateCustomTab { get; set; }
+        [AnalyticsExclude]
+        public bool CatchUpCustomTabJeOwned { get; set; }
+        // Logs who swiped what. Admins read it on the page.
+        public bool CatchUpLogEnabled { get; set; } = true;
 
         // Hidden Content per-user defaults
         public bool HiddenContentDefaultEnabled { get; set; }
