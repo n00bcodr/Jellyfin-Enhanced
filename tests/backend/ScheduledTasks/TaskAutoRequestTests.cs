@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
@@ -76,6 +77,54 @@ public class TaskAutoRequestTests
             Assert.Equal(2, posts.Count);
             Assert.Equal(1, lookups);
         }
+    }
+
+    [Theory]
+    [InlineData("fa-IR", true)][InlineData("fa-IR", false)]
+    [InlineData("th-TH", true)][InlineData("th-TH", false)]
+    public async Task MovieCollectionReleaseDateIsReadAsGregorianUnderNonGregorianCulture(string culture, bool released)
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.AutoMovieRequestEnabled = true;
+        config.JellyseerrEnabled = true;
+        config.TMDB_API_KEY = "test-tmdb";
+        config.JellyseerrUrls = "http://seerr.test";
+        config.JellyseerrApiKey = "test-seerr";
+        config.AutoMovieRequestCheckReleaseDate = true;
+        config.AutoMovieRequestQualityMode = "custom";
+        config.AutoMovieRequestCustomServerId = 0;
+        config.AutoMovieRequestCustomProfileId = 7;
+        config.AutoMovieRequestCustomRootFolder = "/movies";
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var users = new Mock<IUserManager>();
+        users.Setup(u => u.GetUserById(user.Id)).Returns(user);
+        var movie = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
+        // A year either side of today: read as a Persian year a past date lands centuries ahead,
+        // and read as a Thai Buddhist year a future date lands centuries ago.
+        var releaseDate = DateTime.UtcNow.AddYears(released ? -1 : 1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var posts = 0;
+        using var transport = new IntegrationTransport((request, _) =>
+        {
+            switch (request.RequestUri!.AbsolutePath)
+            {
+                case "/3/movie/123": return Task.FromResult(IntegrationTransport.Response("{\"belongs_to_collection\":{\"id\":9,\"name\":\"Saga\"}}"));
+                case "/api/v1/collection/9": return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { parts = new[] { new { id = 123, title = "First", releaseDate = "2000-01-01", mediaInfo = new { status = 5 } }, new { id = 124, title = "Second", releaseDate, mediaInfo = new { status = 1 } } } })));
+                case "/api/v1/user": return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 22, jellyfinUserId = user.Id.ToString("N") } } })));
+                case "/api/v1/request":
+                    Interlocked.Increment(ref posts);
+                    return Task.FromResult(IntegrationTransport.Response("{}", 201));
+                default: throw new InvalidOperationException("Unexpected URL " + request.RequestUri);
+            }
+        });
+        var old = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
+            await new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!).CheckMovieForCollectionRequestAsync(movie, user.Id);
+        }
+        finally { CultureInfo.CurrentCulture = old; }
+        Assert.Equal(released ? 1 : 0, posts);
     }
 
     [Theory]
