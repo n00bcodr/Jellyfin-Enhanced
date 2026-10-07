@@ -84,6 +84,25 @@ public class TaskAutoRequestTests
     [InlineData("th-TH", true)][InlineData("th-TH", false)]
     public async Task MovieCollectionReleaseDateIsReadAsGregorianUnderNonGregorianCulture(string culture, bool released)
     {
+        // A year either side of today: read as a Persian year a past date lands centuries ahead,
+        // and read as a Thai Buddhist year a future date lands centuries ago.
+        var releaseDate = DateTime.UtcNow.AddYears(released ? -1 : 1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        Assert.Equal(released ? 1 : 0, await NextCollectionMovieRequests(releaseDate, CultureInfo.GetCultureInfo(culture)));
+    }
+
+    [Fact]
+    public async Task MovieCollectionReleasedTodayInServerTimeIsRequested()
+    {
+        // A date-only release day starts at the server's local midnight. A UTC cutoff would treat this
+        // title as unreleased when the test runs ahead of UTC in the hours after local midnight.
+        var today = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        Assert.Equal(1, await NextCollectionMovieRequests(today, CultureInfo.CurrentCulture));
+    }
+
+    // Runs the collection check for an available first movie whose sequel has the given release date,
+    // under the given culture, and returns how many requests reached Seerr.
+    private static async Task<int> NextCollectionMovieRequests(string releaseDate, CultureInfo culture)
+    {
         using var f = new ApiPluginFixture();
         var config = f.Plugin.Configuration;
         config.AutoMovieRequestEnabled = true;
@@ -100,9 +119,6 @@ public class TaskAutoRequestTests
         var users = new Mock<IUserManager>();
         users.Setup(u => u.GetUserById(user.Id)).Returns(user);
         var movie = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
-        // A year either side of today: read as a Persian year a past date lands centuries ahead,
-        // and read as a Thai Buddhist year a future date lands centuries ago.
-        var releaseDate = DateTime.UtcNow.AddYears(released ? -1 : 1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var posts = 0;
         using var transport = new IntegrationTransport((request, _) =>
         {
@@ -120,11 +136,11 @@ public class TaskAutoRequestTests
         var old = CultureInfo.CurrentCulture;
         try
         {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
+            CultureInfo.CurrentCulture = culture;
             await new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!).CheckMovieForCollectionRequestAsync(movie, user.Id);
         }
         finally { CultureInfo.CurrentCulture = old; }
-        Assert.Equal(released ? 1 : 0, posts);
+        return posts;
     }
 
     [Theory]

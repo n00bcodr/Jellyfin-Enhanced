@@ -325,10 +325,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                         var releaseDateStr = releaseDateProp.GetString();
                                         // Seerr sends ISO dates ("2001-01-01"); a culture-sensitive parse reads the year
                                         // in the server's calendar (Persian, Thai Buddhist) and misjudges the release.
+                                        // A date-only value parses as the server's local midnight, so a title counts as
+                                        // released from the start of its release day in the server's time zone.
                                         if (!string.IsNullOrEmpty(releaseDateStr) && DateTime.TryParse(releaseDateStr, System.Globalization.CultureInfo.InvariantCulture,
-                                            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var releaseDate))
+                                            System.Globalization.DateTimeStyles.None, out var releaseDate))
                                         {
-                                            if (releaseDate > DateTime.UtcNow)
+                                            if (releaseDate > DateTime.Now)
                                             {
                                                 _logger.Debug($"[Auto-Movie-Request] Next movie is not yet released (release date: {releaseDateStr}), skipping");
                                                 return null;
