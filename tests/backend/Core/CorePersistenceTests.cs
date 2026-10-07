@@ -89,6 +89,11 @@ public class CorePersistenceTests
         f.Manager.SaveUserConfiguration(User, "payload.json", Make(0));
         using var done = new CancellationTokenSource();
         var reads = 0;
+        var savesStarted = false;
+        // Handshakes instead of timing: the saves start only after a first read, and wait halfway
+        // for a read that finished after they started, however slowly the pool schedules the reader.
+        var firstRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var readDuringSaves = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var reader = Task.Run(() =>
         {
             while (!done.IsCancellationRequested)
@@ -97,19 +102,29 @@ public class CorePersistenceTests
                 var read = f.Manager.GetUserConfigurationStrict<Payload>(User, "payload.json");
                 Assert.Equal(20000, read.Items.Count);
                 Assert.Equal($"item-{read.Version}-19999-padding-padding-padding", read.Items[^1]);
-                reads++;
+                Interlocked.Increment(ref reads);
+                firstRead.TrySetResult();
+                if (Volatile.Read(ref savesStarted)) readDuringSaves.TrySetResult();
             }
         });
         try
         {
-            for (var version = 1; version <= 30 && !reader.IsCompleted; version++) f.Manager.SaveUserConfiguration(User, "payload.json", Make(version));
+            // WhenAny with the reader so a failing first read surfaces instead of hanging.
+            await Task.WhenAny(firstRead.Task, reader);
+            Volatile.Write(ref savesStarted, true);
+            for (var version = 1; version <= 30 && !reader.IsCompleted; version++)
+            {
+                f.Manager.SaveUserConfiguration(User, "payload.json", Make(version));
+                if (version == 15) await Task.WhenAny(readDuringSaves.Task, reader);
+            }
         }
         finally
         {
             done.Cancel();
         }
         await reader;
-        Assert.True(reads > 0);
+        Assert.True(readDuringSaves.Task.IsCompleted);
+        Assert.True(Volatile.Read(ref reads) > 1);
         Assert.Empty(Directory.GetFiles(f.ConfigRoot, "*.corrupt-*", SearchOption.AllDirectories));
         Assert.Equal(30, f.Manager.GetUserConfigurationStrict<Payload>(User, "payload.json").Version);
     }
