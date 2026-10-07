@@ -105,12 +105,15 @@ for (const [active, linked] of [[false, true], [true, false]]) test(`request but
   assert.equal(h.button.disabled, true); assert.equal(h.calls.length, 0);
 });
 
-test('rapid repeated clicks submit one movie request and update status on success', async t => {
-  const pending = deferred(); const h = uiSetup(t, { post: () => pending.promise }); h.configure();
-  h.button.click(); h.button.click(); assert.equal(h.button.disabled, true); await flush(); assert.equal(h.calls.length, 1);
+// split: the 4K-enabled split button's main half has its own copy of the request handler.
+const mainButton = (h, split) => split ? h.document.querySelector('.jellyseerr-split-main') : h.button;
+for (const split of [false, true]) test(`rapid repeated clicks submit one movie request and update status on success (split=${split})`, async t => {
+  const pending = deferred(); const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: split }, post: () => pending.promise }); h.configure();
+  const button = mainButton(h, split);
+  button.click(); button.click(); assert.equal(button.disabled, true); await flush(); assert.equal(h.calls.length, 1);
   pending.resolve({ id: 7 }); await flush();
-  assert.equal(h.item.mediaInfo.status, 3); assert.equal(h.button.disabled, true);
-  assert.ok(h.button.classList.contains('jellyseerr-button-pending'));
+  assert.equal(h.item.mediaInfo.status, 3); assert.equal(button.disabled, true);
+  assert.ok(button.classList.contains('jellyseerr-button-pending')); assert.ok(button.textContent.includes('jellyseerr_btn_requested'));
 });
 
 for (const split of [false, true]) test(`request failure escapes message and permits explicit retry (split=${split})`, async t => {
@@ -121,10 +124,12 @@ for (const split of [false, true]) test(`request failure escapes message and per
   button.click(); await flush(); assert.equal(h.calls.length, 2); assert.equal(button.disabled, true);
 });
 
-test('quota rejection shows escaped dialog and restores request button', async t => {
-  const h = uiSetup(t, { post: async () => { throw { status: 403, responseJSON: { message: 'Movie Quota exceeded. <img src=x>' } }; }, get: async () => ({ movie: { limit: 2, used: 2, restricted: true } }) });
-  const dialogs = []; h.window.Dashboard = { alert: data => dialogs.push(data) }; h.configure(); h.button.click(); await flush();
-  assert.equal(dialogs.length, 1); assert.ok(dialogs[0].message.includes('&lt;img')); assert.equal(h.button.disabled, false); assert.equal(h.events.length, 0);
+for (const split of [false, true]) test(`quota rejection shows escaped dialog and restores request button (split=${split})`, async t => {
+  const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: split }, post: async () => { throw { status: 403, responseJSON: { message: 'Movie Quota exceeded. <img src=x>' } }; }, get: async () => ({ movie: { limit: 2, used: 2, restricted: true } }) });
+  const dialogs = []; h.window.Dashboard = { alert: data => dialogs.push(data) }; h.configure();
+  const button = mainButton(h, split); button.click(); await flush();
+  assert.equal(dialogs.length, 1); assert.ok(dialogs[0].message.includes('&lt;img')); assert.equal(button.disabled, false); assert.equal(h.events.length, 0);
+  assert.ok(button.textContent.includes('jellyseerr_btn_request')); assert.equal(button.classList.contains('jellyseerr-button-error'), false);
 });
 
 test('quota detection distinguishes permission errors and honors feature toggle', t => {
@@ -146,16 +151,16 @@ test('reconfigured button submits the new media rather than stale item data', as
   h.button.click(); await flush(); assert.equal(h.calls.length, 1); assert.equal(h.calls[0][1].body.mediaId, 99);
 });
 
-test('advanced-permission UI opens options without prematurely submitting', async t => {
-  const h = uiSetup(t, { config: { JellyseerrShowAdvanced: true }, get: async () => ({ active: true, userFound: true, canRequestAdvanced: true }) });
+for (const split of [false, true]) test(`advanced-permission UI opens options without prematurely submitting (split=${split})`, async t => {
+  const h = uiSetup(t, { config: { JellyseerrShowAdvanced: true, JellyseerrEnable4KRequests: split }, get: async () => ({ active: true, userFound: true, canRequestAdvanced: true }) });
   await h.api.checkUserStatus(); const opened = []; h.JE.jellyseerrUI.showMovieRequestModal = (...args) => opened.push(args);
-  h.configure(); h.button.click(); await flush(); assert.equal(h.calls.length, 0); assert.equal(opened.length, 1); assert.equal(opened[0][0], 42);
+  h.configure(); mainButton(h, split).click(); await flush(); assert.equal(h.calls.length, 0); assert.equal(opened.length, 1); assert.equal(opened[0][0], 42);
 });
 
-for (const code of ['no_request_permission', 'request_4k_forbidden']) test(`typed permission denial ${code} is shown without success state`, async t => {
-  const h = uiSetup(t, { post: async () => { throw { status: 403, responseJSON: { code } }; } });
-  h.configure(); h.button.click(); await flush();
-  assert.ok(h.button.textContent.includes(`jellyseerr_err_${code}`)); assert.equal(h.events.length, 0); assert.equal(h.item.mediaInfo, undefined);
+for (const split of [false, true]) for (const code of ['no_request_permission', 'request_4k_forbidden']) test(`typed permission denial ${code} is shown without success state (split=${split})`, async t => {
+  const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: split }, post: async () => { throw { status: 403, responseJSON: { code } }; } });
+  h.configure(); const button = mainButton(h, split); button.click(); await flush();
+  assert.ok(button.textContent.includes(`jellyseerr_err_${code}`)); assert.equal(h.events.length, 0); assert.equal(h.item.mediaInfo, undefined);
 });
 
 test('quota chips hide unlimited quotas and distinguish warning from restriction', t => {
@@ -186,3 +191,4 @@ for (const split of [false, true]) for (const succeeds of [true, false]) test(`l
   if (succeeds) pending.resolve({ id: 7 }); else pending.reject({ status: 500, responseJSON: { message: 'old failure' } });
   await flush(); assert.equal(h.button.disabled, true); assert.equal(h.button.textContent, offlineLabel);
 });
+
