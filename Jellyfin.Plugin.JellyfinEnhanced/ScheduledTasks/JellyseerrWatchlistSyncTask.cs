@@ -646,18 +646,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     // Mark as processed if prevention is enabled and not already marked
                     if (config?.PreventWatchlistReAddition == true)
                     {
-                        var processedItems = _userConfigurationManager.GetProcessedWatchlistItems(user.Id);
-                        if (!processedItems.Items.Any(p => p.TmdbId == watchlistItem.TmdbId && p.MediaType == watchlistItem.MediaType))
-                        {
-                            processedItems.Items.Add(new ProcessedWatchlistItem
-                            {
-                                TmdbId = watchlistItem.TmdbId,
-                                MediaType = watchlistItem.MediaType,
-                                ProcessedAt = System.DateTime.UtcNow,
-                                Source = "existing"
-                            });
-                            _userConfigurationManager.SaveProcessedWatchlistItems(user.Id, processedItems);
-                        }
+                        _userConfigurationManager.MarkWatchlistItemProcessed(user.Id, watchlistItem.TmdbId, watchlistItem.MediaType, "existing");
                     }
 
                     return Task.FromResult(WatchlistItemResult.AlreadyInWatchlist);
@@ -670,15 +659,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 // Mark as processed if prevention is enabled
                 if (config?.PreventWatchlistReAddition == true)
                 {
-                    var processedItems = _userConfigurationManager.GetProcessedWatchlistItems(user.Id);
-                    processedItems.Items.Add(new ProcessedWatchlistItem
-                    {
-                        TmdbId = watchlistItem.TmdbId,
-                        MediaType = watchlistItem.MediaType,
-                        ProcessedAt = System.DateTime.UtcNow,
-                        Source = "sync"
-                    });
-                    _userConfigurationManager.SaveProcessedWatchlistItems(user.Id, processedItems);
+                    _userConfigurationManager.MarkWatchlistItemProcessed(user.Id, watchlistItem.TmdbId, watchlistItem.MediaType, "sync");
                 }
 
                 _logger.Info($"[Seerr→Jellyfin Watchlist Sync] ✓ Added to watchlist: {item.Name} for user {user.Username}");

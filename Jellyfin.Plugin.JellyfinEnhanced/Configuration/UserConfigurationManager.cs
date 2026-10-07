@@ -911,22 +911,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SaveUserConfiguration(userId.ToString(), "processed-watchlist-items.json", items);
         }
 
+        /// Records a processed watchlist item for a user unless the same TMDB id and media
+        /// type is already recorded. Runs under the per-user file lock, so the scheduled
+        /// sync, a manual sync and the watchlist monitor cannot drop each other's entries.
+        /// Returns true when the item was added; a failed write is logged, not thrown, so
+        /// one user's unreadable file never stops a sync or monitor pass.
+        public bool MarkWatchlistItemProcessed(Guid userId, int tmdbId, string mediaType, string source)
+        {
+            try
+            {
+                return RmwUserConfiguration<ProcessedWatchlistItems>(userId.ToString(), "processed-watchlist-items.json", items =>
+                {
+                    if (items.Items.Any(p => p.TmdbId == tmdbId && p.MediaType == mediaType))
+                    {
+                        return 0;
+                    }
+
+                    items.Items.Add(new ProcessedWatchlistItem
+                    {
+                        TmdbId = tmdbId,
+                        MediaType = mediaType,
+                        ProcessedAt = System.DateTime.UtcNow,
+                        Source = source
+                    });
+                    return 1;
+                }) > 0;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error recording processed watchlist item {mediaType}:{tmdbId} for user {userId}: {ex.Message}");
+                return false;
+            }
+        }
+
         /// Cleans up old processed watchlist items (older than specified days).
         public void CleanupOldProcessedWatchlistItems(Guid userId, int daysToKeep = 365)
         {
             try
             {
-                var items = GetProcessedWatchlistItems(userId);
                 var cutoffDate = System.DateTime.UtcNow.AddDays(-daysToKeep);
-
-                var originalCount = items.Items.Count;
-                var itemsToKeep = items.Items.Where(item => item.ProcessedAt > cutoffDate).ToList();
-
-                if (itemsToKeep.Count != originalCount)
+                var removed = RmwUserConfiguration<ProcessedWatchlistItems>(userId.ToString(), "processed-watchlist-items.json", items =>
                 {
-                    items.Items = itemsToKeep;
-                    SaveProcessedWatchlistItems(userId, items);
-                    _logger.Info($"Cleaned up {originalCount - itemsToKeep.Count} old processed watchlist items for user {userId}");
+                    var originalCount = items.Items.Count;
+                    items.Items = items.Items.Where(item => item.ProcessedAt > cutoffDate).ToList();
+                    return originalCount - items.Items.Count;
+                });
+
+                if (removed > 0)
+                {
+                    _logger.Info($"Cleaned up {removed} old processed watchlist items for user {userId}");
                 }
             }
             catch (Exception ex)

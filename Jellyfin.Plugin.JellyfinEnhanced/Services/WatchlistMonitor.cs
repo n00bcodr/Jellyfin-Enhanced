@@ -234,32 +234,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         // Mark as processed if prevention is enabled
                         if (config.PreventWatchlistReAddition)
                         {
-                            var processedItems = _userConfigurationManager.GetProcessedWatchlistItems(user.Id);
-                            processedItems.Items.Add(new ProcessedWatchlistItem
-                            {
-                                TmdbId = tmdbId,
-                                MediaType = mediaType,
-                                ProcessedAt = System.DateTime.UtcNow,
-                                Source = "monitor"
-                            });
-                            _userConfigurationManager.SaveProcessedWatchlistItems(user.Id, processedItems);
+                            _userConfigurationManager.MarkWatchlistItemProcessed(user.Id, tmdbId, mediaType, "monitor");
                         }
                     }
                     else if (userData != null && userData.Likes == true && config.PreventWatchlistReAddition)
                     {
                         // Item is already in watchlist, mark as processed if not already marked
-                        var processedItems = _userConfigurationManager.GetProcessedWatchlistItems(user.Id);
-                        if (!processedItems.Items.Any(p => p.TmdbId == tmdbId && p.MediaType == mediaType))
-                        {
-                            processedItems.Items.Add(new ProcessedWatchlistItem
-                            {
-                                TmdbId = tmdbId,
-                                MediaType = mediaType,
-                                ProcessedAt = System.DateTime.UtcNow,
-                                Source = "existing"
-                            });
-                            _userConfigurationManager.SaveProcessedWatchlistItems(user.Id, processedItems);
-                        }
+                        _userConfigurationManager.MarkWatchlistItemProcessed(user.Id, tmdbId, mediaType, "existing");
                     }
                 }
 

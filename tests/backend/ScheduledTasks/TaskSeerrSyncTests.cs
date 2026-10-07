@@ -257,4 +257,51 @@ public class TaskSeerrSyncTests
         // The rest of the pass stays on the URL whose user list loaded; the third is never tried.
         Assert.Equal(new[] { "first.test/api/v1/user", "second.test/api/v1/user", "second.test/api/v1/user/27/watchlist" }, calls);
     }
+
+    [Fact]
+    public async Task ConcurrentSyncPassesKeepEveryProcessedEntry()
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.JellyseerrEnabled = true;
+        config.SyncJellyseerrWatchlist = true;
+        config.JellyseerrUrls = "http://seerr.test";
+        config.JellyseerrApiKey = "test";
+        config.PreventWatchlistReAddition = true;
+        config.WatchlistMemoryRetentionDays = 30;
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        const int perPass = 60;
+        var movies = Enumerable.Range(1, perPass * 2).Select(i => new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = i.ToString() } }).ToArray();
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(movies);
+        // Even TMDB ids are already on the watchlist, so both the "added" and the
+        // "already there" records are written concurrently.
+        var data = new Mock<IUserDataManager>();
+        data.Setup(d => d.GetUserData(It.IsAny<User>(), It.IsAny<BaseItem>()))
+            .Returns((User _, BaseItem item) => new UserItemData { Key = "fixture", Likes = int.Parse(item.ProviderIds["Tmdb"]) % 2 == 0 });
+        // Both passes fetch the user list before either processes an item, so their
+        // processed-items writes for the same user overlap.
+        using var bothStarted = new Barrier(2);
+        IntegrationTransport Seerr(int first) => new((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath == "/api/v1/user")
+            {
+                bothStarted.SignalAndWait(TimeSpan.FromSeconds(30));
+                return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 27, jellyfinUserId = user.Id.ToString("N") } } })));
+            }
+            var items = Enumerable.Range(first, perPass).Select(i => new { tmdbId = i, mediaType = "movie" });
+            return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { results = items })));
+        });
+        // The scheduled run and a manual sync, each seeing a different half of the watchlist.
+        using var scheduledSeerr = Seerr(1);
+        using var manualSeerr = Seerr(perPass + 1);
+        var scheduled = new JellyseerrWatchlistSyncTask(library.Object, Users(user).Object, data.Object, scheduledSeerr, f.Core.Manager, f.Core.Logger);
+        var manual = new JellyseerrWatchlistSyncTask(library.Object, Users(user).Object, data.Object, manualSeerr, f.Core.Manager, f.Core.Logger);
+
+        var passes = await Task.WhenAll(Task.Run(() => scheduled.RunAsync(null, default)), Task.Run(() => manual.RunAsync(null, default)));
+
+        Assert.All(passes, pass => Assert.Equal(perPass / 2, pass!.ItemsAdded));
+        var recorded = f.Core.Manager.GetProcessedWatchlistItems(user.Id).Items.Select(item => item.TmdbId).OrderBy(id => id);
+        Assert.Equal(Enumerable.Range(1, perPass * 2), recorded);
+    }
 }
