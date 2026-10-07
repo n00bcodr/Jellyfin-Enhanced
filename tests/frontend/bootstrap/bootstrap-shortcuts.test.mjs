@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHarness } from '../helpers/harness.mjs';
+import { createHarness, plain } from '../helpers/harness.mjs';
 
 function setup(t, disabled = false) {
   const actions = [], saves = [];
@@ -35,6 +35,19 @@ test('editor rejects conflicts and modifier-only input, disables with Delete and
   h.key.focus(); h.press(h.key, 'Backspace');
   assert.equal(h.JE.state.activeShortcuts.CycleAudioTracks, 'A'); assert.equal(h.JE.userConfig.shortcuts.Shortcuts.length, 0);
 });
+
+// A page reload rebuilds the bindings from the plugin defaults and the user's saved shortcuts.json.
+for (const [label, press, expected] of [['rebinding', 'q', 'Q'], ['disabling', 'Delete', '']]) {
+  test(`shortcut ${label} saved by the editor overrides the plugin default after a reload`, t => {
+    const h = setup(t); h.key.focus(); h.press(h.key, press);
+    const [file, saved] = h.saves.at(-1); assert.equal(file, 'shortcuts.json');
+    const reloaded = createHarness({ JE: { pluginConfig: { Shortcuts: [{ Name: 'CycleAudioTracks', Key: 'A' }, { Name: 'GoToHome', Key: 'H' }] }, userConfig: { shortcuts: plain(saved) } } });
+    t.after(() => reloaded.close());
+    reloaded.load('enhanced/config.js'); reloaded.JE.initializeShortcuts();
+    assert.equal(reloaded.JE.state.activeShortcuts.CycleAudioTracks, expected);
+    assert.equal(reloaded.JE.state.activeShortcuts.GoToHome, 'H', 'bindings the user never changed keep the plugin default');
+  });
+}
 
 test('actual player capture listener suppresses host defaults and ignores track auto-repeat', t => {
   const h = setup(t); let hostCalls = 0;
