@@ -11,6 +11,15 @@ test('release chips deduplicate in-flight requests and resolve regional theatric
  assert.equal(h.container.querySelectorAll('.mediaInfoItem-releaseDate').length,3);assert.match(h.container.querySelector('.je-release-date-cinema').textContent,/Feb/);assert.deepEqual(h.counts(),{itemCalls:1,fetchCalls:1});
  h.container.replaceChildren();h.api.displayReleaseDate('movie',h.container);assert.equal(h.container.children.length,3);assert.deepEqual(h.counts(),{itemCalls:1,fetchCalls:1});
 });
+test('a release type listed in several countries prefers the configured region, then US, over list order',async t=>{
+ // GB is listed first and has the earliest date, US the next earliest; the configured AU still wins.
+ const dates={GB:'2025-01-05',US:'2025-02-05',AU:'2025-03-05'};
+ const data=countries=>({results:countries.map(iso=>({iso_3166_1:iso,release_dates:[{type:4,release_date:dates[iso]}]}))});
+ const configured=setup(t,{data:data(['GB','US','AU'])});configured.api.displayReleaseDate('movie',configured.container);await configured.settle();
+ assert.match(configured.container.querySelector('.je-release-date-digital').textContent,/Mar/);
+ const fallback=setup(t,{data:data(['GB','US'])});fallback.api.displayReleaseDate('movie',fallback.container);await fallback.settle();
+ assert.match(fallback.container.querySelector('.je-release-date-digital').textContent,/Feb/);
+});
 test('episode premiere date bypasses external TMDB request',async t=>{
  const h=setup(t,{getItem:async(_user,id)=>id==='series'?{Type:'Series',ProviderIds:{Tmdb:'42'}}:{Type:'Episode',SeriesId:'series',PremiereDate:'2025-02-03T00:00:00Z'}});h.api.displayReleaseDate('episode',h.container);await h.settle();assert.equal(h.container.children.length,1);assert.equal(h.counts().fetchCalls,0);
 });
