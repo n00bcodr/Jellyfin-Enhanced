@@ -171,16 +171,24 @@ test('overlapping bookmark adds leave memory equal to the saved set',async t=>{
   assert.deepEqual(Object.keys(saves.calls[1].data.bookmarks),[added.id]);
   assert.equal(h.JE.userConfig.bookmark.bookmarks[added.id].timestamp,2);
 });
-test('a queued bookmark mutation does not run for a user who signed out meanwhile',async t=>{
-  const saves=controlledSaves();const h=setup(t,{a:{itemId:'one'},b:{itemId:'two'}},saves.save);
-  const first=h.api.delete('a'),second=h.api.update('b',{label:'later'});
-  (await saves.next(1)).resolve();
-  h.JE.userConfig={bookmark:{bookmarks:{}}};
-  // Settle any save a regression issues for the signed-out user, so it fails rather than hangs.
-  const results=Promise.all([first,second]);for(let i=0;i<10;i++)await new Promise(done=>setImmediate(done));saves.calls.slice(1).forEach(call=>call.resolve());
-  assert.deepEqual(await results,[true,false]);
-  assert.equal(saves.calls.length,1);assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks),{});
-});
+// Each mutation is queued behind a pending delete; another user signs in before it runs. Its
+// save would go to the new user's bookmark.json, so it must not run at all.
+for(const operation of ['update','deleteAll','backfill']){
+ test(`a queued bookmark ${operation} does not run for a user who signed in meanwhile`,async t=>{
+  const saves=controlledSaves();const h=setup(t,{a:{itemId:'one'},b:{itemId:'two',mediaType:'tv'}},saves.save);
+  h.routes.items=async()=>({Items:[{Id:'two',Type:'Episode',ParentIndexNumber:1,IndexNumber:2,ProviderIds:{}}]});
+  const first=h.api.delete('a');
+  const second=operation==='update'?h.api.update('b',{label:'later'}):operation==='deleteAll'?h.api.deleteAll():h.api.backfillEpisodeMetadata();
+  const saveA=await saves.next(1);await ticks(); // the backfill's episode lookup finishes and it queues
+  saveA.resolve();
+  const next={bookmark:{bookmarks:{mine:{itemId:'x'}}}};h.JE.userConfig=next;
+  // Settle any save a regression issues for the new user, so it fails rather than hangs.
+  const results=Promise.all([first,second]);await ticks();saves.calls.slice(1).forEach(call=>call.resolve());
+  assert.deepEqual(await results,[true,operation==='backfill'?undefined:false]);
+  assert.equal(saves.calls.length,1);
+  assert.equal(h.JE.userConfig,next);assert.deepEqual(plain(next.bookmark.bookmarks),{mine:{itemId:'x'}});
+ });
+}
 /** Loads the replacement modal and migrates `group` to the single offered item. */
 async function migrate(h,group){
   const replacement={Id:'new-item-0000000000000000',Name:'New cut',Type:'Movie',ProviderIds:{Tmdb:'42'}};
