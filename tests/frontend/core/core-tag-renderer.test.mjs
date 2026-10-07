@@ -35,15 +35,19 @@ test('tag cache honors TTL pruning, legacy cleanup and server clear timestamp',t
  h.JE.pluginConfig.ClearLocalStorageTimestamp=Date.now();h.register();assert.equal(ctx.getPersistent('fresh'),undefined);assert.equal(ctx.hot.size,0);
  assert.equal(store.getItem('test-v2'),null);assert.equal(store.getItem('test-v2Timestamp'),String(h.JE.pluginConfig.ClearLocalStorageTimestamp));
 });
-test('legacy sweep keeps the current cache and owner keys when they share the legacy stem',t=>{
+test('legacy sweep keeps the current cache, timestamp and owner keys when they share the legacy stem',t=>{
  // Language tags: current "…languageTagsCache-v2" starts with the legacy "…languageTagsCache-" stem.
- const h=setup(t,{TagCacheServerMode:false});h.spec.cache={key:'JellyfinEnhanced-languageTagsCache-v2',legacyPrefix:['JellyfinEnhanced-languageTagsCache','languageTagsCache'],hotBucket:'language'};
+ // A past server clear (timestamp 1000) is already applied; sweeping its "…-v2Timestamp" key would re-apply it on every reload.
+ const h=setup(t,{TagCacheServerMode:false,ClearLocalStorageTimestamp:1000});h.spec.cache={key:'JellyfinEnhanced-languageTagsCache-v2',legacyPrefix:['JellyfinEnhanced-languageTagsCache','languageTagsCache'],hotBucket:'language'};
  const store=h.window.localStorage;store.setItem('JellyfinEnhanced-languageTagsCache','{}');store.setItem('languageTagsCache-x','{}');
  const ctx=h.register();ctx.setPersistent('fresh',{timestamp:Date.now()});h.saved[0]();
  assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache'),null);assert.equal(store.getItem('languageTagsCache-x'),null);
  assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache-v2:identity-owner'),'s:a');
+ assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache-v2Timestamp'),'1000');
  h.register();assert.ok(ctx.getPersistent('fresh'),'reload must not drop the language cache');
+ assert.ok(store.getItem('JellyfinEnhanced-languageTagsCache-v2').includes('fresh'));
  assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache-v2:identity-owner'),'s:a');
+ assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache-v2Timestamp'),'1000');
 });
 test('tag search/admin exclusions apply to sibling render hosts',t=>{
  const h=setup(t,{DisableTagsOnSearchPage:true});const ctx=h.register();assert.equal(ctx.shouldIgnore(h.host),false);
