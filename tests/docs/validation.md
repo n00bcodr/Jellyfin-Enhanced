@@ -18,20 +18,23 @@ python3 tests/run.py host --target jf12
 
 `python3 tests/run.py all` runs the same stages in one go. Each stage writes its command, exit status, duration and log path to `artifacts/regression/summary.json`.
 
+The culture and time-zone row reruns `python3 tests/run.py backend` once with `LANG=fa_IR.UTF-8 LC_ALL=fa_IR.UTF-8` and once with `TZ=America/Los_Angeles` set. The Node 22.14.0 results come from `python3 tests/run.py frontend` with that Node first on `PATH`.
+
 ## Latest results
 
-All stages passed with no failed or skipped tests.
+Every stage below ran once at commit `b8179d9e` on 2026-10-08, and all passed with no failed or skipped tests.
 
 | Stage | Result |
 | --- | --- |
 | Plugin build, jf12 (.NET 10) and jf10 (.NET 9) | 0 warnings, 0 errors |
 | Inventory freshness | Current |
-| Tooling false-green checks | 9 passed |
-| Backend, Jellyfin 10.11 / .NET 9 | 803 passed |
-| Backend, Jellyfin 12 / .NET 10 | 803 passed |
-| Backend coverage | jf10 50.66% lines / 38.75% branches; jf12 50.67% / 38.78% (floors 47% / 35%) |
+| Tooling checks (false-green guards and the inventory generator) | 10 passed |
+| Backend, Jellyfin 10.11 / .NET 9 | 804 passed |
+| Backend, Jellyfin 12 / .NET 10 | 804 passed |
+| Backend coverage | jf10 50.28% lines / 38.36% branches; jf12 50.29% / 38.39% (floors 47% / 35%) |
+| Backend under the fa-IR culture and under the America/Los_Angeles time zone | 804 passed on each target in each run |
 | Frontend, instrumented production modules | 413 passed (Node 26.2.0 and the CI's Node 22.14.0) |
-| Frontend coverage | 32.51% statements, 24.14% branches, 32.94% functions, 34.19% lines (floors 28% / 20% / 29% / 30%) |
+| Frontend coverage | 31.84% statements, 23.78% branches, 31.94% functions, 33.70% lines on Node 26.2.0; 31.86% / 23.79% / 31.99% / 33.71% on Node 22.14.0 (floors 28% / 20% / 29% / 30%) |
 | Browser, Chromium desktop/mobile and Firefox | 39 passed, including 3 unchanged visual baselines |
 | Native poster pipeline | 140 checks passed |
 | JavaScript/C# poster parity | 39 setting profiles × 101 fixtures matched, plus one empty-profile check; 115,960 language names and 31,676 casing strings matched (Node 26.2.0, ICU 78.3) |
