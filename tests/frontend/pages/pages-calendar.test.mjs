@@ -53,13 +53,14 @@ test('calendar any/all filters honor favorites, watched, availability and librar
   const h = setup(t); h.P.loadSettings(); const s = h.P.state;
   s.userDataMap.set('a', {isFavorite:true,isWatched:false});
   s.userDataMap.set('b', {isFavorite:false,isWatched:true});
-  const events = [{id:'a',itemId:'1',hasFile:true},{id:'b',itemId:'2'}, {id:'denied',itemId:'3',hasFile:true}];
+  // 'upcoming' has no Jellyfin item yet (not in any library), so the access check must keep it.
+  const events = [{id:'a',itemId:'1',hasFile:true},{id:'b',itemId:'2'}, {id:'denied',itemId:'3',hasFile:true},{id:'upcoming'}];
   s.activeFilters.add('Watchlist'); s.activeFilters.add('Available');
   assert.deepEqual(plain(h.P.filterEvents(events)).map(x=>x.id), ['a']);
   s.activeFilters.add('Watched');
   assert.deepEqual(plain(h.P.filterEvents(events)).map(x=>x.id), ['a','b']);
   s.filterMatchMode='all'; assert.equal(h.P.filterEvents(events).length,0);
-  s.activeFilters.clear(); assert.deepEqual(plain(h.P.filterEvents(events)).map(x=>x.id), ['a','b']);
+  s.activeFilters.clear(); assert.deepEqual(plain(h.P.filterEvents(events)).map(x=>x.id), ['a','b','upcoming']);
 });
 
 test('calendar errors are escaped, deduplicated and shown again after recovery', async t => {
@@ -77,14 +78,36 @@ test('calendar errors are escaped, deduplicated and shown again after recovery',
   assert.equal(await h.P.fetchCalendarEvents(start,end),null); assert.equal(h.P.state.events.length,0);
 });
 
-test('calendar drops user-data responses arriving after account switch', async t => {
-  const pending=deferred(); const h=setup(t,{core:{api:{plugin:()=>pending.promise}}});
-  h.P.state.settings.highlightFavorites=true; h.P.state.events=[{id:'old',title:'Old'}];
-  const run=h.P.fetchUserData(); h.switchUser();
-  h.P.state.userDataMap.set('new',{isFavorite:true});
-  pending.resolve({results:[{id:'old',isFavorite:true}]}); await run;
-  assert.deepEqual([...h.P.state.userDataMap.keys()],['new']);
+test('calendar events, instance errors and failures from before an account switch never reach the new account', async t => {
+  const late=[deferred(),deferred()]; let calls=0;
+  const fresh={events:[{id:'b-event',releaseDate:'2026-02-02'}]};
+  const h=setup(t,{core:{api:{plugin:()=>{calls++; return calls===1?late[0].promise:calls===3?late[1].promise:Promise.resolve(fresh);}}}});
+  const start=new Date('2026-02-01'); const end=new Date('2026-02-28');
+  h.P.state.events=[{id:'a-event',releaseDate:'2026-02-01'}]; h.P.state.userDataMap.set('a-event',{isFavorite:true});
+  const lateSuccess=h.P.fetchCalendarEvents(start,end); h.switchUser();
+  assert.equal(h.P.state.events.length,0); assert.equal(h.P.state.userDataMap.size,0);
+  await h.P.fetchCalendarEvents(start,end);
+  late[0].resolve({events:[{id:'a-private',releaseDate:'2026-02-03'}],errors:[{source:'Sonarr',instanceName:'A only',reason:'down'}]});
+  assert.equal(await lateSuccess,null);
+  assert.deepEqual(plain(h.P.state.events).map(x=>x.id),['b-event']); assert.equal(h.notices.length,0);
+  h.expectConsoleError('Calendar Page: Failed to fetch calendar events: Error: offline');
+  const lateFailure=h.P.fetchCalendarEvents(start,end); h.switchUser();
+  await h.P.fetchCalendarEvents(start,end);
+  late[1].reject(new Error('offline')); assert.equal(await lateFailure,null);
+  assert.deepEqual(plain(h.P.state.events).map(x=>x.id),['b-event']);
 });
+
+for (const outcome of ['resolve','reject']) {
+  test(`calendar user-data ${outcome==='resolve'?'responses':'failures'} arriving after account switch keep the new account map`, async t => {
+    const pending=deferred(); const h=setup(t,{core:{api:{plugin:()=>pending.promise}}});
+    h.P.state.settings.highlightFavorites=true; h.P.state.events=[{id:'old',title:'Old'}];
+    const run=h.P.fetchUserData(); h.switchUser();
+    h.P.state.userDataMap.set('new',{isFavorite:true});
+    if (outcome==='resolve') pending.resolve({results:[{id:'old',isFavorite:true}]}); else pending.reject(new Error('offline'));
+    await run;
+    assert.deepEqual([...h.P.state.userDataMap.keys()],['new']);
+  });
+}
 
 test('calendar requests paginate, normalize type, deduplicate and load only once', async t => {
   const calls=[];
