@@ -35,7 +35,11 @@ public class IntegrationWatchProvidersTests
         Assert.True(WatchProvidersBatch.TryParseItems(maximum + ",movie:1", out var parsed, out _));
         Assert.Equal(100, parsed.Count);
         Assert.False(WatchProvidersBatch.TryParseItems(maximum + ",movie:101", out _, out _));
-        Assert.False(WatchProvidersBatch.TryParseItems(new string('x', 2049), out _, out _));
+        // A valid list padded to the 2048-character limit is accepted; one character more is rejected by the length guard alone.
+        var padded = "movie:1" + new string(',', 2048 - "movie:1".Length);
+        Assert.True(WatchProvidersBatch.TryParseItems(padded, out _, out _));
+        Assert.False(WatchProvidersBatch.TryParseItems(padded + ",", out var rejected, out var error));
+        Assert.Empty(rejected); Assert.Equal($"Too many items (max {WatchProvidersBatch.MaxItems}).", error);
     }
 
     [Theory]
