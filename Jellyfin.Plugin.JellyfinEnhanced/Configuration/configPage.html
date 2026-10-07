@@ -417,6 +417,13 @@
                                 <div class="fieldDescription je-field-desc-sm-font-lg">Pre-computes tag data on the server and serves it in a single request. Tags load instantly without per-page API calls. Disable to use the legacy per-page batch mode: the cache is not loaded, built, or maintained while off, and the in-memory cache is released. Re-enabling restores the last snapshot and catches up on missed changes automatically in the background.</div>
                             </div>
 
+                            <div class="checkboxContainer"><label><input id="tagCacheExcludeLibraries" is="emby-checkbox" type="checkbox"/><span>Exclude libraries from the tag cache</span></label></div>
+                            <div id="tagCacheExcludedLibrariesBox" style="display: none; margin: 12px 0 16px 0; padding: 12px 16px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-left: 3px solid var(--primary-accent-color, #00a4dc); border-radius: 6px;">
+                                <div style="font-weight: 600; margin-bottom: 4px;">Libraries to exclude</div>
+                                <div class="fieldDescription" style="margin-bottom: 8px;">Tick a library to leave it out of the tag cache. Useful for very large libraries that use a lot of memory to scan. Takes effect on the next cache rebuild.</div>
+                                <div id="tagCacheExcludedLibraryList"><div class="fieldDescription">Loading libraries...</div></div>
+                            </div>
+
                             <div id="tagsLocalStorageFallbackContainer" class="checkboxContainer">
                                 <label><input id="enableTagsLocalStorageFallback" is="emby-checkbox" type="checkbox"/><span>Persist Tag Fallback Cache in Browser Storage</span></label>
                             </div>
@@ -5649,6 +5656,10 @@
                 option.value = saved;
                 option.textContent = saved;
                 option.dataset.jePlaceholder = '1';
+        document.getElementById('tagCacheExcludeLibraries').addEventListener('change', function () {
+            document.getElementById('tagCacheExcludedLibrariesBox').style.display = this.checked ? '' : 'none';
+        });
+
                 select.appendChild(option);
             }
             select.value = saved;
@@ -5658,6 +5669,48 @@
         // list has been rendered from it yet. Until it has (VirtualFolders
         // still loading, or failed) a save round-trips the stored value
         // untouched instead of silently resetting it to "every library".
+        var _tagCacheExcludedRaw = '';
+        var _tagCacheExcludedRendered = false;
+
+        function renderTagCacheExcludedLibraries(raw) {
+            var host = document.getElementById('tagCacheExcludedLibraryList');
+            if (!host) return;
+            _tagCacheExcludedRaw = String(raw || '');
+            var selected = _tagCacheExcludedRaw.split(',').map(function (s) { return s.trim().toLowerCase(); });
+            ApiClient.getJSON(ApiClient.getUrl('Library/VirtualFolders')).then(function (folders) {
+                host.innerHTML = '';
+                (folders || []).filter(function (f) { return f.ItemId; }).forEach(function (f) {
+                    var wrap = document.createElement('div');
+                    wrap.className = 'checkboxContainer';
+                    var label = document.createElement('label');
+                    var input = document.createElement('input');
+                    input.setAttribute('is', 'emby-checkbox');
+                    input.type = 'checkbox';
+                    input.className = 'tagCacheExcludedLibrary';
+                    input.setAttribute('data-library-id', f.ItemId);
+                    input.checked = selected.indexOf(String(f.ItemId).replace(/-/g, '').toLowerCase()) !== -1;
+                    var span = document.createElement('span');
+                    span.textContent = f.Name;
+                    label.appendChild(input);
+                    label.appendChild(span);
+                    wrap.appendChild(label);
+                    host.appendChild(wrap);
+                });
+                _tagCacheExcludedRendered = true;
+            }).catch(function () {
+                host.innerHTML = '<div class="fieldDescription">Could not load the library list. Saving keeps the current selection.</div>';
+            });
+        }
+
+        function collectTagCacheExcludedLibraries() {
+            if (!_tagCacheExcludedRendered) return _tagCacheExcludedRaw;
+            var ids = [];
+            document.querySelectorAll('#tagCacheExcludedLibraryList input.tagCacheExcludedLibrary').forEach(function (el) {
+                if (el.checked) ids.push(String(el.getAttribute('data-library-id')).replace(/-/g, '').toLowerCase());
+            });
+            return ids.join(',');
+        }
+
         var _spoilerAutoEnableLibrariesRaw = '';
         var _spoilerAutoEnableLibrariesRendered = false;
 
@@ -6006,6 +6059,8 @@
                 const qPos = (config.QualityTagsPosition || 'top-left');
                 const gPos = (config.GenreTagsPosition || 'top-right');
                 const lPos = (config.LanguageTagsPosition || 'bottom-left');
+                document.querySelector('#tagCacheExcludeLibraries').checked = config.TagCacheExcludeLibraries === true;
+                document.getElementById('tagCacheExcludedLibrariesBox').style.display = config.TagCacheExcludeLibraries === true ? '' : 'none';
                 const rPos = (config.RatingTagsPosition || 'bottom-right');
                 const arPos = (config.AgeRatingTagsPosition || 'bottom-right');
                 const langEnabled = !!config.LanguageTagsEnabled;
@@ -6049,6 +6104,7 @@
                 document.querySelector('#ratingTagsOnContinueWatching').checked = config.RatingTagsOnContinueWatching !== false;
                 document.querySelector('#ratingTagsOnNextUp').checked = config.RatingTagsOnNextUp !== false;
                 document.querySelector('#tagCacheServerMode').checked = config.TagCacheServerMode !== false;
+                renderTagCacheExcludedLibraries(config.TagCacheExcludedLibraryIds || '');
                 document.querySelector('#enableTagsLocalStorageFallback').checked = config.EnableTagsLocalStorageFallback === true;
                 document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
@@ -6551,6 +6607,7 @@
             config.LongPress2xEnabled = document.querySelector('#longPress2xEnabled').checked;
             config.RandomButtonEnabled = document.querySelector('#randomButtonEnabled').checked;
             config.RandomIncludeMovies = document.querySelector('#randomIncludeMovies').checked;
+            config.TagCacheExcludeLibraries = document.querySelector('#tagCacheExcludeLibraries').checked;
             config.RandomIncludeShows = document.querySelector('#randomIncludeShows').checked;
             config.RandomUnwatchedOnly = document.querySelector('#randomUnwatchedOnly').checked;
             config.RandomScopeCurrentContainer = document.querySelector('#randomScopeCurrentContainer').checked;
@@ -6594,6 +6651,7 @@
             config.RatingTagsOnContinueWatching = document.querySelector('#ratingTagsOnContinueWatching').checked;
             config.RatingTagsOnNextUp = document.querySelector('#ratingTagsOnNextUp').checked;
             config.TagCacheServerMode = document.querySelector('#tagCacheServerMode').checked;
+            config.TagCacheExcludedLibraryIds = collectTagCacheExcludedLibraries();
             config.EnableTagsLocalStorageFallback = config.TagCacheServerMode
                 ? document.querySelector('#enableTagsLocalStorageFallback').checked
                 : true;
