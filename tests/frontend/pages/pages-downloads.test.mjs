@@ -25,10 +25,36 @@ test('downloads page loads queue, whole-row requests/issues/history pages while 
   assert.deepEqual([ajaxUrls[1].searchParams.get('skip'),ajaxUrls[1].searchParams.get('take'),h.P.state.issuesPage],['0','52',1]);
   assert.deepEqual([page('/arr/history',before).get('skip'),page('/arr/history',before).get('take'),h.P.state.historyPage],['0','39',1]);
 });
-test('downloads pending queue, request and history responses cannot restore previous account data or permissions',async t=>{
-  const pending=deferred();const h=setup(t,{api:()=>pending.promise,config:{DownloadsPageShowIssues:false}});
-  const run=h.P.loadAllData();h.switchUser();pending.resolve({items:[{id:'old'}],requests:[{id:'old'}],canApproveRequests:true});await run;
+test('downloads pending queue, request, issue and history responses cannot restore previous account data or permissions',async t=>{
+  const pending=deferred(),issues=deferred();const h=setup(t,{api:()=>pending.promise,ajax:()=>issues.promise});
+  // The previous account could approve: the switch itself must revoke that.
+  h.P.state.canApproveRequests=true;
+  const run=h.P.loadAllData();h.switchUser();assert.equal(h.P.state.canApproveRequests,false);
+  pending.resolve({items:[{id:'old'}],requests:[{id:'old'}],canApproveRequests:true});issues.resolve({results:[{id:'old'}],pageInfo:{pages:9}});await run;
   assert.equal(h.P.state.downloads.length,0);assert.equal(h.P.state.requests.length,0);assert.equal(h.P.state.history.length,0);assert.equal(h.P.state.canApproveRequests,false);
+  assert.equal(h.P.state.issues.length,0);assert.equal(h.P.state.issuesTotalPages,1);
+});
+test('downloads queue, request, issue and history failures from before an account switch keep the new account lists',async t=>{
+  const pending=deferred(),issues=deferred();const h=setup(t,{api:()=>pending.promise,ajax:()=>issues.promise});
+  for(const source of ['downloads','requests','issues','history'])h.expectConsoleError(`Requests Page: Failed to fetch ${source}:`);
+  const run=h.P.loadAllData();h.switchUser();
+  Object.assign(h.P.state,{downloads:[{id:'new'}],requests:[{id:'new'}],issues:[{id:'new'}],history:[{id:'new'}]});
+  pending.reject(new Error('offline'));issues.reject(new Error('offline'));await run;
+  for(const list of ['downloads','requests','issues','history'])assert.deepEqual(plain(h.P.state[list]),[{id:'new'}],list);
+  assert.equal(h.P.state.issuesError,false);
+});
+test('downloads issue media details resolving after an account switch do not fill the new account cache',async t=>{
+  const late={42:deferred(),43:deferred()};let lateLookups=0;const lookups=[];
+  const h=setup(t,{ajax:options=>{
+    if(options.url.includes('/issue'))return Promise.resolve({results:[{id:1,media:{mediaType:'tv',tmdbId:42}},{id:2,media:{mediaType:'movie',tmdbId:43}}]});
+    const id=options.url.match(/(\d+)$/)[1];lookups.push(id);
+    return lateLookups++<2?late[id].promise:Promise.resolve({id:Number(id),name:`New ${id}`,title:`New ${id}`});
+  }});
+  const run=h.P.fetchIssues();for(let i=0;i<5&&lateLookups<2;i++)await new Promise(resolve=>setImmediate(resolve));
+  h.switchUser();late[42].resolve({id:42,name:'Previous account view'});late[43].reject(new Error('offline'));await run;
+  // Neither the late success nor the late failure is cached for the new account: both are looked up again.
+  await h.P.fetchIssues();assert.deepEqual(lookups.sort(),['42','42','43','43']);
+  assert.deepEqual(plain(h.P.state.issues).map(issue=>issue.media.title),['New 42','New 43']);
 });
 test('downloads issue permission denial is sticky for current user and resets on account switch',async t=>{
   let count=0;const h=setup(t,{ajax:async()=>{count++;throw {status:403};}});h.expectConsoleError('Requests Page: Failed to fetch issues:');
