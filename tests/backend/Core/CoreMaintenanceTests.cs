@@ -391,20 +391,41 @@ public class CoreMaintenanceTests
     }
 
     [Fact]
-    public async Task CheckpointFailureAfterPolicyRestoreAbortsReconciliation()
+    public async Task CheckpointFailureAfterPolicyRestoreAbortsReconciliationButKeepsTheRestore()
     {
         using var f = new Fixture();
-        await f.Service.EnableAsync("", 0, "both", [f.Alice.Id.ToString()]);
+        var clock = new Clock();
+        var service = new MaintenanceModeService(f.Users.Object, f.Sessions.Object, f.Core.Paths.Object, f.Core.Logger, clock);
+        await service.EnableAsync("", 0, "both", [f.Alice.Id.ToString()]);
+        var activeJournal = File.ReadAllText(StatePath(f));
         f.Users.Setup(x => x.UpdatePolicyAsync(f.Alice.Id, It.IsAny<UserPolicy>())).Returns<Guid, UserPolicy>((id, policy) =>
         {
             f.Policies[id] = policy;
             BreakStateFile(f);
             return Task.CompletedTask;
         });
-        await Assert.ThrowsAnyAsync<IOException>(() => f.Service.EnableAsync("new", 0, "none", null));
-        Assert.Contains(f.Alice.Id.ToString(), f.Service.GetStatus().AccountDisabledUserIds);
-        Assert.Equal("both", f.Service.GetStatus().Action);
-        Assert.False(f.Service.GetStatus().IsActive);
+        // Re-targeting restores Alice, then her checkpoint fails: the new selection is not applied...
+        await Assert.ThrowsAnyAsync<IOException>(() => service.EnableAsync("new", 0, "none", null));
+        Assert.False(f.Policies[f.Alice.Id].IsDisabled);
+        var status = service.GetStatus();
+        Assert.Equal("both", status.Action);
+        Assert.False(status.IsActive);
+        // ...but her restore stands, so she is no longer listed to restore.
+        Assert.Empty(status.AccountDisabledUserIds);
+        Assert.Empty(status.RemoteDisabledUserIds);
+
+        // An admin then disables Alice by hand, and the disk recovers still holding the active journal.
+        StorePoliciesNormally(f, f.Alice.Id);
+        f.Policies[f.Alice.Id].IsDisabled = true;
+        Directory.Delete(StatePath(f));
+        File.WriteAllText(StatePath(f), activeJournal);
+        await service.ExpireIfDueAsync();
+        // The tick saves the restored state instead of restoring Alice a second time.
+        Assert.True(f.Policies[f.Alice.Id].IsDisabled);
+        var onDisk = JsonConvert.DeserializeObject<MaintenanceState>(File.ReadAllText(StatePath(f)))!;
+        Assert.False(onDisk.IsActive);
+        Assert.Empty(onDisk.AccountDisabledUserIds);
+        Assert.Empty(onDisk.RemoteDisabledUserIds);
     }
 
     private static string StatePath(Fixture f) => Path.Combine(f.Core.ConfigRoot, "maintenance-state.json");

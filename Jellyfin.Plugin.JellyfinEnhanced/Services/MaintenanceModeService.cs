@@ -811,9 +811,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         };
 
         /// <summary>
-        /// Saves a restore-path checkpoint. With <paramref name="failOpen"/> a write failure is already
-        /// logged by <see cref="SaveState"/>, and the in-memory state takes the change anyway so
-        /// restoration can continue and be retried.
+        /// Saves a restore-path checkpoint. A write failure is already logged by <see cref="SaveState"/>.
+        /// The restore it records has happened either way, so the in-memory state takes the change and
+        /// the schedule tick rewrites the file (a stale entry would restore that user again later, even
+        /// after an admin disabled them by hand). With <paramref name="failOpen"/> restoration carries
+        /// on; otherwise the failure propagates and aborts the enable-path transition.
         /// </summary>
         private void Checkpoint(MaintenanceState state, bool failOpen)
         {
@@ -821,10 +823,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 SaveState(state);
             }
-            catch (Exception) when (failOpen)
+            catch (Exception)
             {
                 _cached = CopyState(state);
                 _journalDirty = true;
+                if (!failOpen) throw;
             }
         }
 
