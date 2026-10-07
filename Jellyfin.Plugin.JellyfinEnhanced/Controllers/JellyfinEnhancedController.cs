@@ -1903,7 +1903,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             continue;
                         }
 
-                        if (!DateTime.TryParse(createdEl.GetString(), null,
+                        if (!DateTime.TryParse(createdEl.GetString(), System.Globalization.CultureInfo.InvariantCulture,
                             System.Globalization.DateTimeStyles.RoundtripKind, out var createdAt))
                         {
                             continue;
@@ -2470,8 +2470,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 name = person.Name,
                 tmdbId = tmdbId,
                 type = person.GetType().Name,
-                birthDate = birthDate?.ToString("yyyy-MM-dd"),
-                deathDate = endDate?.ToString("yyyy-MM-dd"),
+                birthDate = birthDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                deathDate = endDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
                 birthPlace = birthPlace,
                 isDeceased = isDeceased,
                 currentAge = currentAge,
@@ -2511,7 +2511,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Parse birth date
                 if (jsonElement.TryGetProperty("birthday", out var birthdayProp) &&
                     birthdayProp.ValueKind != JsonValueKind.Null &&
-                    DateTime.TryParse(birthdayProp.GetString(), out var birth))
+                    TryParseIso(birthdayProp.GetString()) is DateTime birth)
                 {
                     birthDate = birth;
                 }
@@ -2520,7 +2520,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (jsonElement.TryGetProperty("deathday", out var deathdayProp) &&
                     deathdayProp.ValueKind != JsonValueKind.Null &&
                     deathdayProp.GetString() is string deathStr &&
-                    DateTime.TryParse(deathStr, out var death))
+                    TryParseIso(deathStr) is DateTime death)
                 {
                     deathDate = death;
                 }
@@ -10326,16 +10326,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 var today = DateTime.UtcNow.Date;
 
                                 // For TV shows, use nextAirDate
-                                if (r.type == "tv" && !string.IsNullOrEmpty(r.nextAirDate) && DateTime.TryParse(r.nextAirDate, out var airDate) && airDate.Date > today)
+                                if (r.type == "tv" && !string.IsNullOrEmpty(r.nextAirDate) && TryParseIso(r.nextAirDate) is DateTime airDate && airDate.Date > today)
                                 {
                                     bestDate = airDate;
                                 }
                                 else
                                 {
                                     // For movies, use digital or theatrical date
-                                    if (!string.IsNullOrEmpty(r.digitalReleaseDate) && DateTime.TryParse(r.digitalReleaseDate, out var dd) && dd.Date > today)
+                                    if (!string.IsNullOrEmpty(r.digitalReleaseDate) && TryParseIso(r.digitalReleaseDate) is DateTime dd && dd.Date > today)
                                         bestDate = dd;
-                                    if (!string.IsNullOrEmpty(r.theatricalReleaseDate) && DateTime.TryParse(r.theatricalReleaseDate, out var td) && td.Date > today)
+                                    if (!string.IsNullOrEmpty(r.theatricalReleaseDate) && TryParseIso(r.theatricalReleaseDate) is DateTime td && td.Date > today)
                                     {
                                         if (bestDate == null || td < bestDate)
                                             bestDate = td;
@@ -10426,14 +10426,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static bool IsOrphanedRequest(string? mediaStatus, string? createdAt)
         {
             if (mediaStatus != "Approved" && mediaStatus != "Processing") return false;
-            return DateTimeOffset.TryParse(createdAt, out var created) && created < DateTimeOffset.UtcNow.AddMinutes(-10);
+            return DateTimeOffset.TryParse(createdAt, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var created)
+                && created < DateTimeOffset.UtcNow.AddMinutes(-10);
         }
 
         // Coming soon: approved or processing with a future release date. Processing lists the rest.
         private static bool IsComingSoonRequest(string? status, string? type, string? nextAirDate, string? digitalReleaseDate, string? theatricalReleaseDate)
         {
             var today = DateTime.UtcNow.Date;
-            static bool IsFuture(string? value, DateTime day) => !string.IsNullOrEmpty(value) && DateTime.TryParse(value, out var date) && date.Date > day;
+            static bool IsFuture(string? value, DateTime day) => TryParseIso(value) is DateTime date && date.Date > day;
 
             var normalized = (status ?? "").ToLower();
             if (type == "tv")

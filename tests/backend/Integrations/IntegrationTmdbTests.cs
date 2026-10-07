@@ -1,7 +1,14 @@
+using System.Globalization;
+using System.Text.Json;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Library;
+using Microsoft.AspNetCore.Mvc;
+using Moq;
 
 namespace JE.Tests;
 
+[Collection("Plugin singleton")]
 public class IntegrationTmdbTests
 {
     private sealed class Clock : TimeProvider
@@ -151,5 +158,40 @@ public class IntegrationTmdbTests
         using var reloaded = new TmdbResponseCache(transport, env.Paths.Object, env.Logger);
         Assert.Equal("{\"id\":1}", (await reloaded.GetAsync("movie/1", "", "top-secret-key", default)).Content);
         Assert.Equal(1, transport.Calls);
+    }
+
+    [Theory]
+    [InlineData("fa-IR")][InlineData("th-TH")]
+    public async Task PersonDatesStayGregorianUnderNonGregorianCulture(string culture)
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TMDB_API_KEY = "key";
+        using var transport = new IntegrationTransport((request, _) => request.RequestUri!.AbsolutePath == "/3/person/7"
+            ? Task.FromResult(IntegrationTransport.Response("{\"birthday\":\"1950-06-15\",\"deathday\":\"2020-03-01\",\"place_of_birth\":\"Here\"}"))
+            : throw new InvalidOperationException("Unexpected URL " + request.RequestUri));
+        using var cache = new TmdbResponseCache(transport, TimeProvider.System);
+        // TMDB supplies one person's dates as text; Jellyfin stores the other's as a DateTime.
+        var fromTmdb = new Person { Id = Guid.NewGuid(), Name = "From TMDB", ProviderIds = new() { ["Tmdb"] = "7" } };
+        var fromJellyfin = new Person { Id = Guid.NewGuid(), Name = "From Jellyfin", PremiereDate = new DateTime(1980, 2, 29, 0, 0, 0, DateTimeKind.Utc) };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemById(fromTmdb.Id)).Returns(fromTmdb);
+        library.Setup(l => l.GetItemById(fromJellyfin.Id)).Returns(fromJellyfin);
+        var controller = ApiAssetTests.Controller(f.Core, library.Object, cache);
+        JsonElement tmdb, jellyfin;
+        var old = CultureInfo.CurrentCulture;
+        try
+        {
+            // fa-IR reads ISO years as Persian and th-TH formats them as Thai Buddhist years.
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
+            tmdb = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await controller.GetPersonInfo(fromTmdb.Id)).Value);
+            jellyfin = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await controller.GetPersonInfo(fromJellyfin.Id)).Value);
+        }
+        finally { CultureInfo.CurrentCulture = old; }
+        Assert.Equal("1950-06-15", tmdb.GetProperty("birthDate").GetString());
+        Assert.Equal("2020-03-01", tmdb.GetProperty("deathDate").GetString());
+        Assert.True(tmdb.GetProperty("isDeceased").GetBoolean());
+        Assert.Equal(69, tmdb.GetProperty("ageAtDeath").GetInt32());
+        Assert.Equal("1980-02-29", jellyfin.GetProperty("birthDate").GetString());
+        Assert.False(jellyfin.GetProperty("isDeceased").GetBoolean());
     }
 }
