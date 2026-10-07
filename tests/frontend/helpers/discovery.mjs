@@ -18,8 +18,12 @@ export function discoverTests(directory = frontendRoot) {
   return files;
 }
 
-/** A hung test fails on its own instead of stalling the whole run. */
-export const testArguments = ['--test-timeout=20000'];
+/**
+ * A hung test fails on its own instead of stalling the whole run. Node 22 (CI)
+ * applies --test-timeout to each test file as a whole, newer Node to each test,
+ * so the limit leaves room for the heaviest file on a slow runner.
+ */
+export const testArguments = ['--test-timeout=120000'];
 
 /** Dates and locale-formatted text must not depend on the machine running the tests. */
 export function testEnvironment(extra = {}) {

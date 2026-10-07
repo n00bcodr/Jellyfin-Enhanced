@@ -84,12 +84,12 @@ def main():
                            '-p:JellyfinTarget='+args.target, '--filter', 'FullyQualifiedName~'+case['test'],
                            '--results-directory', str(artifacts), '--logger', 'trx;LogFileName='+trx.name]
             else:
-                command = ['node', '--test', '--test-reporter=tap', '--test-timeout=20000', '--test-name-pattern='+case['test'], case.get('test_file', 'tests/frontend/features/features-hidden.test.mjs')]
+                command = ['node', '--test', '--test-reporter=tap', '--test-timeout=120000', '--test-name-pattern='+case['test'], case.get('test_file', 'tests/frontend/features/features-hidden.test.mjs')]
             started = time.monotonic()
             env = dict(os.environ)
             env.pop('JE_COVERAGE_DIR', None)
             if case['layer'] == 'frontend':
-                # Same pinned zone/locale and per-test timeout as tests/frontend/run.mjs.
+                # Same pinned zone/locale and timeout as tests/frontend/run.mjs.
                 env.update(TZ='UTC', LANG='en_US.UTF-8', LC_ALL='en_US.UTF-8')
             with log.open('w') as output:
                 process = subprocess.run(command, cwd=work, env=env, stdout=output, stderr=subprocess.STDOUT, timeout=600)

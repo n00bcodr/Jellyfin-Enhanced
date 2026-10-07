@@ -40,7 +40,8 @@ catches them.
 loads every `js/component-scripts.json` entry in manifest order, so a module that
 needs another file's top-level declarations, or a module later in the manifest,
 while it loads fails here. Both runners
-pin `TZ=UTC` and an `en_US.UTF-8` locale and give each test a 20 second timeout.
+pin `TZ=UTC` and an `en_US.UTF-8` locale and pass `--test-timeout=120000`, which
+Node 22 (used in CI) applies to each test file and newer Node to each test.
 
 Specs are grouped by feature under `bootstrap/`, `core/`, `features/`, `pages/`,
 `requests/`, and `regressions/`. Both runners discover nested `*.test.mjs` files
