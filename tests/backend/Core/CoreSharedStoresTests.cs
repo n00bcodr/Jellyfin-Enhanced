@@ -86,12 +86,15 @@ public class CoreSharedStoresTests
     {
         using var f = new CoreFixture();
         var store = new AllActivityStore();
-        for (var i = 0; i < 500; i++) store.Entries[$"u:{i}:Watched"] = new ActivityEntry { OccurredAt = $"{i:D5}" };
+        for (var i = 0; i < 499; i++) store.Entries[$"u:{i}:Watched"] = new ActivityEntry { OccurredAt = $"{i + 1:D5}" };
+        // The oldest entry has the key that sorts last and is inserted last, so only its timestamp marks it as oldest.
+        store.Entries["u:zzz:Watched"] = new ActivityEntry { OccurredAt = "00000" };
         File.WriteAllText(Path.Combine(f.ConfigRoot, "activity.json"), JsonConvert.SerializeObject(store));
         f.Manager.RecordActivity("u", "new", "Watched", "99999");
         var result = f.Manager.GetAllActivity().Entries;
         Assert.Equal(500, result.Count);
-        Assert.False(result.ContainsKey("u:0:Watched"));
+        Assert.False(result.ContainsKey("u:zzz:Watched"));
+        Assert.True(result.ContainsKey("u:0:Watched"));
         Assert.True(result.ContainsKey("u:new:Watched"));
         Assert.Empty(Directory.GetFiles(f.ConfigRoot, "*.tmp"));
     }
