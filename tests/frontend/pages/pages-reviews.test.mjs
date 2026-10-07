@@ -54,7 +54,15 @@ test('review cards escape user content and regular viewers cannot moderate other
   assert.equal(h.document.querySelector('.tmdb-reviews-section script'),null);
   assert.equal(h.document.querySelector('a[href^="javascript:"]'),null);
   assert.equal(h.document.querySelector('.je-review-admin-delete-btn'),null);
+  assert.equal(h.document.querySelector('.je-review-edit-btn'),null);assert.equal(h.document.querySelector('.je-review-delete-btn'),null);
   assert.match(h.document.querySelector('.je-avg-user-rating-chip').textContent,/8/);
+});
+test('regular viewers get edit and delete controls on their own review only',async t=>{
+  const h=await setup(t,{reviews:[{userId:'other',userName:'Other',content:'Theirs',rating:3},{userId:'user-a',userName:'Me',content:'Mine',rating:4}]});
+  const card=text=>[...h.document.querySelectorAll('.tmdb-review-card')].find(c=>c.textContent.includes(text));
+  assert.equal(card('Theirs').querySelector('.je-review-btn'),null);
+  assert.ok(card('Mine').querySelector('.je-review-edit-btn'));assert.ok(card('Mine').querySelector('.je-review-delete-btn'));
+  assert.equal(card('Mine').querySelector('.je-review-admin-delete-btn'),null);
 });
 test('admin viewers see moderation controls and missing translations use readable fallback',async t=>{
   const h=await setup(t,{admin:true,reviews:[{userId:'other',userName:'Other',content:'Review',rating:3}]});
