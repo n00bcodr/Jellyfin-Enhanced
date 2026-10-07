@@ -1,5 +1,9 @@
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.EventHandlers;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Querying;
 using MediaBrowser.Model.Search;
@@ -8,6 +12,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Xunit;
 
 namespace JellyfinEnhanced.Tests;
@@ -133,4 +139,22 @@ public class PrivacyHiddenContentTests
         Assert.Equal(filtered ? 0 : 1, result.Items.Count);
     }
 
+    [Theory]
+    [InlineData("continuewatching", null)]
+    [InlineData("homesections", "nextup")]
+    public async Task ResumingAHiddenItemShowsItInContinueWatchingOnTheNextRequest(string scope, string? remainingScope)
+    {
+        using var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.HiddenContentEnabled = true;
+        var user = Guid.NewGuid(); var movie = new Movie { Id = Guid.NewGuid() }; Save(f, user, Hide(movie.Id, scope));
+        // The first request caches the user's hidden content (30-second TTL) with the entry present.
+        Assert.Empty(Assert.IsType<QueryResult<BaseItemDto>>(await Run(f, user, "Items", "GetResumeItems", Rows(new BaseItemDto { Id = movie.Id }))).Items);
+        using var usage = new UsageEventCounterService(f.Core.Paths.Object, f.Core.Logger);
+        await new ContinueWatchingPlaybackConsumer(f.Core.Manager, usage, f.Core.Logger).OnEvent(new PlaybackStartEventArgs
+        { Item = movie, Session = new SessionInfo(Mock.Of<ISessionManager>(), NullLogger.Instance) { UserId = user } });
+        // A Continue Watching hide is dropped and a home-sections hide demoted to Next Up...
+        var saved = f.Core.Manager.GetUserConfiguration<UserHiddenContent>(user.ToString("N"), "hidden-content.json");
+        Assert.Equal(remainingScope, saved.Items.Values.SingleOrDefault()?.HideScope);
+        // ...and the very next request sees it, without waiting for the cache to expire.
+        Assert.Single(Assert.IsType<QueryResult<BaseItemDto>>(await Run(f, user, "Items", "GetResumeItems", Rows(new BaseItemDto { Id = movie.Id }))).Items);
+    }
 }
