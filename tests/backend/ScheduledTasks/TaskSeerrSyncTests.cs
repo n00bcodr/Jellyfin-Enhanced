@@ -203,4 +203,58 @@ public class TaskSeerrSyncTests
         Assert.Contains(f.Core.Manager.GetProcessedWatchlistItems(admin.Id).Items, item => item.TmdbId == 123);
         Assert.Empty(f.Core.Manager.GetProcessedWatchlistItems(blocked.Id).Items);
     }
+
+    [Theory]
+    [InlineData(false)][InlineData(true)]
+    public async Task ManualWatchlistSyncUsesTheFirstUrlThatAnswersAndFailsWhenNoneDoes(bool allFail)
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.JellyseerrEnabled = true;
+        config.SyncJellyseerrWatchlist = true;
+        config.JellyseerrUrls = "http://first.test\n http://second.test \nhttp://third.test";
+        config.JellyseerrApiKey = "test";
+        var admin = new User("admin", "default", "default") { Id = Guid.NewGuid() };
+        var movie = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new BaseItem[] { movie });
+        var data = new Mock<IUserDataManager>();
+        data.Setup(d => d.GetUserData(It.IsAny<User>(), It.IsAny<BaseItem>())).Returns(() => new UserItemData { Key = "fixture", Likes = false });
+        var saved = 0;
+        data.Setup(d => d.SaveUserData(It.IsAny<User>(), It.IsAny<BaseItem>(), It.IsAny<UserItemData>(), It.IsAny<MediaBrowser.Model.Entities.UserDataSaveReason>(), It.IsAny<CancellationToken>()))
+            .Callback(() => saved++);
+        var calls = new List<string>();
+        using var transport = new IntegrationTransport((request, _) =>
+        {
+            var uri = request.RequestUri!;
+            lock (calls) calls.Add(uri.Host + uri.AbsolutePath);
+            // The first URL refuses the connection; the second answers unless every URL is down.
+            if (uri.Host == "first.test") throw new HttpRequestException("connection refused");
+            if (allFail) return Task.FromResult(IntegrationTransport.Response("<html>bad gateway</html>", 502, "text/html"));
+            return Task.FromResult(IntegrationTransport.Response(uri.AbsolutePath == "/api/v1/user"
+                ? JsonSerializer.Serialize(new { results = new[] { new { id = 27, jellyfinUserId = admin.Id.ToString("N") } } })
+                : "{\"results\":[{\"tmdbId\":123,\"mediaType\":\"movie\"}]}"));
+        });
+        var controller = ApiAssetTests.Controller(f.Core, Users(admin).Object, library.Object, data.Object, transport, f.Core.Manager);
+        controller.ControllerContext.HttpContext.User = global::JellyfinEnhanced.Tests.PrivacyPolicyTests.Principal(admin.Id, admin: true);
+
+        var result = await controller.SyncJellyseerrWatchlist();
+
+        if (allFail)
+        {
+            // No URL answered: a failure, not a 200 with nothing processed.
+            var failure = Assert.IsType<ObjectResult>(result);
+            Assert.Equal(502, failure.StatusCode);
+            Assert.Equal("{\"error\":\"Could not load the user list from any configured Jellyseerr URL.\"}", JsonSerializer.Serialize(failure.Value));
+            Assert.Equal(new[] { "first.test/api/v1/user", "second.test/api/v1/user", "third.test/api/v1/user" }, calls);
+            Assert.Equal(0, saved);
+            return;
+        }
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("{\"success\":true,\"itemsProcessed\":1,\"itemsAdded\":1,\"errors\":null}", JsonSerializer.Serialize(ok.Value));
+        Assert.Equal(1, saved);
+        // The rest of the pass stays on the URL whose user list loaded; the third is never tried.
+        Assert.Equal(new[] { "first.test/api/v1/user", "second.test/api/v1/user", "second.test/api/v1/user/27/watchlist" }, calls);
+    }
 }

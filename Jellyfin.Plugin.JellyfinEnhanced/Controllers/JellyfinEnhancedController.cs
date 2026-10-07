@@ -2813,6 +2813,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return BadRequest(new { error = "Jellyseerr URL or API key is not configured" });
                 }
 
+                if (summary.SeerrUnreachable)
+                {
+                    return StatusCode(502, new { error = "Could not load the user list from any configured Jellyseerr URL." });
+                }
+
                 _logger.Info($"[Manual Watchlist Sync] Sync complete. Processed: {summary.ItemsProcessed}, Added: {summary.ItemsAdded}");
 
                 return Ok(new
