@@ -115,6 +115,12 @@ public class PerfRound2TagCacheResponseTests
         }
     }
 
+    private static string FilterRevision(string body)
+    {
+        using var json = JsonDocument.Parse(body);
+        return json.RootElement.GetProperty("filterRevision").GetString()!;
+    }
+
     [Fact]
     public async Task ExecutedResponsesAndValidatorsRemainUserIsolatedAfterAccessChanges()
     {
@@ -142,6 +148,80 @@ public class PerfRound2TagCacheResponseTests
         Assert.Equal(200, changed.Status);
         Assert.Contains("Second secret", changed.Body); Assert.DoesNotContain("First secret", changed.Body);
         Assert.NotEqual(a.ETag, changed.ETag);
+    }
+
+    [Theory]
+    [InlineData("tag-cache")]
+    [InlineData("tag-data")]
+    [InlineData("item-stats")]
+    [InlineData("file-size")]
+    [InlineData("watch-progress")]
+    public async Task NonAdminCannotReadAnotherUsersPerUserData(string route)
+    {
+        using var endpoint = new Endpoint();
+        endpoint.SignIn(endpoint.Bob);
+        var alice = endpoint.Alice.Id;
+        var item = endpoint.First;
+        IActionResult result = route switch
+        {
+            "tag-cache" => endpoint.Controller.GetTagCache(alice),
+            "tag-data" => endpoint.Controller.GetTagData(alice, [item.ToString()]),
+            "item-stats" => endpoint.Controller.GetItemStatsByItemId(alice, item),
+            "file-size" => endpoint.Controller.GetFileSizeByItemId(alice, item),
+            _ => endpoint.Controller.GetWatchProgressByItemId(alice, item),
+        };
+        Assert.IsType<ForbidResult>(result);
+        if (route != "tag-cache") return;
+        // Controls: an administrator may read Alice's cache, and Bob still reads his own.
+        var admin = await endpoint.Read(endpoint.Bob, route: alice, admin: true);
+        Assert.Equal(200, admin.Status); Assert.Contains("First secret", admin.Body); Assert.DoesNotContain("Second secret", admin.Body);
+        Assert.Contains("Second secret", (await endpoint.Read(endpoint.Bob)).Body);
+    }
+
+    [Fact]
+    public async Task DeltaRevalidationAfterAccessRevocationReturnsTheNewFilterRevision()
+    {
+        // A delta (?since=) holds only entries changed since the client's copy, so it
+        // can't say an entry was revoked: only the filter revision tells the client to
+        // replace its stored copy. Here both deltas are empty, so the revision is all
+        // that differs, and the old validator must not get a 304.
+        using var endpoint = new Endpoint();
+        endpoint.AliceAccess = [endpoint.First, endpoint.Second];
+        var full = await endpoint.Read(endpoint.Alice);
+        Assert.Contains("Second secret", full.Body);
+        var delta = await endpoint.Read(endpoint.Alice, since: 200);
+        Assert.Equal(200, delta.Status);
+        Assert.Equal(304, (await endpoint.Read(endpoint.Alice, since: 200, validator: delta.ETag)).Status);
+        endpoint.AliceAccess = [endpoint.First];
+        endpoint.Cache.InvalidateUserAccess();
+        var revoked = await endpoint.Read(endpoint.Alice, since: 200, validator: delta.ETag);
+        Assert.Equal(200, revoked.Status);
+        Assert.NotEqual(delta.ETag, revoked.ETag);
+        Assert.NotEqual(FilterRevision(delta.Body), FilterRevision(revoked.Body));
+        Assert.DoesNotContain("Second secret", revoked.Body);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(300L)]
+    public async Task RevalidationSeesAGuardedEpisodeBecomingWatched(long? since)
+    {
+        // Watching a guarded episode changes neither the cache version, the
+        // guarded set (filter revision) nor the entry count — only the entry
+        // itself, now unstripped. A full load and a delta (which always carries
+        // guarded entries) must both answer the old validator with the new body.
+        using var endpoint = new Endpoint();
+        endpoint.AliceAccess = [endpoint.First, endpoint.Episode];
+        endpoint.GuardSeries();
+        var guarded = await endpoint.Read(endpoint.Alice, since: since);
+        Assert.Equal(200, guarded.Status);
+        Assert.Contains(endpoint.Episode.ToString("N"), guarded.Body); Assert.DoesNotContain("Episode secret", guarded.Body);
+        Assert.Equal(304, (await endpoint.Read(endpoint.Alice, since: since, validator: guarded.ETag)).Status);
+        endpoint.AlicePlayed.Add(endpoint.Episode);
+        var watched = await endpoint.Read(endpoint.Alice, since: since, validator: guarded.ETag);
+        Assert.Equal(200, watched.Status);
+        Assert.Contains("Episode secret", watched.Body);
+        Assert.Equal(FilterRevision(guarded.Body), FilterRevision(watched.Body));
     }
 
     [Fact]
