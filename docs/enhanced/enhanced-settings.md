@@ -138,3 +138,15 @@ Configured under **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **E
 | **Add Activity as a native Home tab** | Off | Adds a Home-page tab, no external plugin needed |
 | **Use Plugin Pages** | Off | Adds an "Activity" sidebar link via [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) (Jellyfin 12: user profile menu instead) |
 | **Use Custom Tabs** | Off | Adds a Home-page tab via [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) instead of the native one |
+
+## Catch Up
+
+Configured under **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Extras** tab. See [Enhanced Features - Catch Up](enhanced-features.md#catch-up) for the gestures and the admin Activity panel.
+
+| Setting | Default | Description |
+|---|---|---|
+| **Enable Catch Up** | Off | Master switch for the feature |
+| **Add Catch Up as a native Home tab** | Off | Adds a Home-page tab, no external plugin needed |
+| **Use Plugin Pages** | Off | Adds a "Catch Up" sidebar link via [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) (Jellyfin 12: user profile menu instead) |
+| **Use Custom Tabs** | Off | Adds a Home-page tab via [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) instead of the native one |
+| **Record Catch Up activity** | On | Logs who swiped what to `catchup-log.jsonl`; administrators read it in the page's Activity panel. Turn off to record nothing |
