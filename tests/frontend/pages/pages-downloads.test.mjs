@@ -30,8 +30,11 @@ test('downloads pending queue, request, issue and history responses cannot resto
   // The previous account could approve: the switch itself must revoke that.
   h.P.state.canApproveRequests=true;
   const run=h.P.loadAllData();h.switchUser();assert.equal(h.P.state.canApproveRequests,false);
-  pending.resolve({items:[{id:'old'}],requests:[{id:'old'}],canApproveRequests:true});issues.resolve({results:[{id:'old'}],pageInfo:{pages:9}});await run;
+  // The new account's history is hidden; the previous account's late response says visible.
+  h.P.state.historyVisible=false;
+  pending.resolve({items:[{id:'old'}],requests:[{id:'old'}],canApproveRequests:true,visible:true});issues.resolve({results:[{id:'old'}],pageInfo:{pages:9}});await run;
   assert.equal(h.P.state.downloads.length,0);assert.equal(h.P.state.requests.length,0);assert.equal(h.P.state.history.length,0);assert.equal(h.P.state.canApproveRequests,false);
+  assert.equal(h.P.state.historyVisible,false);
   assert.equal(h.P.state.issues.length,0);assert.equal(h.P.state.issuesTotalPages,1);
 });
 test('downloads queue, request, issue and history failures from before an account switch keep the new account lists',async t=>{
