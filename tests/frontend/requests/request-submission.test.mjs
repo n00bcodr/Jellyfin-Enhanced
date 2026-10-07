@@ -192,3 +192,121 @@ for (const split of [false, true]) for (const succeeds of [true, false]) test(`l
   await flush(); assert.equal(h.button.disabled, true); assert.equal(h.button.textContent, offlineLabel);
 });
 
+// Already requested, partial, available and blocked media show a disabled button that cannot submit;
+// a deleted one (status 7) can be requested again.
+for (const split of [false, true]) for (const [label, status, disabled] of [['pending', 2, true], ['requested', 3, true], ['partial', 4, true], ['available', 5, true], ['blocked', 6, true], ['deleted', 7, false]]) {
+  test(`movie ${label} status ${disabled ? 'renders a disabled button that cannot submit' : 'stays requestable'} (split=${split})`, async t => {
+    const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: split } }); h.item.mediaInfo = { status }; h.configure();
+    const button = mainButton(h, split); button.click(); await flush();
+    assert.equal(button.disabled, true); assert.equal(h.calls.length, disabled ? 0 : 1);
+    if (disabled) assert.equal(button.classList.contains('jellyseerr-button-request'), false);
+  });
+}
+for (const [label, status] of [['available', 5], ['blocked', 6]]) test(`tv ${label} status renders a disabled button`, t => {
+  const h = uiSetup(t); h.item = { id: 42, mediaType: 'tv', name: 'Show', mediaInfo: { status } }; h.configure();
+  assert.equal(h.button.disabled, true);
+});
+
+/**
+ * Opens the real season-selection modal over a stubbed modal shell. `save` clicks Request.
+ * @returns {Promise<object>} The harness plus the modal element, its request button and `save`.
+ */
+async function seasonModal(t, { tvDetails, partial = true, specials = true, post } = {}) {
+  const h = setup(t, { post });
+  for (const file of ['seerr-status.js', 'ui/ui-icons.js', 'ui/ui-quota.js', 'ui/ui-season-modal.js']) h.load(`jellyseerr/${file}`);
+  h.JE.internals.jellyseerrUi.markCardRequested = () => {};
+  Object.assign(h.api, { fetchRequestSettings: async () => ({ partialRequestsEnabled: partial, enableSpecialEpisodes: specials }),
+    fetchTvShowDetails: async () => tvDetails, fetchSonarrLookup: async () => [], fetchUserQuota: async () => null, fetchTvSeasonDetails: async () => ({}) });
+  let modal;
+  h.JE.jellyseerrModal = { createAdvancedOptionsHTML: () => '', populateAdvancedOptions() {}, create(o) {
+    const el = h.document.createElement('div'); el.innerHTML = `<div class="jellyseerr-modal-body">${o.bodyHtml}</div>`;
+    h.document.body.append(el); modal = { el, o }; return { modalElement: el, show() {} }; } };
+  await h.JE.jellyseerrUI.showSeasonSelectionModal(42, 'tv', 'Show', null, false);
+  const requestBtn = h.document.createElement('button');
+  return { ...h, el: modal.el, requestBtn, save: () => modal.o.onSave(modal.el, requestBtn, () => {}) };
+}
+const seasonCheckbox = (h, number) => h.el.querySelector(`.jellyseerr-season-checkbox[data-season-number="${number}"]`);
+const tvSeasons = [{ seasonNumber: 0, name: 'Specials', episodeCount: 2, airDate: '2020-01-01' }, { seasonNumber: 1, name: '<img src=x onerror=evil()>', episodeCount: 3, airDate: '2020-01-01' }, { seasonNumber: 2, episodeCount: 3, airDate: '2021-01-01' }];
+
+test('season modal sends a stored TVDB id with the selected seasons', async t => {
+  const h = await seasonModal(t, { tvDetails: { seasons: tvSeasons, externalIds: {}, mediaInfo: { tvdbId: 555, seasons: [] } } });
+  assert.equal(h.el.querySelector('#jellyseerr-tvdb-id'), null);
+  seasonCheckbox(h, 1).checked = true; await h.save();
+  assert.deepEqual(h.calls[0][1].body.seasons, [1]); assert.equal(h.calls[0][1].body.tvdbId, 555);
+});
+
+// #653: without a TVDB id Seerr accepts the request, then Sonarr drops it.
+for (const partial of [true, false]) test(`season modal requires a TVDB match when TMDB has none and sends it (partial=${partial})`, async t => {
+  const h = await seasonModal(t, { partial, tvDetails: { seasons: tvSeasons, externalIds: {}, mediaInfo: { seasons: [] } } });
+  if (partial) seasonCheckbox(h, 1).checked = true;
+  await h.save();
+  assert.equal(h.calls.length, 0); assert.equal(h.toasts.at(-1)[0], 'jellyseerr_modal_toast_tvdb_required'); assert.equal(h.requestBtn.disabled, false);
+  // Seerr stores the id in a 32-bit column: a larger one is rejected like a missing one.
+  h.el.querySelector('#jellyseerr-tvdb-id').value = '2147483648'; await h.save(); assert.equal(h.calls.length, 0);
+  h.el.querySelector('#jellyseerr-tvdb-id').value = '777'; await h.save();
+  assert.equal(h.calls.length, 1); assert.equal(h.calls[0][1].body.tvdbId, 777);
+  assert.deepEqual(h.calls[0][1].body.seasons, partial ? [1] : [1, 2]);
+});
+
+test('season modal escapes season names and leaves Specials out of a whole-show request', async t => {
+  const h = await seasonModal(t, { partial: false, tvDetails: { seasons: tvSeasons, externalIds: { tvdbId: 1 } } });
+  assert.equal(h.el.querySelector('.jellyseerr-season-name img'), null);
+  assert.equal(h.el.querySelectorAll('.jellyseerr-season-name')[1].textContent, '<img src=x onerror=evil()>');
+  assert.ok(seasonCheckbox(h, 0), 'Specials are listed when Seerr enables them');
+  await h.save(); assert.deepEqual(h.calls[0][1].body.seasons, [1, 2]);
+});
+
+test('season modal disables requested seasons but re-offers one Seerr still calls available after its deletion', async t => {
+  // Season 2 is "available" in Seerr, but nothing in Jellyfin backs it any more (no media id).
+  const h = await seasonModal(t, { tvDetails: { seasons: tvSeasons, externalIds: { tvdbId: 1 }, mediaInfo: { seasons: [{ seasonNumber: 1, status: 3 }, { seasonNumber: 2, status: 5 }] } } });
+  assert.equal(seasonCheckbox(h, 1).disabled, true); assert.equal(seasonCheckbox(h, 2).disabled, false);
+  seasonCheckbox(h, 2).checked = true; await h.save(); assert.deepEqual(h.calls[0][1].body.seasons, [2]);
+});
+
+test('season modal failure toast escapes the upstream message and re-enables the request button', async t => {
+  const h = await seasonModal(t, { tvDetails: { seasons: tvSeasons, externalIds: { tvdbId: 1 } }, post: async () => { throw { status: 500, responseJSON: { message: '<img src=x>' } }; } });
+  seasonCheckbox(h, 1).checked = true; await h.save();
+  assert.equal(h.toasts.at(-1)[0], '&lt;img src=x&gt;'); assert.equal(h.requestBtn.disabled, false);
+  assert.equal(h.requestBtn.textContent, 'jellyseerr_modal_request_selected');
+});
+
+/**
+ * Loads the real movie/collection request modals over a stubbed modal shell with
+ * server/quality/folder selects. `save` clicks Request on the last modal opened.
+ */
+function requestModals(t, options) {
+  const h = setup(t, options);
+  for (const file of ['seerr-status.js', 'ui/ui-icons.js', 'ui/ui-quota.js', 'ui/ui-request-modals.js']) h.load(`jellyseerr/${file}`);
+  h.JE.cdn = { url: () => 'https://cdn.test/poster.png' };
+  const select = id => `<select id="${id}"><option value=""></option><option value="${id === 'movie-folder' ? '/movies' : 2}">x</option></select>`;
+  let current;
+  h.JE.jellyseerrModal = { createAdvancedOptionsHTML: () => ['movie-server', 'movie-quality', 'movie-folder'].map(select).join(''), populateAdvancedOptions() {},
+    create(o) { const el = h.document.createElement('div'); el.innerHTML = `<div class="jellyseerr-modal-body">${o.bodyHtml}</div>`; h.document.body.append(el); current = { el, o }; return { modalElement: el, show() {} }; } };
+  h.requestBtn = h.document.createElement('button');
+  h.modal = () => current.el;
+  h.save = () => current.o.onSave(current.el, h.requestBtn, () => {});
+  return h;
+}
+
+test('movie request modal needs every advanced option before it submits them', async t => {
+  const h = requestModals(t); h.api.fetchAdvancedRequestData = async () => ({});
+  await h.JE.jellyseerrUI.showMovieRequestModal(42, 'Film', null);
+  await h.save(); assert.equal(h.calls.length, 0); assert.equal(h.toasts.at(-1)[0], 'jellyseerr_modal_toast_options_missing');
+  for (const id of ['movie-server', 'movie-quality', 'movie-folder']) h.modal().querySelector(`#${id}`).selectedIndex = 1;
+  await h.save(); assert.equal(h.calls.length, 1);
+  assert.deepEqual([h.calls[0][1].body.serverId, h.calls[0][1].body.profileId, h.calls[0][1].body.rootFolder], [2, 2, '/movies']);
+});
+
+test('collection request modal escapes titles, skips owned movies and stops at the quota', async t => {
+  let posts = 0;
+  const h = requestModals(t, { post: async () => { if (++posts === 1) throw { status: 403, responseJSON: { message: 'Movie Quota exceeded.' } }; return { id: 7 }; } });
+  const dialogs = []; h.window.Dashboard = { alert: data => dialogs.push(data) };
+  h.api.fetchCollectionDetails = async () => ({ parts: [{ id: 1, title: '<img src=x onerror=evil()>', mediaInfo: { status: 5 } }, { id: 2, title: 'Two' }, { id: 3, title: 'Three' }] });
+  await h.JE.jellyseerrUI.showCollectionRequestModal(9, 'Saga');
+  assert.equal(h.modal().querySelector('.jellyseerr-collection-movie-details .title img'), null);
+  assert.equal(h.modal().querySelector('#movie-1').disabled, true);
+  await h.save();
+  // The quota rejection on the first selected movie ends the batch: nothing is sent for the rest.
+  assert.deepEqual(h.calls.map(call => call[1].body.mediaId), [2]);
+  assert.equal(dialogs.length, 1);
+});
