@@ -123,7 +123,7 @@ test('language selector normalizes persisted region and saves only current user'
   await languagePanel(page);
   await expect(page.getByLabel('Display language')).toHaveValue('zh-HK');
   await expect(page.getByRole('option', {name:'Chinese (Hong Kong)'})).toHaveCount(1);
-  await page.clock.install();
+  await pauseClock(page); // the panel's page reload must not fire mid-test
   await page.evaluate(()=>localStorage.setItem('user-b-language','pr'));
   await page.getByLabel('Display language').selectOption('de');
   expect(await page.evaluate(()=>({settings:savedSettings, a:localStorage.getItem('user-a-language'),b:localStorage.getItem('user-b-language')}))).toEqual({settings:[{file:'settings.json',settings:{displayLanguage:'de'}}],a:'de',b:'pr'});
@@ -131,7 +131,7 @@ test('language selector normalizes persisted region and saves only current user'
 test('automatic language clears override and cache clearing preserves unrelated settings', async ({ page }) => {
   await languagePanel(page);
   await expect(page.getByLabel('Display language')).toHaveValue('zh-HK');
-  await page.clock.install();
+  await pauseClock(page); // the panel's page reloads must not fire mid-test
   await page.getByLabel('Display language').selectOption('');
   await page.evaluate(()=>{localStorage.setItem('JE_translation_de','{}');localStorage.setItem('JE_translation_ts_de','123');localStorage.setItem('bookmarks','keep');});
   await page.getByRole('button',{name:'Clear translations'}).click();
