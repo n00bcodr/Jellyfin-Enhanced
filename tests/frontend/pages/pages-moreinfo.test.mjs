@@ -47,10 +47,17 @@ test('more-info stale refresh cannot update replacement modal actions',async t=>
   await h.P.open(1,'movie');h.state.currentModal.querySelector('.modal-refresh').click();await h.P.open(2,'movie');pending.resolve({id:1});await nextTurn();
   assert.deepEqual(h.actions,[1,2]);
 });
-test('more-info stale TV request completion cannot render into replacement',async t=>{
+for(const outcome of ['completion','failure'])test(`more-info stale TV request ${outcome} cannot render into replacement`,async t=>{
   const pending=deferred();let firstCalls=0;const h=setup(t,{details:id=>id===1&&firstCalls++>0?pending.promise:Promise.resolve({id})});
   await h.P.open(1,'tv');h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-tv-requested',{detail:{tmdbId:1}}));await h.P.open(2,'movie');
-  pending.resolve({id:1,mediaInfo:{status:2}});await nextTurn();assert.deepEqual(h.actions,[1,2]);
+  if(outcome==='completion')pending.resolve({id:1,mediaInfo:{status:2}});else pending.reject(Error('offline'));
+  await nextTurn();assert.deepEqual(h.actions,[1,2]);
+});
+test('more-info failed TV request refresh still marks the open modal requested',async t=>{
+  let calls=0;const rendered=[];const h=setup(t,{details:async id=>{if(++calls>1)throw Error('offline');return {id};}});
+  h.internal.renderActions=data=>rendered.push(data.mediaInfo?.status);
+  await h.P.open(1,'tv');h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-tv-requested',{detail:{tmdbId:1}}));await nextTurn();
+  assert.deepEqual(rendered,[undefined,2]);
 });
 test('more-info ratings from an earlier opening of the same item cannot overwrite fresh ratings',async t=>{
   const pending=deferred();let calls=0;const h=setup(t,{ratings:()=>++calls===1?pending.promise:Promise.resolve({label:'fresh'})});
