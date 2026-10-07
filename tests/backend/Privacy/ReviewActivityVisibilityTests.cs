@@ -105,14 +105,52 @@ public class ReviewActivityVisibilityTests
         Assert.Single(builder.Build(entries, [], viewer, true, config, 1));
     }
 
+    [Theory]
+    [InlineData("Watched", false)] [InlineData("Watched", true)]
+    [InlineData("Favorited", false)] [InlineData("Favorited", true)]
+    [InlineData("Reviewed", false)] [InlineData("Reviewed", true)]
+    public void DisabledFeedCategoriesNeverQueryLibraryWhileEnabledOnesReachIt(string category, bool enabled)
+    {
+        using var env = new CoreFixture();
+        // The viewer is the author, so the author-visibility check cannot drop the entry:
+        // only the category switch decides whether the library is asked.
+        var viewer = User(); var itemId = Guid.NewGuid();
+        var library = new Mock<ILibraryManager>(); var repository = new Mock<IItemRepository>();
+        if (enabled)
+        {
+            library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(new List<Guid> { itemId });
+            library.Setup(x => x.GetItemById(itemId)).Returns(new Movie { Id = itemId, Name = "Visible movie" });
+            repository.Setup(x => x.GetItemIdsList(It.IsAny<InternalItemsQuery>())).Returns(new List<Guid> { itemId });
+        }
+        var builder = new ActivityFeedBuilder(library.Object, Mock.Of<IUserManager>(), repository.Object, env.Logger);
+        var config = new PluginConfiguration
+        {
+            ActivityFeedShowWatched = enabled && category == "Watched", ActivityFeedShowFavorited = enabled && category == "Favorited",
+            ActivityFeedShowReviewed = enabled && category == "Reviewed", HideReviewsFromHiddenUsers = true, HideReviewsFromDisabledUsers = true
+        };
+        var activity = category == "Reviewed" ? [] : new[] { new ActivityEntry { UserId = viewer.Id.ToString("N"), ItemId = itemId.ToString("N"), ActivityType = category, OccurredAt = "2025-01-01T00:00:00Z" } };
+        var reviews = category == "Reviewed" ? new[] { new UserReview { UserId = viewer.Id.ToString("N"), TmdbId = "42", CreatedAt = "2025-01-01T00:00:00Z", Rating = 4 } } : [];
+        var rows = builder.Build(activity, reviews, viewer, false, config, 5);
+        if (!enabled)
+        {
+            // Not even a lookup: the feed builder swallows per-candidate lookup failures,
+            // so a throwing mock could not prove this.
+            Assert.Empty(rows);
+            library.VerifyNoOtherCalls();
+            repository.VerifyNoOtherCalls();
+            return;
+        }
+        Assert.Equal(category, Assert.Single(rows).ActivityType);
+        library.Verify(x => x.GetItemIds(It.IsAny<InternalItemsQuery>()), Times.Once);
+    }
+
     [Fact]
-    public void DisabledFeedCategoriesAndCancellationNeverQueryLibrary()
+    public void CancellationStopsTheFeedBeforeTheLibrary()
     {
         using var env = new CoreFixture();
         var library = new Mock<ILibraryManager>(MockBehavior.Strict);
         var builder = new ActivityFeedBuilder(library.Object,Mock.Of<IUserManager>(),Mock.Of<IItemRepository>(),env.Logger);
         var entry = new ActivityEntry { UserId = Guid.NewGuid().ToString("N"), ItemId = Guid.NewGuid().ToString("N"), ActivityType = "Watched", OccurredAt = "2025-01-01T00:00:00Z" };
-        Assert.Empty(builder.Build([entry], [], User(), false, new PluginConfiguration { ActivityFeedShowWatched = false }, 1));
         using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
         Assert.Throws<OperationCanceledException>(() => builder.Build([entry], [], User(), false, new PluginConfiguration(), 1, cancelled.Token));
     }
