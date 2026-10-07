@@ -10,7 +10,7 @@ public class PosterBlurTests
         for(int y=0;y<height;y++) for(int x=0;x<width;x++) bitmap.SetPixel(x,y, ((x/4+y/4)%2==0)^inverse ? SKColors.White : SKColors.Black);
         using var image=SKImage.FromBitmap(bitmap); using var encoded=image.Encode(SKEncodedImageFormat.Png,100); return encoded.ToArray();
     }
-    private static double Contrast(SKBitmap image) { var pixels=image.Pixels; var mean=pixels.Average(p=>(double)p.Red); return pixels.Average(p=>Math.Abs(p.Red-mean)); }
+    internal static double Contrast(SKBitmap image) { var pixels=image.Pixels; var mean=pixels.Average(p=>(double)p.Red); return pixels.Average(p=>Math.Abs(p.Red-mean)); }
     [Theory]
     [InlineData(1f)][InlineData(15f)][InlineData(100f)]
     public void Blur_reduces_detail_returns_jpeg_and_preserves_dimensions(float sigma)

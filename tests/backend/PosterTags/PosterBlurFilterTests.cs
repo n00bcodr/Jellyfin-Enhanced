@@ -75,6 +75,12 @@ public class PosterBlurFilterTests
         Assert.False(http.Response.Headers.ContainsKey("ETag")); Assert.False(http.Response.Headers.ContainsKey("Last-Modified"));
         Assert.Equal(true,http.Items[SpoilerBlurImageFilter.NoStoreHttpContextItem]);
     }
+    private static double Contrast(byte[] bytes) { using var image=SKBitmap.Decode(bytes); return PosterBlurTests.Contrast(image); }
+    // A re-encoded but unblurred checkerboard keeps nearly all of its contrast; the default intensity removes most of it.
+    private static void Blurred(byte[] source,byte[] output)
+    {
+        var (before,after)=(Contrast(source),Contrast(output)); Assert.True(after<before/4,$"contrast {after} is not well below the source's {before}");
+    }
     // "hide" is the default mode: with no safe parent art a directly guarded movie falls back to a blur.
     [Theory]
     [InlineData("Primary","blur")][InlineData("Thumb","blur")][InlineData("Screenshot","blur")][InlineData("Chapter","blur")]
@@ -83,7 +89,7 @@ public class PosterBlurFilterTests
     {
         using var f=new Fixture(); f.Plugin.Plugin.Configuration.SpoilerBlurMode=mode; var bytes=PosterBlurTests.Source();
         var (executed,http)=await f.Run(new FileContentResult(bytes,"image/png"),type);
-        var result=Assert.IsType<FileContentResult>(executed.Result);Assert.Equal("image/jpeg",result.ContentType);Assert.NotEqual(bytes,result.FileContents);
+        var result=Assert.IsType<FileContentResult>(executed.Result);Assert.Equal("image/jpeg",result.ContentType);Assert.NotEqual(bytes,result.FileContents);Blurred(bytes,result.FileContents);
         using var image=SKBitmap.Decode(result.FileContents);Assert.Equal(96,image.Width);Private(http,type=="Chapter");
     }
     [Theory]
@@ -165,7 +171,18 @@ public class PosterBlurFilterTests
         using var f=new Fixture();f.Plugin.Plugin.Configuration.SpoilerBlurMode=mode;var bytes=PosterBlurTests.Source();var path=Path.Combine(f.Plugin.Core.Root,"spoiler.png");await File.WriteAllBytesAsync(path,bytes);
         using var stream=new MemoryStream(bytes);
         IActionResult original=shape switch {"stream"=>new FileStreamResult(stream,"image/png"),"physical"=>new PhysicalFileResult(path,"image/png"),_=>new VirtualFileResult(path,"image/png")};
-        var(executed,http)=await f.Run(original);var result=Assert.IsType<FileContentResult>(executed.Result);Assert.NotEqual(bytes,result.FileContents);Private(http);
+        var(executed,http)=await f.Run(original);var result=Assert.IsType<FileContentResult>(executed.Result);Assert.NotEqual(bytes,result.FileContents);Blurred(bytes,result.FileContents);Private(http);
+    }
+    [Theory]
+    [InlineData("blur")][InlineData("hide")]
+    public async Task Higher_blur_intensity_removes_more_detail_in_both_modes(string mode)
+    {
+        async Task<double> At(int intensity)
+        {
+            using var f=new Fixture();f.Plugin.Plugin.Configuration.SpoilerBlurMode=mode;f.Plugin.Plugin.Configuration.SpoilerBlurIntensity=intensity;
+            var(executed,_)=await f.Run(new FileContentResult(PosterBlurTests.Source(),"image/png"));return Contrast(Assert.IsType<FileContentResult>(executed.Result).FileContents);
+        }
+        var(light,heavy)=(await At(10),await At(60));Assert.True(heavy<light/2,$"intensity 60 left contrast {heavy}, intensity 10 left {light}");
     }
 
     [Fact]
