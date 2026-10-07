@@ -90,8 +90,14 @@ public class ApiConfigurationTests
         var controller = ApiAssetTests.Controller(fixture.Core);
         using var stream = Assert.IsType<FileStreamResult>(controller.GetMainScript()).FileStream;
         Assert.Equal("no-store", controller.Response.Headers.CacheControl);
-        Assert.IsType<FileContentResult>(controller.GetScriptBundle());
-        Assert.Equal("no-store", controller.Response.Headers.CacheControl);
+        // A fresh controller, so the header checked is the bundle's own and not GetMainScript's.
+        var bundleController = ApiAssetTests.Controller(fixture.Core);
+        var first = Assert.IsType<FileContentResult>(bundleController.GetScriptBundle());
+        Assert.Equal("no-store", bundleController.Response.Headers.CacheControl);
+        // Development mode rebuilds the bundle on every request instead of serving the cached build.
+        var second = Assert.IsType<FileContentResult>(ApiAssetTests.Controller(fixture.Core).GetScriptBundle());
+        Assert.NotSame(first.FileContents, second.FileContents);
+        Assert.Equal(first.FileContents, second.FileContents);
         Assert.Contains("dev=\"true\"", fixture.Plugin.BuildScriptTag());
     }
     [Fact]
