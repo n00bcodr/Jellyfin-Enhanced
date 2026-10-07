@@ -563,6 +563,44 @@ public class CoreMaintenanceTests
         Assert.Equal([f.Alice.Id.ToString()], onDisk.AccountDisabledUserIds);
     }
 
+    [Fact]
+    public async Task CheckpointFailureStopsTheRemainingRestores()
+    {
+        using var f = new Fixture();
+        var bob = new User("bob", "default", "default") { Id = Guid.NewGuid() };
+        f.Policies[bob.Id] = new UserPolicy { IsDisabled = false, EnableRemoteAccess = true };
+        var all = new[] { f.Admin, f.Alice, f.Restricted, bob };
+#if NET9_0
+        f.Users.SetupGet(x => x.Users).Returns(all);
+#else
+        f.Users.Setup(x => x.GetUsers()).Returns(all);
+#endif
+        f.Users.Setup(x => x.GetUserById(bob.Id)).Returns(bob);
+        f.Users.Setup(x => x.GetUserDto(bob, It.IsAny<string>())).Returns(() => new UserDto { Id = bob.Id, Policy = JsonConvert.DeserializeObject<UserPolicy>(JsonConvert.SerializeObject(f.Policies[bob.Id]))! });
+        var service = new MaintenanceModeService(f.Users.Object, f.Sessions.Object, f.Core.Paths.Object, f.Core.Logger, new Clock());
+        await service.EnableAsync("", 0, "both", [f.Alice.Id.ToString(), bob.Id.ToString()]);
+        Assert.True(f.Policies[f.Alice.Id].IsDisabled);
+        Assert.True(f.Policies[bob.Id].IsDisabled);
+        var restored = new List<Guid>();
+        f.Users.Setup(x => x.UpdatePolicyAsync(It.IsAny<Guid>(), It.IsAny<UserPolicy>())).Returns<Guid, UserPolicy>((id, policy) =>
+        {
+            restored.Add(id);
+            f.Policies[id] = policy;
+            BreakStateFile(f);
+            return Task.CompletedTask;
+        });
+
+        // Re-targeting restores the first user, whose checkpoint then fails.
+        await Assert.ThrowsAnyAsync<IOException>(() => service.EnableAsync("new", 0, "none", null));
+
+        // The failure aborts the pass: the second user is neither restored nor dropped from the list.
+        var first = Assert.Single(restored);
+        var second = first == bob.Id ? f.Alice.Id : bob.Id;
+        Assert.False(f.Policies[first].IsDisabled);
+        Assert.True(f.Policies[second].IsDisabled);
+        Assert.Equal([second.ToString()], service.GetStatus().AccountDisabledUserIds);
+    }
+
     private static void StorePoliciesNormally(Fixture f, Guid id)
         => f.Users.Setup(x => x.UpdatePolicyAsync(id, It.IsAny<UserPolicy>()))
             .Callback<Guid, UserPolicy>((user, policy) => f.Policies[user] = JsonConvert.DeserializeObject<UserPolicy>(JsonConvert.SerializeObject(policy))!)
