@@ -155,31 +155,37 @@ test('reconfigured button submits the new media rather than stale item data', as
   h.button.click(); await flush(); assert.equal(h.calls.length, 1); assert.equal(h.calls[0][1].body.mediaId, 99);
 });
 
-test('a results refresh updates only its own section and matches the media type as well as the id', async t => {
+test('a results refresh updates only its own section and matches the media type as well as the exact id', async t => {
   const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: true } });
   h.JE.core.ui = { addTouchTapListener() {} }; h.load('jellyseerr/ui/ui-results.js');
   // A retained overview elsewhere on the page keeps its own 4K split button for movie 42.
   h.button.dataset.tmdbId = '42'; h.button.dataset.mediaType = 'movie'; h.configure();
   const overviewMain = h.document.querySelector('.jellyseerr-split-main');
-  // The refreshed section holds a show and a movie that share TMDB id 42.
+  // The refreshed section holds a show and a movie that share TMDB id 42, and a
+  // second movie whose id 420 starts with the same digits.
   const section = h.document.createElement('div'); h.document.body.append(section);
   const sectionButton = item => {
     const button = h.document.createElement('button'); button.className = 'jellyseerr-request-button';
-    Object.assign(button.dataset, { tmdbId: '42', mediaType: item.mediaType, searchResultItem: JSON.stringify(item) });
+    Object.assign(button.dataset, { tmdbId: String(item.id), mediaType: item.mediaType, searchResultItem: JSON.stringify(item) });
     section.append(button); return button;
   };
   const show = { id: 42, mediaType: 'tv', name: 'Show', mediaInfo: { status: 1 } };
   const showButton = sectionButton(show);
   sectionButton({ id: 42, mediaType: 'movie', title: 'Film', mediaInfo: { status: 1 } });
-  // Only the movie changed; it comes first, so an id-only match would hand it to the show.
-  h.JE.jellyseerrUI.updateJellyseerrResults([{ id: 42, mediaType: 'movie', title: 'Film', mediaInfo: { status: 5 } }, show], true, true, section);
+  sectionButton({ id: 420, mediaType: 'movie', title: 'Other film', mediaInfo: { status: 2 } });
+  // Movie 42 became available and movie 420 requestable again. Movie 42 comes first, so an
+  // id-only match would hand it to the show, and a type-only or prefix match to movie 420.
+  h.JE.jellyseerrUI.updateJellyseerrResults([{ id: 42, mediaType: 'movie', title: 'Film', mediaInfo: { status: 5 } }, show,
+    { id: 420, mediaType: 'movie', title: 'Other film', mediaInfo: { status: 1 } }], true, true, section);
   assert.ok(showButton.isConnected); assert.equal(JSON.parse(showButton.dataset.searchResultItem).mediaType, 'tv');
-  const sectionMain = section.querySelector('.jellyseerr-split-main');
+  const sectionMain = section.querySelector('.jellyseerr-split-main[data-tmdb-id="42"]');
   assert.equal(sectionMain.disabled, true); assert.equal(JSON.parse(sectionMain.dataset.searchResultItem).mediaInfo.status, 5);
+  const otherMain = section.querySelector('.jellyseerr-split-main[data-tmdb-id="420"]');
+  assert.equal(otherMain.disabled, false); assert.equal(JSON.parse(otherMain.dataset.searchResultItem).mediaInfo.status, 1);
   // The overview outside the section keeps its split styling and its own request handler.
   assert.ok(overviewMain.classList.contains('jellyseerr-split-main'));
-  overviewMain.click(); await flush();
-  assert.deepEqual(h.calls.map(call => call[1].body), [{ mediaType: 'movie', mediaId: 42 }]);
+  overviewMain.click(); await flush(); otherMain.click(); await flush();
+  assert.deepEqual(h.calls.map(call => call[1].body), [{ mediaType: 'movie', mediaId: 42 }, { mediaType: 'movie', mediaId: 420 }]);
 });
 
 for (const split of [false, true]) test(`advanced-permission UI opens options without prematurely submitting (split=${split})`, async t => {
