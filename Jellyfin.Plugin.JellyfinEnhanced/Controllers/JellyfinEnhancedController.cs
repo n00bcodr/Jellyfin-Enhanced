@@ -3561,6 +3561,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.HiddenContentUseNativeTab,
                 config.HiddenContentAdmin,
 
+                // Catch Up Page Settings
+                config.CatchUpEnabled,
+                config.CatchUpUsePluginPages,
+                config.CatchUpUseCustomTabs,
+                config.CatchUpUseNativeTab,
+
                 // Maintenance Mode
                 MaintenanceModeEnabled = mmActive,
                 MaintenanceModeMessage = mmMessage,
