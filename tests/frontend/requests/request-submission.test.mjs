@@ -111,6 +111,8 @@ for (const split of [false, true]) test(`rapid repeated clicks submit one movie 
   const pending = deferred(); const h = uiSetup(t, { config: { JellyseerrEnable4KRequests: split }, post: () => pending.promise }); h.configure();
   const button = mainButton(h, split);
   button.click(); button.click(); assert.equal(button.disabled, true); await flush(); assert.equal(h.calls.length, 1);
+  // The standard half requests this movie in standard quality: no is4k flag.
+  assert.deepEqual(h.calls[0][1].body, { mediaType: 'movie', mediaId: 42 });
   pending.resolve({ id: 7 }); await flush();
   assert.equal(h.item.mediaInfo.status, 3); assert.equal(button.disabled, true);
   assert.ok(button.classList.contains('jellyseerr-button-pending')); assert.ok(button.textContent.includes('jellyseerr_btn_requested'));
@@ -129,7 +131,9 @@ for (const split of [false, true]) test(`quota rejection shows escaped dialog an
   const dialogs = []; h.window.Dashboard = { alert: data => dialogs.push(data) }; h.configure();
   const button = mainButton(h, split); button.click(); await flush();
   assert.equal(dialogs.length, 1); assert.ok(dialogs[0].message.includes('&lt;img')); assert.equal(button.disabled, false); assert.equal(h.events.length, 0);
-  assert.ok(button.textContent.includes('jellyseerr_btn_request')); assert.equal(button.classList.contains('jellyseerr-button-error'), false);
+  // Back to the idle label exactly (not the in-flight "requesting" one) with no spinner.
+  assert.equal(button.textContent.trim(), 'jellyseerr_btn_request'); assert.equal(button.querySelector('.jellyseerr-button-spinner'), null);
+  assert.equal(button.classList.contains('jellyseerr-button-error'), false);
 });
 
 test('quota detection distinguishes permission errors and honors feature toggle', t => {
@@ -182,6 +186,8 @@ for (const split of [false, true]) test(`advanced-permission UI opens options wi
   const h = uiSetup(t, { config: { JellyseerrShowAdvanced: true, JellyseerrEnable4KRequests: split }, get: async () => ({ active: true, userFound: true, canRequestAdvanced: true }) });
   await h.api.checkUserStatus(); const opened = []; h.JE.jellyseerrUI.showMovieRequestModal = (...args) => opened.push(args);
   h.configure(); mainButton(h, split).click(); await flush(); assert.equal(h.calls.length, 0); assert.equal(opened.length, 1); assert.equal(opened[0][0], 42);
+  // The standard half opens the standard-quality options, never the 4K ones.
+  assert.equal(opened[0][3], false);
 });
 
 for (const split of [false, true]) for (const code of ['no_request_permission', 'request_4k_forbidden']) test(`typed permission denial ${code} is shown without success state (split=${split})`, async t => {
@@ -305,7 +311,9 @@ function requestModals(t, options) {
   const h = setup(t, options);
   for (const file of ['seerr-status.js', 'ui/ui-icons.js', 'ui/ui-quota.js', 'ui/ui-request-modals.js']) h.load(`jellyseerr/${file}`);
   h.JE.cdn = { url: () => 'https://cdn.test/poster.png' };
-  const select = id => `<select id="${id}"><option value=""></option><option value="${id === 'movie-folder' ? '/movies' : 2}">x</option></select>`;
+  // Distinct values, so a server/quality mix-up reaches the request body.
+  const values = { 'movie-server': 2, 'movie-quality': 5, 'movie-folder': '/movies' };
+  const select = id => `<select id="${id}"><option value=""></option><option value="${values[id]}">x</option></select>`;
   let current;
   h.JE.jellyseerrModal = { createAdvancedOptionsHTML: () => ['movie-server', 'movie-quality', 'movie-folder'].map(select).join(''), populateAdvancedOptions() {},
     create(o) { const el = h.document.createElement('div'); el.innerHTML = `<div class="jellyseerr-modal-body">${o.bodyHtml}</div>`; h.document.body.append(el); current = { el, o }; return { modalElement: el, show() {} }; } };
@@ -318,19 +326,32 @@ function requestModals(t, options) {
 test('movie request modal needs every advanced option before it submits them', async t => {
   const h = requestModals(t); h.api.fetchAdvancedRequestData = async () => ({});
   await h.JE.jellyseerrUI.showMovieRequestModal(42, 'Film', null);
+  const ids = ['movie-server', 'movie-quality', 'movie-folder'];
   await h.save(); assert.equal(h.calls.length, 0); assert.equal(h.toasts.at(-1)[0], 'jellyseerr_modal_toast_options_missing');
-  for (const id of ['movie-server', 'movie-quality', 'movie-folder']) h.modal().querySelector(`#${id}`).selectedIndex = 1;
+  // Any one option left empty blocks the request on its own.
+  for (const empty of ids) {
+    for (const id of ids) h.modal().querySelector(`#${id}`).selectedIndex = id === empty ? 0 : 1;
+    const toasts = h.toasts.length;
+    await h.save();
+    assert.equal(h.calls.length, 0, `${empty} empty`);
+    assert.equal(h.toasts.length, toasts + 1); assert.equal(h.toasts.at(-1)[0], 'jellyseerr_modal_toast_options_missing');
+  }
+  for (const id of ids) h.modal().querySelector(`#${id}`).selectedIndex = 1;
   await h.save(); assert.equal(h.calls.length, 1);
-  assert.deepEqual([h.calls[0][1].body.serverId, h.calls[0][1].body.profileId, h.calls[0][1].body.rootFolder], [2, 2, '/movies']);
+  assert.deepEqual([h.calls[0][1].body.serverId, h.calls[0][1].body.profileId, h.calls[0][1].body.rootFolder], [2, 5, '/movies']);
 });
 
 test('collection request modal escapes titles, skips owned movies and stops at the quota', async t => {
   let posts = 0;
   const h = requestModals(t, { post: async () => { if (++posts === 1) throw { status: 403, responseJSON: { message: 'Movie Quota exceeded.' } }; return { id: 7 }; } });
   const dialogs = []; h.window.Dashboard = { alert: data => dialogs.push(data) };
-  h.api.fetchCollectionDetails = async () => ({ parts: [{ id: 1, title: '<img src=x onerror=evil()>', mediaInfo: { status: 5 } }, { id: 2, title: 'Two' }, { id: 3, title: 'Three' }] });
+  // The quote would end the poster's alt attribute and start an onerror one if it were not escaped.
+  const hostile = '<img src=x onerror=evil()>" onerror="evil()';
+  h.api.fetchCollectionDetails = async () => ({ parts: [{ id: 1, title: hostile, mediaInfo: { status: 5 } }, { id: 2, title: 'Two' }, { id: 3, title: 'Three' }] });
   await h.JE.jellyseerrUI.showCollectionRequestModal(9, 'Saga');
   assert.equal(h.modal().querySelector('.jellyseerr-collection-movie-details .title img'), null);
+  assert.equal(h.modal().querySelector('.jellyseerr-collection-movie-poster').getAttribute('alt'), hostile);
+  assert.equal(h.modal().querySelector('[onerror]'), null);
   assert.equal(h.modal().querySelector('#movie-1').disabled, true);
   await h.save();
   // The quota rejection on the first selected movie ends the batch: nothing is sent for the rest.
