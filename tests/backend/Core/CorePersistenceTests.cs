@@ -98,13 +98,16 @@ public class CorePersistenceTests
         {
             while (!done.IsCancellationRequested)
             {
+                // Checked before the read starts, so only a read that began once the saves had
+                // started counts as one during them.
+                var startedAfterSaves = Volatile.Read(ref savesStarted);
                 // A torn read throws here (and would quarantine the user's valid file).
                 var read = f.Manager.GetUserConfigurationStrict<Payload>(User, "payload.json");
                 Assert.Equal(20000, read.Items.Count);
                 Assert.Equal($"item-{read.Version}-19999-padding-padding-padding", read.Items[^1]);
                 Interlocked.Increment(ref reads);
                 firstRead.TrySetResult();
-                if (Volatile.Read(ref savesStarted)) readDuringSaves.TrySetResult();
+                if (startedAfterSaves) readDuringSaves.TrySetResult();
             }
         });
         try
@@ -124,6 +127,7 @@ public class CorePersistenceTests
         }
         await reader;
         Assert.True(readDuringSaves.Task.IsCompleted);
+        // The first read came before the saves and another began after them.
         Assert.True(Volatile.Read(ref reads) > 1);
         Assert.Empty(Directory.GetFiles(f.ConfigRoot, "*.corrupt-*", SearchOption.AllDirectories));
         Assert.Equal(30, f.Manager.GetUserConfigurationStrict<Payload>(User, "payload.json").Version);
