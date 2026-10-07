@@ -198,10 +198,32 @@ public class TaskSeerrSyncTests
         // Only the admin's new watchlist item: not the blocked user's 456, not the
         // removed 789, and not the 555 request while requested media is off.
         Assert.Equal(new[] { (admin.Id, fresh.Id) }, saved);
-        using var body = JsonDocument.Parse(JsonSerializer.Serialize(result.Value));
-        Assert.Equal(1, body.RootElement.GetProperty("itemsAdded").GetInt32());
+        // The admin's two watchlist entries (123 and the removed 789) were processed;
+        // the blocked user's list and the requests were never read.
+        Assert.Equal("{\"success\":true,\"itemsProcessed\":2,\"itemsAdded\":1,\"errors\":null}", JsonSerializer.Serialize(result.Value));
         Assert.Contains(f.Core.Manager.GetProcessedWatchlistItems(admin.Id).Items, item => item.TmdbId == 123);
         Assert.Empty(f.Core.Manager.GetProcessedWatchlistItems(blocked.Id).Items);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("\n  \n")]
+    public async Task ManualWatchlistSyncWithoutAUsableUrlIsABadRequest(string urls)
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.JellyseerrEnabled = true;
+        config.SyncJellyseerrWatchlist = true;
+        config.JellyseerrUrls = urls;
+        config.JellyseerrApiKey = "test";
+        var admin = new User("admin", "default", "default") { Id = Guid.NewGuid() };
+        using var transport = new IntegrationTransport((_, _) => throw new InvalidOperationException("Must not call Seerr"));
+        var controller = ApiAssetTests.Controller(f.Core, Users(admin).Object, new Mock<ILibraryManager>().Object, new Mock<IUserDataManager>().Object, transport, f.Core.Manager);
+        controller.ControllerContext.HttpContext.User = global::JellyfinEnhanced.Tests.PrivacyPolicyTests.Principal(admin.Id, admin: true);
+
+        var result = Assert.IsType<BadRequestObjectResult>(await controller.SyncJellyseerrWatchlist());
+        Assert.Equal("{\"error\":\"Jellyseerr URL or API key is not configured\"}", JsonSerializer.Serialize(result.Value));
+        Assert.Equal(0, transport.Calls);
     }
 
     [Theory]
