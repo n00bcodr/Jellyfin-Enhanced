@@ -3105,23 +3105,24 @@
                             </div>
                             <hr style="border:0; border-top: 1px solid rgba(255,255,255,0.05); margin: 5px 0;">
 
-                            <h4>Add Override</h4>
-                            <div style="display:flex; gap:10px; align-items:center;">
-                                <select is="emby-select" class="emby-select" id="add-shortcut-select" style="flex:1;"></select>
-                                <input is="emby-input" id="add-shortcut-key" type="text" placeholder="Key (e.g. Shift+A)" style="flex:1;"/>
-                                <div class="je-setting-description" data-desc-for="add-shortcut-key">
-                                    <p class="fieldDescription je-field-desc-mt">
-                                    <b>Modifier Keys:</b> Use `Shift+`, `Ctrl+`, or `Alt+`. Examples: `Shift+A`, `Ctrl+S`.
-                                    </p>
-                                </div>
-                                <button is="emby-button" type="button" id="add-shortcut-btn" class="emby-button raised">Add</button>
-                                <button is="emby-button" type="button" id="disable-shortcut-btn" class="emby-button raised button-cancel" title="Disables this shortcut for every user on the server">Disable</button>
-                            </div>
-                            <div class="fieldDescription je-field-desc-mt">Select a shortcut above and click <b>Disable</b> to turn it off server-wide (the key field is ignored). Users can still re-enable it for themselves from their own Enhanced Panel.</div>
+                            <style>
+                                #shortcut-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-top: 12px; }
+                                #shortcut-grid h4 { margin: 0 0 10px 0; }
+                                .je-sc-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; }
+                                .je-sc-row.je-sc-disabled { opacity: 0.5; }
+                                .je-sc-left { display: flex; align-items: center; gap: 6px; }
+                                .je-sc-key { min-width: 28px; text-align: center; padding: 2px 8px; border-radius: 3px; background: rgba(255,255,255,0.12); border: 1px solid transparent; cursor: pointer; font-family: monospace; outline: none; }
+                                .je-sc-key[data-readonly] { cursor: default; }
+                                .je-sc-key:focus { border-color: var(--primary-accent-color, #00a4dc); }
+                                .je-sc-key.je-sc-error { background: rgb(255 0 0 / 60%); }
+                                .je-sc-btn { background: transparent; border: none; color: inherit; opacity: 0.6; cursor: pointer; padding: 2px; display: flex; align-items: center; }
+                                .je-sc-btn:hover { opacity: 1; }
+                                .je-sc-btn .material-icons { font-size: 18px; }
+                                .je-sc-mod { color: var(--primary-accent-color, #00a4dc); font-size: 20px; line-height: 1; margin-right: 6px; }
+                            </style>
+                            <div class="fieldDescription je-field-desc-mt">Click a key, then press the new key combination (for example <kbd>Shift+A</kbd>). <b>Delete</b> disables the shortcut for every user, <b>Backspace</b> restores its default. Users can still change their own keys from their Enhanced Panel.</div>
                             <div id="shortcut-error-comment" style="display: none; color: #ff6b6b; margin-top:5px;"></div>
-
-                            <h4 style="margin-top:20px;">Current Overrides</h4>
-                            <div id="shortcut-list-container" style="display:flex; flex-direction:column; gap:10px;"></div>
+                            <div id="shortcut-grid"></div>
                         </div>
                     </fieldset>
                 </div>
@@ -3225,11 +3226,7 @@
             const resetAllUserSettingsBtn = document.querySelector('#resetAllUserSettingsBtn');
             const clearTagsCacheBtn = document.querySelector('#clearTagsCacheBtn');
 
-            const shortcutListContainer = document.getElementById('shortcut-list-container');
-            const addShortcutSelect = document.getElementById('add-shortcut-select');
-            const addShortcutKeyInput = document.getElementById('add-shortcut-key');
-            const addShortcutBtn = document.getElementById('add-shortcut-btn');
-            const disableShortcutBtn = document.getElementById('disable-shortcut-btn');
+            const shortcutGrid = document.getElementById('shortcut-grid');
             const shortcutErrorComment = document.getElementById('shortcut-error-comment');
 
             const testJellyseerrBtn = document.getElementById('testJellyseerrBtn');
@@ -3999,151 +3996,109 @@
             { Name: "JumpToPercentage", Key: "0-9", Label: "Jump to % of video", Category: "Player" }
         ];
 
-        function renderOverrides() {
-            shortcutListContainer.innerHTML = '';
-            if (shortcutOverrides.length === 0) {
-                shortcutListContainer.innerHTML = '<p class="fieldDescription" style="text-align: center;">No overrides configured. All shortcuts are using default values.</p>';
-            }
-            shortcutOverrides.forEach((shortcut, index) => {
-                const row = document.createElement('div');
-                row.className = 'inputContainer';
-                row.style.display = 'flex';
-                row.style.alignItems = 'center';
-                row.style.gap = '1em';
+        // Same player-page actions and Jellyfin-native keys the per-user panel protects.
+        const PLAYER_KEYS_TAKEN = new Set([' ', 'Enter', 'Escape', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', 'K', 'J', 'L', 'M', 'F', 'Shift+N', 'Shift+P']);
 
-                const label = document.createElement('label');
-                label.className = 'inputLabel';
-                label.textContent = shortcut.Label;
-                label.style.flex = '1';
-
-                const input = document.createElement('input');
-                input.setAttribute('is', 'emby-input');
-                input.type = 'text';
-                input.value = shortcut.Key;
-                input.style.flex = '1';
-                input.style.textAlign = 'center';
-                if (shortcut.Key === '') {
-                    input.placeholder = 'Disabled';
-                    input.style.opacity = '0.6';
-                    input.title = 'This shortcut is disabled server-wide. Type a key here to re-enable it with that binding, or click Remove to revert to the default.';
-                }
-                input.addEventListener('input', (e) => {
-                    let value = e.target.value;
-                    // Automatically convert single lowercase letters to uppercase ***
-                    if (value.match(/^[a-z]$/)) {
-                        value = value.toUpperCase();
-                        e.target.value = value;
-                    }
-                    input.style.opacity = value === '' ? '0.6' : '';
-                    input.placeholder = value === '' ? 'Disabled' : '';
-                    shortcutOverrides[index].Key = value;
-                });
-
-
-                const buttonContainer = document.createElement('div');
-                const removeBtn = document.createElement('button');
-                removeBtn.setAttribute('is', 'emby-button');
-                removeBtn.type = 'button';
-                removeBtn.textContent = 'Remove';
-                removeBtn.className = 'raised button-cancel';
-                removeBtn.style.marginLeft = '1em';
-                removeBtn.addEventListener('click', () => {
-                    shortcutOverrides.splice(index, 1);
-                    renderOverrides();
-                    populateAddShortcutDropdown();
-                });
-
-                buttonContainer.appendChild(removeBtn);
-                row.appendChild(label);
-                row.appendChild(input);
-                row.appendChild(buttonContainer);
-                shortcutListContainer.appendChild(row);
-            });
+        function effectiveShortcutKey(def) {
+            const o = shortcutOverrides.find(x => x.Name === def.Name);
+            return o ? o.Key : def.Key;
         }
 
-        function populateAddShortcutDropdown() {
-            addShortcutSelect.innerHTML = '';
-            const overriddenNames = shortcutOverrides.map(s => s.Name);
-            const availableShortcuts = defaultShortcuts.filter(s => !overriddenNames.includes(s.Name));
-
-            availableShortcuts.forEach(shortcut => {
-                const option = document.createElement('option');
-                option.value = shortcut.Name;
-                option.textContent = shortcut.Label;
-                addShortcutSelect.appendChild(option);
-            });
-            addShortcutBtn.disabled = availableShortcuts.length === 0;
-            addShortcutKeyInput.disabled = availableShortcuts.length === 0;
-            disableShortcutBtn.disabled = availableShortcuts.length === 0;
+        function setShortcutOverride(def, key) {
+            shortcutOverrides = shortcutOverrides.filter(x => x.Name !== def.Name);
+            if (key !== def.Key) shortcutOverrides.push({ ...def, Key: key });
+            renderOverrides();
         }
 
-        function showValidationError(elementToShake, message) {
+        function showValidationError(chip, message) {
             shortcutErrorComment.textContent = message;
             shortcutErrorComment.style.display = 'block';
-            elementToShake.classList.add('shake');
-
+            chip.classList.add('je-sc-error');
             setTimeout(() => {
-                elementToShake.classList.remove('shake');
+                chip.classList.remove('je-sc-error');
                 shortcutErrorComment.style.display = 'none';
-            }, 8000);
+            }, 4000);
         }
 
-        addShortcutBtn.addEventListener('click', () => {
-            const selectedName = addShortcutSelect.value;
-            let newKey = addShortcutKeyInput.value.trim();
+        function renderOverrides() {
+            shortcutGrid.innerHTML = '';
+            ['Global', 'Player'].forEach(category => {
+                const col = document.createElement('div');
+                const title = document.createElement('h4');
+                title.textContent = category;
+                col.appendChild(title);
 
-            // Automatically convert single lowercase letters to uppercase ***
-            if (newKey.match(/^[a-z]$/)) {
-                newKey = newKey.toUpperCase();
-            }
+                defaultShortcuts.filter(d => d.Category === category && d.Name !== 'JumpToPercentage').forEach(def => {
+                    const key = effectiveShortcutKey(def);
+                    const isDisabled = key === '';
+                    const isModified = shortcutOverrides.some(x => x.Name === def.Name);
 
-            // Check 0: See if there is a key being added
-            if (!selectedName || !newKey) {
-                showValidationError(addShortcutBtn, 'Please enter a key to use as an override.');
-                return;
-            }
+                    const row = document.createElement('div');
+                    row.className = 'je-sc-row' + (isDisabled ? ' je-sc-disabled' : '');
 
-            // Check 1: See if the key is already used in another custom override.
-            const overrideConflict = shortcutOverrides.find(s => s.Key.toLowerCase() === newKey.toLowerCase());
+                    const left = document.createElement('div');
+                    left.className = 'je-sc-left';
+                    const chip = document.createElement('span');
+                    chip.className = 'je-sc-key';
+                    chip.textContent = isDisabled ? 'Disabled' : key;
+                    {
+                        chip.tabIndex = 0;
+                        chip.setAttribute('data-je-key-recorder', '1');
+                        chip.addEventListener('click', () => chip.focus());
+                        chip.addEventListener('focus', () => { chip.textContent = 'Press a key...'; });
+                        chip.addEventListener('blur', () => { chip.textContent = isDisabled ? 'Disabled' : key; });
+                        chip.addEventListener('keydown', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (e.key === 'Backspace') { setShortcutOverride(def, def.Key); return; }
+                            if (e.key === 'Delete') { setShortcutOverride(def, ''); return; }
+                            if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+                            if (e.key === 'Tab') { chip.blur(); return; }
 
-            if (overrideConflict) {
-                const errorMessage = "The key '" + newKey + "' is already assigned to '" + overrideConflict.Label + "' as an override.";
-                showValidationError(addShortcutKeyInput.parentElement, errorMessage);
-                return;
-            }
+                            const combo = (e.metaKey ? 'Meta+' : '') + (e.ctrlKey ? 'Ctrl+' : '') + (e.altKey ? 'Alt+' : '') + (e.shiftKey ? 'Shift+' : '') + (e.key.match(/^[a-zA-Z]$/) ? e.key.toUpperCase() : e.key);
+                            if (combo !== def.Key) {
+                                if (def.Category === 'Player' && PLAYER_KEYS_TAKEN.has(combo)) {
+                                    showValidationError(chip, "The key '" + combo + "' is already used by the Jellyfin player.");
+                                    return;
+                                }
+                                const clash = defaultShortcuts.find(d => d.Name !== def.Name && effectiveShortcutKey(d) === combo);
+                                if (clash) {
+                                    showValidationError(chip, "The key '" + combo + "' is already used by '" + clash.Label + "'.");
+                                    return;
+                                }
+                            }
+                            setShortcutOverride(def, combo);
+                        });
+                    }
+                    left.appendChild(chip);
 
-            // Check 2: See if the key is used by another default shortcut.
-            const defaultConflict = defaultShortcuts.find(s => s.Key.toLowerCase() === newKey.toLowerCase() && s.Name !== selectedName);
+                    {
+                        const toggle = document.createElement('button');
+                        toggle.type = 'button';
+                        toggle.className = 'je-sc-btn';
+                        toggle.title = isDisabled ? 'Enable (restore default key)' : 'Disable for every user';
+                        toggle.innerHTML = '<span class="material-icons"' + (isDisabled ? ' style="color: #ff6b6b;"' : '') + '>block</span>';
+                        toggle.addEventListener('click', () => setShortcutOverride(def, isDisabled ? def.Key : ''));
+                        left.appendChild(toggle);
+                    }
 
-            if (defaultConflict) {
-                const errorMessage = "The key '" + newKey + "' is already used by '" + defaultConflict.Label + "'.";
-                showValidationError(addShortcutKeyInput.parentElement, errorMessage);
-                return;
-            }
+                    const right = document.createElement('div');
+                    if (isModified) {
+                        const dot = document.createElement('span');
+                        dot.className = 'je-sc-mod';
+                        dot.title = 'Changed from default (' + def.Key + ')';
+                        dot.textContent = '\u2022';
+                        right.appendChild(dot);
+                    }
+                    right.appendChild(document.createTextNode(def.Label));
 
-            const defaultConfig = defaultShortcuts.find(s => s.Name === selectedName);
-            if (defaultConfig) {
-                shortcutOverrides.push({ ...defaultConfig, Key: newKey });
-                renderOverrides();
-                populateAddShortcutDropdown();
-                addShortcutKeyInput.value = '';
-            }
-        });
-
-        disableShortcutBtn.addEventListener('click', () => {
-            const selectedName = addShortcutSelect.value;
-            if (!selectedName) return;
-
-            const defaultConfig = defaultShortcuts.find(s => s.Name === selectedName);
-            if (defaultConfig) {
-                // An empty Key is the same "disabled" sentinel the per-user Enhanced Panel
-                // uses — it can never match a real keypress, so the shortcut just no-ops.
-                shortcutOverrides.push({ ...defaultConfig, Key: '' });
-                renderOverrides();
-                populateAddShortcutDropdown();
-                addShortcutKeyInput.value = '';
-            }
-        });
+                    row.appendChild(left);
+                    row.appendChild(right);
+                    col.appendChild(row);
+                });
+                shortcutGrid.appendChild(col);
+            });
+        }
 
         async function testJellyseerrConnection() {
             const urls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean);
@@ -5656,10 +5611,6 @@
                 option.value = saved;
                 option.textContent = saved;
                 option.dataset.jePlaceholder = '1';
-        document.getElementById('tagCacheExcludeLibraries').addEventListener('change', function () {
-            document.getElementById('tagCacheExcludedLibrariesBox').style.display = this.checked ? '' : 'none';
-        });
-
                 select.appendChild(option);
             }
             select.value = saved;
@@ -5701,6 +5652,10 @@
                 host.innerHTML = '<div class="fieldDescription">Could not load the library list. Saving keeps the current selection.</div>';
             });
         }
+
+        document.getElementById('tagCacheExcludeLibraries').addEventListener('change', function () {
+            document.getElementById('tagCacheExcludedLibrariesBox').style.display = this.checked ? '' : 'none';
+        });
 
         function collectTagCacheExcludedLibraries() {
             if (!_tagCacheExcludedRendered) return _tagCacheExcludedRaw;
@@ -5964,7 +5919,6 @@
                 });
 
                 renderOverrides();
-                populateAddShortcutDropdown();
 
                 // Load all other settings
                 document.querySelector('#devMode').checked = config.DevMode;
@@ -6059,8 +6013,6 @@
                 const qPos = (config.QualityTagsPosition || 'top-left');
                 const gPos = (config.GenreTagsPosition || 'top-right');
                 const lPos = (config.LanguageTagsPosition || 'bottom-left');
-                document.querySelector('#tagCacheExcludeLibraries').checked = config.TagCacheExcludeLibraries === true;
-                document.getElementById('tagCacheExcludedLibrariesBox').style.display = config.TagCacheExcludeLibraries === true ? '' : 'none';
                 const rPos = (config.RatingTagsPosition || 'bottom-right');
                 const arPos = (config.AgeRatingTagsPosition || 'bottom-right');
                 const langEnabled = !!config.LanguageTagsEnabled;
@@ -6104,6 +6056,8 @@
                 document.querySelector('#ratingTagsOnContinueWatching').checked = config.RatingTagsOnContinueWatching !== false;
                 document.querySelector('#ratingTagsOnNextUp').checked = config.RatingTagsOnNextUp !== false;
                 document.querySelector('#tagCacheServerMode').checked = config.TagCacheServerMode !== false;
+                document.querySelector('#tagCacheExcludeLibraries').checked = config.TagCacheExcludeLibraries === true;
+                document.getElementById('tagCacheExcludedLibrariesBox').style.display = config.TagCacheExcludeLibraries === true ? '' : 'none';
                 renderTagCacheExcludedLibraries(config.TagCacheExcludedLibraryIds || '');
                 document.querySelector('#enableTagsLocalStorageFallback').checked = config.EnableTagsLocalStorageFallback === true;
                 document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
@@ -6607,7 +6561,6 @@
             config.LongPress2xEnabled = document.querySelector('#longPress2xEnabled').checked;
             config.RandomButtonEnabled = document.querySelector('#randomButtonEnabled').checked;
             config.RandomIncludeMovies = document.querySelector('#randomIncludeMovies').checked;
-            config.TagCacheExcludeLibraries = document.querySelector('#tagCacheExcludeLibraries').checked;
             config.RandomIncludeShows = document.querySelector('#randomIncludeShows').checked;
             config.RandomUnwatchedOnly = document.querySelector('#randomUnwatchedOnly').checked;
             config.RandomScopeCurrentContainer = document.querySelector('#randomScopeCurrentContainer').checked;
@@ -6651,6 +6604,7 @@
             config.RatingTagsOnContinueWatching = document.querySelector('#ratingTagsOnContinueWatching').checked;
             config.RatingTagsOnNextUp = document.querySelector('#ratingTagsOnNextUp').checked;
             config.TagCacheServerMode = document.querySelector('#tagCacheServerMode').checked;
+            config.TagCacheExcludeLibraries = document.querySelector('#tagCacheExcludeLibraries').checked;
             config.TagCacheExcludedLibraryIds = collectTagCacheExcludedLibraries();
             config.EnableTagsLocalStorageFallback = config.TagCacheServerMode
                 ? document.querySelector('#enableTagsLocalStorageFallback').checked

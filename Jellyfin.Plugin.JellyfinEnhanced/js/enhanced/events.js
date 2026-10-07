@@ -27,6 +27,8 @@
      */
     JE.keyListener = (e) => {
         if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+        // A key recorder (admin shortcut grid) is capturing the next press; don't also run it.
+        if (document.activeElement.hasAttribute('data-je-key-recorder')) return;
 
         const key = e.key;
         const combo = (e.shiftKey ? 'Shift+' : '') +
