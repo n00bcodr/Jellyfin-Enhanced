@@ -1,10 +1,12 @@
 using System.Linq.Expressions;
 using System.Text.Json;
 using Jellyfin.Database.Implementations.Entities;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
+using Microsoft.AspNetCore.Mvc;
 using Moq;
 
 namespace JE.Tests;
@@ -151,5 +153,54 @@ public class TaskSeerrSyncTests
         data.Verify(d => d.SaveUserData(It.IsAny<User>(), otherUsersMovie, It.IsAny<UserItemData>(), It.IsAny<MediaBrowser.Model.Entities.UserDataSaveReason>(), It.IsAny<CancellationToken>()), Times.Never);
         Assert.DoesNotContain(f.Core.Manager.GetProcessedWatchlistItems(allowed.Id).Items, item => item.TmdbId == 456);
         Assert.Equal(100, progress.Values.Last());
+    }
+
+    [Fact]
+    public async Task ManualWatchlistSyncHonoursBlockedUsersReadditionPreventionAndTheRequestSetting()
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.JellyseerrEnabled = true;
+        config.SyncJellyseerrWatchlist = true;
+        config.JellyseerrUrls = "http://seerr.test";
+        config.JellyseerrApiKey = "test";
+        config.PreventWatchlistReAddition = true;
+        config.WatchlistMemoryRetentionDays = 30;
+        config.AddRequestedMediaToWatchlist = false;
+        var admin = new User("admin", "default", "default") { Id = Guid.NewGuid() };
+        var blocked = new User("blocked", "default", "default") { Id = Guid.NewGuid() };
+        config.JellyseerrImportBlockedUsers = blocked.Id.ToString();
+        Movie Movie(string tmdb) => new() { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = tmdb } };
+        var fresh = Movie("123"); var removed = Movie("789"); var blockedPick = Movie("456"); var requested = Movie("555");
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new BaseItem[] { fresh, removed, blockedPick, requested });
+        // An earlier sync added 789 for the admin, who has since removed it.
+        f.Core.Manager.SaveProcessedWatchlistItems(admin.Id, new ProcessedWatchlistItems
+        { Items = { new ProcessedWatchlistItem { TmdbId = 789, MediaType = "movie", ProcessedAt = DateTime.UtcNow, Source = "sync" } } });
+        var data = new Mock<IUserDataManager>();
+        data.Setup(d => d.GetUserData(It.IsAny<User>(), It.IsAny<BaseItem>())).Returns(() => new UserItemData { Key = "fixture", Likes = false });
+        var saved = new List<(Guid User, Guid Item)>();
+        data.Setup(d => d.SaveUserData(It.IsAny<User>(), It.IsAny<BaseItem>(), It.IsAny<UserItemData>(), It.IsAny<MediaBrowser.Model.Entities.UserDataSaveReason>(), It.IsAny<CancellationToken>()))
+            .Callback((User user, BaseItem item, UserItemData _, MediaBrowser.Model.Entities.UserDataSaveReason _, CancellationToken _) => saved.Add((user.Id, item.Id)));
+        using var transport = new IntegrationTransport((request, _) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            return Task.FromResult(IntegrationTransport.Response(
+                path == "/api/v1/user" ? JsonSerializer.Serialize(new { results = new[] { new { id = 27, jellyfinUserId = admin.Id.ToString("N") }, new { id = 28, jellyfinUserId = blocked.Id.ToString("N") } } })
+                : path == "/api/v1/user/27/watchlist" ? "{\"results\":[{\"tmdbId\":123,\"mediaType\":\"movie\"},{\"tmdbId\":789,\"mediaType\":\"movie\"}]}"
+                : path == "/api/v1/user/28/watchlist" ? "{\"results\":[{\"tmdbId\":456,\"mediaType\":\"movie\"}]}"
+                : "{\"results\":[{\"requestedBy\":{\"id\":27},\"media\":{\"tmdbId\":555,\"mediaType\":\"movie\"}}]}"));
+        });
+        var controller = ApiAssetTests.Controller(f.Core, Users(admin, blocked).Object, library.Object, data.Object, transport, f.Core.Manager);
+        controller.ControllerContext.HttpContext.User = global::JellyfinEnhanced.Tests.PrivacyPolicyTests.Principal(admin.Id, admin: true);
+
+        var result = Assert.IsType<OkObjectResult>(await controller.SyncJellyseerrWatchlist());
+        // Only the admin's new watchlist item: not the blocked user's 456, not the
+        // removed 789, and not the 555 request while requested media is off.
+        Assert.Equal(new[] { (admin.Id, fresh.Id) }, saved);
+        using var body = JsonDocument.Parse(JsonSerializer.Serialize(result.Value));
+        Assert.Equal(1, body.RootElement.GetProperty("itemsAdded").GetInt32());
+        Assert.Contains(f.Core.Manager.GetProcessedWatchlistItems(admin.Id).Items, item => item.TmdbId == 123);
+        Assert.Empty(f.Core.Manager.GetProcessedWatchlistItems(blocked.Id).Items);
     }
 }

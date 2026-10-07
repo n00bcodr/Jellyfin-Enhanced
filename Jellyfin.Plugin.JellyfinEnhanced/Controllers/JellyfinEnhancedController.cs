@@ -2803,93 +2803,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 _logger.Info("[Manual Watchlist Sync] Starting manual Seerr watchlist sync...");
 
-                int itemsProcessed = 0;
-                int itemsAdded = 0;
-                var errors = new List<string>();
-
-                foreach (var user in _userManager.GetAllUsers())
+                // The scheduled task's own pass, so a manual sync honours the same
+                // blocked users, re-addition prevention and requested-media settings.
+                var summary = await new ScheduledTasks.JellyseerrWatchlistSyncTask(
+                    _libraryManager, _userManager, _userDataManager, _httpClientFactory, _userConfigurationManager, _logger)
+                    .RunAsync(null, CancellationToken.None);
+                if (summary == null)
                 {
-                    try
-                    {
-                        _logger.Info($"[Manual Watchlist Sync] Processing user: {user.Username} ({user.Id})");
-
-                        // Get Seerr user ID for this Jellyfin user
-                        var jellyseerrUserId = await GetJellyseerrUserId(user.Id.ToString());
-                        if (string.IsNullOrEmpty(jellyseerrUserId))
-                        {
-                            _logger.Warning($"[Manual Watchlist Sync] Could not find Seerr user for {user.Username}");
-                            continue;
-                        }
-
-                        // Get watchlist from Seerr
-                        var watchlistItems = await GetJellyseerrWatchlistForUser(jellyseerrUserId);
-                        if (watchlistItems == null || watchlistItems.Count == 0)
-                        {
-                            _logger.Info($"[Manual Watchlist Sync] No watchlist items found for {user.Username}");
-                            watchlistItems = new List<WatchlistItem>();
-                        }
-
-                        _logger.Info($"[Manual Watchlist Sync] Found {watchlistItems.Count} watchlist items for {user.Username}");
-
-                        var requestItems = await GetJellyseerrRequestsForUser(jellyseerrUserId);
-                        if (requestItems != null && requestItems.Count > 0)
-                        {
-                            _logger.Info($"[Manual Watchlist Sync] Found {requestItems.Count} request items for {user.Username}");
-                            watchlistItems.AddRange(requestItems);
-                        }
-
-                        var processedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                        // Process each watchlist item
-                        foreach (var item in watchlistItems)
-                        {
-                            itemsProcessed++;
-
-                            var key = $"{item.MediaType}:{item.TmdbId}";
-                            if (!processedKeys.Add(key))
-                            {
-                                continue;
-                            }
-
-                            // Find the item in Jellyfin library by TMDB ID
-                            var libraryItem = FindItemByTmdbId(item.TmdbId, item.MediaType);
-                            if (libraryItem != null)
-                            {
-                                var userData = _userDataManager.GetUserData(user, libraryItem);
-                                if (userData == null)
-                                {
-                                    _logger.Warning($"[Manual Watchlist Sync] User data was null for '{libraryItem.Name}' and user {user.Username}; skipping.");
-                                }
-                                else if (userData.Likes != true)
-                                {
-                                    userData.Likes = true;
-                                    _userDataManager.SaveUserData(user, libraryItem, userData, UserDataSaveReason.UpdateUserRating, default);
-                                    itemsAdded++;
-                                    _logger.Info($"[Manual Watchlist Sync] Added '{libraryItem.Name}' to watchlist for {user.Username}");
-                                }
-                            }
-                            else
-                            {
-                                // Item not in library yet - WatchlistMonitor will automatically add it when it arrives
-                                _logger.Debug($"[Manual Watchlist Sync] Item TMDB {item.TmdbId} ({item.MediaType}) not in library yet for {user.Username} - will be auto-added by WatchlistMonitor when available");
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Error($"[Manual Watchlist Sync] Error processing user {user.Username}: {ex.Message}");
-                        errors.Add("Failed to sync watchlist for a user.");
-                    }
+                    return BadRequest(new { error = "Jellyseerr URL or API key is not configured" });
                 }
 
-                _logger.Info($"[Manual Watchlist Sync] Sync complete. Processed: {itemsProcessed}, Added: {itemsAdded}");
+                _logger.Info($"[Manual Watchlist Sync] Sync complete. Processed: {summary.ItemsProcessed}, Added: {summary.ItemsAdded}");
 
                 return Ok(new
                 {
                     success = true,
-                    itemsProcessed,
-                    itemsAdded,
-                    errors = errors.Count > 0 ? errors : null
+                    itemsProcessed = summary.ItemsProcessed,
+                    itemsAdded = summary.ItemsAdded,
+                    errors = summary.FailedUsers > 0
+                        ? Enumerable.Repeat("Failed to sync watchlist for a user.", summary.FailedUsers).ToList()
+                        : null
                 });
             }
             catch (Exception ex)
@@ -2995,72 +2928,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Error($"[Manual User Import] Invalid Jellyseerr response: {ex.Message}");
                 return StatusCode(502, new { error = "Invalid response from Jellyseerr. Check server logs for details." });
             }
-        }
-
-        private async Task<List<WatchlistItem>?> GetJellyseerrWatchlistForUser(string userId)
-        {
-            try
-            {
-                var config = JellyfinEnhanced.Instance?.Configuration;
-                if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
-                {
-                    return null;
-                }
-
-                var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
-
-                foreach (var url in urls)
-                {
-                    var trimmedUrl = url.Trim();
-                    try
-                    {
-                        var requestUri = $"{trimmedUrl.TrimEnd('/')}/api/v1/user/{userId}/watchlist";
-                        using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                            HttpMethod.Get, requestUri, config.JellyseerrApiKey);
-                        using var response = await httpClient.SendAsync(request);
-                        var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
-
-                        if (error == null && content != null)
-                        {
-                            var json = JsonDocument.Parse(content);
-
-                            if (json.RootElement.TryGetProperty("results", out var results))
-                            {
-                                var items = new List<WatchlistItem>();
-                                foreach (var item in results.EnumerateArray())
-                                {
-                                    if (item.TryGetProperty("tmdbId", out var tmdbId) &&
-                                        item.TryGetProperty("mediaType", out var mediaType))
-                                    {
-                                        items.Add(new WatchlistItem
-                                        {
-                                            TmdbId = tmdbId.GetInt32(),
-                                            MediaType = mediaType.GetString() ?? "movie"
-                                        });
-                                    }
-                                }
-                                return items;
-                            }
-                        }
-                        else if (error != null)
-                        {
-                            _logger.Warning($"Failed to get watchlist from {trimmedUrl}: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Warning($"Failed to get watchlist from {trimmedUrl}: {ex.Message}");
-                        continue;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Error getting Seerr watchlist: {ex}");
-            }
-
-            return null;
         }
 
         private async Task<List<WatchlistItem>?> GetJellyseerrRequestsForUser(string userId)
@@ -3200,25 +3067,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 TmdbId = tmdbId,
                 MediaType = mediaType
             };
-        }
-
-        private BaseItem? FindItemByTmdbId(int tmdbId, string mediaType)
-        {
-            var query = new InternalItemsQuery
-            {
-                HasTmdbId = true,
-                IncludeItemTypes = mediaType == "tv" ? new[] { Jellyfin.Data.Enums.BaseItemKind.Series } : new[] { Jellyfin.Data.Enums.BaseItemKind.Movie }
-            };
-
-            var items = _libraryManager.GetItemList(query);
-            return items.FirstOrDefault(i =>
-            {
-                if (i.ProviderIds != null && i.ProviderIds.TryGetValue("Tmdb", out var tmdbIdStr))
-                {
-                    return tmdbIdStr == tmdbId.ToString();
-                }
-                return false;
-            });
         }
 
         private class WatchlistItem
