@@ -59,7 +59,10 @@ test('untrusted modal subtitles render as text', async ({ page }) => {
 test('modal fits viewport and has labelled controls @visual', async ({ page }) => {
   await page.evaluate(() => openRequest('Synthetic Series'));
   await page.evaluate(() => document.fonts.ready);
-  await expect(page.locator('#season')).toBeFocused();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByLabel('Season', { exact: true })).toBeFocused();
+  await expect(dialog.getByRole('button', { name: 'Request', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible();
   const bounds = await page.locator('.jellyseerr-season-content').boundingBox();
   const viewport = page.viewportSize();
   expect(bounds.x).toBeGreaterThanOrEqual(0);
