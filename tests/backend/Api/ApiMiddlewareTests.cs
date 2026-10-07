@@ -44,7 +44,9 @@ public class ApiMiddlewareTests
             c.Response.Headers.AcceptRanges = "bytes";
             await c.Response.WriteAsync("<html><body>日本語</body></html>");
         });
-        Assert.Contains(f.Plugin.BuildScriptTag(), Body(context));
+        // The tag goes just before </body>, and the rewritten page is UTF-8 and says so.
+        Assert.Equal("<html><body>日本語" + f.Plugin.BuildScriptTag() + "\n</body></html>", Body(context));
+        Assert.Equal("text/html;charset=utf-8", context.Response.ContentType);
         Assert.Equal(0, context.Response.Headers.ETag.Count);
         Assert.Equal(0, context.Response.Headers.LastModified.Count);
         Assert.Equal(0, context.Response.Headers.AcceptRanges.Count);

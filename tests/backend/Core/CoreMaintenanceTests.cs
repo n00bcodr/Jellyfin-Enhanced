@@ -630,6 +630,22 @@ public class CoreMaintenanceTests
     }
 
     [Theory]
+    [InlineData(7, 0, false)][InlineData(7, 59, false)][InlineData(8, 0, true)]
+    [InlineData(9, 59, true)][InlineData(10, 0, false)][InlineData(23, 0, false)]
+    public void SameDayWindowCoversOnlyItsOwnHours(int hour, int minute, bool active)
+    {
+        // 08:00-10:00 lasts two hours; it must not run on into the next morning.
+        var now = new DateTime(2026, 10, 5, hour, minute, 0);
+        var result = MaintenanceScheduleService.CurrentWindow(TimeSpan.FromHours(8), TimeSpan.FromHours(10), now);
+        Assert.Equal(active, result.HasValue);
+        if (active)
+        {
+            Assert.Equal(now.Date.AddHours(8), result!.Value.Start);
+            Assert.Equal(now.Date.AddHours(10), result.Value.End);
+        }
+    }
+
+    [Theory]
     [InlineData(-1, "0m")][InlineData(0, "0m")][InlineData(1, "1m")][InlineData(60, "1m")]
     [InlineData(61, "2m")][InlineData(3900, "1h 05m")]
     public void CountdownRoundsUpAndClampsExpiredWindows(int seconds, string expected)

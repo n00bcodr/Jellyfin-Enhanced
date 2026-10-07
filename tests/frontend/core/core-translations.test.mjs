@@ -23,6 +23,11 @@ test('corrupt current-version cache refetches and old-version entries are remove
   assert.equal((await h.JE.loadTranslations()).ok,'OK');assert.equal(calls,1);
   assert.equal(store.getItem('JE_translation_en_old'),null);assert.equal(store.getItem('unrelated'),'keep');
 });
+for(const [label,age,expired] of [['a minute short of',24*60*60*1000-60*1000,false],['a minute past',24*60*60*1000+60*1000,true]])test(`translations cached ${label} 24 hours ${expired?'are fetched again':'are reused'}`,async t=>{
+  let calls=0;const h=setup(t,async()=>{calls++;return jsonResponse({ok:'fresh'});});const store=h.window.localStorage;
+  store.setItem('JE_translation_en_test-v1',JSON.stringify({ok:'cached'}));store.setItem('JE_translation_ts_en_test-v1',String(Date.now()-age));
+  assert.equal((await h.JE.loadTranslations()).ok,expired?'fresh':'cached');assert.equal(calls,expired?1:0);
+});
 test('translation fallback stays on the local proxy and supports English fallback',async t=>{
   const calls=[];const h=setup(t,async url=>{calls.push(url);return url.endsWith('/en.json')?jsonResponse({ok:'OK'}):jsonResponse({},404);});
   h.window.localStorage.setItem('a-language','zz');assert.equal((await h.JE.loadTranslations()).ok,'OK');
