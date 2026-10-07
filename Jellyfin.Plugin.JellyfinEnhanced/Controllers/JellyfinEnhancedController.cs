@@ -7855,8 +7855,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // stripping for them. Strict-read so corruption is observable (rate-limited
             // warn) rather than silently passing through. Resolved BEFORE the cache
             // read so a delta request can include the guarded entries (below).
+            // Loaded for the resolved user, not the route value: an empty route id
+            // resolves to the caller, whose own guard must still apply.
             var spPolicy = Services.SpoilerTagDataStripper.IsConfigured(spCfg)
-                ? Services.SpoilerTagDataStripper.CreatePolicy(spCfg, LoadSpoilerStateForTagStrip(userId))
+                ? Services.SpoilerTagDataStripper.CreatePolicy(spCfg, LoadSpoilerStateForTagStrip(user.Id))
                 : null;
 
             // A delta (?since=) only carries entries the library changed, but a
@@ -8116,7 +8118,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.SpoilerTagStripPolicy? spoilerPolicy = null;
             if (Services.SpoilerTagDataStripper.IsConfigured(spoilerCfg))
             {
-                spoilerPolicy = Services.SpoilerTagDataStripper.CreatePolicy(spoilerCfg, LoadSpoilerStateForTagStrip(userId));
+                // The resolved user's state (see GetTagCache): an empty route id is the caller.
+                spoilerPolicy = Services.SpoilerTagDataStripper.CreatePolicy(spoilerCfg, LoadSpoilerStateForTagStrip(user.Id));
             }
             var stripTagsEnabled = spoilerPolicy != null;
             var spStripGenres = spoilerPolicy?.StripGenres == true;
