@@ -701,7 +701,7 @@
     "panel_settings_random_button_scope_current_desc": "Sur une page de sélection ou de collection, choisir parmi ses éléments au lieu de toute la bibliothèque",
     "panel_settings_random_button_scope_current": "Utiliser la playlist ou la collection que je regarde",
     "toast_random_source_set": "{{icon:random}} Choix aléatoire depuis {name}",
-    "panel_settings_random_button_source_playlists": "Listes de lecture",
+    "panel_settings_random_button_source_playlists": "Playlists",
     "panel_settings_random_button_source_missing": "(la playlist ou collection n'existe plus)",
     "panel_settings_ui_rating_tags_scope_series": "Series",
     "panel_settings_ui_quality_tags_audio_language_none": "No preference (best track overall)",
