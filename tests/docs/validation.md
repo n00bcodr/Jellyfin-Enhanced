@@ -27,11 +27,11 @@ All stages passed with no failed or skipped tests.
 | Plugin build, jf12 (.NET 10) and jf10 (.NET 9) | 0 warnings, 0 errors |
 | Inventory freshness | Current |
 | Tooling false-green checks | 9 passed |
-| Backend, Jellyfin 10.11 / .NET 9 | 783 passed |
-| Backend, Jellyfin 12 / .NET 10 | 783 passed |
-| Backend coverage | jf10 50.12% lines / 38.17% branches; jf12 50.13% / 38.2% (floors 47% / 35%) |
-| Frontend, instrumented production modules | 408 passed (Node 26.2.0 and the CI's Node 22.14.0) |
-| Frontend coverage | 32.39% statements, 24.03% branches, 32.76% functions, 34.06% lines (floors 28% / 20% / 29% / 30%) |
+| Backend, Jellyfin 10.11 / .NET 9 | 795 passed |
+| Backend, Jellyfin 12 / .NET 10 | 795 passed |
+| Backend coverage | jf10 50.27% lines / 38.34% branches; jf12 50.28% / 38.37% (floors 47% / 35%) |
+| Frontend, instrumented production modules | 411 passed (Node 26.2.0 and the CI's Node 22.14.0) |
+| Frontend coverage | 32.51% statements, 24.14% branches, 32.92% functions, 34.19% lines (floors 28% / 20% / 29% / 30%) |
 | Browser, Chromium desktop/mobile and Firefox | 39 passed, including 3 unchanged visual baselines |
 | Native poster pipeline | 140 checks passed |
 | JavaScript/C# poster parity | 39 setting profiles × 101 fixtures matched, plus one empty-profile check; 115,960 language names and 31,676 casing strings matched (Node 26.2.0, ICU 78.3) |
