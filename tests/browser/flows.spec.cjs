@@ -10,6 +10,13 @@ const test = base.extend({
     expect(errors, 'unexpected browser errors').toEqual([]);
   }
 });
+// Freezes the page's timers so only clock.runFor advances them and a slow runner cannot fire
+// one early. The pause point is far past install so a stall between the calls cannot put it
+// in the past.
+async function pauseClock(page) {
+  await page.clock.install({ time: 0 });
+  await page.clock.pauseAt(60_000);
+}
 test('modal primary button invokes callback with selected fixture season once', async ({ page }) => {
   await page.getByRole('button', { name: 'Open request' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
@@ -86,12 +93,15 @@ test('style injection replaces stale rules without duplicates and removes cleanl
   expect(await page.evaluate(() => [JellyfinEnhanced.core.ui.removeCss('regression-style'), JellyfinEnhanced.core.ui.removeCss('regression-style')])).toEqual([true,false]);
 });
 test('toast displays escaped content and expires under controlled time', async ({ page }) => {
-  await page.clock.install();
+  await pauseClock(page);
   await page.evaluate(() => JellyfinEnhanced.toast(JellyfinEnhanced.escapeHtml('<script>unsafe</script>'), 1000));
   await page.clock.runFor(20);
   await expect(page.locator('.jellyfin-enhanced-toast')).toHaveText('<script>unsafe</script>');
   await expect(page.locator('.jellyfin-enhanced-toast script')).toHaveCount(0);
-  await page.clock.runFor(1500);
+  // It slides out at 1000 ms and is removed 300 ms later.
+  await page.clock.runFor(1270);
+  await expect(page.locator('.jellyfin-enhanced-toast')).toHaveCount(1);
+  await page.clock.runFor(20);
   await expect(page.locator('.jellyfin-enhanced-toast')).toHaveCount(0);
 });
 
