@@ -48,11 +48,16 @@ def inventory():
         category = path.relative_to(PRODUCTION).parts[0]
         result['files'].append({'path': relative, 'category': category})
         if category == 'Controllers' and path.suffix == '.cs':
+            # Each action's template is relative to its controller's class-level [Route];
+            # a controller without one falls back to JellyfinEnhanced.
+            controllers = [(declaration.start(), next(iter(re.findall(r'\[Route\("([^"\n]*)"\)\]', declaration[1])), 'JellyfinEnhanced'))
+                           for declaration in re.finditer(r'((?:\[[^\n]+\]\s*)*)public\s+(?:sealed\s+|partial\s+)*class\s+\w+\s*:\s*(?:ControllerBase|Controller)\b', text)]
             for match in re.finditer(r'\[Http(Get|Post|Put|Delete|Patch|Head|Options)\("([^"\n]*)"\)\]', text):
                 tail = text[match.end():]
                 method = re.search(r'\bpublic\s+(?:async\s+)?[^\n]+?\s+(\w+)\s*\(', tail)
                 attributes = tail[:method.start()] if method else ''
-                result['routes'].append({'verb': match[1].upper(), 'path': '/JellyfinEnhanced/' + match[2],
+                prefix = next((route for start, route in reversed(controllers) if start < match.start()), 'JellyfinEnhanced')
+                result['routes'].append({'verb': match[1].upper(), 'path': '/' + prefix.strip('/') + '/' + match[2],
                                          'method': method[1] if method else None, 'file': relative,
                                          'following_attributes': re.findall(r'\[([^\n]+)\]', attributes)})
         if category == 'Configuration' and path.suffix == '.cs':

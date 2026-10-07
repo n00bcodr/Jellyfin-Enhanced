@@ -93,6 +93,36 @@ class RegressionToolingTests(unittest.TestCase):
         self.assertEqual(0, found.returncode, found.stderr)
         self.assertEqual([str(spec)], json.loads(found.stdout))
 
+    def test_inventory_routes_use_each_controllers_class_route(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('je_inventory', ROOT / 'tests/inventory/generate.py')
+        generator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(generator)
+        production = self.output / 'Jellyfin.Plugin.JellyfinEnhanced'
+        (production / 'Controllers').mkdir(parents=True)
+        (production / 'JellyfinEnhanced.csproj').write_text('<Project/>')
+        (production / 'Controllers/Feature.cs').write_text('\n'.join([
+            'public class FeatureRequest { }',
+            '[ApiController]',
+            '[Route("JellyfinEnhanced/feature")]',
+            'public class FeatureController : ControllerBase',
+            '{',
+            '    private sealed class Nested { }',
+            '    [HttpPost("event")]',
+            '    public IActionResult PostEvent() => Ok();',
+            '}',
+            '[ApiController]',
+            'public class PlainController : ControllerBase',
+            '{',
+            '    [HttpGet("status")]',
+            '    public IActionResult GetStatus() => Ok();',
+            '}']))
+        generator.ROOT = self.output
+        generator.PRODUCTION = production
+        routes = json.loads(generator.inventory())['routes']
+        self.assertEqual([('PostEvent', '/JellyfinEnhanced/feature/event'), ('GetStatus', '/JellyfinEnhanced/status')],
+            [(route['method'], route['path']) for route in routes])
+
     def test_host_network_scan_tolerates_a_network_removed_after_listing(self):
         import importlib.util
         from types import SimpleNamespace

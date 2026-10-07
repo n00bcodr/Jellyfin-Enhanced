@@ -59,6 +59,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "category": "Controllers"
     },
@@ -219,6 +223,10 @@
       "category": "PluginPages"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/CatchUpPage.html",
+      "category": "PluginPages"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/DownloadsPage.html",
       "category": "PluginPages"
     },
@@ -320,6 +328,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/BrandingAssetStartupFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/CatchUpLogService.cs",
       "category": "Services"
     },
     {
@@ -740,6 +752,30 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/bookmarks/bookmarks.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/catchup/catchup-activity.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/catchup/catchup-core.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/catchup/catchup-custom-tab.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/catchup/catchup-deck.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/catchup/catchup-page.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/catchup/catchup-styles.js",
       "category": "js"
     },
     {
@@ -1372,6 +1408,33 @@
     }
   ],
   "routes": [
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/catchup/event",
+      "method": "PostEvent",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/catchup/events",
+      "method": "GetEvents",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/catchup/summary",
+      "method": "GetSummary",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
     {
       "verb": "GET",
       "path": "/JellyfinEnhanced/jellyseerr/status",
@@ -5099,6 +5162,62 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "CatchUpEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "CatchUpUsePluginPages",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "CatchUpUseNativeTab",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "CatchUpUseCustomTabs",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "CatchUpAutoCreateCustomTab",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "CatchUpCustomTabJeOwned",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "CatchUpLogEnabled",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "HiddenContentDefaultEnabled",
       "type": "bool",
       "initializer": null,
@@ -7346,9 +7465,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 339,
-    "routes": 167,
-    "configuration_properties": 501,
+    "files": 348,
+    "routes": 170,
+    "configuration_properties": 508,
     "storage_references": 63,
     "scheduled_tasks": 13,
     "locales": 33
