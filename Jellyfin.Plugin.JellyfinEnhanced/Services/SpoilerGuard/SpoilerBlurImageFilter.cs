@@ -328,11 +328,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // previews that the user opted to hide).
             bool isTrickplay = IsTrickplayRoute(context);
             string imageType;
-            bool inAlways, inArtwork;
+            bool inArtwork;
             if (isTrickplay)
             {
                 imageType = "Trickplay";
-                inAlways = true;
                 inArtwork = false;
             }
             else
@@ -345,7 +344,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Always-blur tier (poster surface) vs artwork tier (Backdrop/
                 // Art) gated behind SpoilerBlurArtwork. Anything else (logos,
                 // banners, etc.) passes through unchanged.
-                inAlways = _alwaysBlurImageTypes.Contains(imageType);
+                var inAlways = _alwaysBlurImageTypes.Contains(imageType);
                 inArtwork = !inAlways && _artworkImageTypes.Contains(imageType);
                 if (!inAlways && !inArtwork)
                 {

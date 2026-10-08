@@ -62,7 +62,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public void Initialize()
         {
             // Only initialize if the watchlist feature is enabled in plugin configuration.
-            var config = JellyfinEnhanced.Instance?.Configuration as Configuration.PluginConfiguration;
+            var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
             {
                 _logger.Warning("[Watchlist] Configuration is null - skipping watchlist monitoring initialization");
@@ -119,7 +119,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // _logger.Info($"[Watchlist] {eventType} event triggered for: {e.Item?.Name ?? "Unknown"} (Type: {itemKind})");
 
                 // Check if watchlist feature is enabled
-                var config = JellyfinEnhanced.Instance?.Configuration as PluginConfiguration;
+                var config = JellyfinEnhanced.Instance?.Configuration;
                 if (config == null)
                 {
                     _logger.Warning("[Watchlist] Configuration is null");

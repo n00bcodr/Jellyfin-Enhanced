@@ -764,53 +764,6 @@
       color: #b0bec5;
     }
 
-    /* Orphaned results list */
-    .je-orphaned-results {
-      margin-top: 20px;
-      max-height: 400px;
-      overflow-y: auto;
-    }
-
-    .je-orphaned-result-item {
-      background: rgba(255,255,255,0.03);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 8px;
-      padding: 14px;
-      margin-bottom: 12px;
-    }
-
-    .je-orphaned-result-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: start;
-      margin-bottom: 10px;
-    }
-
-    .je-orphaned-result-name {
-      font-weight: 600;
-      color: #ff9800;
-      margin-bottom: 4px;
-    }
-
-    .je-orphaned-result-count {
-      font-size: 12px;
-      color: #aaa;
-    }
-
-    .je-orphaned-result-meta {
-      font-size: 11px;
-      color: #666;
-      padding: 8px;
-      background: rgba(0,0,0,0.3);
-      border-radius: 4px;
-    }
-
-    .btnMigrateOrphaned {
-      background: rgba(76, 175, 80, 0.15);
-      border-color: #4caf50;
-      color: #4caf50;
-    }
-
     /* Duplicates modal */
     .je-duplicates-modal-container {
       max-width: 700px;

@@ -1301,7 +1301,6 @@
       // Fire-and-forget: backfill existing bookmarks with episode metadata.
       backfillEpisodeMetadata().catch(e => console.warn(`${logPrefix} Backfill failed:`, e));
 
-      let updateTimeout = null;
       let lastVideoUrl = null;
       let lastInjectedOsdKey = null;
       const osdObserverId = 'je-bookmarks-osd';

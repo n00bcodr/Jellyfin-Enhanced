@@ -35,6 +35,8 @@ jobs:
           build-mode: manual
         - language: javascript-typescript
           build-mode: none
+        - language: actions
+          build-mode: none
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
