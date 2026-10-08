@@ -211,6 +211,7 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} No s'han pogut carregar els detalls de la col·lecció",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} No s'han trobat pel·lícules a la col·lecció",
     "jellyseerr_select_all_seasons": "Seleccionar totes les temporades",
+    "jellyseerr_select_all_episodes": "Select All Episodes",
     "jellyseerr_season_specials": "Especials",
     "jellyseerr_season_name": "Temporada {number}",
     "jellyseerr_season_status_not_requested": "No sol·licitada",

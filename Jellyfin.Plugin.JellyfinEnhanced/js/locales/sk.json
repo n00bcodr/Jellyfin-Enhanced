@@ -211,6 +211,7 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Nepodarilo sa načítať detaily kolekcie",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} V kolekcii sa nenašli žiadne filmy",
     "jellyseerr_select_all_seasons": "Vybrať všetky série",
+    "jellyseerr_select_all_episodes": "Select All Episodes",
     "jellyseerr_season_specials": "Špeciály",
     "jellyseerr_season_name": "Séria {number}",
     "jellyseerr_season_status_not_requested": "Nepožiadané",

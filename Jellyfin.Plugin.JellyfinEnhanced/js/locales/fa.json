@@ -211,6 +211,7 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} بارگیری جزئیات مجموعه ناموفق بود",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} هیچ فیلمی در مجموعه یافت نشد",
     "jellyseerr_select_all_seasons": "انتخاب همه فصل‌ها",
+    "jellyseerr_select_all_episodes": "Select All Episodes",
     "jellyseerr_season_specials": "ویژه‌ها",
     "jellyseerr_season_name": "فصل {number}",
     "jellyseerr_season_status_not_requested": "درخواست نشده",

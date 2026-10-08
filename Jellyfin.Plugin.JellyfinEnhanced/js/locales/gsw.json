@@ -211,6 +211,7 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Sammligsdetail konnte nöd glade werde",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} Kei Filme i dr Sammlig gfunde",
     "jellyseerr_select_all_seasons": "Alli Staffle uswähle",
+    "jellyseerr_select_all_episodes": "Select All Episodes",
     "jellyseerr_season_specials": "Specials",
     "jellyseerr_season_name": "Staffle {number}",
     "jellyseerr_season_status_not_requested": "Nöd aagfrogt",

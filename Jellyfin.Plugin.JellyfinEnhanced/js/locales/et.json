@@ -211,6 +211,7 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Kogumiku üksikasjade laadimine ebaõnnestus",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} Kogumikust ei leitud filme",
     "jellyseerr_select_all_seasons": "Vali kõik hooajad",
+    "jellyseerr_select_all_episodes": "Select All Episodes",
     "jellyseerr_season_specials": "Lisaosad",
     "jellyseerr_season_name": "Hooaeg {number}",
     "jellyseerr_season_status_not_requested": "Taotlemata",

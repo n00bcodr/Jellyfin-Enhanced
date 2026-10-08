@@ -162,6 +162,7 @@
     "jellyseerr_report_issue_message_placeholder": "Детально опишіть проблему…",
     "feature_watch_progress_display": "{{icon:eye}} Відображення прогресу перегляду",
     "jellyseerr_select_all_seasons": "Вибрати всі сезони",
+    "jellyseerr_select_all_episodes": "Select All Episodes",
     "hidden_content_admin_add_title": "Додати до прихованого вмісту користувача {userName}",
     "requests_episodes": "епізодів",
     "jellyseerr_modal_request_selected_movies": "Запросити вибрані фільми",
