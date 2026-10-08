@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHarness, plain } from '../helpers/harness.mjs';
+import { createHarness, loadKeyCombo, plain } from '../helpers/harness.mjs';
 
 function setup(t, disabled = false) {
   const actions = [], saves = [];
@@ -12,7 +12,7 @@ function setup(t, disabled = false) {
       injectGlobalStyles() {}, addPluginMenuButton() {}, addUserMenuLink() {}, addRandomButton() {}, applySavedStylesWhenReady() {},
       helpers: { createObserver() {}, throttle: fn => fn, onBodyMutation() {} } } });
   t.after(() => h.close());
-  h.load('enhanced/events.js'); h.load('enhanced/settingspanel/ui-panel-shortcut-editor.js');
+  loadKeyCombo(h); h.load('enhanced/events.js'); h.load('enhanced/settingspanel/ui-panel-shortcut-editor.js');
   h.JE.internals.enhancedUi.wireShortcutEditor({ help: h.document.getElementById('help'), pluginShortcuts: [{ Name: 'CycleAudioTracks', Key: 'A' }], primaryAccentColor: 'blue', kbdBackground: 'black' });
   const key = h.document.querySelector('kbd');
   const press = (target, name, modifiers = {}) => { const event = new h.window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...modifiers }); target.dispatchEvent(event); return event; };

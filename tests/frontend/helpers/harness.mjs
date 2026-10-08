@@ -79,3 +79,11 @@ export function deferred() {
 }
 export const jsonResponse = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 export const plain = value => JSON.parse(JSON.stringify(value));
+
+/** Install the real JE.keyCombo from config.js without running the rest of that module (it needs a full JE). */
+export function loadKeyCombo(harness) {
+  const source = readFileSync(resolve(jsRoot, 'enhanced/config.js'), 'utf8');
+  const match = /JE\.keyCombo = function[\s\S]*?\n    };/.exec(source);
+  if (!match) throw new Error('JE.keyCombo not found in enhanced/config.js');
+  harness.window.eval(`(function(JE){${match[0]}})(window.JellyfinEnhanced)`);
+}

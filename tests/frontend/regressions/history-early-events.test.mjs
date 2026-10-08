@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createHarness} from '../helpers/harness.mjs';
+import {createHarness, loadKeyCombo} from '../helpers/harness.mjs';
 
 function setup(t) {
   const h = createHarness({html:'<video></video><button id="randomItemButton"></button><button class="btnSubtitles"></button>', JE:{
@@ -9,7 +9,7 @@ function setup(t) {
     isVideoPage:()=>false, attachSeekTracker(){}, injectGlobalStyles(){},addPluginMenuButton(){},addUserMenuLink(){},addRandomButton(){},applySavedStylesWhenReady(){},
     helpers:{createObserver(){},throttle:fn=>fn,onBodyMutation(){}}
   }});
-  t.after(()=>h.close());h.load('enhanced/events.js');
+  t.after(()=>h.close());loadKeyCombo(h);h.load('enhanced/events.js');
   h.press=(key,modifiers={})=>{const e=new h.window.KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...modifiers});h.JE.keyListener(e);return e;};
   return h;
 }

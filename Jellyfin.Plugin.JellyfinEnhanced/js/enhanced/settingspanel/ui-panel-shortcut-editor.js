@@ -128,7 +128,7 @@
                     }
 
                     const labelWrapper = keyElement.parentElement.nextElementSibling;
-                    const combo = (e.metaKey ? 'Meta+' : '') + (e.ctrlKey ? 'Ctrl+' : '') + (e.altKey ? 'Alt+' : '') + (e.shiftKey ? 'Shift+' : '') + (e.key.match(/^[a-zA-Z]$/) ? e.key.toUpperCase() : e.key);
+                    const combo = JE.keyCombo(e);
                     // Stored bindings may list their modifiers in any order ("Shift+Ctrl+S");
                     // compare them the way the key listener does (events.js).
                     const canonical = JE.internals.canonicalCombo || (value => value);

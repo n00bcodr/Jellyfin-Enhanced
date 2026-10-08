@@ -70,13 +70,7 @@
         if (document.activeElement.hasAttribute('data-je-key-recorder')) return;
 
         const key = e.key;
-        // Built in the shortcut editor's modifier order; stored combos are
-        // canonicalised to the same order below.
-        const combo = (e.metaKey ? 'Meta+' : '') +
-                      (e.ctrlKey ? 'Ctrl+' : '') +
-                      (e.altKey ? 'Alt+' : '') +
-                      (e.shiftKey ? 'Shift+' : '') +
-                      (key.match(/^[a-zA-Z]$/) ? key.toUpperCase() : key);
+        const combo = JE.keyCombo(e);
 
         const video = document.querySelector('video');
         const activeShortcuts = canonicalShortcuts();
