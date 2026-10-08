@@ -3346,6 +3346,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DEFAULT_REGION,
                 config.DEFAULT_PROVIDERS,
                 config.IGNORE_PROVIDERS,
+                config.ElsewhereSeasonProviders,
                 config.ElsewhereCustomBrandingText,
                 config.ElsewhereCustomBrandingImageUrl,
                 config.ClearLocalStorageTimestamp,

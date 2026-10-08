@@ -98,6 +98,18 @@ Multiple patterns:
 - Remove free streaming options
 - Exclude rental/purchase-only services
 
+
+## Per-season providers
+
+On **Series** and **Season** pages, Elsewhere can look up streaming providers per season (TMDB lists them per season, so a show can be on different services from one season to the next).
+
+- **Series page:** if every season is on the same providers, nothing changes. If seasons differ, the providers are grouped under a label such as `Seasons 1–6` and `Season 7`.
+- **Season page:** shows the providers for that season.
+- **Fallbacks:** a season TMDB has no providers (or no data) for uses the series' providers. Specials (season 0) are only shown when TMDB has data for them.
+- **Season order:** only used when the series uses the default (aired) season order. TMDB's seasons follow its default ordering, so series set to DVD, absolute or another display order keep the series-level providers.
+
+Admins can turn this off with **Per-season providers** in the Elsewhere settings, and each user can turn it off for themselves in the Elsewhere search settings.
+
 ## Custom Branding
 
 **Custom Branding Text:**
