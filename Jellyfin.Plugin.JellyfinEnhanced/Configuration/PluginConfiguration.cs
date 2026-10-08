@@ -627,6 +627,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool DisableTagsOnSearchPage { get; set; }
         public bool TagsHideOnHover { get; set; }
         public bool TagCacheServerMode { get; set; }
+        // Master switch for the exclusion list below; off means every library is cached.
+        public bool TagCacheExcludeLibraries { get; set; } = false;
+        // Comma-separated library ids (dashless) the tag cache skips. Empty means none.
+        public string TagCacheExcludedLibraryIds { get; set; } = "";
         public bool EnableTagsLocalStorageFallback { get; set; }
         public bool DisableAllShortcuts { get; set; }
         public int DefaultSubtitleStyle { get; set; }
