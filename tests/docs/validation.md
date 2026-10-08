@@ -22,7 +22,7 @@ The culture and time-zone row reruns `python3 tests/run.py backend` once with `L
 
 ## Latest results
 
-Every stage below ran once at commit `b8179d9e` on 2026-10-08, and all passed with no failed or skipped tests.
+Every stage below ran once at commit `b8179d9e` on 2026-10-08, except the real-host row, which was rerun at `8e64c47c` after the host suite switched to the newest release of each line. All passed with no failed or skipped tests.
 
 | Stage | Result |
 | --- | --- |
@@ -41,7 +41,7 @@ Every stage below ran once at commit `b8179d9e` on 2026-10-08, and all passed wi
 | Native assets | 253 flags decoded and HarfBuzz shaping passed on Skia 3.116.1 and 3.119.4 |
 | Mutation checks, jf12 | 4 of 4 faults detected, with passing baseline and restored runs |
 | Historical fault replay | 13 historical faults (9 JavaScript, 4 backend on each target): all 17 experiments detected the fault and passed again once restored |
-| Real Jellyfin hosts | Jellyfin 10.11.11 and 12.0 each passed all 46 report entries: 45 HTTP checks plus one real-Chromium journey (login, panel save and reload) covering a regular and an admin user |
+| Real Jellyfin hosts | Jellyfin 10.11.11 and 12.2.0 (the newest `10.11` and `12` images) each passed all 46 report entries: 45 HTTP checks plus one real-Chromium journey (login, panel save and reload) covering a regular and an admin user |
 
 Coverage counts every production module, including ones no test loads. It guards against regressions; it is not a measure of behavioral completeness. The [coverage matrix](coverage-matrix.md) lists what is tested and what is not.
 
