@@ -35,14 +35,6 @@
       "category": "Assets"
     },
     {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.css",
-      "category": "Configuration"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
-      "category": "Configuration"
-    },
-    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
       "category": "Configuration"
     },
@@ -52,6 +44,14 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.css",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
       "category": "Configuration"
     },
     {
@@ -165,6 +165,446 @@
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.cs",
       "category": "JellyfinEnhanced.cs"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Logger.cs",
+      "category": "Logger.cs"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/AnalyticsData.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/Arr/ArrInstance.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/Arr/ArrItem.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/Arr/ArrType.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/AwardsData.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/Jellyseerr/JellyseerrPermission.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/Jellyseerr/JellyseerrUser.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/MdblistRatings.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/TagCacheEntry.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/WhatsNewData.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/ActivityPage.html",
+      "category": "PluginPages"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/BookmarksPage.html",
+      "category": "PluginPages"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/CalendarPage.html",
+      "category": "PluginPages"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/CatchUpPage.html",
+      "category": "PluginPages"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/DownloadsPage.html",
+      "category": "PluginPages"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/HiddenContentPage.html",
+      "category": "PluginPages"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/RecommendationsPage.html",
+      "category": "PluginPages"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginServiceRegistrator.cs",
+      "category": "PluginServiceRegistrator.cs"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/AnalyticsReportTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ArrTagsSyncTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/AudioLanguageTagsSyncTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/BuildTagCacheTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ClearTranslationCacheTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/JellyfinToSeerrWatchlistSyncTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/JellyseerrUserImportTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/JellyseerrWatchlistSyncTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/MdblistRatingsFetchRunner.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/MdblistRatingsFetchTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/MdblistRatingsSyncTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/RefreshCdnAssetsTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/SpoilerApplyExistingTitlesTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ActivityFavoriteMonitor.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ActivityFeedBuilder.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ActivityService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AnalyticsReportingService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoMovieRequestMonitor.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoMovieRequestService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoSeasonRequestMonitor.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoSeasonRequestService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/BrandingAssetStartupFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/CatchUpLogService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/CdnAssetService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientScriptBundle.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/HiddenContentResponseFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/HostCompatibilityService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Identity/RequestIdentityService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ItemStatsService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintenanceModeService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintenanceScheduleService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MdblistService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/CompositeImageCache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/NativeClientPolicy.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/NativePosterTagStamper.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagComposer.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagDataProvider.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagImageFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagModel.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagResolver.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagReviewRatings.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagSettings.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagSettingsProvider.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagUserCache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagVariantToken.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagAssets.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagCss.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagImageScaler.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagPlan.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagRenderer.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagText.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagTileCache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/AgeRatingRules.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/GenreIcons.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/JsText.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/LanguageFlagRules.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/LanguageNames.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/QualityTagRules.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/RatingRules.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/ResolutionData.g.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/RadarrService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ReviewAuthorCache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ScriptInjectionStartupFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SeerrParentalFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SeerrScanTriggerService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SonarrService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/ImageBlurService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/ImageTagDecoration.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerAutoEnableArmer.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerAutoEnableFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerBlurImageFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerExistingTitlesApplier.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerFieldStripFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerIdentityService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerIdentityTagFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerLibraryAddAutoEnabler.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerNextUnwatchedService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerSeerrPendingPromoter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerTagDataStripper.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerUserResolver.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StartupService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheMonitor.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCachePendingChanges.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbCompanyTvDiscover.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbResponseCache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/UsageEventCounterService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/WatchProvidersBatch.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/WatchlistMonitor.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/WhatsNewService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/WikidataAwardsService.cs",
+      "category": "Services"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/arr-links.js",
@@ -959,452 +1399,12 @@
       "category": "js"
     },
     {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Logger.cs",
-      "category": "Logger.cs"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/AnalyticsData.cs",
-      "category": "Model"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/Arr/ArrInstance.cs",
-      "category": "Model"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/Arr/ArrItem.cs",
-      "category": "Model"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/Arr/ArrType.cs",
-      "category": "Model"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/AwardsData.cs",
-      "category": "Model"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/Jellyseerr/JellyseerrPermission.cs",
-      "category": "Model"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/Jellyseerr/JellyseerrUser.cs",
-      "category": "Model"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/MdblistRatings.cs",
-      "category": "Model"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/TagCacheEntry.cs",
-      "category": "Model"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/WhatsNewData.cs",
-      "category": "Model"
-    },
-    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/packages.jf10.lock.json",
       "category": "packages.jf10.lock.json"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/packages.jf12.lock.json",
       "category": "packages.jf12.lock.json"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/ActivityPage.html",
-      "category": "PluginPages"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/BookmarksPage.html",
-      "category": "PluginPages"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/CalendarPage.html",
-      "category": "PluginPages"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/CatchUpPage.html",
-      "category": "PluginPages"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/DownloadsPage.html",
-      "category": "PluginPages"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/HiddenContentPage.html",
-      "category": "PluginPages"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginPages/RecommendationsPage.html",
-      "category": "PluginPages"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/PluginServiceRegistrator.cs",
-      "category": "PluginServiceRegistrator.cs"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/AnalyticsReportTask.cs",
-      "category": "ScheduledTasks"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ArrTagsSyncTask.cs",
-      "category": "ScheduledTasks"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/AudioLanguageTagsSyncTask.cs",
-      "category": "ScheduledTasks"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/BuildTagCacheTask.cs",
-      "category": "ScheduledTasks"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ClearTranslationCacheTask.cs",
-      "category": "ScheduledTasks"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/JellyfinToSeerrWatchlistSyncTask.cs",
-      "category": "ScheduledTasks"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/JellyseerrUserImportTask.cs",
-      "category": "ScheduledTasks"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/JellyseerrWatchlistSyncTask.cs",
-      "category": "ScheduledTasks"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/MdblistRatingsFetchRunner.cs",
-      "category": "ScheduledTasks"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/MdblistRatingsFetchTask.cs",
-      "category": "ScheduledTasks"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/MdblistRatingsSyncTask.cs",
-      "category": "ScheduledTasks"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/RefreshCdnAssetsTask.cs",
-      "category": "ScheduledTasks"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/SpoilerApplyExistingTitlesTask.cs",
-      "category": "ScheduledTasks"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ActivityFavoriteMonitor.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ActivityFeedBuilder.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ActivityService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AnalyticsReportingService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoMovieRequestMonitor.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoMovieRequestService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoSeasonRequestMonitor.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoSeasonRequestService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/BrandingAssetStartupFilter.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/CatchUpLogService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/CdnAssetService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientScriptBundle.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/HiddenContentResponseFilter.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/HostCompatibilityService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Identity/RequestIdentityService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ItemStatsService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintenanceModeService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintenanceScheduleService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MdblistService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/CompositeImageCache.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/NativeClientPolicy.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/NativePosterTagStamper.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagComposer.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagDataProvider.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagImageFilter.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagModel.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagResolver.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagReviewRatings.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagSettings.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagSettingsProvider.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagUserCache.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagVariantToken.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagAssets.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagCss.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagImageScaler.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagPlan.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagRenderer.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagText.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagTileCache.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/AgeRatingRules.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/GenreIcons.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/JsText.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/LanguageFlagRules.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/LanguageNames.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/QualityTagRules.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/RatingRules.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/ResolutionData.g.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/RadarrService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ReviewAuthorCache.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ScriptInjectionStartupFilter.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SeerrParentalFilter.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SeerrScanTriggerService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SonarrService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/ImageBlurService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/ImageTagDecoration.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerAutoEnableArmer.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerAutoEnableFilter.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerBlurImageFilter.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerExistingTitlesApplier.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerFieldStripFilter.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerIdentityService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerIdentityTagFilter.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerLibraryAddAutoEnabler.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerNextUnwatchedService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerSeerrPendingPromoter.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerTagDataStripper.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerUserResolver.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StartupService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheMonitor.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCachePendingChanges.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbCompanyTvDiscover.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbResponseCache.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/UsageEventCounterService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/WatchlistMonitor.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/WatchProvidersBatch.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/WhatsNewService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/WikidataAwardsService.cs",
-      "category": "Services"
     }
   ],
   "routes": [
@@ -7151,78 +7151,6 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.cs"
     },
     {
-      "literal": "settings.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/calendar/calendar-page-actions.js"
-    },
-    {
-      "literal": "elsewhere.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/elsewhere/elsewhere.js"
-    },
-    {
-      "literal": "settings.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/elsewhere/reviews.js"
-    },
-    {
-      "literal": "bookmark.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/bookmarks/bookmarks.js"
-    },
-    {
-      "literal": "bookmark.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js"
-    },
-    {
-      "literal": "settings.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js"
-    },
-    {
-      "literal": "settings.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/itemdetails/features-details-media-info.js"
-    },
-    {
-      "literal": "en.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-language.js"
-    },
-    {
-      "literal": "settings.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-language.js"
-    },
-    {
-      "literal": "settings.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-settings.js"
-    },
-    {
-      "literal": "shortcuts.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-shortcut-editor.js"
-    },
-    {
-      "literal": "settings.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel.js"
-    },
-    {
-      "literal": "/JellyfinEnhanced/locales/en.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/translations.js"
-    },
-    {
-      "literal": "bookmark.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/plugin.js"
-    },
-    {
-      "literal": "elsewhere.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/plugin.js"
-    },
-    {
-      "literal": "hidden-content.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/plugin.js"
-    },
-    {
-      "literal": "settings.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/plugin.js"
-    },
-    {
-      "literal": "shortcuts.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/plugin.js"
-    },
-    {
       "literal": "bookmark.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/AnalyticsReportingService.cs"
     },
@@ -7309,6 +7237,78 @@
     {
       "literal": "awards.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/WikidataAwardsService.cs"
+    },
+    {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/calendar/calendar-page-actions.js"
+    },
+    {
+      "literal": "elsewhere.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/elsewhere/elsewhere.js"
+    },
+    {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/elsewhere/reviews.js"
+    },
+    {
+      "literal": "bookmark.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/bookmarks/bookmarks.js"
+    },
+    {
+      "literal": "bookmark.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js"
+    },
+    {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js"
+    },
+    {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/itemdetails/features-details-media-info.js"
+    },
+    {
+      "literal": "en.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-language.js"
+    },
+    {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-language.js"
+    },
+    {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-settings.js"
+    },
+    {
+      "literal": "shortcuts.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-shortcut-editor.js"
+    },
+    {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel.js"
+    },
+    {
+      "literal": "/JellyfinEnhanced/locales/en.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/translations.js"
+    },
+    {
+      "literal": "bookmark.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/plugin.js"
+    },
+    {
+      "literal": "elsewhere.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/plugin.js"
+    },
+    {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/plugin.js"
+    },
+    {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/plugin.js"
+    },
+    {
+      "literal": "shortcuts.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/plugin.js"
     }
   ],
   "scheduled_tasks": [

@@ -38,7 +38,8 @@ def inventory():
               'build_targets': targets,
               'files': [], 'routes': [], 'configuration_properties': [],
               'storage_references': [], 'scheduled_tasks': [], 'locales': []}
-    for path in sorted(PRODUCTION.rglob('*')):
+    # as_posix key: Path ordering is case-insensitive on Windows, so sort by string for identical output everywhere
+    for path in sorted(PRODUCTION.rglob('*'), key=lambda p: p.relative_to(ROOT).as_posix()):
         if not path.is_file() or any(part in ('obj', 'bin') for part in path.relative_to(PRODUCTION).parts):
             continue
         relative = path.relative_to(ROOT).as_posix()
