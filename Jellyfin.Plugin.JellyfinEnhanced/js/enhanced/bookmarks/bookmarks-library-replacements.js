@@ -239,13 +239,9 @@
           episodeNumber: fullItem.Type === 'Episode' ? (fullItem.IndexNumber ?? null) : null
         };
 
-        // Delete old bookmarks BEFORE syncing to prevent race condition with re-render
-        for (const bm of oldGroup.bookmarks) {
-          delete JE.userConfig.bookmark.bookmarks[bm.id];
-        }
-
-        // Sync bookmarks to new item (no offset)
-        const synced = await JE.bookmarks.syncBookmarks(oldGroup.bookmarks, newDetails, 0);
+        // Move the bookmarks to the new item (no offset). The old records are removed
+        // in the same save, before the re-render it triggers, and come back if it fails.
+        const synced = await JE.bookmarks.syncBookmarks(oldGroup.bookmarks, newDetails, 0, { replaceOriginals: true });
 
         JE.toast(JE.t('bookmark_migrated').replace('{count}', synced.length).replace('{name}', fullItem.Name), 4000);
 

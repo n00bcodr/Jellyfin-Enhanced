@@ -146,6 +146,7 @@
 
     // Re-fetch from server and replace local cache. Don't call immediately after a server-direct write from THIS tab — use markScopedHidden().
     async function refresh() {
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         try {
             const userId = ApiClient.getCurrentUserId();
             if (!userId) return false;
@@ -154,6 +155,7 @@
                 url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
                 dataType: 'json'
             });
+            if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
             const camelCased = (typeof JE.toCamelCase === 'function') ? JE.toCamelCase(fresh) : fresh;
             JE.userConfig = JE.userConfig || {};
             JE.userConfig.hiddenContent = camelCased || { items: {}, settings: {} };

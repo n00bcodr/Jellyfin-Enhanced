@@ -13,6 +13,7 @@
     const MediaStatus = JE.seerrStatus.MEDIA;
     const DisplayStatus = JE.seerrStatus.DISPLAY;
     const icons = internal.icons; // requires ui-icons.js to be loaded first
+    const requestHandlers = new WeakMap();
 
     /**
      * Configures the request button based on item status and type.
@@ -22,6 +23,13 @@
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
      */
     function configureRequestButton(button, item, isJellyseerrActive, jellyseerrUserFound) {
+        // Results can refresh the same button with new data or a new user status.
+        // Remove the old closure so one click cannot submit twice or use stale media.
+        const previousHandler = requestHandlers.get(button);
+        if (previousHandler) {
+            button.removeEventListener('click', previousHandler);
+            requestHandlers.delete(button);
+        }
         if (!isJellyseerrActive) {
             button.innerHTML = `<span>${JE.t('jellyseerr_btn_offline')}</span>${icons.cloud_off}`;
             button.disabled = true;
@@ -205,7 +213,7 @@
             button.replaceWith(buttonGroup);
 
             if (!mainButtonDisabled) {
-                mainButton.addEventListener('click', async (e) => {
+                const requestHandler = async (e) => {
                     e.stopPropagation();
                     if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                         ui.showMovieRequestModal(item.id, item.title || item.name, item, false);
@@ -214,16 +222,19 @@
                         mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                         try {
                             await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
+                            if (requestHandlers.get(mainButton) !== requestHandler) return;
                             if (!item.mediaInfo) item.mediaInfo = {};
                             item.mediaInfo.status = 3;
                             mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
                             mainButton.classList.remove('jellyseerr-button-request');
                             mainButton.classList.add('jellyseerr-button-pending');
                         } catch (error) {
+                            if (requestHandlers.get(mainButton) !== requestHandler) return;
                             mainButton.disabled = false;
                             // Quota errors get a themed dialog; restore button to idle.
                             if (ui.isQuotaError && ui.isQuotaError(error)) {
                                 await ui.showQuotaErrorDialog(error, 'movie');
+                                if (requestHandlers.get(mainButton) !== requestHandler) return;
                                 mainButton.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
                                 return;
                             }
@@ -242,7 +253,9 @@
                             mainButton.classList.add('jellyseerr-button-error');
                         }
                     }
-                });
+                };
+                requestHandlers.set(mainButton, requestHandler);
+                mainButton.addEventListener('click', requestHandler);
             }
 
             arrowButton.addEventListener('click', (e) => {
@@ -271,7 +284,7 @@
 
         // Add click handler for request button (for overview button and standard button)
         if (!button.disabled && !button.closest('.jellyseerr-button-group')) {
-            button.addEventListener('click', async (e) => {
+            const requestHandler = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 if (JE.jellyseerrAPI.shouldShowAdvanced()) {
@@ -281,16 +294,19 @@
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
                         await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
+                        if (requestHandlers.get(button) !== requestHandler) return;
                         if (!item.mediaInfo) item.mediaInfo = {};
                         item.mediaInfo.status = 3;
                         button.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
                         button.classList.remove('jellyseerr-button-request');
                         button.classList.add('jellyseerr-button-pending');
                     } catch (error) {
+                        if (requestHandlers.get(button) !== requestHandler) return;
                         button.disabled = false;
                         // Quota errors get a themed dialog; restore button to idle.
                         if (ui.isQuotaError && ui.isQuotaError(error)) {
                             await ui.showQuotaErrorDialog(error, 'movie');
+                            if (requestHandlers.get(button) !== requestHandler) return;
                             button.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
                             return;
                         }
@@ -308,7 +324,9 @@
                         button.classList.add('jellyseerr-button-error');
                     }
                 }
-            });
+            };
+            requestHandlers.set(button, requestHandler);
+            button.addEventListener('click', requestHandler);
         }
     }
     ui.configureRequestButton = configureRequestButton;

@@ -431,14 +431,19 @@
      * @param {Array} newResults - The new array of result items from the API.
      * @param {boolean} isJellyseerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
+     * @param {ParentNode} [container=document] - The refreshed section's container. Only
+     *   request buttons inside it are updated, so a button elsewhere on the page (such as
+     *   a retained item-details overview) is left alone.
      */
-    ui.updateJellyseerrResults = function(newResults, isJellyseerrActive, jellyseerrUserFound) {
-        const existingButtons = document.querySelectorAll('.jellyseerr-request-button[data-tmdb-id]');
+    ui.updateJellyseerrResults = function(newResults, isJellyseerrActive, jellyseerrUserFound, container = document) {
+        const existingButtons = container.querySelectorAll('.jellyseerr-request-button[data-tmdb-id]');
         if (existingButtons.length === 0) return;
 
         existingButtons.forEach(button => {
             const tmdbId = button.dataset.tmdbId;
-            const newItem = newResults.find(item => item.id.toString() === tmdbId);
+            // A movie and a show can share a TMDB id, so the media type must match too.
+            const mediaType = button.dataset.mediaType;
+            const newItem = newResults.find(item => item.id.toString() === tmdbId && item.mediaType === mediaType);
             if (!newItem) return;
 
             const oldItemJSON = button.dataset.searchResultItem;

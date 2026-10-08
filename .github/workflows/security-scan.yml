@@ -55,20 +55,49 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: |
+            9.0.x
+            10.0.x
 
+      # Both build targets: jf12 (net10.0, the default) and jf10 (net9.0). JellyfinTarget is read
+      # from the environment as an MSBuild property. A restore or listing failure fails the step.
       - name: List vulnerable packages
-        run: dotnet list Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj package --vulnerable --include-transitive 2>&1 | tee vulnerable-packages.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in jf12 jf10; do
+            echo "::group::$target"
+            JellyfinTarget=$target dotnet restore Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj
+            JellyfinTarget=$target dotnet list Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj package \
+              --vulnerable --include-transitive --no-restore --format json > "vulnerable-$target.json"
+            cat "vulnerable-$target.json"
+            echo "::endgroup::"
+          done
 
       - name: Check for vulnerabilities
+        shell: bash
         run: |
-          if grep -q "has the following vulnerable packages" vulnerable-packages.txt; then
-            echo "::error::Vulnerable packages found!"
-            cat vulnerable-packages.txt
-            exit 1
-          else
-            echo "No vulnerable packages found."
-          fi
+          python3 - vulnerable-jf12.json vulnerable-jf10.json <<'EOF'
+          import json, sys
+          failed = False
+          for path in sys.argv[1:]:
+              report = json.load(open(path))
+              projects = report.get('projects') or []
+              if not projects:
+                  print(f'::error::{path}: no project was scanned')
+                  failed = True
+              for problem in report.get('problems') or []:
+                  print(f"::error::{path}: {problem.get('text', problem)}")
+                  failed = True
+              for project in projects:
+                  for framework in project.get('frameworks') or []:
+                      for package in (framework.get('topLevelPackages') or []) + (framework.get('transitivePackages') or []):
+                          print(f"::error::{path}: {framework.get('framework')} {package.get('id')} {package.get('resolvedVersion')} has known vulnerabilities")
+                          failed = True
+          if failed:
+              sys.exit(1)
+          print('No vulnerable packages found for jf12 or jf10.')
+          EOF
 
   # SARIF upload for GitHub Security tab
   upload-sarif:

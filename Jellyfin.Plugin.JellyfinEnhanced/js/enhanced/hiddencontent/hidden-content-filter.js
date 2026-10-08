@@ -72,6 +72,7 @@
         if (parentSeriesRequestMap.has(itemId)) {
             return parentSeriesRequestMap.get(itemId);
         }
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const request = (async () => {
             try {
                 const userId = ApiClient.getCurrentUserId();
@@ -80,15 +81,17 @@
                     url: ApiClient.getUrl(`/Users/${userId}/Items/${itemId}`, { Fields: 'SeriesId' }),
                     dataType: 'json'
                 });
-                const seriesId = item?.SeriesId || null;
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return null;
+                const seriesId = normalizeId(item?.SeriesId) || null;
                 parentSeriesCache.set(itemId, seriesId);
                 return seriesId;
             } catch (e) {
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return null;
                 console.warn('🪼 Jellyfin Enhanced: Failed to fetch parent series for', itemId, e);
                 parentSeriesCache.set(itemId, null);
                 return null;
             } finally {
-                parentSeriesRequestMap.delete(itemId);
+                if (!JE.session || JE.session.isCurrent(requestEpoch)) parentSeriesRequestMap.delete(itemId);
             }
         })();
         parentSeriesRequestMap.set(itemId, request);
@@ -196,7 +199,9 @@
         if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) return;
         if (hiddenIdSet.size === 0) return;
 
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         getParentSeriesId(itemId).then((seriesId) => {
+            if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
             if (!seriesId) return;
             if (!card.isConnected) return;
             if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) return;
@@ -224,6 +229,10 @@
         if (!getSettings().enabled || !shouldFilterSurface(getCurrentNativeSurface())) return;
         if (hiddenIdSet.size === 0) return;
 
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const canApply = () => (!JE.session || JE.session.isCurrent(requestEpoch))
+            && getSettings().enabled && shouldFilterSurface(getCurrentNativeSurface());
+
         // Separate cached from uncached
         const cached = [];
         const uncached = [];
@@ -239,6 +248,7 @@
         // Process cached entries immediately
         if (cached.length > 0) {
             requestAnimationFrame(() => {
+                if (!canApply()) return;
                 for (let i = 0; i < cached.length; i++) {
                     const { card, seriesId } = cached[i];
                     if (!card.isConnected || !seriesId) continue;
@@ -268,12 +278,15 @@
                     dataType: 'json'
                 });
 
+                if (!canApply()) return;
                 const itemsById = new Map();
                 const responseItems = result?.Items || [];
                 for (let i = 0; i < responseItems.length; i++) {
                     const item = responseItems[i];
-                    itemsById.set(item.Id, item.SeriesId || null);
-                    parentSeriesCache.set(item.Id, item.SeriesId || null);
+                    const itemId = normalizeId(item.Id);
+                    const seriesId = normalizeId(item.SeriesId) || null;
+                    itemsById.set(itemId, seriesId);
+                    parentSeriesCache.set(itemId, seriesId);
                 }
 
                 // Also cache items that weren't in the response (deleted, etc.)
@@ -285,6 +298,7 @@
 
                 // Batch apply hiding
                 requestAnimationFrame(() => {
+                    if (!canApply()) return;
                     for (let i = 0; i < chunk.length; i++) {
                         const { card, itemId } = chunk[i];
                         if (!card.isConnected) continue;
@@ -297,6 +311,7 @@
                     }
                 });
             } catch (e) {
+                if (!canApply()) return;
                 console.warn('🪼 Jellyfin Enhanced: Batch parent series check failed', e);
                 // Fall back to individual lookups for this chunk
                 for (let i = 0; i < chunk.length; i++) {

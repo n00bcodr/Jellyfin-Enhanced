@@ -69,6 +69,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // needs to flip before the user next browses the title.
         private const int SweepSettleDelayMs = 2000;
 
+        /// <summary>The settle delay before a scheduled sweep runs (tests shorten it).</summary>
+        internal TimeSpan SweepSettleDelay { get; set; } = TimeSpan.FromMilliseconds(SweepSettleDelayMs);
+
+        // Sweeps this instance scheduled and that have not finished yet. StopAsync
+        // cancels the waiting ones and awaits the rest, so no sweep reads or writes
+        // user files after the service has stopped.
+        private readonly ConcurrentDictionary<Task, byte> _activeSweeps = new();
+        private readonly CancellationTokenSource _stopping = new();
+
         // Exposed so the controller's POST/DELETE endpoints can keep the gate
         // accurate without coupling to the hosted-service instance.
         public static void RegisterPending(string pendingKey, Guid userId)
@@ -150,11 +159,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return Task.CompletedTask;
         }
 
-        public Task StopAsync(CancellationToken cancellationToken)
+        public async Task StopAsync(CancellationToken cancellationToken)
         {
             _libraryManager.ItemAdded -= OnItemAdded;
             _libraryManager.ItemUpdated -= OnItemAdded;
-            return Task.CompletedTask;
+            _stopping.Cancel();
+            try
+            {
+                await WaitForSweepsAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // The host gave up waiting; the sweep finishes its current user on its own.
+            }
+        }
+
+        /// <summary>Completes once no sweep scheduled by this instance is waiting or running.</summary>
+        internal async Task WaitForSweepsAsync(CancellationToken cancellationToken = default)
+        {
+            // A finishing sweep can schedule a follow-up, so wait until none is left.
+            while (!_activeSweeps.IsEmpty)
+            {
+                await Task.WhenAll(_activeSweeps.Keys).WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
 
         // Best-effort startup scan — corrupt or missing files are skipped on
@@ -241,18 +268,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // racing the scanner.
         private void ScheduleSweep(string pendingKey, Guid itemId, string itemName, bool isSeries)
         {
+            var stopping = _stopping.Token;
+            if (stopping.IsCancellationRequested) return;
             _sweepRerun[pendingKey] = 0;
             if (!_sweepRunning.TryAdd(pendingKey, 0)) return; // active sweep picks up the rerun flag
 
-            _ = Task.Run(async () =>
+            var sweep = Task.Run(async () =>
             {
                 try
                 {
-                    await Task.Delay(SweepSettleDelayMs).ConfigureAwait(false);
-                    while (_sweepRerun.TryRemove(pendingKey, out _))
+                    await Task.Delay(SweepSettleDelay, stopping).ConfigureAwait(false);
+                    while (!stopping.IsCancellationRequested && _sweepRerun.TryRemove(pendingKey, out _))
                     {
                         SweepPendingUsers(pendingKey, itemId, itemName, isSeries);
                     }
+                }
+                catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+                {
+                    // Stopped while settling; the pending keys stay on disk for the next start.
                 }
                 catch (Exception ex)
                 {
@@ -269,7 +302,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         ScheduleSweep(pendingKey, itemId, itemName, isSeries);
                     }
                 }
-            });
+            }, CancellationToken.None);
+            _activeSweeps.TryAdd(sweep, 0);
+            _ = sweep.ContinueWith(finished => _activeSweeps.TryRemove(finished, out _), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         }
 
         private void SweepPendingUsers(string pendingKey, Guid itemId, string itemName, bool isSeries)

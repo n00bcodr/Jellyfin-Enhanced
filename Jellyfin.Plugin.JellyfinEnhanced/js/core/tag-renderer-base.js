@@ -371,9 +371,17 @@
             state.cacheTtl = (JE.pluginConfig?.TagsCacheTtlDays || 30) * 24 * 60 * 60 * 1000;
             if (!spec.cache) return;
             enforceCacheOwnership();
-            state.cache = state.localStorageEnabled
-                ? (JSON.parse(localStorage.getItem(spec.cache.key) || '{}') || {})
-                : {};
+            state.cache = {};
+            if (state.localStorageEnabled) {
+                try {
+                    const cached = JSON.parse(localStorage.getItem(spec.cache.key) || '{}');
+                    // Persisted data is an item-id dictionary. Corrupt or obsolete
+                    // payloads must not prevent the renderer from registering.
+                    if (cached && typeof cached === 'object' && !Array.isArray(cached)) state.cache = cached;
+                } catch (e) {
+                    console.warn(`${logPrefix} Ignoring unreadable tag cache`, e);
+                }
+            }
             if (spec.cache.hotBucket) {
                 const Hot = (JE._hotCache = JE._hotCache || { ttl: state.cacheTtl });
                 Hot[spec.cache.hotBucket] = Hot[spec.cache.hotBucket] || new Map();
@@ -407,6 +415,11 @@
             if (!spec.cache || !state.localStorageEnabled) return;
             const CACHE_KEY = spec.cache.key;
             const TIMESTAMP_KEY = `${CACHE_KEY}Timestamp`;
+            // The current key can itself start with a legacy stem (language
+            // tags: "…languageTagsCache-v2" vs the old "…languageTagsCache"),
+            // so every current-generation key — including the owner sentinel,
+            // whose loss would wipe the cache on every reload — is kept.
+            const currentKeys = [CACHE_KEY, TIMESTAMP_KEY, `${CACHE_KEY}:identity-owner`];
             // A renderer can accumulate several generations of dead keys
             // (un-namespaced, then namespaced-v1, …), so accept one stem or a
             // list of them — replacing the stem would orphan the older one.
@@ -419,7 +432,7 @@
                 const key = localStorage.key(i);
                 if (key &&
                     legacyStems.some(legacy => key.startsWith(`${legacy}-`) || key === legacy || key === `${legacy}Timestamp`) &&
-                    key !== CACHE_KEY && key !== TIMESTAMP_KEY) {
+                    !currentKeys.includes(key)) {
                     stale.push(key);
                 }
             }

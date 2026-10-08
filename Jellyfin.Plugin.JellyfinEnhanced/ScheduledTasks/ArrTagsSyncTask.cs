@@ -275,7 +275,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 }
 
                 // Update item if modified
-                if (modified)
+                if (modified && !(item.Tags ?? Array.Empty<string>()).SequenceEqual(existingTags, StringComparer.Ordinal))
                 {
                     item.Tags = existingTags.ToArray();
                     await item.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken);

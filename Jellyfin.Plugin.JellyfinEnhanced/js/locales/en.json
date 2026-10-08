@@ -438,6 +438,7 @@
     "toast_bookmark_updated": "{{icon:success}} Bookmark updated",
     "toast_bookmark_deleted": "{{icon:trash}} Bookmark deleted",
     "toast_bookmark_save_failed": "{{icon:error}} Failed to save bookmark",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Jumped to bookmark",
     "bookmark_cleanup_complete": "Cleanup complete: removed {count} orphaned bookmarks",
     "bookmark_cleanup_failed": "Cleanup failed",

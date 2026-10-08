@@ -83,7 +83,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // category off, nothing is counted or written to disk at all.
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !config.AnalyticsEnabled || !config.AnalyticsShareUsageCounts) return;
-            if (!IsValidKey(key)) return;
+            if (!IsValidKey(key) || !IsKnownKey(key)) return;
             _counters.AddOrUpdate(key, 1, (_, v) => v + 1);
             ScheduleDebouncedSave();
         }
@@ -140,7 +140,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 using var stream = File.OpenRead(path);
                 var data = JsonSerializer.Deserialize<UsageCounterDiskFormat>(stream);
-                if (data == null || data.SchemaVersion != CurrentSchemaVersion) return;
+                if (data == null || data.SchemaVersion != CurrentSchemaVersion || data.Counters == null) return;
 
                 if (!string.IsNullOrEmpty(data.PeriodStart)) _periodStart = data.PeriodStart;
 
