@@ -21,6 +21,45 @@
         }
     }
 
+    const MODIFIER_ORDER = ['Meta', 'Ctrl', 'Alt', 'Shift'];
+
+    /**
+     * Rewrites a stored shortcut ("Shift+Ctrl+S", "Ctrl+Shift+S") as its modifier set in the
+     * shortcut editor's order followed by the key, so a binding typed with the modifiers in any
+     * order matches the runtime combo.
+     * @param {*} combo A stored shortcut; anything but a non-empty string is returned unchanged.
+     * @returns {*} The canonical combo.
+     */
+    function canonicalCombo(combo) {
+        if (typeof combo !== 'string' || !combo) return combo;
+        const modifiers = new Set();
+        let rest = combo;
+        let match;
+        // A trailing "+" is the key itself ("Ctrl++"), never a separator.
+        while ((match = /^(Meta|Ctrl|Alt|Shift)\+(?=.)/.exec(rest))) {
+            modifiers.add(match[1]);
+            rest = rest.slice(match[0].length);
+        }
+        const key = /^[a-zA-Z]$/.test(rest) ? rest.toUpperCase() : rest;
+        return MODIFIER_ORDER.filter(name => modifiers.has(name)).map(name => name + '+').join('') + key;
+    }
+
+    // The shortcut editor's conflict check compares bindings the same way.
+    JE.internals = JE.internals || {};
+    JE.internals.canonicalCombo = canonicalCombo;
+
+    /**
+     * The active shortcuts with every combo canonicalised (see canonicalCombo).
+     * @returns {Object<string, *>} Action name to canonical combo.
+     */
+    function canonicalShortcuts() {
+        const canonical = {};
+        for (const [name, combo] of Object.entries(JE.state.activeShortcuts || {})) {
+            canonical[name] = canonicalCombo(combo);
+        }
+        return canonical;
+    }
+
     /**
      * The main key listener for all other shortcuts.
      * @param {KeyboardEvent} e The keyboard event.
@@ -34,7 +73,7 @@
         const combo = JE.keyCombo(e);
 
         const video = document.querySelector('video');
-        const activeShortcuts = JE.state.activeShortcuts;
+        const activeShortcuts = canonicalShortcuts();
 
         // --- Global Shortcuts ---
         if (combo === activeShortcuts.OpenSearch) {

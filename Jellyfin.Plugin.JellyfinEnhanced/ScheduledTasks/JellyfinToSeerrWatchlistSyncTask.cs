@@ -181,13 +181,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     {
                         cancellationToken.ThrowIfCancellationRequested();
 
-                        if (!item.ProviderIds.TryGetValue("Tmdb", out var tmdbIdStr) || string.IsNullOrEmpty(tmdbIdStr))
+                        if (!item.ProviderIds.TryGetValue("Tmdb", out var tmdbIdStr)
+                            || !int.TryParse(tmdbIdStr, out var tmdbId) || tmdbId <= 0)
                         {
                             itemsSkipped++;
                             continue;
                         }
 
-                        var key = $"{mediaType}:{tmdbIdStr}";
+                        var key = $"{mediaType}:{tmdbId}";
 
                         if (seerrWatchlistKeys.Contains(key))
                         {
@@ -197,7 +198,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                         var result = await AddToSeerrWatchlist(
                             httpClient, jellyseerrUrl, jellyseerrUserId, config.JellyseerrApiKey,
-                            int.Parse(tmdbIdStr), mediaType, item.Name ?? "");
+                            tmdbId, mediaType, item.Name ?? "");
 
                         if (result == 1)
                         {

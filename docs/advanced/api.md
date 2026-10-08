@@ -600,7 +600,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 | GET | `jellyseerr/user` | Calling user's Seerr profile |
 | POST | `jellyseerr/request/tv/{tmdbId}/seasons` | Request specific seasons of a show |
 | GET | `jellyseerr/watchlist` | Calling user's Seerr watchlist |
-| POST | `jellyseerr/sync-watchlist` | Trigger a watchlist sync |
+| POST | `jellyseerr/sync-watchlist` | Admin: run the **Sync Watchlist from Seerr to Jellyfin** task's pass now, with the same settings. Uses the first configured Seerr URL whose user list loads, and returns `502` when none does. The response has `success`, `itemsProcessed`, `itemsAdded` and `errors`. Users missing from Seerr aren't imported; the **Import Jellyfin Users to Seerr** task does that |
 | POST | `jellyseerr/import-users` | Admin: import Jellyfin users into Seerr |
 | GET | `jellyseerr/settings/partial-requests` | Whether Seerr allows partial season requests |
 | GET | `jellyseerr/issue`, `jellyseerr/issue/{id}` | List / get Seerr issues |

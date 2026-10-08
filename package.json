@@ -1,0 +1,21 @@
+{
+  "name": "jellyfin-enhanced-regression",
+  "private": true,
+  "version": "1.0.0",
+  "engines": { "node": ">=22.12.0" },
+  "scripts": {
+    "test": "npm run test:frontend",
+    "test:frontend": "node tests/frontend/run.mjs",
+    "test:frontend:coverage": "node tests/frontend/helpers/coverage.mjs",
+    "test:browser": "playwright test --config tests/browser/playwright.config.cjs",
+    "test:visual": "playwright test --config tests/browser/playwright.config.cjs --grep @visual"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2",
+    "jsdom": "26.1.0",
+    "istanbul-lib-instrument": "6.0.3",
+    "istanbul-lib-coverage": "3.2.2",
+    "istanbul-lib-report": "3.0.1",
+    "istanbul-reports": "3.2.0"
+  }
+}

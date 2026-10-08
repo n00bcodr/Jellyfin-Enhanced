@@ -18,12 +18,36 @@
             });
     }
 
+    /**
+     * Today's local calendar date as "YYYY-MM-DD", to compare with TMDB air dates (also
+     * calendar dates). The UTC date would already be tomorrow on a US evening.
+     * @returns {string} The local date.
+     */
     function todayIso() {
-        return new Date().toISOString().slice(0, 10);
+        const now = new Date();
+        const pad = (value) => String(value).padStart(2, '0');
+        return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
     }
 
+    /**
+     * Formats a release or air date in the user's locale. These are calendar dates, not instants:
+     * TMDB sends "YYYY-MM-DD" (air dates) or "YYYY-MM-DDT00:00:00.000Z" (movie release dates) and
+     * episode premieres arrive trimmed to "YYYY-MM-DD". Read as UTC midnight, any of them would show
+     * the previous day west of UTC, so the leading date is formatted as that local calendar day.
+     * @param {string} dateStr The date as received.
+     * @returns {string} The formatted date, or the input unchanged when it is not a valid date.
+     */
     function formatReleaseDate(dateStr) {
-        const d = new Date(dateStr);
+        const parts = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(String(dateStr));
+        let d;
+        if (parts) {
+            const [year, month, day] = [Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])];
+            d = new Date(year, month, day);
+            // Out-of-range parts would otherwise roll over into another date.
+            if (d.getFullYear() !== year || d.getMonth() !== month || d.getDate() !== day) return dateStr;
+        } else {
+            d = new Date(dateStr);
+        }
         if (isNaN(d.getTime())) return dateStr;
         return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
     }
@@ -225,7 +249,13 @@
         chip.style.gap = '0.3em';
         chip.style.whiteSpace = 'nowrap';
         chip.style.margin = '0 1em 0 0 !important';
-        chip.innerHTML = `<span class="je-release-date-icon" style="font-size: inherit;">${info.icon}</span><span>${formatReleaseDate(info.date)}</span>`;
+        const icon = document.createElement('span');
+        icon.className = 'je-release-date-icon';
+        icon.style.fontSize = 'inherit';
+        icon.textContent = info.icon;
+        const date = document.createElement('span');
+        date.textContent = formatReleaseDate(info.date);
+        chip.replaceChildren(icon, date);
     }
 
     // Each date is its own flex sibling (like every other stat chip in this

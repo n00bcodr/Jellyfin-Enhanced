@@ -60,9 +60,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // In-memory copy of the state file. public-config (every page load, anonymous) and the
         // playback reminder now read the state, so it must not cost a file read per request.
         private MaintenanceState? _cached;
+        // Set while maintenance-state.json exists but cannot be read or parsed. That file may be the
+        // only record of whom to restore, so nothing writes over it and enable refuses until an admin
+        // repairs or removes it. Cleared by the next successful load.
+        private volatile string? _stateLoadError;
+        // The failure last reported (message plus file size/time), so a broken file is logged and
+        // backed up once rather than on every status read.
+        private volatile string? _reportedLoadFailure;
+
+        // A restore that keeps failing leaves users locked out, so the schedule tick keeps retrying it,
+        // but with backoff: the first retry runs on the next tick, then the wait doubles from 30 s up
+        // to an hour. Tracked in memory only; a restart retries at once. Each failure streak is logged
+        // at Error once, later attempts at Warning (per-user detail at Debug).
+        private static readonly TimeSpan RestoreRetryBaseDelay = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan RestoreRetryMaxDelay = TimeSpan.FromHours(1);
+        private readonly TimeProvider _timeProvider;
+        // Consecutive restore attempts that left a user unrestored; changed under _gate.
+        private int _restoreFailureStreak;
+        // UTC ticks before which the schedule tick skips the pending-restore retry; 0 = retry now.
+        private long _restoreRetryNotBeforeTicks;
+
+        // Set when a fail-open checkpoint (or the enable journal) could not be written, so the file is
+        // behind the in-memory state. A stale active journal left there would act again after a
+        // restart, so the schedule tick keeps rewriting the in-memory state, with the same backoff as
+        // restores, until a save lands. Every successful save clears it. Changed under _gate.
+        private volatile bool _journalDirty;
+        // Consecutive tick rewrites of a dirty journal that failed; changed under _gate.
+        private int _journalFailureStreak;
+        // UTC ticks before which the schedule tick skips the dirty-journal rewrite; 0 = retry now.
+        private long _journalRetryNotBeforeTicks;
 
         public MaintenanceModeService(IUserManager userManager, ISessionManager sessionManager, IApplicationPaths appPaths, Logger logger)
+            : this(userManager, sessionManager, appPaths, logger, TimeProvider.System)
         {
+        }
+
+        internal MaintenanceModeService(IUserManager userManager, ISessionManager sessionManager, IApplicationPaths appPaths, Logger logger, TimeProvider timeProvider)
+        {
+            _timeProvider = timeProvider;
             _userManager = userManager;
             _sessionManager = sessionManager;
             _logger = logger;
@@ -85,16 +120,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static bool IsExpired(MaintenanceState state)
             => state.IsActive && state.EndsAt.HasValue && DateTime.UtcNow >= state.EndsAt.Value;
 
+        private static bool HasPendingRestores(MaintenanceState state)
+            => state.AccountDisabledUserIds.Count > 0 || state.RemoteDisabledUserIds.Count > 0;
+
         /// <summary>
         /// Same expiry check as <see cref="GetStatus"/>, but awaits the disable so the caller
         /// (the schedule tick) sees the settled state instead of racing the background restore.
         /// </summary>
         public async Task<MaintenanceState> ExpireIfDueAsync()
         {
-            if (IsExpired(LoadState()))
+            if (_journalDirty) await RetryDirtyJournalAsync().ConfigureAwait(false);
+            var current = LoadState();
+            // A window that ran out always ends; a pending restore waits out its retry backoff.
+            var retryDue = _timeProvider.GetUtcNow().UtcTicks >= Interlocked.Read(ref _restoreRetryNotBeforeTicks);
+            if (IsExpired(current) || (!current.IsActive && HasPendingRestores(current) && retryDue))
             {
                 // Re-checked under the gate: an admin may have re-enabled with a new end time meanwhile.
-                await DisableCoreAsync(IsExpired, "Timed window reached its end", false).ConfigureAwait(false);
+                await DisableCoreAsync(state => IsExpired(state) || !state.IsActive, "Timed window reached its end or restoration pending", false).ConfigureAwait(false);
             }
             return LoadState();
         }
@@ -147,6 +189,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             action ??= "disable_accounts";
 
             var currentState = LoadState();
+            var loadError = _stateLoadError;
+            if (loadError != null)
+                throw new InvalidOperationException($"Maintenance state could not be loaded ({loadError}); repair or remove maintenance-state.json before enabling maintenance.");
+            if (!currentState.IsActive && HasPendingRestores(currentState))
+            {
+                await RestoreUsersAsync(currentState, failOpen: false).ConfigureAwait(false);
+                LogCarriedRestores(currentState);
+            }
             if (currentState.IsActive)
             {
                 bool sameAction = currentState.Action == action;
@@ -194,7 +244,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Undo whatever this instance previously applied, then fall through to re-apply
                 // fresh against the new action/target below.
                 _logger.Info("[Maintenance] Action/targets changed while active - reconciling.");
-                await RestoreUsersAsync(currentState).ConfigureAwait(false);
+                // Until restoration completes this is a pending transition, not
+                // a fully applied active window. A retry of the old selection
+                // must reapply it rather than take the same-target shortcut.
+                currentState.IsActive = false;
+                SaveState(currentState);
+                await RestoreUsersAsync(currentState, failOpen: false).ConfigureAwait(false);
+                LogCarriedRestores(currentState);
             }
 
             bool doAccounts = action == "disable_accounts" || action == "both";
@@ -219,44 +275,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 targetUsers = allNonAdmin.Where(u => idSet.Contains(u.Id));
             }
 
-            var accountDisabled = new List<string>();
-            var remoteDisabled  = new List<string>();
+            // The journal is the still-inactive state. Any restores carried over from an earlier window
+            // stay on it, and each user disabled below is added and checkpointed before the next user is
+            // touched, so a failure or crash part-way leaves an inactive state listing everyone to restore.
+            var accountDisabled = currentState.AccountDisabledUserIds;
+            var remoteDisabled  = currentState.RemoteDisabledUserIds;
+
+            // Refuse policy mutations if the restoration journal is already
+            // unwritable. Host policy commits and this file cannot share a
+            // transaction, but an existing filesystem failure is detectable.
+            SaveState(currentState);
 
             foreach (var user in targetUsers)
             {
+                bool accountChanged = false;
+                bool remoteChanged = false;
                 try
                 {
                     var dto = _userManager.GetUserDto(user, string.Empty);
                     if (dto.Policy == null) continue;
 
-                    bool changed = false;
-
                     if (doAccounts && !dto.Policy.IsDisabled)
                     {
                         dto.Policy.IsDisabled = true;
-                        accountDisabled.Add(user.Id.ToString());
-                        changed = true;
+                        accountChanged = true;
                     }
 
                     if (doRemote && dto.Policy.EnableRemoteAccess)
                     {
                         dto.Policy.EnableRemoteAccess = false;
-                        remoteDisabled.Add(user.Id.ToString());
-                        changed = true;
+                        remoteChanged = true;
                     }
 
-                    if (changed)
+                    if (accountChanged || remoteChanged)
                     {
                         await _userManager.UpdatePolicyAsync(user.Id, dto.Policy).ConfigureAwait(false);
-                        _logger.Info($"[Maintenance] Updated user '{user.Username}'" +
-                            $"{(doAccounts && accountDisabled.Contains(user.Id.ToString()) ? " (account disabled)" : "")}" +
-                            $"{(doRemote  && remoteDisabled.Contains(user.Id.ToString())  ? " (remote disabled)"  : "")}");
                     }
                 }
                 catch (Exception ex)
                 {
                     _logger.Error($"[Maintenance] Failed to update user '{user.Username}': {ex.Message}");
+                    continue;
                 }
+
+                if (!accountChanged && !remoteChanged) continue;
+                // Only restore changes the policy store actually accepted.
+                // A failed update must not grant access on a later disable.
+                var id = user.Id.ToString();
+                if (accountChanged && !accountDisabled.Contains(id)) accountDisabled.Add(id);
+                if (remoteChanged && !remoteDisabled.Contains(id)) remoteDisabled.Add(id);
+                // A journal write failure stops here: nobody else is locked out without a record, and
+                // the in-memory journal still lists this user so the next tick or disable restores them.
+                SaveJournal(currentState);
+                _logger.Info($"[Maintenance] Updated user '{user.Username}'" +
+                    $"{(accountChanged ? " (account disabled)" : "")}" +
+                    $"{(remoteChanged ? " (remote disabled)" : "")}");
             }
 
             var newState = new MaintenanceState
@@ -314,16 +387,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var state = LoadState();
                 if (!state.IsActive)
                 {
+                    if (HasPendingRestores(state))
+                        await RestoreUsersAsync(state, failOpen: true).ConfigureAwait(false);
                     _logger.Info("[Maintenance] Already inactive - skipping disable.");
                     return;
                 }
                 if (!shouldDisable(state)) return;
                 if (reason != null) _logger.Info($"[Maintenance] {reason} - disabling.");
-                SaveState(new MaintenanceState
-                {
-                    IsActive = false,
-                    SkippedScheduledWindowEnd = explicitEnd && state.Source == "schedule" ? state.EndsAt : null
-                });
+                // Persist restoration intent before touching policies. Failed users
+                // remain on this inactive state so the next tick/restart retries.
+                // An unwritable state file must not keep users locked out: the
+                // pending list is then kept in memory and restoration goes ahead.
+                state.IsActive = false;
+                state.SkippedScheduledWindowEnd = explicitEnd && state.Source == "schedule" ? state.EndsAt : null;
+                Checkpoint(state, failOpen: true);
 
                 // A timed manual window that ran out must also clear the admin toggle, or the config
                 // page would still show it checked and the next save would re-enable it. Cleared before
@@ -333,7 +410,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     ClearManualConfigFlag();
                 }
 
-                await RestoreUsersAsync(state).ConfigureAwait(false);
+                await RestoreUsersAsync(state, failOpen: true).ConfigureAwait(false);
                 _logger.Info($"[Maintenance Mode] Disabled (was {state.Source}).");
             }
             finally
@@ -481,38 +558,150 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// (reconciling a changed Action/target selection while still active) - callers own
         /// updating IsActive/persisting the resulting state themselves.
         /// </summary>
-        private async Task RestoreUsersAsync(MaintenanceState state)
+        /// <param name="failOpen">
+        /// True on the disable/expiry path: a journal write failure is logged and restoration carries
+        /// on with the pending list kept in memory. False on the enable path, where it aborts the
+        /// transition before a new window can be applied.
+        /// </param>
+        private async Task RestoreUsersAsync(MaintenanceState state, bool failOpen)
         {
             var allIds = state.AccountDisabledUserIds
                 .Union(state.RemoteDisabledUserIds)
                 .Distinct()
                 .ToList();
+            var failed = 0;
 
             var accountSet = new HashSet<string>(state.AccountDisabledUserIds);
             var remoteSet  = new HashSet<string>(state.RemoteDisabledUserIds);
 
             foreach (var idStr in allIds)
             {
-                if (!Guid.TryParse(idStr, out var userId)) continue;
+                if (!Guid.TryParse(idStr, out var userId))
+                {
+                    state.AccountDisabledUserIds.Remove(idStr);
+                    state.RemoteDisabledUserIds.Remove(idStr);
+                    Checkpoint(state, failOpen);
+                    continue;
+                }
                 try
                 {
+                    // A deleted user or one without a policy has nothing left to restore;
+                    // dropping the entry keeps it from staying pending forever.
                     var user = _userManager.GetUserById(userId);
-                    if (user == null) continue;
+                    if (user == null)
+                    {
+                        _logger.Warning($"[Maintenance] User {idStr} no longer exists - dropping it from the restore list.");
+                    }
+                    else
+                    {
+                        var dto = _userManager.GetUserDto(user, string.Empty);
+                        if (dto.Policy == null)
+                        {
+                            _logger.Warning($"[Maintenance] User '{user.Username}' has no policy - dropping it from the restore list.");
+                        }
+                        else
+                        {
+                            if (accountSet.Contains(idStr)) dto.Policy.IsDisabled = false;
+                            if (remoteSet.Contains(idStr))  dto.Policy.EnableRemoteAccess = true;
 
-                    var dto = _userManager.GetUserDto(user, string.Empty);
-                    if (dto.Policy == null) continue;
-
-                    if (accountSet.Contains(idStr)) dto.Policy.IsDisabled = false;
-                    if (remoteSet.Contains(idStr))  dto.Policy.EnableRemoteAccess = true;
-
-                    await _userManager.UpdatePolicyAsync(userId, dto.Policy).ConfigureAwait(false);
-                    _logger.Info($"[Maintenance] Restored user '{user.Username}'");
+                            await _userManager.UpdatePolicyAsync(userId, dto.Policy).ConfigureAwait(false);
+                            _logger.Info($"[Maintenance] Restored user '{user.Username}'");
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error($"[Maintenance] Failed to restore user {idStr}: {ex.Message}");
+                    failed++;
+                    var message = $"[Maintenance] Failed to restore user {idStr}: {ex.Message}";
+                    if (_restoreFailureStreak == 0) _logger.Error(message);
+                    else _logger.Debug(message);
+                    continue;
                 }
+                // On the enable path persistence failures abort the transition rather
+                // than being swallowed as policy failures.
+                state.AccountDisabledUserIds.Remove(idStr);
+                state.RemoteDisabledUserIds.Remove(idStr);
+                Checkpoint(state, failOpen);
             }
+
+            RecordRestoreOutcome(failed);
+        }
+
+        /// <summary>
+        /// Updates the restore failure streak and the next automatic retry time after a restore pass.
+        /// A clean pass resets both; a failing one doubles the wait (none for the first retry, then
+        /// 30 s up to an hour) and, after the first failure of the streak, logs one Warning.
+        /// </summary>
+        /// <param name="failed">Users this pass could not restore.</param>
+        private void RecordRestoreOutcome(int failed)
+        {
+            if (failed == 0)
+            {
+                _restoreFailureStreak = 0;
+                Interlocked.Exchange(ref _restoreRetryNotBeforeTicks, 0);
+                return;
+            }
+
+            _restoreFailureStreak++;
+            var delay = TimeSpan.Zero;
+            if (_restoreFailureStreak > 1)
+            {
+                delay = RetryDelay(_restoreFailureStreak - 2);
+                _logger.Warning($"[Maintenance] {failed} user(s) still could not be restored (attempt {_restoreFailureStreak}); " +
+                    $"retrying in {delay.TotalMinutes.ToString("0.#", CultureInfo.InvariantCulture)} min.");
+            }
+
+            Interlocked.Exchange(ref _restoreRetryNotBeforeTicks, (_timeProvider.GetUtcNow() + delay).UtcTicks);
+        }
+
+        /// <summary>The retry wait after <paramref name="doublings"/> doublings of 30 s, capped at an hour.</summary>
+        private static TimeSpan RetryDelay(int doublings)
+            => TimeSpan.FromTicks(Math.Min(RestoreRetryBaseDelay.Ticks << Math.Min(doublings, 20), RestoreRetryMaxDelay.Ticks));
+
+        /// <summary>
+        /// Rewrites the in-memory state after a fail-open checkpoint could not save it, so a stale
+        /// journal on disk cannot re-disable or re-restore users after a restart. The first rewrite
+        /// runs on the next tick, then the wait doubles from 30 s up to an hour. The original write
+        /// failure was already logged at Error, so each failed rewrite logs one Warning.
+        /// </summary>
+        private async Task RetryDirtyJournalAsync()
+        {
+            if (_timeProvider.GetUtcNow().UtcTicks < Interlocked.Read(ref _journalRetryNotBeforeTicks)) return;
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var cached = _cached;
+                if (!_journalDirty || cached == null) return;
+                try
+                {
+                    WriteState(cached);
+                }
+                catch (Exception ex)
+                {
+                    _journalFailureStreak++;
+                    var delay = RetryDelay(_journalFailureStreak - 1);
+                    Interlocked.Exchange(ref _journalRetryNotBeforeTicks, (_timeProvider.GetUtcNow() + delay).UtcTicks);
+                    _logger.Warning($"[Maintenance] The maintenance state still could not be saved (attempt {_journalFailureStreak}): {ex.Message}; " +
+                        $"retrying in {delay.TotalMinutes.ToString("0.#", CultureInfo.InvariantCulture)} min.");
+                    return;
+                }
+                _logger.Info("[Maintenance] Saved the maintenance state that a failed write had left only in memory.");
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        /// <summary>
+        /// Restores that still failed stay on the journal and are carried into the window being
+        /// opened, so they are retried when it ends instead of blocking every future window.
+        /// </summary>
+        private void LogCarriedRestores(MaintenanceState state)
+        {
+            if (!HasPendingRestores(state)) return;
+            _logger.Warning($"[Maintenance] {state.AccountDisabledUserIds.Union(state.RemoteDisabledUserIds).Count()} user(s) could not be restored; " +
+                "they stay on the restore list and are retried when the new window ends.");
         }
 
         /// <summary>Order-independent comparison; null/empty both mean "all non-admin users".</summary>
@@ -526,34 +715,179 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private MaintenanceState LoadState()
         {
             var cached = _cached;
-            if (cached != null) return cached;
-            try
+            if (cached != null) return CopyState(cached);
+            // Only a missing file means "no maintenance state". An unreadable or corrupt one reads as
+            // inactive but is not cached, so the next read retries, and nothing may overwrite it.
+            if (File.Exists(_stateFilePath))
             {
-                if (File.Exists(_stateFilePath))
+                string json;
+                try
                 {
-                    var json = File.ReadAllText(_stateFilePath);
+                    json = File.ReadAllText(_stateFilePath);
+                }
+                catch (Exception ex)
+                {
+                    ReportLoadFailure($"could not read maintenance-state.json: {ex.Message}", backup: false);
+                    return new MaintenanceState();
+                }
+
+                string? parseError = null;
+                try
+                {
                     cached = JsonConvert.DeserializeObject<MaintenanceState>(json);
                 }
+                catch (Exception ex)
+                {
+                    parseError = ex.Message;
+                }
+
+                if (cached == null)
+                {
+                    ReportLoadFailure($"maintenance-state.json is corrupt ({parseError ?? "empty or null"})", backup: true);
+                    return new MaintenanceState();
+                }
+            }
+            _stateLoadError = null;
+            _reportedLoadFailure = null;
+            cached ??= new MaintenanceState();
+            cached.AccountDisabledUserIds = (cached.AccountDisabledUserIds ?? new()).Distinct().ToList();
+            cached.RemoteDisabledUserIds = (cached.RemoteDisabledUserIds ?? new()).Distinct().ToList();
+            _cached = cached;
+            return CopyState(cached);
+        }
+
+        /// <summary>
+        /// Records why the state file could not be loaded (enable refuses while it is set). A given
+        /// failure on a given file version is logged, and a corrupt file backed up, only once.
+        /// </summary>
+        private void ReportLoadFailure(string message, bool backup)
+        {
+            _stateLoadError = message;
+            var key = message;
+            try
+            {
+                var info = new FileInfo(_stateFilePath);
+                key += "|" + info.Length.ToString(CultureInfo.InvariantCulture) + "|" + info.LastWriteTimeUtc.Ticks.ToString(CultureInfo.InvariantCulture);
+            }
+            catch (Exception)
+            {
+                // The message alone still deduplicates.
+            }
+
+            if (key == _reportedLoadFailure) return;
+            _reportedLoadFailure = key;
+            _logger.Error($"[Maintenance] Failed to load state: {message}. Maintenance cannot be enabled and the file will not be " +
+                "overwritten until it is repaired or removed; users it lists as disabled by maintenance are not restored automatically.");
+            if (backup) BackupCorruptStateFile();
+        }
+
+        /// <summary>Copies a corrupt state file aside for recovery, like the reviews store does. Never throws.</summary>
+        private void BackupCorruptStateFile()
+        {
+            try
+            {
+                var backupPath = _stateFilePath + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+                if (!File.Exists(backupPath))
+                    File.Copy(_stateFilePath, backupPath);
+                _logger.Warning($"[Maintenance] Corrupt maintenance-state.json backed up to {backupPath}");
             }
             catch (Exception ex)
             {
-                _logger.Error($"[Maintenance] Failed to load state: {ex.Message}");
+                _logger.Error($"[Maintenance] Failed to back up corrupt maintenance-state.json: {ex.Message}");
             }
-            cached ??= new MaintenanceState();
-            _cached = cached;
-            return cached;
+        }
+
+        // Callers stage mutations privately; a failed disk checkpoint must not
+        // silently change the authoritative cached state.
+        private static MaintenanceState CopyState(MaintenanceState state) => new()
+        {
+            IsActive = state.IsActive, Message = state.Message, NotificationMessage = state.NotificationMessage,
+            Action = state.Action, Source = state.Source, StartedAt = state.StartedAt, EndsAt = state.EndsAt,
+            RequestedDurationMinutes = state.RequestedDurationMinutes,
+            AccountDisabledUserIds = new(state.AccountDisabledUserIds),
+            RemoteDisabledUserIds = new(state.RemoteDisabledUserIds),
+            RequestedAffectedUserIds = state.RequestedAffectedUserIds == null ? null : new(state.RequestedAffectedUserIds),
+            SkippedScheduledWindowEnd = state.SkippedScheduledWindowEnd
+        };
+
+        /// <summary>
+        /// Saves a restore-path checkpoint. A write failure is already logged by <see cref="SaveState"/>.
+        /// The restore it records has happened either way, so the in-memory state takes the change and
+        /// the schedule tick rewrites the file (a stale entry would restore that user again later, even
+        /// after an admin disabled them by hand). With <paramref name="failOpen"/> restoration carries
+        /// on; otherwise the failure propagates and aborts the enable-path transition.
+        /// </summary>
+        private void Checkpoint(MaintenanceState state, bool failOpen)
+        {
+            try
+            {
+                SaveState(state);
+            }
+            catch (Exception)
+            {
+                _cached = CopyState(state);
+                _journalDirty = true;
+                if (!failOpen) throw;
+            }
+        }
+
+        /// <summary>
+        /// Saves the enable-path journal after a user was disabled. On failure the in-memory state
+        /// still records that user for restoration before the error propagates.
+        /// </summary>
+        private void SaveJournal(MaintenanceState state)
+        {
+            try
+            {
+                SaveState(state);
+            }
+            catch (Exception)
+            {
+                _cached = CopyState(state);
+                _journalDirty = true;
+                throw;
+            }
         }
 
         private void SaveState(MaintenanceState state)
         {
-            _cached = state;
             try
             {
-                File.WriteAllText(_stateFilePath, JsonConvert.SerializeObject(state, Formatting.Indented));
+                WriteState(state);
             }
             catch (Exception ex)
             {
                 _logger.Error($"[Maintenance] Failed to save state: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Atomically replaces the state file and the cache with <paramref name="state"/>, and ends any
+        /// dirty-journal retry. Throws without logging; <see cref="SaveState"/> logs for its callers.
+        /// </summary>
+        private void WriteState(MaintenanceState state)
+        {
+            var loadError = _stateLoadError;
+            if (loadError != null)
+            {
+                // Writing now would erase the only record of whom to restore.
+                throw new InvalidOperationException($"Maintenance state could not be loaded ({loadError}); refusing to overwrite it.");
+            }
+
+            var temporaryPath = _stateFilePath + ".tmp." + Guid.NewGuid().ToString("N");
+            try
+            {
+                File.WriteAllText(temporaryPath, JsonConvert.SerializeObject(state, Formatting.Indented));
+                File.Move(temporaryPath, _stateFilePath, overwrite: true);
+                _cached = CopyState(state);
+                _journalDirty = false;
+                _journalFailureStreak = 0;
+                Interlocked.Exchange(ref _journalRetryNotBeforeTicks, 0);
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
             }
         }
     }

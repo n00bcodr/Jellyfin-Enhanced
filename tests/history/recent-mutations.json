@@ -1,0 +1,66 @@
+[
+  {
+    "name": "history-659-audio-stream-order",
+    "layer": "frontend",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js",
+    "before": "    function getChannelTag(audioStreams) {\n        if (!Array.isArray(audioStreams) || audioStreams.length === 0) return null;\n\n        const rank = { '7.1': 3, '5.1': 2, '2.0': 1 };\n        let maxChannels = 0;\n        let detectedLayoutTag = null;\n\n        for (const stream of audioStreams) {\n            const channels = stream.Channels || 0;\n            if (channels > maxChannels) {\n                maxChannels = channels;\n            }\n\n            const layoutSignals = `${stream.ChannelLayout || ''} ${stream.DisplayTitle || ''}`.toLowerCase();\n            let tag = null;\n            if (/\\b7[. ]?1\\b/.test(layoutSignals)) {\n                tag = '7.1';\n            } else if (/\\b5[. ]?1\\b/.test(layoutSignals)) {\n                tag = '5.1';\n            } else if (/\\bstereo\\b|\\b2[. ]?0\\b/.test(layoutSignals)) {\n                tag = '2.0';\n            }\n\n            if (tag && (!detectedLayoutTag || rank[tag] > rank[detectedLayoutTag])) {\n                detectedLayoutTag = tag;\n            }\n        }\n\n        if (detectedLayoutTag) {\n            return detectedLayoutTag;\n        }\n\n        if (maxChannels >= 8) return '7.1';\n        if (maxChannels >= 6) return '5.1';\n        if (maxChannels >= 2) return '2.0';\n\n        return null;\n    }\n",
+    "after": "    function getChannelTag(audioStreams) {\n        if (!Array.isArray(audioStreams) || audioStreams.length === 0) return null;\n\n        let maxChannels = 0;\n        let detectedLayoutTag = null;\n\n        for (const stream of audioStreams) {\n            const channels = stream.Channels || 0;\n            if (channels > maxChannels) {\n                maxChannels = channels;\n            }\n\n            const layoutSignals = `${stream.ChannelLayout || ''} ${stream.DisplayTitle || ''}`.toLowerCase();\n            if (!detectedLayoutTag) {\n                if (/\\b7[. ]?1\\b/.test(layoutSignals)) {\n                    detectedLayoutTag = '7.1';\n                } else if (/\\b5[. ]?1\\b/.test(layoutSignals)) {\n                    detectedLayoutTag = '5.1';\n                } else if (/\\bstereo\\b|\\b2[. ]?0\\b/.test(layoutSignals)) {\n                    detectedLayoutTag = '2.0';\n                }\n            }\n        }\n\n        if (detectedLayoutTag) {\n            return detectedLayoutTag;\n        }\n\n        if (maxChannels >= 8) return '7.1';\n        if (maxChannels >= 6) return '5.1';\n        if (maxChannels >= 2) return '2.0';\n\n        return null;\n    }\n",
+    "test": "history issue 659 stereo first cannot hide richer audio badges",
+    "test_file": "tests/frontend/regressions/history-recent-regressions.test.mjs",
+    "assertion": "ERR_ASSERTION",
+    "issue": 659,
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/659",
+    "evidence": "Historical function restored from 4fc376fb parent, indentation adjusted",
+    "sources": [
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/659"
+    ]
+  },
+  {
+    "name": "history-658-pending-approval",
+    "layer": "frontend",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/requests/requests-page-render-cards.js",
+    "before": "state.canApproveRequests && item.requestStatus === 1 && item.id",
+    "after": "state.canApproveRequests && item.mediaStatus === \"Pending\" && item.id",
+    "test": "history PR 658 pending season remains approvable on an available series",
+    "test_file": "tests/frontend/regressions/history-recent-regressions.test.mjs",
+    "assertion": "ERR_ASSERTION",
+    "pr": 658,
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/658",
+    "evidence": "Exact predicate reversal from d76a5847, relocated split file",
+    "sources": [
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/658"
+    ]
+  },
+  {
+    "name": "history-658-repeated-dispatch",
+    "layer": "frontend",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/requests/requests-page-render.js",
+    "before": "if (!container._jeRequestsActionsBound) {",
+    "after": "if (true) {",
+    "test": "history PR 658 rerendering requests dispatches one approval or navigation per click",
+    "test_file": "tests/frontend/regressions/history-recent-regressions.test.mjs",
+    "assertion": "ERR_ASSERTION",
+    "pr": 658,
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/658",
+    "evidence": "Faithful unguarded binding fault from d76a5847 parent, guard replaced rather than whole hunk",
+    "sources": [
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/658"
+    ]
+  },
+  {
+    "name": "history-774-bookmark-episode",
+    "layer": "frontend",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/bookmarks/bookmarks.js",
+    "before": "      if (isEpisode && bookmark.episodeNumber != null) {\n        const bookmarkIsSameEpisode = bookmark.episodeNumber === episodeNumber\n          && (bookmark.seasonNumber ?? null) === (seasonNumber ?? null);\n        if (!bookmarkIsSameEpisode) continue;\n      }\n",
+    "after": "",
+    "test": "episode provider fallback excludes other episodes and seasons but retains legacy records",
+    "test_file": "tests/frontend/features/features-bookmarks.test.mjs",
+    "assertion": "ERR_ASSERTION",
+    "issue": 774,
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/774",
+    "evidence": "Exact removal of filtering hunk introduced by 9acc883b",
+    "sources": [
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/774"
+    ]
+  }
+]

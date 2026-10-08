@@ -9,12 +9,17 @@
   JE.initializePauseScreen = function() {
     // Only run if the feature is enabled in the user's settings
     if (!JE.currentSettings.pauseScreenEnabled) {
+        JE.pauseScreenInstance?.destroy();
         console.log('🪼 Jellyfin Enhanced: Custom Pause Screen is disabled.');
         return;
     }
+      if (JE.pauseScreenInstance?.overlay?.isConnected) return;
+      JE.pauseScreenInstance?.destroy();
       class JellyfinPauseScreen {
         constructor() {
           // State
+          this.generation = 0;
+          this.destroyed = false;
           this.currentVideo = null;
           this.currentItemId = null;
           this.userId = null;
@@ -66,6 +71,8 @@
           // re-read is deferred a tick because the reset fires before the host
           // finishes writing the new credentials to localStorage.
           JE.session?.onUserChange('pause-screen', () => {
+            if (this.destroyed) return;
+            this.clearState();
             for (const url of this.imgBlobCache.values()) URL.revokeObjectURL(url);
             this.imgBlobCache.clear();
             this.imgProbeCache.clear();
@@ -73,6 +80,7 @@
             this.userId = null;
             this.token = null;
             setTimeout(() => {
+              if (this.destroyed) return;
               const fresh = this.getCredentials();
               this.userId = fresh?.userId || null;
               this.token = fresh?.token || null;
@@ -477,7 +485,7 @@
 
         setupKeyboardAccessibility() {
           // Space/Enter resumes when overlay visible
-          document.addEventListener('keydown', (e) => {
+          this.keyboardListener = (e) => {
             if (this.overlay.getAttribute('aria-hidden') === 'false') {
               if (e.code === 'Space' || e.code === 'Enter') {
                 e.preventDefault();
@@ -496,7 +504,8 @@
                 }
               }
             }
-          }, { capture: true });
+          };
+          document.addEventListener('keydown', this.keyboardListener, { capture: true });
         }
 
         setupVideoObserver() {
@@ -709,6 +718,7 @@
         }
 
         async fetchItemInfo(itemId) {
+            const generation = ++this.generation;
             this.clearDisplayData();
             this.fetchAbort?.abort();
             this.fetchAbort = new AbortController();
@@ -720,11 +730,13 @@
                     headers: { "Authorization": 'MediaBrowser Token="' + this.token + '"', "X-Emby-Token": this.token, "Accept": "application/json" },
                     signal: this.fetchAbort.signal
                 });
+                if (this.destroyed || generation !== this.generation) return;
                 record = { item: itemResp, domain: ApiClient.serverAddress() };
                 this.itemCache.set(itemId, record);
                 }
                 await this.displayItemInfo(record.item, record.domain, itemId);
             } catch (err) {
+                if (this.destroyed || generation !== this.generation) return;
                 if (err.name !== 'AbortError') {
                 console.error("🪼 Jellyfin Enhanced: Error fetching item info:", err);
                 this.overlayPlot.textContent = JE.t('pausescreen_fetch_error');
@@ -746,15 +758,22 @@
         }
 
         async displayItemInfo(item, domain, itemId) {
+          const generation = this.generation;
           // Details
           const year = item.ProductionYear || "";
           const rating = item.OfficialRating || "";
           const runtime = this.formatRuntime(item.RunTimeTicks);
-          this.overlayDetails.innerHTML = [
-            year && `<span>${year}</span>`,
-            rating && `<span class="mediaInfoOfficialRating" rating="${rating}">${rating}</span>`,
-            runtime && `<span>${runtime}</span>`
-          ].filter(Boolean).join('');
+          this.overlayDetails.replaceChildren();
+          for (const [value, isRating] of [[year, false], [rating, true], [runtime, false]]) {
+            if (!value) continue;
+            const span = document.createElement('span');
+            span.textContent = String(value);
+            if (isRating) {
+              span.className = 'mediaInfoOfficialRating';
+              span.setAttribute('rating', String(value));
+            }
+            this.overlayDetails.appendChild(span);
+          }
 
           this.overlayPlot.textContent = item.Overview || JE.t('pausescreen_no_description');
 
@@ -769,6 +788,7 @@
             this.firstAvailableBlobURL(backdropUrls)
           ]);
 
+          if (this.destroyed || generation !== this.generation) return;
           if (logoURL) this.overlayLogo.src = logoURL;
           if (discURL) this.overlayDisc.src = discURL;
           if (backdropURL) this.overlayBackdrop.style.backgroundImage = `url("${backdropURL}")`;
@@ -830,9 +850,11 @@
 
         // ------- Image helpers (blob cache) -------
         async firstAvailableBlobURL(urls) {
+          const generation = this.generation;
           for (const url of urls) {
             if (!url) continue;
             const ok = await this.probeImage(url);
+            if (this.destroyed || generation !== this.generation) return null;
             if (!ok) continue;
             const blobURL = await this.toBlobURL(url);
             if (blobURL) return blobURL;
@@ -840,6 +862,7 @@
           return null;
         }
         async probeImage(url, timeoutMs = 2500) {
+          const generation = this.generation;
           if (this.imgProbeCache.has(url)) return this.imgProbeCache.get(url);
           try {
             const ctl = new AbortController();
@@ -850,15 +873,18 @@
               signal: ctl.signal
             });
             clearTimeout(t);
+            if (this.destroyed || generation !== this.generation) return false;
             const ok = res.ok;
             this.imgProbeCache.set(url, ok);
             return ok;
           } catch {
+            if (this.destroyed || generation !== this.generation) return false;
             this.imgProbeCache.set(url, false);
             return false;
           }
         }
         async toBlobURL(url, timeoutMs = 5000) {
+          const generation = this.generation;
           if (this.imgBlobCache.has(url)) return this.imgBlobCache.get(url);
           try {
             const ctl = new AbortController();
@@ -870,6 +896,7 @@
             clearTimeout(t);
             if (!res.ok) return null;
             const blob = await res.blob();
+            if (this.destroyed || generation !== this.generation) return null;
             const obj = URL.createObjectURL(blob);
             this.imgBlobCache.set(url, obj);
             return obj;
@@ -905,6 +932,7 @@
         }
 
         clearState() {
+          this.generation++;
           this.hideOverlay();
           this.clearDisplayData();
 
@@ -921,7 +949,12 @@
         }
 
         destroy() {
-          this.clearState();
+          this.destroyed = true;
+          if (this.keyboardListener) {
+            document.removeEventListener('keydown', this.keyboardListener, { capture: true });
+            this.keyboardListener = null;
+          }
+          if (this.overlay) this.clearState();
           if (this.observer) { this.observer.unsubscribe(); this.observer = null; }
 
           // Clean up interaction listeners

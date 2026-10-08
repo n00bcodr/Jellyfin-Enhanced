@@ -118,16 +118,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
         /// <summary>
         /// Variant canonicalization: language+variant aliases (zh-hakka -> hak, art-lojban -> jbo),
-        /// then the language-independent ones (heploc -> alalc97, lojban dropped; baku1926 becomes the
-        /// Baku script only when it is the tag's sole subtag).
+        /// then the language-independent ones (heploc -> alalc97, lojban dropped, aaland fills an empty
+        /// region with AX). A script variant (baku1926, colb1945, luna1918, petr1708) becomes that script
+        /// only when no script or region is present after alias expansion and it sorts first among the
+        /// remaining variants; ICU then drops the whole variant sequence. Otherwise it stays a variant:
+        /// "az-baku1926-fonipa" is "Azerbaijani (Baku)", but "az-baku1926-1994" is
+        /// "Azerbaijani (1994_BAKU1926)" and "az-baku1926-heploc" is "Azerbaijani (ALALC97_BAKU1926)".
         /// </summary>
         private static List<string>? ApplyVariantAliases(string originalLanguage, List<string> variants, ref string language, ref string? script, ref string? region)
         {
-            var soleSubtag = variants.Count == 1 && script is null && region is null;
             var result = new List<string>(variants.Count);
             foreach (var variant in variants)
             {
-                if (VariantAliases.TryGetValue(originalLanguage + "-" + variant, out var pairAlias))
+                // Display names never apply a language+variant alias to a script variant (sh-petr1708 stays
+                // "Serbian (Latin, PETR1708)"); those pairs only exist in getCanonicalLocales.
+                if (!IsScriptVariant(variant) && VariantAliases.TryGetValue(originalLanguage + "-" + variant, out var pairAlias))
                 {
                     // Intl writes a kept posix variant as the -u-va-posix extension (prs-posix -> fa-AF-u-va-posix).
                     if (EndsWithAsciiIgnoreCase(pairAlias, PosixExtension))
@@ -141,14 +146,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                     if (aliasVariants is not null) result.AddRange(aliasVariants);
                 }
                 else if (!GenericVariantAliases.TryGetValue(variant, out var replacement)
-                    || replacement.StartsWith("u-va-", StringComparison.Ordinal))
+                    || replacement.StartsWith("u-va-", StringComparison.Ordinal)
+                    || IsScriptVariant(variant))
                 {
-                    result.Add(variant); // posix stays a variant, named "Computer"
+                    result.Add(variant); // posix stays a variant, named "Computer"; a script variant is decided below
                 }
-                else if (replacement.Length == 4 && char.IsAsciiLetterUpper(replacement[0]))
+                else if (IsRegionSubtag(replacement))
                 {
-                    if (soleSubtag) script = replacement;
-                    else result.Add(variant);
+                    // A region alias fills an empty region and is otherwise dropped (en-US-aaland -> en-US).
+                    region ??= replacement;
                 }
                 else if (replacement.Length > 0)
                 {
@@ -156,8 +162,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 }
             }
 
+            if (script is null && region is null && result.Count > 0)
+            {
+                var first = result[0];
+                foreach (var variant in result)
+                {
+                    if (string.CompareOrdinal(variant, first) < 0) first = variant;
+                }
+
+                if (IsScriptVariant(first))
+                {
+                    script = GenericVariantAliases[first];
+                    return null;
+                }
+            }
+
             return result.Count == 0 ? null : result;
         }
+
+        /// <summary>True for a variant whose alias is a script (baku1926 -> Baku, petr1708 -> Petr).</summary>
+        private static bool IsScriptVariant(string variant)
+            => GenericVariantAliases.TryGetValue(variant, out var replacement)
+                && replacement.Length == 4 && char.IsAsciiLetterUpper(replacement[0])
+                && char.IsAsciiLetterLower(replacement[1]) && char.IsAsciiLetterLower(replacement[2]) && char.IsAsciiLetterLower(replacement[3]);
+
+        /// <summary>True for a canonical region subtag: two upper-case letters or three digits.</summary>
+        private static bool IsRegionSubtag(string subtag)
+            => (subtag.Length == 2 && char.IsAsciiLetterUpper(subtag[0]) && char.IsAsciiLetterUpper(subtag[1]))
+                || (subtag.Length == 3 && char.IsAsciiDigit(subtag[0]) && char.IsAsciiDigit(subtag[1]) && char.IsAsciiDigit(subtag[2]));
 
         /// <summary>
         /// The canonical base language Intl.getCanonicalLocales gives a 2-3 letter code
