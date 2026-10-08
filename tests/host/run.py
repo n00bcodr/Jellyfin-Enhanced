@@ -16,9 +16,12 @@ import uuid
 import wave
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+# Floating tags: each run pulls the newest release of its compatibility line and
+# records the digest and server version it actually tested in report.json.
+# Never use `latest`, which would move to the next major line.
 IMAGES = {
-    "jf10": "jellyfin/jellyfin:10.11.11@sha256:aefb67e6a7ff1debdd154a78a7bbb780fd0c873d8639210a7f6a2016ad2b35db",
-    "jf12": "jellyfin/jellyfin:12.0@sha256:baba630419915985442f315f08b0cf46d9f4c8a0cc4bd38e94a6d35751dd5ef5",
+    "jf10": "jellyfin/jellyfin:10.11",
+    "jf12": "jellyfin/jellyfin:12",
 }
 PLUGIN_ID = "f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b"
 # Every container and network carries this label (value: the run's unique name).
@@ -107,15 +110,29 @@ class Host:
         print(f"  PASS {label}", flush=True)
 
 
+def pull(image):
+    """Pull the tag and return its repo digest. A failed pull is an error, never a fallback to a cached image."""
+    print(f"Pulling {image}", flush=True)
+    try:
+        command("docker", "pull", image)
+    except RuntimeError as error:
+        raise RuntimeError(f"Could not pull {image}; refusing to test a possibly stale cached image. {error}") from error
+    resolved = command("docker", "image", "inspect", "--format", "{{index .RepoDigests 0}}", image)
+    print(f"Resolved {image} to {resolved}", flush=True)
+    return resolved
+
+
 def run(target, artifacts, browser=False):
     output = artifacts / target
     output.mkdir(parents=True, exist_ok=True)
     name = "je-regression-" + uuid.uuid4().hex[:12]
     host = None
+    report = {"target": target, "image": IMAGES[target], "resolved_image": None, "server_version": None}
     with tempfile.TemporaryDirectory(prefix=name) as temporary:
         temp = pathlib.Path(temporary)
         temp.chmod(0o755)
         try:
+            report["resolved_image"] = pull(IMAGES[target])
             print(f"Building {target}", flush=True)
             result = subprocess.run(["dotnet", "build", str(ROOT / "Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj"),
                 "-c", "Release", f"-p:JellyfinTarget={target}", "--artifacts-path", str(temp / "build")],
@@ -141,11 +158,13 @@ def run(target, artifacts, browser=False):
                     "--volume", f"{temp / 'cache'}:/cache",
                     "--volume", f"{temp / 'config'}:/config",
                     "--volume", f"{media}:/media:ro", "--env", "JELLYFIN_PublishedServerUrl=http://localhost",
-                    IMAGES[target])
+                    report["resolved_image"])
             inspection = json.loads(command("docker", "inspect", name))[0]
             address = inspection["NetworkSettings"]["Networks"][name]["IPAddress"]
             host = Host("http://" + address + ":8096")
             host.ready()
+            report["server_version"] = host.request("/System/Info/Public")["Version"]
+            print(f"Jellyfin server version {report['server_version']} ({report['resolved_image']})", flush=True)
             password = "Regression-only-" + uuid.uuid4().hex
             host.request("/Startup/Configuration", "POST", {"UICulture": "en-US", "MetadataCountryCode": "US", "PreferredMetadataLanguage": "en"}, expected=204)
             host.request("/Startup/User")
@@ -253,9 +272,12 @@ def run(target, artifacts, browser=False):
                 assert result.returncode == 0, f"Real browser journey failed: {output / 'browser.log'}"
                 host.passed.append("real Chromium regular/admin login, panel and preference persistence")
                 print(result.stdout, flush=True)
-            (output / "report.json").write_text(json.dumps({"target": target, "image": IMAGES[target], "passed": host.passed, "status": "passed"}, indent=2))
+            report.update({"passed": host.passed, "status": "passed"})
+            (output / "report.json").write_text(json.dumps(report, indent=2))
+            print(f"{target}: {len(host.passed)} checks passed on Jellyfin {report['server_version']} ({report['resolved_image']})", flush=True)
         except BaseException as error:
-            (output / "report.json").write_text(json.dumps({"target": target, "image": IMAGES[target], "passed": host.passed if host else [], "status": "failed", "error": str(error)}, indent=2))
+            report.update({"passed": host.passed if host else [], "status": "failed", "error": str(error)})
+            (output / "report.json").write_text(json.dumps(report, indent=2))
             raise
         finally:
             # Attempt all cleanup even if log collection or one removal fails, and
