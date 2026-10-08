@@ -9184,35 +9184,6 @@
         }
 
         /**
-         * Counts configured arr instance cards for a given type (sonarr|radarr).
-         * An instance is "configured" when both URL and API key are non-empty.
-         * Returns -1 (not 0) if the instance list container is missing, so callers
-         * can distinguish "user configured zero" from "DOM not ready / mismatched."
-         * @param {string} type - 'sonarr' or 'radarr'
-         * @returns {number} Count of fully-configured instances, or -1 if list missing
-         */
-        var _jeMissingListWarned = Object.create(null);
-        function countArrInstances(type) {
-            var listId = type === 'sonarr' ? 'sonarrInstancesList' : 'radarrInstancesList';
-            var list = document.getElementById(listId);
-            if (!list) {
-                if (!_jeMissingListWarned[listId]) {
-                    _jeMissingListWarned[listId] = true;
-                    console.warn('[JE] status dashboard: #' + listId + ' not found');
-                }
-                return -1;
-            }
-            var cards = list.querySelectorAll('.arr-instance-card');
-            var count = 0;
-            for (var i = 0; i < cards.length; i++) {
-                var url = cards[i].querySelector('.arr-instance-url');
-                var key = cards[i].querySelector('.arr-instance-apikey');
-                if (url && url.value.trim() && key && key.value.trim()) count++;
-            }
-            return count;
-        }
-
-        /**
          * Merged Service Status renderer.
          *
          * Replaces the legacy status-card grid + Integration Health checklist

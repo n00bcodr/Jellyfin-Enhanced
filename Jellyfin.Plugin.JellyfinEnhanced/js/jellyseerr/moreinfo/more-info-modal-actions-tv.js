@@ -21,9 +21,7 @@ function buildTvActions(data, show4kOption = false) {
     // If Seerr reports Available (5) but the item has no Jellyfin media ID,
     // the library was wiped and Seerr's status is stale — treat as requestable.
     const jellyfinMediaId = mediaInfo.jellyfinMediaId || null;
-    const jellyfinMediaId4k = mediaInfo.jellyfinMediaId4k || null;
     const effectiveStatus = JE.seerrStatus.effectiveMediaStatus(status, jellyfinMediaId);
-    const effectiveStatus4k = JE.seerrStatus.effectiveMediaStatus(status4k, jellyfinMediaId4k);
 
     if (!JE.seerrStatus.isRequestable(effectiveStatus)) {
         return null;

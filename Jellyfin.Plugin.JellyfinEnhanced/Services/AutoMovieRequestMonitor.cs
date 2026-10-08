@@ -42,7 +42,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public void Initialize()
         {
             // Check if auto-movie-request is enabled
-            var config = JellyfinEnhanced.Instance?.Configuration as Configuration.PluginConfiguration;
+            var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
             {
                 _logger.Warning("[Auto-Movie-Request] Configuration is null - skipping auto-movie-request monitoring initialization");
@@ -69,7 +69,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 // Check if auto-movie-request is enabled
-                var config = JellyfinEnhanced.Instance?.Configuration as PluginConfiguration;
+                var config = JellyfinEnhanced.Instance?.Configuration;
                 if (config == null || !config.AutoMovieRequestEnabled || !config.JellyseerrEnabled)
                 {
                     return;
