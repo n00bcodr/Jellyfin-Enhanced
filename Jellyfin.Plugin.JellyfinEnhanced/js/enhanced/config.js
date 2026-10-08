@@ -205,6 +205,24 @@
         return mergedSettings;
     };
 
+    /** Shortcut combo for a keydown, e.g. "Ctrl+Shift+A". Shift is dropped for shifted symbols ("+", not "Shift++"). */
+    JE.keyCombo = function(e) {
+        const key = e.key;
+        const isLetter = /^[a-zA-Z]$/.test(key);
+        const isShiftedSymbol = key.length === 1 && key !== ' ' && !isLetter;
+        return (e.metaKey ? 'Meta+' : '') +
+               (e.ctrlKey ? 'Ctrl+' : '') +
+               (e.altKey ? 'Alt+' : '') +
+               (e.shiftKey && !isShiftedSymbol ? 'Shift+' : '') +
+               (isLetter ? key.toUpperCase() : key);
+    };
+
+    /** Converts bindings saved before the fix ("Shift++") to the current format. */
+    JE.normalizeShortcutKey = function(key) {
+        if (typeof key !== 'string') return key;
+        return key.replace(/Shift\+([^A-Za-z0-9\s,./;'\[\]\\=`-])$/, '$1');
+    };
+
     /**
      * Initializes keyboard shortcut mappings from plugin and user configurations.
      */
@@ -228,6 +246,9 @@
 
         JE.state.activeShortcuts = JE.state.activeShortcuts || {};
         Object.assign(JE.state.activeShortcuts, defaultShortcuts, userShortcuts);
+        Object.keys(JE.state.activeShortcuts).forEach(function(name) {
+            JE.state.activeShortcuts[name] = JE.normalizeShortcutKey(JE.state.activeShortcuts[name]);
+        });
     };
 
 })(window.JellyfinEnhanced);

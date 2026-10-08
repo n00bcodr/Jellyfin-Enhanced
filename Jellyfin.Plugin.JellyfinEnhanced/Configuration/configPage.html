@@ -4055,7 +4055,9 @@
                             if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
                             if (e.key === 'Tab') { chip.blur(); return; }
 
-                            const combo = (e.metaKey ? 'Meta+' : '') + (e.ctrlKey ? 'Ctrl+' : '') + (e.altKey ? 'Alt+' : '') + (e.shiftKey ? 'Shift+' : '') + (e.key.match(/^[a-zA-Z]$/) ? e.key.toUpperCase() : e.key);
+                            const isLetter = /^[a-zA-Z]$/.test(e.key);
+                            const isShiftedSymbol = e.key.length === 1 && e.key !== ' ' && !isLetter;
+                            const combo = (e.metaKey ? 'Meta+' : '') + (e.ctrlKey ? 'Ctrl+' : '') + (e.altKey ? 'Alt+' : '') + (e.shiftKey && !isShiftedSymbol ? 'Shift+' : '') + (isLetter ? e.key.toUpperCase() : e.key);
                             if (combo !== def.Key) {
                                 if (def.Category === 'Player' && PLAYER_KEYS_TAKEN.has(combo)) {
                                     showValidationError(chip, "The key '" + combo + "' is already used by the Jellyfin player.");

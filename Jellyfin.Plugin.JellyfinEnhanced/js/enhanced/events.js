@@ -31,11 +31,7 @@
         if (document.activeElement.hasAttribute('data-je-key-recorder')) return;
 
         const key = e.key;
-        const combo = (e.shiftKey ? 'Shift+' : '') +
-                      (e.metaKey ? 'Meta+' : '') +
-                      (e.ctrlKey ? 'Ctrl+' : '') +
-                      (e.altKey ? 'Alt+' : '') +
-                      (key.match(/^[a-zA-Z]$/) ? key.toUpperCase() : key);
+        const combo = JE.keyCombo(e);
 
         const video = document.querySelector('video');
         const activeShortcuts = JE.state.activeShortcuts;
