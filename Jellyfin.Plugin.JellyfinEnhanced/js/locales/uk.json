@@ -389,6 +389,7 @@
     "feature_language_tags": "{{icon:flag}} Теги мови",
     "hidden_content_group_movies": "Фільми",
     "toast_bookmark_save_failed": "{{icon:error}} Не вдалося зберегти закладку",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "panel_settings_random_button_unwatched": "Тільки «Непереглянуті»",
     "hidden_content_admin_editing_user": "Редагування: {userName}",
     "jellyseerr_card_badge_collection": "Колекція",

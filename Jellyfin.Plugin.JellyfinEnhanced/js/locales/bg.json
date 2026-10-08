@@ -393,6 +393,7 @@
     "toast_bookmark_updated": "{{icon:success}} Отметката е актуализирана",
     "toast_bookmark_deleted": "{{icon:trash}} Отметката е изтрита",
     "toast_bookmark_save_failed": "{{icon:error}} Неуспешно запазване на отметката",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Прескачане до отметка",
     "bookmark_cleanup_complete": "Почистването завърши: премахнати са {count} изоставени отметки",
     "bookmark_cleanup_failed": "Почистването е неуспешно",

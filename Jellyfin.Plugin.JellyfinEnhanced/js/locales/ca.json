@@ -393,6 +393,7 @@
     "toast_bookmark_updated": "{{icon:success}} Marcador actualitzat",
     "toast_bookmark_deleted": "{{icon:trash}} Marcador eliminat",
     "toast_bookmark_save_failed": "{{icon:error}} Error en desar el marcador",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Saltat al marcador",
     "bookmark_cleanup_complete": "Neteja completada: s'han eliminat {count} marcadors orfes",
     "bookmark_cleanup_failed": "Neteja fallida",

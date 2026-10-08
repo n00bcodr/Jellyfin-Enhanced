@@ -393,6 +393,7 @@
     "toast_bookmark_updated": "{{icon:success}} Marcador actualizado",
     "toast_bookmark_deleted": "{{icon:trash}} Marcador eliminado",
     "toast_bookmark_save_failed": "{{icon:error}} Error al guardar marcador",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Saltado a marcador",
     "bookmark_cleanup_complete": "Limpieza completada: se eliminaron {count} marcadores huérfanos",
     "bookmark_cleanup_failed": "Limpieza fallida",

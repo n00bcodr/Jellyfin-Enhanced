@@ -393,6 +393,7 @@
     "toast_bookmark_updated": "{{icon:success}} Marked spot updated",
     "toast_bookmark_deleted": "{{icon:trash}} Marked spot tossed overboard",
     "toast_bookmark_save_failed": "{{icon:error}} Failed to mark th' spot",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Sailed to marked spot",
     "bookmark_cleanup_complete": "Cleanup complete: threw {count} abandoned bookmarks overboard",
     "bookmark_cleanup_failed": "Cleanup failed, blast!",

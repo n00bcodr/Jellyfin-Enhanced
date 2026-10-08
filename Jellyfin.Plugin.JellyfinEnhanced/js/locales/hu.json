@@ -393,6 +393,7 @@
     "toast_bookmark_updated": "{{icon:success}} Könyvjelző frissítve",
     "toast_bookmark_deleted": "{{icon:trash}} Könyvjelző törölve",
     "toast_bookmark_save_failed": "{{icon:error}} Sikertelen könyvjelző mentés",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Ugrás könyvjelzőhöz",
     "bookmark_cleanup_complete": "Takarítás befejezve: {count} árva könyvjelző eltávolítva",
     "bookmark_cleanup_failed": "Takarítás sikertelen",

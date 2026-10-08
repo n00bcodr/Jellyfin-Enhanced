@@ -393,6 +393,7 @@
     "toast_bookmark_updated": "{{icon:success}} نشانک به‌روز شد",
     "toast_bookmark_deleted": "{{icon:trash}} نشانک حذف شد",
     "toast_bookmark_save_failed": "{{icon:error}} ذخیره نشانک ناموفق بود",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} پرش به نشانک",
     "bookmark_cleanup_complete": "پاکسازی کامل شد: {count} نشانک یتیم حذف شد",
     "bookmark_cleanup_failed": "پاکسازی ناموفق بود",

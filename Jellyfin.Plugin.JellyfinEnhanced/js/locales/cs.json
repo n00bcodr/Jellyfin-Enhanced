@@ -393,6 +393,7 @@
     "toast_bookmark_updated": "{{icon:success}} Záložka aktualizována",
     "toast_bookmark_deleted": "{{icon:trash}} Záložka smazána",
     "toast_bookmark_save_failed": "{{icon:error}} Nepodařilo se uložit záložku",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Přeskočeno na záložku",
     "bookmark_cleanup_complete": "Čištění dokončeno: odstraněno {count} osiřelých záložek",
     "bookmark_cleanup_failed": "Čištění selhalo",

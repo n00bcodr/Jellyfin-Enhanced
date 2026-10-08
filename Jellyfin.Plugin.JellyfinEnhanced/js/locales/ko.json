@@ -398,6 +398,7 @@
     "toast_bookmark_updated": "{{icon:success}} 북마크가 업데이트되었습니다",
     "toast_bookmark_deleted": "{{icon:trash}} 북마크가 삭제되었습니다",
     "toast_bookmark_save_failed": "{{icon:error}} 북마크 저장에 실패했습니다",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} 북마크로 이동했습니다",
     "bookmark_cleanup_complete": "정리 완료: 고아 북마크 {count}개를 제거했습니다",
     "bookmark_cleanup_failed": "정리에 실패했습니다",

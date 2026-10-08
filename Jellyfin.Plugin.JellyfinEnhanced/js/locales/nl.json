@@ -381,6 +381,7 @@
     "toast_bookmark_updated": "{{icon:success}} Bladwijzer bijgewerkt",
     "toast_bookmark_deleted": "{{icon:trash}} Bladwijzer verwijderd",
     "toast_bookmark_save_failed": "{{icon:error}} Bladwijzer opslaan mislukt",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Gesprongen naar bladwijzer",
     "bookmark_cleanup_complete": "Opschonen voltooid: {count} weesbladwijzer(s) verwijderd",
     "bookmark_cleanup_failed": "Opschonen mislukt",

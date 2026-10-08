@@ -393,6 +393,7 @@
     "toast_bookmark_updated": "{{icon:success}} Закладка обновлена",
     "toast_bookmark_deleted": "{{icon:trash}} Закладка удалена",
     "toast_bookmark_save_failed": "{{icon:error}} Не удалось сохранить закладку",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Переход к закладке",
     "bookmark_cleanup_complete": "Очистка завершена: удалено {count} потерянных закладок",
     "bookmark_cleanup_failed": "Очистка не удалась",

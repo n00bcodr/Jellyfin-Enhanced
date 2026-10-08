@@ -393,6 +393,7 @@
     "toast_bookmark_updated": "{{icon:success}} Segnalibro aggiornato",
     "toast_bookmark_deleted": "{{icon:trash}} Segnalibro eliminato",
     "toast_bookmark_save_failed": "{{icon:error}} Impossibile salvare il segnalibro",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Saltato al segnalibro",
     "bookmark_cleanup_complete": "Pulizia completata: rimossi {count} segnalibri orfani",
     "bookmark_cleanup_failed": "Pulizia fallita",

@@ -393,6 +393,7 @@
     "toast_bookmark_updated": "{{icon:success}} 书签已更新",
     "toast_bookmark_deleted": "{{icon:trash}} 书签已删除",
     "toast_bookmark_save_failed": "{{icon:error}} 储存书签失败",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} 已跳至书签",
     "bookmark_cleanup_complete": "清理完成：已移除 {count} 个孤立书签",
     "bookmark_cleanup_failed": "清理失败",

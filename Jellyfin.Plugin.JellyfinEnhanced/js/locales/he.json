@@ -408,6 +408,7 @@
     "feature_language_tags": "{{icon:flag}} תגי שפה",
     "hidden_content_group_movies": "סרטים",
     "toast_bookmark_save_failed": "{{icon:error}} שמירת הסימנייה נכשלה",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "panel_settings_random_button_unwatched": "רק תוכן שלא נצפה",
     "jellyseerr_card_badge_collection": "אוסף",
     "panel_footer_close": "לחצו <kbd>?</kbd> או <kbd>Esc</kbd> כדי לסגור",

@@ -393,6 +393,7 @@
     "toast_bookmark_updated": "{{icon:success}} Signet mis à jour",
     "toast_bookmark_deleted": "{{icon:trash}} Signet supprimé",
     "toast_bookmark_save_failed": "{{icon:error}} Échec de l'enregistrement du signet",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Sauté au signet",
     "bookmark_cleanup_complete": "Nettoyage terminé : {count} signets orphelins supprimés",
     "bookmark_cleanup_failed": "Échec du nettoyage",

@@ -342,6 +342,7 @@
     "feature_language_tags": "{{icon:flag}} Kielitagit",
     "hidden_content_group_movies": "Elokuvat",
     "toast_bookmark_save_failed": "{{icon:error}} Kirjanmerkin tallentaminen epäonnistui",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "panel_settings_random_button_unwatched": "Vain katsomattomat",
     "jellyseerr_card_badge_collection": "Kokoelma",
     "panel_footer_close": "Sulje painamalla <kbd>?</kbd> tai <kbd>Esc</kbd>",

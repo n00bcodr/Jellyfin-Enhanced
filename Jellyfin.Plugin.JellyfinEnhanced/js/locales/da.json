@@ -381,6 +381,7 @@
     "toast_bookmark_updated": "{{icon:success}} Bogmærke opdateret",
     "toast_bookmark_deleted": "{{icon:trash}} Bogmærke slettet",
     "toast_bookmark_save_failed": "{{icon:error}} Kunne ikke gemme bogmærke",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Sprang til bogmærke",
     "bookmark_cleanup_complete": "Oprydning fuldført: fjernede {count} forældreløse bogmærker",
     "bookmark_cleanup_failed": "Oprydning mislykkedes",

@@ -398,6 +398,7 @@
     "toast_bookmark_updated": "{{icon:success}} ബുക്ക്മാർക്ക് പുതുക്കി",
     "toast_bookmark_deleted": "{{icon:trash}} ബുക്ക്മാർക്ക് ഇല്ലാതാക്കി",
     "toast_bookmark_save_failed": "{{icon:error}} ബുക്ക്മാർക്ക് സേവ് ചെയ്യുന്നതിൽ പരാജയപ്പെട്ടു",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} ബുക്ക്മാർക്കിലേക്ക് പോയി",
     "bookmark_cleanup_complete": "വൃത്തിയാക്കൽ പൂർത്തിയായി: {count} അനാഥ ബുക്ക്മാർക്കുകൾ നീക്കം ചെയ്തു",
     "bookmark_cleanup_failed": "വൃത്തിയാക്കൽ പരാജയപ്പെട്ടു",

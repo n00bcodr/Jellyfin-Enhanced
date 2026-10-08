@@ -393,6 +393,7 @@
     "toast_bookmark_updated": "{{icon:success}} تم تحديث الإشارة المرجعية",
     "toast_bookmark_deleted": "{{icon:trash}} تم حذف الإشارة المرجعية",
     "toast_bookmark_save_failed": "{{icon:error}} فشل في حفظ الإشارة المرجعية",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} تم التخطي إلى الإشارة المرجعية",
     "bookmark_cleanup_complete": "اكتمل التنظيف: تمت إزالة {count} إشارة مرجعية معزولة",
     "bookmark_cleanup_failed": "فشل التنظيف",

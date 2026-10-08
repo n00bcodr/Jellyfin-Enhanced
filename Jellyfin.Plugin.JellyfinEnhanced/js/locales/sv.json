@@ -393,6 +393,7 @@
     "toast_bookmark_updated": "{{icon:success}} Bokmärke uppdaterat",
     "toast_bookmark_deleted": "{{icon:trash}} Bokmärke borttaget",
     "toast_bookmark_save_failed": "{{icon:error}} Misslyckades spara bokmärke",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Hoppade till bokmärke",
     "bookmark_cleanup_complete": "Upprensning klar: tog bort {count} föräldralösa bokmärken",
     "bookmark_cleanup_failed": "Upprensning misslyckades",

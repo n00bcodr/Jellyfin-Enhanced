@@ -393,6 +393,7 @@
     "toast_bookmark_updated": "{{icon:success}} Lesezeichen aktualisiert",
     "toast_bookmark_deleted": "{{icon:trash}} Lesezeichen gelöscht",
     "toast_bookmark_save_failed": "{{icon:error}} Fehler beim Speichern des Lesezeichens",
+    "toast_bookmark_delete_failed": "{{icon:error}} Fehler beim Löschen des Lesezeichens",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Zu Lesezeichen gesprungen",
     "bookmark_cleanup_complete": "Bereinigung abgeschlossen: {count} verwaiste Lesezeichen entfernt",
     "bookmark_cleanup_failed": "Bereinigung fehlgeschlagen",

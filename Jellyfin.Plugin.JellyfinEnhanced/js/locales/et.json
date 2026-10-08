@@ -398,6 +398,7 @@
     "toast_bookmark_updated": "{{icon:success}} Järjehoidja uuendatud",
     "toast_bookmark_deleted": "{{icon:trash}} Järjehoidja kustutatud",
     "toast_bookmark_save_failed": "{{icon:error}} Järjehoidja salvestamine ebaõnnestus",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Hüpati järjehoidjasse",
     "bookmark_cleanup_complete": "Puhastamine lõpetatud: eemaldati {count} orvuks jäänud järjehoidjat",
     "bookmark_cleanup_failed": "Puhastamine ebaõnnestus",

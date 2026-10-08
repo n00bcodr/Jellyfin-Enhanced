@@ -398,6 +398,7 @@
     "toast_bookmark_updated": "{{icon:success}} Lesezeiche aktualisiert",
     "toast_bookmark_deleted": "{{icon:trash}} Lesezeiche glöscht",
     "toast_bookmark_save_failed": "{{icon:error}} Lesezeiche konnt nöd gspicheret werde",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Zum Lesezeiche gsprunge",
     "bookmark_cleanup_complete": "Ufruume abgschlosse: {count} verwaisti Lesezeiche entfernt",
     "bookmark_cleanup_failed": "Ufruume fählgschlage",
