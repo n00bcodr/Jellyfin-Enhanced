@@ -756,5 +756,5 @@
     "catchup_top_dismissed": "En çok yoksayılan",
     "catchup_top_watchlisted": "En çok izleme listesine eklenen",
     "catchup_failed": "Başarısız: {error}",
-    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
+    "toast_bookmark_delete_failed": "{{icon:error}} Yer imi silinemedi"
 }
