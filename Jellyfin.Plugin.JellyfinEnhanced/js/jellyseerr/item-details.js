@@ -507,7 +507,8 @@
      * be inserted with their data, so a view restored by Back or Forward had
      * them from its first frame (the run there replaces them in place). They
      * are built into the left view, hidden or not, with Jellyfin's render of
-     * it or after NAME_WAIT_MS, unless it is gone, another build has taken it
+     * it, after NAME_WAIT_MS or for printing (a view restored before its
+     * render printed them), unless it is gone, another build has taken it
      * over or another user signed in (see commitLeftRows). Only for the
      * item's own view: a build waiting on another item's view (see below) is
      * dropped, as before, so that item's rows stay. A view's item is known
@@ -538,10 +539,9 @@
             && detailsItemIdFromHash() === itemId && !!findDetailPage();
         const waiting = { itemId, retarget: () => { if (movedOn()) run(); } };
 
-        // No longer the current run's: printing, the run's abort and the
-        // shown view's viewshow run leave the build alone.
+        // No longer the current run's: its abort and the shown view's
+        // viewshow run leave the build alone. Printing still builds it.
         const detach = () => {
-            window.removeEventListener('beforeprint', run);
             signal.removeEventListener('abort', onAbort);
             if (waitingRows === waiting) waitingRows = null;
         };
@@ -549,6 +549,7 @@
             done = true;
             nameObserver?.disconnect();
             clearTimeout(nameTimer);
+            window.removeEventListener('beforeprint', run);
             detach();
         };
         const drop = () => {

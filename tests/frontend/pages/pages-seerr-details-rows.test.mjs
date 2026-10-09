@@ -176,12 +176,33 @@ test('a left view gets its rows after 5 s without a render, and none once it is 
  assert.deepEqual(back.after(),['marker']);back.navigate('#!/details?id=movie-0');
  await back.render();assert.deepEqual(back.after(),['Recommended','Similar']);
  assert.deepEqual(back.after(back.document.getElementById('previous')),[],'nothing in the other item\'s view');
+ const print=x=>x.window.dispatchEvent(new x.window.Event('beforeprint'));
  const removed=setup(t);await removed.start();removed.navigate('#!/home');removed.view.remove();
- await removed.render();removed.timer(5000);assert.equal(removed.counts.cards,0);assert.deepEqual(removed.after(),[]);
+ print(removed);await removed.render();removed.timer(5000);assert.equal(removed.counts.cards,0);assert.deepEqual(removed.after(),[]);
  const before=setup(t);await before.start();before.bumpEpoch();before.navigate('#!/home');
- assert.equal(before.marker(),null);assert.deepEqual(before.delays(),[]);await before.render();assert.equal(before.counts.cards,0);
+ assert.equal(before.marker(),null);assert.deepEqual(before.delays(),[]);print(before);await before.render();assert.equal(before.counts.cards,0);
  const after=setup(t);await after.start();after.navigate('#!/home');after.bumpEpoch();
- await after.render();assert.equal(after.counts.cards,0);assert.deepEqual(after.after(),[]);
+ print(after);await after.render();assert.equal(after.counts.cards,0);assert.deepEqual(after.after(),[]);
+});
+
+test('a build kept for a left view still builds for printing: a view restored before its render prints the rows',async t=>{
+ // Back before Jellyfin rendered the view: it is restored as it is, while the new run looks the item up again.
+ let lookup=()=>MOVIE;const h=setup(t,{item:()=>lookup()});await h.start();await h.viewshow({id:'movie-1'});
+ h.navigate('#!/home');h.view.classList.add('hide');await h.flush();
+ const pending=deferred();lookup=()=>pending.promise;
+ h.navigate('#!/details?id=movie-1');h.view.classList.remove('hide');await h.viewshow({id:'movie-1'});
+ assert.deepEqual(h.after(),['marker']);
+ h.window.dispatchEvent(new h.window.Event('beforeprint'));
+ assert.deepEqual(h.after(),['Recommended','Similar'],'printed with the rows, as before');assert.deepEqual(h.cards(),[20,20]);
+ assert.deepEqual(h.delays(),[]);
+ pending.resolve(MOVIE);await h.flush();
+ assert.deepEqual(h.after(),['Recommended','Similar'],'replaced in place, as before');assert.equal(h.counts.cards,80);
+ assert.deepEqual(h.network,{similar:1,recommended:1});
+ // Printing another page builds them into the hidden left view, which had them before; once.
+ const away=setup(t);await away.start();away.navigate('#!/home');away.view.classList.add('hide');
+ away.window.dispatchEvent(new away.window.Event('beforeprint'));assert.deepEqual(away.after(),['Recommended','Similar']);
+ away.window.dispatchEvent(new away.window.Event('beforeprint'));await away.render();away.timer(5000);
+ assert.equal(away.counts.cards,40,'once');assert.deepEqual(away.delays(),[]);
 });
 
 test('a run for the view the user came back to before its render takes over from the kept build',async t=>{
