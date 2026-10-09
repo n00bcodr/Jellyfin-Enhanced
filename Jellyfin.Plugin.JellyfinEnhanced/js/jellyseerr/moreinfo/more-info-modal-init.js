@@ -11,6 +11,7 @@
     const internal = JE.internals.moreInfoModal;
     const state = internal.state;
     const logPrefix = '🪼 Jellyfin Enhanced: Jellyseerr More Info:';
+    let openGeneration = 0;
 
 /**
  * Open the more info modal for a movie or TV show
@@ -18,9 +19,11 @@
  * @param {string} mediaType - 'movie' or 'tv'
  */
 moreInfoModal.open = async function(tmdbId, mediaType) {
+    const generation = ++openGeneration;
     try {
         // Fetch details first so the modal can open immediately
         const data = await internal.fetchMediaDetails(tmdbId, mediaType);
+        if (generation !== openGeneration) return;
         if (!data) {
             internal.showError('Failed to load media information');
             return;
@@ -28,6 +31,7 @@ moreInfoModal.open = async function(tmdbId, mediaType) {
 
         // Render modal immediately
         showModal(data, mediaType);
+        const openedModal = state.currentModal;
 
         // For TV shows, backfill missing season metadata (poster, overview, airDate) from TMDB/episodes
         if (mediaType === 'tv' && data.seasons?.some(s => s.episodeCount > 0 && (!s.airDate || !s.posterPath))) {
@@ -38,7 +42,7 @@ moreInfoModal.open = async function(tmdbId, mediaType) {
         internal.fetchRatings(tmdbId, mediaType)
             .then((ratings) => {
                 // Modal might have been closed or replaced; ensure we're updating the correct one
-                if (!state.currentModal) return;
+                if (state.currentModal !== openedModal || openedModal._isClosing) return;
                 const modalTmdbId = state.currentModal?.dataset?.tmdbId;
                 const modalMediaType = state.currentModal?.dataset?.mediaType;
                 if (String(modalTmdbId) !== String(data.id) || modalMediaType !== mediaType) return;
@@ -55,6 +59,7 @@ moreInfoModal.open = async function(tmdbId, mediaType) {
                 // Silently fail; modal is already shown without ratings
             });
     } catch (error) {
+        if (generation !== openGeneration) return;
         console.error('Error opening more info modal:', error);
         internal.showError('Failed to load media information');
     }
@@ -71,6 +76,7 @@ async function refreshModalData(data, mediaType, modal, refreshBtn) {
 
         // Fetch fresh data
         const freshData = await internal.fetchMediaDetails(data.id, mediaType);
+        if (state.currentModal !== modal || modal._isClosing) return;
         if (!freshData) {
             internal.showError('Failed to refresh media information');
             refreshBtn.classList.remove('loading');
@@ -91,6 +97,7 @@ async function refreshModalData(data, mediaType, modal, refreshBtn) {
         refreshBtn.disabled = false;
 
     } catch (error) {
+        if (state.currentModal !== modal || modal._isClosing) return;
         console.error('Error refreshing modal data:', error);
         internal.showError('Failed to refresh modal data');
         refreshBtn.classList.remove('loading');
@@ -102,8 +109,8 @@ async function refreshModalData(data, mediaType, modal, refreshBtn) {
  * Show the modal with media information
  */
 function showModal(data, mediaType) {
-    // Close existing modal if any
-    moreInfoModal.close();
+    // Replace the current modal without canceling this open operation.
+    closeCurrentModal();
 
     const modal = document.createElement('div');
     modal.className = 'je-more-info-modal';
@@ -179,6 +186,7 @@ function showModal(data, mediaType) {
             try {
                 // Refresh details to pull latest status/progress
                 const fresh = await internal.fetchMediaDetails(data.id, 'tv');
+                if (state.currentModal !== modal || modal._isClosing) return;
                 if (fresh?.mediaInfo) {
                     data.mediaInfo = fresh.mediaInfo;
                 } else {
@@ -187,6 +195,7 @@ function showModal(data, mediaType) {
                     mediaInfo.status = mediaInfo.status || 2;
                 }
             } catch (_) {
+                if (state.currentModal !== modal || modal._isClosing) return;
                 const mediaInfo = data.mediaInfo || (data.mediaInfo = {});
                 mediaInfo.status = mediaInfo.status || 2;
             }
@@ -205,7 +214,7 @@ function showModal(data, mediaType) {
 /**
  * Close the modal
  */
-moreInfoModal.close = function() {
+function closeCurrentModal() {
     if (state.currentModal) {
         if (state.currentModal._isClosing) return;
         state.currentModal._isClosing = true;
@@ -218,15 +227,13 @@ moreInfoModal.close = function() {
         if (state.currentModal._cleanupEscapeListener) {
             state.currentModal._cleanupEscapeListener();
         }
-        const closing = state.currentModal;
-        closing.classList.remove('active');
+        state.currentModal.classList.remove('active');
+        // A replacement can open during the exit animation. Remove only the
+        // modal this close owns, never the replacement stored in currentModal.
+        const closingModal = state.currentModal;
         setTimeout(() => {
-            // Remove the modal this close was for: another may have opened in
-            // the 300ms fade (showModal closes the old one first) and must stay.
-            if (document.body.contains(closing)) {
-                document.body.removeChild(closing);
-            }
-            if (state.currentModal === closing) state.currentModal = null;
+            closingModal.remove();
+            if (state.currentModal === closingModal) state.currentModal = null;
             // Work held back while the modal covered the page (the
             // seamless-scroll fill) resumes on this.
             document.dispatchEvent(new CustomEvent('jellyseerr-more-info-closed'));
@@ -234,11 +241,18 @@ moreInfoModal.close = function() {
     }
 }
 
+    moreInfoModal.close = function() {
+        openGeneration++;
+        closeCurrentModal();
+    };
+
+    // Request permissions and details belong to the active account. Invalidate
+    // pending opens immediately on identity changes, before navigation arrives.
+    JE.session?.onUserChange('jellyseerr-more-info', () => moreInfoModal.close());
+
     // Close modal on page navigation
     document.addEventListener('viewshow', function() {
-        if (state.currentModal) {
-            moreInfoModal.close();
-        }
+        moreInfoModal.close();
     });
 
     // Expose helpers used by other modules (e.g., item-details.js for the

@@ -326,3 +326,11 @@ scripts/deploy*
 
 # Local test output (poster tag harnesses and captures)
 /.engineering-artifacts/
+
+# Regression infrastructure manifests are versioned; generated reports are not.
+!/package.json
+!/package-lock.json
+/artifacts/
+/coverage/
+/playwright-report/
+/test-results/

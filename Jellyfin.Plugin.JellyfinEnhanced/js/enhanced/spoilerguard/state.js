@@ -101,41 +101,65 @@
     };
 
     internal.enableForSeries = function(id) {
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const normalized = internal.normalizeId(id);
         return request(`/spoiler-blur/series/${encodeURIComponent(normalized)}`, { method: 'POST', skipRetry: true })
-            .then(function() { enabledSeries.add(normalized); });
+            .then(function() {
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                enabledSeries.add(normalized);
+            });
     };
 
     internal.disableForSeries = function(id) {
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const normalized = internal.normalizeId(id);
         return request(`/spoiler-blur/series/${encodeURIComponent(normalized)}`, { method: 'DELETE', skipRetry: true })
-            .then(function() { enabledSeries.delete(normalized); });
+            .then(function() {
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                enabledSeries.delete(normalized);
+            });
     };
 
     internal.enableForMovie = function(id, name) {
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const normalized = internal.normalizeId(id);
         return request(`/spoiler-blur/movies/${encodeURIComponent(normalized)}`, {
             method: 'POST', body: { MovieName: name || '' }, skipRetry: true
-        }).then(function() { enabledMovies.add(normalized); });
+        }).then(function() {
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                enabledMovies.add(normalized);
+            });
     };
 
     internal.disableForMovie = function(id) {
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const normalized = internal.normalizeId(id);
         return request(`/spoiler-blur/movies/${encodeURIComponent(normalized)}`, { method: 'DELETE', skipRetry: true })
-            .then(function() { enabledMovies.delete(normalized); });
+            .then(function() {
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                enabledMovies.delete(normalized);
+            });
     };
 
     internal.enableForCollection = function(id, name) {
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const normalized = internal.normalizeId(id);
         return request(`/spoiler-blur/collections/${encodeURIComponent(normalized)}`, {
             method: 'POST', body: { CollectionName: name || '' }, skipRetry: true
-        }).then(function() { enabledCollections.add(normalized); });
+        }).then(function() {
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                enabledCollections.add(normalized);
+            });
     };
 
     internal.disableForCollection = function(id) {
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const normalized = internal.normalizeId(id);
         return request(`/spoiler-blur/collections/${encodeURIComponent(normalized)}`, { method: 'DELETE', skipRetry: true })
-            .then(function() { enabledCollections.delete(normalized); });
+            .then(function() {
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                enabledCollections.delete(normalized);
+            });
     };
 
     internal.isTmdbEnabled = function(mediaType, tmdbId, jellyfinMediaId) {
@@ -149,12 +173,14 @@
     };
 
     internal.enableForTmdb = function(mediaType, tmdbId, displayName) {
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const type = String(mediaType || '').toLowerCase();
         const id = String(tmdbId || '').trim();
         if (!id || (type !== 'tv' && type !== 'movie')) return Promise.reject(new Error('invalid mediaType/tmdbId'));
         const query = displayName ? `?displayName=${encodeURIComponent(displayName)}` : '';
         return request(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}${query}`, { method: 'POST', skipRetry: true })
             .then(function(response) {
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return response;
                 const key = internal.pendingKey(type, id);
                 if (response?.promoted === 'pending') {
                     if (key) enabledPendingTmdb.add(key);
@@ -172,11 +198,13 @@
     };
 
     internal.disableForTmdb = function(mediaType, tmdbId) {
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const type = String(mediaType || '').toLowerCase();
         const id = String(tmdbId || '').trim();
         if (!id || (type !== 'tv' && type !== 'movie')) return Promise.reject(new Error('invalid mediaType/tmdbId'));
         return request(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}`, { method: 'DELETE', skipRetry: true })
             .then(function(response) {
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return response;
                 const key = internal.pendingKey(type, id);
                 if (key) { enabledPendingTmdb.delete(key); tmdbToJellyfin.delete(key); }
                 if (response?.removedFrom === 'series' && response.jellyfinId) {
@@ -190,9 +218,11 @@
 
     internal.getUserPrefs = function() { return Object.assign({}, userPrefs); };
     internal.setUserPrefs = function(next) {
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const payload = next || {};
         return request('/spoiler-blur/user-prefs', { method: 'POST', body: payload, skipRetry: true })
             .then(function(response) {
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return response;
                 userPrefs = Object.assign({}, payload);
                 return response?.prefs || userPrefs;
             })

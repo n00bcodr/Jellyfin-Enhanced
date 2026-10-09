@@ -78,6 +78,10 @@ ICONS = {
         # enhanced/itemdetails/features-details-media-info.js via the
         # .mediaInfoItem-* .material-icons rule in enhanced/ui-styles.js
         'hourglass_empty', 'save', 'translate',
+        # arr/requests/requests-page-render.js section headings (download is listed above)
+        'playlist_add_check', 'warning', 'history',
+        # jellyseerr/recommendations/recommendations-render.js row scroll arrows
+        'chevron_left', 'chevron_right',
     },
     # tags/genretags.js genreIconMap: scanned from the source, nothing to list.
     'outlined': set(),

@@ -252,13 +252,30 @@
         }
 
         /**
+         * Whether a no-results message is actually being shown. Other search
+         * scripts (KefinTweaks) keep a permanent .noItemsMessage on the page
+         * and only hide it while there are results, so its presence alone
+         * doesn't mean Jellyfin found nothing. Messages hidden by this plugin
+         * (jellyseerr-native-message-hidden, or section-hidden from the
+         * Seerr-only filter) still count unless their owner hid them inline.
+         * @param {HTMLElement} el
+         * @returns {boolean}
+         */
+        function isNoResultsMessageShown(el) {
+            if (el.style.display === 'none') return false;
+            if (el.classList.contains('jellyseerr-native-message-hidden') || el.classList.contains('section-hidden')) return true;
+            return getComputedStyle(el).display !== 'none';
+        }
+
+        /**
          * Places the section after Movies/Shows if found, otherwise appends
          * to the results container or search page.
          * @returns {boolean} True if positioned after a primary section or
          *   no-results message; false if using fallback placement.
          */
         function positionSection() {
-            const noResultsMessage = searchPage.querySelector('.noItemsMessage:not(.jellyseerr-no-results-message)');
+            const noResultsMessage = Array.from(searchPage.querySelectorAll('.noItemsMessage:not(.jellyseerr-no-results-message)'))
+                .find(isNoResultsMessageShown);
             if (noResultsMessage) {
                 // The no-results message is React-owned, and React reuses the same
                 // DOM node for the results container on a later query (both render
@@ -418,14 +435,19 @@
      * @param {Array} newResults - The new array of result items from the API.
      * @param {boolean} isJellyseerrActive - If the server is reachable.
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
+     * @param {ParentNode} [container=document] - The refreshed section's container. Only
+     *   request buttons inside it are updated, so a button elsewhere on the page (such as
+     *   a retained item-details overview) is left alone.
      */
-    ui.updateJellyseerrResults = function(newResults, isJellyseerrActive, jellyseerrUserFound) {
-        const existingButtons = document.querySelectorAll('.jellyseerr-request-button[data-tmdb-id]');
+    ui.updateJellyseerrResults = function(newResults, isJellyseerrActive, jellyseerrUserFound, container = document) {
+        const existingButtons = container.querySelectorAll('.jellyseerr-request-button[data-tmdb-id]');
         if (existingButtons.length === 0) return;
 
         existingButtons.forEach(button => {
             const tmdbId = button.dataset.tmdbId;
-            const newItem = newResults.find(item => item.id.toString() === tmdbId);
+            // A movie and a show can share a TMDB id, so the media type must match too.
+            const mediaType = button.dataset.mediaType;
+            const newItem = newResults.find(item => item.id.toString() === tmdbId && item.mediaType === mediaType);
             if (!newItem) return;
 
             const oldItemJSON = button.dataset.searchResultItem;

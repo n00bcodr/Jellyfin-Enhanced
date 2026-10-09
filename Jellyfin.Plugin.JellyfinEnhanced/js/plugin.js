@@ -468,6 +468,7 @@
             JE.pluginConfig.DownloadsUseCustomTabs = false;
             JE.pluginConfig.RecommendationsUseCustomTabs = false;
             JE.pluginConfig.ActivityFeedUseCustomTabs = false;
+            JE.pluginConfig.CatchUpUseCustomTabs = false;
         }
         if (!hasPluginPages) {
             JE.pluginConfig.BookmarksUsePluginPages = false;
@@ -821,11 +822,24 @@
         banner.style.cssText = [
             'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:9990',
             'background:#b71c1c', 'color:#fff', 'text-align:center',
-            'padding:10px 16px', 'font-size:14px', 'font-weight:600',
+            'padding:10px 48px', 'font-size:14px', 'font-weight:600',
             'letter-spacing:0.02em', 'box-shadow:0 2px 8px rgba(0,0,0,0.4)',
             'font-family:inherit'
         ].join(';');
         banner.textContent = text;
+        // Dismiss for this page load only: nothing is stored, so a refresh brings it back.
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.textContent = '×';
+        const translate = window.JellyfinEnhanced && window.JellyfinEnhanced.t;
+        const closeLabel = translate ? translate('awards_close') : '';
+        closeBtn.setAttribute('aria-label', closeLabel && closeLabel !== 'awards_close' ? closeLabel : 'Close');
+        closeBtn.style.cssText = 'position:absolute;top:50%;right:12px;transform:translateY(-50%);background:none;border:0;color:#fff;font-size:22px;line-height:1;cursor:pointer;padding:2px 8px;opacity:0.85';
+        closeBtn.addEventListener('click', function() {
+            banner.remove();
+            if (resizeObserver) resizeObserver.disconnect();
+            applyOffset();
+        });
         document.body.appendChild(banner);
         // A <style> tag shifts Jellyfin's fixed header, drawers and the body down by the banner
         // height, so the rules survive Jellyfin re-rendering its header. The height is tracked
@@ -859,6 +873,7 @@
         requestAnimationFrame(applyOffset);
         const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(applyOffset) : null;
         if (resizeObserver) resizeObserver.observe(banner);
+        banner.appendChild(closeBtn);
         if (!endsAt) return;
         const tick = setInterval(function() {
             if (!document.body.contains(banner)) { clearInterval(tick); return; }
@@ -869,7 +884,7 @@
                 applyOffset();
                 return;
             }
-            banner.textContent = formatMaintenanceText(message, endsAt);
+            banner.firstChild.nodeValue = formatMaintenanceText(message, endsAt);
         }, 15000);
     }
 

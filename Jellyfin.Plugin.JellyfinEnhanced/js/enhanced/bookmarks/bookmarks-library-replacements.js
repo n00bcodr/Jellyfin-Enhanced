@@ -239,13 +239,9 @@
           episodeNumber: fullItem.Type === 'Episode' ? (fullItem.IndexNumber ?? null) : null
         };
 
-        // Delete old bookmarks BEFORE syncing to prevent race condition with re-render
-        for (const bm of oldGroup.bookmarks) {
-          delete JE.userConfig.bookmark.bookmarks[bm.id];
-        }
-
-        // Sync bookmarks to new item (no offset)
-        const synced = await JE.bookmarks.syncBookmarks(oldGroup.bookmarks, newDetails, 0);
+        // Move the bookmarks to the new item (no offset). The old records are removed
+        // in the same save, before the re-render it triggers, and come back if it fails.
+        const synced = await JE.bookmarks.syncBookmarks(oldGroup.bookmarks, newDetails, 0, { replaceOriginals: true });
 
         JE.toast(JE.t('bookmark_migrated').replace('{count}', synced.length).replace('{name}', fullItem.Name), 4000);
 
@@ -262,79 +258,6 @@
         btn.disabled = false;
         btn.querySelector('span:last-child').textContent = JE.t('bookmark_migrate');
       }
-    });
-
-    setTimeout(() => modal.style.opacity = '1', 10);
-  }
-
-  /**
-   * Show summary of all orphaned items with replacements
-   */
-  function showOrphanedSummaryModal(replacementResults) {
-    const modal = document.createElement('div');
-    modal.className = 'je-bm-library-modal-overlay';
-    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 10000; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s;';
-    modal.innerHTML = `
-      <div class="je-bm-library-modal-container" style="max-width: 700px; background: #181818; border-radius: 12px; padding: 24px; position: relative; box-shadow: 0 8px 32px rgba(0,0,0,0.8);">
-        <button class="je-bm-library-modal-close" style="position: absolute; top: 16px; right: 16px; background: transparent; border: none; color: #fff; font-size: 32px; cursor: pointer; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: background 0.2s;">×</button>
-        <div class="je-bm-library-modal-content">
-          <div class="je-bookmarks-modal-header">
-            <span class="material-icons" aria-hidden="true" style="font-size: 32px; color: #4caf50;">search</span>
-            <div>
-              <h2 style="margin: 0 0 4px 0; font-size: 20px;">Orphaned Bookmarks</h2>
-              <p style="margin: 0; font-size: 13px; color: #999;">Found ${replacementResults.length} item(s) with replacements available</p>
-            </div>
-          </div>
-          <div style="margin-top: 20px; max-height: 400px; overflow-y: auto;">
-            ${replacementResults.map((result, idx) => `
-              <div class="je-orphaned-result-item">
-                <div class="je-orphaned-result-header">
-                  <div>
-                    <div class="je-orphaned-result-name">${escapeHtml(result.group.details.name)}</div>
-                    <div class="je-orphaned-result-count">${result.group.bookmarks.length} bookmark(s) • ${result.matches.length} replacement(s) found</div>
-                  </div>
-                  <button class="btnMigrateOrphaned je-btn" data-result-index="${idx}">
-                    <span class="material-icons" aria-hidden="true" style="font-size: 16px;">find_replace</span>
-                    <span>Migrate</span>
-                  </button>
-                </div>
-                <div class="je-orphaned-result-meta">
-                  TMDB: ${result.group.details.tmdbId || 'N/A'} • Item ID: ${result.group.details.itemId.substring(0,12)}...
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-        <div class="je-bookmark-modal-actions">
-          <button class="je-bookmark-btn-cancel">
-            <span class="material-icons" aria-hidden="true" style="font-size: 18px;">close</span>
-            <span>Close</span>
-          </button>
-        </div>
-      </div>
-    `;
-
-    document.body.appendChild(modal);
-
-    const closeDialog = () => {
-      modal.style.opacity = '0';
-      setTimeout(() => modal.remove(), 200);
-    };
-
-    modal.querySelector('.je-bm-library-modal-close').addEventListener('click', closeDialog);
-    modal.querySelector('.je-bookmark-btn-cancel').addEventListener('click', closeDialog);
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) closeDialog();
-    });
-
-    // Migrate button handlers
-    modal.querySelectorAll('.btnMigrateOrphaned').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const idx = parseInt(btn.dataset.resultIndex);
-        const result = replacementResults[idx];
-        closeDialog();
-        setTimeout(() => showReplacementSelectionModal(result.group, result.matches), 300);
-      });
     });
 
     setTimeout(() => modal.style.opacity = '1', 10);

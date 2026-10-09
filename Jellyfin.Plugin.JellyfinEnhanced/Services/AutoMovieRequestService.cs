@@ -323,11 +323,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                     if (config.AutoMovieRequestCheckReleaseDate && nextPart.TryGetProperty("releaseDate", out var releaseDateProp))
                                     {
                                         var releaseDateStr = releaseDateProp.GetString();
-                                        if (!string.IsNullOrEmpty(releaseDateStr) && DateTime.TryParse(releaseDateStr, out var releaseDate))
+                                        // Seerr sends ISO dates ("2001-01-01"); a culture-sensitive parse reads the year
+                                        // in the server's calendar (Persian, Thai Buddhist) and misjudges the release.
+                                        // A date-only value parses as the server's local midnight, so a title counts as
+                                        // released from the start of its release day in the server's time zone.
+                                        if (!string.IsNullOrEmpty(releaseDateStr) && DateTime.TryParse(releaseDateStr, System.Globalization.CultureInfo.InvariantCulture,
+                                            System.Globalization.DateTimeStyles.None, out var releaseDate))
                                         {
                                             if (releaseDate > DateTime.Now)
                                             {
-                                                _logger.Debug($"[Auto-Movie-Request] Next movie is not yet released (release date: {releaseDate:yyyy-MM-dd}), skipping");
+                                                _logger.Debug($"[Auto-Movie-Request] Next movie is not yet released (release date: {releaseDateStr}), skipping");
                                                 return null;
                                             }
                                         }
@@ -579,7 +584,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
                         HttpMethod.Post, requestUri, config.JellyseerrApiKey, jellyseerrUserId, jsonContent);
                     using var response = await httpClient.SendAsync(request);
-                    var (responseContent, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+                    var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
                     if (error == null)
                     {

@@ -256,7 +256,7 @@ Intelligent playback features for better viewing experience.
 - **Auto-resume** - Resume when returning to tab
 - **Auto-skip intros/outros** - Seamless binge-watching, driven by Jellyfin's own media segments (requires a segment provider such as Intro Skipper)
 - **Playback speed control** - Adjust speed with keyboard shortcuts
-- **Auto Picture-in-Picture** - Enter PiP mode when switching tabs
+- **Auto Picture-in-Picture** - Enter PiP mode when switching tabs and leave it when you come back. Browsers that open their own automatic PiP on tab switch (such as Edge and Chrome) keep control of that window; JE only closes a PiP window it opened itself
 
 **Configuration:**
 Enable/disable in Enhanced panel → Settings tab
@@ -538,6 +538,43 @@ Shows recently watched, favorited, and reviewed titles across the server, so use
 
 !!! note
     Turning the feature off does not delete any recorded activity - it just stops recording and stops showing the feed. Turning it back on picks up from where it left off.
+
+---
+
+### Catch Up
+
+A card-deck page for quickly sorting the library: each unwatched movie or show appears as a poster card and one gesture records what the viewer thinks of it. It is a fast way to find out which titles people have already seen.
+
+| Gesture | Keyboard | What it does |
+|---|---|---|
+| Swipe right | `→` | Marks the title **watched** |
+| Swipe left | `←` | **Dismisses** it (hidden from that viewer's deck in this browser) |
+| Swipe up | `↑` | Adds it to the **watchlist** - sets the title's **Likes** flag, the same flag [Seerr watchlist sync](../seerr/seerr-settings.md) uses |
+| Swipe down | `↓` | **Opens** the title's details page |
+| Rewind button | `Backspace` / `Z` | Undoes the last action, including un-marking watched and removing the watchlist flag |
+
+**Features:**
+
+- Separate **Movies** and **Shows** decks, newest random batch first
+- Swiping right on a show asks **which seasons were watched**: tapping a later season selects every earlier one, and any individual season can be unticked before confirming
+- Works with touch, mouse and keyboard
+- Optional activity log: records who swiped what (title, action, time). Administrators see it in an **Activity** panel on the page itself - docked beside the deck on wide screens - with a feed (filter by user, one or more actions, or title), a per-user summary and the most watched / dismissed / watchlisted titles. Non-admins never see the panel, and the endpoints refuse them
+- Each viewer only sees titles they have library access to; watched and watchlist changes are written to that viewer's own Jellyfin account
+
+**Setup:**
+
+1. Go to **Dashboard** → **Plugins** → **Jellyfin Enhanced**
+2. Navigate to the **Extras** tab
+3. Enable **"Enable Catch Up"**
+4. Leave **"Record Catch Up activity"** on if you want the admin Activity panel, or turn it off to record nothing
+5. Choose how it's reachable - pick one or more:
+   - **Add Catch Up as a native Home tab** - no external plugin needed
+   - **Use Plugin Pages** - adds a sidebar link (requires [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages); Jellyfin 12: user profile menu instead)
+   - **Use Custom Tabs** - adds a home-page tab via [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) instead of the native one
+6. Click **Save**
+
+!!! note
+    The activity log is stored as `catchup-log.jsonl` in the plugin's configuration folder and is size-bounded (about 5 MB per file, two files kept). Item names in the log are looked up from the library on the server, never taken from the browser.
 
 ---
 

@@ -171,7 +171,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             return path.EndsWith("/web/index.html", StringComparison.OrdinalIgnoreCase)
                 || path.EndsWith("/web/", StringComparison.OrdinalIgnoreCase)
-                || path.Equals("/web", StringComparison.OrdinalIgnoreCase);
+                || path.EndsWith("/web", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

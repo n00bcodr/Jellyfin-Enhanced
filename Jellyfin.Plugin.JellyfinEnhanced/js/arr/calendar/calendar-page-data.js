@@ -105,10 +105,11 @@
     _customTabContainer: null,
   };
 
-  // Watched state, favorites and requested-item highlighting are per-user —
-  // clear them on a user switch so the calendar re-derives everything for
-  // the new user on its next render.
+  // Events (filtered server-side by library access), watched state, favorites
+  // and requested-item highlighting are per-user — clear them on a user switch
+  // so the calendar re-derives everything for the new user on its next render.
   JE.session?.onUserChange('calendar-page', () => {
+    state.events = [];
     state.userDataMap.clear();
     state.requestedItems.clear();
     state.requestedLoaded = false;
@@ -158,12 +159,17 @@
    * Fetch calendar events from backend
    */
   async function fetchCalendarEvents(startDate, endDate) {
+    // The backend filters events by the signed-in user's library access — a
+    // response (or failure) resolving after a user switch must not replace the
+    // new user's events or toast the previous user's instance errors.
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
     try {
       const query = new URLSearchParams({
         start: startDate.toISOString(),
         end: endDate.toISOString(),
       });
       const data = await JE.core.api.plugin(`/arr/calendar?${query.toString()}`);
+      if (JE.session && !JE.session.isCurrent(epoch)) return null;
       state.events = (data.events || []).filter((evt) => evt && evt.releaseDate);
       // Surface per-instance errors from the backend envelope so a misconfigured or
       // unreachable arr instance doesn't silently leave the calendar looking fine.
@@ -171,7 +177,7 @@
       return data;
     } catch (error) {
       console.error(`${logPrefix} Failed to fetch calendar events:`, error);
-      state.events = [];
+      if (!JE.session || JE.session.isCurrent(epoch)) state.events = [];
       return null;
     }
   }

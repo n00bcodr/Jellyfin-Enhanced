@@ -1,0 +1,18 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>JE browser regression fixture</title>
+<style>@font-face{font-family:Fixture;src:url(/tests/browser/fonts/LiberationSans-Regular.ttf)}@font-face{font-family:Fixture;src:url(/tests/browser/fonts/LiberationSans-Bold.ttf);font-weight:700}body{margin:0;background:#141414;color:white;font-family:Fixture,sans-serif}main{padding:24px}button,input,select{font:inherit}*{animation:none!important;transition:none!important}</style>
+</head><body><main><h1>JE regression fixture</h1><button id="open">Open request</button><div id="output" aria-live="polite"></div></main>
+<script>
+window.JellyfinEnhanced = {core:{}, helpers:{}, CONFIG:{}, pluginConfig:{}, t:key => ({jellyseerr_modal_cancel:'Cancel',jellyseerr_modal_request:'Request'}[key] || key)};
+window.saved=0; window.closeCount=0;
+</script>
+<script src="/Jellyfin.Plugin.JellyfinEnhanced/js/core/ui-kit.js"></script>
+<script src="/Jellyfin.Plugin.JellyfinEnhanced/js/core/navigation.js"></script>
+<script src="/Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/ui/ui-styles.js"></script>
+<script src="/Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/modal.js"></script>
+<script>
+window.openRequest = (subtitle='Synthetic Series • 日本語') => {
+ window.requestModal = JellyfinEnhanced.jellyseerrModal.create({title:'Request seasons', subtitle, bodyHtml:'<label for="season">Season</label><select id="season"><option value="1">Season 1</option><option value="2">Season 2</option></select>', onSave:(modal,button,close)=>{window.saved++;document.querySelector('#output').textContent='Requested season '+modal.querySelector('#season').value;close();},onClose:()=>window.closeCount++});
+ window.requestModal.show();
+};
+document.querySelector('#open').addEventListener('click',()=>openRequest());
+</script></body></html>

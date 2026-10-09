@@ -809,7 +809,7 @@
                     const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
                     itemsContainer.appendChild(card);
                 });
-                updateJellyseerrResults(results, isJellyseerrActive, jellyseerrUserFound);
+                updateJellyseerrResults(results, isJellyseerrActive, jellyseerrUserFound, itemsContainer);
 
                 if (searchHasMore) {
                     setupSearchInfiniteScroll(query);

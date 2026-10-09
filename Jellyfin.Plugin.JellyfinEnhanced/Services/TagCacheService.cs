@@ -601,12 +601,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var itemIds = _libraryManager.GetItemIds(new InternalItemsQuery
             {
                 IncludeItemTypes = TaggableTypes.Where(kind => !IsContainerKind(kind)).ToArray(),
+                TopParentIds = IncludedLibraryIds(),
                 IsVirtualItem = false,
                 Recursive = true
             });
             var containerIds = _libraryManager.GetItemIds(new InternalItemsQuery
             {
                 IncludeItemTypes = new[] { BaseItemKind.Series, BaseItemKind.Season },
+                TopParentIds = IncludedLibraryIds(),
                 IsVirtualItem = false,
                 Recursive = true
             });
@@ -785,6 +787,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var changedIds = _libraryManager.GetItemIds(new InternalItemsQuery
             {
                 IncludeItemTypes = TaggableTypes.ToArray(),
+                TopParentIds = IncludedLibraryIds(),
                 IsVirtualItem = false,
                 Recursive = true,
                 MinDateLastSaved = changedSinceUtc
@@ -856,6 +859,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var currentIds = _libraryManager.GetItemIds(new InternalItemsQuery
             {
                 IncludeItemTypes = TaggableTypes.ToArray(),
+                TopParentIds = IncludedLibraryIds(),
                 IsVirtualItem = false,
                 Recursive = true
             });
@@ -1220,6 +1224,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
+        /// Library ids to scan: every library except TagCacheExcludedLibraryIds.
+        /// Empty array (no exclusions configured) means no restriction.
+        /// </summary>
+        private Guid[] IncludedLibraryIds()
+        {
+            var excluded = ExcludedLibraryIds();
+            if (excluded.Count == 0) return Array.Empty<Guid>();
+            var included = _libraryManager.GetVirtualFolders()
+                .Select(f => Guid.TryParse(f.ItemId, out var g) ? g : Guid.Empty)
+                .Where(g => g != Guid.Empty && !excluded.Contains(g))
+                .ToArray();
+            // Everything excluded: a sentinel id matches nothing (an empty array would match all).
+            return included.Length > 0 ? included : new[] { Guid.NewGuid() };
+        }
+
+        private static HashSet<Guid> ExcludedLibraryIds()
+        {
+            var cfg = JellyfinEnhanced.Instance?.Configuration;
+            var set = new HashSet<Guid>();
+            if (cfg?.TagCacheExcludeLibraries != true || string.IsNullOrWhiteSpace(cfg.TagCacheExcludedLibraryIds)) return set;
+            var raw = cfg.TagCacheExcludedLibraryIds;
+            foreach (var part in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (Guid.TryParse(part, out var id)) set.Add(id);
+            }
+            return set;
+        }
+
+        private bool IsInExcludedLibrary(BaseItem item)
+        {
+            var excluded = ExcludedLibraryIds();
+            if (excluded.Count == 0) return false;
+            return _libraryManager.GetCollectionFolders(item).Any(f => excluded.Contains(f.Id));
+        }
+
+        /// <summary>
         /// Resolve an id to its live library item and (re)build its cache entry.
         /// Returns true if the cache was modified. Runs on the flush worker only.
         /// <paramref name="episodeScans"/> is the caller's per-episode memo (see
@@ -1232,6 +1272,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var kind = item.GetBaseItemKind();
             if (!TaggableTypes.Contains(kind)) return false;
+            // In-place removal through TryRemoveEntry, so shared response bytes see the mutation epoch move.
+            if (IsInExcludedLibrary(item)) return TryRemoveEntry(id.ToString("N").ToLowerInvariant(), out _);
 
             var entry = BuildEntryForItem(item, episodeScans);
             if (entry == null) return false;

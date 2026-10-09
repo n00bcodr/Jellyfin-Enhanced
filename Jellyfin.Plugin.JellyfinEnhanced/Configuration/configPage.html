@@ -417,6 +417,13 @@
                                 <div class="fieldDescription je-field-desc-sm-font-lg">Pre-computes tag data on the server and serves it in a single request. Tags load instantly without per-page API calls. Disable to use the legacy per-page batch mode: the cache is not loaded, built, or maintained while off, and the in-memory cache is released. Re-enabling restores the last snapshot and catches up on missed changes automatically in the background.</div>
                             </div>
 
+                            <div class="checkboxContainer"><label><input id="tagCacheExcludeLibraries" is="emby-checkbox" type="checkbox"/><span>Exclude libraries from the tag cache</span></label></div>
+                            <div id="tagCacheExcludedLibrariesBox" style="display: none; margin: 12px 0 16px 0; padding: 12px 16px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-left: 3px solid var(--primary-accent-color, #00a4dc); border-radius: 6px;">
+                                <div style="font-weight: 600; margin-bottom: 4px;">Libraries to exclude</div>
+                                <div class="fieldDescription" style="margin-bottom: 8px;">Tick a library to leave it out of the tag cache. Useful for very large libraries that use a lot of memory to scan. Takes effect on the next cache rebuild.</div>
+                                <div id="tagCacheExcludedLibraryList"><div class="fieldDescription">Loading libraries...</div></div>
+                            </div>
+
                             <div id="tagsLocalStorageFallbackContainer" class="checkboxContainer">
                                 <label><input id="enableTagsLocalStorageFallback" is="emby-checkbox" type="checkbox"/><span>Persist Tag Fallback Cache in Browser Storage</span></label>
                             </div>
@@ -1036,7 +1043,7 @@
                             <div class="je-setting-description" data-desc-for="bookmarksUsePluginPages">
                                 <div class="fieldDescription je-field-desc-xl">
                                     Adds a "Bookmarks" link via <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-pages" target="_blank">Plugin Pages</a>.<br/>
-                                    <strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.
+                                    <strong>Note:</strong> Plugin Pages 3.0 or newer applies this without a Jellyfin restart. Older versions need one after enabling this option for the first time.
                                     <span class="je-installed-badge" data-plugin="pluginpages"><i class="material-icons" aria-hidden="true">check_circle</i>Plugin Pages detected</span>
                                 </div>
                             </div>
@@ -1116,7 +1123,7 @@
                             <div class="je-setting-description" data-desc-for="hiddenContentUsePluginPages">
                                 <div class="fieldDescription je-field-desc-xl">
                                     Replaces the default Hidden Content page with a <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-pages" target="_blank">Plugin Pages</a> implementation.<br/>
-                                    <strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.
+                                    <strong>Note:</strong> Plugin Pages 3.0 or newer applies this without a Jellyfin restart. Older versions need one after enabling this option for the first time.
                                     <span class="je-installed-badge" data-plugin="pluginpages"><i class="material-icons" aria-hidden="true">check_circle</i>Plugin Pages detected</span>
                                 </div>
                             </div>
@@ -1326,7 +1333,7 @@
                             </div>
                             <div class="checkboxContainer"><label><input id="downloadsUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages for Requests</span></label></div>
                             <div class="je-setting-description" data-desc-for="downloadsUsePluginPages">
-                                <div class="fieldDescription je-field-desc-xl">Replaces the default Requests page with a <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-pages" target="_blank">Plugin Pages</a> implementation.<br/><strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.<span class="je-installed-badge" data-plugin="pluginpages"><i class="material-icons" aria-hidden="true">check_circle</i>Plugin Pages detected</span></div>
+                                <div class="fieldDescription je-field-desc-xl">Replaces the default Requests page with a <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-pages" target="_blank">Plugin Pages</a> implementation.<br/><strong>Note:</strong> Plugin Pages 3.0 or newer applies this without a Jellyfin restart. Older versions need one after enabling this option for the first time.<span class="je-installed-badge" data-plugin="pluginpages"><i class="material-icons" aria-hidden="true">check_circle</i>Plugin Pages detected</span></div>
                             </div>
 
                             <div class="checkboxContainer"><label><input id="downloadsUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs for Requests</span></label></div>
@@ -1418,7 +1425,7 @@
                             <div class="je-setting-description" data-desc-for="calendarUsePluginPages">
                                 <div class="fieldDescription je-field-desc-xl">
                                     Replaces the default Calendar page with a <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-pages" target="_blank">Plugin Pages</a> implementation.<br/>
-                                    <strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.
+                                    <strong>Note:</strong> Plugin Pages 3.0 or newer applies this without a Jellyfin restart. Older versions need one after enabling this option for the first time.
                                     <span class="je-installed-badge" data-plugin="pluginpages"><i class="material-icons" aria-hidden="true">check_circle</i>Plugin Pages detected</span>
                                 </div>
                             </div>
@@ -1540,7 +1547,7 @@
                             <div class="je-setting-description" data-desc-for="recommendationsUsePluginPages">
                                 <div class="fieldDescription je-field-desc-xl">
                                     Replaces the default Recommendations page with a <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-pages" target="_blank">Plugin Pages</a> implementation.<br/>
-                                    <strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.
+                                    <strong>Note:</strong> Plugin Pages 3.0 or newer applies this without a Jellyfin restart. Older versions need one after enabling this option for the first time.
                                     <span class="je-installed-badge" data-plugin="pluginpages"><i class="material-icons" aria-hidden="true">check_circle</i>Plugin Pages detected</span>
                                 </div>
                             </div>
@@ -1628,7 +1635,7 @@
                             <div class="je-setting-description" data-desc-for="activityFeedUsePluginPages">
                                 <div class="fieldDescription je-field-desc-xl">
                                     Adds an "Activity" link via <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-pages" target="_blank">Plugin Pages</a>.<br/>
-                                    <strong>Note:</strong> Jellyfin must be restarted after enabling this option for the first time for changes to take effect.
+                                    <strong>Note:</strong> Plugin Pages 3.0 or newer applies this without a Jellyfin restart. Older versions need one after enabling this option for the first time.
                                     <span class="je-installed-badge" data-plugin="pluginpages"><i class="material-icons" aria-hidden="true">check_circle</i>Plugin Pages detected</span>
                                 </div>
                             </div>
@@ -1671,6 +1678,90 @@
                                                     <span class="copy-btn-text je-copy-btn-text">Copy</span>
                                                 </button>
                                                 <pre class="je-code-pre"><code>&lt;div class="jellyfinenhanced activity"&gt;&lt;/div&gt;</code></pre>
+                                            </div>
+                                            <div class="fieldDescription je-field-desc-mt">
+                                                Already have Custom Tabs installed?
+                                                <a class="sectionTitle je-custom-tabs-link" href="/web/#/configurationpage?name=Custom%20Tabs">Click here to configure it.</a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend class="sectionTitle">Catch Up</legend>
+                        <div class="configSection">
+                            <div class="je-info-banner-inline-center" style="margin-bottom: 15px;">
+                                <div class="je-info-banner-row">
+                                    <i class="material-icons je-info-icon">style</i>
+                                    <div>
+                                        <strong>Catch Up</strong> shows unwatched movies and shows as cards. Swipe right to mark watched, left to dismiss, up to add to your watchlist (the Likes flag) and down to open the title. Handy for finding out what people have already seen.
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="checkboxContainer je-main-feature"><label><input id="catchUpEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Catch Up</span></label></div>
+                            <div class="je-setting-description" data-desc-for="catchUpEnabled">
+                                <div class="fieldDescription je-field-desc-md">Turns the feature on. Each user only sees titles they have library access to.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="catchUpLogEnabled" is="emby-checkbox" type="checkbox"/><span>Record Catch Up activity</span></label></div>
+                            <div class="je-setting-description" data-desc-for="catchUpLogEnabled">
+                                <div class="fieldDescription je-field-desc-xl">Logs who swiped what (user, title, action and time) to <code>catchup-log.jsonl</code> in the plugin's configuration folder. Administrators can read it, with a per-user summary, in the Activity panel on the Catch Up page. The log is size-bounded (about 5&nbsp;MB per file, two files kept).</div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="catchUpUseNativeTab" is="emby-checkbox" type="checkbox"/><span>Add Catch Up as a native Home tab</span></label></div>
+                            <div class="je-setting-description" data-desc-for="catchUpUseNativeTab">
+                                <div class="fieldDescription je-field-desc-xl">Adds Catch Up as its own tab on the Home page, no external plugin needed.<br/><strong>Recommended on Jellyfin 12's experimental layout</strong> (the default).</div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="catchUpUsePluginPages" is="emby-checkbox" type="checkbox"/><span>Use Plugin Pages</span></label></div>
+                            <div class="je-setting-description" data-desc-for="catchUpUsePluginPages">
+                                <div class="fieldDescription je-field-desc-xl">
+                                    Adds a "Catch Up" link via <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-pages" target="_blank">Plugin Pages</a>.<br/>
+                                    <strong>Note:</strong> Plugin Pages 3.0 or newer applies this without a Jellyfin restart. Older versions need one after enabling this option for the first time.
+                                    <span class="je-installed-badge" data-plugin="pluginpages"><i class="material-icons" aria-hidden="true">check_circle</i>Plugin Pages detected</span>
+                                </div>
+                            </div>
+
+                            <div class="checkboxContainer"><label><input id="catchUpUseCustomTabs" is="emby-checkbox" type="checkbox"/><span>Use Custom Tabs</span></label></div>
+                            <div class="je-note-banner je-v12-tab-hint-banner" id="je-v12-hint-catchUp" style="display:none;">
+                                <i class="material-icons je-note-icon">info</i>
+                                <div>On Jellyfin 12, <strong>"Add Catch Up as a native Home tab"</strong> is more reliable than Custom Tabs. The two cannot be enabled together.</div>
+                            </div>
+
+                            <div class="checkboxContainer je-customtabs-automanage" data-gated-by="catchUpUseCustomTabs,catchUpEnabled">
+                                <label><input id="catchUpAutoCreateCustomTab" is="emby-checkbox" type="checkbox"/><span>Add the Custom Tabs entry for me</span></label>
+                            </div>
+                            <div class="je-setting-description je-customtabs-automanage" data-desc-for="catchUpAutoCreateCustomTab" data-gated-by="catchUpUseCustomTabs,catchUpEnabled">
+                                <div class="fieldDescription je-field-desc-md">
+                                    Jellyfin Enhanced will create the matching Custom Tabs entry on save. Turning off "Use Custom Tabs" removes the entry; turning it back on re-creates it. Leave unchecked to manage the Custom Tabs entry yourself.
+                                </div>
+                            </div>
+
+                            <div class="je-setting-description" data-desc-for="catchUpUseCustomTabs">
+                                <div class="je-info-banner-inline">
+                                    <div class="je-info-banner-row">
+                                        <i class="material-icons je-info-icon">info</i>
+                                        <div>
+                                            <h4 class="je-custom-tabs-h4">
+                                                Embed Catch Up in Custom Tabs:
+                                                <span class="je-installed-badge" data-plugin="customtabs"><i class="material-icons" aria-hidden="true">check_circle</i>Custom Tabs detected</span>
+                                            </h4>
+                                            <p class="fieldDescription je-custom-tabs-p">Display the Catch Up page in a Custom Tabs tab instead of the sidebar link.</p>
+                                            <p class="fieldDescription je-custom-tabs-p-mt je-needs-customtabs">You need the <a class="sectionTitle" href="https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs" target="_blank">Custom Tabs</a> plugin.</p>
+                                            <ol class="fieldDescription je-custom-tabs-ol">
+                                                <li class="je-custom-tabs-li je-needs-customtabs">Install the <strong>Custom Tabs</strong> plugin and all its prerequisites.</li>
+                                                <li class="je-custom-tabs-li">Navigate to Dashboard &gt; Plugins &gt; Custom Tabs and add a new tab.</li>
+                                                <li class="je-custom-tabs-li">Add "Display Text" according to your preference (e.g., "Catch Up").</li>
+                                                <li class="je-custom-tabs-li">Copy the code below and paste it into the 'HTML Content' field.</li>
+                                            </ol>
+                                            <div class="je-copy-code-wrapper">
+                                                <button class="je-copy-html-btn raised raised-mini emby-button" data-copy-text='&lt;div class="jellyfinenhanced catchup"&gt;&lt;/div&gt;' type="button">
+                                                    <i class="material-icons je-copy-icon">content_copy</i>
+                                                    <span class="copy-btn-text je-copy-btn-text">Copy</span>
+                                                </button>
+                                                <pre class="je-code-pre"><code>&lt;div class="jellyfinenhanced catchup"&gt;&lt;/div&gt;</code></pre>
                                             </div>
                                             <div class="fieldDescription je-field-desc-mt">
                                                 Already have Custom Tabs installed?
@@ -2448,6 +2539,10 @@
                                 <div class="je-setting-description" data-desc-for="IGNORE_PROVIDERS">
                                     <div class="fieldDescription">A list of providers to ignore from the default region (supports regex).<a class="sectionTitle" href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/providers.txt" target="_blank">Full List</a></div>
                                 </div>
+                            <div class="checkboxContainer"><label><input id="ElsewhereSeasonProviders" is="emby-checkbox" type="checkbox"/><span>Per-season providers</span></label></div>
+                                <div class="je-setting-description" data-desc-for="ElsewhereSeasonProviders">
+                                    <div class="fieldDescription">On Series and Season pages, look up streaming providers per season from TMDB. A season is labelled only when seasons differ; seasons TMDB has no data for fall back to the series providers. Only applies when the series uses the default (aired) season order. Users can turn this off for themselves in the Elsewhere search settings.</div>
+                                </div>
 
                             <details class="je-details-section">
                                 <summary>Custom Branding</summary>
@@ -3014,23 +3109,24 @@
                             </div>
                             <hr style="border:0; border-top: 1px solid rgba(255,255,255,0.05); margin: 5px 0;">
 
-                            <h4>Add Override</h4>
-                            <div style="display:flex; gap:10px; align-items:center;">
-                                <select is="emby-select" class="emby-select" id="add-shortcut-select" style="flex:1;"></select>
-                                <input is="emby-input" id="add-shortcut-key" type="text" placeholder="Key (e.g. Shift+A)" style="flex:1;"/>
-                                <div class="je-setting-description" data-desc-for="add-shortcut-key">
-                                    <p class="fieldDescription je-field-desc-mt">
-                                    <b>Modifier Keys:</b> Use `Shift+`, `Ctrl+`, or `Alt+`. Examples: `Shift+A`, `Ctrl+S`.
-                                    </p>
-                                </div>
-                                <button is="emby-button" type="button" id="add-shortcut-btn" class="emby-button raised">Add</button>
-                                <button is="emby-button" type="button" id="disable-shortcut-btn" class="emby-button raised button-cancel" title="Disables this shortcut for every user on the server">Disable</button>
-                            </div>
-                            <div class="fieldDescription je-field-desc-mt">Select a shortcut above and click <b>Disable</b> to turn it off server-wide (the key field is ignored). Users can still re-enable it for themselves from their own Enhanced Panel.</div>
+                            <style>
+                                #shortcut-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-top: 12px; }
+                                #shortcut-grid h4 { margin: 0 0 10px 0; }
+                                .je-sc-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; }
+                                .je-sc-row.je-sc-disabled { opacity: 0.5; }
+                                .je-sc-left { display: flex; align-items: center; gap: 6px; }
+                                .je-sc-key { min-width: 28px; text-align: center; padding: 2px 8px; border-radius: 3px; background: rgba(255,255,255,0.12); border: 1px solid transparent; cursor: pointer; font-family: monospace; outline: none; }
+                                .je-sc-key[data-readonly] { cursor: default; }
+                                .je-sc-key:focus { border-color: var(--primary-accent-color, #00a4dc); }
+                                .je-sc-key.je-sc-error { background: rgb(255 0 0 / 60%); }
+                                .je-sc-btn { background: transparent; border: none; color: inherit; opacity: 0.6; cursor: pointer; padding: 2px; display: flex; align-items: center; }
+                                .je-sc-btn:hover { opacity: 1; }
+                                .je-sc-btn .material-icons { font-size: 18px; }
+                                .je-sc-mod { color: var(--primary-accent-color, #00a4dc); font-size: 20px; line-height: 1; margin-right: 6px; }
+                            </style>
+                            <div class="fieldDescription je-field-desc-mt">Click a key, then press the new key combination (for example <kbd>Shift+A</kbd>). <b>Delete</b> disables the shortcut for every user, <b>Backspace</b> restores its default. Users can still change their own keys from their Enhanced Panel.</div>
                             <div id="shortcut-error-comment" style="display: none; color: #ff6b6b; margin-top:5px;"></div>
-
-                            <h4 style="margin-top:20px;">Current Overrides</h4>
-                            <div id="shortcut-list-container" style="display:flex; flex-direction:column; gap:10px;"></div>
+                            <div id="shortcut-grid"></div>
                         </div>
                     </fieldset>
                 </div>
@@ -3137,11 +3233,7 @@
             const resetAllUserSettingsBtn = document.querySelector('#resetAllUserSettingsBtn');
             const clearTagsCacheBtn = document.querySelector('#clearTagsCacheBtn');
 
-            const shortcutListContainer = document.getElementById('shortcut-list-container');
-            const addShortcutSelect = document.getElementById('add-shortcut-select');
-            const addShortcutKeyInput = document.getElementById('add-shortcut-key');
-            const addShortcutBtn = document.getElementById('add-shortcut-btn');
-            const disableShortcutBtn = document.getElementById('disable-shortcut-btn');
+            const shortcutGrid = document.getElementById('shortcut-grid');
             const shortcutErrorComment = document.getElementById('shortcut-error-comment');
 
             const testJellyseerrBtn = document.getElementById('testJellyseerrBtn');
@@ -3915,151 +4007,111 @@
             { Name: "JumpToPercentage", Key: "0-9", Label: "Jump to % of video", Category: "Player" }
         ];
 
-        function renderOverrides() {
-            shortcutListContainer.innerHTML = '';
-            if (shortcutOverrides.length === 0) {
-                shortcutListContainer.innerHTML = '<p class="fieldDescription" style="text-align: center;">No overrides configured. All shortcuts are using default values.</p>';
-            }
-            shortcutOverrides.forEach((shortcut, index) => {
-                const row = document.createElement('div');
-                row.className = 'inputContainer';
-                row.style.display = 'flex';
-                row.style.alignItems = 'center';
-                row.style.gap = '1em';
+        // Same player-page actions and Jellyfin-native keys the per-user panel protects.
+        const PLAYER_KEYS_TAKEN = new Set([' ', 'Enter', 'Escape', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', 'K', 'J', 'L', 'M', 'F', 'Shift+N', 'Shift+P']);
 
-                const label = document.createElement('label');
-                label.className = 'inputLabel';
-                label.textContent = shortcut.Label;
-                label.style.flex = '1';
-
-                const input = document.createElement('input');
-                input.setAttribute('is', 'emby-input');
-                input.type = 'text';
-                input.value = shortcut.Key;
-                input.style.flex = '1';
-                input.style.textAlign = 'center';
-                if (shortcut.Key === '') {
-                    input.placeholder = 'Disabled';
-                    input.style.opacity = '0.6';
-                    input.title = 'This shortcut is disabled server-wide. Type a key here to re-enable it with that binding, or click Remove to revert to the default.';
-                }
-                input.addEventListener('input', (e) => {
-                    let value = e.target.value;
-                    // Automatically convert single lowercase letters to uppercase ***
-                    if (value.match(/^[a-z]$/)) {
-                        value = value.toUpperCase();
-                        e.target.value = value;
-                    }
-                    input.style.opacity = value === '' ? '0.6' : '';
-                    input.placeholder = value === '' ? 'Disabled' : '';
-                    shortcutOverrides[index].Key = value;
-                });
-
-
-                const buttonContainer = document.createElement('div');
-                const removeBtn = document.createElement('button');
-                removeBtn.setAttribute('is', 'emby-button');
-                removeBtn.type = 'button';
-                removeBtn.textContent = 'Remove';
-                removeBtn.className = 'raised button-cancel';
-                removeBtn.style.marginLeft = '1em';
-                removeBtn.addEventListener('click', () => {
-                    shortcutOverrides.splice(index, 1);
-                    renderOverrides();
-                    populateAddShortcutDropdown();
-                });
-
-                buttonContainer.appendChild(removeBtn);
-                row.appendChild(label);
-                row.appendChild(input);
-                row.appendChild(buttonContainer);
-                shortcutListContainer.appendChild(row);
-            });
+        function effectiveShortcutKey(def) {
+            const o = shortcutOverrides.find(x => x.Name === def.Name);
+            return o ? o.Key : def.Key;
         }
 
-        function populateAddShortcutDropdown() {
-            addShortcutSelect.innerHTML = '';
-            const overriddenNames = shortcutOverrides.map(s => s.Name);
-            const availableShortcuts = defaultShortcuts.filter(s => !overriddenNames.includes(s.Name));
-
-            availableShortcuts.forEach(shortcut => {
-                const option = document.createElement('option');
-                option.value = shortcut.Name;
-                option.textContent = shortcut.Label;
-                addShortcutSelect.appendChild(option);
-            });
-            addShortcutBtn.disabled = availableShortcuts.length === 0;
-            addShortcutKeyInput.disabled = availableShortcuts.length === 0;
-            disableShortcutBtn.disabled = availableShortcuts.length === 0;
+        function setShortcutOverride(def, key) {
+            shortcutOverrides = shortcutOverrides.filter(x => x.Name !== def.Name);
+            if (key !== def.Key) shortcutOverrides.push({ ...def, Key: key });
+            renderOverrides();
         }
 
-        function showValidationError(elementToShake, message) {
+        function showValidationError(chip, message) {
             shortcutErrorComment.textContent = message;
             shortcutErrorComment.style.display = 'block';
-            elementToShake.classList.add('shake');
-
+            chip.classList.add('je-sc-error');
             setTimeout(() => {
-                elementToShake.classList.remove('shake');
+                chip.classList.remove('je-sc-error');
                 shortcutErrorComment.style.display = 'none';
-            }, 8000);
+            }, 4000);
         }
 
-        addShortcutBtn.addEventListener('click', () => {
-            const selectedName = addShortcutSelect.value;
-            let newKey = addShortcutKeyInput.value.trim();
+        function renderOverrides() {
+            shortcutGrid.innerHTML = '';
+            ['Global', 'Player'].forEach(category => {
+                const col = document.createElement('div');
+                const title = document.createElement('h4');
+                title.textContent = category;
+                col.appendChild(title);
 
-            // Automatically convert single lowercase letters to uppercase ***
-            if (newKey.match(/^[a-z]$/)) {
-                newKey = newKey.toUpperCase();
-            }
+                defaultShortcuts.filter(d => d.Category === category && d.Name !== 'JumpToPercentage').forEach(def => {
+                    const key = effectiveShortcutKey(def);
+                    const isDisabled = key === '';
+                    const isModified = shortcutOverrides.some(x => x.Name === def.Name);
 
-            // Check 0: See if there is a key being added
-            if (!selectedName || !newKey) {
-                showValidationError(addShortcutBtn, 'Please enter a key to use as an override.');
-                return;
-            }
+                    const row = document.createElement('div');
+                    row.className = 'je-sc-row' + (isDisabled ? ' je-sc-disabled' : '');
 
-            // Check 1: See if the key is already used in another custom override.
-            const overrideConflict = shortcutOverrides.find(s => s.Key.toLowerCase() === newKey.toLowerCase());
+                    const left = document.createElement('div');
+                    left.className = 'je-sc-left';
+                    const chip = document.createElement('span');
+                    chip.className = 'je-sc-key';
+                    chip.textContent = isDisabled ? 'Disabled' : key;
+                    {
+                        chip.tabIndex = 0;
+                        chip.setAttribute('data-je-key-recorder', '1');
+                        chip.addEventListener('click', () => chip.focus());
+                        chip.addEventListener('focus', () => { chip.textContent = 'Press a key...'; });
+                        chip.addEventListener('blur', () => { chip.textContent = isDisabled ? 'Disabled' : key; });
+                        chip.addEventListener('keydown', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (e.key === 'Backspace') { setShortcutOverride(def, def.Key); return; }
+                            if (e.key === 'Delete') { setShortcutOverride(def, ''); return; }
+                            if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+                            if (e.key === 'Tab') { chip.blur(); return; }
 
-            if (overrideConflict) {
-                const errorMessage = "The key '" + newKey + "' is already assigned to '" + overrideConflict.Label + "' as an override.";
-                showValidationError(addShortcutKeyInput.parentElement, errorMessage);
-                return;
-            }
+                            const isLetter = /^[a-zA-Z]$/.test(e.key);
+                            const isShiftedSymbol = e.key.length === 1 && e.key !== ' ' && !isLetter;
+                            const combo = (e.metaKey ? 'Meta+' : '') + (e.ctrlKey ? 'Ctrl+' : '') + (e.altKey ? 'Alt+' : '') + (e.shiftKey && !isShiftedSymbol ? 'Shift+' : '') + (isLetter ? e.key.toUpperCase() : e.key);
+                            if (combo !== def.Key) {
+                                if (def.Category === 'Player' && PLAYER_KEYS_TAKEN.has(combo)) {
+                                    showValidationError(chip, "The key '" + combo + "' is already used by the Jellyfin player.");
+                                    return;
+                                }
+                                const clash = defaultShortcuts.find(d => d.Name !== def.Name && effectiveShortcutKey(d) === combo);
+                                if (clash) {
+                                    showValidationError(chip, "The key '" + combo + "' is already used by '" + clash.Label + "'.");
+                                    return;
+                                }
+                            }
+                            setShortcutOverride(def, combo);
+                        });
+                    }
+                    left.appendChild(chip);
 
-            // Check 2: See if the key is used by another default shortcut.
-            const defaultConflict = defaultShortcuts.find(s => s.Key.toLowerCase() === newKey.toLowerCase() && s.Name !== selectedName);
+                    {
+                        const toggle = document.createElement('button');
+                        toggle.type = 'button';
+                        toggle.className = 'je-sc-btn';
+                        toggle.title = isDisabled ? 'Enable (restore default key)' : 'Disable for every user';
+                        toggle.innerHTML = '<span class="material-icons"' + (isDisabled ? ' style="color: #ff6b6b;"' : '') + '>block</span>';
+                        toggle.addEventListener('click', () => setShortcutOverride(def, isDisabled ? def.Key : ''));
+                        left.appendChild(toggle);
+                    }
 
-            if (defaultConflict) {
-                const errorMessage = "The key '" + newKey + "' is already used by '" + defaultConflict.Label + "'.";
-                showValidationError(addShortcutKeyInput.parentElement, errorMessage);
-                return;
-            }
+                    const right = document.createElement('div');
+                    if (isModified) {
+                        const dot = document.createElement('span');
+                        dot.className = 'je-sc-mod';
+                        dot.title = 'Changed from default (' + def.Key + ')';
+                        dot.textContent = '\u2022';
+                        right.appendChild(dot);
+                    }
+                    right.appendChild(document.createTextNode(def.Label));
 
-            const defaultConfig = defaultShortcuts.find(s => s.Name === selectedName);
-            if (defaultConfig) {
-                shortcutOverrides.push({ ...defaultConfig, Key: newKey });
-                renderOverrides();
-                populateAddShortcutDropdown();
-                addShortcutKeyInput.value = '';
-            }
-        });
-
-        disableShortcutBtn.addEventListener('click', () => {
-            const selectedName = addShortcutSelect.value;
-            if (!selectedName) return;
-
-            const defaultConfig = defaultShortcuts.find(s => s.Name === selectedName);
-            if (defaultConfig) {
-                // An empty Key is the same "disabled" sentinel the per-user Enhanced Panel
-                // uses — it can never match a real keypress, so the shortcut just no-ops.
-                shortcutOverrides.push({ ...defaultConfig, Key: '' });
-                renderOverrides();
-                populateAddShortcutDropdown();
-                addShortcutKeyInput.value = '';
-            }
-        });
+                    row.appendChild(left);
+                    row.appendChild(right);
+                    col.appendChild(row);
+                });
+                shortcutGrid.appendChild(col);
+            });
+        }
 
         async function testJellyseerrConnection() {
             const urls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean);
@@ -4383,7 +4435,8 @@
             { masterKey: 'DownloadsPageEnabled',  parentKey: 'DownloadsUseCustomTabs',     autoKey: 'DownloadsAutoCreateCustomTab',     ownedKey: 'DownloadsCustomTabJeOwned',     title: 'Requests',       html: '<div class="jellyfinenhanced requests"></div>' },
             { masterKey: 'CalendarPageEnabled',   parentKey: 'CalendarUseCustomTabs',      autoKey: 'CalendarAutoCreateCustomTab',      ownedKey: 'CalendarCustomTabJeOwned',      title: 'Calendar',       html: '<div class="jellyfinenhanced calendar"></div>' },
             { masterKey: 'RecommendationsPageEnabled', parentKey: 'RecommendationsUseCustomTabs', autoKey: 'RecommendationsAutoCreateCustomTab', ownedKey: 'RecommendationsCustomTabJeOwned', title: 'Recommendations', html: '<div class="jellyfinenhanced recommendations"></div>' },
-            { masterKey: 'ActivityFeedEnabled',   parentKey: 'ActivityFeedUseCustomTabs',   autoKey: 'ActivityFeedAutoCreateCustomTab',   ownedKey: 'ActivityFeedCustomTabJeOwned',  title: 'Activity',       html: '<div class="jellyfinenhanced activity"></div>' }
+            { masterKey: 'ActivityFeedEnabled',   parentKey: 'ActivityFeedUseCustomTabs',   autoKey: 'ActivityFeedAutoCreateCustomTab',   ownedKey: 'ActivityFeedCustomTabJeOwned',  title: 'Activity',       html: '<div class="jellyfinenhanced activity"></div>' },
+            { masterKey: 'CatchUpEnabled',      parentKey: 'CatchUpUseCustomTabs',        autoKey: 'CatchUpAutoCreateCustomTab',        ownedKey: 'CatchUpCustomTabJeOwned',       title: 'Catch Up',       html: '<div class="jellyfinenhanced catchup"></div>' }
         ];
 
         function isCustomTabsConfigShapeOk(cfg) {
@@ -5580,6 +5633,52 @@
         // list has been rendered from it yet. Until it has (VirtualFolders
         // still loading, or failed) a save round-trips the stored value
         // untouched instead of silently resetting it to "every library".
+        var _tagCacheExcludedRaw = '';
+        var _tagCacheExcludedRendered = false;
+
+        function renderTagCacheExcludedLibraries(raw) {
+            var host = document.getElementById('tagCacheExcludedLibraryList');
+            if (!host) return;
+            _tagCacheExcludedRaw = String(raw || '');
+            var selected = _tagCacheExcludedRaw.split(',').map(function (s) { return s.trim().toLowerCase(); });
+            ApiClient.getJSON(ApiClient.getUrl('Library/VirtualFolders')).then(function (folders) {
+                host.innerHTML = '';
+                (folders || []).filter(function (f) { return f.ItemId; }).forEach(function (f) {
+                    var wrap = document.createElement('div');
+                    wrap.className = 'checkboxContainer';
+                    var label = document.createElement('label');
+                    var input = document.createElement('input');
+                    input.setAttribute('is', 'emby-checkbox');
+                    input.type = 'checkbox';
+                    input.className = 'tagCacheExcludedLibrary';
+                    input.setAttribute('data-library-id', f.ItemId);
+                    input.checked = selected.indexOf(String(f.ItemId).replace(/-/g, '').toLowerCase()) !== -1;
+                    var span = document.createElement('span');
+                    span.textContent = f.Name;
+                    label.appendChild(input);
+                    label.appendChild(span);
+                    wrap.appendChild(label);
+                    host.appendChild(wrap);
+                });
+                _tagCacheExcludedRendered = true;
+            }).catch(function () {
+                host.innerHTML = '<div class="fieldDescription">Could not load the library list. Saving keeps the current selection.</div>';
+            });
+        }
+
+        document.getElementById('tagCacheExcludeLibraries').addEventListener('change', function () {
+            document.getElementById('tagCacheExcludedLibrariesBox').style.display = this.checked ? '' : 'none';
+        });
+
+        function collectTagCacheExcludedLibraries() {
+            if (!_tagCacheExcludedRendered) return _tagCacheExcludedRaw;
+            var ids = [];
+            document.querySelectorAll('#tagCacheExcludedLibraryList input.tagCacheExcludedLibrary').forEach(function (el) {
+                if (el.checked) ids.push(String(el.getAttribute('data-library-id')).replace(/-/g, '').toLowerCase());
+            });
+            return ids.join(',');
+        }
+
         var _spoilerAutoEnableLibrariesRaw = '';
         var _spoilerAutoEnableLibrariesRendered = false;
 
@@ -5833,7 +5932,6 @@
                 });
 
                 renderOverrides();
-                populateAddShortcutDropdown();
 
                 // Load all other settings
                 document.querySelector('#devMode').checked = config.DevMode;
@@ -5879,6 +5977,7 @@
                 populateRegionSelect(config.DEFAULT_REGION);
                 document.querySelector('#DEFAULT_PROVIDERS').value = config.DEFAULT_PROVIDERS;
                 document.querySelector('#IGNORE_PROVIDERS').value = config.IGNORE_PROVIDERS;
+                document.querySelector('#ElsewhereSeasonProviders').checked = config.ElsewhereSeasonProviders !== false;
                 document.querySelector('#ElsewhereCustomBrandingText').value = config.ElsewhereCustomBrandingText || '';
                 document.querySelector('#ElsewhereCustomBrandingImageUrl').value = config.ElsewhereCustomBrandingImageUrl || '';
                 document.querySelector('#jellyseerr_TMDB_API_KEY').value = config.TMDB_API_KEY;
@@ -5971,6 +6070,9 @@
                 document.querySelector('#ratingTagsOnContinueWatching').checked = config.RatingTagsOnContinueWatching !== false;
                 document.querySelector('#ratingTagsOnNextUp').checked = config.RatingTagsOnNextUp !== false;
                 document.querySelector('#tagCacheServerMode').checked = config.TagCacheServerMode !== false;
+                document.querySelector('#tagCacheExcludeLibraries').checked = config.TagCacheExcludeLibraries === true;
+                document.getElementById('tagCacheExcludedLibrariesBox').style.display = config.TagCacheExcludeLibraries === true ? '' : 'none';
+                renderTagCacheExcludedLibraries(config.TagCacheExcludedLibraryIds || '');
                 document.querySelector('#enableTagsLocalStorageFallback').checked = config.EnableTagsLocalStorageFallback === true;
                 document.querySelector('#tagsCacheTtlDays').value = config.TagsCacheTtlDays || 30;
                 document.querySelector('#pauseScreenEnabled').checked = config.PauseScreenEnabled;
@@ -6229,6 +6331,13 @@
                 document.querySelector('#activityFeedShowActiveStreams').checked = config.ActivityFeedShowActiveStreams !== false;
                 document.querySelector('#activityFeedUseNativeTab').checked = config.ActivityFeedUseNativeTab === true;
                 document.querySelector('#activityFeedUsePluginPages').checked = config.ActivityFeedUsePluginPages === true;
+                document.querySelector('#catchUpEnabled').checked = config.CatchUpEnabled === true;
+                document.querySelector('#catchUpUsePluginPages').checked = config.CatchUpUsePluginPages === true;
+                document.querySelector('#catchUpLogEnabled').checked = config.CatchUpLogEnabled !== false;
+                document.querySelector('#catchUpUseNativeTab').checked = config.CatchUpUseNativeTab === true;
+                document.querySelector('#catchUpUseCustomTabs').checked = config.CatchUpUseCustomTabs === true;
+                var __cuAuto = document.querySelector('#catchUpAutoCreateCustomTab');
+                if (__cuAuto) __cuAuto.checked = config.CatchUpAutoCreateCustomTab === true;
                 document.querySelector('#activityFeedUseCustomTabs').checked = config.ActivityFeedUseCustomTabs === true;
                 var __aAuto = document.querySelector('#activityFeedAutoCreateCustomTab');
                 if (__aAuto) __aAuto.checked = config.ActivityFeedAutoCreateCustomTab === true;
@@ -6456,6 +6565,7 @@
             config.DEFAULT_REGION = document.querySelector('#DEFAULT_REGION').value;
             config.DEFAULT_PROVIDERS = document.querySelector('#DEFAULT_PROVIDERS').value;
             config.IGNORE_PROVIDERS = document.querySelector('#IGNORE_PROVIDERS').value;
+            config.ElsewhereSeasonProviders = document.querySelector('#ElsewhereSeasonProviders').checked;
             config.ElsewhereCustomBrandingText = document.querySelector('#ElsewhereCustomBrandingText').value;
             config.ElsewhereCustomBrandingImageUrl = document.querySelector('#ElsewhereCustomBrandingImageUrl').value;
             config.AutoPauseEnabled = document.querySelector('#autoPauseEnabled').checked;
@@ -6509,6 +6619,8 @@
             config.RatingTagsOnContinueWatching = document.querySelector('#ratingTagsOnContinueWatching').checked;
             config.RatingTagsOnNextUp = document.querySelector('#ratingTagsOnNextUp').checked;
             config.TagCacheServerMode = document.querySelector('#tagCacheServerMode').checked;
+            config.TagCacheExcludeLibraries = document.querySelector('#tagCacheExcludeLibraries').checked;
+            config.TagCacheExcludedLibraryIds = collectTagCacheExcludedLibraries();
             config.EnableTagsLocalStorageFallback = config.TagCacheServerMode
                 ? document.querySelector('#enableTagsLocalStorageFallback').checked
                 : true;
@@ -6733,6 +6845,13 @@
             config.ActivityFeedShowActiveStreams = document.querySelector('#activityFeedShowActiveStreams').checked;
             config.ActivityFeedUseNativeTab = document.querySelector('#activityFeedUseNativeTab').checked;
             config.ActivityFeedUsePluginPages = document.querySelector('#activityFeedUsePluginPages').checked;
+            config.CatchUpEnabled = document.querySelector('#catchUpEnabled').checked;
+            config.CatchUpUsePluginPages = document.querySelector('#catchUpUsePluginPages').checked;
+            config.CatchUpLogEnabled = document.querySelector('#catchUpLogEnabled').checked;
+            config.CatchUpUseNativeTab = document.querySelector('#catchUpUseNativeTab').checked;
+            config.CatchUpUseCustomTabs = document.querySelector('#catchUpUseCustomTabs').checked;
+            var __cuAutoSave = document.querySelector('#catchUpAutoCreateCustomTab');
+            config.CatchUpAutoCreateCustomTab = !!(__cuAutoSave && __cuAutoSave.checked);
             config.ActivityFeedUseCustomTabs = document.querySelector('#activityFeedUseCustomTabs').checked;
             var __aAutoSave = document.querySelector('#activityFeedAutoCreateCustomTab');
             config.ActivityFeedAutoCreateCustomTab = !!(__aAutoSave && __aAutoSave.checked);
@@ -7829,12 +7948,14 @@
             { id: 'calendarUsePluginPages',        checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'recommendationsUsePluginPages', checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'activityFeedUsePluginPages',    checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
+            { id: 'catchUpUsePluginPages',           checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
             { id: 'bookmarksUseCustomTabs',        checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'hiddenContentUseCustomTabs',    checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'downloadsUseCustomTabs',        checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'calendarUseCustomTabs',         checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'recommendationsUseCustomTabs',  checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'activityFeedUseCustomTabs',     checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
+            { id: 'catchUpUseCustomTabs',          checkFn: function() { return hasCustomTabs !== false; }, hint: 'Install Custom Tabs plugin to enable', icon: 'extension' },
             { id: 'showLetterboxdLinkAsText', checkFn: function() { return !isMetadataIconsEnabled(); }, hint: 'Forced to icon mode while Metadata Icons (Druidblack) is enabled', icon: 'block' },
             { id: 'showArrLinksAsText',       checkFn: function() { return !isMetadataIconsEnabled(); }, hint: 'Forced to icon mode while Metadata Icons (Druidblack) is enabled', icon: 'block' }
         ];
@@ -7847,7 +7968,8 @@
             { customId: 'downloadsUseCustomTabs',       nativeId: 'downloadsUseNativeTab',       bannerId: 'je-v12-hint-downloads' },
             { customId: 'calendarUseCustomTabs',        nativeId: 'calendarUseNativeTab',        bannerId: 'je-v12-hint-calendar' },
             { customId: 'recommendationsUseCustomTabs', nativeId: 'recommendationsUseNativeTab', bannerId: 'je-v12-hint-recommendations' },
-            { customId: 'activityFeedUseCustomTabs',    nativeId: 'activityFeedUseNativeTab',     bannerId: 'je-v12-hint-activityFeed' }
+            { customId: 'activityFeedUseCustomTabs',    nativeId: 'activityFeedUseNativeTab',     bannerId: 'je-v12-hint-activityFeed' },
+            { customId: 'catchUpUseCustomTabs',         nativeId: 'catchUpUseNativeTab',         bannerId: 'je-v12-hint-catchUp' }
         ];
 
         /**
@@ -8044,7 +8166,7 @@
 
         var PARENT_DEPS = [
             { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['nativePosterTagsWebClientNames'] },
-            { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
+            { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereSeasonProviders', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'mirrorReviewRatingsToJellyfin', 'showUserRatingDash', 'showUserRatingOnPosters'] },
@@ -8072,6 +8194,7 @@
             { parent: 'calendarPageEnabled', label: 'Enable Calendar Page', children: ['calendarUsePluginPages', 'calendarUseNativeTab', 'calendarUseCustomTabs', 'calendarFirstDayOfWeek', 'calendarTimeFormat', 'calendarHighlightFavorites', 'calendarHighlightWatchedSeries', 'calendarFilterByLibraryAccess', 'calendarShowOnlyRequested', 'calendarForceOnlyRequested'] },
             { parent: 'recommendationsPageEnabled', label: 'Enable Recommendations Page', children: ['recommendationsUseNativeTab', 'recommendationsUsePluginPages', 'recommendationsUseCustomTabs', 'recommendationsAutoCreateCustomTab'] },
             { parent: 'activityFeedEnabled', label: 'Enable Activity Feed', children: ['activityFeedShowWatched', 'activityFeedShowFavorited', 'activityFeedShowReviewed', 'activityFeedShowActiveStreams', 'activityFeedUseNativeTab', 'activityFeedUsePluginPages', 'activityFeedUseCustomTabs', 'activityFeedAutoCreateCustomTab'] },
+            { parent: 'catchUpEnabled', label: 'Enable Catch Up', children: ['catchUpLogEnabled', 'catchUpUseNativeTab', 'catchUpUsePluginPages', 'catchUpUseCustomTabs', 'catchUpAutoCreateCustomTab'] },
             { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
             { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
             { parent: 'preventWatchlistReAddition', label: 'Prevent re-adding removed items', children: ['watchlistMemoryRetentionDays'] },
@@ -8999,7 +9122,7 @@
 
         // A page can use the native Home tab or Custom Tabs, never both: the two
         // would register competing tabs for the same page.
-        var TAB_EXCLUSIVE_PAIRS = ['bookmarks', 'hiddenContent', 'downloads', 'calendar', 'recommendations', 'activityFeed'].map(function(p) {
+        var TAB_EXCLUSIVE_PAIRS = ['bookmarks', 'hiddenContent', 'downloads', 'calendar', 'recommendations', 'activityFeed', 'catchUp'].map(function(p) {
             return { native: p + 'UseNativeTab', custom: p + 'UseCustomTabs' };
         });
 
@@ -9091,35 +9214,6 @@
                 return '';
             }
             return (el.value || '').trim();
-        }
-
-        /**
-         * Counts configured arr instance cards for a given type (sonarr|radarr).
-         * An instance is "configured" when both URL and API key are non-empty.
-         * Returns -1 (not 0) if the instance list container is missing, so callers
-         * can distinguish "user configured zero" from "DOM not ready / mismatched."
-         * @param {string} type - 'sonarr' or 'radarr'
-         * @returns {number} Count of fully-configured instances, or -1 if list missing
-         */
-        var _jeMissingListWarned = Object.create(null);
-        function countArrInstances(type) {
-            var listId = type === 'sonarr' ? 'sonarrInstancesList' : 'radarrInstancesList';
-            var list = document.getElementById(listId);
-            if (!list) {
-                if (!_jeMissingListWarned[listId]) {
-                    _jeMissingListWarned[listId] = true;
-                    console.warn('[JE] status dashboard: #' + listId + ' not found');
-                }
-                return -1;
-            }
-            var cards = list.querySelectorAll('.arr-instance-card');
-            var count = 0;
-            for (var i = 0; i < cards.length; i++) {
-                var url = cards[i].querySelector('.arr-instance-url');
-                var key = cards[i].querySelector('.arr-instance-apikey');
-                if (url && url.value.trim() && key && key.value.trim()) count++;
-            }
-            return count;
         }
 
         /**

@@ -2015,7 +2015,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             continue;
                         }
 
-                        if (!DateTime.TryParse(createdEl.GetString(), null,
+                        if (!DateTime.TryParse(createdEl.GetString(), System.Globalization.CultureInfo.InvariantCulture,
                             System.Globalization.DateTimeStyles.RoundtripKind, out var createdAt))
                         {
                             continue;
@@ -2716,8 +2716,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 name = person.Name,
                 tmdbId = tmdbId,
                 type = person.GetType().Name,
-                birthDate = birthDate?.ToString("yyyy-MM-dd"),
-                deathDate = endDate?.ToString("yyyy-MM-dd"),
+                birthDate = birthDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                deathDate = endDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
                 birthPlace = birthPlace,
                 isDeceased = isDeceased,
                 currentAge = currentAge,
@@ -2757,7 +2757,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Parse birth date
                 if (jsonElement.TryGetProperty("birthday", out var birthdayProp) &&
                     birthdayProp.ValueKind != JsonValueKind.Null &&
-                    DateTime.TryParse(birthdayProp.GetString(), out var birth))
+                    TryParseIso(birthdayProp.GetString()) is DateTime birth)
                 {
                     birthDate = birth;
                 }
@@ -2766,7 +2766,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (jsonElement.TryGetProperty("deathday", out var deathdayProp) &&
                     deathdayProp.ValueKind != JsonValueKind.Null &&
                     deathdayProp.GetString() is string deathStr &&
-                    DateTime.TryParse(deathStr, out var death))
+                    TryParseIso(deathStr) is DateTime death)
                 {
                     deathDate = death;
                 }
@@ -3049,93 +3049,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 _logger.Info("[Manual Watchlist Sync] Starting manual Seerr watchlist sync...");
 
-                int itemsProcessed = 0;
-                int itemsAdded = 0;
-                var errors = new List<string>();
-
-                foreach (var user in _userManager.GetAllUsers())
+                // The scheduled task's own pass, so a manual sync honours the same
+                // blocked users, re-addition prevention and requested-media settings.
+                var summary = await new ScheduledTasks.JellyseerrWatchlistSyncTask(
+                    _libraryManager, _userManager, _userDataManager, _httpClientFactory, _userConfigurationManager, _logger)
+                    .RunAsync(null, CancellationToken.None);
+                if (summary == null)
                 {
-                    try
-                    {
-                        _logger.Info($"[Manual Watchlist Sync] Processing user: {user.Username} ({user.Id})");
-
-                        // Get Seerr user ID for this Jellyfin user
-                        var jellyseerrUserId = await GetJellyseerrUserId(user.Id.ToString());
-                        if (string.IsNullOrEmpty(jellyseerrUserId))
-                        {
-                            _logger.Warning($"[Manual Watchlist Sync] Could not find Seerr user for {user.Username}");
-                            continue;
-                        }
-
-                        // Get watchlist from Seerr
-                        var watchlistItems = await GetJellyseerrWatchlistForUser(jellyseerrUserId);
-                        if (watchlistItems == null || watchlistItems.Count == 0)
-                        {
-                            _logger.Info($"[Manual Watchlist Sync] No watchlist items found for {user.Username}");
-                            watchlistItems = new List<WatchlistItem>();
-                        }
-
-                        _logger.Info($"[Manual Watchlist Sync] Found {watchlistItems.Count} watchlist items for {user.Username}");
-
-                        var requestItems = await GetJellyseerrRequestsForUser(jellyseerrUserId);
-                        if (requestItems != null && requestItems.Count > 0)
-                        {
-                            _logger.Info($"[Manual Watchlist Sync] Found {requestItems.Count} request items for {user.Username}");
-                            watchlistItems.AddRange(requestItems);
-                        }
-
-                        var processedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                        // Process each watchlist item
-                        foreach (var item in watchlistItems)
-                        {
-                            itemsProcessed++;
-
-                            var key = $"{item.MediaType}:{item.TmdbId}";
-                            if (!processedKeys.Add(key))
-                            {
-                                continue;
-                            }
-
-                            // Find the item in Jellyfin library by TMDB ID
-                            var libraryItem = FindItemByTmdbId(item.TmdbId, item.MediaType);
-                            if (libraryItem != null)
-                            {
-                                var userData = _userDataManager.GetUserData(user, libraryItem);
-                                if (userData == null)
-                                {
-                                    _logger.Warning($"[Manual Watchlist Sync] User data was null for '{libraryItem.Name}' and user {user.Username}; skipping.");
-                                }
-                                else if (userData.Likes != true)
-                                {
-                                    userData.Likes = true;
-                                    _userDataManager.SaveUserData(user, libraryItem, userData, UserDataSaveReason.UpdateUserRating, default);
-                                    itemsAdded++;
-                                    _logger.Info($"[Manual Watchlist Sync] Added '{libraryItem.Name}' to watchlist for {user.Username}");
-                                }
-                            }
-                            else
-                            {
-                                // Item not in library yet - WatchlistMonitor will automatically add it when it arrives
-                                _logger.Debug($"[Manual Watchlist Sync] Item TMDB {item.TmdbId} ({item.MediaType}) not in library yet for {user.Username} - will be auto-added by WatchlistMonitor when available");
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Error($"[Manual Watchlist Sync] Error processing user {user.Username}: {ex.Message}");
-                        errors.Add("Failed to sync watchlist for a user.");
-                    }
+                    return BadRequest(new { error = "Jellyseerr URL or API key is not configured" });
                 }
 
-                _logger.Info($"[Manual Watchlist Sync] Sync complete. Processed: {itemsProcessed}, Added: {itemsAdded}");
+                if (summary.SeerrUnreachable)
+                {
+                    return StatusCode(502, new { error = "Could not load the user list from any configured Jellyseerr URL." });
+                }
+
+                _logger.Info($"[Manual Watchlist Sync] Sync complete. Processed: {summary.ItemsProcessed}, Added: {summary.ItemsAdded}");
 
                 return Ok(new
                 {
                     success = true,
-                    itemsProcessed,
-                    itemsAdded,
-                    errors = errors.Count > 0 ? errors : null
+                    itemsProcessed = summary.ItemsProcessed,
+                    itemsAdded = summary.ItemsAdded,
+                    errors = summary.FailedUsers > 0
+                        ? Enumerable.Repeat("Failed to sync watchlist for a user.", summary.FailedUsers).ToList()
+                        : null
                 });
             }
             catch (Exception ex)
@@ -3241,72 +3179,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Error($"[Manual User Import] Invalid Jellyseerr response: {ex.Message}");
                 return StatusCode(502, new { error = "Invalid response from Jellyseerr. Check server logs for details." });
             }
-        }
-
-        private async Task<List<WatchlistItem>?> GetJellyseerrWatchlistForUser(string userId)
-        {
-            try
-            {
-                var config = JellyfinEnhanced.Instance?.Configuration;
-                if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
-                {
-                    return null;
-                }
-
-                var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
-
-                foreach (var url in urls)
-                {
-                    var trimmedUrl = url.Trim();
-                    try
-                    {
-                        var requestUri = $"{trimmedUrl.TrimEnd('/')}/api/v1/user/{userId}/watchlist";
-                        using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                            HttpMethod.Get, requestUri, config.JellyseerrApiKey);
-                        using var response = await httpClient.SendAsync(request);
-                        var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
-
-                        if (error == null && content != null)
-                        {
-                            var json = JsonDocument.Parse(content);
-
-                            if (json.RootElement.TryGetProperty("results", out var results))
-                            {
-                                var items = new List<WatchlistItem>();
-                                foreach (var item in results.EnumerateArray())
-                                {
-                                    if (item.TryGetProperty("tmdbId", out var tmdbId) &&
-                                        item.TryGetProperty("mediaType", out var mediaType))
-                                    {
-                                        items.Add(new WatchlistItem
-                                        {
-                                            TmdbId = tmdbId.GetInt32(),
-                                            MediaType = mediaType.GetString() ?? "movie"
-                                        });
-                                    }
-                                }
-                                return items;
-                            }
-                        }
-                        else if (error != null)
-                        {
-                            _logger.Warning($"Failed to get watchlist from {trimmedUrl}: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Warning($"Failed to get watchlist from {trimmedUrl}: {ex.Message}");
-                        continue;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Error getting Seerr watchlist: {ex}");
-            }
-
-            return null;
         }
 
         private async Task<List<WatchlistItem>?> GetJellyseerrRequestsForUser(string userId)
@@ -3446,25 +3318,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 TmdbId = tmdbId,
                 MediaType = mediaType
             };
-        }
-
-        private BaseItem? FindItemByTmdbId(int tmdbId, string mediaType)
-        {
-            var query = new InternalItemsQuery
-            {
-                HasTmdbId = true,
-                IncludeItemTypes = mediaType == "tv" ? new[] { Jellyfin.Data.Enums.BaseItemKind.Series } : new[] { Jellyfin.Data.Enums.BaseItemKind.Movie }
-            };
-
-            var items = _libraryManager.GetItemList(query);
-            return items.FirstOrDefault(i =>
-            {
-                if (i.ProviderIds != null && i.ProviderIds.TryGetValue("Tmdb", out var tmdbIdStr))
-                {
-                    return tmdbIdStr == tmdbId.ToString();
-                }
-                return false;
-            });
         }
 
         private class WatchlistItem
@@ -3740,6 +3593,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DEFAULT_REGION,
                 config.DEFAULT_PROVIDERS,
                 config.IGNORE_PROVIDERS,
+                config.ElsewhereSeasonProviders,
                 config.ElsewhereCustomBrandingText,
                 config.ElsewhereCustomBrandingImageUrl,
                 config.ClearLocalStorageTimestamp,
@@ -3954,6 +3808,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.HiddenContentUseCustomTabs,
                 config.HiddenContentUseNativeTab,
                 config.HiddenContentAdmin,
+
+                // Catch Up Page Settings
+                config.CatchUpEnabled,
+                config.CatchUpUsePluginPages,
+                config.CatchUpUseCustomTabs,
+                config.CatchUpUseNativeTab,
 
                 // Maintenance Mode
                 MaintenanceModeEnabled = mmActive,
@@ -4993,6 +4853,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return false;
             }
 
+            // The allowlist is case-insensitive, but the middleware and status endpoint
+            // use fixed lowercase names. Normalize accepted aliases on case-sensitive hosts.
+            normalizedFileName = normalizedFileName.ToLowerInvariant();
             var fullBrandingDir = Path.GetFullPath(brandingDir);
             var candidateFilePath = Path.GetFullPath(Path.Combine(fullBrandingDir, normalizedFileName));
             var candidateDirectory = Path.GetDirectoryName(candidateFilePath);
@@ -8217,8 +8080,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // stripping for them. Strict-read so corruption is observable (rate-limited
             // warn) rather than silently passing through. Resolved BEFORE the cache
             // read so a delta request can include the guarded entries (below).
+            // Loaded for the resolved user, not the route value: an empty route id
+            // resolves to the caller, whose own guard must still apply.
             var spPolicy = Services.SpoilerTagDataStripper.IsConfigured(spCfg)
-                ? Services.SpoilerTagDataStripper.CreatePolicy(spCfg, LoadSpoilerStateForTagStrip(userId))
+                ? Services.SpoilerTagDataStripper.CreatePolicy(spCfg, LoadSpoilerStateForTagStrip(user.Id))
                 : null;
 
             // A delta (?since=) only carries entries the library changed, but a
@@ -8561,7 +8426,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.SpoilerTagStripPolicy? spoilerPolicy = null;
             if (Services.SpoilerTagDataStripper.IsConfigured(spoilerCfg))
             {
-                spoilerPolicy = Services.SpoilerTagDataStripper.CreatePolicy(spoilerCfg, LoadSpoilerStateForTagStrip(userId));
+                // The resolved user's state (see GetTagCache): an empty route id is the caller.
+                spoilerPolicy = Services.SpoilerTagDataStripper.CreatePolicy(spoilerCfg, LoadSpoilerStateForTagStrip(user.Id));
             }
             var stripTagsEnabled = spoilerPolicy != null;
             var spStripGenres = spoilerPolicy?.StripGenres == true;
@@ -10682,6 +10548,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Build filter parameter
                 // "comingsoon" is a custom filter - fetch processing items and filter server-side
                 var isComingSoonFilter = string.Equals(filter, "comingsoon", StringComparison.OrdinalIgnoreCase);
+                // Processing and Coming Soon split one Seerr list: fetch it whole and page it here.
+                var splitsProcessing = isComingSoonFilter || string.Equals(filter, "processing", StringComparison.OrdinalIgnoreCase);
+                var seerrTake = splitsProcessing ? 500 : take;
+                var seerrSkip = splitsProcessing ? 0 : skip;
                 var filterParam = filter?.ToLower() switch
                 {
                     "pending" => "&filter=pending",
@@ -10706,7 +10576,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 Helpers.Jellyseerr.SeerrError? lastError = null;
                 foreach (var candidateUrl in allUrls)
                 {
-                    var requestsUri = $"{candidateUrl}/api/v1/request?take={take}&skip={skip}{filterParam}";
+                    var requestsUri = $"{candidateUrl}/api/v1/request?take={seerrTake}&skip={seerrSkip}{filterParam}";
                     try
                     {
                         using var requestsRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
@@ -10774,9 +10644,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var data = JObject.Parse(json!);
 
                 var requests = new List<object>();
+                int? splitTotal = null;
                 var results = data["results"] as JArray;
                 if (results != null)
                 {
+                    var requestAborted = HttpContext.RequestAborted;
                     // Enrich all requests in parallel for better performance
                     var enrichmentTasks = results.Select(async req =>
                     {
@@ -10875,6 +10747,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 : createdAtToken.ToString();
                         }
 
+                        var tvdbId = media?["tvdbId"]?.Value<int?>();
+                        var isOrphaned = IsOrphanedRequest(mediaStatus, createdAtStr)
+                            && await IsMissingFromArrAsync(type, tmdbId, tvdbId, requestAborted);
+
                         return new
                         {
                             id = req["id"]?.Value<int>(),
@@ -10886,7 +10762,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             // TV only — Sonarr identifies series by TVDB id, not TMDB id, so
                             // this is what the Requests page needs to build an "Open in Sonarr"
                             // link via /arr/series-slugs.
-                            tvdbId = media?["tvdbId"]?.Value<int?>(),
+                            tvdbId = tvdbId,
                             mediaStatus = mediaStatus,
                             // Raw Seerr request status (1=Pending, 2=Approved, 3=Declined,
                             // 4=Failed, 5=Completed). Exposed separately from mediaStatus
@@ -10902,7 +10778,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             digitalReleaseDate = digitalReleaseDate,
                             theatricalReleaseDate = theatricalReleaseDate,
                             initialAirDate = initialAirDate,
-                            nextAirDate = nextAirDate
+                            nextAirDate = nextAirDate,
+                            isComingSoon = IsComingSoonRequest(mediaStatus, type, nextAirDate, digitalReleaseDate, theatricalReleaseDate),
+                            isOrphaned = isOrphaned
                         };
                     }).ToList();
 
@@ -10911,42 +10789,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // Apply server-side filtering for "comingsoon"
                     if (isComingSoonFilter)
                     {
-                        var today = DateTime.UtcNow.Date;
                         enrichedRequests = enrichedRequests
-                            .Where(r =>
-                            {
-                                var status = (r.mediaStatus ?? "").ToLower();
-                                var itemType = r.type;
-
-                                // For TV shows: include if has future nextAirDate
-                                // (can be processing, approved, or even partially available with upcoming episodes)
-                                if (itemType == "tv")
-                                {
-                                    var airDate = r.nextAirDate;
-                                    if (!string.IsNullOrEmpty(airDate) && DateTime.TryParse(airDate, out var ad) && ad.Date > today)
-                                    {
-                                        // Include processing, approved, or partially available TV shows with upcoming episodes
-                                        return status == "processing" || status == "approved" || status == "partially available";
-                                    }
-                                    return false;
-                                }
-
-                                // For movies: check digital or theatrical release dates
-                                // Only include processing or approved movies
-                                if (status != "processing" && status != "approved")
-                                    return false;
-
-                                var digitalDate = r.digitalReleaseDate;
-                                var theatricalDate = r.theatricalReleaseDate;
-
-                                // Check if has a future release date
-                                if (!string.IsNullOrEmpty(digitalDate) && DateTime.TryParse(digitalDate, out var dd) && dd.Date > today)
-                                    return true;
-                                if (!string.IsNullOrEmpty(theatricalDate) && DateTime.TryParse(theatricalDate, out var td) && td.Date > today)
-                                    return true;
-
-                                return false;
-                            })
+                            .Where(r => r.isComingSoon && !r.isOrphaned)
                             .OrderBy(r =>
                             {
                                 // Sort by the earliest future date
@@ -10954,16 +10798,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 var today = DateTime.UtcNow.Date;
 
                                 // For TV shows, use nextAirDate
-                                if (r.type == "tv" && !string.IsNullOrEmpty(r.nextAirDate) && DateTime.TryParse(r.nextAirDate, out var airDate) && airDate.Date > today)
+                                if (r.type == "tv" && !string.IsNullOrEmpty(r.nextAirDate) && TryParseIso(r.nextAirDate) is DateTime airDate && airDate.Date > today)
                                 {
                                     bestDate = airDate;
                                 }
                                 else
                                 {
                                     // For movies, use digital or theatrical date
-                                    if (!string.IsNullOrEmpty(r.digitalReleaseDate) && DateTime.TryParse(r.digitalReleaseDate, out var dd) && dd.Date > today)
+                                    if (!string.IsNullOrEmpty(r.digitalReleaseDate) && TryParseIso(r.digitalReleaseDate) is DateTime dd && dd.Date > today)
                                         bestDate = dd;
-                                    if (!string.IsNullOrEmpty(r.theatricalReleaseDate) && DateTime.TryParse(r.theatricalReleaseDate, out var td) && td.Date > today)
+                                    if (!string.IsNullOrEmpty(r.theatricalReleaseDate) && TryParseIso(r.theatricalReleaseDate) is DateTime td && td.Date > today)
                                     {
                                         if (bestDate == null || td < bestDate)
                                             bestDate = td;
@@ -10974,12 +10818,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             })
                             .ToArray();
                     }
+                    else if (splitsProcessing)
+                    {
+                        enrichedRequests = enrichedRequests.Where(r => !r.isComingSoon && !r.isOrphaned).ToArray();
+                    }
+
+                    if (splitsProcessing)
+                    {
+                        splitTotal = enrichedRequests.Length;
+                        enrichedRequests = enrichedRequests.Skip(skip).Take(take).ToArray();
+                    }
 
                     requests.AddRange(enrichedRequests);
                 }
 
                 var pageInfo = data["pageInfo"] as JObject;
-                var totalResults = isComingSoonFilter ? requests.Count : (pageInfo?["results"]?.Value<int>() ?? 0);
+                var totalResults = splitsProcessing ? (splitTotal ?? 0) : (pageInfo?["results"]?.Value<int>() ?? 0);
                 var totalPages = (int)Math.Ceiling((double)totalResults / take);
 
                 var canApproveRequests = IsAdminUser() || JellyseerrPermissionHelper.HasAnyPermission(
@@ -11013,6 +10867,56 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     totalResults = 0,
                 });
             }
+        }
+
+        private static readonly ConcurrentDictionary<string, (bool Missing, DateTime Expires)> OrphanCheckCache = new();
+
+        // True only when every enabled Radarr/Sonarr instance answered and none has the title.
+        private async Task<bool> IsMissingFromArrAsync(string? type, int? tmdbId, int? tvdbId, CancellationToken ct)
+        {
+            var isTv = type == "tv";
+            var id = isTv ? tvdbId : tmdbId;
+            if (!id.HasValue || id <= 0) return false;
+
+            var key = $"{(isTv ? "tv" : "movie")}:{id}";
+            if (OrphanCheckCache.TryGetValue(key, out var cached) && cached.Expires > DateTime.UtcNow) return cached.Missing;
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null) return false;
+            var instances = isTv ? config.GetEnabledSonarrInstances() : config.GetEnabledRadarrInstances();
+            if (instances.Count == 0) return false;
+
+            var outcomes = await Task.WhenAll(instances.Select(i => isTv
+                ? FetchSeriesInfoFromInstance(i, id.Value, ct)
+                : FetchMovieInfoFromInstance(i, id.Value, ct)));
+            var missing = outcomes.All(o => o.Error == null && o.Match == null);
+            OrphanCheckCache[key] = (missing, DateTime.UtcNow.AddMinutes(5));
+            return missing;
+        }
+
+        // Approved, not yet available, and older than the grace period (10 min) for Radarr to pick it up.
+        private static bool IsOrphanedRequest(string? mediaStatus, string? createdAt)
+        {
+            if (mediaStatus != "Approved" && mediaStatus != "Processing") return false;
+            return DateTimeOffset.TryParse(createdAt, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var created)
+                && created < DateTimeOffset.UtcNow.AddMinutes(-10);
+        }
+
+        // Coming soon: approved or processing with a future release date. Processing lists the rest.
+        private static bool IsComingSoonRequest(string? status, string? type, string? nextAirDate, string? digitalReleaseDate, string? theatricalReleaseDate)
+        {
+            var today = DateTime.UtcNow.Date;
+            static bool IsFuture(string? value, DateTime day) => TryParseIso(value) is DateTime date && date.Date > day;
+
+            var normalized = (status ?? "").ToLower();
+            if (type == "tv")
+            {
+                return IsFuture(nextAirDate, today)
+                    && (normalized == "processing" || normalized == "approved" || normalized == "partially available");
+            }
+
+            if (normalized != "processing" && normalized != "approved") return false;
+            return IsFuture(digitalReleaseDate, today) || IsFuture(theatricalReleaseDate, today);
         }
 
         [HttpPost("arr/requests/{requestId}/approve")]
@@ -11082,7 +10986,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             if (Request.Query.TryGetValue("start", out var startValues))
             {
-                if (DateTime.TryParse(startValues.ToString(), out var parsedStart))
+                // Invariant: under a culture with another calendar (th-TH is Buddhist) "2026-10-05"
+                // would be read as a different year and the range would miss every event.
+                if (DateTime.TryParse(startValues.ToString(), System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var parsedStart))
                 {
                     startDate = parsedStart.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(parsedStart, DateTimeKind.Utc) : parsedStart.ToUniversalTime();
                 }
@@ -11090,7 +10997,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             if (Request.Query.TryGetValue("end", out var endValues))
             {
-                if (DateTime.TryParse(endValues.ToString(), out var parsedEnd))
+                if (DateTime.TryParse(endValues.ToString(), System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var parsedEnd))
                 {
                     endDate = parsedEnd.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(parsedEnd, DateTimeKind.Utc) : parsedEnd.ToUniversalTime();
                 }
@@ -11320,7 +11228,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
                         out var dto))
                 {
-                    return dto.UtcDateTime.ToString("yyyy-MM-dd");
+                    return dto.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
                 }
                 // Fallback: strip everything after the first 10 chars when it
                 // already looks like an ISO date prefix.
@@ -11585,8 +11493,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             ArrInstance instance, DateTime startDate, DateTime endDate,
             HashSet<string> includedTypes, Func<object?, DateTime?> parseDate, CancellationToken ct)
         {
-            var startParam = startDate.ToString("yyyy-MM-dd");
-            var endParam = endDate.ToString("yyyy-MM-dd");
+            var startParam = startDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            var endParam = endDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
             return FetchAndMapAsync<List<ArrItem>>(
                 instance,
                 $"/api/v3/Dashboard/CalendarEpisodes?startDate={startParam}&endDate={endParam}&includeMissing=false&includeRestricted=false",

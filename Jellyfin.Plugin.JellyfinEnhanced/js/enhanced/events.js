@@ -21,22 +21,59 @@
         }
     }
 
+    const MODIFIER_ORDER = ['Meta', 'Ctrl', 'Alt', 'Shift'];
+
+    /**
+     * Rewrites a stored shortcut ("Shift+Ctrl+S", "Ctrl+Shift+S") as its modifier set in the
+     * shortcut editor's order followed by the key, so a binding typed with the modifiers in any
+     * order matches the runtime combo.
+     * @param {*} combo A stored shortcut; anything but a non-empty string is returned unchanged.
+     * @returns {*} The canonical combo.
+     */
+    function canonicalCombo(combo) {
+        if (typeof combo !== 'string' || !combo) return combo;
+        const modifiers = new Set();
+        let rest = combo;
+        let match;
+        // A trailing "+" is the key itself ("Ctrl++"), never a separator.
+        while ((match = /^(Meta|Ctrl|Alt|Shift)\+(?=.)/.exec(rest))) {
+            modifiers.add(match[1]);
+            rest = rest.slice(match[0].length);
+        }
+        const key = /^[a-zA-Z]$/.test(rest) ? rest.toUpperCase() : rest;
+        return MODIFIER_ORDER.filter(name => modifiers.has(name)).map(name => name + '+').join('') + key;
+    }
+
+    // The shortcut editor's conflict check compares bindings the same way.
+    JE.internals = JE.internals || {};
+    JE.internals.canonicalCombo = canonicalCombo;
+
+    /**
+     * The active shortcuts with every combo canonicalised (see canonicalCombo).
+     * @returns {Object<string, *>} Action name to canonical combo.
+     */
+    function canonicalShortcuts() {
+        const canonical = {};
+        for (const [name, combo] of Object.entries(JE.state.activeShortcuts || {})) {
+            canonical[name] = canonicalCombo(combo);
+        }
+        return canonical;
+    }
+
     /**
      * The main key listener for all other shortcuts.
      * @param {KeyboardEvent} e The keyboard event.
      */
     JE.keyListener = (e) => {
         if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+        // A key recorder (admin shortcut grid) is capturing the next press; don't also run it.
+        if (document.activeElement.hasAttribute('data-je-key-recorder')) return;
 
         const key = e.key;
-        const combo = (e.shiftKey ? 'Shift+' : '') +
-                      (e.metaKey ? 'Meta+' : '') +
-                      (e.ctrlKey ? 'Ctrl+' : '') +
-                      (e.altKey ? 'Alt+' : '') +
-                      (key.match(/^[a-zA-Z]$/) ? key.toUpperCase() : key);
+        const combo = JE.keyCombo(e);
 
         const video = document.querySelector('video');
-        const activeShortcuts = JE.state.activeShortcuts;
+        const activeShortcuts = canonicalShortcuts();
 
         // --- Global Shortcuts ---
         if (combo === activeShortcuts.OpenSearch) {
@@ -372,6 +409,37 @@
             document.addEventListener('touchcancel', videoPageCheck(JE.handleLongPressCancel), { capture: true, passive: false });
         }
 
+        // Auto PiP only closes a PiP window it opened itself. Chromium browsers (Edge, Chrome) can
+        // open their own automatic PiP on tab switch and close it again when the tab returns;
+        // calling exitPictureInPicture() on that window races the browser's close and leaves the
+        // player dark with audio only (#910).
+        let autoPipVideo = null;
+
+        /**
+         * Whether the video can enter PiP right now (avoids InvalidStateError before metadata loads).
+         * @param {HTMLVideoElement} video The player's video element.
+         * @returns {boolean} True if a PiP request can succeed.
+         */
+        const canAutoPip = (video) => document.pictureInPictureEnabled
+            && !video.disablePictureInPicture
+            && video.readyState >= HTMLMediaElement.HAVE_METADATA;
+
+        /**
+         * Leaves PiP if the current PiP window is the one Auto PiP opened.
+         */
+        const exitAutoPip = () => {
+            const pipVideo = autoPipVideo;
+            autoPipVideo = null;
+            if (pipVideo && document.pictureInPictureElement === pipVideo) {
+                document.exitPictureInPicture().catch(err => console.error("🪼 Jellyfin Enhanced: Auto PiP Error:", err));
+            }
+        };
+
+        // Forget our window once it closes by any route (PiP "back to tab" button, browser, player stop).
+        document.addEventListener('leavepictureinpicture', (e) => {
+            if (e.target === autoPipVideo) autoPipVideo = null;
+        }, true);
+
         // Listeners for tab visibility (auto-pause/resume/PiP)
         document.addEventListener('visibilitychange', () => {
             const video = document.querySelector('video');
@@ -384,17 +452,26 @@
                     video.pause();
                     video.dataset.wasPlayingBeforeHidden = 'true';
                 }
-                if (JE.currentSettings.autoPipEnabled && !document.pictureInPictureElement) {
-                    video.requestPictureInPicture().catch(err => console.error("🪼 Jellyfin Enhanced: Auto PiP Error:", err));
+                if (JE.currentSettings.autoPipEnabled && !document.pictureInPictureElement && canAutoPip(video)) {
+                    video.requestPictureInPicture().then(() => {
+                        autoPipVideo = video;
+                        // The tab came back before the window finished opening.
+                        if (!document.hidden) exitAutoPip();
+                    }).catch(err => {
+                        // Expected in Chromium without a user gesture; the browser may open its own PiP instead.
+                        if (err && err.name === 'NotAllowedError') {
+                            console.debug("🪼 Jellyfin Enhanced: Auto PiP not allowed by the browser:", err.message);
+                        } else {
+                            console.error("🪼 Jellyfin Enhanced: Auto PiP Error:", err);
+                        }
+                    });
                 }
             } else {
                 if (video.paused && video.dataset.wasPlayingBeforeHidden === 'true' && JE.currentSettings.autoResumeEnabled) {
                     video.play();
                 }
                 delete video.dataset.wasPlayingBeforeHidden;
-                if (JE.currentSettings.autoPipEnabled && document.pictureInPictureElement) {
-                    document.exitPictureInPicture().catch(err => console.error("🪼 Jellyfin Enhanced: Auto PiP Error:", err));
-                }
+                exitAutoPip();
             }
         });
     };

@@ -159,7 +159,7 @@ Adding a client module:
 
 ## ✅ CI Checks
 
-Every PR runs a few automated checks (GitHub Actions, `.github/workflows/`). There are no automated tests to run locally - these are all static checks:
+Pull requests run automated backend regressions for both Jellyfin targets, JavaScript behavioral tests with coverage, and browser tests, alongside the static checks below. See [Regression testing](tests/README.md) for setup, commands, reports, and current coverage gaps.
 
 | Check | What it does | Reproduce locally |
 |---|---|---|
@@ -167,12 +167,16 @@ Every PR runs a few automated checks (GitHub Actions, `.github/workflows/`). The
 | **Dependency Review** | Flags newly-introduced dependencies with known vulnerabilities or incompatible licenses | Only relevant if your PR changes `.csproj` package references |
 | **Security Scan** | Scans the diff for accidentally-committed secrets (API keys, tokens, credentials) with TruffleHog | `git diff` your changes yourself before pushing if you're unsure |
 | **Translation Checks** | For any locale file you touched under `js/locales/`, verifies it has valid JSON and the same key set as `en.json` (no missing/extra keys) | Diff your changed locale file's keys against `js/locales/en.json` by hand, or just keep the two in sync as you edit |
+| **NuGet lock files** | The backend regression jobs restore in locked mode from per-target lock files (`packages.jf12.lock.json`, `packages.jf10.lock.json`) beside the plugin and test projects, so a changed package reference fails with NU1004 until they are regenerated. Dependabot can't update these files, so its NuGet PRs fail a dedicated check with this fix | For each `JellyfinTarget` (`jf12`, `jf10`), run `dotnet restore Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj -p:JellyfinTarget=<target> --force-evaluate` and the same for `tests/backend/JE.Tests.csproj`, then commit the four lock files |
+| **Production inventory** | Part of the regression workflow: fails when `tests/docs/production-inventory.json` no longer matches the plugin. Ordinary edits and translation updates don't change it. It does change when you add, remove or rename a production file, locale, HTTP route (or its method), configuration property, scheduled task (any class implementing `IScheduledTask`) or storage literal; when a route's following attributes such as `[Authorize]` change; when a configuration property's type, default value or constructor assignment changes; or when a build target's `TargetFramework` or `JellyfinVersion` changes | Run `python3 tests/inventory/generate.py` and commit the regenerated file (`--check` only verifies it) |
 
 Two more workflows exist but aren't part of the PR gate: **Check Unused Translation Keys** and **OpenSSF Scorecard** are both maintainer-triggered/scheduled, not run against your PR - a scorecard badge or unused-key report you might see elsewhere in the repo isn't something your PR needs to pass.
 
 ## 🧪 Testing
 
-Before submitting a PR, ensure you've tested:
+After installing the prerequisites in [Regression testing](tests/README.md), run `python3 tests/run.py fast` for local feedback or `python3 tests/run.py all` for the complete suite. The full run includes disposable real Jellyfin hosts; it never uses your personal server. Automated coverage is recorded in the [coverage matrix](tests/docs/coverage-matrix.md).
+
+For behavior outside automated coverage, also verify:
 
 - [ ] Feature works as expected
 - [ ] No console errors

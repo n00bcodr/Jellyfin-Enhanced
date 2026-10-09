@@ -337,7 +337,7 @@
                 const val = Math.max(1, Math.min(60, parseInt(pauseScreenDelayInput.value, 10) || 5));
                 pauseScreenDelayInput.value = val;
                 JE.currentSettings.pauseScreenDelaySeconds = val;
-                JE.saveUserSettings();
+                JE.saveUserSettings('settings.json', JE.currentSettings);
                 // Push the new delay into the already-running pause-screen
                 // instance so it takes effect immediately, without a page reload.
                 if (JE.pauseScreenInstance) {

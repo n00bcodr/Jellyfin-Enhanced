@@ -37,8 +37,9 @@
             .jellyseerr-card { position: relative; }
             .jellyseerr-card .cardScalable { contain: paint; }
             .jellyseerr-icon-on-card { width: 1.2em !important; height: 1.2em !important; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)); flex-shrink: 0; }
-            .jellyseerr-status-badge { position: absolute; top: 8px; right: 8px; z-index: 100; width: 1.5em; height: 1.5em; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1.5px solid rgba(255,255,255,0.3); box-shadow: 0 0 1px rgba(255,255,255,0.4) inset, 0 4px 12px rgba(0,0,0,0.6); }
-            .jellyseerr-status-badge svg { width: 1.4em; height: 1.4em; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6)); }
+            /* Scales with the card; round() snaps to whole pixels */
+            .jellyseerr-status-badge { position: absolute; top: clamp(6px, 4cqw, 10px); right: clamp(6px, 4cqw, 10px); z-index: 100; box-sizing: border-box; width: clamp(1.5rem, 11cqw, 1.8rem); height: clamp(1.5rem, 11cqw, 1.8rem); width: round(clamp(1.5rem, 11cqw, 1.8rem), 2px); height: round(clamp(1.5rem, 11cqw, 1.8rem), 2px); border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 0 1px rgba(255,255,255,0.4) inset, 0 4px 12px rgba(0,0,0,0.6); }
+            .jellyseerr-status-badge svg { width: 100%; height: 100%; filter: drop-shadow(0 0 2px rgba(0,0,0,0.5)); }
             .jellyseerr-status-badge.status-available { background-color: rgba(34, 197, 94, 0.7); border-color: rgba(34, 197, 94, 0.3); }
             .jellyseerr-status-badge.status-processing { background-color: rgba(99, 102, 241, 0.7); border-color: rgba(99, 102, 241, 0.3); }
             .jellyseerr-status-badge.status-requested { background-color: rgba(136, 61, 206, 0.7); border-color: rgba(147, 51, 234, 0.3); }
@@ -96,7 +97,7 @@
             @media (max-width: 600px) { .jellyseerr-card .jellyseerr-button-collection svg { display: none; } }
             .jellyseerr-request-button svg { width: 1.2em; height: 1.2em; flex-shrink: 0; vertical-align: middle; }
             .layout-mobile .jellyseerr-request-button svg { width: 1em; height: 1em; }
-            .layout-mobile .jellyseerr-request-button span { font-size: 0.8em !important; }
+            .layout-mobile .jellyseerr-request-button span:not(.material-icons) { font-size: 0.8em !important; }
             .jellyseerr-request-button.jellyseerr-button-offline, .jellyseerr-request-button.jellyseerr-button-no-user { opacity: .6; cursor: not-allowed; }
             .jellyseerr-request-button.jellyseerr-button-request { background-color: #5a3fb8 !important; color: #fff !important; }
             .jellyseerr-request-button.jellyseerr-button-request:hover:not(:disabled) { background-color: #6b4bb5 !important; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(90, 63, 184, 0.4); }

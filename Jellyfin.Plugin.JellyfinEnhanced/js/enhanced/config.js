@@ -26,12 +26,6 @@
         pauseScreenClickTimer: null
     };
 
-    /**
-     * Saves user settings to the server.
-     * Skips the POST if the data is identical to the last value saved this session
-     * (prevents redundant writes). The first save per session for a given file is
-     * always allowed through since the cache starts empty.
-     */
     // Per-file cache of the last JSON string successfully sent to the server.
     const _lastSavedJson = {};
     // Per-file chain of in-flight saves. Every control posts the whole object,
@@ -39,14 +33,29 @@
     // (smaller) snapshot can land last and drop the newer change.
     const _saveChain = {};
 
-    JE.saveUserSettings = async (fileName, settings) => {
+    /**
+     * Saves user settings to the server.
+     * Skips the POST if the data is identical to the last value saved this session
+     * (prevents redundant writes). The first save per session for a given file is
+     * always allowed through since the cache starts empty.
+     * Failures are logged and swallowed unless the caller opts in to them.
+     * @param {string} fileName Per-user settings file, e.g. 'settings.json'.
+     * @param {object} settings The whole document to save.
+     * @param {{throwOnError?: boolean}} [options] throwOnError: reject (without logging) when
+     *   nothing was saved, so a caller can roll back its own optimistic change.
+     * @returns {Promise<void>}
+     */
+    JE.saveUserSettings = async (fileName, settings, options = {}) => {
+        const throwOnError = options?.throwOnError === true;
         if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId) {
+            if (throwOnError) throw new Error('ApiClient not available');
             console.error("🪼 Jellyfin Enhanced: ApiClient not available");
             return;
         }
         try {
             const userId = ApiClient.getCurrentUserId();
             if (!userId) {
+                if (throwOnError) throw new Error('User ID not available');
                 console.error("🪼 Jellyfin Enhanced: User ID not available");
                 return;
             }
@@ -86,6 +95,7 @@
             _saveChain[cacheKey] = save.catch(() => {});
             await save;
         } catch (e) {
+            if (throwOnError) throw e;
             console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, e);
         }
     };
@@ -205,6 +215,24 @@
         return mergedSettings;
     };
 
+    /** Shortcut combo for a keydown, e.g. "Ctrl+Shift+A". Shift is dropped for shifted symbols ("+", not "Shift++"). */
+    JE.keyCombo = function(e) {
+        const key = e.key;
+        const isLetter = /^[a-zA-Z]$/.test(key);
+        const isShiftedSymbol = key.length === 1 && key !== ' ' && !isLetter;
+        return (e.metaKey ? 'Meta+' : '') +
+               (e.ctrlKey ? 'Ctrl+' : '') +
+               (e.altKey ? 'Alt+' : '') +
+               (e.shiftKey && !isShiftedSymbol ? 'Shift+' : '') +
+               (isLetter ? key.toUpperCase() : key);
+    };
+
+    /** Converts bindings saved before the fix ("Shift++") to the current format. */
+    JE.normalizeShortcutKey = function(key) {
+        if (typeof key !== 'string') return key;
+        return key.replace(/Shift\+([^A-Za-z0-9\s,./;'\[\]\\=`-])$/, '$1');
+    };
+
     /**
      * Initializes keyboard shortcut mappings from plugin and user configurations.
      */
@@ -228,6 +256,9 @@
 
         JE.state.activeShortcuts = JE.state.activeShortcuts || {};
         Object.assign(JE.state.activeShortcuts, defaultShortcuts, userShortcuts);
+        Object.keys(JE.state.activeShortcuts).forEach(function(name) {
+            JE.state.activeShortcuts[name] = JE.normalizeShortcutKey(JE.state.activeShortcuts[name]);
+        });
     };
 
 })(window.JellyfinEnhanced);

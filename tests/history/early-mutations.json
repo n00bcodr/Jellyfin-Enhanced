@@ -1,0 +1,18 @@
+[
+  {
+    "name": "history-55-meta-refresh",
+    "layer": "frontend",
+    "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/events.js",
+    "before": "const combo = (e.metaKey ? 'Meta+' : '') +",
+    "after": "const combo = '' +",
+    "test": "history issue 55 Command-R preserves browser refresh without selecting random media",
+    "test_file": "tests/frontend/regressions/history-early-events.test.mjs",
+    "assertion": "ERR_ASSERTION",
+    "sources": [
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/55",
+      "https://github.com/n00bcodr/Jellyfin-Enhanced/commit/4f8feb69997749667e08d65a2e933b0999b9bd94"
+    ],
+    "evidence": "exact-reversal",
+    "rationale": "Removes the Meta modifier term added in 4f8feb69; surrounding modifier order changed later, but this precisely restores the reported missing-Meta behavior."
+  }
+]

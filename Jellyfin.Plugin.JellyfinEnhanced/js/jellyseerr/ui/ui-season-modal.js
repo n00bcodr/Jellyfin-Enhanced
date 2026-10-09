@@ -489,11 +489,6 @@
             const showJellyfinId = is4kMode
                 ? (tvDetails.mediaInfo?.jellyfinMediaId4k || null)
                 : (tvDetails.mediaInfo?.jellyfinMediaId || null);
-            // Also check per-season Jellyfin IDs from the season info in mediaInfo
-            const seasonMediaInfo = tvDetails.mediaInfo?.seasons?.find(s => s.seasonNumber === seasonNumber);
-            const seasonJellyfinId = is4kMode
-                ? (seasonMediaInfo?.jellyfinMediaId4k || seasonMediaInfo?.jellyfinSeasonId4k || null)
-                : (seasonMediaInfo?.jellyfinMediaId || seasonMediaInfo?.jellyfinSeasonId || null);
             const effectiveApiStatus = JE.seerrStatus.effectiveMediaStatus(
                 apiStatus, showJellyfinId, jellyfinSeasonMap, seasonNumber
             );

@@ -88,7 +88,8 @@
         const batch = pendingMutations;
         pendingMutations = [];
         if (batch.length === 0) return;
-        for (const [id, sub] of bodySubscribers) {
+        for (const [id, sub] of Array.from(bodySubscribers)) {
+            if (bodySubscribers.get(id) !== sub) continue;
             if (sub.priority > 0) continue;
             try {
                 sub.callback(batch);
@@ -138,10 +139,11 @@
             }
             if (!hasStructuralChange) return;
 
-            // NOTE: Callbacks may call unsubscribe()/disconnect(), deleting from this Map
-            // during iteration. ES spec guarantees Map iteration handles concurrent deletion.
+            // Callbacks can subscribe, replace, or unsubscribe during dispatch. Snapshot
+            // this batch so resorting the live Map cannot revisit callbacks.
             // Priority subscribers (sorted first) stay synchronous so they can act before paint.
-            for (const [id, sub] of bodySubscribers) {
+            for (const [id, sub] of Array.from(bodySubscribers)) {
+                if (bodySubscribers.get(id) !== sub) continue;
                 if (sub.priority <= 0) break;
                 try {
                     sub.callback(mutations);
@@ -201,14 +203,15 @@
         if (bodySubscribers.has(id)) {
             console.warn(`🪼 Jellyfin Enhanced: Replacing body observer subscriber: ${id}`);
         }
-        bodySubscribers.set(id, { callback, priority });
-        if (priority !== 0) {
-            resortBodySubscribers();
-        }
+        const subscription = { callback, priority };
+        bodySubscribers.set(id, subscription);
+        // Replacing a high-priority entry with priority zero must also move it
+        // behind the remaining priority subscribers: dispatch stops at the first zero.
+        resortBodySubscribers();
         ensureBodyObserver();
         // console.log(`🪼 Jellyfin Enhanced: Body subscriber registered: ${id} (priority: ${priority}, total: ${bodySubscribers.size})`);
         const cleanup = () => {
-            if (!bodySubscribers.has(id)) return;
+            if (bodySubscribers.get(id) !== subscription) return;
             bodySubscribers.delete(id);
             // console.log(`🪼 Jellyfin Enhanced: Body subscriber removed: ${id} (remaining: ${bodySubscribers.size})`);
             stopBodyObserverIfEmpty();
@@ -242,6 +245,12 @@
      * @returns {MutationObserver|{ disconnect: Function, unsubscribe: Function }} Observer handle
      */
     function createObserver(id, callback, target, config) {
+        // Dispose the previous observer even when its replacement changes from a
+        // dedicated observer to the shared body path (or vice versa).
+        if (activeObservers.has(id)) {
+            activeObservers.get(id).disconnect();
+            activeObservers.delete(id);
+        }
         // Route body observers to the shared multiplexed observer
         const isBodyTarget = target === document.body || target === document.documentElement || target === document;
         const isSubtreeWatch = config && config.childList && config.subtree;
@@ -263,11 +272,6 @@
 
         // For non-body targets or complex configs (attributes, characterData),
         // create a dedicated observer as before
-        if (activeObservers.has(id)) {
-            const existing = activeObservers.get(id);
-            existing.disconnect();
-            console.warn(`🪼 Jellyfin Enhanced: Replacing existing observer: ${id}`);
-        }
 
         const observer = new MutationObserver(callback);
         observer.observe(target, config);

@@ -65,41 +65,83 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
         public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
         {
+            await RunAsync(progress, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Totals of one sync pass, reported by the manual sync route. SeerrUnreachable
+        /// is set when no configured Jellyseerr URL returned its user list, so nothing ran.
+        /// </summary>
+        internal sealed record SyncSummary(int ItemsProcessed, int ItemsAdded, int FailedUsers, bool SeerrUnreachable = false);
+
+        /// <summary>
+        /// One sync pass over every user, honouring the same settings whoever starts it:
+        /// JellyseerrImportBlockedUsers, PreventWatchlistReAddition and
+        /// AddRequestedMediaToWatchlist. The scheduled run and the admin
+        /// POST jellyseerr/sync-watchlist route both use it, so a manual sync cannot
+        /// bypass them.
+        /// </summary>
+        /// <returns>
+        /// The pass totals, or null when sync is disabled or Seerr is not configured. When no
+        /// configured URL returns the Seerr user list, the totals are zero and SeerrUnreachable is set.
+        /// </returns>
+        internal async Task<SyncSummary?> RunAsync(IProgress<double>? progress, CancellationToken cancellationToken)
+        {
             var config = JellyfinEnhanced.Instance?.Configuration;
 
             if (config == null || !config.SyncJellyseerrWatchlist || !config.JellyseerrEnabled)
             {
                 _logger.Info("[Seerr→Jellyfin Watchlist Sync] Sync is disabled in plugin configuration.");
                 progress?.Report(100);
-                return;
+                return null;
             }
 
             if (string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
             {
                 _logger.Warning("[Seerr→Jellyfin Watchlist Sync] Jellyseerr URL or API key not configured.");
                 progress?.Report(100);
-                return;
+                return null;
             }
 
             _logger.Info("[Seerr→Jellyfin Watchlist Sync] Starting Jellyseerr watchlist sync task...");
             progress?.Report(0);
 
-            var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            var jellyseerrUrl = urls.FirstOrDefault()?.Trim();
+            var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(u => u.Trim())
+                .Where(u => u.Length > 0)
+                .ToList();
 
-            if (string.IsNullOrEmpty(jellyseerrUrl))
+            if (urls.Count == 0)
             {
                 _logger.Warning("[Seerr→Jellyfin Watchlist Sync] No valid Jellyseerr URL found.");
                 progress?.Report(100);
-                return;
+                return null;
             }
 
             var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
 
-            var jellyseerrUserMap = await GetJellyseerrUserMap(httpClient, jellyseerrUrl, config.JellyseerrApiKey);
-            if (jellyseerrUserMap.Count == 0)
+            // Use the first configured URL that answers, as the Seerr proxy and the
+            // auto-request services do (WatchlistMonitor and the Jellyfin→Seerr sync
+            // task use only the first URL): the first one whose user list loads
+            // serves the whole pass.
+            string? jellyseerrUrl = null;
+            Dictionary<string, string>? jellyseerrUserMap = null;
+            foreach (var url in urls)
             {
-                _logger.Warning("[Seerr→Jellyfin Watchlist Sync] Unable to build Jellyseerr user map.");
+                cancellationToken.ThrowIfCancellationRequested();
+                jellyseerrUserMap = await GetJellyseerrUserMap(httpClient, url, config.JellyseerrApiKey);
+                if (jellyseerrUserMap != null)
+                {
+                    jellyseerrUrl = url;
+                    break;
+                }
+            }
+
+            if (jellyseerrUrl == null || jellyseerrUserMap == null)
+            {
+                _logger.Warning($"[Seerr→Jellyfin Watchlist Sync] Unable to load the Jellyseerr user list from any of {urls.Count} configured URL(s); nothing synced.");
+                progress?.Report(100);
+                return new SyncSummary(0, 0, 0, SeerrUnreachable: true);
             }
 
             // Get all Jellyfin users, then filter out the JellyseerrImportBlockedUsers
@@ -120,6 +162,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             var totalUsers = jellyfinUsers.Count;
             var processedUsers = 0;
             var totalItemsAdded = 0;
+            var totalItemsProcessed = 0;
+            var failedUsers = 0;
 
             foreach (var jellyfinUser in jellyfinUsers)
             {
@@ -183,6 +227,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     foreach (var item in combinedItems)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
+                        totalItemsProcessed++;
 
                         var key = $"{item.MediaType}:{item.TmdbId}";
                         if (!processedKeys.Add(key))
@@ -230,9 +275,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                     _logger.Info($"[Seerr→Jellyfin Watchlist Sync] User {jellyfinUser.Username}: Added {itemsAdded} items to watchlist, {itemsPending} items added to pending watchlist, {alreadyProcessedItems.Count} already processed, {alreadyInWatchlistItems.Count} already in watchlist, {notInLibraryItems.Count} not in library");
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     _logger.Error($"[Seerr→Jellyfin Watchlist Sync] Error processing user {jellyfinUser.Username}: {ex.Message}");
+                    failedUsers++;
                 }
 
                 processedUsers++;
@@ -244,6 +294,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             _logger.Info($"=================================================================================================================================");
             _logger.Info($"[Seerr→Jellyfin Watchlist Sync] Completed. Added {totalItemsAdded} total items across {processedUsers} users");
             progress?.Report(100);
+            return new SyncSummary(totalItemsProcessed, totalItemsAdded, failedUsers);
         }
 
         private static string NormalizeUserId(string? userId)
@@ -251,7 +302,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             return string.IsNullOrEmpty(userId) ? string.Empty : userId.Replace("-", string.Empty);
         }
 
-        private async Task<Dictionary<string, string>> GetJellyseerrUserMap(HttpClient httpClient, string jellyseerrUrl, string apiKey)
+        // Null when this URL did not return a complete user list (error status, a body
+        // without results, or an exception), so the caller can try the next URL.
+        private async Task<Dictionary<string, string>?> GetJellyseerrUserMap(HttpClient httpClient, string jellyseerrUrl, string apiKey)
         {
             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -273,15 +326,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                     if (error != null)
                     {
-                        _logger.Warning($"[Seerr→Jellyfin Watchlist Sync] Failed to get users from Jellyseerr: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
-                        return result;
+                        _logger.Warning($"[Seerr→Jellyfin Watchlist Sync] Failed to get users from Jellyseerr at {jellyseerrUrl}: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
+                        return null;
                     }
 
                     var usersResponse = JsonSerializer.Deserialize<JsonElement>(content!);
 
                     if (!usersResponse.TryGetProperty("results", out var usersArray))
                     {
-                        return result;
+                        _logger.Warning($"[Seerr→Jellyfin Watchlist Sync] User list from {jellyseerrUrl} has no results array.");
+                        return null;
                     }
 
                     int pageCount = 0;
@@ -320,7 +374,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             }
             catch (Exception ex)
             {
-                _logger.Error($"[Seerr→Jellyfin Watchlist Sync] Error getting Jellyseerr user map: {ex.Message}");
+                _logger.Error($"[Seerr→Jellyfin Watchlist Sync] Error getting Jellyseerr user map from {jellyseerrUrl}: {ex.Message}");
+                return null;
             }
 
             return result;
@@ -593,18 +648,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     // Mark as processed if prevention is enabled and not already marked
                     if (config?.PreventWatchlistReAddition == true)
                     {
-                        var processedItems = _userConfigurationManager.GetProcessedWatchlistItems(user.Id);
-                        if (!processedItems.Items.Any(p => p.TmdbId == watchlistItem.TmdbId && p.MediaType == watchlistItem.MediaType))
-                        {
-                            processedItems.Items.Add(new ProcessedWatchlistItem
-                            {
-                                TmdbId = watchlistItem.TmdbId,
-                                MediaType = watchlistItem.MediaType,
-                                ProcessedAt = System.DateTime.UtcNow,
-                                Source = "existing"
-                            });
-                            _userConfigurationManager.SaveProcessedWatchlistItems(user.Id, processedItems);
-                        }
+                        _userConfigurationManager.MarkWatchlistItemProcessed(user.Id, watchlistItem.TmdbId, watchlistItem.MediaType, "existing");
                     }
 
                     return Task.FromResult(WatchlistItemResult.AlreadyInWatchlist);
@@ -617,15 +661,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 // Mark as processed if prevention is enabled
                 if (config?.PreventWatchlistReAddition == true)
                 {
-                    var processedItems = _userConfigurationManager.GetProcessedWatchlistItems(user.Id);
-                    processedItems.Items.Add(new ProcessedWatchlistItem
-                    {
-                        TmdbId = watchlistItem.TmdbId,
-                        MediaType = watchlistItem.MediaType,
-                        ProcessedAt = System.DateTime.UtcNow,
-                        Source = "sync"
-                    });
-                    _userConfigurationManager.SaveProcessedWatchlistItems(user.Id, processedItems);
+                    _userConfigurationManager.MarkWatchlistItemProcessed(user.Id, watchlistItem.TmdbId, watchlistItem.MediaType, "sync");
                 }
 
                 _logger.Info($"[Seerr→Jellyfin Watchlist Sync] ✓ Added to watchlist: {item.Name} for user {user.Username}");

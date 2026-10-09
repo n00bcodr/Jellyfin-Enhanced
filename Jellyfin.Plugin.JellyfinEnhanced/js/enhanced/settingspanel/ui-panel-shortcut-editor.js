@@ -128,8 +128,11 @@
                     }
 
                     const labelWrapper = keyElement.parentElement.nextElementSibling;
-                    const combo = (e.metaKey ? 'Meta+' : '') + (e.ctrlKey ? 'Ctrl+' : '') + (e.altKey ? 'Alt+' : '') + (e.shiftKey ? 'Shift+' : '') + (e.key.match(/^[a-zA-Z]$/) ? e.key.toUpperCase() : e.key);
-                    const existingAction = Object.keys(JE.state.activeShortcuts).find(name => JE.state.activeShortcuts[name] === combo);
+                    const combo = JE.keyCombo(e);
+                    // Stored bindings may list their modifiers in any order ("Shift+Ctrl+S");
+                    // compare them the way the key listener does (events.js).
+                    const canonical = JE.internals.canonicalCombo || (value => value);
+                    const existingAction = Object.keys(JE.state.activeShortcuts).find(name => canonical(JE.state.activeShortcuts[name]) === combo);
                     // Player actions can't take keys Jellyfin's own player already handles,
                     // otherwise both would fire on one press.
                     const isReservedPlayerKey = PLAYER_ACTIONS.has(action) && JELLYFIN_PLAYER_KEYS.has(combo);

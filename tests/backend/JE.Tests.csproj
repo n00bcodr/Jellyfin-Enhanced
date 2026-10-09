@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <JellyfinTarget Condition="'$(JellyfinTarget)' == ''">jf12</JellyfinTarget>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <NuGetLockFilePath>$(MSBuildProjectDirectory)/packages.$(JellyfinTarget).lock.json</NuGetLockFilePath>
+    <TargetFramework Condition="'$(JellyfinTarget)' == 'jf12'">net10.0</TargetFramework>
+    <TargetFramework Condition="'$(JellyfinTarget)' == 'jf10'">net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <AssemblyName>JE.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2" PrivateAssets="all" />
+    <PackageReference Include="Moq" Version="4.20.72" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.0" Condition="'$(JellyfinTarget)' == 'jf12'" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="9.0.0" Condition="'$(JellyfinTarget)' == 'jf10'" />
+    <PackageReference Include="SkiaSharp" Version="3.116.1" />
+    <PackageReference Include="SkiaSharp.HarfBuzz" Version="3.116.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.116.1" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="8.3.1.1" />
+    <PackageReference Include="coverlet.collector" Version="6.0.4" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.11" Condition="'$(JellyfinTarget)' == 'jf12'" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.10" Condition="'$(JellyfinTarget)' == 'jf10'" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>

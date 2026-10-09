@@ -21,6 +21,7 @@
         const IGNORE_PROVIDERS = JE.pluginConfig.IGNORE_PROVIDERS ? JE.pluginConfig.IGNORE_PROVIDERS.replace(/'/g, '').replace(/\n/g, ',').split(',').map(s => s.trim()).filter(s => s) : [];
         const ELSEWHERE_CUSTOM_BRANDING_TEXT = JE.pluginConfig.ElsewhereCustomBrandingText || '';
         const ELSEWHERE_CUSTOM_BRANDING_IMAGE_URL = JE.pluginConfig.ElsewhereCustomBrandingImageUrl || '';
+        const SEASON_PROVIDERS_ADMIN = JE.pluginConfig.ElsewhereSeasonProviders !== false;
 
         if (!TmdbEnabled) {
             console.log('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: TMDB is not configured, skipping initialization');
@@ -32,6 +33,7 @@
         let userServices = []; // Empty by default - will show all services from settings region
         let availableRegions = {};
         let availableProviders = [];
+        let userSeasonProviders = true;
 
         // Safe fallback for helpers.js Stage-3 load-order races.
         const extLink = JE.helpers?.createExternalLink || ((u, o) => {
@@ -370,6 +372,12 @@
                     <div id="services-autocomplete"></div>
                 </div>
 
+                ${SEASON_PROVIDERS_ADMIN ? `
+                <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; color: #ccc; cursor: pointer;">
+                    <input type="checkbox" id="season-providers-checkbox" ${userSeasonProviders ? 'checked' : ''} style="width: 16px; height: 16px; cursor: pointer;">
+                    <span>${JE.t('elsewhere_settings_season_providers')}</span>
+                </label>` : ''}
+
                 <div style="display: flex; gap: 12px; justify-content: flex-end;">
                     <button id="cancel-settings" style="padding: 10px 18px; border: 1px solid #444; background: #2a2a2a; color: #fff; border-radius: 6px; cursor: pointer; font-size: 14px;">${JE.t('elsewhere_settings_cancel')}</button>
                     <button id="save-settings" style="padding: 10px 18px; border: none; background: #0078d4; color: white; border-radius: 6px; cursor: pointer; font-size: 14px;">${JE.t('elsewhere_settings_save')}</button>
@@ -434,12 +442,16 @@
                 });
                 userServices = selectedServices;
 
+                const seasonCheckbox = document.getElementById('season-providers-checkbox');
+                if (seasonCheckbox) userSeasonProviders = seasonCheckbox.checked;
+
                 modal.style.display = 'none';
 
                 const elsewhereSettings = {
                     Region: userRegion,
                     Regions: userRegions,
-                    Services: userServices
+                    Services: userServices,
+                    SeasonProviders: userSeasonProviders
                 };
                 JE.saveUserSettings('elsewhere.json', elsewhereSettings);
             };
@@ -458,6 +470,9 @@
             userRegion = settings.Region || DEFAULT_REGION;
             userRegions = settings.Regions || [];
             userServices = settings.Services || [];
+            userSeasonProviders = settings.SeasonProviders !== false;
+            const seasonCheckbox = document.getElementById('season-providers-checkbox');
+            if (seasonCheckbox) seasonCheckbox.checked = userSeasonProviders;
         }
 
         // This closure survives an SPA logout/login, so re-read the incoming
@@ -564,8 +579,189 @@
                 });
         }
 
+        // Per-season providers. Only for the default (aired) season order, since TMDB's
+        // season numbers would not line up with an alternate Jellyfin order.
+
+        const SEASON_FETCH_CONCURRENCY = 4;
+        const seasonProvidersCache = new Map();
+        const tmdbSeasonNumbersCache = new Map();
+
+        function isDefaultSeasonOrder(order) {
+            const value = (order || '').toString().trim().toLowerCase();
+            return value === '' || value === 'aired' || value === 'airdate' || value === 'default';
+        }
+
+        function applyProviderFilters(services) {
+            let filtered = services || [];
+
+            if (DEFAULT_PROVIDERS.length > 0) {
+                filtered = filtered.filter(service => DEFAULT_PROVIDERS.includes(service.provider_name));
+            }
+
+            if (IGNORE_PROVIDERS.length > 0) {
+                try {
+                    const ignorePatterns = IGNORE_PROVIDERS.map(pattern => new RegExp(pattern, 'i'));
+                    filtered = filtered.filter(service =>
+                        !ignorePatterns.some(regex => regex.test(service.provider_name))
+                    );
+                } catch (e) {
+                    console.error('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: Invalid regex in IGNORE_PROVIDERS.', e);
+                }
+            }
+
+            return filtered;
+        }
+
+        function getPageItemId() {
+            try {
+                return new URLSearchParams(window.location.hash.split('?')[1] || '').get('id');
+            } catch {
+                return null;
+            }
+        }
+
+        function fetchSeasonProviders(tmdbId, seasonNumber) {
+            const key = `${tmdbId}:${seasonNumber}`;
+            if (!seasonProvidersCache.has(key)) {
+                const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb/tv/${tmdbId}/season/${seasonNumber}/watch/providers`);
+                seasonProvidersCache.set(key, JE.core.api.fetch(url).catch(() => {
+                    seasonProvidersCache.delete(key);
+                    return null;
+                }));
+            }
+            return seasonProvidersCache.get(key);
+        }
+
+        function fetchTmdbSeasonNumbers(tmdbId) {
+            if (!tmdbSeasonNumbersCache.has(tmdbId)) {
+                const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb/tv/${tmdbId}`);
+                tmdbSeasonNumbersCache.set(tmdbId, JE.core.api.fetch(url)
+                    .then(data => (Array.isArray(data?.seasons)
+                        ? new Set(data.seasons.map(season => season.season_number))
+                        : null))
+                    .catch(() => {
+                        tmdbSeasonNumbersCache.delete(tmdbId);
+                        return null;
+                    }));
+            }
+            return tmdbSeasonNumbersCache.get(tmdbId);
+        }
+
+        async function fetchJellyfinSeasonNumbers(seriesId) {
+            const userId = ApiClient.getCurrentUserId();
+            const url = ApiClient.getUrl(`Shows/${seriesId}/Seasons`, { userId });
+            const result = await JE.core.api.fetch(url);
+            return (result?.Items || [])
+                .map(season => season.IndexNumber)
+                .filter(number => Number.isInteger(number))
+                .sort((a, b) => a - b);
+        }
+
+        async function resolveSeasonContext(expectedTmdbId) {
+            if (!SEASON_PROVIDERS_ADMIN || !userSeasonProviders) return null;
+
+            const itemId = getPageItemId();
+            if (!itemId) return null;
+
+            const item = await JE.helpers.getItemCached(itemId);
+            if (!item) return null;
+
+            let series;
+            let seasonNumber = null;
+            if (item.Type === 'Series') {
+                series = item;
+            } else if (item.Type === 'Season' && item.SeriesId && Number.isInteger(item.IndexNumber)) {
+                series = await JE.helpers.getItemCached(item.SeriesId);
+                seasonNumber = item.IndexNumber;
+            } else {
+                return null;
+            }
+
+            if (!series || !isDefaultSeasonOrder(series.DisplayOrder)) return null;
+
+            const tmdbId = series.ProviderIds?.Tmdb;
+            if (!tmdbId || (expectedTmdbId && String(tmdbId) !== String(expectedTmdbId))) return null;
+
+            return { kind: seasonNumber === null ? 'series' : 'season', seriesId: series.Id, tmdbId: String(tmdbId), seasonNumber };
+        }
+
+        async function mapWithLimit(items, limit, mapper) {
+            const results = new Array(items.length);
+            let next = 0;
+            const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+                while (next < items.length) {
+                    const index = next++;
+                    results[index] = await mapper(items[index]);
+                }
+            });
+            await Promise.all(workers);
+            return results;
+        }
+
+        function formatSeasonLabel(seasonNumbers) {
+            const numbers = seasonNumbers.filter(n => n > 0);
+            const parts = [];
+            for (let i = 0; i < numbers.length;) {
+                let j = i;
+                while (j + 1 < numbers.length && numbers[j + 1] === numbers[j] + 1) j++;
+                parts.push(j > i ? `${numbers[i]}–${numbers[j]}` : String(numbers[i]));
+                i = j + 1;
+            }
+            const hasSpecials = seasonNumbers.includes(0);
+
+            if (parts.length === 1 && !hasSpecials && numbers.length === 1) {
+                return JE.t('elsewhere_season_label', { number: numbers[0] });
+            }
+            if (parts.length === 0 && hasSpecials) {
+                return JE.t('jellyseerr_season_specials');
+            }
+            if (hasSpecials) parts.push(JE.t('jellyseerr_season_specials'));
+            return JE.t('elsewhere_seasons_label', { range: parts.join(', ') });
+        }
+
+        async function buildSeasonView(ctx, seriesData) {
+            const regionOf = data => data?.results?.[userRegion];
+            const seriesServices = applyProviderFilters(regionOf(seriesData)?.flatrate);
+            const tmdbSeasons = await fetchTmdbSeasonNumbers(ctx.tmdbId);
+
+            const seasonNumbers = ctx.kind === 'season'
+                ? [ctx.seasonNumber]
+                : await fetchJellyfinSeasonNumbers(ctx.seriesId);
+            if (seasonNumbers.length === 0) return null;
+
+            const entries = await mapWithLimit(seasonNumbers, SEASON_FETCH_CONCURRENCY, async number => {
+                const knownToTmdb = !tmdbSeasons || tmdbSeasons.has(number);
+                const data = knownToTmdb ? await fetchSeasonProviders(ctx.tmdbId, number) : null;
+                const own = applyProviderFilters(regionOf(data)?.flatrate);
+                if (own.length > 0) {
+                    return { number, services: own, link: regionOf(data)?.link };
+                }
+                if (number === 0) return null;
+                return { number, services: seriesServices, link: undefined };
+            });
+            const seasons = entries.filter(Boolean);
+            if (seasons.length === 0) return null;
+
+            if (ctx.kind === 'season') {
+                return { servicesOverride: seasons[0].services, link: seasons[0].link };
+            }
+
+            const byProviders = new Map();
+            seasons.forEach(season => {
+                const key = season.services.map(service => service.provider_id).sort((a, b) => a - b).join(',');
+                if (!byProviders.has(key)) byProviders.set(key, { services: season.services, numbers: [] });
+                byProviders.get(key).numbers.push(season.number);
+            });
+            if (byProviders.size <= 1) return null; // every season is on the same providers: no labels
+
+            const groups = [...byProviders.values()]
+                .filter(group => group.services.length > 0)
+                .map(group => ({ label: formatSeasonLabel(group.numbers), services: group.services }));
+            return groups.length > 0 ? { groups } : null;
+        }
+
         // Process streaming data for default region (auto-load)
-        function processDefaultRegionData(data, tmdbId, mediaType) {
+        function processDefaultRegionData(data, tmdbId, mediaType, seasonView = {}) {
             // userRegion is the effective region: the per-user "Default Search Country"
             // override if the user set one, otherwise the admin's DEFAULT_REGION (see loadSettings).
             const regionData = data.results[userRegion];
@@ -597,33 +793,20 @@
             // Pre-filter services to check if any will actually be displayed
             let filteredServices = [];
             if (hasServices) {
-                filteredServices = regionData.flatrate;
-
-                // Apply DEFAULT_PROVIDERS filter
-                if (DEFAULT_PROVIDERS.length > 0) {
-                    filteredServices = filteredServices.filter(service =>
-                        DEFAULT_PROVIDERS.includes(service.provider_name)
-                    );
-                }
-
-                // Apply IGNORE_PROVIDERS filter
-                if (IGNORE_PROVIDERS.length > 0) {
-                    try {
-                        const ignorePatterns = IGNORE_PROVIDERS.map(pattern => new RegExp(pattern, 'i'));
-                        filteredServices = filteredServices.filter(service =>
-                            !ignorePatterns.some(regex => regex.test(service.provider_name))
-                        );
-                    } catch (e) {
-                        console.error('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: Invalid regex in IGNORE_PROVIDERS.', e);
-                    }
-                }
+                filteredServices = applyProviderFilters(regionData.flatrate);
             }
 
-            const hasFilteredServices = filteredServices.length > 0;
+            if (seasonView.servicesOverride) {
+                filteredServices = seasonView.servicesOverride;
+            }
+            const seasonGroups = seasonView.groups || null;
+            const linkUrl = seasonView.link || (regionData && regionData.link) || '';
+
+            const hasFilteredServices = !!seasonGroups || filteredServices.length > 0;
 
             // Create clickable title that links to JustWatch
             const title = extLink(
-                (hasFilteredServices && regionData && regionData.link) ? regionData.link : '#',
+                (hasFilteredServices && linkUrl) ? linkUrl : '#',
                 { title: 'JustWatch' }
             );
 
@@ -672,9 +855,9 @@
             `;
 
             // Add JustWatch link if available and has filtered services
-            if (hasFilteredServices && regionData && regionData.link) {
+            if (hasFilteredServices && linkUrl) {
                 title.classList.add('elsewhere-link-reset');
-                title.href = regionData.link;
+                title.href = linkUrl;
                 title.style.padding = '0';
                 title.style.margin = '0';
             } else if (!hasFilteredServices && ELSEWHERE_CUSTOM_BRANDING_TEXT) {
@@ -777,8 +960,22 @@
             }
 
             // Show services if they exist after filtering, otherwise show appropriate message
-            if (hasServices) {
-                if (hasFilteredServices) {
+            if (hasServices || hasFilteredServices) {
+                if (seasonGroups) {
+                    seasonGroups.forEach(group => {
+                        const groupLabel = document.createElement('div');
+                        groupLabel.textContent = group.label;
+                        groupLabel.style.cssText = 'font-size: 12px; font-weight: 600; color: #aaa; margin: 4px 0 2px;';
+                        container.appendChild(groupLabel);
+
+                        const groupServices = document.createElement('div');
+                        groupServices.style.cssText = 'display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;';
+                        group.services.forEach(service => {
+                            groupServices.appendChild(createServiceBadge(service, tmdbId, mediaType));
+                        });
+                        container.appendChild(groupServices);
+                    });
+                } else if (hasFilteredServices) {
                     // Use the pre-filtered services
                     const servicesContainer = document.createElement('div');
                     servicesContainer.style.cssText = 'display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px;';
@@ -1083,7 +1280,7 @@
 
         // Auto-load streaming data on page load (default region only)
         function autoLoadStreamingData(tmdbId, mediaType, container) {
-            fetchStreamingData(tmdbId, mediaType, (error, data) => {
+            fetchStreamingData(tmdbId, mediaType, async (error, data) => {
                 if (error) {
                     const errorDiv = document.createElement('div');
                     errorDiv.style.cssText = 'font-size: 13px; margin-top: 8px; color: #ff6b6b;';
@@ -1092,12 +1289,62 @@
                     return;
                 }
 
+                let seasonView = {};
+                if (mediaType === 'tv' && SEASON_PROVIDERS_ADMIN && userSeasonProviders) {
+                    try {
+                        const ctx = await resolveSeasonContext(tmdbId);
+                        if (ctx) {
+                            seasonView = (await buildSeasonView(ctx, data)) || {};
+                        }
+                    } catch (e) {
+                        console.warn('🪼 Jellyfin Enhanced: 🎬 Jellyfin Elsewhere: Per-season providers unavailable, using series providers.', e);
+                    }
+                }
+
                 // Show default region results automatically
-                const defaultResult = processDefaultRegionData(data, tmdbId, mediaType);
+                const defaultResult = processDefaultRegionData(data, tmdbId, mediaType, seasonView);
                 if (defaultResult) {
                     container.appendChild(defaultResult);
                 }
             });
+        }
+
+        function mountStreamingLookup(section, tmdbId, mediaType) {
+            const container = document.createElement('div');
+            container.className = 'streaming-lookup-container';
+            container.style.cssText = 'margin: 16px 0;';
+
+            // Auto-load streaming data for default region
+            autoLoadStreamingData(tmdbId, mediaType, container);
+
+            // Insert after external links or at the end
+            const externalLinks = section.querySelector('.itemExternalLinks');
+            if (externalLinks) {
+                externalLinks.parentNode.insertBefore(container, externalLinks.nextSibling);
+            } else {
+                section.appendChild(container);
+            }
+        }
+
+        // Season pages may lack a TMDB link; derive the series' TMDB id from the item instead.
+        const seasonFallbackInFlight = new Set();
+        function mountSeasonPageFallback(section) {
+            if (!SEASON_PROVIDERS_ADMIN || !userSeasonProviders) return;
+            if (document.querySelector('.streaming-lookup-container')) return;
+            if (section !== document.querySelector('.detailSectionContent')) return;
+
+            const itemId = getPageItemId();
+            if (!itemId || seasonFallbackInFlight.has(itemId)) return;
+            seasonFallbackInFlight.add(itemId);
+
+            resolveSeasonContext()
+                .then(ctx => {
+                    if (!ctx || ctx.kind !== 'season') return;
+                    if (!section.isConnected || document.querySelector('.streaming-lookup-container')) return;
+                    mountStreamingLookup(section, ctx.tmdbId, 'tv');
+                })
+                .catch(() => { /* not a season page / item unavailable */ })
+                .finally(() => seasonFallbackInFlight.delete(itemId));
         }
 
         // Add buttons to detail pages
@@ -1110,30 +1357,16 @@
 
                 // Look for TMDB link to get ID and media type
                 const tmdbLinks = section.querySelectorAll('a[href*="themoviedb.org"]');
-                if (tmdbLinks.length === 0) return;
+                if (tmdbLinks.length === 0) {
+                    mountSeasonPageFallback(section);
+                    return;
+                }
 
                 const tmdbLink = tmdbLinks[0];
                 const match = tmdbLink.href.match(/themoviedb\.org\/(movie|tv)\/(\d+)/);
                 if (!match) return;
 
-                const mediaType = match[1];
-                const tmdbId = match[2];
-
-                // Create container
-                const container = document.createElement('div');
-                container.className = 'streaming-lookup-container';
-                container.style.cssText = 'margin: 16px 0;';
-
-                // Auto-load streaming data for default region
-                autoLoadStreamingData(tmdbId, mediaType, container);
-
-                // Insert after external links or at the end
-                const externalLinks = section.querySelector('.itemExternalLinks');
-                if (externalLinks) {
-                    externalLinks.parentNode.insertBefore(container, externalLinks.nextSibling);
-                } else {
-                    section.appendChild(container);
-                }
+                mountStreamingLookup(section, match[2], match[1]);
             });
         }
         // --- Initialization ---

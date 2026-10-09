@@ -460,7 +460,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // is a deliberately conservative guess rather than a tuned value — cheap to
         // be generous here since it only adds a few seconds to a background refresh
         // that runs once at startup and once every 24h, not on the request path.
-        private static readonly TimeSpan BurstSensitiveDelay = TimeSpan.FromSeconds(2);
+        private static readonly TimeSpan DefaultBurstSensitiveDelay = TimeSpan.FromSeconds(2);
+
+        /// <summary>Pause between consecutive burst-sensitive downloads (tests set it to zero).</summary>
+        internal TimeSpan BurstSensitiveDelay { get; set; } = DefaultBurstSensitiveDelay;
 
         /// <summary>Forces a fresh download of every <see cref="KnownAssets"/> entry.</summary>
         public async Task RefreshKnownAsync(IProgress<double>? progress, CancellationToken cancellationToken)

@@ -617,7 +617,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
                         HttpMethod.Post, requestUri, config.JellyseerrApiKey, jellyseerrUserId, jsonContent);
                     using var response = await httpClient.SendAsync(request);
-                    var (responseContent, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
+                    var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
                     if (error == null)
                     {

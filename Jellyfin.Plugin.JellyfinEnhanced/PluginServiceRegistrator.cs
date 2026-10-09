@@ -57,6 +57,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<AutoMovieRequestService>();
             serviceCollection.AddSingleton<AutoMovieRequestMonitor>();
             serviceCollection.AddSingleton<WatchlistMonitor>();
+            serviceCollection.AddSingleton<CatchUpLogService>();
             serviceCollection.AddSingleton<SeerrScanTriggerService>();
             serviceCollection.AddSingleton<TagCacheService>();
             serviceCollection.AddSingleton<TagCacheMonitor>();

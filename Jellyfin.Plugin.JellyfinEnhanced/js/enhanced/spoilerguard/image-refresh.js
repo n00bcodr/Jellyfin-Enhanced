@@ -20,12 +20,12 @@
         const cacheBuster = `_sbcb=${Date.now()}`;
         const bust = url => internal.bustSpoilerImageUrl(url, cacheBuster);
 
-        document.querySelectorAll('img[src*="/Items/"]').forEach(function(img) {
+        document.querySelectorAll('img[src*="/Items/"], img[srcset*="/Items/"]').forEach(function(img) {
             const src = img.getAttribute('src') || '';
             if (imagePath.test(src)) img.setAttribute('src', bust(src));
             const srcset = img.getAttribute('srcset');
             if (srcset && imagePath.test(srcset)) {
-                img.setAttribute('srcset', srcset.replace(/([^\s,]+)(?=\s*[\d.]+x|\s*,|\s*$)/g,
+                img.setAttribute('srcset', srcset.replace(/([^\s,]+)(?=\s*[\d.]+[wx]|\s*,|\s*$)/g,
                     url => imagePath.test(url) ? bust(url) : url));
             }
         });
@@ -33,7 +33,7 @@
         document.querySelectorAll('source[srcset*="/Items/"]').forEach(function(source) {
             const srcset = source.getAttribute('srcset') || '';
             if (imagePath.test(srcset)) {
-                source.setAttribute('srcset', srcset.replace(/([^\s,]+)(?=\s*[\d.]+x|\s*,|\s*$)/g,
+                source.setAttribute('srcset', srcset.replace(/([^\s,]+)(?=\s*[\d.]+[wx]|\s*,|\s*$)/g,
                     url => imagePath.test(url) ? bust(url) : url));
             }
         });

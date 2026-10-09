@@ -21,6 +21,26 @@
 
   const escapeHtml = JE.escapeHtml;
 
+  // A save serialises the whole bookmark map when it is called, but the POST waits
+  // behind earlier saves. If two mutations overlapped, the first one's rollback could
+  // undo the second's saved change or bring back a record the server no longer has.
+  // So each user's mutations run one at a time: mutate, save and, on failure, roll
+  // back before the next one touches memory.
+  const mutationQueues = new WeakMap();
+
+  /**
+   * Runs a bookmark mutation once every earlier mutation for the same owner has settled.
+   * @template T
+   * @param {object} owner - The `JE.userConfig` object the mutation writes to.
+   * @param {() => Promise<T>} mutation - Mutates memory, saves and rolls back its own change on failure.
+   * @returns {Promise<T>} The mutation's own result or rejection.
+   */
+  function queueBookmarkMutation(owner, mutation) {
+    const run = (mutationQueues.get(owner) || Promise.resolve()).then(mutation);
+    mutationQueues.set(owner, run.catch(() => {}));
+    return run;
+  }
+
   /**
    * New bookmark data structure:
    * {
@@ -59,18 +79,26 @@
     }
   }
 
-  const itemDetailsCache = { itemId: null, data: null, pending: null };
+  let itemDetailsCache = null;
 
   /**
    * Fetch full item details including TMDB/TVDB IDs (cached per item for a few seconds)
    */
   async function fetchItemDetails(itemId) {
-    if (itemDetailsCache.itemId === itemId && itemDetailsCache.data) {
-      return itemDetailsCache.data;
+    const owner = JE.userConfig;
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
+    if (!itemDetailsCache || itemDetailsCache.owner !== owner
+        || itemDetailsCache.epoch !== epoch || itemDetailsCache.itemId !== itemId) {
+      itemDetailsCache = { owner, epoch, itemId, data: null, pending: null };
+    }
+    // Keep each in-flight lookup attached to its original owner and item.
+    const cache = itemDetailsCache;
+    if (cache.itemId === itemId && cache.data) {
+      return cache.data;
     }
 
-    if (itemDetailsCache.pending && itemDetailsCache.itemId === itemId) {
-      return itemDetailsCache.pending;
+    if (cache.pending && cache.itemId === itemId) {
+      return cache.pending;
     }
 
     const fetchPromise = (async () => {
@@ -87,6 +115,7 @@
           dataType: 'json'
         });
 
+        if (JE.userConfig !== owner || (JE.session && !JE.session.isCurrent(epoch))) return null;
         const item = result?.Items?.[0];
         if (!item) return null;
 
@@ -141,18 +170,18 @@
           episodeNumber
         };
 
-        itemDetailsCache.data = details;
+        cache.data = details;
         return details;
       } catch (e) {
         console.warn(`${logPrefix} Error fetching item details:`, e);
         return null;
       } finally {
-        itemDetailsCache.pending = null;
+        cache.pending = null;
       }
     })();
 
-    itemDetailsCache.itemId = itemId;
-    itemDetailsCache.pending = fetchPromise;
+    cache.itemId = itemId;
+    cache.pending = fetchPromise;
     return fetchPromise;
   }
 
@@ -215,6 +244,10 @@
    * Add a new bookmark
    */
   async function addBookmark(timestamp, label = '') {
+    const owner = JE.userConfig;
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
+    const isCurrentOwner = () => JE.userConfig === owner
+      && (!JE.session || JE.session.isCurrent(epoch));
     const itemData = getCurrentItemData();
     if (!itemData) {
       JE.toast(JE.t('toast_bookmark_no_item'), 3000);
@@ -223,138 +256,235 @@
 
     // Fetch full details
     const details = await fetchItemDetails(itemData.itemId);
+    if (!isCurrentOwner()) return null;
     if (!details) {
       JE.toast(JE.t('toast_bookmark_fetch_failed'), 3000);
       return null;
     }
 
-    const bookmarkId = generateBookmarkId();
-    const now = new Date().toISOString();
+    return queueBookmarkMutation(owner, async () => {
+      // An earlier queued mutation may have outlived this user's session.
+      if (!isCurrentOwner()) return null;
+      const bookmarkId = generateBookmarkId();
+      const now = new Date().toISOString();
 
-    const bookmark = {
-      itemId: details.itemId || '',
-      tmdbId: details.tmdbId || '',
-      tvdbId: details.tvdbId || '',
-      mediaType: details.mediaType || '',
-      name: details.name || '',
-      timestamp: timestamp,
-      label: label || '',
-      createdAt: now,
-      updatedAt: now,
-      syncedFrom: '',
-      seasonNumber: details.seasonNumber ?? null,
-      episodeNumber: details.episodeNumber ?? null
-    };
+      const bookmark = {
+        itemId: details.itemId || '',
+        tmdbId: details.tmdbId || '',
+        tvdbId: details.tvdbId || '',
+        mediaType: details.mediaType || '',
+        name: details.name || '',
+        timestamp: timestamp,
+        label: label || '',
+        createdAt: now,
+        updatedAt: now,
+        syncedFrom: '',
+        seasonNumber: details.seasonNumber ?? null,
+        episodeNumber: details.episodeNumber ?? null
+      };
 
-    // Initialize bookmark structure if needed
-    if (!JE.userConfig.bookmark) {
-      JE.userConfig.bookmark = { bookmarks: {} };
-    }
-    if (!JE.userConfig.bookmark.bookmarks) {
-      JE.userConfig.bookmark.bookmarks = {};
-    }
+      // Initialize bookmark structure if needed
+      if (!owner.bookmark) {
+        owner.bookmark = { bookmarks: {} };
+      }
+      if (!owner.bookmark.bookmarks) {
+        owner.bookmark.bookmarks = {};
+      }
 
-    JE.userConfig.bookmark.bookmarks[bookmarkId] = bookmark;
+      const bookmarks = owner.bookmark.bookmarks;
+      bookmarks[bookmarkId] = bookmark;
 
-    try {
-      await JE.saveUserSettings('bookmark.json', JE.userConfig.bookmark);
-      console.log(`${logPrefix} Bookmark added:`, bookmarkId, bookmark);
-      emitBookmarksUpdated('add');
-      return { id: bookmarkId, ...bookmark };
-    } catch (e) {
-      console.error(`${logPrefix} Failed to save bookmark:`, e);
-      delete JE.userConfig.bookmark.bookmarks[bookmarkId];
-      throw e;
-    }
+      try {
+        await JE.saveUserSettings('bookmark.json', owner.bookmark, { throwOnError: true });
+        console.log(`${logPrefix} Bookmark added:`, bookmarkId, bookmark);
+        if (isCurrentOwner()) emitBookmarksUpdated('add');
+        return { id: bookmarkId, ...bookmark };
+      } catch (e) {
+        console.error(`${logPrefix} Failed to save bookmark:`, e);
+        delete bookmarks[bookmarkId];
+        throw e;
+      }
+    });
   }
 
   /**
    * Update an existing bookmark
    */
   async function updateBookmark(bookmarkId, updates) {
+    const owner = JE.userConfig;
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
+    const isCurrentOwner = () => JE.userConfig === owner
+      && (!JE.session || JE.session.isCurrent(epoch));
     if (!JE.userConfig?.bookmark?.bookmarks?.[bookmarkId]) {
       console.warn(`${logPrefix} Bookmark not found:`, bookmarkId);
       return false;
     }
 
-    const bookmark = JE.userConfig.bookmark.bookmarks[bookmarkId];
-    Object.assign(bookmark, updates, { updatedAt: new Date().toISOString() });
+    return queueBookmarkMutation(owner, async () => {
+      // Re-check after any earlier queued mutation: the user or the record may be gone.
+      if (!isCurrentOwner() || !owner.bookmark?.bookmarks?.[bookmarkId]) {
+        console.warn(`${logPrefix} Bookmark not found:`, bookmarkId);
+        return false;
+      }
+      const bookmarks = owner.bookmark.bookmarks;
+      const original = bookmarks[bookmarkId];
+      const bookmark = { ...original, ...updates, updatedAt: new Date().toISOString() };
+      bookmarks[bookmarkId] = bookmark;
 
-    try {
-      await JE.saveUserSettings('bookmark.json', JE.userConfig.bookmark);
-      console.log(`${logPrefix} Bookmark updated:`, bookmarkId);
-      emitBookmarksUpdated('update');
-      return true;
-    } catch (e) {
-      console.error(`${logPrefix} Failed to update bookmark:`, e);
-      return false;
-    }
+      try {
+        await JE.saveUserSettings('bookmark.json', owner.bookmark, { throwOnError: true });
+        console.log(`${logPrefix} Bookmark updated:`, bookmarkId);
+        if (isCurrentOwner()) emitBookmarksUpdated('update');
+        return true;
+      } catch (e) {
+        if (bookmarks[bookmarkId] === bookmark) {
+          bookmarks[bookmarkId] = original;
+        }
+        console.error(`${logPrefix} Failed to update bookmark:`, e);
+        return false;
+      }
+    });
   }
 
   /**
-   * Delete a bookmark
+   * Delete a bookmark.
+   * @param {string} bookmarkId - The bookmark record ID.
+   * @returns {Promise<boolean|null>} true once the deletion is saved; false when the save
+   *   failed and the record was restored; null when there was nothing to delete (already
+   *   gone, e.g. a double-clicked delete, or the user changed).
    */
   async function deleteBookmark(bookmarkId) {
+    const owner = JE.userConfig;
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
+    const isCurrentOwner = () => JE.userConfig === owner
+      && (!JE.session || JE.session.isCurrent(epoch));
     if (!JE.userConfig?.bookmark?.bookmarks?.[bookmarkId]) {
       console.warn(`${logPrefix} Bookmark not found:`, bookmarkId);
-      return false;
+      return null;
     }
 
-    delete JE.userConfig.bookmark.bookmarks[bookmarkId];
+    return queueBookmarkMutation(owner, async () => {
+      // Re-check after any earlier queued mutation: the user or the record may be gone.
+      if (!isCurrentOwner() || !owner.bookmark?.bookmarks?.[bookmarkId]) {
+        console.warn(`${logPrefix} Bookmark not found:`, bookmarkId);
+        return null;
+      }
+      const bookmarks = owner.bookmark.bookmarks;
+      const original = bookmarks[bookmarkId];
+      delete bookmarks[bookmarkId];
 
-    try {
-      await JE.saveUserSettings('bookmark.json', JE.userConfig.bookmark);
-      console.log(`${logPrefix} Bookmark deleted:`, bookmarkId);
-      emitBookmarksUpdated('delete');
-      return true;
-    } catch (e) {
-      console.error(`${logPrefix} Failed to delete bookmark:`, e);
-      return false;
-    }
+      try {
+        await JE.saveUserSettings('bookmark.json', owner.bookmark, { throwOnError: true });
+        console.log(`${logPrefix} Bookmark deleted:`, bookmarkId);
+        if (isCurrentOwner()) emitBookmarksUpdated('delete');
+        return true;
+      } catch (e) {
+        if (!Object.prototype.hasOwnProperty.call(bookmarks, bookmarkId)) {
+          bookmarks[bookmarkId] = original;
+        }
+        console.error(`${logPrefix} Failed to delete bookmark:`, e);
+        return false;
+      }
+    });
   }
 
   /**
-   * Sync bookmarks from old item ID to new item ID
-   * Creates duplicates with new item ID, keeps old ones
+   * Delete every bookmark of the current user, queued behind the user's other mutations.
+   * @returns {Promise<boolean>} true once saved; false if the user changed before it ran.
+   *   Rejects after restoring the previous bookmarks when the save fails.
    */
-  async function syncBookmarks(oldBookmarks, newItemDetails, timeOffset = 0) {
-    const synced = [];
-    const now = new Date().toISOString();
+  async function deleteAllBookmarks() {
+    const owner = JE.userConfig;
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
+    const isCurrentOwner = () => JE.userConfig === owner
+      && (!JE.session || JE.session.isCurrent(epoch));
+    return queueBookmarkMutation(owner, async () => {
+      if (!isCurrentOwner()) return false;
+      if (!owner.bookmark) owner.bookmark = { bookmarks: {} };
+      const previous = owner.bookmark.bookmarks;
+      const cleared = {};
+      owner.bookmark.bookmarks = cleared;
 
-    for (const oldBookmark of oldBookmarks) {
-      const newBookmarkId = generateBookmarkId();
-      const newTimestamp = Math.max(0, oldBookmark.timestamp + timeOffset);
+      try {
+        await JE.saveUserSettings('bookmark.json', owner.bookmark, { throwOnError: true });
+        console.log(`${logPrefix} All bookmarks deleted`);
+        return true;
+      } catch (e) {
+        if (owner.bookmark.bookmarks === cleared) owner.bookmark.bookmarks = previous;
+        console.error(`${logPrefix} Failed to delete all bookmarks:`, e);
+        throw e;
+      }
+    });
+  }
 
-      const newBookmark = {
-        itemId: newItemDetails.itemId,
-        tmdbId: newItemDetails.tmdbId,
-        tvdbId: newItemDetails.tvdbId,
-        mediaType: newItemDetails.mediaType,
-        name: newItemDetails.name,
-        timestamp: newTimestamp,
-        label: oldBookmark.label || '',
-        createdAt: oldBookmark.createdAt || now,
-        updatedAt: now,
-        syncedFrom: oldBookmark.itemId, // Track where it came from
-        seasonNumber: newItemDetails.seasonNumber ?? null,
-        episodeNumber: newItemDetails.episodeNumber ?? null
-      };
+  /**
+   * Sync bookmarks from old item ID to new item ID.
+   * Creates duplicates with the new item ID and keeps the old ones, unless
+   * `replaceOriginals` is set: then the old records are removed in the same save,
+   * and a failed save restores them along with removing the new copies.
+   * @param {Array<{id?: string}>} oldBookmarks - Bookmarks to copy, with their record IDs.
+   * @param {object} newItemDetails - Item fields for the copies.
+   * @param {number} [timeOffset=0] - Seconds added to each copied timestamp.
+   * @param {{replaceOriginals?: boolean}} [options]
+   * @returns {Promise<Array<object>>} The new bookmarks; rejects if the save fails.
+   */
+  async function syncBookmarks(oldBookmarks, newItemDetails, timeOffset = 0, { replaceOriginals = false } = {}) {
+    const owner = JE.userConfig;
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
+    const isCurrentOwner = () => JE.userConfig === owner
+      && (!JE.session || JE.session.isCurrent(epoch));
+    return queueBookmarkMutation(owner, async () => {
+      if (!isCurrentOwner()) throw new Error('Bookmark owner changed before sync');
+      const bookmarks = owner.bookmark.bookmarks;
+      const synced = [];
+      const removed = [];
+      const now = new Date().toISOString();
 
-      JE.userConfig.bookmark.bookmarks[newBookmarkId] = newBookmark;
-      synced.push({ id: newBookmarkId, ...newBookmark });
-    }
+      if (replaceOriginals) {
+        for (const { id } of oldBookmarks) {
+          if (id && Object.prototype.hasOwnProperty.call(bookmarks, id)) {
+            removed.push([id, bookmarks[id]]);
+            delete bookmarks[id];
+          }
+        }
+      }
 
-    try {
-      await JE.saveUserSettings('bookmark.json', JE.userConfig.bookmark);
-      console.log(`${logPrefix} Synced ${synced.length} bookmarks to new item ID`);
-      emitBookmarksUpdated('sync');
-      return synced;
-    } catch (e) {
-      console.error(`${logPrefix} Failed to sync bookmarks:`, e);
-      // Rollback
-      synced.forEach(bm => delete JE.userConfig.bookmark.bookmarks[bm.id]);
-      throw e;
-    }
+      for (const oldBookmark of oldBookmarks) {
+        const newBookmarkId = generateBookmarkId();
+        const newTimestamp = Math.max(0, oldBookmark.timestamp + timeOffset);
+
+        const newBookmark = {
+          itemId: newItemDetails.itemId,
+          tmdbId: newItemDetails.tmdbId,
+          tvdbId: newItemDetails.tvdbId,
+          mediaType: newItemDetails.mediaType,
+          name: newItemDetails.name,
+          timestamp: newTimestamp,
+          label: oldBookmark.label || '',
+          createdAt: oldBookmark.createdAt || now,
+          updatedAt: now,
+          syncedFrom: oldBookmark.itemId, // Track where it came from
+          seasonNumber: newItemDetails.seasonNumber ?? null,
+          episodeNumber: newItemDetails.episodeNumber ?? null
+        };
+
+        bookmarks[newBookmarkId] = newBookmark;
+        synced.push({ id: newBookmarkId, ...newBookmark });
+      }
+
+      try {
+        await JE.saveUserSettings('bookmark.json', owner.bookmark, { throwOnError: true });
+        console.log(`${logPrefix} Synced ${synced.length} bookmarks to new item ID`);
+        if (isCurrentOwner()) emitBookmarksUpdated('sync');
+        return synced;
+      } catch (e) {
+        console.error(`${logPrefix} Failed to sync bookmarks:`, e);
+        // Rollback
+        synced.forEach(bm => delete bookmarks[bm.id]);
+        removed.forEach(([id, original]) => { bookmarks[id] = original; });
+        throw e;
+      }
+    });
   }
 
   /**
@@ -363,35 +493,58 @@
    * per-episode ID (previously stored as the series-level value).
    */
   async function backfillEpisodeMetadata() {
-    const allBookmarks = JE.userConfig?.bookmark?.bookmarks || {};
+    const owner = JE.userConfig;
+    const epoch = JE.session ? JE.session.getEpoch() : 0;
+    const isCurrentOwner = () => JE.userConfig === owner
+      && (!JE.session || JE.session.isCurrent(epoch));
+    const allBookmarks = owner?.bookmark?.bookmarks || {};
     const candidates = Object.entries(allBookmarks).filter(
       ([, bm]) => bm?.mediaType === 'tv' && bm.itemId && bm.episodeNumber == null
     );
     if (candidates.length === 0) return;
 
-    let changed = false;
-    for (const [, bm] of candidates) {
+    // Look the episodes up first; only the apply and save run in the mutation queue.
+    const found = [];
+    for (const [id, bm] of candidates) {
       try {
         const details = await fetchItemDetails(bm.itemId);
-        if (details?.episodeNumber != null) {
-          bm.seasonNumber = details.seasonNumber;
-          bm.episodeNumber = details.episodeNumber;
-          if (details.tvdbId) bm.tvdbId = details.tvdbId;
-          changed = true;
-        }
+        if (details?.episodeNumber != null) found.push([id, bm.itemId, details]);
       } catch (e) {
         // Item may no longer exist; leave it for cleanupOrphanedBookmarks() to handle
       }
     }
+    if (found.length === 0) return;
 
-    if (changed) {
+    await queueBookmarkMutation(owner, async () => {
+      if (!isCurrentOwner()) return;
+      const bookmarks = owner.bookmark?.bookmarks;
+      if (!bookmarks) return;
+      const applied = [];
+      for (const [id, itemId, details] of found) {
+        // An earlier queued mutation may have deleted, replaced or already filled the record.
+        const original = bookmarks[id];
+        if (!original || original.itemId !== itemId || original.episodeNumber != null) continue;
+        const filled = {
+          ...original,
+          seasonNumber: details.seasonNumber,
+          episodeNumber: details.episodeNumber,
+          ...(details.tvdbId ? { tvdbId: details.tvdbId } : {})
+        };
+        bookmarks[id] = filled;
+        applied.push([id, original, filled]);
+      }
+      if (applied.length === 0) return;
+
       try {
-        await JE.saveUserSettings('bookmark.json', JE.userConfig.bookmark);
-        console.log(`${logPrefix} Backfilled episode metadata for ${candidates.length} bookmark(s)`);
+        await JE.saveUserSettings('bookmark.json', owner.bookmark, { throwOnError: true });
+        console.log(`${logPrefix} Backfilled episode metadata for ${applied.length} bookmark(s)`);
       } catch (e) {
+        applied.forEach(([id, original, filled]) => {
+          if (bookmarks[id] === filled) bookmarks[id] = original;
+        });
         console.warn(`${logPrefix} Failed to save backfilled episode metadata:`, e);
       }
-    }
+    });
   }
 
   /**
@@ -433,8 +586,11 @@
     // Delete orphaned bookmarks
     for (const bookmarkId of toDelete) {
       try {
-        await deleteBookmark(bookmarkId);
-        cleaned++;
+        // deleteBookmark reports a failed save (rolled back) as false and an
+        // already-gone record as null, which is neither a removal nor an error.
+        const deleted = await deleteBookmark(bookmarkId);
+        if (deleted) cleaned++;
+        else if (deleted === false) errors++;
       } catch (e) {
         errors++;
       }
@@ -1020,11 +1176,16 @@
 
       try {
         if (isEdit) {
-          await updateBookmark(existingBookmark.id, { label: labelInput });
-           JE.toast(JE.t('toast_bookmark_updated'), 2000);
+          // A failed save is rolled back and reported as false.
+          if (!await updateBookmark(existingBookmark.id, { label: labelInput })) {
+            JE.toast(JE.t('toast_bookmark_save_failed'), 3000);
+            return;
+          }
+          JE.toast(JE.t('toast_bookmark_updated'), 2000);
         } else {
-          await addBookmark(timestamp, labelInput);
-           JE.toast(JE.t('toast_bookmark_updated'), 2000);
+          // null: no item, or the lookup failed (already reported) or the user changed.
+          if (!await addBookmark(timestamp, labelInput)) return;
+          JE.toast(JE.t('toast_bookmark_updated'), 2000);
         }
 
         // Refresh markers
@@ -1052,7 +1213,19 @@
     modal.querySelectorAll('.je-bookmark-btn-delete').forEach(btn => {
       btn.addEventListener('click', async () => {
         const bookmarkId = btn.dataset.bookmarkId;
-        await deleteBookmark(bookmarkId);
+        btn.disabled = true;
+        let deleted;
+        try {
+          deleted = await deleteBookmark(bookmarkId);
+        } finally {
+          btn.disabled = false;
+        }
+        // null: already gone (e.g. a second click), so neither failure nor success.
+        if (deleted === null) return;
+        if (!deleted) {
+          JE.toast(JE.t('toast_bookmark_delete_failed'), 3000);
+          return;
+        }
         JE.toast(JE.t('toast_bookmark_deleted'), 2000);
         updateBookmarkMarkersForCurrentVideo();
         closeDialog();
@@ -1067,6 +1240,7 @@
     add: addBookmark,
     update: updateBookmark,
     delete: deleteBookmark,
+    deleteAll: deleteAllBookmarks,
     findForItem: findBookmarksForItem,
     showModal: showBookmarkModal,
     updateMarkers: updateBookmarkMarkersForCurrentVideo,
@@ -1127,7 +1301,6 @@
       // Fire-and-forget: backfill existing bookmarks with episode metadata.
       backfillEpisodeMetadata().catch(e => console.warn(`${logPrefix} Backfill failed:`, e));
 
-      let updateTimeout = null;
       let lastVideoUrl = null;
       let lastInjectedOsdKey = null;
       const osdObserverId = 'je-bookmarks-osd';

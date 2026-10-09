@@ -24,10 +24,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private const int MaxItemsLength = 2048;
         private const int MaxProviderNameLength = 200;
 
-        private static readonly Regex ItemPattern = new(@"^(movie|tv):([0-9]{1,9})$", RegexOptions.CultureInvariant);
-        private static readonly Regex RegionPattern = new(@"^[A-Z]{2}$", RegexOptions.CultureInvariant);
+        private static readonly Regex ItemPattern = new(@"^(movie|tv):([0-9]{1,9})\z", RegexOptions.CultureInvariant);
+        private static readonly Regex RegionPattern = new(@"^[A-Z]{2}\z", RegexOptions.CultureInvariant);
         // Same shape the client accepts for TMDB image paths (e.g. "/abc.jpg").
-        private static readonly Regex LogoPathPattern = new(@"^/[A-Za-z0-9_\-.]+\.(jpg|jpeg|png|webp|avif)$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        private static readonly Regex LogoPathPattern = new(@"^/[A-Za-z0-9_\-.]+\.(jpg|jpeg|png|webp|avif)\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
         /// <summary>One requested title.</summary>
         /// <param name="MediaType">"movie" or "tv".</param>

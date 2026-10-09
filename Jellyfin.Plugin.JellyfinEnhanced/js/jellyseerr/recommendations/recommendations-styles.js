@@ -107,7 +107,24 @@
         background: rgba(79, 70, 229, 0.9);
         transform: scale(1.08);
       }
-      .je-scroll-btn .material-icons { font-size: 28px; }
+      .je-msym-rounded {
+        font-family: 'JE Material Symbols Rounded';
+        font-weight: normal;
+        font-style: normal;
+        font-size: 24px;
+        line-height: 1;
+        letter-spacing: normal;
+        text-transform: none;
+        display: inline-block;
+        white-space: nowrap;
+        word-wrap: normal;
+        direction: ltr;
+        -webkit-font-feature-settings: 'liga';
+        -moz-font-feature-settings: 'liga';
+        font-feature-settings: 'liga';
+        -webkit-font-smoothing: antialiased;
+      }
+      .je-scroll-btn .je-msym-rounded { font-size: 28px; }
       @media (hover: hover) {
         .je-scroll-btn.show { display: flex; }
         .je-recommendations-section:hover .je-scroll-btn.show { opacity: 1; }

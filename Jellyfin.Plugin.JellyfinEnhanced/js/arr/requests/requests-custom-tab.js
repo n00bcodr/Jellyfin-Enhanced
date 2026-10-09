@@ -41,8 +41,9 @@
     '.jellyfinenhanced.requests {',
     '  padding: 12px 3vw;',
     '}',
-    '.backgroundContainer.withBackdrop:has(~ .mainAnimatedPages #indexPage .tabContent.is-active .jellyfinenhanced.requests) {',
+    '.backgroundContainer.withBackdrop:has(~ * #indexPage .tabContent.is-active .jellyfinenhanced.requests) {',
     '  background: rgba(0, 0, 0, 0.7) !important;',
+    '  opacity: 1 !important;',
     '}'
   ].join('\n');
   document.head.appendChild(style);

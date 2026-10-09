@@ -1,0 +1,3012 @@
+[
+  {
+    "number": 1,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/1",
+    "title": "Prevent 'S' from reopening subtitle menu if it is open",
+    "status": "tested-new",
+    "tests": [
+      "tests/frontend/regressions/history-early-events.test.mjs"
+    ],
+    "assessment": "Specific reported symptom tested against current production event module. Passes; historical fault not replayed for this record. #1 only English host sheet label; #163 exercises settings flag rather than administrator-to-user default propagation."
+  },
+  {
+    "number": 2,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/2",
+    "title": "Add a way to open the panel on devices without keyboard",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 3,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/3",
+    "title": "\"C\" hotkey says \"no subtitle tracks\" even though there are.",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 4,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/4",
+    "title": "Audio Track Cycling 'v' not working",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 5,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/5",
+    "title": "Add an option to the JS file to set defaults for all server users overwriting previous localstorage defaults",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 6,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/6",
+    "title": "Shift + Esc for Home clashes with Browser Taskmanager",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 7,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/7",
+    "title": "Auto updating on server side install",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 9,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/9",
+    "title": "System.UnauthorizedAccessException: Access to the path '/usr/share/jellyfin/web/index.html' is denied",
+    "status": "environment",
+    "tests": [],
+    "assessment": "Reported OS web-folder permissions differ from disposable-host startup. Can test denied-write handling but cannot claim reproducing deployment permissions here."
+  },
+  {
+    "number": 10,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/10",
+    "title": "the plugin can't access the web folder",
+    "status": "environment",
+    "tests": [],
+    "assessment": "Reported OS web-folder permissions differ from disposable-host startup. Can test denied-write handling but cannot claim reproducing deployment permissions here."
+  },
+  {
+    "number": 11,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/11",
+    "title": "Jellyfin Installation on Docker doesn't have \"/usr/share/jellyfin/web/index.html\" location",
+    "status": "environment",
+    "tests": [],
+    "assessment": "Reported OS web-folder permissions differ from disposable-host startup. Can test denied-write handling but cannot claim reproducing deployment permissions here."
+  },
+  {
+    "number": 12,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/12",
+    "title": "Clear local storage setting",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 13,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/13",
+    "title": "Use File Transformation plugin to inject JS",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 14,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/14",
+    "title": "Customizable Hotkey shortcuts",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 15,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/15",
+    "title": "Move Default configuration to config page.",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 16,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/16",
+    "title": "Subtitles are tiny, even when on \"Extra Large\" settings",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 17,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/17",
+    "title": "Add ability to override shortcuts",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 18,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/18",
+    "title": "Add customizable keyboard shortcuts with UI",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 19,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/19",
+    "title": "Subtitle styling doesn't change",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 20,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/20",
+    "title": "🐛[BUG] Can't install on my jellyfin instance",
+    "status": "historical-deployment",
+    "tests": [
+      "tests/host/run.py"
+    ],
+    "assessment": "Old package checksum/ABI/unsupported-version/deprecation reports. Current pinned10.11.11 and12.0 host smoke covers modern load contracts, not historic binaries/installer manifests."
+  },
+  {
+    "number": 21,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/21",
+    "title": "🐛[BUG] TMDB links open in the app instead of external browser",
+    "status": "client-gap",
+    "tests": [],
+    "assessment": "Native app/WebOS/iOS behavior requires actual affected client or a faithful host DOM/playback fixture. Browser emulation does not establish native-client detection."
+  },
+  {
+    "number": 22,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/22",
+    "title": "🐛[BUG]Jellyseerr Search not showing anything",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 23,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/23",
+    "title": "🐛[BUG] Most features broken on local address",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 24,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/24",
+    "title": "🐛[BUG] tmdb integration breaks on jellyfin app",
+    "status": "client-gap",
+    "tests": [],
+    "assessment": "Native app/WebOS/iOS behavior requires actual affected client or a faithful host DOM/playback fixture. Browser emulation does not establish native-client detection."
+  },
+  {
+    "number": 25,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/25",
+    "title": "🐛[BUG] Issue with Card Sizing while using Elegantfin theme",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 26,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/26",
+    "title": "🐛[BUG] Admin works but not admin doesnt on truenass",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 27,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/27",
+    "title": "🐛[BUG] cannot request -getting Error response",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 28,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/28",
+    "title": "🐛[BUG] Jellyseerr not returning results",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 29,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/29",
+    "title": "🐛[BUG]not seem to be able to request stuff",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 30,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/30",
+    "title": "➕[Feature Request] - Add Quality Tags and Pause Screen from BobHasNoSoul",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 31,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/31",
+    "title": "➕[Feature Request] Jellyseerr request seasons",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 32,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/32",
+    "title": "🐛[BUG?] Auto update scheduled task not updating the plugin",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 33,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/33",
+    "title": "🐛[BUG] Quality Tags are showing wrong info",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/PosterTags/PosterRegressionTests.cs",
+      "tests/frontend/core/core-tag-renderer.test.mjs"
+    ],
+    "assessment": "Production tag renderer and stream-height resolution tested; original TV-mode div-card and 1328x720 fixture not all replayed. Width-sensitive threshold may escape height-only test."
+  },
+  {
+    "number": 34,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/34",
+    "title": "➕[Feature Request] Add ability to select from multiple Radarr and Sonarr Instances",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 36,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/36",
+    "title": "➕[Feature Request] Multi lang support or option to edit texts/images",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 37,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/37",
+    "title": "Localisation",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 38,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/38",
+    "title": "🐛[BUG]",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 40,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/40",
+    "title": "Adjust Italian localization text in it.json",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 41,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/41",
+    "title": "Spanish translation",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 42,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/42",
+    "title": "🐛[BUG] Not working with \"/jellyfin\" BaseUrl",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/Api/ApiMiddlewareTests.cs",
+      "tests/frontend/bootstrap/bootstrap.test.mjs"
+    ],
+    "assessment": "Base-path asset/bootstrap coverage exists; historical reverse-proxy deployment and branded-image route not reproduced end-to-end."
+  },
+  {
+    "number": 43,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/43",
+    "title": "🐛[BUG] ASS subtitle files are not displayed",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 44,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/44",
+    "title": "➕[Feature Request]",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/Api/ApiSeerrTests.cs",
+      "tests/frontend/requests/request-submission.test.mjs"
+    ],
+    "assessment": "Request identity/permission/advanced option gates and submission covered; each historical partial-request control and ARR queue visibility not replayed."
+  },
+  {
+    "number": 45,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/45",
+    "title": "Add Traditional Chinese",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 46,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/46",
+    "title": "➕[Feature Request] Genre Flags",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 47,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/47",
+    "title": "➕[Feature Request] Subtitles - Add dropshadow to 'Clean White'",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 48,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/48",
+    "title": "feat: Watchlist",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 49,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/49",
+    "title": "➕[Feature Request] Hungarian translation",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 50,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/50",
+    "title": "➕[Feature Request] Pause screen should be toggleable",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 51,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/51",
+    "title": "➕[Feature Request] Integrate watchlist with Home Sections plugin",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 52,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/52",
+    "title": "Create hu.json",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 53,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/53",
+    "title": "➕[Feature Request] See who requested a particular media item on Jellyseerr from within Jellyfin",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 54,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/54",
+    "title": "➕[Feature Request] Sync watchlist with Jellyseerr watchlist",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 55,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/55",
+    "title": "🐛[BUG] Random Shortcut Breaks Refresh",
+    "status": "proven-new",
+    "tests": [
+      "tests/frontend/regressions/history-early-events.test.mjs"
+    ],
+    "assessment": "Command-R is not consumed and does not select random media; plain R still works. Exact missing-Meta fix reversal detected in disposable copy."
+  },
+  {
+    "number": 56,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/56",
+    "title": "➕[Feature Request] Option to disable streaming providers",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 57,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/57",
+    "title": "🐛[BUG] Jellyseerr search results not displayed in TV display mode",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 58,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/58",
+    "title": "Add admin update check and install",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 59,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/59",
+    "title": "➕[Feature Request] Add option for custom splash screen",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 60,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/60",
+    "title": "10.11 RC support???",
+    "status": "historical-deployment",
+    "tests": [
+      "tests/host/run.py"
+    ],
+    "assessment": "Old package checksum/ABI/unsupported-version/deprecation reports. Current pinned10.11.11 and12.0 host smoke covers modern load contracts, not historic binaries/installer manifests."
+  },
+  {
+    "number": 61,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/61",
+    "title": "🐛[BUG] Actors returned in Jellyseerr results",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 62,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/62",
+    "title": "🐛[BUG] Partially Available Show Unable To Request",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 63,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/63",
+    "title": "Integrate watchlist into home sections plugin",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 64,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/64",
+    "title": "➕[Feature Request] Disable All Shortcuts",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 66,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/66",
+    "title": "🐛[BUG] Doesnt work on any browser except for firefox",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 67,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/67",
+    "title": "➕ Proxy TheMovieDB requests through jellyfin",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 68,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/68",
+    "title": "🐛[BUG] Long loading",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 69,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/69",
+    "title": "🐛[BUG] Invalid TMDB API Key",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 70,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/70",
+    "title": "➕[Feature Request] Better loader",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 71,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/71",
+    "title": "🐛[BUG] Language Settings not applied if Profile Language is set to Auto, Always ENG",
+    "status": "partial-existing",
+    "tests": [
+      "tests/frontend/core/core-translations.test.mjs"
+    ],
+    "assessment": "Document-language fallback and bundled Unicode loading covered; original browser Auto locale and release-specific deployment not replayed."
+  },
+  {
+    "number": 72,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/72",
+    "title": "➕[Feature Request] Disable GUI for users",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 73,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/73",
+    "title": "➕[Feature Request] Tap and Hold for Instant 2x Playback",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 74,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/74",
+    "title": "🐛[BUG] Jellyseer requests only working on home network.",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 76,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/76",
+    "title": "🐛[BUG] User not found on jellyseerr",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 77,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/77",
+    "title": "➕[Feature Request] Add a black list for genre's",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 78,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/78",
+    "title": "➕[Feature Request]Make the jellyseerr logo sizable",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 79,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/79",
+    "title": "🐛[BUG] Permissions error on Windows, Jellyfin as a service.",
+    "status": "environment",
+    "tests": [],
+    "assessment": "Reported OS web-folder permissions differ from disposable-host startup. Can test denied-write handling but cannot claim reproducing deployment permissions here."
+  },
+  {
+    "number": 80,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/80",
+    "title": "🐛[BUG] - Jellyseerr API key Validation does not work",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 82,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/82",
+    "title": "🐛[BUG] Pause Screen backdrop is still blurred after disabling backdrop",
+    "status": "partial-existing",
+    "tests": [
+      "tests/frontend/features/features-pause.test.mjs"
+    ],
+    "assessment": "Disabled initial mount and pause lifecycle covered; administrator precedence/backdrop unblur/mouse-delay original reports need separate fixtures."
+  },
+  {
+    "number": 83,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/83",
+    "title": "🐛[BUG] Watchlist Custom Tab Scrolling doesnt work",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 85,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/85",
+    "title": "➕[Feature Request] Ability to request only 4K movies",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 86,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/86",
+    "title": "🐛[BUG] Subtitles are weird on the android app",
+    "status": "client-gap",
+    "tests": [],
+    "assessment": "Native app/WebOS/iOS behavior requires actual affected client or a faithful host DOM/playback fixture. Browser emulation does not establish native-client detection."
+  },
+  {
+    "number": 87,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/87",
+    "title": "🐛[BUG] Enhancer features are working only on local ip address",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 88,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/88",
+    "title": "🐛[BUG] Subtitles not showing",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 89,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/89",
+    "title": "Unable to find splash screen folder",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 90,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/90",
+    "title": "🐛 [BUG] JellySeer Search + Meilisearch (I think) ",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 91,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/91",
+    "title": "➕[Feature Request] Global Default subtitle settings for admins & Drop shadow options.",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 92,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/92",
+    "title": "➕[Feature Request] Make Jellyseerr search work on the LG WebOS Jellyfin app",
+    "status": "client-gap",
+    "tests": [],
+    "assessment": "Native app/WebOS/iOS behavior requires actual affected client or a faithful host DOM/playback fixture. Browser emulation does not establish native-client detection."
+  },
+  {
+    "number": 93,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/93",
+    "title": "Cannot find remove from continue watching",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 94,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/94",
+    "title": "🐛[BUG] Language and Audio Tags don't persist when navigating between episodes",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 95,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/95",
+    "title": "🐛[BUG] Manually mark watched items should be removed from watchlist",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 96,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/96",
+    "title": "➕[Feature Request] Back button should be visible on top of enhanced pause screen",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 97,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/97",
+    "title": "➕[Feature Request] Jellyseer Request to not have Seasons option",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 98,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/98",
+    "title": "UNINSTALL INSTRUCTIONS",
+    "status": "support",
+    "tests": [],
+    "assessment": "Support/setup request without established production fault; retain as deployment/documentation evidence, no claim of automated bug detection."
+  },
+  {
+    "number": 99,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/99",
+    "title": "🐛[BUG] Genre Tags should better handle foreign movies/languages",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 100,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/100",
+    "title": "➕[Feature Request] 3D Tag for Show Quality Tag",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 102,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/102",
+    "title": "🐛[BUG]",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 103,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/103",
+    "title": "🐛[BUG] After the new plug-in update. Shows are struggling to find languages, causing the ui to act weird",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 104,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/104",
+    "title": "🐛[BUG] Integrated Jellyseer search not working after update to Jellyfin 10.11.0",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 105,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/105",
+    "title": "🐛[BUG] Not working on 10.11",
+    "status": "historical-deployment",
+    "tests": [
+      "tests/host/run.py"
+    ],
+    "assessment": "Old package checksum/ABI/unsupported-version/deprecation reports. Current pinned10.11.11 and12.0 host smoke covers modern load contracts, not historic binaries/installer manifests."
+  },
+  {
+    "number": 106,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/106",
+    "title": "➕[Feature Request] hdr10plus label",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 107,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/107",
+    "title": "🐛[BUG]   INTERACTION WITH GELATO PLUGIN",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 108,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/108",
+    "title": "🐛[BUG] Watchlist feature not working in Jellyfin 10.11.0",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 109,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/109",
+    "title": "🐛[BUG] Subtitle settings not having an effect in Firefox, Jellyfin 10.11.0",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 110,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/110",
+    "title": "🐛[BUG] the logo is not showing in the splash-screen",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 111,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/111",
+    "title": "➕[Feature Request] Option to hide audio quality and HDR",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 112,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/112",
+    "title": "[Question] Jellyseerr and SSO?",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 113,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/113",
+    "title": "Watchlist from KefinTweaks",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 114,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/114",
+    "title": "➕[Feature Request] Jellyseerr button on show page",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 115,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/115",
+    "title": "➕[Feature Request] Export/Import watchlist",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 116,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/116",
+    "title": "➕[Feature Request] key navigation",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 117,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/117",
+    "title": "🐛[BUG] No features working after update to Jellyfin 10.11.0",
+    "status": "historical-deployment",
+    "tests": [
+      "tests/host/run.py"
+    ],
+    "assessment": "Old package checksum/ABI/unsupported-version/deprecation reports. Current pinned10.11.11 and12.0 host smoke covers modern load contracts, not historic binaries/installer manifests."
+  },
+  {
+    "number": 118,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/118",
+    "title": "➕[Feature Request] Auto-expand Reviews",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 120,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/120",
+    "title": "➕[Feature Request] Decouple Quality Tags and Genre Tags cache from plugin version",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 122,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/122",
+    "title": "🐛[BUG] Jellyseerr icon not showing, no search results.",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 124,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/124",
+    "title": "🐛[BUG] Multiple Watchlist buttons appear",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 125,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/125",
+    "title": "🐛[BUG]",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 126,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/126",
+    "title": "🐛[BUG] Watchlist no longer works with Home Screen Sections plugin",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 127,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/127",
+    "title": "🐛[BUG] The settings doesnt work on jellyfin client",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 128,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/128",
+    "title": "Disc Missing",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 129,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/129",
+    "title": "fix typo",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 130,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/130",
+    "title": "Add [Authorize] to Jellyseerr and TMDB endpoints",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/Api/ApiRoutingTests.cs",
+      "tests/backend/Api/ApiConfigurationTests.cs"
+    ],
+    "assessment": "Authenticated routing and safe configuration responses covered; no exact removal of historical authorization attributes replayed."
+  },
+  {
+    "number": 131,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/131",
+    "title": "Add check for TMDb link before adding ARR links",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Specific ARR missing-TMDB polling/slug/trailing-slash or Seerr HTTP fallback contract needs dedicated fixture and historical patch proof; generic integration tests cannot establish detection."
+  },
+  {
+    "number": 132,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/132",
+    "title": "➕[Feature Request] Respect Override Rules from Jellyseerr when Requesting content",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/Api/ApiSeerrTests.cs",
+      "tests/frontend/requests/request-submission.test.mjs"
+    ],
+    "assessment": "Request identity/permission/advanced option gates and submission covered; each historical partial-request control and ARR queue visibility not replayed."
+  },
+  {
+    "number": 133,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/133",
+    "title": "Add theme detection and dynamic theming support",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 134,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/134",
+    "title": "[BUG] MissingMethodException: IUserManager.GetUserById not found in Jellyfin 10.11.1",
+    "status": "historical-deployment",
+    "tests": [
+      "tests/host/run.py"
+    ],
+    "assessment": "Old package checksum/ABI/unsupported-version/deprecation reports. Current pinned10.11.11 and12.0 host smoke covers modern load contracts, not historic binaries/installer manifests."
+  },
+  {
+    "number": 135,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/135",
+    "title": "➕[Feature Request] Ability to add multiple Sonarr, Radarr instances",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 136,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/136",
+    "title": "➕[Feature Request] Show filesizes for Entire Shows and Seasons",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 137,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/137",
+    "title": "Fix quality tags for TV mode",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/PosterTags/PosterRegressionTests.cs",
+      "tests/frontend/core/core-tag-renderer.test.mjs"
+    ],
+    "assessment": "Production tag renderer and stream-height resolution tested; original TV-mode div-card and 1328x720 fixture not all replayed. Width-sensitive threshold may escape height-only test."
+  },
+  {
+    "number": 138,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/138",
+    "title": "🐛[BUG]",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 139,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/139",
+    "title": "Fix LanguageTagsEnabled not resetting when using ResetAllUserSettings",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/Api/ApiConfigurationTests.cs"
+    ],
+    "assessment": "Reset/default configuration has coverage; exact LanguageTagsEnabled reset and old Jellyfin10.11.1 TypeLoadException not replayed. Historical unsupported binary cannot be inferred from current host passes."
+  },
+  {
+    "number": 140,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/140",
+    "title": "➕[Feature Request] Requested Media added to Watchlist",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 141,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/141",
+    "title": "➕[Feature Request] Automatic season requests",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 142,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/142",
+    "title": "🐛[BUG] Genre tags global position settings do not work",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 143,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/143",
+    "title": "➕[Feature Request] InPlayerEpisodePreview",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 144,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/144",
+    "title": "🐛[BUG] No option for remove continue watching.",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 145,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/145",
+    "title": "fix: Add 'Remove from Continue Watching' option on right-click",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 146,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/146",
+    "title": "🐛[BUG]  Exception while trying to get Jellyseerr user ID",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 147,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/147",
+    "title": "Focus in jellyseerr dialog",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 148,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/148",
+    "title": "🐛[BUG] Unable to open user menu on WebOS",
+    "status": "client-gap",
+    "tests": [],
+    "assessment": "Native app/WebOS/iOS behavior requires actual affected client or a faithful host DOM/playback fixture. Browser emulation does not establish native-client detection."
+  },
+  {
+    "number": 149,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/149",
+    "title": "🐛[BUG] Subtitles are rendered too small and the subtitle settings are ignored",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 150,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/150",
+    "title": "Fix: Unable to open user menu on WebOS",
+    "status": "client-gap",
+    "tests": [],
+    "assessment": "Native app/WebOS/iOS behavior requires actual affected client or a faithful host DOM/playback fixture. Browser emulation does not establish native-client detection."
+  },
+  {
+    "number": 151,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/151",
+    "title": "🐛[BUG] Quality tags are incorrect for 720p media",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/PosterTags/PosterRegressionTests.cs",
+      "tests/frontend/core/core-tag-renderer.test.mjs"
+    ],
+    "assessment": "Production tag renderer and stream-height resolution tested; original TV-mode div-card and 1328x720 fixture not all replayed. Width-sensitive threshold may escape height-only test."
+  },
+  {
+    "number": 152,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/152",
+    "title": "➕[Feature Request] Make Jellyseerr search's result cards' images clickable",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 153,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/153",
+    "title": "➕[Feature Request] Remove/Hide from Next Up?",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 154,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/154",
+    "title": "[WHY] watchlist seems different than KefinTweaks Watchlist even though you are using his?",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 156,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/156",
+    "title": "🐛[BUG] request in 4K fail",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 158,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/158",
+    "title": "🐛[BUG] quality tags / pause screen and pause on switch tab do not work",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 159,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/159",
+    "title": "🐛[BUG] Unable to reset all user settings to Default",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/Api/ApiConfigurationTests.cs"
+    ],
+    "assessment": "Reset/default configuration has coverage; exact LanguageTagsEnabled reset and old Jellyfin10.11.1 TypeLoadException not replayed. Historical unsupported binary cannot be inferred from current host passes."
+  },
+  {
+    "number": 160,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/160",
+    "title": "Partial TV Show Requests Ignore Jellyseerr Settings",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/Api/ApiSeerrTests.cs",
+      "tests/frontend/requests/request-submission.test.mjs"
+    ],
+    "assessment": "Request identity/permission/advanced option gates and submission covered; each historical partial-request control and ARR queue visibility not replayed."
+  },
+  {
+    "number": 161,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/161",
+    "title": "➕[Feature Request]Scaling quality tags mobile",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 162,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/162",
+    "title": "🐛[BUG] isPartialRequestsEnabled failed with 403 for user account",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/Api/ApiSeerrTests.cs",
+      "tests/frontend/requests/request-submission.test.mjs"
+    ],
+    "assessment": "Request identity/permission/advanced option gates and submission covered; each historical partial-request control and ARR queue visibility not replayed."
+  },
+  {
+    "number": 163,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/163",
+    "title": "🐛[BUG] Auto Pause",
+    "status": "tested-new",
+    "tests": [
+      "tests/frontend/regressions/history-early-events.test.mjs"
+    ],
+    "assessment": "Specific reported symptom tested against current production event module. Passes; historical fault not replayed for this record. #1 only English host sheet label; #163 exercises settings flag rather than administrator-to-user default propagation."
+  },
+  {
+    "number": 164,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/164",
+    "title": "➕[Feature Request] Leverage Genres and Languages for search",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 165,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/165",
+    "title": "➕[Feature Request] Pause screen with video background instead of landscape image",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 166,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/166",
+    "title": "➕[Feature Request] Something should happen when clicking the jellyseer poster in search result",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 167,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/167",
+    "title": "🐛[BUG] Request button looks strange",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 168,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/168",
+    "title": "🐛[BUG] Pause screen not localized",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 170,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/170",
+    "title": "add brazilian portuguese localization",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 171,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/171",
+    "title": "🐛[BUG] Subtitles iOS don’t show up when fullscreen",
+    "status": "client-gap",
+    "tests": [],
+    "assessment": "Native app/WebOS/iOS behavior requires actual affected client or a faithful host DOM/playback fixture. Browser emulation does not establish native-client detection."
+  },
+  {
+    "number": 172,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/172",
+    "title": "Add Turkish localization for Jellyfin Enhanced",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 175,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/175",
+    "title": "🐛[BUG] Cannot change settings tab",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 177,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/177",
+    "title": "➕[Feature Request] Separate internal and external Jellyseerr URLs",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 178,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/178",
+    "title": "Fix Review layout to support different themes",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 179,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/179",
+    "title": "➕[Feature Request] The custom pause screen should be activated after a delay",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 180,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/180",
+    "title": "🐛[BUG] No longer showing search results from Jellyseerr",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 181,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/181",
+    "title": "➕[Feature Request] Letterboxd link on item page",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 182,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/182",
+    "title": "fix: replace '&' (ampersand) with 'and' in series name for Sonarr link",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Specific ARR missing-TMDB polling/slug/trailing-slash or Seerr HTTP fallback contract needs dedicated fixture and historical patch proof; generic integration tests cannot establish detection."
+  },
+  {
+    "number": 183,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/183",
+    "title": "Fix watchlist following to https://github.com/ranaldsgift/KefinTweaks/commit/216be4502a87730da43da01aabdb9a86b50249f0",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 184,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/184",
+    "title": "➕[Feature Request] Jellyseer integration works but doesn't look good.",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 185,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/185",
+    "title": "[Fix] Allow Entire Request Cover to Be Clicked",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 186,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/186",
+    "title": "🐛[BUG] Critical error while loading watchlist scripts",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 187,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/187",
+    "title": "*arr tags causes app to crash when clicked",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 188,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/188",
+    "title": "Found a little typo",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 189,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/189",
+    "title": "File does not exist",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 190,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/190",
+    "title": "➕[Feature Request] Configurable quality tags",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 191,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/191",
+    "title": "feat: file size info for shows and seasons",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 192,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/192",
+    "title": "🐛[BUG] Random button serving missing content",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 193,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/193",
+    "title": "feat: watch progress for item details",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 194,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/194",
+    "title": "➕[Feature Request]  change Language TMDB comments",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 195,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/195",
+    "title": "➕[Feature Request] Download transcoded videos",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 196,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/196",
+    "title": "🐛[BUG] Cannot make request",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 197,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/197",
+    "title": "🐛[BUG] Languages for shows don't show up for shows",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 198,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/198",
+    "title": "➕[Feature Request] Changing flags and size",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 199,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/199",
+    "title": "➕[Feature Request] Automatic selection of a content version based on the device",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 200,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/200",
+    "title": "🐛[BUG] Automatic Advance Season Request not working",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/ScheduledTasks/TaskAutoRequestTests.cs"
+    ],
+    "assessment": "SeasonThresholdAvailabilityAndExistingRequestsControlAutomaticRequest covers thresholds/existence/requests; cross-user concurrency/restart request de-dup and every reported release combination remain gaps."
+  },
+  {
+    "number": 201,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/201",
+    "title": "Add Russian language support for genre icons",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 202,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/202",
+    "title": "➕🐛[Feature Request/BUG] Automatically add requested media to user's Watchlist",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 203,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/203",
+    "title": "🐛[BUG] Jellyseer connection fails",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 204,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/204",
+    "title": "➕[Feature Request] IMDB Rating tags in video player and on posters.",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 205,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/205",
+    "title": "🐛[BUG] Subtitles disconnected shadows",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 206,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/206",
+    "title": "🐛[BUG] Jellyseerr Automatic Advance Season Requests is requesting seasons that don't exist.",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/ScheduledTasks/TaskAutoRequestTests.cs"
+    ],
+    "assessment": "SeasonThresholdAvailabilityAndExistingRequestsControlAutomaticRequest covers thresholds/existence/requests; cross-user concurrency/restart request de-dup and every reported release combination remain gaps."
+  },
+  {
+    "number": 207,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/207",
+    "title": "🐛[BUG] Failed to load assembly \"/config/plugins/Jellyfin Enhanced_9.6.1.0/Jellyfin.Plugin.JellyfinEnhanced.dll",
+    "status": "historical-deployment",
+    "tests": [
+      "tests/host/run.py"
+    ],
+    "assessment": "Old package checksum/ABI/unsupported-version/deprecation reports. Current pinned10.11.11 and12.0 host smoke covers modern load contracts, not historic binaries/installer manifests."
+  },
+  {
+    "number": 208,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/208",
+    "title": "➕[Feature Request] Add select all seasons checkbox",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 209,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/209",
+    "title": "➕[Feature Request] Report issues to jellyseerr",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 210,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/210",
+    "title": "🐛[BUG] Status NotSupported Version\t9.6.2.0",
+    "status": "historical-deployment",
+    "tests": [
+      "tests/host/run.py"
+    ],
+    "assessment": "Old package checksum/ABI/unsupported-version/deprecation reports. Current pinned10.11.11 and12.0 host smoke covers modern load contracts, not historic binaries/installer manifests."
+  },
+  {
+    "number": 211,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/211",
+    "title": "➕[Feature Request] Improve Item Identification flow",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 212,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/212",
+    "title": "🐛[BUG] Custom Pause Screen not working if moving mouse before default delay",
+    "status": "partial-existing",
+    "tests": [
+      "tests/frontend/features/features-pause.test.mjs"
+    ],
+    "assessment": "Disabled initial mount and pause lifecycle covered; administrator precedence/backdrop unblur/mouse-delay original reports need separate fixtures."
+  },
+  {
+    "number": 213,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/213",
+    "title": "🐛[BUG] Genre tags not displayed for TV shows (Series) or on detail-page posters",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 215,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/215",
+    "title": "➕[Feature Request] Expose Jellyseerr “Request Movie Collection” from Jellyfin Enhanced",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 216,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/216",
+    "title": "🐛[BUG]Extremely laggy UI on Jellyfin Media Player, also crashes my Plugins directory.",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 217,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/217",
+    "title": "🐛[BUG] [auto request]  \"season 2 already exists locally\" <-- but it does not.",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/ScheduledTasks/TaskAutoRequestTests.cs"
+    ],
+    "assessment": "SeasonThresholdAvailabilityAndExistingRequestsControlAutomaticRequest covers thresholds/existence/requests; cross-user concurrency/restart request de-dup and every reported release combination remain gaps."
+  },
+  {
+    "number": 219,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/219",
+    "title": "🐛[BUG] Infinite searching for IMDb ID for Letterboxd Link on Playlists",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 220,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/220",
+    "title": "🐛[BUG][Jellyseer Requests] Request show up and then nothing",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 221,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/221",
+    "title": "🐛[BUG] Unable to add request",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 222,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/222",
+    "title": "🐛[BUG] Resquets spam cause poor perfomance",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 223,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/223",
+    "title": "How to actually install this?",
+    "status": "support",
+    "tests": [],
+    "assessment": "Support/setup request without established production fault; retain as deployment/documentation evidence, no claim of automated bug detection."
+  },
+  {
+    "number": 224,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/224",
+    "title": "Added ability to report issues to Jellyseerr through Jellyfin via this plugin",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 225,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/225",
+    "title": "🐛[BUG] Jellyfin users cannot be fetched from Jellyseeer",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 226,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/226",
+    "title": "🐛[BUG] Automatic advance season request feature requests too much",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/ScheduledTasks/TaskAutoRequestTests.cs"
+    ],
+    "assessment": "SeasonThresholdAvailabilityAndExistingRequestsControlAutomaticRequest covers thresholds/existence/requests; cross-user concurrency/restart request de-dup and every reported release combination remain gaps."
+  },
+  {
+    "number": 227,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/227",
+    "title": "➕[Feature Request] Option to hide streaming-lookup-container",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 228,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/228",
+    "title": "🐛[BUG] Watchlist Spam even when disabled",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/ScheduledTasks/TaskRegressionTests.cs"
+    ],
+    "assessment": "DisabledWatchlistMonitorDoesNotSubscribeAndDisposalUnsubscribes covers inactive monitor; historical client watchlist polling not reproduced."
+  },
+  {
+    "number": 229,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/229",
+    "title": "➕[Feature Request] Library Scan on Media Import",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 230,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/230",
+    "title": "[Help?] Jellyfin-Enhanced on Windows Jellyfin 10.11.5 installed, configured... nothing.",
+    "status": "support",
+    "tests": [],
+    "assessment": "Support/setup request without established production fault; retain as deployment/documentation evidence, no claim of automated bug detection."
+  },
+  {
+    "number": 231,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/231",
+    "title": "🐛[BUG] Infinite polling in Jellyseerr UI until client exit",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 232,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/232",
+    "title": "➕[Feature Request] Ability to choose Quality Profile",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 234,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/234",
+    "title": "➕[Feature Request] Add Bazarr to Jellyfin",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 235,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/235",
+    "title": "[Discussion] Jellyseer URL Mappings Not Replacing Localhost with TLD",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 236,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/236",
+    "title": "➕[Feature Request] Distinguished quality tags",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 237,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/237",
+    "title": "🐛[BUG] PiP only works when media is in paused state",
+    "status": "client-gap",
+    "tests": [],
+    "assessment": "Native app/WebOS/iOS behavior requires actual affected client or a faithful host DOM/playback fixture. Browser emulation does not establish native-client detection."
+  },
+  {
+    "number": 238,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/238",
+    "title": "🐛[BUG] No image on Jellyseerr results",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 239,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/239",
+    "title": "➕[Feature Request] Adding new features",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 240,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/240",
+    "title": "Improve issue reporting: always search missing episodes & lazy TMDB resolution",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 241,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/241",
+    "title": "🐛[BUG] Slow input response on media player IOS",
+    "status": "client-gap",
+    "tests": [],
+    "assessment": "Native app/WebOS/iOS behavior requires actual affected client or a faithful host DOM/playback fixture. Browser emulation does not establish native-client detection."
+  },
+  {
+    "number": 242,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/242",
+    "title": "🐛[BUG] Jellyseerr Watchlist integration adds all Jellyseerr requests to all users",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/ScheduledTasks/TaskSeerrSyncTests.cs"
+    ],
+    "assessment": "InboundWatchlistIsUserScopedIdempotentAndDoesNotReaddRemovedItems covers per-user ownership and scheduled removal preservation; manual endpoint and library-event path are not equivalent proof."
+  },
+  {
+    "number": 243,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/243",
+    "title": "➕[Feature Request] Add Rotten Tomatoes/TMDB ratings",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 244,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/244",
+    "title": "Add Polish locale file",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 245,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/245",
+    "title": "🐛[BUG] arr links arent absolute",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Specific ARR missing-TMDB polling/slug/trailing-slash or Seerr HTTP fallback contract needs dedicated fixture and historical patch proof; generic integration tests cannot establish detection."
+  },
+  {
+    "number": 246,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/246",
+    "title": "🐛[BUG] NotSupported error after installed",
+    "status": "historical-deployment",
+    "tests": [
+      "tests/host/run.py"
+    ],
+    "assessment": "Old package checksum/ABI/unsupported-version/deprecation reports. Current pinned10.11.11 and12.0 host smoke covers modern load contracts, not historic binaries/installer manifests."
+  },
+  {
+    "number": 247,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/247",
+    "title": "➕[Feature Request] More detailed auto request for seasons",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 248,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/248",
+    "title": "➕[Feature Request] Automatic Movie Request",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 249,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/249",
+    "title": "➕[Feature Request] Modern 2x speed video playback control",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 250,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/250",
+    "title": "➕[Feature Request] Option to remove emoji",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 251,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/251",
+    "title": "🐛[BUG] The plugin adds an extra character to the arr link address",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Specific ARR missing-TMDB polling/slug/trailing-slash or Seerr HTTP fallback contract needs dedicated fixture and historical patch proof; generic integration tests cannot establish detection."
+  },
+  {
+    "number": 252,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/252",
+    "title": "➕[Feature Request] Use multiple ARR applications",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 253,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/253",
+    "title": "Redesign seerr UI",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 254,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/254",
+    "title": "➕[Feature Request] Show recommended series/shows",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 255,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/255",
+    "title": "🐛[BUG] Genre tags cover native jellyfin watch progress indicator",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 256,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/256",
+    "title": "➕[Feature Request] Double-tap/click to seek.md",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 257,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/257",
+    "title": "🐛[BUG] No more translations",
+    "status": "partial-existing",
+    "tests": [
+      "tests/frontend/core/core-translations.test.mjs"
+    ],
+    "assessment": "Document-language fallback and bundled Unicode loading covered; original browser Auto locale and release-specific deployment not replayed."
+  },
+  {
+    "number": 259,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/259",
+    "title": "Feat/watch-progress-as-time-string",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 260,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/260",
+    "title": "[Feature Request] Shortcut key to skip intro",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 261,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/261",
+    "title": "Add discovery sections for networks, genres, tags, and persons",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 262,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/262",
+    "title": "Feat: Customizable icons",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 265,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/265",
+    "title": "🐛[BUG] Report button not working",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 266,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/266",
+    "title": "➕[Feature Request] File size / watch progress for nested collections",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 267,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/267",
+    "title": "🐛[BUG] Custom xxxx does not support base URL",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/Api/ApiMiddlewareTests.cs",
+      "tests/frontend/bootstrap/bootstrap.test.mjs"
+    ],
+    "assessment": "Base-path asset/bootstrap coverage exists; historical reverse-proxy deployment and branded-image route not reproduced end-to-end."
+  },
+  {
+    "number": 268,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/268",
+    "title": "➕[Feature Request] \"Continue Watching\" list in Jellyfin without resetting the watch progress",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 269,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/269",
+    "title": "➕[Feature Request] Collection in Details page",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 270,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/270",
+    "title": "🐛[BUG] Disabling custom pause screen does not disable custom pause screen.",
+    "status": "partial-existing",
+    "tests": [
+      "tests/frontend/features/features-pause.test.mjs"
+    ],
+    "assessment": "Disabled initial mount and pause lifecycle covered; administrator precedence/backdrop unblur/mouse-delay original reports need separate fixtures."
+  },
+  {
+    "number": 271,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/271",
+    "title": "➕[Feature Request] Arr integration for request & download tracking",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 272,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/272",
+    "title": "🐛[BUG]NotSupported on 10.11.5",
+    "status": "historical-deployment",
+    "tests": [
+      "tests/host/run.py"
+    ],
+    "assessment": "Old package checksum/ABI/unsupported-version/deprecation reports. Current pinned10.11.11 and12.0 host smoke covers modern load contracts, not historic binaries/installer manifests."
+  },
+  {
+    "number": 275,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/275",
+    "title": "🐛[BUG] 2x speed overlay displaying escaped HTML/SVG code instead of rendering icon when using non-emoji icons",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 276,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/276",
+    "title": "🐛[BUG] Random Unwatched only option not working",
+    "status": "partial-existing",
+    "tests": [
+      "tests/frontend/features/features-random.test.mjs"
+    ],
+    "assessment": "Pinned collection unwatched-empty fallback covered; full historical only-unwatched API filter contract not proven."
+  },
+  {
+    "number": 277,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/277",
+    "title": "🐛[BUG] Jellyfin enhanced settings common to all users",
+    "status": "partial-existing",
+    "tests": [
+      "tests/frontend/bootstrap/bootstrap.test.mjs",
+      "tests/backend/Api/ApiConfigurationTests.cs"
+    ],
+    "assessment": "Identity transitions and user settings isolation exercised; original complete settings UI journey across accounts not replayed."
+  },
+  {
+    "number": 278,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/278",
+    "title": "Fix person page missing TV shows/episodes sections",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 279,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/279",
+    "title": "🐛[BUG] Not Supported on v10.11.5",
+    "status": "historical-deployment",
+    "tests": [
+      "tests/host/run.py"
+    ],
+    "assessment": "Old package checksum/ABI/unsupported-version/deprecation reports. Current pinned10.11.11 and12.0 host smoke covers modern load contracts, not historic binaries/installer manifests."
+  },
+  {
+    "number": 280,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/280",
+    "title": "🐛[BUG] Expanding Jellyseerr search results in Android app fails",
+    "status": "client-gap",
+    "tests": [],
+    "assessment": "Native app/WebOS/iOS behavior requires actual affected client or a faithful host DOM/playback fixture. Browser emulation does not establish native-client detection."
+  },
+  {
+    "number": 281,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/281",
+    "title": "➕[Calendar/Schedule Element with integrated requesting]",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 282,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/282",
+    "title": "🐛[BUG] Auto-Season Request does not check unreleased episodes for threshold",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/ScheduledTasks/TaskAutoRequestTests.cs"
+    ],
+    "assessment": "SeasonThresholdAvailabilityAndExistingRequestsControlAutomaticRequest covers thresholds/existence/requests; cross-user concurrency/restart request de-dup and every reported release combination remain gaps."
+  },
+  {
+    "number": 283,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/283",
+    "title": "➕[Feature Request] Show next movie in collection in next up",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 284,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/284",
+    "title": "➕[Feature Request] Add option to disable the \"hold to select\" feature",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 285,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/285",
+    "title": "Refactor discovery modules with shared utilities and fix All filter",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 286,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/286",
+    "title": "🐛[BUG] Can not install Jellyfin Enhanced",
+    "status": "historical-deployment",
+    "tests": [
+      "tests/host/run.py"
+    ],
+    "assessment": "Old package checksum/ABI/unsupported-version/deprecation reports. Current pinned10.11.11 and12.0 host smoke covers modern load contracts, not historic binaries/installer manifests."
+  },
+  {
+    "number": 287,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/287",
+    "title": "[Miscellaneous] Move Scripts in Separate \"Scripts\" Section",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 288,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/288",
+    "title": "➕[Feature Request] Exclude rejected movies/series from Jellyseerr Item Details",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 289,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/289",
+    "title": "🐛[BUG] Disable Colored Ratings doesn't work",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 291,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/291",
+    "title": "➕[Feature Request] Also theme the favicons that are shown on apple devices",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 293,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/293",
+    "title": "➕[Feature Request] Preview or Info On Actual size resolution for Icon Transparent, Favicon, Banner Light and Dark",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 294,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/294",
+    "title": "Fix config banner text light/dark",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 295,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/295",
+    "title": "Personal changes",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 296,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/296",
+    "title": "➕[Feature Request] Options to hide and move the 2X speed overlay",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 297,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/297",
+    "title": "➕[Feature Request] Ability to set subtitle opacity or custom hex color",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 298,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/298",
+    "title": "Add dedicated requests page with sonarr/radarr/jellyseerr request monitoring",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 299,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/299",
+    "title": "🐛[BUG] On connectionManager Id missmatch loading prevent user from taking action",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Stale connectionManager server-ID recovery needs real saved-session/mismatched-server fixture; ordinary bootstrap is insufficient."
+  },
+  {
+    "number": 300,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/300",
+    "title": "➕[Feature Request] Jellyseerr Tags",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 301,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/301",
+    "title": "🐛[BUG] Hide Requests and Calendar if Jellyseerr is not set up",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 302,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/302",
+    "title": "Replace fixed calendar grid with minmax for flexible widths",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 303,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/303",
+    "title": "🐛[BUG] The new Request page contains some untranslated elements.",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 304,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/304",
+    "title": "Modify arr/requests endpoint to enforce Jellyseerr user permissions",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/Api/ApiSeerrTests.cs",
+      "tests/frontend/requests/request-submission.test.mjs"
+    ],
+    "assessment": "Request identity/permission/advanced option gates and submission covered; each historical partial-request control and ARR queue visibility not replayed."
+  },
+  {
+    "number": 305,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/305",
+    "title": "🐛[BUG] Live Tv info page has colored tags clobbering text.",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 306,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/306",
+    "title": "🐛[BUG] Sidebar doesn’t auto-close when clicking on Requests",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 307,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/307",
+    "title": "🐛[BUG] A few visual things",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 308,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/308",
+    "title": "🐛[BUG] Sidebar favicon fetched via unsecure `http`",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 309,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/309",
+    "title": "➕[Feature Request] Add filtering for calendar",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 310,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/310",
+    "title": "➕[Feature Request] Jump to item from Calendar view if item is available",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 311,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/311",
+    "title": "➕[Feature Request] Highlight Calendar Entries of watchlistedContent",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 312,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/312",
+    "title": "Fix server ID mismatch blocking user authentication",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Stale connectionManager server-ID recovery needs real saved-session/mismatched-server fixture; ordinary bootstrap is insufficient."
+  },
+  {
+    "number": 313,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/313",
+    "title": "fix: Navigate to episode details instead of series from calendar",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 314,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/314",
+    "title": "feat: Highlight calendar entries for favorites and watched series",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 315,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/315",
+    "title": "➕[Feature Request] Coming soon Tab in requests view",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 316,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/316",
+    "title": "Plugin Pages Support & Calendar/Requests Improvements",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 317,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/317",
+    "title": "➕[Feature Request] Filter Active Downloads in Requests Page",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 318,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/318",
+    "title": "➕[Feature Request] Hiding arr* name in calendar",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 319,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/319",
+    "title": "Add seamless infinite scroll to discovery sections",
+    "status": "partial-existing",
+    "tests": [
+      "tests/frontend/pages/pages-scroll.test.mjs"
+    ],
+    "assessment": "Sparse/zero-progress pages, hidden-section inactivity and teardown tested; entire discovery-page filter/dedup/network retry combination not reproduced."
+  },
+  {
+    "number": 320,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/320",
+    "title": "Add seamless infinite scroll to discovery sections",
+    "status": "partial-existing",
+    "tests": [
+      "tests/frontend/pages/pages-scroll.test.mjs"
+    ],
+    "assessment": "Sparse/zero-progress pages, hidden-section inactivity and teardown tested; entire discovery-page filter/dedup/network retry combination not reproduced."
+  },
+  {
+    "number": 321,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/321",
+    "title": "➕[Feature Request] Spinner for jellyseer search results",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 322,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/322",
+    "title": "Optimize calendar method and new endpoint for item ID by provider IDs",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 324,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/324",
+    "title": "Intent to Deprecate Support for Jellyfin Version 10.10.x - Mid February",
+    "status": "historical-deployment",
+    "tests": [
+      "tests/host/run.py"
+    ],
+    "assessment": "Old package checksum/ABI/unsupported-version/deprecation reports. Current pinned10.11.11 and12.0 host smoke covers modern load contracts, not historic binaries/installer manifests."
+  },
+  {
+    "number": 325,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/325",
+    "title": "➕[Feature Request] IMAX quality tag",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 326,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/326",
+    "title": "Fix calendar range handling (UTC) and pass RFC3339 start/end to Sonarr/Radarr",
+    "status": "partial-existing",
+    "tests": [
+      "tests/frontend/pages/pages-calendar.test.mjs",
+      "tests/backend/Integrations/IntegrationCalendarTests.cs"
+    ],
+    "assessment": "Calendar settings/filtering/provider integration has coverage; last-day RFC3339 boundary and each historical navigation/layout change not proven by this audit."
+  },
+  {
+    "number": 327,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/327",
+    "title": "Keep last calendar view in user settings",
+    "status": "partial-existing",
+    "tests": [
+      "tests/frontend/pages/pages-calendar.test.mjs",
+      "tests/backend/Integrations/IntegrationCalendarTests.cs"
+    ],
+    "assessment": "Calendar settings/filtering/provider integration has coverage; last-day RFC3339 boundary and each historical navigation/layout change not proven by this audit."
+  },
+  {
+    "number": 328,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/328",
+    "title": "fix: Jellyseerr proxy URL fallback on HTTP errors",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Specific ARR missing-TMDB polling/slug/trailing-slash or Seerr HTTP fallback contract needs dedicated fixture and historical patch proof; generic integration tests cannot establish detection."
+  },
+  {
+    "number": 329,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/329",
+    "title": "➕[Feature Request]/[Bug] allow Watchlist Removal",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/ScheduledTasks/TaskSeerrSyncTests.cs"
+    ],
+    "assessment": "InboundWatchlistIsUserScopedIdempotentAndDoesNotReaddRemovedItems covers per-user ownership and scheduled removal preservation; manual endpoint and library-event path are not equivalent proof."
+  },
+  {
+    "number": 330,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/330",
+    "title": "fix: prevent watchlist sync from re-adding user-removed items",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/ScheduledTasks/TaskSeerrSyncTests.cs"
+    ],
+    "assessment": "InboundWatchlistIsUserScopedIdempotentAndDoesNotReaddRemovedItems covers per-user ownership and scheduled removal preservation; manual endpoint and library-event path are not equivalent proof."
+  },
+  {
+    "number": 331,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/331",
+    "title": "Remove weird icons with date below items",
+    "status": "support",
+    "tests": [],
+    "assessment": "Support/setup request without established production fault; retain as deployment/documentation evidence, no claim of automated bug detection."
+  },
+  {
+    "number": 332,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/332",
+    "title": "Use new item by provider id endpoint to navigate in calendar",
+    "status": "change-not-proven",
+    "tests": [],
+    "assessment": "Historical change/feature/localization PR; no exact before/after reproduction in this audit. Fix-bearing changes remain candidates, not counted as caught regressions."
+  },
+  {
+    "number": 333,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/333",
+    "title": "Jellyseerr search not working",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 334,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/334",
+    "title": "➕[Feature Request] Add Format tag",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 335,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/335",
+    "title": "feat: per-user hidden content system",
+    "status": "partial-existing",
+    "tests": [
+      "tests/frontend/features/features-hidden.test.mjs",
+      "tests/backend/Privacy/PrivacyHiddenContentTests.cs"
+    ],
+    "assessment": "Current hidden-state isolation/filtering covered; all nine surfaces plus dialogs/undo/native-host paths are not exhaustively exercised."
+  },
+  {
+    "number": 336,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/336",
+    "title": "🐛[BUG] Jellyseerr Card does not work in JMP",
+    "status": "client-gap",
+    "tests": [],
+    "assessment": "Native app/WebOS/iOS behavior requires actual affected client or a faithful host DOM/playback fixture. Browser emulation does not establish native-client detection."
+  },
+  {
+    "number": 337,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/337",
+    "title": "➕[Feature Request] Allow easy embedding of calendar & requests pages in custom tabs",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 338,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/338",
+    "title": "Rework Calendar UI",
+    "status": "partial-existing",
+    "tests": [
+      "tests/frontend/pages/pages-calendar.test.mjs",
+      "tests/backend/Integrations/IntegrationCalendarTests.cs"
+    ],
+    "assessment": "Calendar settings/filtering/provider integration has coverage; last-day RFC3339 boundary and each historical navigation/layout change not proven by this audit."
+  },
+  {
+    "number": 339,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/339",
+    "title": "➕[Feature Request] Filter which tags to sync from arr to jellyfin",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 340,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/340",
+    "title": "🐛[BUG] Requests and Calendar custom tabs not working on mobile",
+    "status": "client-gap",
+    "tests": [],
+    "assessment": "Native app/WebOS/iOS behavior requires actual affected client or a faithful host DOM/playback fixture. Browser emulation does not establish native-client detection."
+  },
+  {
+    "number": 341,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/341",
+    "title": "➕[Feature Request] internal and external url for *arr",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 342,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/342",
+    "title": "➕[Feature Request] Option to move Bookmarks to Sidebar",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 343,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/343",
+    "title": "🐛[BUG] Video codec tags always shown",
+    "status": "gap",
+    "tests": [],
+    "assessment": "Report requires a specific reproducer/root-cause or patch mapping. No assertion that current tests would catch this issue; generic feature coverage is insufficient."
+  },
+  {
+    "number": 344,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/344",
+    "title": "➕[Feature Request] Jellyseerr \"Issues\" section on Requests Page",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 345,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/345",
+    "title": "➕[Feature Request] Requests per user",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 346,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/346",
+    "title": "➕[Feature Request] Torrent client feedback integration",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 347,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/347",
+    "title": "➕[Feature Request] Per-user filtered Calendar",
+    "status": "feature-request",
+    "tests": [],
+    "assessment": "Feature request, not by itself evidence of a historical regression. Implemented behavior remains subject to the main coverage matrix; this classification does not mean fully tested."
+  },
+  {
+    "number": 348,
+    "kind": "pull-request",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/pull/348",
+    "title": "Small css tweaks for Calendar Page",
+    "status": "partial-existing",
+    "tests": [
+      "tests/frontend/pages/pages-calendar.test.mjs",
+      "tests/backend/Integrations/IntegrationCalendarTests.cs"
+    ],
+    "assessment": "Calendar settings/filtering/provider integration has coverage; last-day RFC3339 boundary and each historical navigation/layout change not proven by this audit."
+  },
+  {
+    "number": 349,
+    "kind": "issue",
+    "url": "https://github.com/n00bcodr/Jellyfin-Enhanced/issues/349",
+    "title": "🐛[BUG] Jellyseerr next season requests arent being de-duplicated",
+    "status": "partial-existing",
+    "tests": [
+      "tests/backend/ScheduledTasks/TaskAutoRequestTests.cs"
+    ],
+    "assessment": "SeasonThresholdAvailabilityAndExistingRequestsControlAutomaticRequest covers thresholds/existence/requests; cross-user concurrency/restart request de-dup and every reported release combination remain gaps."
+  }
+]

@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Parity / contact-sheet / benchmark harness for the native poster tag renderer (issue #590).
+    Not part of the plugin: JellyfinEnhanced.csproj does not reference it. tests/runner/poster.py runs it
+    (embedded asset checks for both Skia lines), and scheduled/manual CI runs that through tests/run.py poster.
+    Runs the plugin's real renderer (ProjectReference, jf12 build) against the SkiaSharp + HarfBuzz versions a
+    Jellyfin host ships (both lines are byte-identical to these NuGet natives):
+      -p:Skia=3.119.4  Jellyfin 12.1:  SkiaSharp 3.119.4, HarfBuzzSharp 8.3.1.5
+      -p:Skia=3.116.1  Jellyfin 10.11: SkiaSharp 3.116.1, HarfBuzzSharp 8.3.0.1 managed / 8.3.1.1 native
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>PosterTagsHarness</AssemblyName>
+    <!-- Both Skia lines build side by side under obj/<ver> and bin/<ver>; keep each out of the other's compile glob. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**;out/**</DefaultItemExcludes>
+    <RootNamespace>PosterTagsHarness</RootNamespace>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+    <!-- The renderer needs no ASP.NET; do not inherit the plugin's Microsoft.AspNetCore.App framework reference. -->
+    <DisableTransitiveFrameworkReferences>true</DisableTransitiveFrameworkReferences>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Skia)' == '3.119.4'">
+    <HarfBuzzManaged>8.3.1.5</HarfBuzzManaged>
+    <HarfBuzzNative>8.3.1.5</HarfBuzzNative>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Skia)' == '3.116.1'">
+    <HarfBuzzManaged>8.3.0.1</HarfBuzzManaged>
+    <HarfBuzzNative>8.3.1.1</HarfBuzzNative>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj" AdditionalProperties="JellyfinTarget=jf12" />
+    <PackageReference Include="SkiaSharp" Version="$(Skia)" />
+    <PackageReference Include="SkiaSharp.HarfBuzz" Version="$(Skia)" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="$(Skia)" />
+    <PackageReference Include="HarfBuzzSharp" Version="$(HarfBuzzManaged)" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="$(HarfBuzzNative)" />
+  </ItemGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="Skia" Value="$(Skia)" />
+  </ItemGroup>
+</Project>

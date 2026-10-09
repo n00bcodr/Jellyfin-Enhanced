@@ -328,11 +328,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // previews that the user opted to hide).
             bool isTrickplay = IsTrickplayRoute(context);
             string imageType;
-            bool inAlways, inArtwork;
+            bool inArtwork;
             if (isTrickplay)
             {
                 imageType = "Trickplay";
-                inAlways = true;
                 inArtwork = false;
             }
             else
@@ -345,7 +344,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Always-blur tier (poster surface) vs artwork tier (Backdrop/
                 // Art) gated behind SpoilerBlurArtwork. Anything else (logos,
                 // banners, etc.) passes through unchanged.
-                inAlways = _alwaysBlurImageTypes.Contains(imageType);
+                var inAlways = _alwaysBlurImageTypes.Contains(imageType);
                 inArtwork = !inAlways && _artworkImageTypes.Contains(imageType);
                 if (!inAlways && !inArtwork)
                 {
@@ -628,6 +627,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var executed = await next().ConfigureAwait(false);
             if (executed.Canceled || executed.Exception != null) return;
 
+            var originalResult = executed.Result;
             try
             {
                 if (spoilerMode == "hide")
@@ -663,6 +663,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         _logger.Error($"Spoiler Guard: fail-closed fallback assignment failed for {itemId}: {fallbackEx.Message}");
                     }
+                }
+            }
+            finally
+            {
+                // MVC normally disposes FileStreamResult streams while executing the
+                // result. Replacing that result transfers ownership to this filter;
+                // otherwise every protected stream response leaks its file handle.
+                if (!ReferenceEquals(originalResult, executed.Result) && originalResult is FileStreamResult streamResult)
+                {
+                    try { await streamResult.FileStream.DisposeAsync().ConfigureAwait(false); }
+                    catch (Exception ex) { _logger.Warning($"Spoiler Guard source stream cleanup failed: {ex.Message}"); }
                 }
             }
         }
