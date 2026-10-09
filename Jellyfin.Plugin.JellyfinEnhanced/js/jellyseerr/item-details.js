@@ -21,16 +21,11 @@
     const REQUEST_MORE_BTN_CLASS = 'je-series-request-more-btn';
 
     // When the Seerr data comes back before Jellyfin has rendered the item,
-    // the rows are built later (see deferRows): an empty marker holds their
-    // place after More Like This until then.
+    // the rows are built with that render (see deferRows): an empty marker
+    // holds their place after More Like This until then.
     const PENDING_ROWS_CLASS = 'je-seerr-rows-pending';
     // Counted from scheduling, for an item Jellyfin never renders.
     const NAME_WAIT_MS = 5000;
-    // Counted from Jellyfin's render of the item's name. jellyfin-web leaves
-    // More Like This visible and empty when its request fails, so its rows
-    // are not waited for any longer than this.
-    const SIMILAR_WAIT_CAP_MS = 500;
-    const IDLE_BUILD_TIMEOUT_MS = 2000;
     // Elements that never take up space, wherever they sit.
     const NON_RENDERED_TAGS = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'LINK', 'META']);
 
@@ -287,45 +282,6 @@
     }
 
     /**
-     * Whether More Like This is done: hidden (no results, or the template not
-     * rendered yet) or filled. Jellyfin un-hides it in the same task that
-     * renders the name, then fills or hides it when its request comes back.
-     */
-    function similarSettled(anchor) {
-        return anchor.classList.contains('hide') || !!anchor.querySelector('.itemsContainer > *');
-    }
-
-    /** Whether Jellyfin's own rows above the Seerr rows have rendered. */
-    function rowsAboveRendered(page, anchor) {
-        return jellyfinRendered(page) && similarSettled(anchor);
-    }
-
-    /**
-     * Whether the marker is within one viewport of the visible area.
-     * Reads layout once.
-     */
-    function isNear(page, marker) {
-        if (!marker.isConnected || page.classList.contains('hide') || marker.getClientRects().length === 0) return false;
-        const top = marker.getBoundingClientRect().top;
-        const height = window.innerHeight;
-        return top < 2 * height && top > -height;
-    }
-
-    /**
-     * Runs a callback when the browser is idle (bounded by `timeout`), or on
-     * the next task where requestIdleCallback is missing.
-     * @returns {Function} Cancels the pending callback.
-     */
-    function runWhenIdle(fn, timeout) {
-        if (typeof requestIdleCallback !== 'undefined') {
-            const id = requestIdleCallback(() => fn(), { timeout });
-            return () => cancelIdleCallback(id);
-        }
-        const id = setTimeout(fn, 0);
-        return () => clearTimeout(id);
-    }
-
-    /**
      * Whether nothing that takes up space follows More Like This in the view,
      * so rows built later push nothing down that rows inserted now would not
      * have. A div right after it, even a hidden one, is refused as well: it
@@ -353,14 +309,14 @@
     }
 
     /**
-     * Whether the rows can wait: Jellyfin has not rendered its own rows above
-     * them yet, in a visible view that has no Seerr rows (a restored view is
-     * replaced in place at once) and where nothing follows More Like This.
+     * Whether the rows can wait: Jellyfin has not rendered the item yet, in a
+     * visible view that has no Seerr rows (a restored view is replaced in
+     * place at once) and where nothing follows More Like This.
      */
     function canDeferRows({ page, detailPageContent, anchor }) {
         if (!page || !page.isConnected || page.classList.contains('hide') || !page.querySelector('.nameContainer')) return false;
         if (detailPageContent.querySelector('.jellyseerr-details-section')) return false;
-        if (rowsAboveRendered(page, anchor)) return false;
+        if (jellyfinRendered(page)) return false;
         return nothingFollows(anchor, page);
     }
 
@@ -440,15 +396,15 @@
     }
 
     /**
-     * Builds the rows once Jellyfin has rendered its own rows above them
-     * (its name, then More Like This filled or hidden, at most
-     * SIMILAR_WAIT_CAP_MS after the name), and then only once they are
-     * within a viewport of the visible area, or at idle. So they are never
-     * painted on the empty template and then pushed down by Jellyfin's
-     * render, and rows far below the fold do not load their posters while
-     * the page is still loading. Printing builds them at once. The data
-     * and the claim on the item are already there; leaving (the abort)
-     * drops the build.
+     * Builds the rows when Jellyfin renders the item's name, so they are not
+     * painted on the empty template and then pushed down by that render.
+     * The name observer's callback runs before the next paint, so the rows
+     * are already there in the first frame that shows Jellyfin's render: the
+     * page never ends at More Like This without them, as it never did when
+     * they were inserted with their data. A page Jellyfin never renders gets
+     * them after NAME_WAIT_MS; printing builds them at once. The data and
+     * the claim on the item are already there; leaving (the abort) drops
+     * the build.
      * @param {object} ctx - See commitRows
      * @returns {boolean} Whether the rows were scheduled (or inserted)
      */
@@ -459,21 +415,13 @@
         marker.setAttribute('aria-hidden', 'true');
 
         let done = false;
-        let armed = false;
-        let nameSeen = false;
-        let gateObserver = null;
-        let nearObserver = null;
+        let nameObserver = null;
         let nameTimer = null;
-        let capTimer = null;
-        let cancelIdle = null;
 
         const dispose = () => {
             done = true;
-            gateObserver?.disconnect();
-            nearObserver?.disconnect();
+            nameObserver?.disconnect();
             clearTimeout(nameTimer);
-            clearTimeout(capTimer);
-            cancelIdle?.();
             window.removeEventListener('beforeprint', run);
             signal.removeEventListener('abort', onAbort);
         };
@@ -495,50 +443,16 @@
             }
         }
 
-        const arm = () => {
-            if (done || armed) return;
-            armed = true;
-            gateObserver?.disconnect();
-            clearTimeout(nameTimer);
-            clearTimeout(capTimer);
-            // Near rows go in now, before any long frame that comes next.
-            if (isNear(page, marker) || typeof IntersectionObserver !== 'function') {
-                run();
-                return;
-            }
-            try {
-                nearObserver = new IntersectionObserver((entries) => {
-                    // Re-checked: the page may have grown since this was computed.
-                    if (entries.some(entry => entry.isIntersecting) && isNear(page, marker)) run();
-                }, { rootMargin: `${Math.round(window.innerHeight)}px 0px` });
-                nearObserver.observe(marker);
-            } catch (_) {
-                run();
-                return;
-            }
-            cancelIdle = runWhenIdle(run, IDLE_BUILD_TIMEOUT_MS);
-        };
-
-        const onGate = () => {
-            if (done || armed) return;
-            if (!nameSeen && jellyfinRendered(page)) {
-                nameSeen = true;
-                clearTimeout(nameTimer);
-                capTimer = setTimeout(arm, SIMILAR_WAIT_CAP_MS);
-            }
-            if (nameSeen && similarSettled(anchor)) arm();
-        };
-
         try {
             page.querySelectorAll(`.${PENDING_ROWS_CLASS}`).forEach(el => el.remove());
             anchor.after(marker);
             signal.addEventListener('abort', onAbort, { once: true });
             window.addEventListener('beforeprint', run);
-            gateObserver = new MutationObserver(onGate);
-            gateObserver.observe(anchor, { attributes: true, attributeFilter: ['class'], childList: true, subtree: true });
-            gateObserver.observe(page.querySelector('.nameContainer'), { childList: true, subtree: true });
-            nameTimer = setTimeout(arm, NAME_WAIT_MS);
-            onGate();
+            nameObserver = new MutationObserver(() => {
+                if (jellyfinRendered(page)) run();
+            });
+            nameObserver.observe(page.querySelector('.nameContainer'), { childList: true, subtree: true });
+            nameTimer = setTimeout(run, NAME_WAIT_MS);
             return true;
         } catch (_) {
             // Insert now, as before.
