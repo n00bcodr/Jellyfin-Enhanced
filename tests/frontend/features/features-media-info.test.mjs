@@ -2,8 +2,12 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness,deferred} from '../helpers/harness.mjs';
 function setup(t,request=async()=>({size:1073741824,progress:50,totalPlaybackTicks:600000000,totalRuntimeTicks:1200000000})){
- const calls=[],saved=[],handlers=[];let epoch=0;const h=createHarness({html:'<div id="info" class="hide"></div>',globals:{requestAnimationFrame:fn=>{fn();return 1;}},JE:{currentSettings:{},t:key=>key,saveUserSettings:async(file,data)=>saved.push([file,{...data}]),core:{api:{plugin:(...args)=>{calls.push(args);return request(...args);}}},session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange:(key,fn)=>handlers.push(fn)}}});
- t.after(()=>h.close());h.load('enhanced/itemdetails/features-details-media-info.js');return {...h,calls,saved,api:h.JE.internals.features,container:h.document.getElementById('info'),async settle(){await new Promise(done=>setImmediate(done));},switchUser(){epoch++;for(const fn of handlers)fn();}};
+ const calls=[],saved=[],handlers=[],maps=[];let epoch=0;const h=createHarness({html:'<div id="info" class="hide"></div>',globals:{requestAnimationFrame:fn=>{fn();return 1;}},JE:{currentSettings:{},t:key=>key,saveUserSettings:async(file,data)=>saved.push([file,{...data}]),core:{api:{plugin:(...args)=>{calls.push(args);return request(...args);}}},session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange:(key,fn)=>handlers.push(fn)}}});
+ // Every Map the module creates, so a test can check what its caches hold on to.
+ const BaseMap=h.window.Map;h.window.Map=class extends BaseMap{constructor(...args){super(...args);maps.push(this);}};
+ t.after(()=>h.close());h.load('enhanced/itemdetails/features-details-media-info.js');return {...h,calls,saved,api:h.JE.internals.features,container:h.document.getElementById('info'),async settle(){await new Promise(done=>setImmediate(done));},switchUser(){epoch++;for(const fn of handlers)fn();},
+  /** Whether a value in any of the module's maps refers to `target`. */
+  retains(target){return maps.some(map=>[...map.values()].some(value=>value===target||(value&&typeof value==='object'&&Object.values(value).includes(target))));}};
 }
 test('watch progress and file-size chips share request and deduplicate repeated rendering',async t=>{
  const h=setup(t);h.api.displayWatchProgress('item',h.container);h.api.displayItemSize('item',h.container);h.api.displayWatchProgress('item',h.container);h.api.displayItemSize('item',h.container);await h.settle();
@@ -89,4 +93,15 @@ test('a chip that took over a prefetch does not retry it after a user switch',as
  const first=deferred();const h=setup(t,()=>first.promise);
  h.api.prefetchItemStats('item',null,{watchProgress:false,fileSize:true},{});h.api.displayItemSize('item',h.container);h.switchUser();
  first.reject(new Error('signed out'));await h.settle();assert.equal(h.calls.length,1);assert.match(h.container.textContent,/\.\.\./);
+});
+test('a prefetch the chips took over lets go of its visit, which holds the view and the item',async t=>{
+ const h=setup(t);const visit={itemId:'item',view:h.container,item:{Id:'item',Type:'Movie'}};
+ h.api.prefetchItemStats('item',null,{watchProgress:true,fileSize:true},visit);
+ assert.equal(h.retains(visit),true,'kept while no chip has taken it over, so the visit can drop it');
+ h.api.displayWatchProgress('item',h.container);assert.equal(h.retains(visit),false);
+ h.api.displayItemSize('item',h.container);await h.settle();
+ assert.equal(h.calls.length,1);assert.equal(h.retains(visit),false);assert.match(h.container.textContent,/50%/);assert.match(h.container.textContent,/1 GB/);
+ // Its visit ending changes nothing: the answer stays for the next chip, as before.
+ h.api.discardItemStatsPrefetch(visit);h.container.replaceChildren();h.api.displayItemSize('item',h.container,null);await h.settle();
+ assert.equal(h.calls.length,1);assert.match(h.container.textContent,/1 GB/);
 });

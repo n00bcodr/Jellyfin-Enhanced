@@ -19,9 +19,10 @@
     // /item-stats request (both values come from the same server-side walk).
     const ITEMSTATS_CACHE_TTL = 60 * 60 * 1000; // 1 hour
     // Map<`${itemId}|${mediaSourceId}`, { promise: Promise<object>, ts: number,
-    //   visit: object|null, claimed: boolean, ctl: AbortController|null }>.
-    // `visit` is set on a details-visit prefetch (see prefetchItemStats) and
-    // `claimed` once a chip has taken it over.
+    //   prefetched: boolean, visit: object|null, ctl: AbortController|null }>.
+    // `prefetched` marks a details-visit prefetch (see prefetchItemStats).
+    // `visit` and `ctl` are only kept until a chip takes it over: the entry
+    // outlives the visit, and the visit holds its view and item.
     const itemStatsRequests = new Map();
 
     // Watch progress is per-user (and item metadata is fetched with the
@@ -32,7 +33,7 @@
         audioLanguageCache.clear();
         // A prefetch no chip has taken over belongs to the previous user.
         for (const entry of itemStatsRequests.values()) {
-            if (entry.visit && !entry.claimed) entry.ctl?.abort();
+            if (entry.visit) entry.ctl?.abort();
         }
         itemStatsRequests.clear();
     });
@@ -52,13 +53,14 @@
         const now = Date.now();
         const existing = itemStatsRequests.get(key);
         if (existing && (now - existing.ts) < ITEMSTATS_CACHE_TTL) {
-            if (existing.visit && !prefetchVisit) {
+            if (existing.prefetched && !prefetchVisit) {
                 // A chip takes over a details-visit prefetch. A failed prefetch
                 // is never shown: the chip asks again, as it would have without
                 // the prefetch (the failed entry is already gone, so the second
                 // chip shares that request). Not after a user switch, where
                 // the chip discards the answer anyway.
-                existing.claimed = true;
+                existing.visit = null;
+                existing.ctl = null;
                 const claimEpoch = JE.session ? JE.session.getEpoch() : 0;
                 return existing.promise.catch((error) => {
                     if (JE.session && !JE.session.isCurrent(claimEpoch)) throw error;
@@ -77,7 +79,7 @@
         const promise = JE.core?.api?.plugin
             ? JE.core.api.plugin(path, ctl ? { skipRetry: true, signal: ctl.signal } : { skipRetry: true })
             : ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced${path}`), dataType: 'json' });
-        const entry = { promise, ts: now, visit: prefetchVisit, claimed: false, ctl };
+        const entry = { promise, ts: now, prefetched: !!prefetchVisit, visit: prefetchVisit, ctl };
         itemStatsRequests.set(key, entry);
         // A failed request is not kept: the next visit may try again.
         promise.catch(() => {
@@ -114,7 +116,7 @@
      */
     function discardItemStatsPrefetch(visit) {
         for (const [key, entry] of itemStatsRequests) {
-            if (entry.visit !== visit || entry.claimed) continue;
+            if (entry.visit !== visit) continue; // taken over, or another visit's
             entry.ctl?.abort();
             itemStatsRequests.delete(key);
         }
