@@ -254,6 +254,9 @@
     "elsewhere_panel_no_services_in_regions": "Keine Streaming-Dienste in den ausgewählten Regionen verfügbar",
     "elsewhere_panel_not_available_in_regions": "Bei keinem Streaming-Dienst in {regions} verfügbar",
     "elsewhere_panel_available_in_region": "Verfügbar in {region} auf:",
+    "elsewhere_settings_season_providers": "Anbieter pro Staffel anzeigen (wenn sich die Staffeln unterscheiden)",
+    "elsewhere_season_label": "Staffel {number}",
+    "elsewhere_seasons_label": "Staffeln {range}",
     "toast_generic_error": "{{icon:error}} Hoppla! Etwas ist schiefgelaufen!",
     "random_button_tooltip": "Zufälliges Element aus Ihrer Bibliothek anzeigen (R)",
     "watch_progress_tooltip": "Gesamtfortschritt",
@@ -754,5 +757,6 @@
     "catchup_top_watched": "Am häufigsten gesehen",
     "catchup_top_dismissed": "Am häufigsten verworfen",
     "catchup_top_watchlisted": "Am häufigsten gemerkt",
-    "catchup_failed": "Fehlgeschlagen: {error}"
+    "catchup_failed": "Fehlgeschlagen: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

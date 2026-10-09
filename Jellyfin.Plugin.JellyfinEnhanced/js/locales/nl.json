@@ -253,6 +253,9 @@
     "elsewhere_panel_no_services_in_regions": "Geen streamingdiensten beschikbaar in de geselecteerde regio’s",
     "elsewhere_panel_not_available_in_regions": "Niet beschikbaar op streamingdiensten in {regions}",
     "elsewhere_panel_available_in_region": "Beschikbaar in {region} op:",
+    "elsewhere_settings_season_providers": "Aanbieders per seizoen tonen (wanneer seizoenen verschillen)",
+    "elsewhere_season_label": "Seizoen {number}",
+    "elsewhere_seasons_label": "Seizoenen {range}",
     "toast_generic_error": "{{icon:error}} Oeps! Er is iets misgegaan!",
     "random_button_tooltip": "Toon een willekeurig item uit je bibliotheek (R)",
     "watch_progress_tooltip": "Totale kijkvoortgang",
@@ -754,5 +757,6 @@
     "catchup_top_watched": "Meest bekeken",
     "catchup_top_dismissed": "Meest genegeerd",
     "catchup_top_watchlisted": "Meest aan watchlist toegevoegd",
-    "catchup_failed": "Mislukt: {error}"
+    "catchup_failed": "Mislukt: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

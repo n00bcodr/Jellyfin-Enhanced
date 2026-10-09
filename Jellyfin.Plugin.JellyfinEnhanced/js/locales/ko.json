@@ -254,6 +254,9 @@
     "elsewhere_panel_no_services_in_regions": "선택한 지역에서 이용 가능한 스트리밍 서비스가 없습니다",
     "elsewhere_panel_not_available_in_regions": "{regions}에서 이용 가능한 스트리밍 서비스가 없습니다",
     "elsewhere_panel_available_in_region": "{region}에서 이용 가능:",
+    "elsewhere_settings_season_providers": "시즌별 제공 서비스 표시 (시즌마다 다를 때)",
+    "elsewhere_season_label": "시즌 {number}",
+    "elsewhere_seasons_label": "시즌 {range}",
     "toast_generic_error": "{{icon:error}} 이런! 문제가 발생했습니다!",
     "random_button_tooltip": "라이브러리에서 무작위 항목 표시 (R)",
     "header_random_item": "무작위 항목",
@@ -754,5 +757,6 @@
     "catchup_top_watched": "가장 많이 시청",
     "catchup_top_dismissed": "가장 많이 제외",
     "catchup_top_watchlisted": "관심 목록에 가장 많이 추가",
-    "catchup_failed": "실패: {error}"
+    "catchup_failed": "실패: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

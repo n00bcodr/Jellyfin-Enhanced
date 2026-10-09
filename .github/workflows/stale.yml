@@ -7,8 +7,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
 
 jobs:
   stale:
@@ -19,9 +17,16 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Generate bot token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
       - uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          repo-token: ${{ steps.app-token.outputs.token }}
           stale-issue-message: >
             This issue has been marked as stale because it has had no activity for 15 days.
             It will be closed in 3 days if no further activity occurs.

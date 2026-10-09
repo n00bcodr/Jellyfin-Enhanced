@@ -254,6 +254,9 @@
     "elsewhere_panel_no_services_in_regions": "Vo vybraných regiónoch nie sú dostupné žiadne streamovacie služby",
     "elsewhere_panel_not_available_in_regions": "Nie je dostupné na žiadnych streamovacích službách v {regions}",
     "elsewhere_panel_available_in_region": "Dostupné v {region} na:",
+    "elsewhere_settings_season_providers": "Zobraziť poskytovateľov podľa sérií (keď sa série líšia)",
+    "elsewhere_season_label": "Séria {number}",
+    "elsewhere_seasons_label": "Série {range}",
     "toast_generic_error": "{{icon:error}} Ups! Niečo sa pokazilo!",
     "random_button_tooltip": "Zobraziť náhodnú položku z vašej knižnice (R)",
     "watch_progress_tooltip": "Celkový postup sledovania",
@@ -754,5 +757,6 @@
     "catchup_top_watched": "Najviac pozerané",
     "catchup_top_dismissed": "Najviac zamietnuté",
     "catchup_top_watchlisted": "Najviac v zozname sledovania",
-    "catchup_failed": "Zlyhalo: {error}"
+    "catchup_failed": "Zlyhalo: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

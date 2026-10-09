@@ -41,6 +41,9 @@
     "hidden_content_confirm_surface_body": "Valitse, miten haluat piilottaa tämän kohteen.",
     "panel_settings_ui_watch_progress_desc": "Näytä katseluedistyminen kohteen tietosivulla. Valitse näyttötapa alta.",
     "elsewhere_panel_available_in_region": "Saatavilla alueella {region} palvelussa:",
+    "elsewhere_settings_season_providers": "Näytä palveluntarjoajat kausittain (kun kaudet eroavat)",
+    "elsewhere_season_label": "Tuotantokausi {number}",
+    "elsewhere_seasons_label": "Tuotantokaudet {range}",
     "requests_today": "tänään",
     "hidden_content_expand_all": "Laajenna Kaikki",
     "jellyseerr_season_status_requested": "Pyydetty",
@@ -754,5 +757,6 @@
     "catchup_top_watched": "Katsotuimmat",
     "catchup_top_dismissed": "Eniten ohitetut",
     "catchup_top_watchlisted": "Eniten seurantalistalla",
-    "catchup_failed": "Epäonnistui: {error}"
+    "catchup_failed": "Epäonnistui: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

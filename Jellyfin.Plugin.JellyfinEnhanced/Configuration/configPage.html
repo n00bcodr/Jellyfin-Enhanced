@@ -2539,6 +2539,10 @@
                                 <div class="je-setting-description" data-desc-for="IGNORE_PROVIDERS">
                                     <div class="fieldDescription">A list of providers to ignore from the default region (supports regex).<a class="sectionTitle" href="https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources/providers.txt" target="_blank">Full List</a></div>
                                 </div>
+                            <div class="checkboxContainer"><label><input id="ElsewhereSeasonProviders" is="emby-checkbox" type="checkbox"/><span>Per-season providers</span></label></div>
+                                <div class="je-setting-description" data-desc-for="ElsewhereSeasonProviders">
+                                    <div class="fieldDescription">On Series and Season pages, look up streaming providers per season from TMDB. A season is labelled only when seasons differ; seasons TMDB has no data for fall back to the series providers. Only applies when the series uses the default (aired) season order. Users can turn this off for themselves in the Elsewhere search settings.</div>
+                                </div>
 
                             <details class="je-details-section">
                                 <summary>Custom Branding</summary>
@@ -5966,6 +5970,7 @@
                 populateRegionSelect(config.DEFAULT_REGION);
                 document.querySelector('#DEFAULT_PROVIDERS').value = config.DEFAULT_PROVIDERS;
                 document.querySelector('#IGNORE_PROVIDERS').value = config.IGNORE_PROVIDERS;
+                document.querySelector('#ElsewhereSeasonProviders').checked = config.ElsewhereSeasonProviders !== false;
                 document.querySelector('#ElsewhereCustomBrandingText').value = config.ElsewhereCustomBrandingText || '';
                 document.querySelector('#ElsewhereCustomBrandingImageUrl').value = config.ElsewhereCustomBrandingImageUrl || '';
                 document.querySelector('#jellyseerr_TMDB_API_KEY').value = config.TMDB_API_KEY;
@@ -6553,6 +6558,7 @@
             config.DEFAULT_REGION = document.querySelector('#DEFAULT_REGION').value;
             config.DEFAULT_PROVIDERS = document.querySelector('#DEFAULT_PROVIDERS').value;
             config.IGNORE_PROVIDERS = document.querySelector('#IGNORE_PROVIDERS').value;
+            config.ElsewhereSeasonProviders = document.querySelector('#ElsewhereSeasonProviders').checked;
             config.ElsewhereCustomBrandingText = document.querySelector('#ElsewhereCustomBrandingText').value;
             config.ElsewhereCustomBrandingImageUrl = document.querySelector('#ElsewhereCustomBrandingImageUrl').value;
             config.AutoPauseEnabled = document.querySelector('#autoPauseEnabled').checked;
@@ -8135,7 +8141,7 @@
 
         var PARENT_DEPS = [
             { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['nativePosterTagsWebClientNames'] },
-            { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
+            { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereSeasonProviders', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
             { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'mirrorReviewRatingsToJellyfin', 'showUserRatingDash', 'showUserRatingOnPosters'] },

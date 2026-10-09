@@ -254,6 +254,9 @@
     "elsewhere_panel_no_services_in_regions": "Ve vybraných regionech nejsou dostupné žádné streamovací služby",
     "elsewhere_panel_not_available_in_regions": "Není dostupné na žádných streamovacích službách v {regions}",
     "elsewhere_panel_available_in_region": "Dostupné v {region} na:",
+    "elsewhere_settings_season_providers": "Zobrazit poskytovatele podle řad (pokud se řady liší)",
+    "elsewhere_season_label": "Řada {number}",
+    "elsewhere_seasons_label": "Řady {range}",
     "toast_generic_error": "{{icon:error}} Jejda! Něco se pokazilo!",
     "random_button_tooltip": "Zobrazit náhodnou položku z vaší knihovny (R)",
     "watch_progress_tooltip": "Celkový postup sledování",
@@ -754,5 +757,6 @@
     "catchup_top_watched": "Nejsledovanější",
     "catchup_top_dismissed": "Nejčastěji zamítnuté",
     "catchup_top_watchlisted": "Nejčastěji na seznamu sledování",
-    "catchup_failed": "Selhalo: {error}"
+    "catchup_failed": "Selhalo: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

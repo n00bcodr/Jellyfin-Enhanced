@@ -254,6 +254,9 @@
     "elsewhere_panel_no_services_in_regions": "Aucun service de streaming disponible dans les régions sélectionnées",
     "elsewhere_panel_not_available_in_regions": "Non disponible sur aucun service de streaming en {regions}",
     "elsewhere_panel_available_in_region": "Disponible en {region} sur:",
+    "elsewhere_settings_season_providers": "Afficher les fournisseurs par saison (lorsque les saisons diffèrent)",
+    "elsewhere_season_label": "Saison {number}",
+    "elsewhere_seasons_label": "Saisons {range}",
     "toast_generic_error": "{{icon:error}} Oups ! Quelque chose s'est mal passé !",
     "random_button_tooltip": "Afficher un élément aléatoire de votre bibliothèque (R)",
     "watch_progress_tooltip": "Progression totale",
@@ -754,5 +757,6 @@
     "catchup_top_watched": "Les plus vus",
     "catchup_top_dismissed": "Les plus ignorés",
     "catchup_top_watchlisted": "Les plus ajoutés à la liste de suivi",
-    "catchup_failed": "Échec : {error}"
+    "catchup_failed": "Échec : {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

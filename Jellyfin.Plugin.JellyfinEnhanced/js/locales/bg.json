@@ -254,6 +254,9 @@
     "elsewhere_panel_no_services_in_regions": "Няма налични стрийминг услуги в избраните региони",
     "elsewhere_panel_not_available_in_regions": "Не е налично в нито една стрийминг услуга в {regions}",
     "elsewhere_panel_available_in_region": "Налично в {region} в:",
+    "elsewhere_settings_season_providers": "Показване на доставчиците по сезони (когато сезоните се различават)",
+    "elsewhere_season_label": "Сезон {number}",
+    "elsewhere_seasons_label": "Сезони {range}",
     "toast_generic_error": "{{icon:error}} Опа! Нещо се обърка!",
     "random_button_tooltip": "Показва случаен елемент от библиотеката (R)",
     "watch_progress_tooltip": "Общ напредък на гледане",
@@ -754,5 +757,6 @@
     "catchup_top_watched": "Най-гледани",
     "catchup_top_dismissed": "Най-често отхвърляни",
     "catchup_top_watchlisted": "Най-често в списъка за гледане",
-    "catchup_failed": "Неуспешно: {error}"
+    "catchup_failed": "Неуспешно: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

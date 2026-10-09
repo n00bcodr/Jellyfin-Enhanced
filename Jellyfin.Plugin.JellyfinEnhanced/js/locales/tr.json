@@ -253,6 +253,9 @@
     "elsewhere_panel_no_services_in_regions": "Seçili bölgelerde kullanılabilir servis yok",
     "elsewhere_panel_not_available_in_regions": "{regions} bölgelerinde hiçbir akış hizmetinde mevcut değil",
     "elsewhere_panel_available_in_region": "{region} bölgesinde mevcut:",
+    "elsewhere_settings_season_providers": "Sezon başına sağlayıcıları göster (sezonlar farklıysa)",
+    "elsewhere_season_label": "Sezon {number}",
+    "elsewhere_seasons_label": "Sezonlar {range}",
     "toast_generic_error": "{{icon:error}} Bir şeyler ters gitti!",
     "random_button_tooltip": "Kütüphanenden rastgele bir öğe göster (R)",
     "watch_progress_tooltip": "Toplam izleme ilerlemesi",
@@ -754,5 +757,6 @@
     "catchup_top_watched": "En çok izlenen",
     "catchup_top_dismissed": "En çok yoksayılan",
     "catchup_top_watchlisted": "En çok izleme listesine eklenen",
-    "catchup_failed": "Başarısız: {error}"
+    "catchup_failed": "Başarısız: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Yer imi silinemedi"
 }

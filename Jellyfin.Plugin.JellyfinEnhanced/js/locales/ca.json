@@ -254,6 +254,9 @@
     "elsewhere_panel_no_services_in_regions": "No hi ha serveis de streaming disponibles a les regions seleccionades",
     "elsewhere_panel_not_available_in_regions": "No disponible a cap servei de streaming a {regions}",
     "elsewhere_panel_available_in_region": "Disponible a {region} a:",
+    "elsewhere_settings_season_providers": "Mostra els proveïdors per temporada (quan les temporades difereixen)",
+    "elsewhere_season_label": "Temporada {number}",
+    "elsewhere_seasons_label": "Temporades {range}",
     "toast_generic_error": "{{icon:error}} Vaja! Alguna cosa ha anat malament",
     "random_button_tooltip": "Mostrar un element aleatori de la teva biblioteca (R)",
     "watch_progress_tooltip": "Progrés total de visualització",
@@ -754,5 +757,6 @@
     "catchup_top_watched": "Més vistos",
     "catchup_top_dismissed": "Més descartats",
     "catchup_top_watchlisted": "Més afegits a la llista de seguiment",
-    "catchup_failed": "Error: {error}"
+    "catchup_failed": "Error: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }
