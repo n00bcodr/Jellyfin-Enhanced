@@ -45,17 +45,29 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
       - name: Regenerate and commit if stale
         run: |
-          python3 tests/inventory/generate.py
-          if git diff --quiet -- tests/docs/production-inventory.json; then
-            echo 'Production inventory is current.'
-            exit 0
-          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'chore(tests): regenerate production inventory' -- tests/docs/production-inventory.json
-          git push origin HEAD:main
+          # Regenerate against the latest main and retry if another push lands first.
+          for attempt in 1 2 3; do
+            git fetch -q --depth=1 origin main
+            git reset -q --hard FETCH_HEAD
+            python3 tests/inventory/generate.py
+            git add tests/docs/production-inventory.json
+            if git diff --cached --quiet; then
+              echo 'Production inventory is current.'
+              exit 0
+            fi
+            git commit -q -m 'chore(tests): regenerate production inventory'
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          exit 1
 
   backend:
     runs-on: ubuntu-24.04
