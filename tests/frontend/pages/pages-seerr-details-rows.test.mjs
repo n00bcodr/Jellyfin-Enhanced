@@ -49,8 +49,9 @@ function setup(t,{html=page(),config={},status={active:true},card}={}){
   after(v=view){const out=[];for(let el=this.anchor(v).nextElementSibling;el;el=el.nextElementSibling)out.push(el.classList.contains(MARKER)?'marker':el.classList.contains('jellyseerr-details-section')?el.querySelector('h2').textContent:el.id||el.tagName);return out;},
   cards:(v=view)=>[...v.querySelectorAll('.jellyseerr-details-section')].map(s=>s.querySelectorAll('.card').length),
   frame(){const pending=frames.splice(0);for(const fn of pending)fn();},
-  async respond({similar=results('Similar'),recommended=results('Recommended')}={}){
-   cache.similar=similar;cache.recommended=recommended;
+  /** The Seerr data; an `uncached` kind is answered but not kept, as a failed request's empty answer. */
+  async respond({similar=results('Similar'),recommended=results('Recommended'),uncached=[]}={}){
+   if(!uncached.includes('similar'))cache.similar=similar;if(!uncached.includes('recommended'))cache.recommended=recommended;
    for(const d of waiting.similar.splice(0))d.resolve(similar);for(const d of waiting.recommended.splice(0))d.resolve(recommended);
    await this.flush();
   },
@@ -157,13 +158,28 @@ test('a user switch before the build drops the rows and releases the item for a 
  assert.equal(now.counts.cards,0);await now.viewshow();assert.deepEqual(now.after(),['Recommended','Similar']);
 });
 
-test('a hidden view gets nothing; the shown details view gets the rows from the cached data',async t=>{
+test('a hidden view gets nothing; the shown details view gets the rows from the same run, asking nothing again',async t=>{
  const h=setup(t);await h.start();
  h.view.classList.add('hide');h.document.body.insertAdjacentHTML('beforeend',page({id:'second'}));
  const second=h.document.getElementById('second');await h.render({v:second});
- h.timer(5000);assert.deepEqual(h.after(),[],'nothing in the hidden view');assert.equal(h.counts.cards,0);
- h.frame();await h.flush();
- assert.deepEqual(h.after(second),['Recommended','Similar']);assert.deepEqual(h.network,{similar:1,recommended:1});
+ h.timer(5000);assert.deepEqual(h.after(),[],'nothing in the hidden view');
+ assert.deepEqual(h.after(second),['Recommended','Similar']);assert.deepEqual(h.cards(second),[20,20]);
+ await h.viewshow();assert.equal(h.counts.cards,40);
+ assert.deepEqual(h.network,{similar:1,recommended:1});assert.deepEqual([h.counts.status,h.counts.item],[1,1]);
+});
+
+test('data landing after its view was hidden goes to the shown view: a failed endpoint is not asked for again',async t=>{
+ // The run found the old view, still shown; Jellyfin then hid it and showed the new one, and the
+ // data came back before the new view's viewshow frame. Recommendations failed: an empty answer
+ // the client cache does not keep, so another run would request it again.
+ const h=setup(t);h.frame();await h.flush();await h.render();
+ h.view.classList.add('hide');h.document.body.insertAdjacentHTML('beforeend',page({id:'second'}));const second=h.document.getElementById('second');
+ await h.respond({recommended:{results:[]},uncached:['recommended']});
+ assert.deepEqual(h.after(),[],'nothing in the hidden view');assert.deepEqual(h.after(second),['marker'],'waiting for its render');
+ await h.viewshow();await h.render({v:second});
+ assert.deepEqual(h.after(second),['Similar']);assert.deepEqual(h.cards(second),[20]);
+ assert.deepEqual(h.network,{similar:1,recommended:1});assert.deepEqual([h.counts.status,h.counts.item],[1,1]);
+ assert.deepEqual(h.ends.map(end=>end.name),['similar-recommended']);
 });
 
 test('a frame that comes after the URL moved on starts nothing for the old item',async t=>{

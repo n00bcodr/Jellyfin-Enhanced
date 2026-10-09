@@ -86,6 +86,28 @@
     }
 
     /**
+     * The shown view's details content and More Like This, when it has them.
+     * @returns {{detailPageContent: HTMLElement, moreLikeThisSection: HTMLElement}|null}
+     */
+    function findDetailPage() {
+        const activePage = document.querySelector('.libraryPage:not(.hide)');
+        if (!activePage) return null;
+
+        // Jellyfin 12 dropped the .detailPageContent wrapper; fall back to
+        // .detailPageSecondaryContainer, then the page itself. #similarCollapsible
+        // (our insertion anchor) still exists inside it on both lines.
+        const detailPageContent = activePage.querySelector('.detailPageContent') ||
+                                  activePage.querySelector('.detailPageSecondaryContainer') ||
+                                  activePage;
+        const moreLikeThisSection = detailPageContent?.querySelector('#similarCollapsible');
+
+        if (detailPageContent && moreLikeThisSection) {
+            return { detailPageContent, moreLikeThisSection };
+        }
+        return null;
+    }
+
+    /**
      * Wait for the detail page content to be ready
      * @param {AbortSignal} [signal] - Optional abort signal
      * @returns {Promise<HTMLElement|null>}
@@ -98,26 +120,8 @@
                 return;
             }
 
-            const checkPage = () => {
-                const activePage = document.querySelector('.libraryPage:not(.hide)');
-                if (!activePage) return null;
-
-                // Jellyfin 12 dropped the .detailPageContent wrapper; fall back to
-                // .detailPageSecondaryContainer, then the page itself. #similarCollapsible
-                // (our insertion anchor) still exists inside it on both lines.
-                const detailPageContent = activePage.querySelector('.detailPageContent') ||
-                                          activePage.querySelector('.detailPageSecondaryContainer') ||
-                                          activePage;
-                const moreLikeThisSection = detailPageContent?.querySelector('#similarCollapsible');
-
-                if (detailPageContent && moreLikeThisSection) {
-                    return { detailPageContent, moreLikeThisSection };
-                }
-                return null;
-            };
-
             // Try immediately
-            const immediate = checkPage();
+            const immediate = findDetailPage();
             if (immediate) {
                 resolve(immediate);
                 return;
@@ -147,7 +151,7 @@
             }
 
             observerHandle = JE.helpers.onBodyMutation('jellyseerr-item-details-page-detect', () => {
-                const result = checkPage();
+                const result = findDetailPage();
                 if (result) {
                     cleanup();
                     resolve(result);
@@ -157,7 +161,7 @@
             // Timeout fallback (3 seconds)
             timeoutId = setTimeout(() => {
                 cleanup();
-                const result = checkPage();
+                const result = findDetailPage();
                 resolve(result);
             }, 3000);
         });
@@ -327,7 +331,8 @@
      * nothing followed More Like This at scheduling (see nothingFollows).
      * @param {object} ctx - The run: itemId, signal, epoch, page, detailPageContent, anchor, recommended, similar
      * @param {HTMLElement|null} marker - The deferred build's placeholder
-     * @returns {boolean} Whether the rows were inserted
+     * @returns {boolean} Whether the rows were inserted (from a hidden view:
+     *   placed in the shown one, see placeRows)
      */
     function commitRows(ctx, marker) {
         const { itemId, signal, epoch, page, detailPageContent, anchor, recommended, similar } = ctx;
@@ -338,9 +343,23 @@
             return false;
         }
         if (page ? (!page.isConnected || page.classList.contains('hide')) : !anchor.isConnected) {
-            // Never into a cached or hidden view. Run again against the view
-            // that is shown; the status, item and Seerr data all come from
-            // the client caches.
+            // Never into a cached or hidden view. The rows go to the details
+            // view that is shown, from this run's data, and a viewshow run
+            // for it returns early: a new run would ask again for what is not
+            // cached (an endpoint that failed, an expired item).
+            const shown = findDetailPage();
+            const shownPage = shown ? shown.moreLikeThisSection.closest('.libraryPage') : null;
+            if (shownPage && shownPage !== page) {
+                if (placeRows({
+                    ...ctx,
+                    page: shownPage,
+                    detailPageContent: shown.detailPageContent,
+                    anchor: shown.moreLikeThisSection
+                })) return true;
+                releaseClaim(ctx);
+                return false;
+            }
+            // No details view shown: run again once there is one.
             releaseClaim(ctx);
             const visible = document.querySelector('.libraryPage:not(.hide)');
             if (visible && visible !== page) scheduleSimilarAndRecommended(itemId);
@@ -465,6 +484,27 @@
             }
             return placed;
         }
+    }
+
+    /**
+     * Places a run's rows into its view: at once, or with Jellyfin's render
+     * of the item (see deferRows). The item is claimed once they are placed
+     * or waiting, so a viewshow run for it returns early.
+     * @param {object} ctx - See commitRows
+     * @returns {boolean} Whether the rows were placed (or are waiting)
+     */
+    function placeRows(ctx) {
+        if (canDeferRows(ctx)) {
+            // Claimed now, when the rows would otherwise have been
+            // inserted, so a viewshow run for this page still returns
+            // early. A build that does not happen releases the claim.
+            processedItems.add(ctx.itemId);
+            return deferRows(ctx);
+        }
+        const placed = commitRows(ctx, null);
+        // Mark as successfully processed AFTER successful render
+        if (placed) processedItems.add(ctx.itemId);
+        return placed;
     }
 
     /**
@@ -601,18 +641,7 @@
                 recommended: filteredRecommendedResults,
                 similar: filteredSimilarResults
             };
-            let placed;
-            if (canDeferRows(ctx)) {
-                // Claimed now, when the rows would otherwise have been
-                // inserted, so a viewshow run for this page still returns
-                // early. A build that does not happen releases the claim.
-                processedItems.add(itemId);
-                placed = deferRows(ctx);
-            } else {
-                placed = commitRows(ctx, null);
-                // Mark as successfully processed AFTER successful render
-                if (placed) processedItems.add(itemId);
-            }
+            const placed = placeRows(ctx);
 
             // End metrics: the data is ready and the rows placed or scheduled
             if (placed && JE.requestManager?.metrics?.enabled) {
