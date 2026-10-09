@@ -325,6 +325,9 @@
 
             if (!settled && !hasJellyfinInfo(container)) return;
 
+            // Jellyfin has filled the info row: its cast comes next.
+            if (visit && visit.itemId === itemId && visit.view === visiblePage) startPeoplePrefetch(visit);
+
             // Jellyfin fills the version <select> after the info row (and the
             // settled run may come before either): for a single-version item
             // an empty select will hold its only source, so use that id now —
@@ -371,7 +374,10 @@
     // chip took over is dropped when the visit ends, so a later visit asks
     // again exactly as before. Restored views (history back) start no visit:
     // Jellyfin doesn't reload them and their chips are already in place.
-    let visit = null; // { itemId, view, epoch, item }
+    // People tags' people/info requests start once Jellyfin has filled the
+    // info row (its cast follows), so they don't compete with the page's own
+    // item request.
+    let visit = null; // { itemId, view, epoch, item, peopleStarted }
 
     function hashItemId() {
         return new URLSearchParams(window.location.hash.split('?')[1]).get('id');
@@ -383,6 +389,7 @@
         visit = null;
         discardItemStatsPrefetch?.(ended);
         discardReleasePrefetch?.(ended);
+        JE.internals.peopleTags?.leave?.(ended.itemId);
     }
 
     /**
@@ -395,13 +402,14 @@
         if (!itemId || (detail?.params?.id && detail.params.id !== itemId)) return;
         const settings = JE.currentSettings || {};
         const config = JE.pluginConfig || {};
-        if (!(settings.showWatchProgress || settings.showFileSizes || (config.ShowReleaseDates && config.TmdbEnabled))) return;
+        if (!(settings.showWatchProgress || settings.showFileSizes || (config.ShowReleaseDates && config.TmdbEnabled)
+            || (settings.peopleTagsEnabled && JE.internals.peopleTags))) return;
         // runItemDetails already knows this item (A, home, A again) and makes
         // no lookup: neither does the visit.
         if (lastDetailsItemId === itemId && lastDetailsItemType) return;
         const userId = ApiClient.getCurrentUserId?.();
         if (!userId || !JE.helpers?.getItemCached) return;
-        const current = visit = { itemId, view, epoch: JE.session ? JE.session.getEpoch() : 0, item: null };
+        const current = visit = { itemId, view, epoch: JE.session ? JE.session.getEpoch() : 0, item: null, peopleStarted: false };
         // The same cached lookup (key and promise) runItemDetails and Seerr make.
         JE.helpers.getItemCached(itemId, { userId }).then((item) => {
             if (visit !== current || !item) return;
@@ -441,6 +449,19 @@
         if (config.ShowReleaseDates && config.TmdbEnabled && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(item.Type)) {
             prefetchReleaseDate?.(current.itemId, item, current);
         }
+        // The info row was filled before the item came back.
+        const row = current.view.querySelector('.itemMiscInfo.itemMiscInfo-primary');
+        if (row && hasJellyfinInfo(row)) startPeoplePrefetch(current);
+    }
+
+    /**
+     * Starts people tags' people/info requests for the visit's cast, once.
+     * @param {object} current The visit.
+     */
+    function startPeoplePrefetch(current) {
+        if (current.peopleStarted || !current.item || !visitLive(current)) return;
+        current.peopleStarted = true;
+        JE.internals.peopleTags?.prefetch?.(current.itemId, current.item, current.view, current.epoch);
     }
 
     JE.core.navigation.onViewPage((_view, _element, _hash, _itemPromise, rawEvent) => {

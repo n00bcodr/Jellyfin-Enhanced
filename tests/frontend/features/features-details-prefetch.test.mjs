@@ -14,12 +14,12 @@ const ITEMS={
 };
 const RELEASES={results:[{iso_3166_1:'US',release_dates:[{type:3,release_date:'2025-03-01'}]}]};
 
-function setup(t,{id='movie',settings={showWatchProgress:true,showFileSizes:true},config={ShowReleaseDates:true,TmdbEnabled:true},stats}={}){
+function setup(t,{id='movie',settings={showWatchProgress:true,showFileSizes:true},config={ShowReleaseDates:true,TmdbEnabled:true},stats,people}={}){
  const views=[],navs=[],debounced={},userHandlers=[],items=new Map(),plugin=[],tmdb=[];let epoch=0,lookups=0;
  const h=createHarness({html:PAGE,url:`http://jellyfin.test/web/index.html#/details?id=${id}`,
   fetch:async url=>{tmdb.push(String(url));return jsonResponse(RELEASES);},
   globals:{requestAnimationFrame:fn=>{fn();return 1;}},
-  JE:{currentSettings:settings,pluginConfig:config,t:key=>key,
+  JE:{currentSettings:settings,pluginConfig:config,t:key=>key,internals:people?{peopleTags:people}:{},
    helpers:{
     // The shared item cache: one request per item, every caller gets the same promise.
     getItemCached:itemId=>{lookups++;if(!items.has(itemId))items.set(itemId,deferred());return items.get(itemId).promise;},
@@ -33,7 +33,7 @@ function setup(t,{id='movie',settings={showWatchProgress:true,showFileSizes:true
  const page=h.document.getElementById('itemDetailPage'),row=page.querySelector('.itemMiscInfo-primary');
  return {...h,page,row,plugin,tmdb,
   itemRequests:()=>[...items.keys()],lookups:()=>lookups,
-  bumpEpoch(){epoch++;},
+  bumpEpoch(){epoch++;},epoch:()=>epoch,
   giveItem(itemId=id){if(!items.has(itemId))items.set(itemId,deferred());items.get(itemId).resolve(ITEMS[itemId]);},
   async resolveItem(itemId=id){this.giveItem(itemId);await this.flush();},
   viewshow(rawEvent={target:page,detail:{params:{id}}}){for(const fn of views)fn('itemDetailPage',page,h.window.location.hash,null,rawEvent);},
@@ -106,4 +106,40 @@ test('leaving before the chips drops the visit\'s prefetch: still queued, it is 
  // Back to the movie in a fresh view; Jellyfin keeps the old one hidden.
  h.navigate('#/details?id=movie');h.viewshow();await h.flush();assert.equal(h.plugin.length,2);
  await placeChips(h);assert.equal(h.plugin.length,2);assert.match(h.row.textContent,/20%/);assert.match(h.row.textContent,/2 KB/);
+});
+
+/** People tags' entry points, recording their calls. */
+function peopleSpy(){const calls=[];return {calls,prefetch:(...args)=>calls.push(['prefetch',...args]),leave:itemId=>calls.push(['leave',itemId])};}
+
+test('people/info starts once Jellyfin has filled the info row, once per visit',async t=>{
+ const people=peopleSpy();const h=setup(t,{settings:{showFileSizes:true,peopleTagsEnabled:true},people});
+ h.viewshow();await h.resolveItem();assert.equal(h.plugin.length,1);assert.deepEqual(people.calls,[],'the row is still empty');
+ await placeChips(h);
+ assert.deepEqual(people.calls.map(([kind,itemId,item,view,epoch])=>[kind,itemId,item.Id,view,epoch]),[['prefetch','movie','movie',h.page,h.epoch()]]);
+ h.runEarly();h.runSettled();await h.flush();assert.equal(people.calls.length,1);
+ h.navigate('#/home');assert.deepEqual(people.calls[1],['leave','movie']);
+});
+test('a row filled before the item came back starts people/info with the chips',async t=>{
+ const people=peopleSpy();const h=setup(t,{settings:{peopleTagsEnabled:true},config:{},people});
+ h.viewshow();assert.deepEqual(h.itemRequests(),['movie'],'people tags alone start a visit');h.fillInfoRow();await h.resolveItem();
+ assert.equal(people.calls.length,1);assert.equal(people.calls[0][0],'prefetch');assert.equal(h.plugin.length+h.tmdb.length,0);
+});
+test('no people/info prefetch without people tags, after leaving, or on another view',async t=>{
+ const off=setup(t,{settings:{peopleTagsEnabled:true},config:{}});off.viewshow();assert.deepEqual(off.itemRequests(),[],'people tags not initialised');
+ const people=peopleSpy();const left=setup(t,{settings:{showFileSizes:true,peopleTagsEnabled:true},people});
+ left.viewshow();left.navigate('#/details?id=series');left.navigate('#/details?id=movie');await left.resolveItem();await placeChips(left);
+ assert.deepEqual(people.calls.filter(([kind])=>kind==='prefetch'),[]);
+ const other=peopleSpy();const h=setup(t,{settings:{showFileSizes:true,peopleTagsEnabled:true},people:other});
+ h.viewshow({target:h.page,detail:{params:{id:'movie'}}});await h.resolveItem();
+ // Jellyfin shows another details view of the same item (the visit's one is hidden).
+ h.page.classList.add('hide');h.document.body.insertAdjacentHTML('beforeend',PAGE);const second=h.document.querySelectorAll('#itemDetailPage')[1];
+ second.querySelector('.itemMiscInfo-primary').insertAdjacentHTML('afterbegin','<div class="mediaInfoItem">2025</div>');h.runEarly();await h.flush();
+ assert.deepEqual(other.calls,[]);
+ // Both views visible during a transition, the other one first: its row is not the visit's.
+ const both=peopleSpy();const v=setup(t,{settings:{showFileSizes:true,peopleTagsEnabled:true},people:both});
+ v.viewshow();await v.resolveItem();v.document.body.insertAdjacentHTML('afterbegin',PAGE);
+ v.document.querySelector('#itemDetailPage .itemMiscInfo-primary').insertAdjacentHTML('afterbegin','<div class="mediaInfoItem">2025</div>');v.runEarly();await v.flush();
+ assert.deepEqual(both.calls,[]);
+ const stale=peopleSpy();const e=setup(t,{settings:{showFileSizes:true,peopleTagsEnabled:true},people:stale});
+ e.viewshow();await e.resolveItem();e.bumpEpoch();await placeChips(e);assert.deepEqual(stale.calls,[],'the identity moved on');
 });
