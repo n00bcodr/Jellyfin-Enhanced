@@ -1519,6 +1519,9 @@
 .je-help-link { border-radius: 20px; }
 .je-api-row { display: flex; align-items: center; gap: 12px; width: 100%; }
 .je-api-row .je-api-input { flex-grow: 1; width: auto; margin: 0; }
+/* Mask API keys without type="password" (which makes browsers offer to save them); click into the field to reveal. */
+.je-api-input, .arr-instance-apikey { -webkit-text-security: disc; text-security: disc; }
+.je-api-input:focus, .arr-instance-apikey:focus { -webkit-text-security: none; text-security: none; }
 .je-textarea-tall { height: 120px !important; }
 .je-textarea-medium { height: 90px !important; }
 .je-textarea-large { height: 160px !important; }
