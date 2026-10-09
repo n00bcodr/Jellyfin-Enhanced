@@ -680,16 +680,25 @@
      * queued at once. Not JE.core.dom.afterNextPaint: a callback queued
      * there once the frame it shares has run goes with that frame's task,
      * which can come before the next paint, and it cannot be cancelled.
+     * Neither queuing the task nor cancelling leaves the frame requested:
+     * a hidden document would keep it, and `fn` with what it holds, until
+     * it is shown again.
      * @param {function(): void} fn
      * @returns {function(): void} Cancels it
      */
     function afterPaint(fn) {
         let waiting = true;
+        let frame = null;
         let timer = null;
-        const queue = () => {
-            if (!waiting) return;
+        const stop = () => {
             waiting = false;
             document.removeEventListener('visibilitychange', onHidden);
+            if (frame !== null) cancelAnimationFrame(frame);
+            frame = null;
+        };
+        const queue = () => {
+            if (!waiting) return;
+            stop();
             timer = setTimeout(fn, 0);
         };
         const onHidden = () => {
@@ -699,11 +708,13 @@
             queue();
         } else {
             document.addEventListener('visibilitychange', onHidden);
-            requestAnimationFrame(queue);
+            frame = requestAnimationFrame(() => {
+                frame = null;
+                queue();
+            });
         }
         return () => {
-            waiting = false;
-            document.removeEventListener('visibilitychange', onHidden);
+            stop();
             clearTimeout(timer);
         };
     }

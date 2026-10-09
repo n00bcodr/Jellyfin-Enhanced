@@ -22,13 +22,13 @@ const TWO={item:id=>({...MOVIE,ProviderIds:{Tmdb:id==='movie-1'?'1':'2'}}),data:
  * cards (ui/*) instead of counting stand-ins.
  */
 function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE,data,prebuild=false,background=false,real=false,je={}}={}){
- const frames=[],timers=new Map(),navs=[],views=[],teardowns=[],ends=[],idles=new Map(),tasks=[],made=[],releases=[];
+ const frames=new Map(),timers=new Map(),navs=[],views=[],teardowns=[],ends=[],idles=new Map(),tasks=[],made=[],releases=[];
  const network={similar:0,recommended:0},waiting={similar:[],recommended:[]},cache={};
- const counts={status:0,item:0,cards:0,released:0};let timerId=0,epoch=0,idleId=0;
+ const counts={status:0,item:0,cards:0,released:0};let timerId=0,epoch=0,idleId=0,frameId=0;
  // What the cards and rows are built from, changed by the tests: titles, hidden TMDB ids, the card inputs.
  const titles={jellyseerr_recommended_title:'Recommended',jellyseerr_similar_title:'Similar'},hidden=new Set(),inputs={key:'cards'};
  const globals={
-  requestAnimationFrame:fn=>{frames.push(fn);return frames.length;},
+  requestAnimationFrame:fn=>{frames.set(++frameId,fn);return frameId;},cancelAnimationFrame:id=>{frames.delete(id);},
   setTimeout:(fn,ms=0)=>{timers.set(++timerId,{fn,ms});return timerId;},
   clearTimeout:id=>{timers.delete(id);}
  };
@@ -92,7 +92,9 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
   background(){for(let task;(task=tasks.find(entry=>!entry.ran&&!entry.options.signal.aborted));){task.ran=true;task.fn();task.resolve();}},
   /** Runs idle callbacks until `units` rows started or cards built (a step does at least one). */
   idle(units=Infinity){let left=units;while(left>0&&idles.size){const [id,fn]=idles.entries().next().value;idles.delete(id);fn({didTimeout:false,timeRemaining:()=>--left>0?1:0});}},
-  frame(){const pending=frames.splice(0);for(const fn of pending)fn();},
+  frame(){const pending=[...frames.values()];frames.clear();for(const fn of pending)fn();},
+  /** How many animation callbacks are still requested. */
+  frames:()=>frames.size,
   /** The Seerr data; an `uncached` kind is answered but not kept, as a failed request's empty answer. */
   async respond({similar=results('Similar'),recommended=results('Recommended'),uncached=[]}={}){
    if(!uncached.includes('similar'))cache.similar=similar;if(!uncached.includes('recommended'))cache.recommended=recommended;
@@ -424,22 +426,25 @@ test('printing builds waiting rows at once',async t=>{
 
 test('while the rows wait for the paint after Jellyfin\'s render, printing or the 5 s fallback builds them once; leaving and a user switch act as before',async t=>{
  const print=x=>x.window.dispatchEvent(new x.window.Event('beforeprint'));
+ // A build that is done or dropped leaves no frame requested: a hidden document would keep it, and the build, until shown.
  // Printing: at once, and the task after the paint builds nothing more.
  const printed=setup(t);await printed.start();await printed.render({paint:false});
- print(printed);assert.deepEqual(printed.after(),['Recommended','Similar']);assert.deepEqual(printed.delays(),[]);
+ assert.equal(printed.frames(),1,'the frame is requested');
+ print(printed);assert.deepEqual(printed.after(),['Recommended','Similar']);assert.deepEqual(printed.delays(),[]);assert.equal(printed.frames(),0);
  printed.paint();assert.equal(printed.counts.cards,40,'once');assert.deepEqual(printed.delays(),[]);
  // The 5 s fallback before the frame comes: the same.
  const late=setup(t);await late.start();await late.render({paint:false});
- late.timer(5000);assert.deepEqual(late.after(),['Recommended','Similar']);
+ late.timer(5000);assert.deepEqual(late.after(),['Recommended','Similar']);assert.equal(late.frames(),0);
  late.paint();assert.equal(late.counts.cards,40,'once');assert.deepEqual(late.delays(),[]);
  // Leaving: the build is kept for the left view, which gets its rows after the paint, as it would have with the render.
  const left=setup(t);await left.start();await left.render({paint:false});
  left.navigate('#!/home');left.view.classList.add('hide');await left.flush();assert.deepEqual(left.after(),['marker']);
+ assert.equal(left.frames(),1,'kept, still waiting for the frame');
  left.paint();assert.deepEqual(left.after(),['Recommended','Similar']);assert.deepEqual(left.delays(),[]);
  print(left);assert.equal(left.counts.cards,40,'once');
  // Leaving a view that is gone: dropped, and the frame queues nothing.
  const gone=setup(t);await gone.start();await gone.render({paint:false});
- gone.view.remove();gone.navigate('#!/home');assert.deepEqual(gone.delays(),[]);
+ gone.view.remove();gone.navigate('#!/home');assert.deepEqual(gone.delays(),[]);assert.equal(gone.frames(),0);
  gone.paint();print(gone);assert.equal(gone.counts.cards,0);assert.deepEqual(gone.delays(),[]);
  // A user switch: nothing is inserted, and the item is released for a later viewshow.
  const user=setup(t);await user.start();await user.render({paint:false});user.bumpEpoch();
@@ -447,7 +452,7 @@ test('while the rows wait for the paint after Jellyfin\'s render, printing or th
  await user.viewshow();assert.deepEqual(user.after(),['Recommended','Similar'],'the item was released');
  // A user switch, then the navigation: dropped at its abort.
  const away=setup(t);await away.start();await away.render({paint:false});away.bumpEpoch();away.navigate('#!/home');
- assert.equal(away.marker(),null);assert.deepEqual(away.delays(),[]);
+ assert.equal(away.marker(),null);assert.deepEqual(away.delays(),[]);assert.equal(away.frames(),0);
  away.paint();print(away);assert.equal(away.counts.cards,0);assert.deepEqual(away.after(),[]);
 });
 
@@ -456,12 +461,12 @@ test('a hidden document, which runs no animation frames, gets the rows from a ta
  const visibility=x=>x.document.dispatchEvent(new x.window.Event('visibilitychange'));
  // A details page opened in a background tab: no frame needed.
  const background=setup(t);hide(background,true);await background.start();await background.render({paint:false});
- assert.deepEqual(background.delays(),[0,5000]);background.timer(0);
+ assert.deepEqual(background.delays(),[0,5000]);assert.equal(background.frames(),0,'no frame requested');background.timer(0);
  assert.deepEqual(background.after(),['Recommended','Similar']);assert.deepEqual(background.delays(),[]);
  // Hidden after the render, before its frame, which then does not come.
  const h=setup(t);await h.start();await h.render({paint:false});
  visibility(h);assert.deepEqual(h.delays(),[5000],'still shown: waiting for the frame');
- hide(h,true);visibility(h);assert.deepEqual(h.delays(),[0,5000]);
+ hide(h,true);visibility(h);assert.deepEqual(h.delays(),[0,5000]);assert.equal(h.frames(),0,'the frame is no longer requested');
  h.timer(0);assert.deepEqual(h.after(),['Recommended','Similar']);
  // Shown again: the frame that comes then builds nothing more.
  hide(h,false);visibility(h);h.paint();assert.equal(h.counts.cards,40,'once');assert.deepEqual(h.delays(),[]);
