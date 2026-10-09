@@ -20,6 +20,20 @@
     // CSS class used to mark and dedupe the injected Request More button
     const REQUEST_MORE_BTN_CLASS = 'je-series-request-more-btn';
 
+    // When the Seerr data comes back before Jellyfin has rendered the item,
+    // the rows are built later (see deferRows): an empty marker holds their
+    // place after More Like This until then.
+    const PENDING_ROWS_CLASS = 'je-seerr-rows-pending';
+    // Counted from scheduling, for an item Jellyfin never renders.
+    const NAME_WAIT_MS = 5000;
+    // Counted from Jellyfin's render of the item's name. jellyfin-web leaves
+    // More Like This visible and empty when its request fails, so its rows
+    // are not waited for any longer than this.
+    const SIMILAR_WAIT_CAP_MS = 500;
+    const IDLE_BUILD_TIMEOUT_MS = 2000;
+    // Elements that never take up space, wherever they sit.
+    const NON_RENDERED_TAGS = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'LINK', 'META']);
+
     // Current abort controllers for cancellation. Separate controllers prevent
     // the slower similar/recommended fetch from cancelling the Request More
     // check (and vice versa) when the user navigates between detail pages.
@@ -246,6 +260,300 @@
     }
 
     /**
+     * The item id of the details page in the URL, or null on any other page.
+     * @returns {string|null}
+     */
+    function detailsItemIdFromHash() {
+        const hash = window.location.hash;
+        if (!hash.includes('/details?id=')) return null;
+        return new URLSearchParams(hash.split('?')[1]).get('id');
+    }
+
+    /**
+     * Starts Similar and Recommended for an item in the next frame, unless
+     * the URL has moved on to another item by then: cleanup() has already
+     * run for that navigation, so nothing would stop this run.
+     * @param {string} itemId - Jellyfin item ID
+     */
+    function scheduleSimilarAndRecommended(itemId) {
+        requestAnimationFrame(() => {
+            if (detailsItemIdFromHash() === itemId) renderSimilarAndRecommended(itemId);
+        });
+    }
+
+    /** Whether Jellyfin has rendered the item into this details view. */
+    function jellyfinRendered(page) {
+        return !!page.querySelector('.nameContainer .itemName');
+    }
+
+    /**
+     * Whether More Like This is done: hidden (no results, or the template not
+     * rendered yet) or filled. Jellyfin un-hides it in the same task that
+     * renders the name, then fills or hides it when its request comes back.
+     */
+    function similarSettled(anchor) {
+        return anchor.classList.contains('hide') || !!anchor.querySelector('.itemsContainer > *');
+    }
+
+    /** Whether Jellyfin's own rows above the Seerr rows have rendered. */
+    function rowsAboveRendered(page, anchor) {
+        return jellyfinRendered(page) && similarSettled(anchor);
+    }
+
+    /**
+     * Whether the marker is within one viewport of the visible area.
+     * Reads layout once.
+     */
+    function isNear(page, marker) {
+        if (!marker.isConnected || page.classList.contains('hide') || marker.getClientRects().length === 0) return false;
+        const top = marker.getBoundingClientRect().top;
+        const height = window.innerHeight;
+        return top < 2 * height && top > -height;
+    }
+
+    /**
+     * Runs a callback when the browser is idle (bounded by `timeout`), or on
+     * the next task where requestIdleCallback is missing.
+     * @returns {Function} Cancels the pending callback.
+     */
+    function runWhenIdle(fn, timeout) {
+        if (typeof requestIdleCallback !== 'undefined') {
+            const id = requestIdleCallback(() => fn(), { timeout });
+            return () => cancelIdleCallback(id);
+        }
+        const id = setTimeout(fn, 0);
+        return () => clearTimeout(id);
+    }
+
+    /**
+     * Whether nothing that takes up space follows More Like This in the view,
+     * so rows built later push nothing down that rows inserted now would not
+     * have. A div right after it, even a hidden one, is refused as well: it
+     * changes where the immediate insert puts Similar (:last-of-type), and
+     * the deferred build would not reproduce that. Reads no layout.
+     */
+    function nothingFollows(anchor, page) {
+        for (let node = anchor; node !== page; node = node.parentElement) {
+            if (!node) return false;
+            for (let next = node.nextElementSibling; next; next = next.nextElementSibling) {
+                if (next.classList.contains(PENDING_ROWS_CLASS)) continue;
+                if (node === anchor && next.tagName === 'DIV') return false;
+                if (NON_RENDERED_TAGS.has(next.tagName) || next.hidden || next.classList.contains('hide')) continue;
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Releases a run's claim on its item so a later viewshow can retry it. */
+    function releaseClaim({ itemId, signal }) {
+        // Not after an abort: cleanup() cleared the claims and a newer run
+        // may hold this item's by now.
+        if (!signal.aborted) processedItems.delete(itemId);
+    }
+
+    /**
+     * Whether the rows can wait: Jellyfin has not rendered its own rows above
+     * them yet, in a visible view that has no Seerr rows (a restored view is
+     * replaced in place at once) and where nothing follows More Like This.
+     */
+    function canDeferRows({ page, detailPageContent, anchor }) {
+        if (!page || !page.isConnected || page.classList.contains('hide') || !page.querySelector('.nameContainer')) return false;
+        if (detailPageContent.querySelector('.jellyseerr-details-section')) return false;
+        if (rowsAboveRendered(page, anchor)) return false;
+        return nothingFollows(anchor, page);
+    }
+
+    /**
+     * Inserts the Similar and Recommended rows; the only insertion point.
+     * Without a marker they go after More Like This exactly as they always
+     * have; with one, before the marker, which is the same place when
+     * nothing followed More Like This at scheduling (see nothingFollows).
+     * @param {object} ctx - The run: itemId, signal, epoch, page, detailPageContent, anchor, recommended, similar
+     * @param {HTMLElement|null} marker - The deferred build's placeholder
+     * @returns {boolean} Whether the rows were inserted
+     */
+    function commitRows(ctx, marker) {
+        const { itemId, signal, epoch, page, detailPageContent, anchor, recommended, similar } = ctx;
+        if (signal.aborted) return false;
+        if (detailsItemIdFromHash() !== itemId) return false;
+        if (epoch !== undefined && typeof JE.session?.isCurrent === 'function' && !JE.session.isCurrent(epoch)) {
+            releaseClaim(ctx);
+            return false;
+        }
+        if (page ? (!page.isConnected || page.classList.contains('hide')) : !anchor.isConnected) {
+            // Never into a cached or hidden view. Run again against the view
+            // that is shown; the status, item and Seerr data all come from
+            // the client caches.
+            releaseClaim(ctx);
+            const visible = document.querySelector('.libraryPage:not(.hide)');
+            if (visible && visible !== page) scheduleSimilarAndRecommended(itemId);
+            return false;
+        }
+
+        // Remove any existing Jellyseerr sections to avoid duplicates (their
+        // cards must be unobserved first: lazy posters hold strong references).
+        // Before the new cards exist: detached cards are released too.
+        JE.jellyseerrUI?.releasePosters?.(detailPageContent);
+        detailPageContent.querySelectorAll('.jellyseerr-details-section').forEach(el => el.remove());
+
+        const before = marker?.isConnected ? marker : null;
+
+        // Create and insert sections
+        if (recommended.length > 0) {
+            const recommendedTitle = JE.t ? (JE.t('jellyseerr_recommended_title') || 'Recommended') : 'Recommended';
+            const recommendedSection = createJellyseerrSection(
+                recommended.slice(0, 20),
+                recommendedTitle
+            );
+            if (recommendedSection) {
+                if (before) {
+                    before.before(recommendedSection);
+                } else {
+                    anchor.after(recommendedSection);
+                }
+                console.debug(`${logPrefix} Added Recommended section with ${recommended.length} items`);
+            }
+        }
+
+        if (similar.length > 0) {
+            const similarTitle = JE.t ? (JE.t('jellyseerr_similar_title') || 'Similar') : 'Similar';
+            const similarSection = createJellyseerrSection(
+                similar.slice(0, 20),
+                similarTitle
+            );
+            if (similarSection) {
+                if (before) {
+                    before.before(similarSection);
+                } else {
+                    const lastJellyseerrSection = detailPageContent.querySelector('.jellyseerr-details-section:last-of-type');
+                    if (lastJellyseerrSection) {
+                        lastJellyseerrSection.after(similarSection);
+                    } else {
+                        anchor.after(similarSection);
+                    }
+                }
+                console.debug(`${logPrefix} Added Similar section with ${similar.length} items`);
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Builds the rows once Jellyfin has rendered its own rows above them
+     * (its name, then More Like This filled or hidden, at most
+     * SIMILAR_WAIT_CAP_MS after the name), and then only once they are
+     * within a viewport of the visible area, or at idle. So they are never
+     * painted on the empty template and then pushed down by Jellyfin's
+     * render, and rows far below the fold do not load their posters while
+     * the page is still loading. Printing builds them at once. The data
+     * and the claim on the item are already there; leaving (the abort)
+     * drops the build.
+     * @param {object} ctx - See commitRows
+     * @returns {boolean} Whether the rows were scheduled (or inserted)
+     */
+    function deferRows(ctx) {
+        const { signal, page, anchor } = ctx;
+        const marker = document.createElement('div');
+        marker.className = PENDING_ROWS_CLASS;
+        marker.setAttribute('aria-hidden', 'true');
+
+        let done = false;
+        let armed = false;
+        let nameSeen = false;
+        let gateObserver = null;
+        let nearObserver = null;
+        let nameTimer = null;
+        let capTimer = null;
+        let cancelIdle = null;
+
+        const dispose = () => {
+            done = true;
+            gateObserver?.disconnect();
+            nearObserver?.disconnect();
+            clearTimeout(nameTimer);
+            clearTimeout(capTimer);
+            cancelIdle?.();
+            window.removeEventListener('beforeprint', run);
+            signal.removeEventListener('abort', onAbort);
+        };
+        const onAbort = () => {
+            dispose();
+            marker.remove();
+        };
+
+        function run() {
+            if (done) return;
+            dispose();
+            try {
+                commitRows(ctx, marker);
+            } catch (error) {
+                releaseClaim(ctx);
+                console.error(`${logPrefix} Error rendering similar and recommended sections:`, error);
+            } finally {
+                marker.remove();
+            }
+        }
+
+        const arm = () => {
+            if (done || armed) return;
+            armed = true;
+            gateObserver?.disconnect();
+            clearTimeout(nameTimer);
+            clearTimeout(capTimer);
+            // Near rows go in now, before any long frame that comes next.
+            if (isNear(page, marker) || typeof IntersectionObserver !== 'function') {
+                run();
+                return;
+            }
+            try {
+                nearObserver = new IntersectionObserver((entries) => {
+                    // Re-checked: the page may have grown since this was computed.
+                    if (entries.some(entry => entry.isIntersecting) && isNear(page, marker)) run();
+                }, { rootMargin: `${Math.round(window.innerHeight)}px 0px` });
+                nearObserver.observe(marker);
+            } catch (_) {
+                run();
+                return;
+            }
+            cancelIdle = runWhenIdle(run, IDLE_BUILD_TIMEOUT_MS);
+        };
+
+        const onGate = () => {
+            if (done || armed) return;
+            if (!nameSeen && jellyfinRendered(page)) {
+                nameSeen = true;
+                clearTimeout(nameTimer);
+                capTimer = setTimeout(arm, SIMILAR_WAIT_CAP_MS);
+            }
+            if (nameSeen && similarSettled(anchor)) arm();
+        };
+
+        try {
+            page.querySelectorAll(`.${PENDING_ROWS_CLASS}`).forEach(el => el.remove());
+            anchor.after(marker);
+            signal.addEventListener('abort', onAbort, { once: true });
+            window.addEventListener('beforeprint', run);
+            gateObserver = new MutationObserver(onGate);
+            gateObserver.observe(anchor, { attributes: true, attributeFilter: ['class'], childList: true, subtree: true });
+            gateObserver.observe(page.querySelector('.nameContainer'), { childList: true, subtree: true });
+            nameTimer = setTimeout(arm, NAME_WAIT_MS);
+            onGate();
+            return true;
+        } catch (_) {
+            // Insert now, as before.
+            onAbort();
+            let placed = false;
+            try {
+                placed = commitRows(ctx, null);
+            } finally {
+                if (!placed) releaseClaim(ctx);
+            }
+            return placed;
+        }
+    }
+
+    /**
      * Renders Similar and Recommended sections for an item
      * @param {string} itemId - Jellyfin item ID
      */
@@ -261,6 +569,8 @@
         }
         currentAbortController = new AbortController();
         const signal = currentAbortController.signal;
+        // The rows are not inserted for a user who signed in meanwhile.
+        const epoch = typeof JE.session?.getEpoch === 'function' ? JE.session.getEpoch() : undefined;
 
         // Start metrics if enabled
         if (JE.requestManager?.metrics?.enabled) {
@@ -369,46 +679,29 @@
             // Final abort check before DOM manipulation
             if (signal.aborted) return;
 
-            // Remove any existing Jellyseerr sections to avoid duplicates (their
-            // cards must be unobserved first: lazy posters hold strong references)
-            JE.jellyseerrUI?.releasePosters?.(detailPageContent);
-            detailPageContent.querySelectorAll('.jellyseerr-details-section').forEach(el => el.remove());
-
-            // Create and insert sections
-            if (filteredRecommendedResults.length > 0) {
-                const recommendedTitle = JE.t ? (JE.t('jellyseerr_recommended_title') || 'Recommended') : 'Recommended';
-                const recommendedSection = createJellyseerrSection(
-                    filteredRecommendedResults.slice(0, 20),
-                    recommendedTitle
-                );
-                if (recommendedSection) {
-                    moreLikeThisSection.after(recommendedSection);
-                    console.debug(`${logPrefix} Added Recommended section with ${filteredRecommendedResults.length} items`);
-                }
+            const ctx = {
+                itemId, signal, epoch,
+                page: moreLikeThisSection.closest('.libraryPage'),
+                detailPageContent,
+                anchor: moreLikeThisSection,
+                recommended: filteredRecommendedResults,
+                similar: filteredSimilarResults
+            };
+            let placed;
+            if (canDeferRows(ctx)) {
+                // Claimed now, when the rows would otherwise have been
+                // inserted, so a viewshow run for this page still returns
+                // early. A build that does not happen releases the claim.
+                processedItems.add(itemId);
+                placed = deferRows(ctx);
+            } else {
+                placed = commitRows(ctx, null);
+                // Mark as successfully processed AFTER successful render
+                if (placed) processedItems.add(itemId);
             }
 
-            if (filteredSimilarResults.length > 0) {
-                const similarTitle = JE.t ? (JE.t('jellyseerr_similar_title') || 'Similar') : 'Similar';
-                const similarSection = createJellyseerrSection(
-                    filteredSimilarResults.slice(0, 20),
-                    similarTitle
-                );
-                if (similarSection) {
-                    const lastJellyseerrSection = detailPageContent.querySelector('.jellyseerr-details-section:last-of-type');
-                    if (lastJellyseerrSection) {
-                        lastJellyseerrSection.after(similarSection);
-                    } else {
-                        moreLikeThisSection.after(similarSection);
-                    }
-                    console.debug(`${logPrefix} Added Similar section with ${filteredSimilarResults.length} items`);
-                }
-            }
-
-            // Mark as successfully processed AFTER successful render
-            processedItems.add(itemId);
-
-            // End metrics
-            if (JE.requestManager?.metrics?.enabled) {
+            // End metrics: the data is ready and the rows placed or scheduled
+            if (placed && JE.requestManager?.metrics?.enabled) {
                 JE.requestManager.endMeasurement('similar-recommended');
             }
 
@@ -693,12 +986,14 @@
         }
 
         try {
-            const itemId = new URLSearchParams(hash.split('?')[1]).get('id');
+            const itemId = detailsItemIdFromHash();
             if (itemId) {
                 // Use requestAnimationFrame instead of fixed timeout
                 // This ensures we're in sync with the rendering cycle
                 requestAnimationFrame(() => {
-                    renderSimilarAndRecommended(itemId);
+                    // Not for an item the user has already left: cleanup()
+                    // ran for that navigation before this frame.
+                    if (detailsItemIdFromHash() === itemId) renderSimilarAndRecommended(itemId);
                     renderSeriesRequestMoreButton(itemId);
                 });
             }
@@ -711,7 +1006,7 @@
      * Cleanup function for navigation
      */
     function cleanup() {
-        // Abort any in-flight requests
+        // Abort any in-flight requests (this also drops a pending row build)
         if (currentAbortController) {
             currentAbortController.abort();
             currentAbortController = null;
