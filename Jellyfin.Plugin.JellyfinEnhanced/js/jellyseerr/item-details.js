@@ -34,6 +34,9 @@
     // check (and vice versa) when the user navigates between detail pages.
     let currentAbortController = null;
     let requestMoreAbortController = null;
+    // The current run's rows waiting on a view (see deferRows), so the shown
+    // view's viewshow run can send them there: { itemId, retarget }.
+    let waitingRows = null;
 
     /**
      * Gets the TMDB ID from a Jellyfin item
@@ -424,11 +427,17 @@
      * them after NAME_WAIT_MS; printing builds them at once. The data and
      * the claim on the item are already there; leaving (the abort) drops
      * the build.
+     *
+     * Jellyfin adds a new view before it hides the one it leaves, so the run
+     * may have found the outgoing view, still shown. When that view is hidden
+     * (or gone) while the URL is still this item's and another details view
+     * is shown, the rows go there at once (commitRows), not with the hidden
+     * view's render or after NAME_WAIT_MS. So does that view's viewshow run.
      * @param {object} ctx - See commitRows
      * @returns {boolean} Whether the rows were scheduled (or inserted)
      */
     function deferRows(ctx) {
-        const { signal, page, anchor } = ctx;
+        const { itemId, signal, page, anchor } = ctx;
         const marker = document.createElement('div');
         marker.className = PENDING_ROWS_CLASS;
         marker.setAttribute('aria-hidden', 'true');
@@ -436,6 +445,11 @@
         let done = false;
         let nameObserver = null;
         let nameTimer = null;
+        // Not before a details view is shown: commitRows would release the
+        // item and a new run would ask again for what is not cached.
+        const movedOn = () => (!page.isConnected || page.classList.contains('hide'))
+            && detailsItemIdFromHash() === itemId && !!findDetailPage();
+        const waiting = { itemId, retarget: () => { if (movedOn()) run(); } };
 
         const dispose = () => {
             done = true;
@@ -443,6 +457,7 @@
             clearTimeout(nameTimer);
             window.removeEventListener('beforeprint', run);
             signal.removeEventListener('abort', onAbort);
+            if (waitingRows === waiting) waitingRows = null;
         };
         const onAbort = () => {
             dispose();
@@ -468,10 +483,12 @@
             signal.addEventListener('abort', onAbort, { once: true });
             window.addEventListener('beforeprint', run);
             nameObserver = new MutationObserver(() => {
-                if (jellyfinRendered(page)) run();
+                if (jellyfinRendered(page) || movedOn()) run();
             });
             nameObserver.observe(page.querySelector('.nameContainer'), { childList: true, subtree: true });
+            nameObserver.observe(page, { attributes: true, attributeFilter: ['class'] });
             nameTimer = setTimeout(run, NAME_WAIT_MS);
+            waitingRows = waiting;
             return true;
         } catch (_) {
             // Insert now, as before.
@@ -514,6 +531,9 @@
     async function renderSimilarAndRecommended(itemId) {
         // Prevent duplicate renders (check only - add after success)
         if (processedItems.has(itemId)) {
+            // Rows still waiting on a view Jellyfin has since left go to the
+            // shown one now (see deferRows).
+            if (waitingRows?.itemId === itemId) waitingRows.retarget();
             return;
         }
 

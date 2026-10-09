@@ -162,10 +162,43 @@ test('a hidden view gets nothing; the shown details view gets the rows from the 
  const h=setup(t);await h.start();
  h.view.classList.add('hide');h.document.body.insertAdjacentHTML('beforeend',page({id:'second'}));
  const second=h.document.getElementById('second');await h.render({v:second});
- h.timer(5000);assert.deepEqual(h.after(),[],'nothing in the hidden view');
+ assert.deepEqual(h.after(),[],'nothing in the hidden view');assert.deepEqual(h.delays(),[],'with the shown view\'s render, not after 5 s');
  assert.deepEqual(h.after(second),['Recommended','Similar']);assert.deepEqual(h.cards(second),[20,20]);
  await h.viewshow();assert.equal(h.counts.cards,40);
  assert.deepEqual(h.network,{similar:1,recommended:1});assert.deepEqual([h.counts.status,h.counts.item],[1,1]);
+});
+
+test('rows waiting on the view Jellyfin leaves go to the shown view once it hides that one, not with its render',async t=>{
+ // The run found the outgoing view, still shown: Jellyfin adds the new view before it hides the old one.
+ const h=setup(t);await h.start();
+ h.document.body.insertAdjacentHTML('beforeend',page({id:'second'}));const second=h.document.getElementById('second');
+ await h.flush();assert.deepEqual(h.after(),['marker'],'both shown: still waiting');
+ h.view.classList.add('hide');await h.flush();
+ assert.deepEqual(h.after(),[]);assert.deepEqual(h.after(second),['marker'],'waiting for the shown view\'s render');
+ await h.render({v:second});assert.deepEqual(h.after(second),['Recommended','Similar']);assert.deepEqual(h.delays(),[]);
+ // The hidden view's own render, later, and the shown view's viewshow build and ask nothing more.
+ await h.render();await h.viewshow();assert.equal(h.counts.cards,40);assert.deepEqual(h.after(),[]);
+ assert.deepEqual(h.network,{similar:1,recommended:1});assert.deepEqual([h.counts.status,h.counts.item],[1,1]);
+ // Already rendered when the old view is hidden: inserted at once.
+ const rendered=setup(t);await rendered.start();
+ rendered.document.body.insertAdjacentHTML('beforeend',page({id:'second'}));const b=rendered.document.getElementById('second');
+ await rendered.render({v:b});assert.deepEqual(rendered.after(b),[]);
+ rendered.view.classList.add('hide');await rendered.flush();assert.deepEqual(rendered.after(b),['Recommended','Similar']);
+});
+
+test('rows waiting on a view hidden or dropped before the next one shows go to it on that view\'s viewshow',async t=>{
+ const h=setup(t);await h.start();
+ h.view.classList.add('hide');await h.flush();
+ assert.deepEqual(h.after(),['marker'],'no details view shown: still waiting, the item kept');assert.deepEqual(h.delays(),[5000]);
+ h.document.body.insertAdjacentHTML('beforeend',page({id:'second'}));const second=h.document.getElementById('second');
+ await h.viewshow();assert.deepEqual(h.after(),[]);assert.deepEqual(h.after(second),['marker']);
+ await h.render({v:second});assert.deepEqual(h.after(second),['Recommended','Similar']);
+ assert.deepEqual(h.network,{similar:1,recommended:1});assert.deepEqual([h.counts.status,h.counts.item],[1,1]);
+ // Removed rather than hidden: nothing observes that, the viewshow run does.
+ const removed=setup(t);await removed.start();
+ removed.document.body.insertAdjacentHTML('beforeend',page({id:'second'}));const b=removed.document.getElementById('second');
+ removed.view.remove();await removed.flush();assert.deepEqual(removed.after(b),[]);
+ await removed.viewshow();await removed.render({v:b});assert.deepEqual(removed.after(b),['Recommended','Similar']);assert.equal(removed.counts.status,1);
 });
 
 test('data landing after its view was hidden goes to the shown view: a failed endpoint is not asked for again',async t=>{
