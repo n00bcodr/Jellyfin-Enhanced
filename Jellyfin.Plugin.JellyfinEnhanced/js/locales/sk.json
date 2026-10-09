@@ -755,5 +755,6 @@
     "catchup_top_watched": "Najviac pozerané",
     "catchup_top_dismissed": "Najviac zamietnuté",
     "catchup_top_watchlisted": "Najviac v zozname sledovania",
-    "catchup_failed": "Zlyhalo: {error}"
+    "catchup_failed": "Zlyhalo: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

@@ -755,5 +755,6 @@
     "catchup_top_watched": "Най-гледани",
     "catchup_top_dismissed": "Най-често отхвърляни",
     "catchup_top_watchlisted": "Най-често в списъка за гледане",
-    "catchup_failed": "Неуспешно: {error}"
+    "catchup_failed": "Неуспешно: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

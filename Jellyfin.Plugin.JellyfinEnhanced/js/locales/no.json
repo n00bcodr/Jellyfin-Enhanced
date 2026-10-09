@@ -755,5 +755,6 @@
     "catchup_top_watched": "Mest sett",
     "catchup_top_dismissed": "Mest avvist",
     "catchup_top_watchlisted": "Flest på seerlisten",
-    "catchup_failed": "Mislyktes: {error}"
+    "catchup_failed": "Mislyktes: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

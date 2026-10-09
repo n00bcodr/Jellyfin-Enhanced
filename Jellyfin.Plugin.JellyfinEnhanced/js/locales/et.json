@@ -755,5 +755,6 @@
     "catchup_top_watched": "Enim vaadatud",
     "catchup_top_dismissed": "Enim kõrvale jäetud",
     "catchup_top_watchlisted": "Enim vaatamisnimekirjas",
-    "catchup_failed": "Ebaõnnestus: {error}"
+    "catchup_failed": "Ebaõnnestus: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

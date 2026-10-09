@@ -755,5 +755,6 @@
     "catchup_top_watched": "ഏറ്റവും കൂടുതൽ കണ്ടത്",
     "catchup_top_dismissed": "ഏറ്റവും കൂടുതൽ ഒഴിവാക്കിയത്",
     "catchup_top_watchlisted": "വാച്ച്‌ലിസ്റ്റിൽ ഏറ്റവും കൂടുതൽ",
-    "catchup_failed": "പരാജയപ്പെട്ടു: {error}"
+    "catchup_failed": "പരാജയപ്പെട്ടു: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

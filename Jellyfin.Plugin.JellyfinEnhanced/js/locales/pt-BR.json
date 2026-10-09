@@ -755,5 +755,6 @@
     "catchup_top_watched": "Mais assistidos",
     "catchup_top_dismissed": "Mais dispensados",
     "catchup_top_watchlisted": "Mais na lista de observação",
-    "catchup_failed": "Falhou: {error}"
+    "catchup_failed": "Falhou: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

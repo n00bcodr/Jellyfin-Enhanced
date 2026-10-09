@@ -755,5 +755,6 @@
     "catchup_top_watched": "가장 많이 시청",
     "catchup_top_dismissed": "가장 많이 제외",
     "catchup_top_watchlisted": "관심 목록에 가장 많이 추가",
-    "catchup_failed": "실패: {error}"
+    "catchup_failed": "실패: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

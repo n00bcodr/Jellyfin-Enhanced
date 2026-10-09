@@ -755,5 +755,6 @@
     "catchup_top_watched": "觀看最多",
     "catchup_top_dismissed": "忽略最多",
     "catchup_top_watchlisted": "加入待看清單最多",
-    "catchup_failed": "失敗：{error}"
+    "catchup_failed": "失敗：{error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

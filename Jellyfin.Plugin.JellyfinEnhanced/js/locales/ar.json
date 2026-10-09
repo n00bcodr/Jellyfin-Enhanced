@@ -755,5 +755,6 @@
     "catchup_top_watched": "الأكثر مشاهدة",
     "catchup_top_dismissed": "الأكثر استبعادًا",
     "catchup_top_watchlisted": "الأكثر إضافة إلى قائمة المشاهدة",
-    "catchup_failed": "فشل: {error}"
+    "catchup_failed": "فشل: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

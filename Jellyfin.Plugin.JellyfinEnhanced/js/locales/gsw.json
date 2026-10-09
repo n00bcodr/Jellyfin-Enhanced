@@ -755,5 +755,6 @@
     "catchup_top_watched": "Am meischte gluegt",
     "catchup_top_dismissed": "Am meischte übersprunge",
     "catchup_top_watchlisted": "Am meischte uf de Watchlist",
-    "catchup_failed": "Fählgschlage: {error}"
+    "catchup_failed": "Fählgschlage: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

@@ -755,5 +755,6 @@
     "catchup_top_watched": "Katsotuimmat",
     "catchup_top_dismissed": "Eniten ohitetut",
     "catchup_top_watchlisted": "Eniten seurantalistalla",
-    "catchup_failed": "Epäonnistui: {error}"
+    "catchup_failed": "Epäonnistui: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

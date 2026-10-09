@@ -755,5 +755,6 @@
     "catchup_top_watched": "Больше всего просмотров",
     "catchup_top_dismissed": "Чаще всего скрывают",
     "catchup_top_watchlisted": "Чаще всего в списке отслеживания",
-    "catchup_failed": "Ошибка: {error}"
+    "catchup_failed": "Ошибка: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

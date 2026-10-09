@@ -755,5 +755,6 @@
     "catchup_top_watched": "Legtöbbet megtekintett",
     "catchup_top_dismissed": "Legtöbbet elvetett",
     "catchup_top_watchlisted": "Legtöbbször figyelőlistára téve",
-    "catchup_failed": "Sikertelen: {error}"
+    "catchup_failed": "Sikertelen: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }
