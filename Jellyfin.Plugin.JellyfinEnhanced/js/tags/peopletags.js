@@ -1206,7 +1206,7 @@
              */
             function tryFastPath(hashId = currentHashItemId()) {
                 const entry = hashId ? prefetches.get(hashId) : null;
-                if (!entry || !isCurrentEpoch(entry.epoch) || !JE.currentSettings?.peopleTagsEnabled) return;
+                if (!entry || !entry.view || !isCurrentEpoch(entry.epoch) || !JE.currentSettings?.peopleTagsEnabled) return;
                 const sameItem = lastProcessedItemId === hashId;
                 if (sameItem && (peopleTagsComplete || isProcessing)) return;
                 if (document.querySelector('#itemDetailPage:not(.hide)') !== entry.view) return;
@@ -1278,11 +1278,18 @@
 
             /**
              * The visit of a details item ended: drop its prefetch unless a card
-             * pass took it over (that pass ends with its item, as before).
+             * pass took it over (that pass ends with its item, as before). A
+             * kept one lets go of the visit's view, which only the fast path
+             * used, so a view Jellyfin evicts is not held until the next item.
              * @param {string} itemId
              */
             function leave(itemId) {
-                if (lastProcessedItemId !== itemId) dropPrefetch(itemId);
+                if (lastProcessedItemId !== itemId) {
+                    dropPrefetch(itemId);
+                    return;
+                }
+                const entry = prefetches.get(itemId);
+                if (entry) entry.view = null;
             }
 
             // Create managed observer for people tags.

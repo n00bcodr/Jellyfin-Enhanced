@@ -40,9 +40,13 @@ function setup(t,{id='movie',server,premiere}={}){
  const realSetTimeout=h.window.setTimeout.bind(h.window),realClearTimeout=h.window.clearTimeout.bind(h.window);
  h.window.setTimeout=(fn,ms,...args)=>{if(!(ms>=1000))return realSetTimeout(fn,ms,...args);const timer={id:`t${nextTimer++}`,fn,at:clock+ms};timers.push(timer);return timer.id;};
  h.window.clearTimeout=timerId=>{const i=timers.findIndex(timer=>timer.id===timerId);if(i!==-1)timers.splice(i,1);else realClearTimeout(timerId);};
+ // Every Map the module creates, so a test can check what its state holds on to.
+ const maps=[],BaseMap=h.window.Map;h.window.Map=class extends BaseMap{constructor(...args){super(...args);maps.push(this);}};
  h.load('tags/peopletags.js');h.JE.initializePeopleTags();
  const settle=async(rounds=4)=>{for(let i=0;i<rounds;i++)await new Promise(done=>setImmediate(done));};
  const api={...h,calls,tracked,
+  /** Whether a value in any of the module's maps refers to `target`. */
+  retains:target=>maps.some(map=>[...map.values()].some(value=>value===target||(value&&typeof value==='object'&&Object.values(value).includes(target)))),
   get pages(){return [...h.document.querySelectorAll('#itemDetailPage')];},
   view:()=>h.document.querySelector('#itemDetailPage:not(.hide)'),
   epoch:()=>epoch,armed:()=>armed,settle,
@@ -118,9 +122,10 @@ test('leaving before the cards aborts the prefetch and keeps nothing',async t=>{
  h.navigate('next');h.mount(range(1,4));await h.settle();assert.equal(h.tagged(),0,'no fast path without a prefetch');
  await h.quiet();assert.equal(h.calls.length,2);assert.equal(h.tagged(),4);
 });
-test('leaving after the card pass joined keeps the request: it paints the view as before',async t=>{
+test('leaving after the card pass joined keeps the request, not the view: it paints the view as before',async t=>{
  const pending=deferred();const h=setup(t,{server:()=>pending.promise});h.prefetch(itemOf(range(1,4)));h.mount(range(1,4));await h.settle();
- const view=h.view();h.leave();assert.equal(h.calls[0].options.signal.aborted,false);
+ const view=h.view();assert.equal(h.retains(view),true,'the visit\'s view, for the fast path');
+ h.leave();assert.equal(h.calls[0].options.signal.aborted,false);assert.equal(h.retains(view),false,'the left view is not held until the next item');
  view.classList.add('hide');h.window.location.hash='#/home';pending.resolve(answer(h.calls[0].ids));await h.settle();
  assert.equal(h.tagged(view),4);assert.equal(h.calls.length,1);
 });
