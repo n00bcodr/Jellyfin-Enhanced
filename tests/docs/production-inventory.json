@@ -3210,6 +3210,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ElsewhereSeasonProviders",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ElsewhereCustomBrandingText",
       "type": "string",
       "initializer": null,
@@ -6625,6 +6633,14 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
     {
+      "class": "ElsewhereSettings",
+      "name": "SeasonProviders",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
       "class": "PendingWatchlistItem",
       "name": "TmdbId",
       "type": "int",
@@ -7483,7 +7499,7 @@
     "build_targets": 2,
     "files": 348,
     "routes": 170,
-    "configuration_properties": 510,
+    "configuration_properties": 512,
     "storage_references": 63,
     "scheduled_tasks": 13,
     "locales": 33

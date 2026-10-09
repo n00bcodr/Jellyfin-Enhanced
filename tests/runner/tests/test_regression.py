@@ -123,6 +123,20 @@ class RegressionToolingTests(unittest.TestCase):
         self.assertEqual([('PostEvent', '/JellyfinEnhanced/feature/event'), ('GetStatus', '/JellyfinEnhanced/status')],
             [(route['method'], route['path']) for route in routes])
 
+    def test_inventory_drift_inherited_from_base_only_warns(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('je_inventory', ROOT / 'tests/inventory/generate.py')
+        generator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(generator)
+        # Base stale, change touches nothing the inventory covers.
+        self.assertTrue(generator.inherited_drift('new', 'old', 'new', 'old'))
+        # Base current: any staleness is the change's own.
+        self.assertFalse(generator.inherited_drift('new', 'old', 'old', 'old'))
+        # Base stale, and the change adds more drift on top.
+        self.assertFalse(generator.inherited_drift('newer', 'old', 'new', 'old'))
+        # Base stale, and the change commits a different (still wrong) inventory.
+        self.assertFalse(generator.inherited_drift('new', 'edited', 'new', 'old'))
+
     def test_host_network_scan_tolerates_a_network_removed_after_listing(self):
         import importlib.util
         from types import SimpleNamespace
