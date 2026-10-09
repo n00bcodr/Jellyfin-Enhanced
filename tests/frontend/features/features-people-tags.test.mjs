@@ -129,6 +129,39 @@ test('leaving after the card pass joined keeps the request, not the view: it pai
  view.classList.add('hide');h.window.location.hash='#/home';pending.resolve(answer(h.calls[0].ids));await h.settle();
  assert.equal(h.tagged(view),4);assert.equal(h.calls.length,1);
 });
+// Jellyfin's details template has an empty cast section, so a quiet run can take the item before its cards
+// exist. That run claims no card and requests nothing: the visit's prefetch still starts.
+test('a quiet run over the still-empty cast does not block the prefetch: the same requests, none twice, the same tags',async t=>{
+ const cast=[...range(1,12),1],guests=[20,21,22];
+ const old=await oldFlow(t,cast,guests);
+ const pending=[];const h=setup(t,{server:()=>{const d=deferred();pending.push(d);return d.promise;}});
+ await h.quiet();assert.equal(h.calls.length,0,'the empty pass requests nothing');
+ h.prefetch(itemOf(cast,guests));assert.deepEqual(h.urls(),old.urls(),'the card pass\'s requests, at the info row');
+ h.prefetch(itemOf(cast,guests));assert.equal(h.calls.length,2,'once per visit');
+ h.mount(cast,guests);await h.settle();
+ for(const [i,d] of pending.entries())d.resolve(answer(h.calls[i].ids));await h.settle();
+ assert.equal(h.calls.length,2,'the cards take the prefetch over: no request of their own');assert.equal(h.tagged(),cast.length+guests.length);
+ assert.equal(h.view().innerHTML,old.view().innerHTML);
+ await h.quiet();assert.equal(h.calls.length,2);assert.equal(h.view().innerHTML,old.view().innerHTML);
+ assert.equal(h.tracked.size,old.tracked.size,'the prefetch controller is untracked once settled');
+});
+test('a prefetch no pass claimed a card for is dropped on leaving, whichever came first',async t=>{
+ const after=deferred();const h=setup(t,{server:()=>after.promise});await h.quiet();const base=h.tracked.size;
+ h.prefetch(itemOf(range(1,4)));const view=h.view();assert.equal(h.calls.length,1);assert.equal(h.retains(view),true);
+ h.leave();assert.equal(h.calls[0].options.signal.aborted,true);assert.equal(h.tracked.size,base);assert.equal(h.retains(view),false);
+ after.resolve(answer(h.calls[0].ids));await h.settle();assert.equal(h.stored(pid(1)),false);
+ // The prefetch first, then the empty pass: that pass did not take the prefetch over either.
+ const before=deferred();const b=setup(t,{server:()=>before.promise});b.prefetch(itemOf(range(1,4)));await b.quiet();
+ const bView=b.view();b.leave();assert.equal(b.calls[0].options.signal.aborted,true);assert.equal(b.retains(bView),false);
+ before.resolve(answer(b.calls[0].ids));await b.settle();assert.equal(b.stored(pid(1)),false);
+});
+test('a pass that claimed cards still owns the item, and an item done after an empty pass gets no prefetch',async t=>{
+ const h=setup(t);await h.quiet();h.mount([1]);await h.quiet();assert.equal(h.calls.length,1);assert.equal(h.tagged(),1);
+ h.prefetch(itemOf([1,2]));assert.equal(h.calls.length,1,'the card pass requests what it needs');
+ h.leave();h.mount([2]);await h.quiet();assert.deepEqual(h.urls(),[pid(1),pid(2)],'its own request, as before');
+ // The completion latch already fired: neither the subscriber nor the fast path would use the answer.
+ const e=setup(t);await e.quiet();await e.advance(2000);e.prefetch(itemOf([1,2]));assert.equal(e.calls.length,0);
+});
 test('an item change or a user switch leaves no late caching or painting',async t=>{
  const first=deferred();const h=setup(t,{server:()=>first.promise});h.prefetch(itemOf(range(1,4)));h.mount(range(1,4));await h.settle();
  const view=h.view();h.navigate('next');h.mount([9]);await h.quiet();

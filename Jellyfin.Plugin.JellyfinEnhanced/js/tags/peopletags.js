@@ -307,6 +307,10 @@
         // arms the completion latch, so it runs once the fast pass is done.
         let processingFast = false;
         let debouncedSkipped = false;
+        // Whether a card pass has claimed a card of lastProcessedItemId: a
+        // quiet run over the template's still-empty cast section takes the
+        // item with none, and leaves the visit's prefetch free to start.
+        let cardsClaimed = false;
 
         // One AbortController per detail item: aborted when the user navigates
         // to another item or switches account, so a late batch is discarded.
@@ -978,6 +982,7 @@
                 if (!personId) return;
 
                 pendingCards.add(card);
+                cardsClaimed = true;
                 const cards = groups.get(personId);
                 if (cards) cards.push(card);
                 else groups.set(personId, [card]);
@@ -1144,6 +1149,7 @@
                         failedCards = new WeakSet();
                         peopleTagsComplete = false;
                         debouncedSkipped = false;
+                        cardsClaimed = false;
                         for (const key of [...prefetches.keys()]) {
                             if (key !== itemId) dropPrefetch(key);
                         }
@@ -1239,8 +1245,10 @@
              */
             function prefetch(itemId, item, view, epoch) {
                 if (!JE.currentSettings?.peopleTagsEnabled || !isCurrentEpoch(epoch) || typeof JE.core?.api?.plugin !== 'function') return;
-                // A card pass already owns this item: it requests what it needs.
-                if (!itemId || prefetches.has(itemId) || lastProcessedItemId === itemId) return;
+                // A card pass already owns this item: it requests what it needs
+                // (or the item is done). A pass that claimed no card owns nothing.
+                if (!itemId || prefetches.has(itemId)) return;
+                if (lastProcessedItemId === itemId && (cardsClaimed || peopleTagsComplete)) return;
                 const ids = castOrderPersonIds(item);
                 if (!ids || ids.length === 0) return;
                 for (const key of [...prefetches.keys()]) {
@@ -1284,7 +1292,7 @@
              * @param {string} itemId
              */
             function leave(itemId) {
-                if (lastProcessedItemId !== itemId) {
+                if (lastProcessedItemId !== itemId || !cardsClaimed) {
                     dropPrefetch(itemId);
                     return;
                 }
