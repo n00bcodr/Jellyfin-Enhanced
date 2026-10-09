@@ -1,8 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness,deferred,jsonResponse} from '../helpers/harness.mjs';
-function setup(t,{item={Type:'Movie',ProviderIds:{Tmdb:'42'}},data={},fetch,getItem}={}){
- let itemCalls=0,fetchCalls=0;const h=createHarness({html:'<div id="info"></div>',apiClient:{getItem:async(...args)=>{itemCalls++;return getItem?getItem(...args):item;}},fetch:async(...args)=>{fetchCalls++;return fetch?fetch(...args):jsonResponse(data);},globals:{requestAnimationFrame:fn=>{fn();return 1;}},JE:{pluginConfig:{DEFAULT_REGION:'AU'},t:key=>key,helpers:{addCSS:()=>{}}}});
+function setup(t,{item={Type:'Movie',ProviderIds:{Tmdb:'42'}},data={},fetch,getItem,JE={}}={}){
+ let itemCalls=0,fetchCalls=0;const h=createHarness({html:'<div id="info"></div>',apiClient:{getItem:async(...args)=>{itemCalls++;return getItem?getItem(...args):item;}},fetch:async(...args)=>{fetchCalls++;return fetch?fetch(...args):jsonResponse(data);},globals:{requestAnimationFrame:fn=>{fn();return 1;}},JE:{pluginConfig:{DEFAULT_REGION:'AU'},t:key=>key,helpers:{addCSS:()=>{}},...JE}});
  t.after(()=>h.close());h.load('enhanced/itemdetails/features-release-dates.js');return {...h,api:h.JE.internals.features,container:h.document.getElementById('info'),counts:()=>({itemCalls,fetchCalls}),async settle(){await new Promise(done=>setImmediate(done));}};
 }
 test('release chips deduplicate in-flight requests and resolve regional theatrical/digital/physical dates',async t=>{
@@ -64,4 +64,62 @@ test('season chip picks the episode airing today by the local date west of UTC',
 });
 test('malformed external release date cannot inject HTML into details',async t=>{
  const malicious='<img src=x onerror="alert(1)">';const h=setup(t,{data:{results:[{iso_3166_1:'US',release_dates:[{type:3,release_date:malicious}]}]}});h.api.displayReleaseDate('movie',h.container);await h.settle();assert.equal(h.container.querySelector('img'),null);assert.ok(h.container.textContent.includes(malicious));
+});
+// Details-visit prefetch (features-details-page.js starts it once the item is known).
+const movie={Type:'Movie',ProviderIds:{Tmdb:'42'}};
+const releases={results:[{iso_3166_1:'AU',release_dates:[{type:3,release_date:'2025-03-01'},{type:4,release_date:'2025-04-01'}]}]};
+/** A limiter stub recording each prefetch's signal; `gate` holds a slot until resolved. */
+function limiter(gate){const signals=[];return {signals,manager:{withConcurrencyLimit:async(fn,options)=>{signals.push(options.signal);if(gate)await gate;if(options.signal.aborted)throw Object.assign(new Error('Request aborted'),{name:'AbortError'});return fn();}}};}
+function sessionStub(){let epoch=0;const handlers=[];return {session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange:(key,fn)=>handlers.push(fn)},switchUser(){epoch++;for(const fn of handlers)fn();}};}
+test('a chip takes over the release prefetch: one TMDB request through the limiter, the same chips',async t=>{
+ const without=setup(t,{data:releases});without.api.displayReleaseDate('movie',without.container);await without.settle();
+ const {signals,manager}=limiter();const h=setup(t,{data:releases,JE:{core:{api:{manager}}}});const visit={};
+ h.api.prefetchReleaseDate('movie',movie,visit);await h.settle();assert.equal(signals.length,1);assert.equal(h.counts().fetchCalls,1);
+ h.api.displayReleaseDate('movie',h.container);await h.settle();
+ assert.equal(h.counts().fetchCalls,1);assert.equal(h.counts().itemCalls,0,'the visit already had the item');assert.equal(h.container.innerHTML,without.container.innerHTML);
+ h.api.discardReleasePrefetch(visit);assert.equal(signals[0].aborted,false);
+ for(const run of [without,h]){run.container.replaceChildren();run.api.displayReleaseDate('movie',run.container);}
+ assert.equal(h.container.innerHTML,without.container.innerHTML,'the answer was cached as before');assert.equal(h.counts().fetchCalls,1);
+});
+test('a prefetch that never ran is never shown: the chip looks up itself, with the same chips',async t=>{
+ const without=setup(t,{data:releases});without.api.displayReleaseDate('movie',without.container);await without.settle();
+ const manager={withConcurrencyLimit:async()=>{throw new Error('Request queue full - too many pending requests');}};
+ const h=setup(t,{data:releases,JE:{core:{api:{manager}}}});h.api.prefetchReleaseDate('movie',movie,{});h.api.displayReleaseDate('movie',h.container);await h.settle();
+ assert.deepEqual(h.counts(),{itemCalls:1,fetchCalls:1});assert.equal(h.container.innerHTML,without.container.innerHTML);
+});
+test('a prefetch after the chip has started its own lookup joins it',async t=>{
+ const response=deferred();const h=setup(t,{fetch:()=>response.promise});h.api.displayReleaseDate('movie',h.container);await h.settle();
+ h.api.prefetchReleaseDate('movie',movie,{});response.resolve(jsonResponse(releases));await h.settle();
+ assert.deepEqual(h.counts(),{itemCalls:1,fetchCalls:1});assert.equal(h.container.querySelectorAll('.mediaInfoItem-releaseDate').length,2);
+ h.api.prefetchReleaseDate('movie',movie,{});assert.equal(h.counts().fetchCalls,1,'a cached answer needs no prefetch');
+});
+test('a visit drops its unused release prefetch (aborted while queued); the next chip looks up again',async t=>{
+ const gate=deferred();const {signals,manager}=limiter(gate.promise);const h=setup(t,{data:releases,JE:{core:{api:{manager}}}});const visit={};
+ h.api.prefetchReleaseDate('movie',movie,visit);h.api.discardReleasePrefetch(visit);assert.equal(signals[0].aborted,true);gate.resolve();
+ h.api.displayReleaseDate('movie',h.container);await h.settle();assert.deepEqual(h.counts(),{itemCalls:1,fetchCalls:1});
+ const done=setup(t,{data:releases,JE:{core:{api:limiter()}}});done.api.prefetchReleaseDate('movie',movie,visit);await done.settle();done.api.discardReleasePrefetch(visit);
+ done.api.displayReleaseDate('movie',done.container);await done.settle();assert.deepEqual(done.counts(),{itemCalls:1,fetchCalls:2});
+});
+test('a user switch drops the unclaimed release prefetches',async t=>{
+ const gate=deferred();const {signals,manager}=limiter(gate.promise);const {session,switchUser}=sessionStub();
+ const h=setup(t,{data:releases,JE:{core:{api:{manager}},session}});h.api.prefetchReleaseDate('movie',movie,{});switchUser();assert.equal(signals[0].aborted,true);gate.resolve();
+ h.api.displayReleaseDate('movie',h.container);await h.settle();assert.deepEqual(h.counts(),{itemCalls:1,fetchCalls:1});assert.equal(h.container.querySelectorAll('.mediaInfoItem-releaseDate').length,2);
+});
+test('an episode prefetch looks up the series once and asks TMDB nothing, as before',async t=>{
+ const episode={Type:'Episode',SeriesId:'series',PremiereDate:'2025-02-03T00:00:00Z'};const lookups=[];
+ const h=setup(t,{getItem:async(_user,id)=>{lookups.push(id);return id==='series'?{Type:'Series',ProviderIds:{Tmdb:'42'}}:episode;},JE:{core:{api:limiter()}}});
+ h.api.prefetchReleaseDate('episode',episode,{});h.api.displayReleaseDate('episode',h.container);await h.settle();
+ assert.deepEqual(lookups,['series']);assert.equal(h.counts().fetchCalls,0);assert.equal(h.container.querySelectorAll('.je-release-date-episode').length,1);
+});
+test('a TMDB failure in the prefetch still removes the placeholder',async t=>{
+ const h=setup(t,{fetch:async()=>jsonResponse({},503),JE:{core:{api:limiter()}}});h.expectConsoleError(/TMDB request failed/);
+ h.api.prefetchReleaseDate('movie',movie,{});h.api.displayReleaseDate('movie',h.container);await h.settle();
+ assert.equal(h.container.children.length,0);assert.equal(h.counts().fetchCalls,1);
+});
+test('an expired answer is looked up again: a finished lookup is not kept for the next prefetch or chip',async t=>{
+ const h=setup(t,{data:releases,JE:{core:{api:limiter()}}});const RealDate=h.window.Date;let now=RealDate.now();
+ h.window.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}};
+ h.api.displayReleaseDate('movie',h.container);await h.settle();assert.equal(h.counts().fetchCalls,1);
+ now+=2*60*60*1000;h.container.replaceChildren();h.api.displayReleaseDate('movie',h.container);await h.settle();assert.equal(h.counts().fetchCalls,2);
+ now+=2*60*60*1000;h.api.prefetchReleaseDate('movie',movie,{});await h.settle();assert.equal(h.counts().fetchCalls,3);
 });

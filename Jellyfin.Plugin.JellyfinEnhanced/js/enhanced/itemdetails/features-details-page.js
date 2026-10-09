@@ -9,7 +9,10 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.features = JE.internals.features || {};
 
-    const { displayWatchProgress, displayItemSize, displayAudioLanguages, displayReleaseDate } = internal;
+    const {
+        displayWatchProgress, displayItemSize, displayAudioLanguages, displayReleaseDate,
+        prefetchItemStats, discardItemStatsPrefetch, prefetchReleaseDate, discardReleasePrefetch
+    } = internal;
 
     /**
      * Handle item details page display with debounced observer
@@ -358,6 +361,98 @@
         earlyItemDetails();
         settledItemDetails();
     };
+
+    // ── Details visits ──────────────────────────────────────────────────
+    // The chips used to ask for their data only once they were placed, after
+    // Jellyfin had filled its info row (~0.3 s into the page). A visit starts
+    // when Jellyfin shows a freshly built details view and, once the item is
+    // known (the same shared lookup runItemDetails makes), starts the chips'
+    // item-stats and release lookups, which the chips then take over. What no
+    // chip took over is dropped when the visit ends, so a later visit asks
+    // again exactly as before. Restored views (history back) start no visit:
+    // Jellyfin doesn't reload them and their chips are already in place.
+    let visit = null; // { itemId, view, epoch, item }
+
+    function hashItemId() {
+        return new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+    }
+
+    function endDetailsVisit() {
+        const ended = visit;
+        if (!ended) return;
+        visit = null;
+        discardItemStatsPrefetch?.(ended);
+        discardReleasePrefetch?.(ended);
+    }
+
+    /**
+     * @param {HTMLElement} view The details view being shown.
+     * @param {object|undefined} detail The viewshow event's detail.
+     */
+    function beginDetailsVisit(view, detail) {
+        endDetailsVisit();
+        const itemId = hashItemId();
+        if (!itemId || (detail?.params?.id && detail.params.id !== itemId)) return;
+        const settings = JE.currentSettings || {};
+        const config = JE.pluginConfig || {};
+        if (!(settings.showWatchProgress || settings.showFileSizes || (config.ShowReleaseDates && config.TmdbEnabled))) return;
+        // runItemDetails already knows this item (A, home, A again) and makes
+        // no lookup: neither does the visit.
+        if (lastDetailsItemId === itemId && lastDetailsItemType) return;
+        const userId = ApiClient.getCurrentUserId?.();
+        if (!userId || !JE.helpers?.getItemCached) return;
+        const current = visit = { itemId, view, epoch: JE.session ? JE.session.getEpoch() : 0, item: null };
+        // The same cached lookup (key and promise) runItemDetails and Seerr make.
+        JE.helpers.getItemCached(itemId, { userId }).then((item) => {
+            if (visit !== current || !item) return;
+            current.item = item;
+            // Best effort: Seerr's lookups waiting on this item go first.
+            setTimeout(() => prefetchChipData(current), 0);
+        }).catch(() => { /* runItemDetails looks it up again */ });
+    }
+
+    function visitLive(current) {
+        return visit === current
+            && (!JE.session || JE.session.isCurrent(current.epoch))
+            && hashItemId() === current.itemId
+            && current.view.isConnected
+            && !current.view.classList.contains('hide');
+    }
+
+    /**
+     * Starts the lookups the chips of the visit's item will make, under the
+     * same switches and type gates as runItemDetails.
+     * @param {object} current The visit.
+     */
+    function prefetchChipData(current) {
+        if (!visitLive(current)) return;
+        const { item } = current;
+        const settings = JE.currentSettings || {};
+        const config = JE.pluginConfig || {};
+        const sources = item.MediaSources;
+        // The source runItemDetails hands the chips is the single version's
+        // id (what Jellyfin's select will hold), or none without a version.
+        // With several versions the selected one isn't known yet: no prefetch.
+        if (FEATURES_SUPPORTED_TYPES.includes(item.Type) && (settings.showWatchProgress || settings.showFileSizes)
+            && (!Array.isArray(sources) || sources.length <= 1)) {
+            prefetchItemStats?.(current.itemId, sources?.length === 1 ? (sources[0].Id || null) : null,
+                { watchProgress: !!settings.showWatchProgress, fileSize: !!settings.showFileSizes }, current);
+        }
+        if (config.ShowReleaseDates && config.TmdbEnabled && AUDIO_LANGUAGES_SUPPORTED_TYPES.includes(item.Type)) {
+            prefetchReleaseDate?.(current.itemId, item, current);
+        }
+    }
+
+    JE.core.navigation.onViewPage((_view, _element, _hash, _itemPromise, rawEvent) => {
+        const target = rawEvent?.target;
+        if (target && target.id === 'itemDetailPage' && rawEvent.detail?.isRestored !== true) {
+            beginDetailsVisit(target, rawEvent.detail);
+        }
+    });
+    JE.core.navigation.onNavigate(() => {
+        if (visit && hashItemId() !== visit.itemId) endDetailsVisit();
+    });
+    JE.session?.onUserChange('details-prefetch', () => endDetailsVisit());
 
     // Managed observer for item details. childList-only routes it through the
     // shared body observer (Jellyfin re-renders the detail page's children on
