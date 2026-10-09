@@ -162,6 +162,28 @@ test('a pass that claimed cards still owns the item, and an item done after an e
  // The completion latch already fired: neither the subscriber nor the fast path would use the answer.
  const e=setup(t);await e.quiet();await e.advance(2000);e.prefetch(itemOf([1,2]));assert.equal(e.calls.length,0);
 });
+// A slow item load: the empty pass's 2 s latch can fire after the prefetch went out and before the cards mount.
+// It does not end the item while the prefetch has no card, so the prefetch's request is not wasted: the cards use it.
+test('an empty pass\'s latch waits for the cards while the visit\'s prefetch has none, whichever came first',async t=>{
+ const old=await oldFlow(t,range(1,4));
+ const h=setup(t);await h.quiet();await h.advance(1900);h.prefetch(itemOf(range(1,4)));assert.equal(h.calls.length,1);
+ await h.advance(100);await h.advance(5000);h.mount(range(1,4));await h.settle();
+ assert.equal(h.tagged(),4,'the cards take the prefetch over');assert.equal(h.calls.length,1,'no request of their own');
+ assert.equal(h.view().innerHTML,old.view().innerHTML);
+ // Once a pass has claimed cards, the quiet run's latch ends the item as before.
+ await h.quiet();await h.advance(2000);h.mount([5]);await h.quiet();assert.equal(h.tagged(),4);assert.equal(h.calls.length,1);
+ // The prefetch first, then the empty pass: its latch waits the same way.
+ const b=setup(t);b.prefetch(itemOf(range(1,4)));await b.settle();await b.quiet();await b.advance(2000);
+ b.mount(range(1,4));await b.settle();assert.equal(b.tagged(),4);assert.equal(b.calls.length,1);
+ assert.equal(b.view().innerHTML,old.view().innerHTML);
+});
+test('once the waiting prefetch is dropped, an empty pass\'s latch ends the item as before',async t=>{
+ const h=setup(t,{server:()=>new Promise(()=>{})});await h.quiet();h.prefetch(itemOf(range(1,4)));await h.advance(2000);
+ h.leave();assert.equal(h.calls[0].options.signal.aborted,true);
+ h.flush();await h.quiet();await h.advance(2000);
+ h.prefetch(itemOf(range(1,4)));assert.equal(h.calls.length,1,'done: no prefetch');
+ h.mount(range(1,4));await h.quiet();assert.equal(h.tagged(),0);assert.equal(h.calls.length,1);
+});
 test('an item change or a user switch leaves no late caching or painting',async t=>{
  const first=deferred();const h=setup(t,{server:()=>first.promise});h.prefetch(itemOf(range(1,4)));h.mount(range(1,4));await h.settle();
  const view=h.view();h.navigate('next');h.mount([9]);await h.quiet();

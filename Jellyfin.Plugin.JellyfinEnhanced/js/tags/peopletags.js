@@ -309,7 +309,8 @@
         let debouncedSkipped = false;
         // Whether a card pass has claimed a card of lastProcessedItemId: a
         // quiet run over the template's still-empty cast section takes the
-        // item with none, and leaves the visit's prefetch free to start.
+        // item with none, and leaves the visit's prefetch free to start (and
+        // its completion latch waits while that prefetch has no card yet).
         let cardsClaimed = false;
 
         // One AbortController per detail item: aborted when the user navigates
@@ -1189,7 +1190,12 @@
                             return;
                         }
                         setTimeout(() => {
-                            if (lastProcessedItemId === processingItemId) {
+                            // A pass that claimed no card does not end an item
+                            // whose prefetch waits for its cards: the cards
+                            // take it over, and the quiet run after they mount
+                            // arms the latch again.
+                            if (lastProcessedItemId === processingItemId
+                                && (cardsClaimed || !prefetches.has(processingItemId))) {
                                 peopleTagsComplete = true;
                             }
                         }, 2000);
