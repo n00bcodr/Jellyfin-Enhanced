@@ -441,7 +441,7 @@
                     if (!normalized || normalized.length === 0) {
                         setOptions(seasonSelect, [{ value: 0, label: JE.t('jellyseerr_select_all_seasons') || 'All seasons' }]);
                         seasonSelect.disabled = true;
-                        setOptions(episodeSelect, [{ value: 0, label: JE.t('jellyseerr_select_all_seasons') || 'All episodes' }]);
+                        setOptions(episodeSelect, [{ value: 0, label: JE.t('jellyseerr_select_all_episodes') || 'All episodes' }]);
                         episodeSelect.disabled = true;
                         return;
                     }
@@ -463,12 +463,12 @@
                     const populateEpisodesForSeason = (seasonNum) => {
                         const s = normalized.find(x => x.seasonNumber === parseInt(seasonNum));
                         if (!s) {
-                            setOptions(episodeSelect, [{ value: 0, label: JE.t('jellyseerr_select_all_seasons') || 'All episodes' }]);
+                            setOptions(episodeSelect, [{ value: 0, label: JE.t('jellyseerr_select_all_episodes') || 'All episodes' }]);
                             episodeSelect.disabled = true;
                             return;
                         }
                         const eps = s.episodes && s.episodes.length > 0 ? s.episodes : [];
-                        const epOptions = [{ value: 0, label: JE.t('jellyseerr_select_all_seasons') || 'All episodes' }];
+                        const epOptions = [{ value: 0, label: JE.t('jellyseerr_select_all_episodes') || 'All episodes' }];
                         if (eps.length > 0) {
                             for (const ep of eps) epOptions.push({ value: ep.episodeNumber, label: `${JE.t('jellyseerr_report_issue_episode') || 'Episode'} ${ep.episodeNumber}${ep.title ? ' — ' + ep.title : ''}` });
                         }
@@ -514,7 +514,7 @@
                         if (normalized.length > 1) {
                             seasonSelect.value = '0';
                             // Ensure the episode select shows the 'All episodes' option when defaulting
-                            setOptions(episodeSelect, [{ value: 0, label: JE.t('jellyseerr_select_all_seasons') || 'All episodes' }]);
+                            setOptions(episodeSelect, [{ value: 0, label: JE.t('jellyseerr_select_all_episodes') || 'All episodes' }]);
                             episodeSelect.disabled = true;
                         } else {
                             // Single season - select it
@@ -528,7 +528,7 @@
                         const val = seasonSelect.value;
                         if (!val || val === '0') {
                             // All seasons => show a single "All episodes" option to avoid blank UI and disable selection
-                            setOptions(episodeSelect, [{ value: 0, label: JE.t('jellyseerr_select_all_seasons') || 'All episodes' }]);
+                            setOptions(episodeSelect, [{ value: 0, label: JE.t('jellyseerr_select_all_episodes') || 'All episodes' }]);
                             episodeSelect.disabled = true;
                         } else {
                             populateEpisodesForSeason(parseInt(val));
