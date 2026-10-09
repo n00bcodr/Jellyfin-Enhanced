@@ -14,7 +14,7 @@ The project actually supports two separate artifacts: `jf10` targets .NET 9 and 
 - **Blocked**: a specific unavailable prerequisite prevents the stated check.
 - **Manual**: an inherently human assessment such as visual acceptability; automation can still cover neighboring behavior.
 
-The current inventory lists 348 source/configuration/style/locale files, 170 HTTP verb/route declarations, 510 configuration and persisted-model properties, 13 scheduled tasks, and 33 locales. Counts are descriptive, not a coverage denominator. The generated inventory is authoritative if these numbers change.
+The current inventory lists 348 source/configuration/style/locale files, 170 HTTP verb/route declarations, 512 configuration and persisted-model properties, 13 scheduled tasks, and 33 locales. Counts are descriptive, not a coverage denominator. The generated inventory is authoritative if these numbers change.
 
 ## Behavior inventory
 

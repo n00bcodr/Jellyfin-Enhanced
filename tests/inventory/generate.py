@@ -12,10 +12,14 @@ edits and translation updates leave it unchanged. It changes when any of these d
 - a scheduled task (any class implementing IScheduledTask) or its Key;
 - a .json/.xml/.db/.sqlite storage literal in a .cs or .js file;
 - a build target's selector, TargetFramework or JellyfinVersion in JellyfinEnhanced.csproj.
-Run with --check in CI to detect an inventory needing regeneration.
+Run with --check in CI to detect an inventory needing regeneration. On pull requests,
+--base names a checkout of the base branch, so drift the PR inherited from it (for
+example a push to main that skipped regeneration) warns instead of failing.
 """
 import argparse
+import importlib.util
 import json
+import os
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -86,13 +90,41 @@ def inventory():
     return json.dumps(result, indent=2, ensure_ascii=False) + '\n'
 
 
+def committed(root):
+    """Return the inventory committed under root, or None when there is none."""
+    path = root / OUTPUT.relative_to(ROOT)
+    return path.read_text(encoding='utf-8') if path.exists() else None
+
+
+def inherited_drift(generated, current, base_generated, base_current):
+    """True when the staleness is the base branch's own: the base is stale and this
+    checkout changes neither the generated inventory nor the committed file."""
+    return base_generated != base_current and generated == base_generated and current == base_current
+
+
+def base_inventory(base):
+    """Generate the inventory of a base checkout with that checkout's own generator."""
+    spec = importlib.util.spec_from_file_location('je_base_inventory', base / 'tests/inventory/generate.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.inventory()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true', help='Fail if committed inventory is stale')
+    parser.add_argument('--base', type=Path, help='With --check: a checkout of the base branch whose own drift should only warn')
     args = parser.parse_args()
     generated = inventory()
     if args.check:
-        if not OUTPUT.exists() or OUTPUT.read_text(encoding='utf-8') != generated:
+        current = committed(ROOT)
+        if current != generated:
+            base = args.base.resolve() if args.base else None
+            if base and inherited_drift(generated, current, base_inventory(base), committed(base)):
+                prefix = '::warning::' if os.environ.get('GITHUB_ACTIONS') else 'Warning: '
+                print(f'{prefix}Inventory is stale on the base branch, not because of this change: '
+                      'run python3 tests/inventory/generate.py there')
+                return
             raise SystemExit('Inventory is stale: run python3 tests/inventory/generate.py')
         print('Production inventory is current (this does not assert behavioral coverage).')
     else:
