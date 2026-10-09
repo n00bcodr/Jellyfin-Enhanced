@@ -21,10 +21,11 @@
     const REQUEST_MORE_BTN_CLASS = 'je-series-request-more-btn';
 
     // When the Seerr data comes back before Jellyfin has rendered the item,
-    // the rows are built with that render (see deferRows): an empty marker
-    // holds their place after More Like This until then.
+    // the rows are built once that render is painted (see deferRows): an
+    // empty marker holds their place after More Like This until then.
     const PENDING_ROWS_CLASS = 'je-seerr-rows-pending';
-    // Counted from scheduling, for an item Jellyfin never renders.
+    // Counted from scheduling, for an item Jellyfin never renders (or a
+    // paint after its render that never comes, see afterPaint).
     const NAME_WAIT_MS = 5000;
     // A step of the rows' prebuild outside an idle callback (see whenIdle).
     const PREBUILD_SLICE_MS = 8;
@@ -575,11 +576,11 @@
     /**
      * Builds a waiting run's rows ahead of Jellyfin's render (see deferRows),
      * a few cards at a time when nothing else is waiting to run (see
-     * whenIdle), so that render only has to insert them. They wait in a
-     * DocumentFragment: releasePosters leaves cards there alone (insertRows
-     * runs it before inserting), and their posters stay unloaded, as the
-     * poster observer sees them as off screen until they are in the page,
-     * where they then load as they would have.
+     * whenIdle), so that only inserting them is left for after that render.
+     * They wait in a DocumentFragment: releasePosters leaves cards there
+     * alone (insertRows runs it before inserting), and their posters stay
+     * unloaded, as the poster observer sees them as off screen until they
+     * are in the page, where they then load as they would have.
      *
      * A prebuilt row is used only when building it at insertion would give
      * the same: same results, title and filters (exclude-library, Hidden
@@ -672,38 +673,80 @@
     }
 
     /**
-     * Builds the rows when Jellyfin renders the item's name, so they are not
-     * painted on the empty template and then pushed down by that render.
-     * The name observer's callback runs before the next paint, so the rows
-     * are already there in the first frame that shows Jellyfin's render: the
-     * page never ends at More Like This without them, as it never did when
-     * they were inserted with their data. A page Jellyfin never renders gets
-     * them after NAME_WAIT_MS; printing builds them at once. The data and
-     * the claim on the item are already there.
+     * Runs `fn` in a task after the browser has painted the current frame:
+     * the next animation frame queues the task, which runs after that
+     * frame's paint. A hidden document runs no animation frames (and paints
+     * nothing), so there, or once it is hidden while it waits, the task is
+     * queued at once. Not JE.core.dom.afterNextPaint: a callback queued
+     * there once the frame it shares has run goes with that frame's task,
+     * which can come before the next paint, and it cannot be cancelled.
+     * @param {function(): void} fn
+     * @returns {function(): void} Cancels it
+     */
+    function afterPaint(fn) {
+        let waiting = true;
+        let timer = null;
+        const queue = () => {
+            if (!waiting) return;
+            waiting = false;
+            document.removeEventListener('visibilitychange', onHidden);
+            timer = setTimeout(fn, 0);
+        };
+        const onHidden = () => {
+            if (document.hidden) queue();
+        };
+        if (document.hidden) {
+            queue();
+        } else {
+            document.addEventListener('visibilitychange', onHidden);
+            requestAnimationFrame(queue);
+        }
+        return () => {
+            waiting = false;
+            document.removeEventListener('visibilitychange', onHidden);
+            clearTimeout(timer);
+        };
+    }
+
+    /**
+     * Builds the rows once Jellyfin has rendered the item's name, so they
+     * are not painted on the empty template and then pushed down by that
+     * render; not in that render's task, though, but in one after it has
+     * been painted (see afterPaint). Styling and laying out their cards with
+     * it made a long task of the first details page of a session, holding
+     * back Jellyfin's first paint of the page. So they appear a frame after
+     * Jellyfin's render, after More Like This, which nothing followed when
+     * they were scheduled (see nothingFollows): the page ends at More Like
+     * This for that frame, and nothing on it moves when they come. A page
+     * Jellyfin never renders gets them after NAME_WAIT_MS; printing builds
+     * them at once, a paint pending or not. The data and the claim on the
+     * item are already there.
      *
      * Leaving the view (the abort) keeps the build for it: its rows used to
      * be inserted with their data, so a view restored by Back or Forward had
      * them from its first frame (the run there replaces them in place). They
-     * are built into the left view, hidden or not, with Jellyfin's render of
-     * it, after NAME_WAIT_MS or for printing (a view restored before its
-     * render printed them), unless it is gone, another build has taken it
-     * over or another user signed in (see commitLeftRows). Only for the
+     * are built into the left view, hidden or not, after Jellyfin's render
+     * of it as above (also when the user left while they waited for its
+     * paint), after NAME_WAIT_MS or for printing (a view restored before
+     * its render printed them), unless it is gone, another build has taken
+     * it over or another user signed in (see commitLeftRows). Only for the
      * item's own view: a build waiting on another item's view (see below) is
      * dropped, as before, so that item's rows stay. A view's item is known
      * from its viewshow; a build kept before that checks again as it builds.
      *
      * Jellyfin adds a new view before it hides the one it leaves, so the run
      * may have found the outgoing view, still shown. When that view is hidden
-     * (or gone) while the URL is still this item's and another details view
-     * is shown, the rows go there at once (commitRows), not with the hidden
-     * view's render or after NAME_WAIT_MS. So does that view's viewshow run.
+     * while the URL is still this item's and another details view is shown,
+     * the rows go there (commitRows) after the next paint, as after a
+     * render, not with the hidden view's render or after NAME_WAIT_MS. The
+     * shown view's viewshow run sends them there at once, from a view
+     * removed rather than hidden too.
      *
      * Building the cards takes long enough on a cold page to hold back the
      * render it waits for, so they are built while the rows wait, when the
-     * browser is idle (see prebuildRows): the render's task then only inserts
-     * them, at the same moment and in the same place. What has not been
-     * built by then, or no longer matches what would be built, is built
-     * there as before.
+     * browser is idle (see prebuildRows): the task after the render's paint
+     * then only inserts them. What has not been built by then, or no longer
+     * matches what would be built, is built there as before.
      * @param {object} ctx - See commitRows
      * @returns {boolean} Whether the rows were scheduled (or inserted)
      */
@@ -718,6 +761,7 @@
         let left = false;
         let nameObserver = null;
         let nameTimer = null;
+        let cancelPaint = null;
         let prebuilt = null;
         // Not before a details view is shown: commitRows would release the
         // item and a new run would ask again for what is not cached.
@@ -735,6 +779,7 @@
             done = true;
             nameObserver?.disconnect();
             clearTimeout(nameTimer);
+            cancelPaint?.();
             window.removeEventListener('beforeprint', run);
             detach();
         };
@@ -774,7 +819,12 @@
             signal.addEventListener('abort', onAbort, { once: true });
             window.addEventListener('beforeprint', run);
             nameObserver = new MutationObserver(() => {
-                if (jellyfinRendered(page) || movedOn()) run();
+                if (!jellyfinRendered(page) && !movedOn()) return;
+                // Once this frame is painted. Until then the build stays
+                // what it was: an abort, a user switch, printing, the shown
+                // view's viewshow run or NAME_WAIT_MS act on it as before.
+                nameObserver.disconnect();
+                cancelPaint = afterPaint(run);
             });
             nameObserver.observe(page.querySelector('.nameContainer'), { childList: true, subtree: true });
             nameObserver.observe(page, { attributes: true, attributeFilter: ['class'] });
@@ -794,7 +844,7 @@
         try {
             prebuilt = prebuildRows(ctx);
         } catch (_) {
-            // Built with the render instead.
+            // Built at insertion instead.
         }
         // Set even when null: a run sent here from another view's build
         // (commitRows) carries that build's prebuild, released once it ran.
@@ -803,7 +853,7 @@
     }
 
     /**
-     * Places a run's rows into its view: at once, or with Jellyfin's render
+     * Places a run's rows into its view: at once, or after Jellyfin's render
      * of the item (see deferRows). The item is claimed once they are placed
      * or waiting, so a viewshow run for it returns early.
      * @param {object} ctx - See commitRows

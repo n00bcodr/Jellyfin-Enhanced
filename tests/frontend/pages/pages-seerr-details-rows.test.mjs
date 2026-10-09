@@ -5,8 +5,8 @@ import {createHarness,deferred} from '../helpers/harness.mjs';
 
 // item-details.js: the Seerr Recommended and Similar rows on a details page. When the Seerr data
 // comes back before Jellyfin has rendered the item, the rows wait behind an empty marker and are
-// built with Jellyfin's render of the item's name, before that render is painted. Otherwise (and
-// as a fallback) they are inserted at once, exactly as before.
+// built once Jellyfin's render of the item's name has been painted, in a task after that frame.
+// Otherwise (and as a fallback) they are inserted at once, exactly as before.
 const MARKER='je-seerr-rows-pending';
 const SECONDARY='<div class="detailPageSecondaryContainer"><div id="similarCollapsible" class="verticalSection detailVerticalSection hide"><h2 class="sectionTitle">More Like This</h2><div is="emby-scroller"><div is="emby-itemscontainer" class="itemsContainer similarContent"></div></div></div>__AFTER__</div>';
 const page=({id='itemDetailPage',name=true,after='',outside=''}={})=>`<div id="${id}" class="page libraryPage itemDetailPage"><div class="detailPageWrapperContainer"><div class="detailPagePrimaryContainer">${name?'<div class="nameContainer"></div>':''}</div>${SECONDARY.replace('__AFTER__',after)}</div>${outside}</div>`;
@@ -104,15 +104,19 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
   async flush(){for(let i=0;i<5;i++)await settle();},
   /**
    * Jellyfin renders the item in one task: its name, then More Like This shown (and optionally
-   * filled or hidden again). Only microtasks follow, as before the browser paints that task.
+   * filled or hidden again). Only microtasks follow, as before the browser paints that task; then,
+   * unless `paint` is false, the browser paints it (see paint).
    */
-  async render({v=view,card:withCard=true,hide=false}={}){
+  async render({v=view,card:withCard=true,hide=false,paint=true}={}){
    v.querySelector('.nameContainer')?.insertAdjacentHTML('beforeend','<h1 class="itemName infoText"><bdi>Movie</bdi></h1>');
    const anchor=this.anchor(v);anchor.classList.remove('hide');
    if(withCard)anchor.querySelector('.similarContent').insertAdjacentHTML('beforeend','<div class="card">Jellyfin</div>');
    if(hide)anchor.classList.add('hide');
    for(let i=0;i<5;i++)await null;
+   if(paint)this.paint();
   },
+  /** The next frame: its animation callbacks, the paint, then the tasks they queued for after it. */
+  paint(){this.frame();this.timer(0);},
   async fill(v=view){this.anchor(v).querySelector('.similarContent').insertAdjacentHTML('beforeend','<div class="card">Jellyfin</div>');await this.flush();},
   /** Runs the timers due after `ms`, or only the first one scheduled. */
   timer(ms,{once=false}={}){for(const [id,entry] of [...timers])if(entry.ms===ms){timers.delete(id);entry.fn();if(once)return;}},
@@ -128,12 +132,16 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
  };
 }
 
-test('data before Jellyfin: only a marker until the name renders; the rows are in place before that render paints',async t=>{
+test('data before Jellyfin: only a marker until the name renders; the rows follow in a task after that render is painted',async t=>{
  const h=setup(t);await h.start();
  assert.deepEqual(h.after(),['marker']);assert.equal(h.counts.cards,0);assert.equal(h.marker().getAttribute('aria-hidden'),'true');
  assert.deepEqual(h.delays(),[5000]);
  // More Like This is shown, still loading: the page could already be scrolled to its end.
- await h.render({card:false});
+ await h.render({card:false,paint:false});
+ assert.deepEqual(h.after(),['marker'],'not in the render\'s task');assert.equal(h.counts.cards,0);
+ // The next frame paints Jellyfin's render, nothing after More Like This; a task after that paint builds the rows.
+ h.frame();assert.deepEqual(h.after(),['marker'],'not in the frame\'s callbacks');assert.deepEqual(h.delays(),[0,5000]);
+ h.timer(0);
  assert.deepEqual(h.after(),['Recommended','Similar']);assert.deepEqual(h.cards(),[20,20]);assert.equal(h.marker(),null);
  assert.deepEqual(h.delays(),[],'nothing left waiting');assert.deepEqual(h.network,{similar:1,recommended:1});
  await h.fill();assert.deepEqual(h.after(),['Recommended','Similar']);assert.equal(h.counts.cards,40);
@@ -257,7 +265,7 @@ test('the next item\'s run finding the left view, still shown, leaves its kept b
  const h=setup(t);await h.start();await h.viewshow({id:'movie-1'});h.navigate('#!/details?id=movie-2');h.frame();await h.flush();
  assert.deepEqual(h.after(),['marker','marker'],'the next item\'s rows wait there too, for now');
  h.document.body.insertAdjacentHTML('beforeend',page({id:'second'}));const second=h.document.getElementById('second');
- h.view.classList.add('hide');await h.flush();assert.deepEqual(h.after(),['marker']);assert.deepEqual(h.after(second),['marker']);
+ h.view.classList.add('hide');await h.flush();h.paint();assert.deepEqual(h.after(),['marker']);assert.deepEqual(h.after(second),['marker']);
  await h.render();assert.deepEqual(h.after(),['Recommended','Similar'],'the left view\'s own rows');
  await h.render({v:second});assert.deepEqual(h.after(second),['Recommended','Similar']);
  assert.equal(h.counts.cards,80);assert.deepEqual(h.delays(),[]);assert.deepEqual(h.network,{similar:1,recommended:1});
@@ -337,17 +345,25 @@ test('rows waiting on the view Jellyfin leaves go to the shown view once it hide
  const h=setup(t);await h.start();
  h.document.body.insertAdjacentHTML('beforeend',page({id:'second'}));const second=h.document.getElementById('second');
  await h.flush();assert.deepEqual(h.after(),['marker'],'both shown: still waiting');
- h.view.classList.add('hide');await h.flush();
+ h.view.classList.add('hide');await h.flush();assert.deepEqual(h.after(),['marker'],'once the swap is painted');
+ h.paint();
  assert.deepEqual(h.after(),[]);assert.deepEqual(h.after(second),['marker'],'waiting for the shown view\'s render');
  await h.render({v:second});assert.deepEqual(h.after(second),['Recommended','Similar']);assert.deepEqual(h.delays(),[]);
  // The hidden view's own render, later, and the shown view's viewshow build and ask nothing more.
  await h.render();await h.viewshow();assert.equal(h.counts.cards,40);assert.deepEqual(h.after(),[]);
  assert.deepEqual(h.network,{similar:1,recommended:1});assert.deepEqual([h.counts.status,h.counts.item],[1,1]);
- // Already rendered when the old view is hidden: inserted at once.
+ // Already rendered when the old view is hidden: inserted once the swap is painted.
  const rendered=setup(t);await rendered.start();
  rendered.document.body.insertAdjacentHTML('beforeend',page({id:'second'}));const b=rendered.document.getElementById('second');
  await rendered.render({v:b});assert.deepEqual(rendered.after(b),[]);
- rendered.view.classList.add('hide');await rendered.flush();assert.deepEqual(rendered.after(b),['Recommended','Similar']);
+ rendered.view.classList.add('hide');await rendered.flush();assert.deepEqual(rendered.after(b),[]);
+ rendered.paint();assert.deepEqual(rendered.after(b),['Recommended','Similar']);assert.deepEqual(rendered.delays(),[]);
+ // The shown view's viewshow run before that task: there at once, and only once.
+ const shown=setup(t);await shown.start();
+ shown.document.body.insertAdjacentHTML('beforeend',page({id:'second'}));const c=shown.document.getElementById('second');
+ await shown.render({v:c});shown.view.classList.add('hide');await shown.flush();
+ await shown.viewshow();assert.deepEqual(shown.after(c),['Recommended','Similar']);assert.deepEqual(shown.delays(),[]);
+ shown.paint();assert.equal(shown.counts.cards,40);assert.deepEqual([shown.counts.status,shown.counts.item],[1,1]);
 });
 
 test('rows waiting on a view hidden or dropped before the next one shows go to it on that view\'s viewshow',async t=>{
@@ -406,6 +422,55 @@ test('printing builds waiting rows at once',async t=>{
  h.window.dispatchEvent(new h.window.Event('beforeprint'));assert.equal(h.counts.cards,40,'once');
 });
 
+test('while the rows wait for the paint after Jellyfin\'s render, printing or the 5 s fallback builds them once; leaving and a user switch act as before',async t=>{
+ const print=x=>x.window.dispatchEvent(new x.window.Event('beforeprint'));
+ // Printing: at once, and the task after the paint builds nothing more.
+ const printed=setup(t);await printed.start();await printed.render({paint:false});
+ print(printed);assert.deepEqual(printed.after(),['Recommended','Similar']);assert.deepEqual(printed.delays(),[]);
+ printed.paint();assert.equal(printed.counts.cards,40,'once');assert.deepEqual(printed.delays(),[]);
+ // The 5 s fallback before the frame comes: the same.
+ const late=setup(t);await late.start();await late.render({paint:false});
+ late.timer(5000);assert.deepEqual(late.after(),['Recommended','Similar']);
+ late.paint();assert.equal(late.counts.cards,40,'once');assert.deepEqual(late.delays(),[]);
+ // Leaving: the build is kept for the left view, which gets its rows after the paint, as it would have with the render.
+ const left=setup(t);await left.start();await left.render({paint:false});
+ left.navigate('#!/home');left.view.classList.add('hide');await left.flush();assert.deepEqual(left.after(),['marker']);
+ left.paint();assert.deepEqual(left.after(),['Recommended','Similar']);assert.deepEqual(left.delays(),[]);
+ print(left);assert.equal(left.counts.cards,40,'once');
+ // Leaving a view that is gone: dropped, and the frame queues nothing.
+ const gone=setup(t);await gone.start();await gone.render({paint:false});
+ gone.view.remove();gone.navigate('#!/home');assert.deepEqual(gone.delays(),[]);
+ gone.paint();print(gone);assert.equal(gone.counts.cards,0);assert.deepEqual(gone.delays(),[]);
+ // A user switch: nothing is inserted, and the item is released for a later viewshow.
+ const user=setup(t);await user.start();await user.render({paint:false});user.bumpEpoch();
+ user.paint();assert.deepEqual(user.after(),[]);assert.equal(user.counts.cards,0);
+ await user.viewshow();assert.deepEqual(user.after(),['Recommended','Similar'],'the item was released');
+ // A user switch, then the navigation: dropped at its abort.
+ const away=setup(t);await away.start();await away.render({paint:false});away.bumpEpoch();away.navigate('#!/home');
+ assert.equal(away.marker(),null);assert.deepEqual(away.delays(),[]);
+ away.paint();print(away);assert.equal(away.counts.cards,0);assert.deepEqual(away.after(),[]);
+});
+
+test('a hidden document, which runs no animation frames, gets the rows from a task: at once, or once it is hidden while they wait',async t=>{
+ const hide=(x,hidden)=>{Object.defineProperty(x.document,'hidden',{configurable:true,get:()=>hidden});};
+ const visibility=x=>x.document.dispatchEvent(new x.window.Event('visibilitychange'));
+ // A details page opened in a background tab: no frame needed.
+ const background=setup(t);hide(background,true);await background.start();await background.render({paint:false});
+ assert.deepEqual(background.delays(),[0,5000]);background.timer(0);
+ assert.deepEqual(background.after(),['Recommended','Similar']);assert.deepEqual(background.delays(),[]);
+ // Hidden after the render, before its frame, which then does not come.
+ const h=setup(t);await h.start();await h.render({paint:false});
+ visibility(h);assert.deepEqual(h.delays(),[5000],'still shown: waiting for the frame');
+ hide(h,true);visibility(h);assert.deepEqual(h.delays(),[0,5000]);
+ h.timer(0);assert.deepEqual(h.after(),['Recommended','Similar']);
+ // Shown again: the frame that comes then builds nothing more.
+ hide(h,false);visibility(h);h.paint();assert.equal(h.counts.cards,40,'once');assert.deepEqual(h.delays(),[]);
+ // Built for printing first: hiding the document later queues nothing.
+ const printed=setup(t);await printed.start();await printed.render({paint:false});
+ printed.window.dispatchEvent(new printed.window.Event('beforeprint'));hide(printed,true);visibility(printed);
+ assert.deepEqual(printed.delays(),[]);assert.equal(printed.counts.cards,40);
+});
+
 test('switches off or Seerr inactive: no marker and no request; the filters still apply',async t=>{
  const off=setup(t,{config:{JellyseerrShowSimilar:false,JellyseerrShowRecommended:false}});off.frame();await off.flush();
  assert.equal(off.counts.status,0);assert.equal(off.marker(),null);assert.deepEqual(off.network,{similar:0,recommended:0});
@@ -431,8 +496,8 @@ test('the similar-recommended measurement ends once, when the data is ready',asy
 
 // Building the cards held back the render they waited for (a long task on a cold page), so where posters wait
 // for an IntersectionObserver they are built while the rows wait, when the browser is idle, into a fragment, and
-// the render only inserts them. Anything not built by then, or that building now would make differently, is
-// built with the render as before.
+// the task after the render's paint only inserts them. Anything not built by then, or that building now would
+// make differently, is built in that task as before.
 
 test('the cards are built while the rows wait, when idle, and Jellyfin\'s render only inserts them',async t=>{
  const h=setup(t,{prebuild:true});await h.start();
@@ -520,7 +585,7 @@ test('printing, the 5 s fallback and the shown view after a swap get the prebuil
  // Jellyfin hides the view the rows waited on; the shown one has rendered: inserted there at once.
  const swap=setup(t,{prebuild:true});await swap.start();swap.idle();
  swap.document.body.insertAdjacentHTML('beforeend',page({id:'second'}));const second=swap.document.getElementById('second');
- await swap.render({v:second});swap.view.classList.add('hide');await swap.flush();
+ await swap.render({v:second});swap.view.classList.add('hide');await swap.flush();swap.paint();
  assert.deepEqual(swap.after(second),['Recommended','Similar']);assert.deepEqual(swap.inserted(second),swap.made);
  assert.equal(swap.counts.cards,40);assert.deepEqual(swap.after(),[]);
 });
