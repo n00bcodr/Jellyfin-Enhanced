@@ -208,10 +208,12 @@
 
         const performFetch = async () => {
             let entry = null;
-            // A lookup that fails after a user switch is neither retried as
-            // the previous user nor cached as "no dates" for the next one.
+            // A taken-over prefetch that fails after a user switch (the switch
+            // cancels the limiter's queued work) is neither retried as the
+            // previous user nor cached as "no dates" for the next one. Any
+            // other failure is logged and cached as it always was.
             const epoch = JE.session ? JE.session.getEpoch() : 0;
-            const stale = () => !!JE.session && !JE.session.isCurrent(epoch);
+            let cutShort = false;
             try {
                 const userId = ApiClient.getCurrentUserId();
                 const lookupNow = async () => {
@@ -230,7 +232,10 @@
                 // without the prefetch.
                 const infos = entry.visit
                     ? await entry.promise.catch((error) => {
-                        if (stale()) throw error;
+                        if (JE.session && !JE.session.isCurrent(epoch)) {
+                            cutShort = true;
+                            throw error;
+                        }
                         return lookupNow();
                     })
                     : await entry.promise;
@@ -248,7 +253,7 @@
             } catch (error) {
                 if (entry && releaseLookups.get(itemId) === entry) releaseLookups.delete(itemId);
                 placeholder.remove();
-                if (stale()) return;
+                if (cutShort) return;
                 console.error(`🪼 Jellyfin Enhanced: Release Date: Error fetching release info for ${itemId}:`, error);
                 releaseDateCache.set(itemId, { infos: [], ts: now });
             }
