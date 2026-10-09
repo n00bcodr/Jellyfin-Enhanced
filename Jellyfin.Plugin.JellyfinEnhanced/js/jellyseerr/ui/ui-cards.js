@@ -453,11 +453,34 @@
     }
 
     /**
-     * Everything createJellyseerrCard reads besides the items themselves, as
-     * one string: cards built for `items` at two moments with an equal key
-     * are the same. Lets a caller that builds cards ahead of inserting them
-     * (item-details.js) tell whether building them now would differ. Keep it
-     * in step with getBatchContext and createJellyseerrCard.
+     * The fields of a result its card is built from (createJellyseerrCard
+     * and the badges it adds, and item-details.js's createSectionCard), as
+     * plain values. Hover and click handlers read the item itself later.
+     * @param {Object} item - Search result item from Seerr API.
+     * @returns {Array}
+     */
+    function cardItemInputs(item) {
+        const info = item.mediaInfo;
+        return [
+            item.id, item.mediaType, item.title, item.name, item.posterPath, item.voteAverage,
+            item.releaseDate, item.firstAirDate, item.collection ? [item.collection.name] : null,
+            info ? [
+                info.status, info.jellyfinMediaId, info.jellyfinMediaId4k,
+                Array.isArray(info.seasons) ? info.seasons.map(s => [s?.seasonNumber, s?.status]) : !!info.seasons,
+                info.downloadStatus?.length, info.downloadStatus4k?.length
+            ] : null
+        ];
+    }
+
+    /**
+     * Everything createJellyseerrCard reads, as one string: cards built for
+     * `items` at two moments with an equal key are the same. Lets a caller
+     * that builds cards ahead of inserting them (item-details.js) tell
+     * whether building them now would differ. That takes the items' own
+     * fields, not just which items they are: a result can change in place
+     * meanwhile, as a request sets its status on the cached result itself
+     * (ui-buttons.js). Keep it in step with getBatchContext and
+     * createJellyseerrCard.
      * @param {Array<Object>} items - The results the cards are for
      * @returns {string}
      */
@@ -468,6 +491,7 @@
             ctx.showProviderIcons, ctx.posterNotFoundUrl, ctx.seerrIconUrl,
             ctx.showHideButtons, ctx.hiddenLabel, ctx.unhideLabel, ctx.hideLabel, ctx.viewOnJellyseerrLabel(),
             ctx.mediaBadgeLabel('movie'), ctx.mediaBadgeLabel('tv'), ctx.mediaBadgeLabel('collection'),
+            items.map(cardItemInputs),
             // Each hide button's state.
             ctx.showHideButtons ? items.map(item => JE.hiddenContent.isHiddenByTmdbId(item.id)) : null
         ]);

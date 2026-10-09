@@ -584,9 +584,11 @@
      * A prebuilt row is used only when building it at insertion would give
      * the same: same results, title and filters (exclude-library, Hidden
      * Content), and the same card inputs (cardInputsKey: settings, labels,
-     * hidden state), checked again at each step and at insertion. Anything
-     * else, or a row not started by then, is built at insertion as before; a
-     * row part built is finished there. Whatever is not taken is released.
+     * hidden state, and the results' own fields, which a request changes in
+     * place in the cached results the rows are made of), checked again at
+     * each step and at insertion. Anything else, or a row not started by
+     * then, is built at insertion as before; a row part built is finished
+     * there. Whatever is not taken is released.
      * @param {object} ctx - See commitRows
      * @returns {{take: function(object): ({section: HTMLElement|null}|null), release: function(): void}|null}
      *   null where cards would load their posters as they are built

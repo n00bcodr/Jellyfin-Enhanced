@@ -576,6 +576,44 @@ test('with the real cards: prebuilt rows are what the render builds, and their p
  assert.equal(rebuilt.observer.targets.size,40,'the prebuilt cards\' posters are released');
 });
 
+test('with the real cards: a result changed in place since its card was prebuilt is built again with the render',async t=>{
+ // The rows are made of the cached results themselves, which a request changes in place (ui-buttons.js:
+ // `if (!item.mediaInfo) item.mediaInfo = {}; item.mediaInfo.status = 3;`), so the same objects can need other cards.
+ class Observer{observe(){} unobserve(){} disconnect(){}}
+ const fresh=()=>{const extra=i=>({posterPath:`/p${i}.jpg`,...(i===2?{mediaInfo:{status:1}}:{})});
+  return {similar:results('Similar',25,extra),recommended:results('Recommended',25,extra)};};
+ const request=item=>{if(!item.mediaInfo)item.mediaInfo={};item.mediaInfo.status=3;};
+ const html=h=>[...h.view.querySelectorAll('.jellyseerr-details-section')].map(s=>s.outerHTML);
+ const badge=(h,row,i)=>h.view.querySelectorAll('.jellyseerr-details-section')[row].querySelectorAll('.jellyseerr-card')[i].querySelector('.jellyseerr-status-badge');
+ const changes={
+  'requested, without media info':[d=>request(d.recommended.results[1]),['Similar'],h=>badge(h,0,1)],
+  'requested, with media info':[d=>request(d.recommended.results[2]),['Similar'],h=>badge(h,0,2)],
+  'now in the library':[d=>{Object.assign(d.similar.results[2].mediaInfo,{status:5,jellyfinMediaId:'lib-2'});},['Recommended'],
+   h=>h.view.querySelectorAll('.jellyseerr-details-section')[1].querySelectorAll('.jellyseerr-card')[2]]
+ };
+ for(const [name,[change,kept,changed]] of Object.entries(changes)){
+  const d=fresh();const h=setup(t,{real:true,prebuild:Observer});await h.start(d);h.idle();const prebuilt=[...h.made];
+  assert.equal(h.counts.cards,40,name);
+  change(d);await h.render();
+  const same=fresh();const sync=setup(t,{real:true,prebuild:Observer});await sync.start(same);change(same);await sync.render();
+  assert.deepEqual(html(h),html(sync),name);
+  // Only the row with the changed result is built again.
+  assert.equal(h.counts.cards,60,name);
+  const sections=[...h.view.querySelectorAll('.jellyseerr-details-section')];
+  assert.deepEqual(sections.filter(s=>[...s.querySelectorAll('.jellyseerr-card')].every(c=>prebuilt.includes(c))).map(s=>s.querySelector('h2').textContent),kept,name);
+  assert.ok(h.releasedPrebuild(),name);
+  const el=changed(h);
+  if(el.classList.contains('jellyseerr-status-badge')){assert.match(el.className,/status-requested/,name);assert.equal(el.style.display,'flex',name);}
+  else{assert.equal(el.getAttribute('data-library-item'),'true',name);assert.ok(el.classList.contains('jellyseerr-card-in-library'),name);}
+ }
+ // Changed between two steps, in a card already built: the prebuild stops there and the render builds them all.
+ const d=fresh();const mid=setup(t,{real:true,prebuild:Observer});await mid.start(d);mid.idle(6);
+ assert.equal(mid.counts.cards,5);request(d.recommended.results[1]);mid.idle();
+ assert.equal(mid.counts.cards,5);assert.equal(mid.idles(),0);assert.ok(mid.releasedPrebuild());
+ await mid.render();assert.equal(mid.counts.cards,45);assert.deepEqual(mid.cards(),[20,20]);
+ assert.match(badge(mid,0,1).className,/status-requested/);
+});
+
 test('where the browser has background tasks the cards are built in short ones, cancelled with the build',async t=>{
  const h=setup(t,{prebuild:true,background:true});await h.start();
  assert.deepEqual(h.tasks(),[{priority:'background',live:true}]);assert.equal(h.idles(),0,'no idle callback');
