@@ -13,8 +13,10 @@ const page=({id='itemDetailPage',name=true,after='',outside=''}={})=>`<div id="$
 const results=(kind,n=25,extra=()=>({}))=>({results:Array.from({length:n},(_,i)=>({id:i,mediaType:'movie',title:`${kind} ${i}`,...extra(i)}))});
 
 const MOVIE={Type:'Movie',Name:'Movie',ProviderIds:{Tmdb:'42'}};
+// Two titles with their own Seerr answers, already in the client caches: movie-1 is A (TMDB 1), movie-2 is B (TMDB 2).
+const TWO={item:id=>({...MOVIE,ProviderIds:{Tmdb:id==='movie-1'?'1':'2'}}),data:(kind,tmdb)=>results(`${tmdb===1?'A':'B'} ${kind}`)};
 
-function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE}={}){
+function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE,data}={}){
  const frames=[],timers=new Map(),navs=[],views=[],teardowns=[],ends=[];
  const network={similar:0,recommended:0},waiting={similar:[],recommended:[]},cache={};
  const counts={status:0,item:0,cards:0,released:0};let timerId=0,epoch=0;
@@ -24,7 +26,9 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
   clearTimeout:id=>{timers.delete(id);}
  };
  // A client cache in front of the Seerr requests: a response is reused, a request is counted once.
- const related=kind=>()=>{
+ // With `data`, each title's answers are already in it.
+ const related=kind=>tmdb=>{
+  if(data)return Promise.resolve(data(kind,tmdb));
   if(cache[kind])return Promise.resolve(cache[kind]);
   network[kind]++;const d=deferred();waiting[kind].push(d);return d.promise;
  };
@@ -34,7 +38,7 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
    seerrStatus:{MEDIA:{BLOCKED:6}},
    session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch},
    requestManager:{metrics:{enabled:true},startMeasurement:()=>{},endMeasurement:name=>ends.push({name,marker:!!h.document.querySelector(`.${MARKER}`),cards:counts.cards})},
-   helpers:{getItemCached:async()=>{counts.item++;return item();},onBodyMutation:()=>({unsubscribe(){}})},
+   helpers:{getItemCached:async id=>{counts.item++;return item(id);},onBodyMutation:()=>({unsubscribe(){}})},
    jellyseerrAPI:{checkUserStatus:async()=>{counts.status++;return status;},
     fetchSimilarMovies:related('similar'),fetchRecommendedMovies:related('recommended')},
    jellyseerrUI:{releasePosters:()=>{counts.released++;},
@@ -50,6 +54,10 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
   /** Element siblings after More Like This: the marker, the rows by title, anything else by id. */
   after(v=view){const out=[];for(let el=this.anchor(v).nextElementSibling;el;el=el.nextElementSibling)out.push(el.classList.contains(MARKER)?'marker':el.classList.contains('jellyseerr-details-section')?el.querySelector('h2').textContent:el.id||el.tagName);return out;},
   cards:(v=view)=>[...v.querySelectorAll('.jellyseerr-details-section')].map(s=>s.querySelectorAll('.card').length),
+  /** The rows' first cards, which name the title they are for (see `data`). */
+  firsts:(v=view)=>[...v.querySelectorAll('.jellyseerr-details-section')].map(s=>s.querySelector('.card').textContent),
+  /** The items of the waiting builds' markers, in DOM order. */
+  markers:(v=view)=>[...v.querySelectorAll(`.${MARKER}`)].map(m=>m.dataset.itemId),
   frame(){const pending=frames.splice(0);for(const fn of pending)fn();},
   /** The Seerr data; an `uncached` kind is answered but not kept, as a failed request's empty answer. */
   async respond({similar=results('Similar'),recommended=results('Recommended'),uncached=[]}={}){
@@ -72,10 +80,15 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
    for(let i=0;i<5;i++)await null;
   },
   async fill(v=view){this.anchor(v).querySelector('.similarContent').insertAdjacentHTML('beforeend','<div class="card">Jellyfin</div>');await this.flush();},
-  timer(ms){for(const [id,entry] of [...timers])if(entry.ms===ms){timers.delete(id);entry.fn();}},
+  /** Runs the timers due after `ms`, or only the first one scheduled. */
+  timer(ms,{once=false}={}){for(const [id,entry] of [...timers])if(entry.ms===ms){timers.delete(id);entry.fn();if(once)return;}},
   delays:()=>[...timers.values()].map(entry=>entry.ms).sort((a,b)=>a-b),
   bumpEpoch(){epoch++;},
-  async viewshow(){for(const fn of views)fn();this.frame();await this.flush();},
+  /** With an `id`, Jellyfin's viewshow on view `v`, which carries the URL's parameters. */
+  async viewshow({v=view,id}={}){
+   let raw=null;if(id){raw=new h.window.CustomEvent('viewshow',{bubbles:true,detail:{params:{id},isRestored:false}});v.dispatchEvent(raw);}
+   for(const fn of views)fn(undefined,undefined,h.window.location.hash,null,raw);this.frame();await this.flush();
+  },
   // pushState, as Jellyfin's router does (setting location.hash would queue jsdom's hashchange on the faked timers).
   navigate(hash){h.window.history.pushState(null,'',hash);for(const fn of teardowns)fn();for(const fn of navs)fn();}
  };
@@ -186,13 +199,55 @@ test('a run for the view the user came back to before its render takes over from
 });
 
 test('the next item\'s run finding the left view, still shown, leaves its kept build alone',async t=>{
- const h=setup(t);await h.start();h.navigate('#!/details?id=movie-2');h.frame();await h.flush();
+ const h=setup(t);await h.start();await h.viewshow({id:'movie-1'});h.navigate('#!/details?id=movie-2');h.frame();await h.flush();
  assert.deepEqual(h.after(),['marker','marker'],'the next item\'s rows wait there too, for now');
  h.document.body.insertAdjacentHTML('beforeend',page({id:'second'}));const second=h.document.getElementById('second');
  h.view.classList.add('hide');await h.flush();assert.deepEqual(h.after(),['marker']);assert.deepEqual(h.after(second),['marker']);
  await h.render();assert.deepEqual(h.after(),['Recommended','Similar'],'the left view\'s own rows');
  await h.render({v:second});assert.deepEqual(h.after(second),['Recommended','Similar']);
  assert.equal(h.counts.cards,80);assert.deepEqual(h.delays(),[]);assert.deepEqual(h.network,{similar:1,recommended:1});
+});
+
+test('the next item\'s rows waiting in the left item\'s view are dropped when the user leaves: that view keeps its own rows',async t=>{
+ // A's rows wait in its view; B's come from the caches while that view is still shown. The user leaves B before
+ // Jellyfin hides it, and Jellyfin's render of A stalls past 5 s.
+ const h=setup(t,TWO);await h.start();await h.viewshow({id:'movie-1'});
+ h.navigate('#!/details?id=movie-2');h.frame();await h.flush();assert.deepEqual(h.markers(),['movie-2','movie-1']);
+ h.navigate('#!/home');h.view.classList.add('hide');await h.flush();
+ assert.deepEqual(h.markers(),['movie-1'],'only the build for the view\'s own item is kept');assert.deepEqual(h.delays(),[5000]);
+ h.timer(5000);assert.deepEqual(h.firsts(),['A recommended 0','A similar 0']);
+ // Back: the restored view's run replaces them in place, in their order, and nothing replaces them later.
+ h.navigate('#!/details?id=movie-1');h.view.classList.remove('hide');await h.viewshow({id:'movie-1'});
+ assert.deepEqual(h.after(),['Recommended','Similar']);assert.deepEqual(h.firsts(),['A recommended 0','A similar 0']);
+ await h.render();h.window.dispatchEvent(new h.window.Event('beforeprint'));h.timer(5000);
+ assert.deepEqual(h.firsts(),['A recommended 0','A similar 0']);assert.equal(h.marker(),null);assert.deepEqual(h.delays(),[]);
+ // Back to A before B's view shows: A's view is restored as it is, and only A's rows are built there.
+ const back=setup(t,TWO);await back.start();await back.viewshow({id:'movie-1'});
+ back.navigate('#!/details?id=movie-2');back.frame();await back.flush();
+ back.navigate('#!/details?id=movie-1');await back.viewshow({id:'movie-1'});assert.deepEqual(back.markers(),['movie-1']);
+ back.window.dispatchEvent(new back.window.Event('beforeprint'));assert.deepEqual(back.firsts(),['A recommended 0','A similar 0']);
+ back.timer(5000);await back.render();assert.deepEqual(back.firsts(),['A recommended 0','A similar 0']);
+ assert.equal(back.counts.cards,40);assert.deepEqual(back.delays(),[]);
+});
+
+test('a build kept before its view\'s viewshow checks whose view it is before building, and gives way to that view\'s item',async t=>{
+ // B's run found A's view before Jellyfin's viewshow of it (a native Back or Forward during the view swap): the
+ // abort cannot tell whose view it is, so it keeps the build.
+ const h=setup(t,TWO);h.navigate('#!/details?id=movie-2');h.frame();await h.flush();
+ h.navigate('#!/home');h.view.classList.add('hide');assert.deepEqual(h.markers(),['movie-2']);
+ await h.viewshow({id:'movie-1'});h.timer(5000);await h.render();
+ assert.deepEqual(h.after(),[],'nothing in the other item\'s view');assert.equal(h.counts.cards,0);
+ // Its own view, shown after the run found it: built there.
+ const mine=setup(t,TWO);mine.navigate('#!/details?id=movie-2');mine.frame();await mine.flush();
+ mine.navigate('#!/home');mine.view.classList.add('hide');await mine.viewshow({id:'movie-2'});mine.timer(5000);
+ assert.deepEqual(mine.firsts(),['B recommended 0','B similar 0']);
+ // Next to A's own kept build: A's rows, inserted at once on Back, take its place and keep their order.
+ const own=setup(t,TWO);await own.start();own.navigate('#!/details?id=movie-2');own.frame();await own.flush();
+ own.navigate('#!/home');own.view.classList.add('hide');assert.deepEqual(own.markers(),['movie-2','movie-1']);
+ own.timer(5000,{once:true});assert.deepEqual(own.after(),['marker','Recommended','Similar'],'A\'s fallback');
+ own.navigate('#!/details?id=movie-1');own.view.classList.remove('hide');await own.viewshow({id:'movie-1'});
+ assert.deepEqual(own.after(),['Recommended','Similar']);assert.deepEqual(own.firsts(),['A recommended 0','A similar 0']);
+ own.timer(5000);await own.render();assert.deepEqual(own.firsts(),['A recommended 0','A similar 0']);assert.deepEqual(own.delays(),[]);
 });
 
 test('a viewshow while the rows wait, or after they are built, requests and builds nothing again',async t=>{

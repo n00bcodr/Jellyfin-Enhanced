@@ -37,6 +37,15 @@
     // The current run's rows waiting on a view (see deferRows), so the shown
     // view's viewshow run can send them there: { itemId, retarget }.
     let waitingRows = null;
+    // The item each view was shown for, from Jellyfin's viewshow. A view
+    // keeps its URL for its life (Back and Forward restore it, a new visit
+    // builds a new one), so a build kept for a view the user left is only
+    // ever for that view's own item (see deferRows).
+    /** @type {WeakMap<Element, string>} */
+    const viewItems = new WeakMap();
+    // Markers of the builds kept for a view the user left (see deferRows).
+    /** @type {WeakSet<Element>} */
+    const leftMarkers = new WeakSet();
 
     /**
      * Gets the TMDB ID from a Jellyfin item
@@ -315,6 +324,27 @@
         if (!signal.aborted) processedItems.delete(itemId);
     }
 
+    /**
+     * Records the item a view is shown for: Jellyfin dispatches viewshow on
+     * the view, with the URL's parameters.
+     * @param {CustomEvent|null} rawEvent - The raw viewshow event
+     */
+    function noteViewItem(rawEvent) {
+        const view = rawEvent?.target;
+        const itemId = rawEvent?.detail?.params?.id;
+        if (itemId && view?.nodeType === 1) viewItems.set(view, itemId);
+    }
+
+    /**
+     * Whether a view was shown for another item: a run can find the
+     * outgoing view, still shown (see deferRows). Not known before the
+     * view's first viewshow.
+     */
+    function shownForOther(page, itemId) {
+        const shownFor = page ? viewItems.get(page) : undefined;
+        return shownFor !== undefined && shownFor !== itemId;
+    }
+
     /** Whether the identity a run started under is still the signed-in one. */
     function sessionCurrent(epoch) {
         return epoch === undefined || typeof JE.session?.isCurrent !== 'function' || JE.session.isCurrent(epoch);
@@ -377,11 +407,15 @@
 
     /**
      * Removes the waiting builds' markers for an item (see deferRows), but
-     * `keep`. Another item's build kept for its own view stays.
+     * `keep`. Another item's build kept for its own view stays. In a view
+     * shown for this item, another item's kept build goes too: it was kept
+     * before the view's viewshow told whose it is.
      */
-    function removeMarkers(root, itemId, keep = null) {
+    function removeMarkers(page, root, itemId, keep = null) {
+        const own = !!page && viewItems.get(page) === itemId;
         root.querySelectorAll(`.${PENDING_ROWS_CLASS}`).forEach((el) => {
-            if (el !== keep && el.dataset.itemId === itemId) el.remove();
+            if (el === keep) return;
+            if (el.dataset.itemId === itemId || (own && leftMarkers.has(el))) el.remove();
         });
     }
 
@@ -389,12 +423,14 @@
      * Inserts the rows of a build kept for a view the user left (see
      * deferRows): into that view, shown or not, where they were inserted
      * with their data before. Not once the view is gone, a newer build or
-     * insert in it has taken its marker away, or another user signed in.
+     * insert in it has taken its marker away, it turned out to be another
+     * item's view, or another user signed in.
      * @param {object} ctx - See commitRows
      * @param {HTMLElement} marker - The build's placeholder
      */
     function commitLeftRows(ctx, marker) {
         if (!ctx.page.isConnected || !marker.isConnected || !sessionCurrent(ctx.epoch)) return;
+        if (shownForOther(ctx.page, ctx.itemId)) return;
         insertRows(ctx, marker);
     }
 
@@ -406,10 +442,10 @@
      * @param {object} ctx - See commitRows
      * @param {HTMLElement|null} marker - The deferred build's placeholder
      */
-    function insertRows({ itemId, detailPageContent, anchor, recommended, similar }, marker) {
+    function insertRows({ itemId, page, detailPageContent, anchor, recommended, similar }, marker) {
         // A build for this item still kept from when the user left the view
         // gives way.
-        removeMarkers(detailPageContent, itemId, marker);
+        removeMarkers(page, detailPageContent, itemId, marker);
         // Remove any existing Jellyseerr sections to avoid duplicates (their
         // cards must be unobserved first: lazy posters hold strong references).
         // Before the new cards exist: detached cards are released too.
@@ -472,7 +508,10 @@
      * them from its first frame (the run there replaces them in place). They
      * are built into the left view, hidden or not, with Jellyfin's render of
      * it or after NAME_WAIT_MS, unless it is gone, another build has taken it
-     * over or another user signed in (see commitLeftRows).
+     * over or another user signed in (see commitLeftRows). Only for the
+     * item's own view: a build waiting on another item's view (see below) is
+     * dropped, as before, so that item's rows stay. A view's item is known
+     * from its viewshow; a build kept before that checks again as it builds.
      *
      * Jellyfin adds a new view before it hides the one it leaves, so the run
      * may have found the outgoing view, still shown. When that view is hidden
@@ -517,8 +556,9 @@
             marker.remove();
         };
         const onAbort = () => {
-            if (page.isConnected && sessionCurrent(ctx.epoch)) {
+            if (page.isConnected && sessionCurrent(ctx.epoch) && !shownForOther(page, itemId)) {
                 left = true;
+                leftMarkers.add(marker);
                 detach();
                 return;
             }
@@ -540,7 +580,7 @@
         }
 
         try {
-            removeMarkers(page, itemId);
+            removeMarkers(page, page, itemId);
             anchor.after(marker);
             signal.addEventListener('abort', onAbort, { once: true });
             window.addEventListener('beforeprint', run);
@@ -1087,7 +1127,10 @@
         handleItemDetailsPage();
 
         // Also react to view shows (Jellyfin's custom viewshow event)
-        JE.core.navigation.onViewPage(() => handleItemDetailsPage());
+        JE.core.navigation.onViewPage((_view, _element, _hash, _itemPromise, rawEvent) => {
+            noteViewItem(rawEvent);
+            handleItemDetailsPage();
+        });
     }
 
     // Initialize when DOM is ready
