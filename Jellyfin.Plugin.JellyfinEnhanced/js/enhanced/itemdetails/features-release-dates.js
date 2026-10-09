@@ -208,6 +208,10 @@
 
         const performFetch = async () => {
             let entry = null;
+            // A lookup that fails after a user switch is neither retried as
+            // the previous user nor cached as "no dates" for the next one.
+            const epoch = JE.session ? JE.session.getEpoch() : 0;
+            const stale = () => !!JE.session && !JE.session.isCurrent(epoch);
             try {
                 const userId = ApiClient.getCurrentUserId();
                 const lookupNow = async () => {
@@ -224,7 +228,12 @@
                 else releaseLookups.set(itemId, entry = { promise: lookupNow(), visit: null, claimed: true, ctl: null });
                 // A failed prefetch is never shown: look it up now instead, as
                 // without the prefetch.
-                const infos = entry.visit ? await entry.promise.catch(() => lookupNow()) : await entry.promise;
+                const infos = entry.visit
+                    ? await entry.promise.catch((error) => {
+                        if (stale()) throw error;
+                        return lookupNow();
+                    })
+                    : await entry.promise;
                 releaseDateCache.set(itemId, { infos, ts: now });
                 if (releaseLookups.get(itemId) === entry) releaseLookups.delete(itemId);
                 // The chips' small DOM write lands with the next frame's own
@@ -237,10 +246,11 @@
                     placeholder.remove();
                 }
             } catch (error) {
-                console.error(`🪼 Jellyfin Enhanced: Release Date: Error fetching release info for ${itemId}:`, error);
-                releaseDateCache.set(itemId, { infos: [], ts: now });
                 if (entry && releaseLookups.get(itemId) === entry) releaseLookups.delete(itemId);
                 placeholder.remove();
+                if (stale()) return;
+                console.error(`🪼 Jellyfin Enhanced: Release Date: Error fetching release info for ${itemId}:`, error);
+                releaseDateCache.set(itemId, { infos: [], ts: now });
             }
         };
 

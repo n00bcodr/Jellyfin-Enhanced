@@ -123,3 +123,20 @@ test('an expired answer is looked up again: a finished lookup is not kept for th
  now+=2*60*60*1000;h.container.replaceChildren();h.api.displayReleaseDate('movie',h.container);await h.settle();assert.equal(h.counts().fetchCalls,2);
  now+=2*60*60*1000;h.api.prefetchReleaseDate('movie',movie,{});await h.settle();assert.equal(h.counts().fetchCalls,3);
 });
+test('a lookup that fails after a user switch is not retried as the previous user nor cached as no dates',async t=>{
+ // core-api's user-change handler cancels the limiter's queued work, a prefetch a chip took over included.
+ const queued=deferred();const manager={withConcurrencyLimit:()=>queued.promise};const {session,switchUser}=sessionStub();let signedOut=false;
+ const h=setup(t,{data:releases,getItem:async()=>{if(signedOut)throw new Error('401 Unauthorized');return movie;},JE:{core:{api:{manager}},session}});
+ h.api.prefetchReleaseDate('movie',movie,{});h.api.displayReleaseDate('movie',h.container);await h.settle();
+ signedOut=true;switchUser();queued.reject(Object.assign(new Error('Request aborted'),{name:'AbortError'}));await h.settle();
+ assert.deepEqual(h.counts(),{itemCalls:0,fetchCalls:0},'nothing asked for under the next session');assert.equal(h.container.children.length,0);
+ signedOut=false;h.api.displayReleaseDate('movie',h.container);await h.settle();
+ assert.equal(h.container.querySelectorAll('.mediaInfoItem-releaseDate').length,2,'the next user gets the dates');assert.deepEqual(h.counts(),{itemCalls:1,fetchCalls:1});
+ // The chip's own lookup, failing because the session it started in is gone.
+ const item=deferred();const own=sessionStub();
+ const chip=setup(t,{data:releases,getItem:()=>item.promise,JE:{session:own.session}});
+ chip.api.displayReleaseDate('movie',chip.container);await chip.settle();own.switchUser();item.reject(new Error('401 Unauthorized'));await chip.settle();
+ assert.equal(chip.container.children.length,0);
+ chip.window.ApiClient.getItem=async()=>movie;chip.api.displayReleaseDate('movie',chip.container);await chip.settle();
+ assert.equal(chip.container.querySelectorAll('.mediaInfoItem-releaseDate').length,2,'no empty answer was cached');
+});
