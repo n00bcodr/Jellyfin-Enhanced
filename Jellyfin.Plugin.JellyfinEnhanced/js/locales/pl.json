@@ -755,5 +755,6 @@
     "catchup_top_watched": "Najczęściej oglądane",
     "catchup_top_dismissed": "Najczęściej odrzucane",
     "catchup_top_watchlisted": "Najczęściej dodawane do listy",
-    "catchup_failed": "Niepowodzenie: {error}"
+    "catchup_failed": "Niepowodzenie: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

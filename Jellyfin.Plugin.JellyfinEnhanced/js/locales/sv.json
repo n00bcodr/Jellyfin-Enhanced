@@ -755,5 +755,6 @@
     "catchup_top_watched": "Mest sedda",
     "catchup_top_dismissed": "Mest avfärdade",
     "catchup_top_watchlisted": "Mest bevakade",
-    "catchup_failed": "Misslyckades: {error}"
+    "catchup_failed": "Misslyckades: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

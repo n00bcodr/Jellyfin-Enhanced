@@ -755,5 +755,6 @@
     "catchup_top_watched": "Meest bekeken",
     "catchup_top_dismissed": "Meest genegeerd",
     "catchup_top_watchlisted": "Meest aan watchlist toegevoegd",
-    "catchup_failed": "Mislukt: {error}"
+    "catchup_failed": "Mislukt: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

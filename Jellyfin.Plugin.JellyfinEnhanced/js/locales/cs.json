@@ -755,5 +755,6 @@
     "catchup_top_watched": "Nejsledovanější",
     "catchup_top_dismissed": "Nejčastěji zamítnuté",
     "catchup_top_watchlisted": "Nejčastěji na seznamu sledování",
-    "catchup_failed": "Selhalo: {error}"
+    "catchup_failed": "Selhalo: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

@@ -755,5 +755,6 @@
     "catchup_top_watched": "Més vistos",
     "catchup_top_dismissed": "Més descartats",
     "catchup_top_watchlisted": "Més afegits a la llista de seguiment",
-    "catchup_failed": "Error: {error}"
+    "catchup_failed": "Error: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

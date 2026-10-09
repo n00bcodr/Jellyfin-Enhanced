@@ -755,5 +755,6 @@
     "catchup_top_watched": "הנצפים ביותר",
     "catchup_top_dismissed": "המוּתעלמים ביותר",
     "catchup_top_watchlisted": "הנוספים ביותר לרשימת הצפייה",
-    "catchup_failed": "נכשל: {error}"
+    "catchup_failed": "נכשל: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }
