@@ -41,16 +41,21 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'n00bcodr/Jellyfin-Enhanced'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions:
-      contents: write
     steps:
+      - name: Generate bot token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: main
+          token: ${{ steps.app-token.outputs.token }}
       - name: Regenerate and commit if stale
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.name 'jellyfin-enhanced-bot[bot]'
+          git config user.email '340227967+jellyfin-enhanced-bot[bot]@users.noreply.github.com'
           # Regenerate against the latest main and retry if another push lands first.
           for attempt in 1 2 3; do
             git fetch -q --depth=1 origin main
