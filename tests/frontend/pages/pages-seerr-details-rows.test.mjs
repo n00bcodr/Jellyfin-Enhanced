@@ -12,7 +12,9 @@ const SECONDARY='<div class="detailPageSecondaryContainer"><div id="similarColla
 const page=({id='itemDetailPage',name=true,after='',outside=''}={})=>`<div id="${id}" class="page libraryPage itemDetailPage"><div class="detailPageWrapperContainer"><div class="detailPagePrimaryContainer">${name?'<div class="nameContainer"></div>':''}</div>${SECONDARY.replace('__AFTER__',after)}</div>${outside}</div>`;
 const results=(kind,n=25,extra=()=>({}))=>({results:Array.from({length:n},(_,i)=>({id:i,mediaType:'movie',title:`${kind} ${i}`,...extra(i)}))});
 
-function setup(t,{html=page(),config={},status={active:true},card}={}){
+const MOVIE={Type:'Movie',Name:'Movie',ProviderIds:{Tmdb:'42'}};
+
+function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE}={}){
  const frames=[],timers=new Map(),navs=[],views=[],teardowns=[],ends=[];
  const network={similar:0,recommended:0},waiting={similar:[],recommended:[]},cache={};
  const counts={status:0,item:0,cards:0,released:0};let timerId=0,epoch=0;
@@ -32,7 +34,7 @@ function setup(t,{html=page(),config={},status={active:true},card}={}){
    seerrStatus:{MEDIA:{BLOCKED:6}},
    session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch},
    requestManager:{metrics:{enabled:true},startMeasurement:()=>{},endMeasurement:name=>ends.push({name,marker:!!h.document.querySelector(`.${MARKER}`),cards:counts.cards})},
-   helpers:{getItemCached:async()=>{counts.item++;return {Type:'Movie',Name:'Movie',ProviderIds:{Tmdb:'42'}};},onBodyMutation:()=>({unsubscribe(){}})},
+   helpers:{getItemCached:async()=>{counts.item++;return item();},onBodyMutation:()=>({unsubscribe(){}})},
    jellyseerrAPI:{checkUserStatus:async()=>{counts.status++;return status;},
     fetchSimilarMovies:related('similar'),fetchRecommendedMovies:related('recommended')},
    jellyseerrUI:{releasePosters:()=>{counts.released++;},
@@ -130,15 +132,67 @@ test('anything after More Like This keeps the immediate insert and its order',as
  await late.render();assert.deepEqual(late.after(),['Recommended','Similar','late']);
 });
 
-test('leaving while the rows wait drops them; nothing is inserted later and Back inserts at once',async t=>{
- const h=setup(t);await h.start();
- h.navigate('#!/home');
- assert.equal(h.marker(),null);assert.equal(h.timers.size,0);
- await h.render();h.window.dispatchEvent(new h.window.Event('beforeprint'));
- assert.equal(h.counts.cards,0);assert.deepEqual(h.after(),[]);
- // Back to the cached view, which Jellyfin had rendered meanwhile.
- h.navigate('#!/details?id=movie-1');h.frame();await h.flush();
- assert.deepEqual(h.after(),['Recommended','Similar']);assert.deepEqual(h.network,{similar:1,recommended:1});
+test('leaving while the rows wait builds them into the left view with its render; Back restores the view with them',async t=>{
+ // Before, the rows went in with their data, so the view Jellyfin keeps had them when Back restored it.
+ let lookup=()=>MOVIE;const h=setup(t,{item:()=>lookup()});await h.start();
+ h.navigate('#!/home');h.view.classList.add('hide');await h.flush();
+ assert.deepEqual(h.after(),['marker'],'kept for the left view');assert.deepEqual(h.delays(),[5000]);
+ // Jellyfin's reload still renders the left view, now hidden.
+ await h.render();assert.deepEqual(h.after(),['Recommended','Similar']);assert.deepEqual(h.cards(),[20,20]);assert.equal(h.marker(),null);
+ assert.deepEqual(h.delays(),[]);h.window.dispatchEvent(new h.window.Event('beforeprint'));assert.equal(h.counts.cards,40,'once');
+ // Back restores the view after the item cache expired: the rows are there while the item is looked up again.
+ const pending=deferred();lookup=()=>pending.promise;
+ h.navigate('#!/details?id=movie-1');h.view.classList.remove('hide');h.frame();await h.flush();
+ assert.deepEqual(h.after(),['Recommended','Similar'],'from the restored view\'s first frame');assert.equal(h.counts.cards,40);
+ pending.resolve(MOVIE);await h.flush();
+ assert.deepEqual(h.after(),['Recommended','Similar'],'replaced in place, as before');assert.equal(h.counts.cards,80);
+ assert.deepEqual(h.network,{similar:1,recommended:1});
+ // A Back run that finds no item leaves them, as before.
+ let found=MOVIE;const gone=setup(t,{item:()=>found});await gone.start();gone.navigate('#!/home');gone.view.classList.add('hide');await gone.render();
+ found=null;gone.navigate('#!/details?id=movie-1');gone.view.classList.remove('hide');gone.frame();await gone.flush();
+ assert.deepEqual(gone.after(),['Recommended','Similar']);assert.equal(gone.counts.cards,40);
+});
+
+test('a left view gets its rows after 5 s without a render, and none once it is gone or another user signed in',async t=>{
+ const h=setup(t);await h.start();h.navigate('#!/home');h.view.classList.add('hide');
+ h.timer(5000);assert.deepEqual(h.after(),['Recommended','Similar']);assert.equal(h.marker(),null);
+ await h.render();assert.equal(h.counts.cards,40,'once');
+ // Back can restore the previous details view, and hide this one, before JE sees the navigation: kept as well.
+ const back=setup(t);await back.start();back.window.history.pushState(null,'','#!/details?id=movie-0');
+ back.document.body.insertAdjacentHTML('beforeend',page({id:'previous'}));back.view.classList.add('hide');await back.flush();
+ assert.deepEqual(back.after(),['marker']);back.navigate('#!/details?id=movie-0');
+ await back.render();assert.deepEqual(back.after(),['Recommended','Similar']);
+ assert.deepEqual(back.after(back.document.getElementById('previous')),[],'nothing in the other item\'s view');
+ const removed=setup(t);await removed.start();removed.navigate('#!/home');removed.view.remove();
+ await removed.render();removed.timer(5000);assert.equal(removed.counts.cards,0);assert.deepEqual(removed.after(),[]);
+ const before=setup(t);await before.start();before.bumpEpoch();before.navigate('#!/home');
+ assert.equal(before.marker(),null);assert.deepEqual(before.delays(),[]);await before.render();assert.equal(before.counts.cards,0);
+ const after=setup(t);await after.start();after.navigate('#!/home');after.bumpEpoch();
+ await after.render();assert.equal(after.counts.cards,0);assert.deepEqual(after.after(),[]);
+});
+
+test('a run for the view the user came back to before its render takes over from the kept build',async t=>{
+ const h=setup(t);await h.start();h.navigate('#!/home');h.view.classList.add('hide');
+ h.navigate('#!/details?id=movie-1');h.view.classList.remove('hide');h.frame();await h.flush();
+ assert.equal(h.document.querySelectorAll(`.${MARKER}`).length,1);
+ await h.render();assert.deepEqual(h.after(),['Recommended','Similar']);assert.equal(h.counts.cards,40,'built once');
+ assert.deepEqual(h.network,{similar:1,recommended:1});assert.deepEqual(h.delays(),[]);
+ // The new run inserts at once (something now follows More Like This): the kept build gives way.
+ const late=setup(t);await late.start();late.navigate('#!/home');late.view.classList.add('hide');
+ late.anchor().parentElement.insertAdjacentHTML('beforeend','<div id="late"></div>');
+ late.navigate('#!/details?id=movie-1');late.view.classList.remove('hide');late.frame();await late.flush();
+ assert.deepEqual(late.after(),['Similar','Recommended','late'],'the immediate insert\'s order');assert.equal(late.marker(),null);
+ await late.render();late.timer(5000);assert.equal(late.counts.cards,40);
+});
+
+test('the next item\'s run finding the left view, still shown, leaves its kept build alone',async t=>{
+ const h=setup(t);await h.start();h.navigate('#!/details?id=movie-2');h.frame();await h.flush();
+ assert.deepEqual(h.after(),['marker','marker'],'the next item\'s rows wait there too, for now');
+ h.document.body.insertAdjacentHTML('beforeend',page({id:'second'}));const second=h.document.getElementById('second');
+ h.view.classList.add('hide');await h.flush();assert.deepEqual(h.after(),['marker']);assert.deepEqual(h.after(second),['marker']);
+ await h.render();assert.deepEqual(h.after(),['Recommended','Similar'],'the left view\'s own rows');
+ await h.render({v:second});assert.deepEqual(h.after(second),['Recommended','Similar']);
+ assert.equal(h.counts.cards,80);assert.deepEqual(h.delays(),[]);assert.deepEqual(h.network,{similar:1,recommended:1});
 });
 
 test('a viewshow while the rows wait, or after they are built, requests and builds nothing again',async t=>{

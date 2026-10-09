@@ -315,6 +315,11 @@
         if (!signal.aborted) processedItems.delete(itemId);
     }
 
+    /** Whether the identity a run started under is still the signed-in one. */
+    function sessionCurrent(epoch) {
+        return epoch === undefined || typeof JE.session?.isCurrent !== 'function' || JE.session.isCurrent(epoch);
+    }
+
     /**
      * Whether the rows can wait: Jellyfin has not rendered the item yet, in a
      * visible view that has no Seerr rows (a restored view is replaced in
@@ -328,20 +333,18 @@
     }
 
     /**
-     * Inserts the Similar and Recommended rows; the only insertion point.
-     * Without a marker they go after More Like This exactly as they always
-     * have; with one, before the marker, which is the same place when
-     * nothing followed More Like This at scheduling (see nothingFollows).
+     * Inserts a run's rows into its view, when it is still the shown view of
+     * the item in the URL for the identity the run started under.
      * @param {object} ctx - The run: itemId, signal, epoch, page, detailPageContent, anchor, recommended, similar
      * @param {HTMLElement|null} marker - The deferred build's placeholder
      * @returns {boolean} Whether the rows were inserted (from a hidden view:
      *   placed in the shown one, see placeRows)
      */
     function commitRows(ctx, marker) {
-        const { itemId, signal, epoch, page, detailPageContent, anchor, recommended, similar } = ctx;
+        const { itemId, signal, epoch, page, anchor } = ctx;
         if (signal.aborted) return false;
         if (detailsItemIdFromHash() !== itemId) return false;
-        if (epoch !== undefined && typeof JE.session?.isCurrent === 'function' && !JE.session.isCurrent(epoch)) {
+        if (!sessionCurrent(epoch)) {
             releaseClaim(ctx);
             return false;
         }
@@ -368,7 +371,45 @@
             if (visible && visible !== page) scheduleSimilarAndRecommended(itemId);
             return false;
         }
+        insertRows(ctx, marker);
+        return true;
+    }
 
+    /**
+     * Removes the waiting builds' markers for an item (see deferRows), but
+     * `keep`. Another item's build kept for its own view stays.
+     */
+    function removeMarkers(root, itemId, keep = null) {
+        root.querySelectorAll(`.${PENDING_ROWS_CLASS}`).forEach((el) => {
+            if (el !== keep && el.dataset.itemId === itemId) el.remove();
+        });
+    }
+
+    /**
+     * Inserts the rows of a build kept for a view the user left (see
+     * deferRows): into that view, shown or not, where they were inserted
+     * with their data before. Not once the view is gone, a newer build or
+     * insert in it has taken its marker away, or another user signed in.
+     * @param {object} ctx - See commitRows
+     * @param {HTMLElement} marker - The build's placeholder
+     */
+    function commitLeftRows(ctx, marker) {
+        if (!ctx.page.isConnected || !marker.isConnected || !sessionCurrent(ctx.epoch)) return;
+        insertRows(ctx, marker);
+    }
+
+    /**
+     * Inserts the Similar and Recommended rows; the only insertion point.
+     * Without a marker they go after More Like This exactly as they always
+     * have; with one, before the marker, which is the same place when
+     * nothing followed More Like This at scheduling (see nothingFollows).
+     * @param {object} ctx - See commitRows
+     * @param {HTMLElement|null} marker - The deferred build's placeholder
+     */
+    function insertRows({ itemId, detailPageContent, anchor, recommended, similar }, marker) {
+        // A build for this item still kept from when the user left the view
+        // gives way.
+        removeMarkers(detailPageContent, itemId, marker);
         // Remove any existing Jellyseerr sections to avoid duplicates (their
         // cards must be unobserved first: lazy posters hold strong references).
         // Before the new cards exist: detached cards are released too.
@@ -414,7 +455,6 @@
                 console.debug(`${logPrefix} Added Similar section with ${similar.length} items`);
             }
         }
-        return true;
     }
 
     /**
@@ -425,8 +465,14 @@
      * page never ends at More Like This without them, as it never did when
      * they were inserted with their data. A page Jellyfin never renders gets
      * them after NAME_WAIT_MS; printing builds them at once. The data and
-     * the claim on the item are already there; leaving (the abort) drops
-     * the build.
+     * the claim on the item are already there.
+     *
+     * Leaving the view (the abort) keeps the build for it: its rows used to
+     * be inserted with their data, so a view restored by Back or Forward had
+     * them from its first frame (the run there replaces them in place). They
+     * are built into the left view, hidden or not, with Jellyfin's render of
+     * it or after NAME_WAIT_MS, unless it is gone, another build has taken it
+     * over or another user signed in (see commitLeftRows).
      *
      * Jellyfin adds a new view before it hides the one it leaves, so the run
      * may have found the outgoing view, still shown. When that view is hidden
@@ -440,35 +486,51 @@
         const { itemId, signal, page, anchor } = ctx;
         const marker = document.createElement('div');
         marker.className = PENDING_ROWS_CLASS;
+        marker.dataset.itemId = itemId;
         marker.setAttribute('aria-hidden', 'true');
 
         let done = false;
+        let left = false;
         let nameObserver = null;
         let nameTimer = null;
         // Not before a details view is shown: commitRows would release the
         // item and a new run would ask again for what is not cached.
-        const movedOn = () => (!page.isConnected || page.classList.contains('hide'))
+        const movedOn = () => !left && (!page.isConnected || page.classList.contains('hide'))
             && detailsItemIdFromHash() === itemId && !!findDetailPage();
         const waiting = { itemId, retarget: () => { if (movedOn()) run(); } };
 
-        const dispose = () => {
-            done = true;
-            nameObserver?.disconnect();
-            clearTimeout(nameTimer);
+        // No longer the current run's: printing, the run's abort and the
+        // shown view's viewshow run leave the build alone.
+        const detach = () => {
             window.removeEventListener('beforeprint', run);
             signal.removeEventListener('abort', onAbort);
             if (waitingRows === waiting) waitingRows = null;
         };
-        const onAbort = () => {
+        const dispose = () => {
+            done = true;
+            nameObserver?.disconnect();
+            clearTimeout(nameTimer);
+            detach();
+        };
+        const drop = () => {
             dispose();
             marker.remove();
+        };
+        const onAbort = () => {
+            if (page.isConnected && sessionCurrent(ctx.epoch)) {
+                left = true;
+                detach();
+                return;
+            }
+            drop();
         };
 
         function run() {
             if (done) return;
             dispose();
             try {
-                commitRows(ctx, marker);
+                if (left) commitLeftRows(ctx, marker);
+                else commitRows(ctx, marker);
             } catch (error) {
                 releaseClaim(ctx);
                 console.error(`${logPrefix} Error rendering similar and recommended sections:`, error);
@@ -478,7 +540,7 @@
         }
 
         try {
-            page.querySelectorAll(`.${PENDING_ROWS_CLASS}`).forEach(el => el.remove());
+            removeMarkers(page, itemId);
             anchor.after(marker);
             signal.addEventListener('abort', onAbort, { once: true });
             window.addEventListener('beforeprint', run);
@@ -492,7 +554,7 @@
             return true;
         } catch (_) {
             // Insert now, as before.
-            onAbort();
+            drop();
             let placed = false;
             try {
                 placed = commitRows(ctx, null);
@@ -969,7 +1031,8 @@
      * Cleanup function for navigation
      */
     function cleanup() {
-        // Abort any in-flight requests (this also drops a pending row build)
+        // Abort any in-flight requests (a pending row build is kept for the
+        // view being left, see deferRows)
         if (currentAbortController) {
             currentAbortController.abort();
             currentAbortController = null;
