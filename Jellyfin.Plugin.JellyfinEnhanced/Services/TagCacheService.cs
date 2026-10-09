@@ -1272,8 +1272,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var kind = item.GetBaseItemKind();
             if (!TaggableTypes.Contains(kind)) return false;
-            // In-place removal through TryRemoveEntry, so shared response bytes see the mutation epoch move.
-            if (IsInExcludedLibrary(item)) return TryRemoveEntry(id.ToString("N").ToLowerInvariant(), out _);
+            // Through RemoveEntry: it advances the mutation epoch (shared response bytes)
+            // and the version, the only way clients holding the entry learn it is gone.
+            if (IsInExcludedLibrary(item)) return RemoveEntry(id);
 
             var entry = BuildEntryForItem(item, episodeScans);
             if (entry == null) return false;
@@ -2830,7 +2831,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private ContainerEpisodeIndex BuildContainerEpisodeIndex(IReadOnlyList<Guid> containerIds, EpisodeScanMemo episodeScans, CancellationToken cancellationToken)
         {
-            var orderedIds = TagEpisodeSelector.GetOrderedEpisodeIds(_libraryManager);
+            // Same library filter as the build's id queries: episodes of an excluded
+            // library belong to no container this build makes, and would otherwise all
+            // be hydrated below as late episodes.
+            var orderedIds = TagEpisodeSelector.GetOrderedEpisodeIds(_libraryManager, IncludedLibraryIds());
 
             var late = new Dictionary<Guid, MediaBrowser.Controller.Entities.TV.Episode>();
             var lateIds = orderedIds.Where(id => !(episodeScans.TryGetValue(id, out var scan) && scan.Placement != null)).ToList();

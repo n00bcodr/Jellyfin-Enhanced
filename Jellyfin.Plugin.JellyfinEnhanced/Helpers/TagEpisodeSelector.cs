@@ -150,9 +150,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         /// keys (same or no premiere date AND same sort name) have no defined
         /// order in either query.
         /// </summary>
-        public static IReadOnlyList<Guid> GetOrderedEpisodeIds(ILibraryManager libraryManager)
+        /// <param name="libraryManager">Jellyfin's library manager.</param>
+        /// <param name="topParentIds">Libraries to list episodes from (the tag cache's
+        /// included libraries); null or empty for every library.</param>
+        public static IReadOnlyList<Guid> GetOrderedEpisodeIds(ILibraryManager libraryManager, Guid[]? topParentIds = null)
         {
-            return libraryManager.GetItemIds(CreateEpisodeQuery(null));
+            var query = CreateEpisodeQuery(null);
+            if (topParentIds is { Length: > 0 })
+            {
+                query.TopParentIds = topParentIds;
+            }
+
+            return libraryManager.GetItemIds(query);
         }
 
         /// <summary>
