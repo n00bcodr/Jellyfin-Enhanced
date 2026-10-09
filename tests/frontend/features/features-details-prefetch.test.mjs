@@ -44,6 +44,9 @@ function setup(t,{id='movie',settings={showWatchProgress:true,showFileSizes:true
   fillInfoRow(){row.insertAdjacentHTML('afterbegin','<div class="mediaInfoItem">2025</div>');},
   tick:()=>new Promise(done=>h.window.setTimeout(done,0)),
   settle:()=>new Promise(done=>setImmediate(done)),
+  // The item's promise callbacks only: no timer can run in between, so the visit's setTimeout(0)
+  // is still pending (setImmediate and a 1 ms timer may run in either order).
+  async microtasks(){for(let i=0;i<5;i++)await null;},
   // Promise chains, then the visit's setTimeout(0) that starts the lookups.
   async flush(){await this.settle();await this.tick();await this.settle();}};
 }
@@ -93,10 +96,10 @@ test('leaving, a hidden view or a user switch before the item is known starts no
  const hidden=setup(t);hidden.viewshow();hidden.page.classList.add('hide');await hidden.resolveItem();assert.equal(hidden.plugin.length+hidden.tmdb.length,0);
  const switched=setup(t);switched.viewshow();switched.switchUser();await switched.resolveItem();assert.equal(switched.plugin.length+switched.tmdb.length,0);
  // Left between the item and the timer that starts the lookups.
- const late=setup(t);late.viewshow();late.giveItem();await late.settle();late.navigate('#/home');await late.flush();assert.equal(late.plugin.length+late.tmdb.length,0);
+ const late=setup(t);late.viewshow();late.giveItem();await late.microtasks();late.navigate('#/home');await late.flush();assert.equal(late.plugin.length+late.tmdb.length,0);
  // The URL or the identity moved on before their callbacks reached the visit.
- const moved=setup(t);moved.viewshow();moved.giveItem();await moved.settle();moved.window.location.hash='#/details?id=series';await moved.flush();assert.equal(moved.plugin.length+moved.tmdb.length,0);
- const epoch=setup(t);epoch.viewshow();epoch.giveItem();await epoch.settle();epoch.bumpEpoch();await epoch.flush();assert.equal(epoch.plugin.length+epoch.tmdb.length,0);
+ const moved=setup(t);moved.viewshow();moved.giveItem();await moved.microtasks();moved.window.location.hash='#/details?id=series';await moved.flush();assert.equal(moved.plugin.length+moved.tmdb.length,0);
+ const epoch=setup(t);epoch.viewshow();epoch.giveItem();await epoch.microtasks();epoch.bumpEpoch();await epoch.flush();assert.equal(epoch.plugin.length+epoch.tmdb.length,0);
 });
 test('leaving before the chips drops the visit\'s prefetch: still queued, it is aborted; the next visit asks again',async t=>{
  const queued=deferred();let n=0;
