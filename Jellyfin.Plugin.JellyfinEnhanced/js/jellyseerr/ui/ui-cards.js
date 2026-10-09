@@ -453,6 +453,28 @@
     }
 
     /**
+     * Everything createJellyseerrCard reads besides the items themselves, as
+     * one string: cards built for `items` at two moments with an equal key
+     * are the same. Lets a caller that builds cards ahead of inserting them
+     * (item-details.js) tell whether building them now would differ. Keep it
+     * in step with getBatchContext and createJellyseerrCard.
+     * @param {Array<Object>} items - The results the cards are for
+     * @returns {string}
+     */
+    function cardInputsKey(items) {
+        const ctx = getBatchContext();
+        return JSON.stringify([
+            ctx.seerrBase, ctx.useMoreInfoModal, ctx.moreInfoLoaded, ctx.availablePostersLinkToJellyfin,
+            ctx.showProviderIcons, ctx.posterNotFoundUrl, ctx.seerrIconUrl,
+            ctx.showHideButtons, ctx.hiddenLabel, ctx.unhideLabel, ctx.hideLabel, ctx.viewOnJellyseerrLabel(),
+            ctx.mediaBadgeLabel('movie'), ctx.mediaBadgeLabel('tv'), ctx.mediaBadgeLabel('collection'),
+            // Each hide button's state.
+            ctx.showHideButtons ? items.map(item => JE.hiddenContent.isHiddenByTmdbId(item.id)) : null
+        ]);
+    }
+    ui.cardInputsKey = cardInputsKey;
+
+    /**
      * Creates an individual Seerr result card.
      * @param {Object} item - Search result item from Seerr API.
      * @param {boolean} isJellyseerrActive - If the server is reachable.

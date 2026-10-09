@@ -269,7 +269,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`api.js`**: Communication with the Seerr proxy endpoints on the Jellyfin server.
     * **`hss-discovery-handler.js`**: Intercepts clicks on Home Screen Sections discover cards and opens the Seerr More Info modal instead of navigating to the external Seerr site.
     * **`issue-reporter.js`**: Report problems with media items directly from Jellyfin.
-    * **`item-details.js`**: Similar and Recommended rows on item detail pages (when their data comes before Jellyfin has rendered the item, built with that render), plus the "Request More" button for series with unrequested seasons.
+    * **`item-details.js`**: Similar and Recommended rows on item detail pages (when their data comes before Jellyfin has rendered the item, built ahead in idle time and inserted with that render), plus the "Request More" button for series with unrequested seasons.
     * **`jellyseerr.js`**: The Seerr search-results integration — intercepts Jellyfin's search page, renders Seerr results and handles their pagination/infinite scroll. Gated on `JellyseerrShowSearchResults`; the other Seerr components initialise independently of it.
     * **`modal.js`**: Advanced request modals.
     * **`request-manager.js`**: Thin alias onto `JE.core.api.manager`, kept as a stable public surface.

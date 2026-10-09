@@ -16,15 +16,26 @@ const MOVIE={Type:'Movie',Name:'Movie',ProviderIds:{Tmdb:'42'}};
 // Two titles with their own Seerr answers, already in the client caches: movie-1 is A (TMDB 1), movie-2 is B (TMDB 2).
 const TWO={item:id=>({...MOVIE,ProviderIds:{Tmdb:id==='movie-1'?'1':'2'}}),data:(kind,tmdb)=>results(`${tmdb===1?'A':'B'} ${kind}`)};
 
-function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE,data}={}){
- const frames=[],timers=new Map(),navs=[],views=[],teardowns=[],ends=[];
+/**
+ * `prebuild`: an IntersectionObserver (true: a stand-in), which lets the rows be built ahead while they wait,
+ * with idle callbacks run by idle(); `background`: with scheduler.postTask instead. `real`: the real Seerr
+ * cards (ui/*) instead of counting stand-ins.
+ */
+function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE,data,prebuild=false,background=false,real=false,je={}}={}){
+ const frames=[],timers=new Map(),navs=[],views=[],teardowns=[],ends=[],idles=new Map(),tasks=[],made=[],releases=[];
  const network={similar:0,recommended:0},waiting={similar:[],recommended:[]},cache={};
- const counts={status:0,item:0,cards:0,released:0};let timerId=0,epoch=0;
+ const counts={status:0,item:0,cards:0,released:0};let timerId=0,epoch=0,idleId=0;
+ // What the cards and rows are built from, changed by the tests: titles, hidden TMDB ids, the card inputs.
+ const titles={jellyseerr_recommended_title:'Recommended',jellyseerr_similar_title:'Similar'},hidden=new Set(),inputs={key:'cards'};
  const globals={
   requestAnimationFrame:fn=>{frames.push(fn);return frames.length;},
   setTimeout:(fn,ms=0)=>{timers.set(++timerId,{fn,ms});return timerId;},
   clearTimeout:id=>{timers.delete(id);}
  };
+ if(prebuild)Object.assign(globals,{IntersectionObserver:prebuild===true?function(){}:prebuild,
+  requestIdleCallback:fn=>{idles.set(++idleId,fn);return idleId;},cancelIdleCallback:id=>{idles.delete(id);}});
+ if(background)globals.scheduler={postTask:(fn,options)=>new Promise((resolve,reject)=>{
+  tasks.push({fn,options,resolve});options.signal?.addEventListener('abort',()=>reject(options.signal.reason));})};
  // A client cache in front of the Seerr requests: a response is reused, a request is counted once.
  // With `data`, each title's answers are already in it.
  const related=kind=>tmdb=>{
@@ -34,21 +45,31 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
  };
  const h=createHarness({html,url:'http://jellyfin.test/web/index.html#!/details?id=movie-1',globals,
   JE:{pluginConfig:{JellyseerrShowSimilar:true,JellyseerrShowRecommended:true,...config},
-   t:key=>({jellyseerr_recommended_title:'Recommended',jellyseerr_similar_title:'Similar'})[key],
+   t:key=>titles[key]??(real?key:undefined),
    seerrStatus:{MEDIA:{BLOCKED:6}},
+   hiddenContent:{filterJellyseerrResults:list=>list.filter(entry=>!hidden.has(entry.id)),isHiddenByTmdbId:id=>hidden.has(id),
+    getSettings:()=>({enabled:true,showHideButtons:true,showButtonJellyseerr:true})},
+   escapeHtml:text=>String(text).replace(/[&<>"']/g,c=>`&#${c.charCodeAt(0)};`),
+   cdn:{url:(host,path)=>`https://cdn.test/${host}/${path}`,selfhst:path=>`https://cdn.test/selfhst/${path}`},
    session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch},
    requestManager:{metrics:{enabled:true},startMeasurement:()=>{},endMeasurement:name=>ends.push({name,marker:!!h.document.querySelector(`.${MARKER}`),cards:counts.cards})},
    helpers:{getItemCached:async id=>{counts.item++;return item(id);},onBodyMutation:()=>({unsubscribe(){}})},
-   jellyseerrAPI:{checkUserStatus:async()=>{counts.status++;return status;},
+   jellyseerrAPI:{checkUserStatus:async()=>{counts.status++;return status;},resolveJellyseerrBaseUrl:()=>'https://seerr.test',
     fetchSimilarMovies:related('similar'),fetchRecommendedMovies:related('recommended')},
-   jellyseerrUI:{releasePosters:()=>{counts.released++;},
-    createJellyseerrCard:item=>{if(card)card(item);counts.cards++;const el=h.document.createElement('div');el.className='card';el.textContent=item.title;return el;}},
+   jellyseerrUI:real?undefined:{releasePosters:()=>{},cardInputsKey:()=>inputs.key,
+    createJellyseerrCard:item=>{if(card)card(item);const el=h.document.createElement('div');el.className='card';el.textContent=item.title;return el;}},
    core:{lifecycle:{register:()=>({onTeardown:fn=>teardowns.push(fn),teardownOn:()=>{}})},
-    navigation:{onNavigate:fn=>navs.push(fn),onViewPage:fn=>views.push(fn)}}}});
+    navigation:{onNavigate:fn=>navs.push(fn),onViewPage:fn=>views.push(fn)},
+    ui:{addTouchTapListener:()=>{},addDelegatedTouchTapListener:()=>{}}},...je}});
  t.after(()=>h.close());
+ if(real)for(const file of ['seerr-status','ui/ui-icons','ui/ui-popover','ui/ui-badges','ui/ui-cards'])h.load(`jellyseerr/${file}.js`);
+ // Every card built, and every root posters were released under.
+ const ui=h.JE.jellyseerrUI,createCard=ui.createJellyseerrCard,releasePosters=ui.releasePosters;
+ ui.createJellyseerrCard=(...args)=>{const el=createCard(...args);counts.cards++;made.push(el);return el;};
+ ui.releasePosters=root=>{counts.released++;releases.push(root);releasePosters(root);};
  h.load('jellyseerr/item-details.js');
  const view=h.document.querySelector('.libraryPage');
- return {...h,counts,network,timers,ends,view,
+ return {...h,counts,network,timers,ends,view,made,releases,titles,hidden,inputs,
   anchor:(v=view)=>v.querySelector('#similarCollapsible'),
   marker:()=>h.document.querySelector(`.${MARKER}`),
   /** Element siblings after More Like This: the marker, the rows by title, anything else by id. */
@@ -58,6 +79,19 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
   firsts:(v=view)=>[...v.querySelectorAll('.jellyseerr-details-section')].map(s=>s.querySelector('.card').textContent),
   /** The items of the waiting builds' markers, in DOM order. */
   markers:(v=view)=>[...v.querySelectorAll(`.${MARKER}`)].map(m=>m.dataset.itemId),
+  /** The cards in the view's rows, in order. */
+  inserted:(v=view)=>[...v.querySelectorAll('.jellyseerr-details-section .card')],
+  /** Each row's title and its cards' text. */
+  rows:(v=view)=>[...v.querySelectorAll('.jellyseerr-details-section')].map(s=>[s.querySelector('h2').textContent,...[...s.querySelectorAll('.card')].map(c=>c.textContent)]),
+  /** Whether posters were released under a prebuild's fragment. */
+  releasedPrebuild(){return releases.some(root=>root instanceof h.window.DocumentFragment);},
+  idles:()=>idles.size,
+  /** The background tasks posted, and whether each is still to run. */
+  tasks:()=>tasks.map(task=>({priority:task.options.priority,live:!task.options.signal.aborted&&!task.ran})),
+  /** Runs the background tasks, those they post included. */
+  background(){for(let task;(task=tasks.find(entry=>!entry.ran&&!entry.options.signal.aborted));){task.ran=true;task.fn();task.resolve();}},
+  /** Runs idle callbacks until `units` rows started or cards built (a step does at least one). */
+  idle(units=Infinity){let left=units;while(left>0&&idles.size){const [id,fn]=idles.entries().next().value;idles.delete(id);fn({didTimeout:false,timeRemaining:()=>--left>0?1:0});}},
   frame(){const pending=frames.splice(0);for(const fn of pending)fn();},
   /** The Seerr data; an `uncached` kind is answered but not kept, as a failed request's empty answer. */
   async respond({similar=results('Similar'),recommended=results('Recommended'),uncached=[]}={}){
@@ -393,4 +427,162 @@ test('the similar-recommended measurement ends once, when the data is ready',asy
  const h=setup(t);await h.start();
  assert.deepEqual(h.ends,[{name:'similar-recommended',marker:true,cards:0}]);
  await h.render();assert.equal(h.ends.length,1);assert.equal(h.counts.cards,40);
+});
+
+// Building the cards held back the render they waited for (a long task on a cold page), so where posters wait
+// for an IntersectionObserver they are built while the rows wait, when the browser is idle, into a fragment, and
+// the render only inserts them. Anything not built by then, or that building now would make differently, is
+// built with the render as before.
+
+test('the cards are built while the rows wait, when idle, and Jellyfin\'s render only inserts them',async t=>{
+ const h=setup(t,{prebuild:true});await h.start();
+ assert.equal(h.counts.cards,0,'nothing built at data time');assert.equal(h.idles(),1);
+ h.idle();
+ assert.equal(h.counts.cards,40);assert.deepEqual(h.after(),['marker'],'nothing inserted yet');assert.equal(h.idles(),0);
+ assert.ok(h.made.every(card=>!card.isConnected&&card.getRootNode() instanceof h.window.DocumentFragment),'held in a fragment');
+ await h.render({card:false});
+ assert.deepEqual(h.after(),['Recommended','Similar']);assert.deepEqual(h.cards(),[20,20]);assert.equal(h.marker(),null);
+ assert.equal(h.counts.cards,40,'none built with the render');assert.deepEqual(h.inserted(),h.made,'the prebuilt cards, in order');
+ assert.deepEqual(h.delays(),[]);
+ // The same rows the render builds without a prebuild.
+ const sync=setup(t,{prebuild:true});await sync.start();await sync.render({card:false});
+ assert.deepEqual(h.rows(),sync.rows());assert.equal(sync.counts.cards,40);
+});
+
+test('a prebuild the render comes before is finished there, or not used, and stops',async t=>{
+ // Recommended's start and 5 cards: the other 35 are built with the render, after them.
+ const h=setup(t,{prebuild:true});await h.start();h.idle(6);
+ assert.equal(h.counts.cards,5);assert.equal(h.idles(),1);
+ await h.render();
+ assert.deepEqual(h.after(),['Recommended','Similar']);assert.deepEqual(h.cards(),[20,20]);assert.equal(h.counts.cards,40);
+ assert.deepEqual(h.inserted(),h.made);assert.equal(h.idles(),0,'its next step cancelled');
+ // Recommended built, Similar not started: Similar is built with the render.
+ const half=setup(t,{prebuild:true});await half.start();half.idle(21);assert.equal(half.counts.cards,20);
+ await half.render();assert.equal(half.counts.cards,40);assert.deepEqual(half.inserted(),half.made);
+ // Not started: all built with the render, as before.
+ const cold=setup(t,{prebuild:true});await cold.start();await cold.render();
+ assert.deepEqual(cold.after(),['Recommended','Similar']);assert.equal(cold.counts.cards,40);assert.equal(cold.idles(),0);
+ // Without an IntersectionObserver a card would load its poster as it is built: nothing is built ahead.
+ const plain=setup(t);await plain.start();assert.equal(plain.idles(),0);assert.deepEqual(plain.delays(),[5000]);
+});
+
+test('a prebuilt row that building it now would make differently is built again with the render',async t=>{
+ const extra=i=>i<5?{mediaInfo:{jellyfinMediaId:`lib-${i}`}}:{};
+ const data={similar:results('Similar',25,extra),recommended:results('Recommended',25,extra)};
+ const changes={
+  'exclude-library switched on':[h=>{h.JE.pluginConfig.JellyseerrExcludeLibraryItems=true;},[]],
+  'an item hidden':[h=>{h.hidden.add(7);},[]],
+  'a title':[h=>{h.titles.jellyseerr_similar_title='More';},['Recommended']],
+  'the card inputs':[h=>{h.inputs.key='other';},[]]
+ };
+ for(const [name,[change,kept]] of Object.entries(changes)){
+  const h=setup(t,{prebuild:true});await h.start(data);h.idle();const prebuilt=[...h.made];
+  change(h);await h.render();
+  const sync=setup(t,{prebuild:true});await sync.start(data);change(sync);await sync.render();
+  assert.deepEqual(h.rows(),sync.rows(),name);
+  // The rows made of prebuilt cards; the other prebuilt cards were released.
+  const sections=[...h.view.querySelectorAll('.jellyseerr-details-section')];
+  assert.deepEqual(sections.filter(s=>[...s.querySelectorAll('.card')].every(c=>prebuilt.includes(c))).map(s=>s.querySelector('h2').textContent),kept,name);
+  assert.equal(prebuilt.filter(card=>card.isConnected).length,kept.length*20,name);assert.ok(h.releasedPrebuild(),name);
+ }
+ // A change between two steps stops the prebuild there.
+ const mid=setup(t,{prebuild:true});await mid.start();mid.idle(6);mid.inputs.key='other';mid.idle();
+ assert.equal(mid.counts.cards,5);assert.equal(mid.idles(),0);assert.ok(mid.releasedPrebuild());
+ await mid.render();assert.equal(mid.counts.cards,45);assert.deepEqual(mid.cards(),[20,20]);
+ assert.ok(mid.made.slice(0,5).every(card=>!card.isConnected));
+});
+
+test('leaving drops the prebuilt rows unless the build is kept for the left view; a user switch drops them',async t=>{
+ const gone=setup(t,{prebuild:true});await gone.start();gone.idle(6);gone.view.remove();gone.navigate('#!/home');
+ assert.equal(gone.idles(),0,'no more steps');assert.ok(gone.releasedPrebuild());
+ gone.timer(5000);gone.idle();assert.equal(gone.counts.cards,5);
+ // Kept: inserted into the left view with its render, from the prebuilt cards, which it goes on building.
+ const left=setup(t,{prebuild:true});await left.start();left.idle(6);
+ left.navigate('#!/home');left.view.classList.add('hide');left.idle();assert.equal(left.counts.cards,40);
+ await left.render();assert.deepEqual(left.after(),['Recommended','Similar']);assert.deepEqual(left.inserted(),left.made);
+ // A user switch before the prebuild: nothing is built, nor inserted with the render.
+ const before=setup(t,{prebuild:true});await before.start();before.bumpEpoch();before.idle();
+ assert.equal(before.counts.cards,0);assert.equal(before.idles(),0);
+ await before.render();assert.equal(before.counts.cards,0);assert.deepEqual(before.after(),[]);
+ // After it: nothing is inserted, and what was built is released.
+ const after=setup(t,{prebuild:true});await after.start();after.idle();after.bumpEpoch();await after.render();
+ assert.deepEqual(after.after(),[]);assert.equal(after.counts.cards,40);assert.ok(after.releasedPrebuild());
+ assert.ok(after.made.every(card=>!card.isConnected&&!(card.getRootNode() instanceof after.window.DocumentFragment)),'out of the fragment');
+ await after.viewshow();assert.deepEqual(after.after(),['Recommended','Similar'],'the item was released');
+});
+
+test('printing, the 5 s fallback and the shown view after a swap get the prebuilt rows too',async t=>{
+ const print=setup(t,{prebuild:true});await print.start();print.idle();
+ print.window.dispatchEvent(new print.window.Event('beforeprint'));
+ assert.deepEqual(print.after(),['Recommended','Similar']);assert.deepEqual(print.inserted(),print.made);
+ const late=setup(t,{prebuild:true});await late.start();late.idle();late.timer(5000);
+ assert.deepEqual(late.after(),['Recommended','Similar']);assert.deepEqual(late.inserted(),late.made);
+ // Jellyfin hides the view the rows waited on; the shown one has rendered: inserted there at once.
+ const swap=setup(t,{prebuild:true});await swap.start();swap.idle();
+ swap.document.body.insertAdjacentHTML('beforeend',page({id:'second'}));const second=swap.document.getElementById('second');
+ await swap.render({v:second});swap.view.classList.add('hide');await swap.flush();
+ assert.deepEqual(swap.after(second),['Recommended','Similar']);assert.deepEqual(swap.inserted(second),swap.made);
+ assert.equal(swap.counts.cards,40);assert.deepEqual(swap.after(),[]);
+});
+
+test('a card failing while prebuilt is built again with the render, which reports it as before',async t=>{
+ let fail=true;const h=setup(t,{prebuild:true,card:()=>{if(fail)throw new Error('card');}});
+ h.expectConsoleError(/Error rendering similar and recommended sections/);
+ await h.start();h.idle();assert.equal(h.idles(),0);assert.ok(h.releasedPrebuild());
+ await h.render();assert.equal(h.marker(),null);assert.deepEqual(h.cards(),[]);
+ fail=false;await h.viewshow();assert.deepEqual(h.after(),['Recommended','Similar']);
+});
+
+test('with the real cards: prebuilt rows are what the render builds, and their posters load only once inserted',async t=>{
+ // An IntersectionObserver that reports what a browser would once the page is laid out: attached targets intersect.
+ const observers=[];
+ class Observer{constructor(callback,options){Object.assign(this,{callback,options,targets:new Set()});observers.push(this);}
+  observe(el){this.targets.add(el);} unobserve(el){this.targets.delete(el);} disconnect(){this.targets.clear();}
+  deliver(){this.callback([...this.targets].map(target=>({target,isIntersecting:target.isConnected,intersectionRatio:target.isConnected?1:0})),this);}}
+ const extra=i=>({posterPath:`/p${i}.jpg`,voteAverage:7+i/10,releaseDate:`20${10+i}-01-01`,
+  ...(i%4===0?{mediaInfo:{status:5,jellyfinMediaId:`lib-${i}`}}:i%4===1?{mediaInfo:{status:3}}:{}),...(i%5===0?{collection:{name:`Set ${i}`}}:{})});
+ const data={similar:results('Similar',25,extra),recommended:results('Recommended',25,extra)};
+ const html=h=>[...h.view.querySelectorAll('.jellyseerr-details-section')].map(s=>s.outerHTML);
+ const posters=h=>observers.filter(o=>o.options?.rootMargin==='800px');
+ const visit=async({idle,change=()=>{}})=>{
+  observers.length=0;
+  const h=setup(t,{real:true,prebuild:Observer});await h.start(data);if(idle!==undefined)h.idle(idle);
+  const [observer]=posters(h);const waiting=new Set(observer?.targets);
+  // Another Seerr surface releasing its detached cards meanwhile leaves the prebuilt ones alone.
+  h.JE.jellyseerrUI.releasePosters();observer?.deliver();
+  change(h);await h.render();
+  return {h,observer:posters(h)[0],waiting};
+ };
+ const sync=await visit({});
+ assert.equal(sync.h.counts.cards,40);assert.equal(sync.observer.targets.size,40);
+ const built=html(sync.h);sync.observer.deliver();const loaded=html(sync.h);
+ for(const idle of [Infinity,10]){
+  const {h,observer,waiting}=await visit({idle});
+  assert.equal(h.counts.cards,40,`idle ${idle}`);assert.deepEqual(html(h),built,`idle ${idle}: the same rows`);
+  assert.deepEqual(h.inserted(),h.made);
+  // Built ahead: their posters waited, observed and not loaded, and are observed now they are in the page.
+  assert.equal(waiting.size,idle===Infinity?40:9);
+  assert.ok([...waiting].every(el=>el.dataset.jePoster&&!el.style.backgroundImage),'nothing loaded in the fragment');
+  assert.equal(observer.targets.size,40);
+  observer.deliver();
+  assert.equal(observer.targets.size,0);assert.deepEqual(html(h),loaded,'loaded as the render\'s own build loads them');
+  assert.match(h.inserted()[1].querySelector('.cardImageContainer').style.backgroundImage,/image\.tmdb\.org\/t\/p\/w400\/p1\.jpg/);
+ }
+ // Hidden meanwhile (shown with a hide button, not filtered): built again, with the hide button's new state.
+ const hide=h=>{h.JE.hiddenContent.filterJellyseerrResults=list=>list;h.hidden.add(2);};
+ const rebuilt=await visit({idle:Infinity,change:hide});const syncHidden=await visit({change:hide});
+ assert.equal(rebuilt.h.counts.cards,80);assert.deepEqual(html(rebuilt.h),html(syncHidden.h));
+ assert.equal(rebuilt.h.view.querySelectorAll('.je-hide-btn.je-already-hidden').length,2);
+ assert.equal(rebuilt.observer.targets.size,40,'the prebuilt cards\' posters are released');
+});
+
+test('where the browser has background tasks the cards are built in short ones, cancelled with the build',async t=>{
+ const h=setup(t,{prebuild:true,background:true});await h.start();
+ assert.deepEqual(h.tasks(),[{priority:'background',live:true}]);assert.equal(h.idles(),0,'no idle callback');
+ h.background();assert.equal(h.counts.cards,40);assert.ok(h.tasks().every(task=>!task.live));
+ await h.render();assert.deepEqual(h.inserted(),h.made);assert.equal(h.counts.cards,40);
+ // The render before any of them ran: the one waiting is cancelled.
+ const early=setup(t,{prebuild:true,background:true});await early.start();await early.render();
+ assert.deepEqual(early.tasks(),[{priority:'background',live:false}]);assert.equal(early.counts.cards,40);
+ early.background();assert.equal(early.counts.cards,40);
 });

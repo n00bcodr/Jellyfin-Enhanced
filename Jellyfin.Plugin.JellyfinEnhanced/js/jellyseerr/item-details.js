@@ -26,6 +26,8 @@
     const PENDING_ROWS_CLASS = 'je-seerr-rows-pending';
     // Counted from scheduling, for an item Jellyfin never renders.
     const NAME_WAIT_MS = 5000;
+    // A step of the rows' prebuild outside an idle callback (see whenIdle).
+    const PREBUILD_SLICE_MS = 8;
     // Elements that never take up space, wherever they sit.
     const NON_RENDERED_TAGS = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'LINK', 'META']);
 
@@ -180,14 +182,14 @@
     }
 
     /**
-     * Creates a Jellyseerr section similar to search results
+     * The results a section shows: the exclude-library and Hidden Content
+     * filters, read now.
      * @param {Array} results - Array of Jellyseerr items
-     * @param {string} title - Section title (already translated)
-     * @returns {HTMLElement} - Section element
+     * @returns {Array}
      */
-    function createJellyseerrSection(results, title) {
+    function sectionResults(results) {
         if (!results || results.length === 0) {
-            return null;
+            return [];
         }
 
         // Filter out library items if configured
@@ -200,11 +202,42 @@
         if (JE.hiddenContent) {
             filteredResults = JE.hiddenContent.filterJellyseerrResults(filteredResults, 'recommendations');
         }
+        return filteredResults;
+    }
 
+    /**
+     * Creates a Jellyseerr section similar to search results
+     * @param {Array} results - Array of Jellyseerr items
+     * @param {string} title - Section title (already translated)
+     * @returns {HTMLElement} - Section element
+     */
+    function createJellyseerrSection(results, title) {
+        const filteredResults = sectionResults(results);
         if (filteredResults.length === 0) {
             return null;
         }
 
+        const { section, itemsContainer } = createSectionShell(title);
+
+        // Use DocumentFragment for batch DOM insertion
+        const fragment = document.createDocumentFragment();
+
+        // Add items to container
+        for (const item of filteredResults) {
+            const card = createSectionCard(item);
+            if (card) fragment.appendChild(card);
+        }
+
+        itemsContainer.appendChild(fragment);
+        return section;
+    }
+
+    /**
+     * A section without its cards: the title and the row they go in.
+     * @param {string} title - Section title (already translated)
+     * @returns {{section: HTMLElement, itemsContainer: HTMLElement}}
+     */
+    function createSectionShell(title) {
         const section = document.createElement('div');
         section.className = 'verticalSection emby-scroller-container jellyseerr-details-section';
         section.setAttribute('data-jellyseerr-section', 'true');
@@ -233,41 +266,41 @@
         itemsContainer.className = 'focuscontainer-x itemsContainer scrollSlider animatedScrollX';
         itemsContainer.style.whiteSpace = 'nowrap';
 
-        // Use DocumentFragment for batch DOM insertion
-        const fragment = document.createDocumentFragment();
-
-        // Add items to container
-        for (const item of filteredResults) {
-            const card = JE.jellyseerrUI && JE.jellyseerrUI.createJellyseerrCard
-                ? JE.jellyseerrUI.createJellyseerrCard(item, true, true)
-                : null;
-            if (card) {
-                const titleLink = card.querySelector('.cardText-first a');
-
-                // If item exists in library, link to library item
-                const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
-                if (jellyfinMediaId) {
-                    card.setAttribute('data-library-item', 'true');
-                    card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
-                    card.classList.add('jellyseerr-card-in-library');
-                    // Update title link to point to library item
-                    if (titleLink) {
-                        const itemName = item.title || item.name;
-                        titleLink.textContent = itemName;
-                        titleLink.title = itemName;
-                        titleLink.href = `#!/details?id=${jellyfinMediaId}`;
-                        titleLink.removeAttribute('target');
-                        titleLink.removeAttribute('rel');
-                    }
-                }
-                fragment.appendChild(card);
-            }
-        }
-
-        itemsContainer.appendChild(fragment);
         scrollerContainer.appendChild(itemsContainer);
         section.appendChild(scrollerContainer);
-        return section;
+        return { section, itemsContainer };
+    }
+
+    /**
+     * A section's card for one result.
+     * @param {object} item - A Jellyseerr item
+     * @returns {HTMLElement|null}
+     */
+    function createSectionCard(item) {
+        const card = JE.jellyseerrUI && JE.jellyseerrUI.createJellyseerrCard
+            ? JE.jellyseerrUI.createJellyseerrCard(item, true, true)
+            : null;
+        if (card) {
+            const titleLink = card.querySelector('.cardText-first a');
+
+            // If item exists in library, link to library item
+            const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
+            if (jellyfinMediaId) {
+                card.setAttribute('data-library-item', 'true');
+                card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
+                card.classList.add('jellyseerr-card-in-library');
+                // Update title link to point to library item
+                if (titleLink) {
+                    const itemName = item.title || item.name;
+                    titleLink.textContent = itemName;
+                    titleLink.title = itemName;
+                    titleLink.href = `#!/details?id=${jellyfinMediaId}`;
+                    titleLink.removeAttribute('target');
+                    titleLink.removeAttribute('rel');
+                }
+            }
+        }
+        return card;
     }
 
     /**
@@ -365,7 +398,8 @@
     /**
      * Inserts a run's rows into its view, when it is still the shown view of
      * the item in the URL for the identity the run started under.
-     * @param {object} ctx - The run: itemId, signal, epoch, page, detailPageContent, anchor, recommended, similar
+     * @param {object} ctx - The run: itemId, signal, epoch, page, detailPageContent, anchor, recommended, similar,
+     *   and the deferred build's prebuilt rows, if any (see prebuildRows)
      * @param {HTMLElement|null} marker - The deferred build's placeholder
      * @returns {boolean} Whether the rows were inserted (from a hidden view:
      *   placed in the shown one, see placeRows)
@@ -442,55 +476,197 @@
      * @param {object} ctx - See commitRows
      * @param {HTMLElement|null} marker - The deferred build's placeholder
      */
-    function insertRows({ itemId, page, detailPageContent, anchor, recommended, similar }, marker) {
+    function insertRows(ctx, marker) {
+        const { itemId, page, detailPageContent, anchor } = ctx;
         // A build for this item still kept from when the user left the view
         // gives way.
         removeMarkers(page, detailPageContent, itemId, marker);
         // Remove any existing Jellyseerr sections to avoid duplicates (their
         // cards must be unobserved first: lazy posters hold strong references).
         // Before the new cards exist: detached cards are released too.
+        // Prebuilt ones wait in a DocumentFragment, which this leaves alone.
         JE.jellyseerrUI?.releasePosters?.(detailPageContent);
         detailPageContent.querySelectorAll('.jellyseerr-details-section').forEach(el => el.remove());
 
         const before = marker?.isConnected ? marker : null;
 
-        // Create and insert sections
-        if (recommended.length > 0) {
-            const recommendedTitle = JE.t ? (JE.t('jellyseerr_recommended_title') || 'Recommended') : 'Recommended';
-            const recommendedSection = createJellyseerrSection(
-                recommended.slice(0, 20),
-                recommendedTitle
-            );
-            if (recommendedSection) {
-                if (before) {
-                    before.before(recommendedSection);
+        // Create and insert sections: Recommended, then Similar
+        for (const row of rowSpecs(ctx)) {
+            const section = rowSection(ctx, row);
+            if (!section) continue;
+            if (before) {
+                before.before(section);
+            } else if (row.name === 'Similar') {
+                const lastJellyseerrSection = detailPageContent.querySelector('.jellyseerr-details-section:last-of-type');
+                if (lastJellyseerrSection) {
+                    lastJellyseerrSection.after(section);
                 } else {
-                    anchor.after(recommendedSection);
+                    anchor.after(section);
                 }
-                console.debug(`${logPrefix} Added Recommended section with ${recommended.length} items`);
+            } else {
+                anchor.after(section);
             }
+            console.debug(`${logPrefix} Added ${row.name} section with ${row.total} items`);
         }
+    }
 
-        if (similar.length > 0) {
-            const similarTitle = JE.t ? (JE.t('jellyseerr_similar_title') || 'Similar') : 'Similar';
-            const similarSection = createJellyseerrSection(
-                similar.slice(0, 20),
-                similarTitle
-            );
-            if (similarSection) {
-                if (before) {
-                    before.before(similarSection);
-                } else {
-                    const lastJellyseerrSection = detailPageContent.querySelector('.jellyseerr-details-section:last-of-type');
-                    if (lastJellyseerrSection) {
-                        lastJellyseerrSection.after(similarSection);
-                    } else {
-                        anchor.after(similarSection);
-                    }
-                }
-                console.debug(`${logPrefix} Added Similar section with ${similar.length} items`);
-            }
+    /**
+     * The rows a run inserts, in order, with what each is built from.
+     * @param {object} ctx - See commitRows
+     * @returns {Array<{name: string, results: Array, title: string, total: number}>}
+     */
+    function rowSpecs({ recommended, similar }) {
+        const rows = [];
+        if (recommended.length > 0) {
+            const title = JE.t ? (JE.t('jellyseerr_recommended_title') || 'Recommended') : 'Recommended';
+            rows.push({ name: 'Recommended', results: recommended.slice(0, 20), title, total: recommended.length });
         }
+        if (similar.length > 0) {
+            const title = JE.t ? (JE.t('jellyseerr_similar_title') || 'Similar') : 'Similar';
+            rows.push({ name: 'Similar', results: similar.slice(0, 20), title, total: similar.length });
+        }
+        return rows;
+    }
+
+    /**
+     * A row's section: the one prebuilt for it (see prebuildRows) when that is
+     * what building it now gives, else built now.
+     * @param {object} ctx - See commitRows
+     * @param {{name: string, results: Array, title: string}} row - See rowSpecs
+     * @returns {HTMLElement|null}
+     */
+    function rowSection(ctx, row) {
+        const prebuilt = ctx.prebuilt?.take(row);
+        return prebuilt ? prebuilt.section : createJellyseerrSection(row.results, row.title);
+    }
+
+    /** Whether two lists hold the same items in the same order. */
+    function sameItems(a, b) {
+        return a.length === b.length && a.every((item, i) => item === b[i]);
+    }
+
+    /**
+     * Runs a step of a prebuild when nothing else is waiting to run: as a
+     * background task, else when the browser is idle, else in a task of its
+     * own. Outside an idle callback (whose deadline can be 50 ms, long enough
+     * to hold up a response that lands meanwhile) a step gets
+     * PREBUILD_SLICE_MS.
+     * @param {function({timeRemaining: function(): number}): void} fn
+     * @returns {function(): void} Cancels the step
+     */
+    function whenIdle(fn) {
+        const sliced = () => {
+            const end = performance.now() + PREBUILD_SLICE_MS;
+            fn({ timeRemaining: () => Math.max(0, end - performance.now()) });
+        };
+        if (typeof scheduler !== 'undefined' && typeof scheduler?.postTask === 'function') {
+            const controller = new AbortController();
+            scheduler.postTask(sliced, { priority: 'background', signal: controller.signal }).catch(() => {});
+            return () => controller.abort();
+        }
+        if (typeof requestIdleCallback === 'function') {
+            const id = requestIdleCallback(fn);
+            return () => cancelIdleCallback(id);
+        }
+        const id = setTimeout(sliced, 0);
+        return () => clearTimeout(id);
+    }
+
+    /**
+     * Builds a waiting run's rows ahead of Jellyfin's render (see deferRows),
+     * a few cards at a time when nothing else is waiting to run (see
+     * whenIdle), so that render only has to insert them. They wait in a
+     * DocumentFragment: releasePosters leaves cards there alone (insertRows
+     * runs it before inserting), and their posters stay unloaded, as the
+     * poster observer sees them as off screen until they are in the page,
+     * where they then load as they would have.
+     *
+     * A prebuilt row is used only when building it at insertion would give
+     * the same: same results, title and filters (exclude-library, Hidden
+     * Content), and the same card inputs (cardInputsKey: settings, labels,
+     * hidden state), checked again at each step and at insertion. Anything
+     * else, or a row not started by then, is built at insertion as before; a
+     * row part built is finished there. Whatever is not taken is released.
+     * @param {object} ctx - See commitRows
+     * @returns {{take: function(object): ({section: HTMLElement|null}|null), release: function(): void}|null}
+     *   null where cards would load their posters as they are built
+     */
+    function prebuildRows(ctx) {
+        if (typeof IntersectionObserver !== 'function') return null;
+        const holder = document.createDocumentFragment();
+        const rows = rowSpecs(ctx).map(row => ({ ...row, filtered: null, key: undefined, section: null, itemsContainer: null, built: 0, taken: false }));
+        const inputsKey = (items) => JE.jellyseerrUI?.cardInputsKey?.(items);
+        let usable = true;
+        let next = 0;
+        let cancelStep = null;
+
+        const release = () => {
+            usable = false;
+            cancelStep?.();
+            cancelStep = null;
+            if (!holder.firstChild) return;
+            JE.jellyseerrUI?.releasePosters?.(holder);
+            holder.replaceChildren();
+        };
+        const buildCard = (row) => {
+            const card = createSectionCard(row.filtered[row.built++]);
+            if (card) row.itemsContainer.appendChild(card);
+        };
+        // The next card, or the next row's start; false once all are built.
+        const buildNext = () => {
+            const row = rows[next];
+            if (!row) return false;
+            if (!row.filtered) {
+                row.filtered = sectionResults(row.results);
+                row.key = inputsKey(row.filtered);
+                if (row.filtered.length > 0) {
+                    ({ section: row.section, itemsContainer: row.itemsContainer } = createSectionShell(row.title));
+                    holder.appendChild(row.section);
+                }
+            } else {
+                buildCard(row);
+            }
+            if (row.built === row.filtered.length) next++;
+            return true;
+        };
+        const step = (deadline) => {
+            cancelStep = null;
+            if (!usable) return;
+            try {
+                if (!sessionCurrent(ctx.epoch) || rows.some(row => row.filtered && inputsKey(row.filtered) !== row.key)) {
+                    release();
+                    return;
+                }
+                do {
+                    if (!buildNext()) return;
+                } while (deadline.timeRemaining() > 0);
+            } catch (_) {
+                // Built again at insertion, which reports the failure.
+                release();
+                return;
+            }
+            cancelStep = whenIdle(step);
+        };
+
+        /**
+         * The row's section (null: no cards to show), finished now if need
+         * be; null when it is to be built at insertion instead.
+         * @param {{name: string, results: Array, title: string}} spec - See rowSpecs
+         */
+        const take = (spec) => {
+            const row = usable ? rows.find(r => r.name === spec.name) : null;
+            if (!row || row.taken || !row.filtered || row.title !== spec.title || !sameItems(row.results, spec.results)) return null;
+            const filtered = sectionResults(spec.results);
+            if (!sameItems(row.filtered, filtered) || inputsKey(filtered) !== row.key) return null;
+            while (row.built < row.filtered.length) buildCard(row);
+            row.taken = true;
+            const section = row.section;
+            section?.remove();
+            return { section };
+        };
+
+        cancelStep = whenIdle(step);
+        return { take, release };
     }
 
     /**
@@ -519,6 +695,13 @@
      * (or gone) while the URL is still this item's and another details view
      * is shown, the rows go there at once (commitRows), not with the hidden
      * view's render or after NAME_WAIT_MS. So does that view's viewshow run.
+     *
+     * Building the cards takes long enough on a cold page to hold back the
+     * render it waits for, so they are built while the rows wait, when the
+     * browser is idle (see prebuildRows): the render's task then only inserts
+     * them, at the same moment and in the same place. What has not been
+     * built by then, or no longer matches what would be built, is built
+     * there as before.
      * @param {object} ctx - See commitRows
      * @returns {boolean} Whether the rows were scheduled (or inserted)
      */
@@ -533,6 +716,7 @@
         let left = false;
         let nameObserver = null;
         let nameTimer = null;
+        let prebuilt = null;
         // Not before a details view is shown: commitRows would release the
         // item and a new run would ask again for what is not cached.
         const movedOn = () => !left && (!page.isConnected || page.classList.contains('hide'))
@@ -555,6 +739,7 @@
         const drop = () => {
             dispose();
             marker.remove();
+            prebuilt?.release();
         };
         const onAbort = () => {
             if (page.isConnected && sessionCurrent(ctx.epoch) && !shownForOther(page, itemId)) {
@@ -577,6 +762,7 @@
                 console.error(`${logPrefix} Error rendering similar and recommended sections:`, error);
             } finally {
                 marker.remove();
+                prebuilt?.release();
             }
         }
 
@@ -592,7 +778,6 @@
             nameObserver.observe(page, { attributes: true, attributeFilter: ['class'] });
             nameTimer = setTimeout(run, NAME_WAIT_MS);
             waitingRows = waiting;
-            return true;
         } catch (_) {
             // Insert now, as before.
             drop();
@@ -604,6 +789,15 @@
             }
             return placed;
         }
+        try {
+            prebuilt = prebuildRows(ctx);
+        } catch (_) {
+            // Built with the render instead.
+        }
+        // Set even when null: a run sent here from another view's build
+        // (commitRows) carries that build's prebuild, released once it ran.
+        ctx.prebuilt = prebuilt;
+        return true;
     }
 
     /**
