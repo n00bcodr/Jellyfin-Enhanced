@@ -35,6 +35,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string WatchProgressTimeFormat { get; set; } = "hours";
         public bool ShowFileSizes { get; set; }
         public bool ShowAudioLanguages { get; set; }
+        public bool SimplifyDubLanguageFlags { get; set; }
         /// <summary>Native poster tags preference; null (never chosen) and true are on, false is off.</summary>
         public bool? UseNativePosterTags { get; set; }
         public bool QualityTagsEnabled { get; set; }

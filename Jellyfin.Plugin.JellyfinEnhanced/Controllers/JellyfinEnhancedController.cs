@@ -4583,6 +4583,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         WatchProgressTimeFormat = string.IsNullOrWhiteSpace(defaultConfig.WatchProgressTimeFormat) ? "hours" : defaultConfig.WatchProgressTimeFormat,
                         ShowFileSizes = defaultConfig.ShowFileSizes,
                         ShowAudioLanguages = defaultConfig.ShowAudioLanguages,
+                        SimplifyDubLanguageFlags = defaultConfig.SimplifyDubLanguageFlags,
                         UseNativePosterTags = null, // Not chosen yet: on while the administrator allows native poster tags.
                         QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
                         ShowResolutionTag = defaultConfig.ShowResolutionTag,
@@ -7542,6 +7543,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ShowWatchProgress = defaultConfig.ShowWatchProgress,
                 ShowFileSizes = defaultConfig.ShowFileSizes,
                 ShowAudioLanguages = defaultConfig.ShowAudioLanguages,
+                SimplifyDubLanguageFlags = defaultConfig.SimplifyDubLanguageFlags,
                 UseNativePosterTags = null, // Back to not chosen: on while the administrator allows native poster tags.
                 QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
                 ShowResolutionTag = defaultConfig.ShowResolutionTag,
