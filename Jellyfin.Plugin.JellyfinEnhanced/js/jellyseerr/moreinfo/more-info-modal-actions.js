@@ -351,6 +351,9 @@ function renderActions(data, mediaType) {
     const myToken = ++_renderActionsToken;
     renderRequestedBy(requestedByMount, data.mediaInfo);
     JE.internals.spoilerGuard?.appendSeerrToggle?.(secondaryMount, data, mediaType);
+    if (JE.pluginConfig?.ListPlaceholdersEnabled === true) {
+        JE.listPlaceholders?.appendModalAction?.(secondaryMount, data, mediaType);
+    }
 
     if (mediaType === 'movie') {
         const mediaInfo = data.mediaInfo || {};

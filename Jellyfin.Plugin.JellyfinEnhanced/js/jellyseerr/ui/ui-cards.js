@@ -642,8 +642,9 @@
                 card.querySelector('.jellyseerr-elsewhere-icons'), item.id, item.mediaType);
         }
 
-        // Add hide button for hidden content feature
-        if (JE.hiddenContent && JE.hiddenContent.getSettings().enabled && JE.hiddenContent.getSettings().showHideButtons !== false && JE.hiddenContent.getSettings().showButtonJellyseerr !== false) {
+        // Add hide button for hidden content feature (not on list placeholder cards: the
+        // placeholder is managed from its list)
+        if (!item.__jeLp && JE.hiddenContent && JE.hiddenContent.getSettings().enabled && JE.hiddenContent.getSettings().showHideButtons !== false && JE.hiddenContent.getSettings().showButtonJellyseerr !== false) {
             const cardBox = card.querySelector('.cardBox');
             if (cardBox) {
                 const hideBtn = document.createElement('button');
@@ -718,6 +719,12 @@
                 cardBox.style.position = 'relative';
                 cardBox.appendChild(hideBtn);
             }
+        }
+
+        // List placeholders: persistent "Add to collection or playlist" action (movies and
+        // shows only, never on JE's own placeholder cards). Looked up at call time.
+        if (!item.__jeLp && JE.pluginConfig?.ListPlaceholdersEnabled === true) {
+            JE.listPlaceholders?.appendCardAction?.(card, item);
         }
 
         return card;

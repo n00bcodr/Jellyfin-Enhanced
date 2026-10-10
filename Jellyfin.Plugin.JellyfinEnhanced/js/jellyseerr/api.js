@@ -108,11 +108,12 @@
      * @param {number|string} tmdbId
      * @param {'movie'|'tv'} mediaType
      * @param {boolean} is4k
+     * @param {number[]|string} [seasons] - TV: the requested season numbers, or 'all'.
      */
-    function emitMediaRequested(tmdbId, mediaType, is4k = false) {
-        document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', {
-            detail: { tmdbId: String(tmdbId), mediaType: String(mediaType || '').toLowerCase(), is4k: !!is4k }
-        }));
+    function emitMediaRequested(tmdbId, mediaType, is4k = false, seasons = undefined) {
+        const detail = { tmdbId: String(tmdbId), mediaType: String(mediaType || '').toLowerCase(), is4k: !!is4k };
+        if (seasons !== undefined) detail.seasons = seasons;
+        document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail }));
 
         if (String(mediaType || '').toLowerCase() === 'tv') {
             document.dispatchEvent(new CustomEvent('jellyseerr-tv-requested', {
@@ -577,7 +578,7 @@
         // Add to watchlist after successful request
         if (result) {
             invalidateRequestCaches(tmdbId, mediaType);
-            emitMediaRequested(tmdbId, mediaType, is4k);
+            emitMediaRequested(tmdbId, mediaType, is4k, mediaType === 'tv' ? 'all' : undefined);
             JE.helpers.trackUsage('seerr.request_submitted');
             try {
                 await api.addToWatchlist(tmdbId, mediaType);
@@ -625,7 +626,7 @@
         // Add to watchlist after successful request
         if (result) {
             invalidateRequestCaches(tmdbId, 'tv');
-            emitMediaRequested(tmdbId, 'tv', is4k);
+            emitMediaRequested(tmdbId, 'tv', is4k, seasonNumbers);
             JE.helpers.trackUsage('seerr.request_submitted');
             try {
                 await api.addToWatchlist(tmdbId, 'tv');

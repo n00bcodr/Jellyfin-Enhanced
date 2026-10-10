@@ -18,8 +18,11 @@
      * @param {string} mediaType - Should be 'tv'.
      * @param {string} showTitle - Display title of the show.
      * @param {Object|null} searchResultItem - Original search result data.
+     * @param {boolean} [is4k=false] - Request the 4K version.
+     * @param {{preselectedSeasons?: number[]}} [options] - Seasons to tick when the modal opens
+     *   (list placeholders: the placeholder's season).
      */
-    ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null, is4k = false) {
+    ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null, is4k = false, options = {}) {
         if (mediaType !== 'tv') return;
         if (refreshModalInterval) {
             clearInterval(refreshModalInterval);
@@ -155,6 +158,8 @@
                     settings = { serverId: parseInt(server), profileId: parseInt(quality), rootFolder: folder, tags: [] };
                 }
 
+                // Seasons this submit requested ('all' only for a whole-show request without season data).
+                let requestedSeasons = 'all';
                 try {
                     if (partialRequestsEnabled) {
                         // Partial requests enabled: request selected seasons (exclude the Select All checkbox)
@@ -166,6 +171,7 @@
                             return;
                         }
                         await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k, manualTvdbId);
+                        requestedSeasons = selectedSeasons;
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: resolvedShowTitle }), 4000);
                     } else {
                         // Partial requests disabled: request all non-special seasons to avoid locking specials
@@ -175,6 +181,7 @@
 
                         if (allSeasons.length > 0) {
                             await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem, is4k, manualTvdbId);
+                            requestedSeasons = allSeasons; // specials (season 0) were not requested
                         } else {
                             await requestMedia(tmdbId, 'tv', settings, is4k, searchResultItem, manualTvdbId);
                         }
@@ -183,7 +190,7 @@
                     }
                     // Notify any listening modals that TV was requested
                     document.dispatchEvent(new CustomEvent('jellyseerr-tv-requested', { detail: { tmdbId, mediaType: 'tv', is4k } }));
-                    document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail: { tmdbId, mediaType: 'tv', is4k } }));
+                    document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail: { tmdbId, mediaType: 'tv', is4k, seasons: requestedSeasons } }));
 
                     // Update original card button to pending state
                     internal.markCardRequested(tmdbId, 'tv', is4k);
@@ -210,6 +217,7 @@
         // Populate season list inside the modal (shows immediately, air dates may be empty)
         const seasonList = modalInstance.modalElement.querySelector('.jellyseerr-season-list');
         updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k, jellyfinSeasonMap);
+        applyPreselectedSeasons(seasonList, options?.preselectedSeasons, partialRequestsEnabled);
         modalInstance.show();
 
         // Sonarr candidates for the match block — async so the modal opens at once.
@@ -446,6 +454,29 @@
         input.addEventListener('input', syncSelection);
         syncSelection();
     }
+
+    /**
+     * Ticks the given seasons when the modal opens (B6). With partial requests off the
+     * checkboxes are disabled and every season is requested, so a note says so instead.
+     * @param {HTMLElement} seasonList - The modal's season list.
+     * @param {number[]|undefined} seasons - Season numbers to tick.
+     * @param {boolean} partialRequestsEnabled - Seerr's partial-requests setting.
+     */
+    function applyPreselectedSeasons(seasonList, seasons, partialRequestsEnabled) {
+        if (!seasonList || !Array.isArray(seasons) || seasons.length === 0) return;
+        if (!partialRequestsEnabled) {
+            const note = document.createElement('div');
+            note.className = 'jellyseerr-season-preselect-note';
+            note.textContent = JE.t('jellyseerr_modal_all_seasons_requested');
+            seasonList.parentNode?.insertBefore(note, seasonList);
+            return;
+        }
+        const wanted = new Set(seasons.map(Number));
+        seasonList.querySelectorAll('.jellyseerr-season-item .jellyseerr-season-checkbox:not(:disabled)').forEach((checkbox) => {
+            checkbox.checked = wanted.has(Number(checkbox.dataset.seasonNumber));
+        });
+    }
+    internal.applyPreselectedSeasons = applyPreselectedSeasons;
 
     function updateSeasonList(seasonListElement, tvDetails, partialRequestsEnabled = true, enableSpecialEpisodes = false, is4kMode = false, jellyfinSeasonMap = null) {
         if (!seasonListElement || !tvDetails) return;

@@ -29,7 +29,7 @@ for (const type of ['movie', 'tv']) test(`${type} request sends explicit setting
   assert.ok(h.invalidated.includes(`jellyseerr:/${type}/42`));
   assert.ok(h.invalidated.includes('jellyseerr:/quota'));
   assert.equal(h.events.length, type === 'tv' ? 2 : 1);
-  assert.deepEqual(h.events[0][1], { tmdbId: '42', mediaType: type, is4k: true });
+  assert.deepEqual(h.events[0][1], { tmdbId: '42', mediaType: type, is4k: true, ...(type === 'tv' ? { seasons: 'all' } : {}) });
   assert.deepEqual(h.usage, ['seerr.request_submitted']);
 });
 
@@ -37,6 +37,8 @@ test('selected seasons and manual TVDB match survive override-rule evaluation', 
   const h = setup(t, { get: async () => [{ sonarrServiceId: 9, language: 'ja', profileId: 3, rootFolder: '/anime' }] });
   await h.api.requestTvSeasons('42', [0, 2], {}, { originalLanguage: 'ja' }, false, 777);
   assert.deepEqual(h.calls[0][1].body, { mediaType: 'tv', mediaId: 42, seasons: [0, 2], serverId: 9, profileId: 3, rootFolder: '/anime', tvdbId: 777 });
+  // the request event names the seasons, so list placeholders can mark exactly those
+  assert.deepEqual(h.events[0][1], { tmdbId: '42', mediaType: 'tv', is4k: false, seasons: [0, 2] });
 });
 
 for (const status of [403, 404, 429, 503]) test(`request ${status} fails without success side effects or retry`, async t => {

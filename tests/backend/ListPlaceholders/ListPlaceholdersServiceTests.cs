@@ -597,6 +597,86 @@ public class ListPlaceholdersServiceTests
     }
 
     [Fact]
+    public async Task ARestrictedCallerNeverSeesItsCustomEntryOnceAnotherEditorLinkedItToABlockedTitle()
+    {
+        using var h = new ListPlaceholdersHarness(seerr: true);
+        h.MovieCertifications[1] = "PG";
+        h.MovieCertifications[2] = "R";
+        var admin = h.NewUser("admin", admin: true);
+        var kid = h.NewUser("kid", maxRating: 10);
+        var playlist = h.Host.AddPlaylist(kid);
+        var kidAccess = h.AccessFor(playlist, kid);
+        var adminAccess = h.AccessFor(playlist, admin);
+        var allowed = Movie(1);
+        var kidsCustom = Ph("{\"kind\":\"custom\",\"title\":\"Kid note\"}", kidAccess.UserIdN);
+        Ok<ApplyResultDto>(await h.Service.AddPlaceholdersAsync(kidAccess, new[] { allowed, kidsCustom }, null, null, null, None));
+        var rev = (await h.Service.GetViewAsync(kidAccess, None)).Rev;
+
+        // The kid's POST /items checks visibility (custom entry: its own, visible), then waits for the lock while the
+        // admin links that entry to an R-rated title. The 200 view must not carry the linked title.
+        var second = Ph("{\"kind\":\"custom\",\"title\":\"Kid second\"}", kidAccess.UserIdN);
+        Task<ListOutcome> add;
+        using (await h.Store.LockAsync(kidAccess.ListIdN))
+        {
+            add = h.Service.AddPlaceholdersAsync(kidAccess, new[] { second }, null, null, null, None);
+            LinkUnderHeldLock(h, kidAccess.ListIdN, kidsCustom.Id, 2);
+        }
+
+        var added = Ok<ApplyResultDto>(await add);
+        Assert.Equal(new[] { allowed.Id, second.Id }, added.View!.Placeholders.Select(p => p.Id));
+        Assert.Equal(new[] { P(allowed.Id), P(second.Id) }, added.View.Order);
+
+        // Same for a 409 view (stale rev) and for edits through the stale snapshot.
+        using (await h.Store.LockAsync(kidAccess.ListIdN))
+        {
+            var reset = h.Store.LoadForUpdate(kidAccess.ListIdN, ListKinds.Playlist);
+            var entry = reset.Items.Single(p => p.Id == kidsCustom.Id);
+            (entry.Kind, entry.TmdbId) = (PlaceholderKinds.Custom, null);
+            h.Store.Save(reset);
+        }
+
+        var current = await h.Service.GetViewAsync(kidAccess, None);
+        Assert.Contains(kidsCustom.Id, current.Placeholders.Select(p => p.Id));
+        Task<ListOutcome> delete;
+        Task<ListOutcome> patch;
+        using (await h.Store.LockAsync(kidAccess.ListIdN))
+        {
+            delete = h.Service.DeleteAsync(kidAccess, allowed.Id, rev, null, None);
+            // The link saves once (rev + 1), so this PATCH passes the rev check and reaches the visibility check.
+            patch = h.Service.PatchAsync(kidAccess, kidsCustom.Id, current.Rev + 1, "x", null, null, None);
+            LinkUnderHeldLock(h, kidAccess.ListIdN, kidsCustom.Id, 2);
+        }
+
+        var conflict = Error(await delete, 409, "rev_conflict");
+        Assert.Equal(new[] { allowed.Id, second.Id }, conflict.View!.Placeholders.Select(p => p.Id));
+        Assert.DoesNotContain(P(kidsCustom.Id), conflict.View.Order!);
+        Error(await patch, 404, "not_found");
+
+        // A fresh view agrees (the real parental check hides it); the admin still sees it.
+        Assert.DoesNotContain(kidsCustom.Id, (await h.Service.GetViewAsync(kidAccess, None)).Placeholders.Select(p => p.Id));
+        Assert.Contains(kidsCustom.Id, (await h.Service.GetViewAsync(adminAccess, None)).Placeholders.Select(p => p.Id));
+    }
+
+    [Fact]
+    public async Task LinkingACustomEntryKeepsItInTheRestrictedEditorsOwnView()
+    {
+        using var h = new ListPlaceholdersHarness(seerr: true);
+        h.MovieCertifications[1] = "PG";
+        var kid = h.NewUser("kid", maxRating: 10);
+        var playlist = h.Host.AddPlaylist(kid);
+        var access = h.AccessFor(playlist, kid);
+        var custom = Ph("{\"kind\":\"custom\",\"title\":\"Movie 1\"}", access.UserIdN);
+        Ok<ApplyResultDto>(await h.Service.AddPlaceholdersAsync(access, new[] { custom }, null, null, null, None));
+        var rev = (await h.Service.GetViewAsync(access, None)).Rev;
+
+        var view = Ok<ListViewDto>(await h.Service.PatchAsync(access, custom.Id, rev, null, Movie(1), null, None));
+
+        var linked = Assert.Single(view.Placeholders);
+        Assert.Equal((custom.Id, 1), (linked.Id, linked.TmdbId));
+        Assert.Equal(new[] { P(custom.Id) }, view.Order);
+    }
+
+    [Fact]
     public async Task CreatingAListReportsAFailedApplyAndARetryReusesTheList()
     {
         using var h = new ListPlaceholdersHarness();
@@ -671,6 +751,18 @@ public class ListPlaceholdersServiceTests
         var doc = h.Store.LoadForUpdate(listIdN, ListKinds.Playlist);
         doc.Items.Add(placeholder);
         doc.Order.Add(P(placeholder.Id));
+        h.Store.Save(doc);
+    }
+
+    // What PatchAsync's link path does to a custom entry (same id and author, new TMDB title), done by another editor.
+    private static void LinkUnderHeldLock(ListPlaceholdersHarness h, string listIdN, string placeholderId, int tmdbId)
+    {
+        var doc = h.Store.LoadForUpdate(listIdN, ListKinds.Playlist);
+        var placeholder = doc.Items.Single(p => p.Id == placeholderId);
+        placeholder.Kind = PlaceholderKinds.Movie;
+        placeholder.MediaType = "movie";
+        placeholder.TmdbId = tmdbId;
+        placeholder.Title = "Rated";
         h.Store.Save(doc);
     }
 }

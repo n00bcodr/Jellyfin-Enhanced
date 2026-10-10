@@ -1135,6 +1135,50 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-actions.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-api.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-collection.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-granularity.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-init.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-picker.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-playlist.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-render.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-requests.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-search.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-styles.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/modal.js",
       "category": "js"
     },
@@ -7634,7 +7678,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 359,
+    "files": 370,
     "routes": 179,
     "configuration_properties": 513,
     "storage_references": 64,

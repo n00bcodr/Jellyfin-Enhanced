@@ -49,31 +49,75 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
     /// <summary>
     /// Which placeholders one caller may see in one response: everything (unrestricted callers) or only an allowlist of
-    /// ids that passed the caller's parental filter. Anything not on the allowlist is hidden (fail closed).
+    /// placeholders that passed the caller's parental filter. The allowlist is bound to what was checked (the inputs of
+    /// the filter: title or custom author), not just the id, so an entry that changed since the check (e.g. a custom
+    /// entry linked to a title by another editor) is hidden like anything not on the list (fail closed).
     /// </summary>
     internal sealed class PlaceholderVisibility
     {
-        private readonly HashSet<string>? _allowed;
+        private readonly Dictionary<string, string>? _allowed;
 
-        private PlaceholderVisibility(HashSet<string>? allowed) => _allowed = allowed;
+        private PlaceholderVisibility(Dictionary<string, string>? allowed) => _allowed = allowed;
 
         /// <summary>Every placeholder is visible.</summary>
         /// <returns>The visibility.</returns>
         public static PlaceholderVisibility Unrestricted() => new(null);
 
-        /// <summary>Only these ids are visible.</summary>
-        /// <param name="ids">Checked, visible ids.</param>
+        /// <summary>Only these placeholders, as they were when checked, are visible.</summary>
+        /// <param name="placeholders">Checked, visible placeholders.</param>
         /// <returns>The visibility.</returns>
-        public static PlaceholderVisibility Allowlist(IEnumerable<string> ids) => new(new HashSet<string>(ids, StringComparer.Ordinal));
+        public static PlaceholderVisibility Allowlist(IEnumerable<Placeholder> placeholders)
+        {
+            var allowed = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var placeholder in placeholders)
+            {
+                allowed[placeholder.Id] = CheckedKey(placeholder);
+            }
 
-        /// <summary>Whether a placeholder id is visible.</summary>
-        /// <param name="placeholderId">Placeholder id.</param>
+            return new(allowed);
+        }
+
+        /// <summary>Whether a placeholder (in its current state) is visible.</summary>
+        /// <param name="placeholder">Placeholder.</param>
         /// <returns>Whether it is visible.</returns>
-        public bool IsVisible(string placeholderId) => _allowed == null || _allowed.Contains(placeholderId);
+        public bool IsVisible(Placeholder placeholder) =>
+            _allowed == null || (_allowed.TryGetValue(placeholder.Id, out var key) && key == CheckedKey(placeholder));
 
-        /// <summary>Adds an id that was checked for this caller (e.g. one it just added).</summary>
-        /// <param name="placeholderId">Placeholder id.</param>
-        public void Allow(string placeholderId) => _allowed?.Add(placeholderId);
+        /// <summary>A lookup of placeholder-id visibility against the placeholders of one document.</summary>
+        /// <param name="items">The document's placeholders.</param>
+        /// <returns>Whether the placeholder with an id is in <paramref name="items"/> and visible.</returns>
+        public Func<string, bool> For(IEnumerable<Placeholder> items)
+        {
+            if (_allowed == null)
+            {
+                return _ => true;
+            }
+
+            var byId = new Dictionary<string, Placeholder>(StringComparer.Ordinal);
+            foreach (var item in items)
+            {
+                byId[item.Id] = item;
+            }
+
+            return id => byId.TryGetValue(id, out var placeholder) && IsVisible(placeholder);
+        }
+
+        /// <summary>Adds a placeholder that was checked for this caller (e.g. one it just added or linked).</summary>
+        /// <param name="placeholder">Placeholder in its checked state.</param>
+        public void Allow(Placeholder placeholder)
+        {
+            if (_allowed != null)
+            {
+                _allowed[placeholder.Id] = CheckedKey(placeholder);
+            }
+        }
+
+        // What ListAccessService.GetHiddenPlaceholderIdsAsync decides on: the TMDB title, or (custom/unverifiable
+        // entries) who added it.
+        private static string CheckedKey(Placeholder placeholder) =>
+            placeholder.Kind == PlaceholderKinds.Custom || placeholder.TmdbId is not > 0
+                ? "c|" + placeholder.AddedBy
+                : "t|" + placeholder.MediaType + "|" + placeholder.TmdbId!.Value.ToString(CultureInfo.InvariantCulture);
     }
 
     /// <summary>
@@ -325,7 +369,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 else if (position.AfterToken != null)
                 {
                     var index = order.IndexOf(position.AfterToken);
-                    if (index < 0 || !IsVisibleToken(position.AfterToken, access.User, visibility, new Dictionary<Guid, bool>()))
+                    if (index < 0 || !IsVisibleToken(position.AfterToken, access.User, visibility.For(doc.Items), new Dictionary<Guid, bool>()))
                     {
                         return Conflict(access, "stale_anchor", "The position no longer exists; reload the list.", visibility, order, doc);
                     }
@@ -383,7 +427,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
                     room--;
                     doc.Items.Add(placeholder);
-                    visibility.Allow(placeholder.Id); // passed the caller's own filter in PrevalidateAsync
+                    visibility.Allow(placeholder); // passed the caller's own filter in PrevalidateAsync
                     result.Added.Add(placeholder.Id);
                     changed = true;
                     run.Add(new NewEntry(null, ListPlaceholderOrder.PlaceholderToken(placeholder.Id)));
@@ -526,7 +570,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
 
                 var placeholder = doc.Items.FirstOrDefault(p => p.Id == placeholderId);
-                if (placeholder == null || !visibility.IsVisible(placeholderId))
+                if (placeholder == null || !visibility.IsVisible(placeholder))
                 {
                     return Task.FromResult(ListOutcome.Error(404, "not_found", "Placeholder not found."));
                 }
@@ -564,6 +608,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     {
                         placeholder.Note = link.Note;
                     }
+
+                    visibility.Allow(placeholder); // the linked title passed the caller's filter above
                 }
 
                 if (note != null)
@@ -601,7 +647,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
 
                 var placeholder = doc.Items.FirstOrDefault(p => p.Id == placeholderId);
-                if (placeholder == null || !visibility.IsVisible(placeholderId))
+                if (placeholder == null || !visibility.IsVisible(placeholder))
                 {
                     return Task.FromResult(ListOutcome.Error(404, "not_found", "Placeholder not found."));
                 }
@@ -652,7 +698,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
 
                 var callerVisible = new Dictionary<Guid, bool>();
-                bool VisibleToCaller(string token) => IsVisibleToken(token, access.User, visibility, callerVisible);
+                var placeholderVisible = visibility.For(doc.Items);
+                bool VisibleToCaller(string token) => IsVisibleToken(token, access.User, placeholderVisible, callerVisible);
 
                 var canonical = Canonical(access, doc);
                 var projection = ListPlaceholderOrder.Project(canonical, VisibleToCaller);
@@ -871,7 +918,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         private ListViewDto BuildView(ListAccess access, ListDoc? doc, IReadOnlyList<string>? canonical, PlaceholderVisibility visibility)
         {
             var seerrEnabled = SeerrEnabled();
-            var items = (doc?.Items ?? new List<Placeholder>()).Where(p => visibility.IsVisible(p.Id)).ToList();
+            var items = (doc?.Items ?? new List<Placeholder>()).Where(visibility.IsVisible).ToList();
             var view = new ListViewDto
             {
                 ListId = access.ListIdN,
@@ -900,7 +947,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             if (access.List.Kind == ListKinds.Playlist && canonical != null)
             {
                 var callerVisible = new Dictionary<Guid, bool>();
-                view.Order = ListPlaceholderOrder.Project(canonical, t => IsVisibleToken(t, access.User, visibility, callerVisible));
+                var placeholderVisible = visibility.For(items);
+                view.Order = ListPlaceholderOrder.Project(canonical, t => IsVisibleToken(t, access.User, placeholderVisible, callerVisible));
                 ordered = view.Order.Select(ListPlaceholderOrder.PlaceholderIdOf).OfType<string>().Where(byId.ContainsKey).Select(id => byId[id]);
             }
             else
@@ -993,15 +1041,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
         }
 
-        private bool IsVisibleToken(string token, User user, PlaceholderVisibility visibility, Dictionary<Guid, bool> memo)
+        private bool IsVisibleToken(string token, User user, Func<string, bool> placeholderVisible, Dictionary<Guid, bool> memo)
         {
             var placeholderId = ListPlaceholderOrder.PlaceholderIdOf(token);
-            return placeholderId != null ? visibility.IsVisible(placeholderId) : EntryVisible(token, user, memo);
+            return placeholderId != null ? placeholderVisible(placeholderId) : EntryVisible(token, user, memo);
         }
 
         // A2/C5: which placeholders the caller may see. Unrestricted callers see everything. Restricted callers get an
-        // ALLOWLIST of the ids that were checked against their parental filter: a placeholder that another editor adds
-        // after this check (between the snapshot and the list lock) is hidden until the caller's next view (fail closed).
+        // ALLOWLIST of the placeholders that were checked against their parental filter, bound to the checked title or
+        // author: a placeholder that another editor adds or relinks after this check (between the snapshot and the list
+        // lock) is hidden until the caller's next view (fail closed).
         private async Task<PlaceholderVisibility> VisibilityAsync(ListDoc? doc, User user, CancellationToken cancellationToken)
         {
             if (!_access.IsRestricted(user))
@@ -1011,7 +1060,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
             var items = doc?.Items ?? new List<Placeholder>();
             var hidden = await _access.GetHiddenPlaceholderIdsAsync(items, user, cancellationToken).ConfigureAwait(false);
-            return PlaceholderVisibility.Allowlist(items.Select(p => p.Id).Where(id => !hidden.Contains(id)));
+            return PlaceholderVisibility.Allowlist(items.Where(p => !hidden.Contains(p.Id)));
         }
 
         private bool EntryVisible(string token, User user, Dictionary<Guid, bool> memo)

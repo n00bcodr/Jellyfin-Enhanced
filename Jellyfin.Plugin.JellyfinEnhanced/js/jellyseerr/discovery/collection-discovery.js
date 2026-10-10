@@ -151,12 +151,20 @@
         // Status: 1=not available, 2=requested, 3=pending, 4=partial, 5=available
         // No user filter/sort controls needed — collections are small fixed sets
         // Ensure each part has mediaType set to 'movie' for the shared card renderer
-        const missingMovies = collectionDetails.parts
+        let missingMovies = collectionDetails.parts
             .map(movie => ({ ...movie, mediaType: movie.mediaType || 'movie' }))
             .filter(movie => {
                 const movieStatus = movie.mediaInfo?.status || 1;
                 return movieStatus !== 5;
             });
+
+        // List placeholders: titles already in this collection as placeholders show in its
+        // "Not in your library" section; don't offer them a second time here.
+        if (JE.pluginConfig?.ListPlaceholdersEnabled === true && JE.listPlaceholders?.getPlaceholderTmdbIds) {
+            const placeholderIds = await JE.listPlaceholders.getPlaceholderTmdbIds(itemId, 'movie').catch(() => null);
+            if (signal.aborted) return;
+            if (placeholderIds?.size) missingMovies = missingMovies.filter(movie => !placeholderIds.has(Number(movie.id)));
+        }
 
         // Sort by release date
         missingMovies.sort((a, b) => {
