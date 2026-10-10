@@ -34,6 +34,9 @@
         .je-lp-badge.status-partially-available { background: rgba(34, 197, 94, 0.85); }
         .je-lp-badge.status-blocklisted { background: rgba(120, 53, 15, 0.9); }
         .je-lp-badge.status-deleted { background: rgba(220, 38, 38, 0.85); }
+        a.je-lp-adding { text-decoration: none; cursor: pointer; }
+        a.je-lp-adding:hover, a.je-lp-adding:focus-visible { filter: brightness(1.1); text-decoration: underline; }
+        .je-lp-adding .material-icons { font-size: 1.15em; }
         .je-lp-badge-loading { background: transparent; color: inherit; opacity: 0.6; }
         .je-lp-spinner { display: inline-block; width: 0.9em; height: 0.9em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: je-lp-spin 0.9s linear infinite; }
         @keyframes je-lp-spin { to { transform: rotate(360deg); } }
@@ -67,6 +70,8 @@
         .je-lp-section-head h2[hidden] { display: none; }
         .je-lp-section-head .je-lp-toolbar { margin: 0 0 0 auto; padding-right: 3.3%; }
         .je-lp-kind-chip { position: absolute; left: clamp(6px, 4cqw, 10px); top: calc(clamp(6px, 4cqw, 10px) + clamp(1.5rem, 11cqw, 1.8rem) + 4px); z-index: 100; max-width: calc(100% - 20px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.2em 0.6em; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(0, 0, 0, 0.72); color: #fff; font-size: clamp(0.65rem, 5.5cqw, 0.85rem); font-weight: 600; pointer-events: none; }
+        .je-lp-progress-chip { position: absolute; left: clamp(6px, 4cqw, 10px); bottom: clamp(6px, 4cqw, 10px); z-index: 100; max-width: calc(100% - 20px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.2em 0.6em; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(0, 0, 0, 0.72); color: #fff; font-size: clamp(0.65rem, 5.5cqw, 0.85rem); font-weight: 600; pointer-events: none; }
+        .je-lp-progress-chip.je-lp-adding { background: rgba(34, 197, 94, 0.9); border-color: transparent; }
         .je-lp-card-custom .cardScalable { container-type: inline-size; }
         .je-lp-card-custom .je-lp-kind-chip { top: clamp(6px, 4cqw, 10px); }
         .je-lp-card-custom .je-lp-card-image { background-size: cover; background-position: center; position: absolute; inset: 0; opacity: 0.85; }

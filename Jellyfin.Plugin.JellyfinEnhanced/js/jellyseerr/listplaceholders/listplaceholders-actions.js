@@ -114,11 +114,19 @@
      * @returns {Promise<void>}
      */
     async function remove(ctrl, ph) {
+        ctrl.noteRemoved?.(ph.id);
         try {
             await withRev(ctrl, view => lp.api.removePlaceholder(ctrl.listId, ph.id, view.rev),
                 view => view.placeholders.some(p => p.id === ph.id));
             JE.toast(JE.t('listPlaceholders_removed', { title: lp.render.esc(ph.title) }), 2500);
         } catch (error) {
+            ctrl.noteRemoved?.(ph.id, false);
+            // The list changed first and the placeholder is gone from it (swapped in meanwhile): its
+            // disappearance was taken for this removal, so the library rows/cards reload here.
+            const fresh = error?.responseJSON?.view;
+            if (error?.responseJSON?.code === 'rev_conflict' && fresh && !(fresh.placeholders || []).some(p => p.id === ph.id)) {
+                ctrl.afterRealItemsAdded?.();
+            }
             lp.toastError(error);
         }
     }

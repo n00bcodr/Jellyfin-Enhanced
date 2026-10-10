@@ -129,6 +129,16 @@
     }
 
     /**
+     * Identity of a view for the once-only native row reload: its revision plus its real-entry
+     * order (a playlist without placeholders has no document and stays at rev 0 while items are added).
+     * @param {Object} view
+     * @returns {string}
+     */
+    function nativeRefreshKey(view) {
+        return `${view.rev}|${(view.order || []).filter(t => t.startsWith('e:')).join(',')}`;
+    }
+
+    /**
      * Element-wise equality of two string arrays.
      * @param {string[]} a
      * @param {string[]} b
@@ -184,6 +194,8 @@
             pollIndex: 0,
             pollTimer: null,
             refetchTimer: null,
+            refetchAt: 0,
+            addingSeen: new Set(),
             emptyTimer: null,
             moScheduled: false,
             toolbar: null
@@ -191,6 +203,9 @@
 
         /** @returns {boolean} Whether the page still exists. */
         ctrl.isAlive = () => container.isConnected;
+
+        /** @returns {boolean} Whether the page is the one on screen (jellyfin-web hides cached pages). */
+        ctrl.isShown = () => ctrl.isAlive() && !page.classList.contains('hide');
 
         /** @returns {boolean} Whether placeholder rows can be dragged in Jellyfin's Sortable (B4). */
         ctrl.canDragPlaceholders = () => !!(ctrl.view?.nativeCanEdit && !isTvLayout() && container.sortable);
@@ -244,14 +259,21 @@
             ctrl.configureSortable();
         };
 
-        /** Re-renders only the status badges / request buttons (status poll, request events). */
+        /**
+         * Re-renders only the status badges / request buttons (status poll, request events) and
+         * the subtitles: aired counts and date labels follow today's date without a new revision.
+         */
         ctrl.updateStatuses = () => {
             if (!ctrl.view) return;
             const context = ctrl.rowContext();
             container.querySelectorAll(':scope > .je-lp-row').forEach((row) => {
                 const ph = ctrl.byId(row.getAttribute('data-je-lp-id'));
+                if (!ph) return;
                 const mount = row.querySelector('.je-lp-status');
-                if (ph && mount) mount.innerHTML = lp.render.statusHtml(ph, context);
+                if (mount) mount.innerHTML = lp.render.statusHtml(ph, context);
+                const sub = row.querySelector('.je-lp-sub');
+                const text = lp.render.rowSubtitle(ph);
+                if (sub && sub.textContent !== text) sub.textContent = text;
             });
         };
 
@@ -291,11 +313,13 @@
             if (lp.isOlderView(view, previous)) return; // a late answer for an older revision
             ctrl.view = view;
             const viewReal = (view.order || []).filter(t => t.startsWith('e:'));
-            if (ctrl.nativeRendered && ctrl.nativeRefreshedFor !== view.rev && !sameArray(domRealTokens(container), viewReal)) {
+            const key = nativeRefreshKey(view);
+            if (ctrl.nativeRendered && ctrl.nativeRefreshedKey !== key && !sameArray(domRealTokens(container), viewReal)) {
                 // Jellyfin's rows are out of date (items added/moved elsewhere): reload them,
-                // afterRefresh re-inserts the placeholders. Once per revision, so a lasting
+                // afterRefresh re-inserts the placeholders. Once per revision and real order (a
+                // list without placeholders stays at rev 0 while items are added), so a lasting
                 // difference can't loop.
-                ctrl.nativeRefreshedFor = view.rev;
+                ctrl.nativeRefreshedKey = key;
                 ctrl.refreshNative();
             } else if (!previous || previous.rev !== view.rev
                 || container.querySelectorAll(':scope > .je-lp-row').length !== (view.placeholders || []).length) {
@@ -305,6 +329,7 @@
                 ctrl.renderToolbar();
             }
             ctrl.schedulePoll();
+            lp.freshness.checkAdding(ctrl, view);
             if (!ctrl.nativeRendered) ctrl.waitForEmptyPlaylist();
         };
 
@@ -334,9 +359,9 @@
             ctrl.pollTimer = setTimeout(() => ctrl.load(), POLL_DELAYS[ctrl.pollIndex++]);
         };
 
-        /** Fetches the view and applies it if the page is still current. */
+        /** Fetches the view and applies it if the page is still the one shown. */
         ctrl.load = async () => {
-            if (!ctrl.isAlive()) return;
+            if (!ctrl.isShown()) return;
             const epoch = lp.epochNow();
             let view;
             try {
@@ -345,7 +370,8 @@
                 if (error?.status !== 404) console.warn('🪼 Jellyfin Enhanced: List placeholders: could not load the playlist view', error);
                 return;
             }
-            if (!lp.isCurrentEpoch(epoch) || !ctrl.isAlive()) return;
+            // A page left meanwhile re-fetches when it is shown again (viewshow, B3).
+            if (!lp.isCurrentEpoch(epoch) || !ctrl.isShown()) return;
             ctrl.applyView(view);
             if (!ctrl.user && ctrl.view?.seerrEnabled && JE.pluginConfig?.JellyseerrEnabled === true) {
                 lp.requests.userStatus().then((user) => {
@@ -356,11 +382,11 @@
             }
         };
 
-        /** Debounced re-fetch (LibraryChanged for this playlist, B3). */
-        ctrl.scheduleRefetch = () => {
-            clearTimeout(ctrl.refetchTimer);
-            ctrl.refetchTimer = setTimeout(() => ctrl.load(), REFETCH_DEBOUNCE_MS);
-        };
+        /**
+         * Debounced re-fetch (LibraryChanged, a swap in progress, requests; B3).
+         * @param {number} [delayMs] - Wait before the GET (default 1 s); an earlier pending one wins.
+         */
+        ctrl.scheduleRefetch = (delayMs = REFETCH_DEBOUNCE_MS) => lp.freshness.schedule(ctrl, delayMs);
 
         /** A request was announced somewhere: refresh badges now, statuses from the server shortly. */
         ctrl.onRequested = () => {
@@ -368,8 +394,16 @@
             ctrl.scheduleRefetch();
         };
 
-        /** Items were added as real entries: reload Jellyfin's rows. */
-        ctrl.afterRealItemsAdded = () => ctrl.refreshNative();
+        /**
+         * Items were added as real entries: reload Jellyfin's rows, unless adopting the
+         * mutation's view already did for this revision and real order.
+         */
+        ctrl.afterRealItemsAdded = () => {
+            const key = ctrl.view ? nativeRefreshKey(ctrl.view) : undefined;
+            if (key !== undefined && ctrl.nativeRefreshedKey === key) return;
+            ctrl.nativeRefreshedKey = key;
+            ctrl.refreshNative();
+        };
 
         /**
          * Position choices of the Add title modal: end, start, after any row.
@@ -579,14 +613,16 @@
             clearTimeout(ctrl.refetchTimer);
             clearTimeout(ctrl.emptyTimer);
             ctrl.pollTimer = ctrl.refetchTimer = ctrl.emptyTimer = null;
+            ctrl.refetchAt = 0;
         };
 
         /** Takes a disposed controller back into use (its page is shown again, e.g. after a user switch). */
         ctrl.reactivate = () => {
             ctrl.view = null;
             ctrl.user = null;
-            ctrl.nativeRefreshedFor = undefined;
+            ctrl.nativeRefreshedKey = undefined;
             ctrl.pollIndex = 0;
+            ctrl.addingSeen = new Set();
             ctrl.observer?.observe(container, { childList: true });
         };
 

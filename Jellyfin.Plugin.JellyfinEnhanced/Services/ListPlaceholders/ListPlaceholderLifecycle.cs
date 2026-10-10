@@ -80,9 +80,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <inheritdoc />
         public void Dispose()
         {
+            // Idempotent: the service is both a singleton (maintenance task) and a hosted service, so the container
+            // may dispose it more than once.
             _libraryManager.ItemRemoved -= OnItemRemoved;
-            _stopping?.Cancel();
-            _stopping?.Dispose();
+            var stopping = Interlocked.Exchange(ref _stopping, null);
+            stopping?.Cancel();
+            stopping?.Dispose();
         }
 
         /// <summary>Deletes the document of a removed list (off the scan thread).</summary>

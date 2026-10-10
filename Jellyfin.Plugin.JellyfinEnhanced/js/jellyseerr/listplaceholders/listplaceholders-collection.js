@@ -39,7 +39,7 @@
      * @returns {string}
      */
     function statusSignature(ph) {
-        return `${ph.status ?? ''}|${lp.requests.isRequested(ph) ? 1 : 0}`;
+        return `${ph.status ?? ''}|${lp.requests.isRequested(ph) ? 1 : 0}|${lp.render.addingItemId(ph) || ''}|${lp.render.progressParts(ph).join(',')}`;
     }
 
     /**
@@ -61,11 +61,17 @@
             renderToken: 0,
             pollIndex: 0,
             pollTimer: null,
-            refetchTimer: null
+            refetchTimer: null,
+            refetchAt: 0,
+            addingSeen: new Set(),
+            removedHere: new Set()
         };
 
         /** @returns {boolean} Whether the page still exists. */
         ctrl.isAlive = () => page.isConnected;
+
+        /** @returns {boolean} Whether the page is the one on screen (jellyfin-web hides cached pages). */
+        ctrl.isShown = () => ctrl.isAlive() && !page.classList.contains('hide');
 
         /**
          * Looks up a visible placeholder by id.
@@ -195,8 +201,48 @@
             } else {
                 ctrl.updateStatuses();
             }
+            if (ctrl.swappedSince(previous, view)) ctrl.afterRealItemsAdded();
             ctrl.schedulePoll();
+            lp.freshness.checkAdding(ctrl, view);
             ctrl.ensureUser();
+        };
+
+        /**
+         * Whether a newer view shows items that went into the collection since the previous one
+         * (B3), so Jellyfin's own cards above the section need a reload: a placeholder that left
+         * without being removed on this page (swapped in, or linked to a title in the library), an
+         * episodes placeholder with more episodes filled (each Episode item is added), or a season
+         * placeholder's first filled episode (its Season item is added once; later episodes only
+         * change the progress).
+         * @param {Object|null} previous - The view shown before.
+         * @param {Object} view - The new view.
+         * @returns {boolean}
+         */
+        ctrl.swappedSince = (previous, view) => {
+            if (!previous || !(view.rev > previous.rev)) return false;
+            const now = new Map((view.placeholders || []).map(ph => [ph.id, ph]));
+            let swapped = false;
+            for (const ph of previous.placeholders || []) {
+                const next = now.get(ph.id);
+                if (!next) {
+                    if (!ctrl.removedHere.delete(ph.id)) swapped = true;
+                    continue;
+                }
+                const before = Number(ph.filledCount) || 0;
+                const after = Number(next.filledCount) || 0;
+                if (after > before && (next.kind === 'episodes' || before === 0)) swapped = true;
+            }
+            return swapped;
+        };
+
+        /**
+         * Remembers a placeholder being removed from this page, so its disappearance isn't taken
+         * for a swap (and forgets it again when the removal failed).
+         * @param {string} placeholderId
+         * @param {boolean} [removing=true] - false: the removal failed.
+         */
+        ctrl.noteRemoved = (placeholderId, removing = true) => {
+            if (removing) ctrl.removedHere.add(placeholderId); else ctrl.removedHere.delete(placeholderId);
         };
 
         /**
@@ -235,9 +281,9 @@
             ctrl.pollTimer = setTimeout(() => ctrl.load(), POLL_DELAYS[ctrl.pollIndex++]);
         };
 
-        /** Fetches and applies the view (shared with the "Missing from" discovery, B7). */
+        /** Fetches and applies the view (shared with the "Missing from" discovery, B7) while the page is shown. */
         ctrl.load = async () => {
-            if (!ctrl.isAlive()) return;
+            if (!ctrl.isShown()) return;
             const epoch = lp.epochNow();
             let view;
             try {
@@ -246,19 +292,20 @@
                 if (error?.status !== 404) console.warn('🪼 Jellyfin Enhanced: List placeholders: could not load the collection view', error);
                 return;
             }
-            if (!lp.isCurrentEpoch(epoch) || !ctrl.isAlive()) return;
+            // A page left meanwhile re-fetches when it is shown again (viewshow, B3).
+            if (!lp.isCurrentEpoch(epoch) || !ctrl.isShown()) return;
             if (ctrl.needsUser(view)) {
                 ctrl.user = await lp.requests.userStatus();
-                if (!lp.isCurrentEpoch(epoch) || !ctrl.isAlive()) return;
+                if (!lp.isCurrentEpoch(epoch) || !ctrl.isShown()) return;
             }
             ctrl.applyView(view);
         };
 
-        /** Debounced re-fetch (LibraryChanged for this collection, B3). */
-        ctrl.scheduleRefetch = () => {
-            clearTimeout(ctrl.refetchTimer);
-            ctrl.refetchTimer = setTimeout(() => ctrl.load(), REFETCH_DEBOUNCE_MS);
-        };
+        /**
+         * Debounced re-fetch (LibraryChanged, a swap in progress, requests; B3).
+         * @param {number} [delayMs] - Wait before the GET (default 1 s); an earlier pending one wins.
+         */
+        ctrl.scheduleRefetch = (delayMs = REFETCH_DEBOUNCE_MS) => lp.freshness.schedule(ctrl, delayMs);
 
         /** A request was announced: update cards now and fetch statuses shortly. */
         ctrl.onRequested = () => {
@@ -341,6 +388,7 @@
             clearTimeout(ctrl.pollTimer);
             clearTimeout(ctrl.refetchTimer);
             ctrl.pollTimer = ctrl.refetchTimer = null;
+            ctrl.refetchAt = 0;
             ctrl.renderToken++;
             if (ctrl.section && !ctrl.isAlive()) JE.jellyseerrUI?.releasePosters?.(ctrl.section);
         };
@@ -350,6 +398,8 @@
             ctrl.view = null;
             ctrl.user = null;
             ctrl.pollIndex = 0;
+            ctrl.addingSeen = new Set();
+            ctrl.removedHere = new Set();
         };
 
         return ctrl;

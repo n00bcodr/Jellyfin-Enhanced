@@ -227,6 +227,39 @@ test('a newer revision with different real rows reloads jellyfin-web rows once',
   assert.equal(h.refreshes(), 1, 'not again for the same revision');
 });
 
+test('successive in-library adds to a playlist without placeholders (rev stays 0) each reload jellyfin-web rows', async t => {
+  const h = await mount(t, { views: [view({ rev: 0, order: [`e:${ITEM_A}:0`] })], ids: [ITEM_A] });
+  assert.equal(h.refreshes(), 0);
+  // Add title → library movie B: the POST's view (published) still has rev 0 (no document is written)
+  h.ctrl.applyView(view({ rev: 0, order: [`e:${ITEM_A}:0`, `e:${ITEM_B}:0`] }));
+  h.ctrl.afterRealItemsAdded();
+  assert.equal(h.refreshes(), 1, 'one reload for the first add');
+  h.container.innerHTML = [ITEM_A, ITEM_B].map(id => realRow(id)).join('');
+  h.container.afterRefresh({ Items: [] });
+  // second add (movie C): rev 0 again, but a new real order
+  h.ctrl.applyView(view({ rev: 0, order: [`e:${ITEM_A}:0`, `e:${ITEM_B}:0`, `e:${ITEM_C}:0`] }));
+  h.ctrl.afterRealItemsAdded();
+  assert.equal(h.refreshes(), 2, 'the second add reloads too');
+  // the same view again changes nothing
+  h.ctrl.applyView(view({ rev: 0, order: [`e:${ITEM_A}:0`, `e:${ITEM_B}:0`, `e:${ITEM_C}:0`] }));
+  assert.equal(h.refreshes(), 2);
+});
+
+test('a same-revision view whose aired count moved on (a new day) updates the row subtitle', async t => {
+  const season = (aired) => ph('s', { kind: 'season', mediaType: 'tv', seasonNumber: 1, filledCount: 1, expectedCount: 2, airedCount: aired });
+  const first = view({ placeholders: [season(1)], order: [`e:${ITEM_A}:0`, 'p:s'] });
+  const second = view({ placeholders: [season(2)], order: [`e:${ITEM_A}:0`, 'p:s'] });
+  const h = await mount(t, { views: [first, second], ids: [ITEM_A] });
+  const sub = () => h.container.querySelector('.je-lp-row .je-lp-sub').textContent;
+  const row = h.container.querySelector('.je-lp-row');
+  assert.match(sub(), /progress_aired\{"filled":1,"aired":1\}/);
+  assert.match(sub(), /progress_upcoming/);
+  await h.ctrl.load();
+  assert.equal(h.container.querySelector('.je-lp-row'), row, 'same revision: the row is kept');
+  assert.match(sub(), /progress_aired\{"filled":1,"aired":2\}/);
+  assert.doesNotMatch(sub(), /upcoming/);
+});
+
 test('statuses poll with backoff while the Seerr index is not ready', async t => {
   const timers = [];
   const h = setup(t, { html: playlistPage([ITEM_A]), plugin: async () => view({ seerrStatusReady: false, placeholders: [ph('x', { status: null })], order: [`e:${ITEM_A}:0`, 'p:x'] }) });

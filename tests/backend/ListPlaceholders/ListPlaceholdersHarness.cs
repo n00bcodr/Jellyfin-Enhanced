@@ -24,11 +24,25 @@ internal sealed class ListPlaceholdersHarness : IDisposable
     public Mock<ILocalizationManager> Localization { get; } = new();
     public List<string> SeerrCalls { get; } = new();
     public Func<HttpRequestMessage, HttpResponseMessage> Reply { get; set; }
+    /// <summary>When set, answers Seerr calls instead of <see cref="Reply"/> (hanging/slow Seerr).</summary>
+    public Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>? ReplyAsync { get; set; }
     public IntegrationTransport Transport { get; }
     public ListPlaceholderStore Store { get; }
     public ListAccessService Access { get; }
     public SeerrMediaIndex Index { get; }
+    public ListPlaceholderResolver Resolver { get; }
+    public ListPlaceholderMetadataService Metadata { get; }
+    public ListPlaceholderSwapService Swap { get; }
     public ListPlaceholderService Service { get; }
+
+    /// <summary>Synthetic Seerr TV details by TMDB id (JSON), served at /api/v1/tv/{id}.</summary>
+    public Dictionary<int, string> TvDetails { get; } = new();
+
+    /// <summary>Synthetic Seerr season details by (TMDB id, season) (JSON), served at /api/v1/tv/{id}/season/{n}.</summary>
+    public Dictionary<(int Tmdb, int Season), string> SeasonDetails { get; } = new();
+
+    /// <summary>Synthetic Seerr movie details by TMDB id (JSON), served at /api/v1/movie/{id} (before certifications).</summary>
+    public Dictionary<int, string> MovieDetails { get; } = new();
 
     /// <summary>TMDB certification per movie id for the synthetic Seerr detail endpoint.</summary>
     public Dictionary<int, string> MovieCertifications { get; } = new();
@@ -44,14 +58,14 @@ internal sealed class ListPlaceholdersHarness : IDisposable
         }
 
         Reply = DefaultReply;
-        Transport = new IntegrationTransport((request, _) =>
+        Transport = new IntegrationTransport((request, ct) =>
         {
             lock (SeerrCalls)
             {
                 SeerrCalls.Add(request.RequestUri!.PathAndQuery);
             }
 
-            return Task.FromResult(Reply(request));
+            return ReplyAsync != null ? ReplyAsync(request, ct) : Task.FromResult(Reply(request));
         });
         Localization.Setup(l => l.GetRatingScore(It.IsAny<string>(), It.IsAny<string?>()))
             .Returns((string rating, string? _) => rating switch
@@ -67,7 +81,10 @@ internal sealed class ListPlaceholdersHarness : IDisposable
         Store = new ListPlaceholderStore(Plugin.Core.Paths.Object, Plugin.Core.Logger);
         Access = new ListAccessService(Host, Users.Object, filter, Plugin.Core.Logger);
         Index = new SeerrMediaIndex(Transport, Plugin.Core.Logger);
-        Service = new ListPlaceholderService(Store, Access, Host, Index, Users.Object, Plugin.Core.Logger);
+        Resolver = new ListPlaceholderResolver(Host, Plugin.Core.Logger);
+        Metadata = new ListPlaceholderMetadataService(Transport, Plugin.Core.Logger);
+        Swap = new ListPlaceholderSwapService(Store, Host, Users.Object, Resolver, Metadata, Plugin.Core.Logger) { SettleDelay = TimeSpan.Zero };
+        Service = new ListPlaceholderService(Store, Access, Host, Index, Users.Object, Plugin.Core.Logger, Resolver, Metadata, Swap);
     }
 
     public User NewUser(string name, bool admin = false, bool collections = false, int? maxRating = null)
@@ -110,6 +127,7 @@ internal sealed class ListPlaceholdersHarness : IDisposable
 
     public void Dispose()
     {
+        Swap.Dispose();
         Transport.Dispose();
         Plugin.Dispose();
     }
@@ -120,6 +138,30 @@ internal sealed class ListPlaceholdersHarness : IDisposable
         if (path is "/api/v1/media" or "/api/v1/request")
         {
             return IntegrationTransport.Response("{\"pageInfo\":{\"pages\":1},\"results\":[]}");
+        }
+
+        if (path.StartsWith("/api/v1/tv/", StringComparison.Ordinal))
+        {
+            var parts = path["/api/v1/tv/".Length..].Split('/');
+            if (parts.Length == 1 && int.TryParse(parts[0], out var tvId) && TvDetails.TryGetValue(tvId, out var tv))
+            {
+                return IntegrationTransport.Response(tv);
+            }
+
+            if (parts.Length == 3 && parts[1] == "season" && int.TryParse(parts[0], out var showId) && int.TryParse(parts[2], out var number)
+                && SeasonDetails.TryGetValue((showId, number), out var season))
+            {
+                return IntegrationTransport.Response(season);
+            }
+
+            return IntegrationTransport.Response("{\"message\":\"Unable to retrieve series.\"}", 500);
+        }
+
+        if (path.StartsWith("/api/v1/movie/", StringComparison.Ordinal)
+            && int.TryParse(path["/api/v1/movie/".Length..], out var movieId)
+            && MovieDetails.TryGetValue(movieId, out var movie))
+        {
+            return IntegrationTransport.Response(movie);
         }
 
         if (path.StartsWith("/api/v1/movie/", StringComparison.Ordinal)

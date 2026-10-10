@@ -18,7 +18,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
     /// <param name="Index">Index of the entry in the request (for skip reports).</param>
     /// <param name="ItemId">Library item (real entry), or null.</param>
     /// <param name="Placeholder">New placeholder, or null.</param>
-    public sealed record ApplyEntry(int Index, Guid? ItemId, Placeholder? Placeholder);
+    /// <param name="ExpandedFrom">
+    /// For real items the granularity resolver expanded a TV placeholder into (C1): that placeholder. Such items are
+    /// silently skipped when already in the list (they still count as filled) or when the placeholder is a duplicate.
+    /// </param>
+    /// <param name="CompleteIfLanded">
+    /// For a placeholder whose scope the library already holds completely (C1): it is still written with its expanded
+    /// items, and dropped again in the same write once all of them really are in the list. If Jellyfin rejected or
+    /// failed some, it stays and tracks them (swap-in adds them later).
+    /// </param>
+    /// <param name="Covers">For an expanded collection Season item: the episode coordinates credited to it (C1).</param>
+    public sealed record ApplyEntry(int Index, Guid? ItemId, Placeholder? Placeholder, Placeholder? ExpandedFrom = null, bool CompleteIfLanded = false, IReadOnlyList<EpisodeCoord>? Covers = null);
 
     /// <summary>An HTTP-agnostic result of a list operation.</summary>
     public sealed class ListOutcome
@@ -141,6 +151,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         private readonly SeerrMediaIndex _seerrIndex;
         private readonly IUserManager _userManager;
         private readonly Logger _logger;
+        private readonly ListPlaceholderResolver _resolver;
+        private readonly ListPlaceholderMetadataService? _metadata;
+        private readonly ListPlaceholderSwapService? _swap;
         private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _createLocks = new();
 
         /// <summary>Creates the service.</summary>
@@ -150,13 +163,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <param name="seerrIndex">Seerr status index.</param>
         /// <param name="userManager">User manager.</param>
         /// <param name="logger">JE logger.</param>
+        /// <param name="resolver">Granularity resolver (defaults to one over <paramref name="host"/>).</param>
+        /// <param name="metadata">Seerr metadata (null: placeholders keep the client's metadata).</param>
+        /// <param name="swap">Swap-in service (null: no background passes, no swap on link).</param>
         public ListPlaceholderService(
             ListPlaceholderStore store,
             ListAccessService access,
             IListPlaceholderHost host,
             SeerrMediaIndex seerrIndex,
             IUserManager userManager,
-            Logger logger)
+            Logger logger,
+            ListPlaceholderResolver? resolver = null,
+            ListPlaceholderMetadataService? metadata = null,
+            ListPlaceholderSwapService? swap = null)
         {
             _store = store;
             _access = access;
@@ -164,6 +183,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             _seerrIndex = seerrIndex;
             _userManager = userManager;
             _logger = logger;
+            _resolver = resolver ?? new ListPlaceholderResolver(host, logger);
+            _metadata = metadata;
+            _swap = swap;
         }
 
         // ── Views ────────────────────────────────────────────────────────────
@@ -202,6 +224,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
 
             var items = doc?.Items ?? new List<Placeholder>();
+            if (items.Count > 0)
+            {
+                // Catches arrivals whose library events were missed (debounced per list, runs in the background).
+                _swap?.RequestViewPass(access.ListIdN);
+            }
+
             var visibility = await VisibilityAsync(doc, access.User, cancellationToken).ConfigureAwait(false);
             if (SeerrEnabled() && items.Any(HasTmdb))
             {
@@ -219,8 +247,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         // ── Adds / ordered apply ─────────────────────────────────────────────
 
         /// <summary>
-        /// POST /{listId}/items: adds placeholders; a movie that is already in the library (accessible to the caller
-        /// and, for playlists, the owner) is inserted as the REAL item at the requested position instead.
+        /// POST /{listId}/items: adds placeholders; whatever of a placeholder's scope is already in the library
+        /// (accessible to the caller and, for playlists, the owner) is inserted as REAL items at the requested position
+        /// instead (C1): a movie replaces its placeholder, present episodes of a season/series/episodes scope go in before a
+        /// placeholder that keeps the rest (with <c>filled</c> pre-populated), or replace it once the scope is complete.
         /// </summary>
         /// <param name="access">Authorised access (CanEdit).</param>
         /// <param name="placeholders">Validated placeholders, in order.</param>
@@ -231,33 +261,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <returns>The outcome (<see cref="ApplyResultDto"/>).</returns>
         public Task<ListOutcome> AddPlaceholdersAsync(ListAccess access, IReadOnlyList<Placeholder> placeholders, PositionDto? position, int? expectedRev, string? requestId, CancellationToken cancellationToken)
         {
-            var mustSee = new List<User> { access.User };
-            if (access.List.Kind == ListKinds.Playlist && access.Owner != null && access.Owner.Id != access.User.Id)
-            {
-                mustSee.Add(access.Owner);
-            }
-
-            var entries = new List<ApplyEntry>(placeholders.Count);
-            for (var i = 0; i < placeholders.Count; i++)
-            {
-                var placeholder = placeholders[i];
-                Guid? inLibrary = null;
-                if (placeholder.Kind == PlaceholderKinds.Movie && placeholder.TmdbId is > 0
-                    && (access.List.Kind == ListKinds.Collection || access.Owner != null))
-                {
-                    try
-                    {
-                        inLibrary = _host.FindMovieByTmdb(placeholder.TmdbId.Value, mustSee);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Warning($"[ListPlaceholders] Library lookup for TMDB {placeholder.TmdbId} failed: {ex.Message}");
-                    }
-                }
-
-                entries.Add(inLibrary.HasValue ? new ApplyEntry(i, inLibrary, null) : new ApplyEntry(i, null, placeholder));
-            }
-
+            // ApplyAsync resolves every placeholder against the library (C1): what is there goes in as real items.
+            var entries = placeholders.Select((placeholder, i) => new ApplyEntry(i, null, placeholder)).ToList();
             return ApplyAsync(access, entries, position, expectedRev, requestId, cancellationToken);
         }
 
@@ -278,10 +283,124 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         {
             var skipped = new List<SkippedEntryDto>();
             var accepted = await PrevalidateAsync(access, entries, skipped, cancellationToken).ConfigureAwait(false);
+            accepted = await ExpandAsync(access, accepted, cancellationToken).ConfigureAwait(false);
             var visibility = await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
 
-            return await RunLockedAsync(access.ListIdN, access.ListIdN, requestId, access.UserIdN, cancellationToken, () =>
+            var outcome = await RunLockedAsync(access.ListIdN, access.ListIdN, requestId, access.UserIdN, cancellationToken, () =>
                 ApplyLockedAsync(access, accepted, skipped, position, expectedRev, visibility)).ConfigureAwait(false);
+            if (outcome.Value is ApplyResultDto { Added.Count: > 0 } applied)
+            {
+                // Seerr metadata (dates, ids, expected episodes) for the new placeholders, then a swap check, in the background.
+                _swap?.QueuePass(access.ListIdN, applied.Added, MetadataMode.New);
+            }
+
+            return outcome;
+        }
+
+        // C1: resolves every TMDB placeholder against the library as the caller (and, for playlists, the owner). A movie
+        // (or, in a collection, a series) that is there becomes a real entry; a TV scope with present episodes becomes those
+        // real items (playlists: the episodes in order; collections: the Season / Episode items) followed by the placeholder
+        // with `filled` pre-populated, which is dropped when the scope is already complete (season/series: on Seerr metadata
+        // read now, within a short budget).
+        private async Task<List<ApplyEntry>> ExpandAsync(ListAccess access, List<ApplyEntry> accepted, CancellationToken cancellationToken)
+        {
+            var isPlaylist = access.List.Kind == ListKinds.Playlist;
+            if ((isPlaylist && access.Owner == null) || !accepted.Any(e => e.Placeholder != null && HasTmdb(e.Placeholder)))
+            {
+                return accepted;
+            }
+
+            var users = new List<User> { access.User };
+            if (isPlaylist && access.Owner!.Id != access.User.Id)
+            {
+                users.Add(access.Owner);
+            }
+
+            var resolutions = accepted
+                .Select(e => e.Placeholder != null && HasTmdb(e.Placeholder) ? _resolver.Resolve(e.Placeholder, access.List.Kind, users) : ScopeResolution.None)
+                .ToList();
+            var today = DateTime.UtcNow;
+            var fresh = await ReadCompletionMetadataAsync(
+                accepted.Where((e, i) => e.Placeholder is { Kind: PlaceholderKinds.Season or PlaceholderKinds.Series } && resolutions[i].Episodes.Count > 0)
+                    .Select(e => e.Placeholder!)
+                    .ToList(),
+                today,
+                cancellationToken).ConfigureAwait(false);
+
+            var result = new List<ApplyEntry>(accepted.Count);
+            for (var i = 0; i < accepted.Count; i++)
+            {
+                var entry = accepted[i];
+                var resolution = resolutions[i];
+                var placeholder = entry.Placeholder;
+                if (placeholder == null || (!resolution.Found && resolution.Episodes.Count == 0))
+                {
+                    result.Add(entry);
+                    continue;
+                }
+
+                if (placeholder.Kind == PlaceholderKinds.Movie || (!isPlaylist && placeholder.Kind == PlaceholderKinds.Series))
+                {
+                    result.Add(resolution.Found ? entry with { ItemId = resolution.Items[0].ItemId, Placeholder = null } : entry);
+                    continue;
+                }
+
+                // Collections count a season as filled only once its Season item goes in.
+                var filledBy = isPlaylist || resolution.Found ? resolution.Episodes : Array.Empty<ResolvedItem>();
+                foreach (var episode in filledBy)
+                {
+                    placeholder.Filled.AddRange(episode.Coords.Select(c => new FilledEpisode { ItemId = episode.ItemId.ToString("N", CultureInfo.InvariantCulture), S = c.S, E = c.E }));
+                }
+
+                foreach (var item in resolution.Items)
+                {
+                    result.Add(new ApplyEntry(entry.Index, item.ItemId, null, placeholder, Covers: item.Coords));
+                }
+
+                var complete = PlaceholderProgress.IsComplete(placeholder, today)
+                    && (placeholder.Kind == PlaceholderKinds.Episodes || placeholder.InProduction == false || fresh.Contains(placeholder.Id));
+                result.Add(complete ? entry with { CompleteIfLanded = true } : entry);
+            }
+
+            return result;
+        }
+
+        // Season/series completion needs current Seerr metadata (expected episodes, production state): read it for these
+        // placeholders within a short budget and merge it in. Returns the ids that got fresh metadata.
+        private async Task<HashSet<string>> ReadCompletionMetadataAsync(IReadOnlyList<Placeholder> placeholders, DateTime today, CancellationToken cancellationToken)
+        {
+            var fresh = new HashSet<string>(StringComparer.Ordinal);
+            if (_metadata == null || placeholders.Count == 0 || !ListPlaceholderMetadataService.IsAvailable)
+            {
+                return fresh;
+            }
+
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            budget.CancelAfter(ListPlaceholderSwapService.InteractiveMetadataBudget);
+            await Task.WhenAll(placeholders.Select(async placeholder =>
+            {
+                try
+                {
+                    var metadata = await _metadata.FetchAsync(placeholder, ListPlaceholderSwapService.CompletionMetadataMaxAge, today, budget.Token).ConfigureAwait(false);
+                    if (metadata != null)
+                    {
+                        ListPlaceholderMetadataService.Apply(placeholder, metadata);
+                        if (!metadata.Partial)
+                        {
+                            lock (fresh)
+                            {
+                                fresh.Add(placeholder.Id);
+                            }
+                        }
+                    }
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // over budget: the placeholder is kept; the background pass completes it later
+                }
+            })).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            return fresh;
         }
 
         private async Task<List<ApplyEntry>> PrevalidateAsync(ListAccess access, IReadOnlyList<ApplyEntry> entries, List<SkippedEntryDto> skipped, CancellationToken cancellationToken)
@@ -387,15 +506,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var collectionItems = new List<Guid>();
             var changed = false;
 
+            // Expanded TV scopes (C1): a placeholder that is a duplicate takes its expanded items with it, and expanded
+            // items already in the list are skipped quietly (they count as filled). An entry that ends up doing nothing
+            // at all is reported once with the reason it was skipped for.
+            var orderedEntries = accepted.OrderBy(e => e.Index).ToList();
+            var duplicateGroups = new HashSet<Placeholder>(ReferenceEqualityComparer.Instance);
+            var seenGroups = new HashSet<Placeholder>(ReferenceEqualityComparer.Instance);
+            var probe = new HashSet<string>(keys, StringComparer.Ordinal);
+            foreach (var group in orderedEntries.Select(e => e.ExpandedFrom ?? e.Placeholder).OfType<Placeholder>())
+            {
+                if (seenGroups.Add(group) && !probe.Add(PlaceholderRules.IdentityKey(group)))
+                {
+                    duplicateGroups.Add(group);
+                }
+            }
+
+            var quietSkips = new Dictionary<int, string>();
+
             try
             {
-                foreach (var entry in accepted.OrderBy(e => e.Index))
+                foreach (var entry in orderedEntries)
                 {
                     if (entry.ItemId.HasValue)
                     {
+                        if (entry.ExpandedFrom != null && duplicateGroups.Contains(entry.ExpandedFrom))
+                        {
+                            quietSkips.TryAdd(entry.Index, "duplicate");
+                            continue;
+                        }
+
                         if (!present.Add(entry.ItemId.Value))
                         {
-                            skipped.Add(Skip(entry, "alreadyInList"));
+                            if (entry.ExpandedFrom != null)
+                            {
+                                quietSkips.TryAdd(entry.Index, "alreadyInList");
+                            }
+                            else
+                            {
+                                skipped.Add(Skip(entry, "alreadyInList"));
+                            }
+
                             continue;
                         }
 
@@ -413,7 +563,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     }
 
                     var placeholder = entry.Placeholder!;
-                    if (!keys.Add(PlaceholderRules.IdentityKey(placeholder)))
+                    if (duplicateGroups.Contains(placeholder) || !keys.Add(PlaceholderRules.IdentityKey(placeholder)))
                     {
                         skipped.Add(Skip(entry, "duplicate"));
                         continue;
@@ -421,7 +571,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
                     if (room <= 0)
                     {
-                        skipped.Add(Skip(entry, "listFull"));
+                        if (!entry.CompleteIfLanded)
+                        {
+                            skipped.Add(Skip(entry, "listFull"));
+                        }
+
                         continue;
                     }
 
@@ -452,6 +606,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             catch (Exception ex)
             {
                 _logger.Error($"[ListPlaceholders] Updating list {access.ListIdN} in Jellyfin failed: {ex.Message}");
+                PruneUnlandedFills(access, accepted);
+                changed = DropLandedCompleteScopes(doc, accepted, result, order);
                 if (isPlaylist)
                 {
                     order = Canonical(access, new ListDoc { Order = order, Items = doc.Items });
@@ -464,15 +620,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             if (result.AddedAsItems.Count > 0)
             {
                 // Jellyfin can silently drop an item (e.g. it doesn't support playlists): report only what landed.
-                var landed = new HashSet<string>(
-                    _host.GetRawEntries(access.List.Id).Where(r => r.Resolved && r.ItemId.HasValue).Select(r => r.ItemId!.Value.ToString("N", CultureInfo.InvariantCulture)),
-                    StringComparer.Ordinal);
+                var landed = PruneUnlandedFills(access, accepted);
                 foreach (var entry in accepted.Where(e => e.ItemId.HasValue && !landed.Contains(e.ItemId.Value.ToString("N", CultureInfo.InvariantCulture))))
                 {
-                    if (result.AddedAsItems.Remove(entry.ItemId!.Value.ToString("N", CultureInfo.InvariantCulture)))
+                    // An expanded item that didn't land is tracked by its placeholder (swap-in retries it); without one in
+                    // the list (a duplicate or full list) it is reported like any other rejected item.
+                    var tracked = entry.ExpandedFrom != null && doc.Items.Any(p => ReferenceEquals(p, entry.ExpandedFrom));
+                    if (result.AddedAsItems.Remove(entry.ItemId!.Value.ToString("N", CultureInfo.InvariantCulture)) && !tracked
+                        && !skipped.Any(x => x.Index == entry.Index && x.Reason == "rejected"))
                     {
                         skipped.Add(Skip(entry, "rejected"));
                     }
+                }
+            }
+
+            changed = DropLandedCompleteScopes(doc, accepted, result, order);
+
+            // An entry that did nothing visible (all its expanded items already there, or a duplicate scope) is reported once.
+            var addedIds = new HashSet<string>(result.Added, StringComparer.Ordinal);
+            var addedItems = new HashSet<string>(result.AddedAsItems, StringComparer.Ordinal);
+            foreach (var (index, reason) in quietSkips)
+            {
+                var acted = accepted.Any(e => e.Index == index
+                    && ((e.Placeholder != null && addedIds.Contains(e.Placeholder.Id))
+                        || (e.ItemId.HasValue && addedItems.Contains(e.ItemId.Value.ToString("N", CultureInfo.InvariantCulture)))));
+                if (!acted && !skipped.Any(x => x.Index == index))
+                {
+                    skipped.Add(new SkippedEntryDto { Index = index, Reason = reason });
                 }
             }
 
@@ -482,65 +656,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             return ListOutcome.Ok(result);
         }
 
-        // Puts a contiguous run of new real items into Jellyfin right after `anchor`, in the coordinate system the
-        // Jellyfin version needs (jf12: one positional insert at the raw index; jf10: append, then move each into place
-        // by the owner's visible-row index), then verifies Jellyfin's actual order (A5): one misplaced item is fixed with
-        // a single move, anything else falls back to Jellyfin's order with placeholders reconciled to their anchors.
-        private async Task<List<string>> PlaceRealItemsAsync(ListAccess access, IReadOnlyList<Guid> items, string? anchor, List<string> desired, IReadOnlyList<string> inserted)
+        // C1: a placeholder whose scope was already complete in the library goes once every expanded item really is in
+        // the list (its pruned `filled` still completes it). One whose items Jellyfin rejected or failed stays and tracks
+        // them. Returns whether a placeholder is still added (the document must be written).
+        private static bool DropLandedCompleteScopes(ListDoc doc, IReadOnlyList<ApplyEntry> accepted, ApplyResultDto result, List<string> order)
         {
-            var listId = access.List.Id;
-            var owner = access.Owner!;
-            var ownerVisible = new Dictionary<Guid, bool>();
-            bool VisibleToOwner(string token) => EntryVisible(token, owner, ownerVisible);
-
-            if (_host.SupportsPositionalInsert)
+            var today = DateTime.UtcNow;
+            foreach (var placeholder in accepted.Where(e => e.CompleteIfLanded && e.Placeholder != null).Select(e => e.Placeholder!))
             {
-                var position = ListPlaceholderOrder.RawInsertPosition(_host.GetRawEntries(listId), anchor);
-                await _host.AddToPlaylistAsync(listId, items, position, owner.Id).ConfigureAwait(false);
-            }
-            else
-            {
-                await _host.AddToPlaylistAsync(listId, items, null, owner.Id).ConfigureAwait(false);
-                var current = ListPlaceholderOrder.BuildRealTokens(_host.GetRawEntries(listId));
-                var previous = anchor;
-                foreach (var token in inserted)
+                if (result.Added.Contains(placeholder.Id) && PlaceholderProgress.IsComplete(placeholder, today))
                 {
-                    if (!current.Contains(token))
-                    {
-                        continue; // Jellyfin dropped it; the verification below settles the order
-                    }
-
-                    var target = current.Where(t => t != token).ToList();
-                    target.Insert(previous == null ? 0 : target.IndexOf(previous) + 1, token);
-                    var newIndex = ListPlaceholderOrder.VisibleMoveIndex(target, token, VisibleToOwner);
-                    if (newIndex != ListPlaceholderOrder.VisibleMoveIndex(current, token, VisibleToOwner))
-                    {
-                        ListPlaceholderOrder.TryParseReal(token, out var itemId, out _);
-                        await _host.MoveInPlaylistAsync(listId, itemId, newIndex, owner.Id).ConfigureAwait(false);
-                        current = ListPlaceholderOrder.BuildRealTokens(_host.GetRawEntries(listId));
-                    }
-
-                    previous = token;
+                    doc.Items.Remove(placeholder);
+                    result.Added.Remove(placeholder.Id);
+                    order.Remove(ListPlaceholderOrder.PlaceholderToken(placeholder.Id));
                 }
             }
 
-            var actual = ListPlaceholderOrder.BuildRealTokens(_host.GetRawEntries(listId));
-            var desiredReal = desired.Where(ListPlaceholderOrder.IsReal).ToList();
-            if (!actual.SequenceEqual(desiredReal, StringComparer.Ordinal) && items.Count == 1 && actual.Contains(inserted[0]))
-            {
-                var newIndex = ListPlaceholderOrder.VisibleMoveIndex(desiredReal, inserted[0], VisibleToOwner);
-                await _host.MoveInPlaylistAsync(listId, items[0], newIndex, owner.Id).ConfigureAwait(false);
-                actual = ListPlaceholderOrder.BuildRealTokens(_host.GetRawEntries(listId));
-            }
-
-            if (actual.SequenceEqual(desiredReal, StringComparer.Ordinal))
-            {
-                return desired;
-            }
-
-            _logger.Warning($"[ListPlaceholders] Jellyfin placed new entries of list {access.ListIdN} differently than requested; keeping Jellyfin's order.");
-            return ListPlaceholderOrder.Reconcile(desired, actual, desired.Select(ListPlaceholderOrder.PlaceholderIdOf).OfType<string>().ToList());
+            return result.Added.Count > 0;
         }
+
+        // A placeholder's pre-populated `filled` may only name episodes that really are in the list now (a collection
+        // season: once its Season item is): drops the others (Jellyfin rejected them, or the insert failed) so swap-in
+        // adds them later. Returns the ids now in the list.
+        private HashSet<string> PruneUnlandedFills(ListAccess access, IReadOnlyList<ApplyEntry> accepted)
+        {
+            var landed = new HashSet<string>(
+                _host.GetRawEntries(access.List.Id).Where(r => r.Resolved && r.ItemId.HasValue).Select(r => r.ItemId!.Value.ToString("N", CultureInfo.InvariantCulture)),
+                StringComparer.Ordinal);
+            foreach (var group in accepted.Select(e => e.ExpandedFrom).OfType<Placeholder>().Distinct())
+            {
+                if (access.List.Kind == ListKinds.Collection && group.Kind == PlaceholderKinds.Season)
+                {
+                    // Each episode counts through the Season item of its show copy: only the landed ones' coordinates stay.
+                    var landedCoords = accepted
+                        .Where(e => ReferenceEquals(e.ExpandedFrom, group) && e.ItemId.HasValue
+                            && landed.Contains(e.ItemId.Value.ToString("N", CultureInfo.InvariantCulture)))
+                        .SelectMany(e => e.Covers ?? Array.Empty<EpisodeCoord>())
+                        .ToHashSet();
+                    group.Filled.RemoveAll(f => !landedCoords.Contains(new EpisodeCoord(f.S, f.E)));
+                }
+                else
+                {
+                    group.Filled.RemoveAll(f => !landed.Contains(f.ItemId));
+                }
+            }
+
+            return landed;
+        }
+
+        // Puts a contiguous run of new real items into Jellyfin right after `anchor` (see ListPlaylistPlacement).
+        private Task<List<string>> PlaceRealItemsAsync(ListAccess access, IReadOnlyList<Guid> items, string? anchor, List<string> desired, IReadOnlyList<string> inserted) =>
+            ListPlaylistPlacement.PlaceAsync(_host, _logger, access.List.Id, access.ListIdN, access.Owner!, items, anchor, desired, inserted);
 
         // ── Placeholder edits ────────────────────────────────────────────────
 
@@ -560,32 +726,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 return ListOutcome.Error(403, "parental_block", "This title isn't available for your account.");
             }
 
+            // A linked title gets its Seerr metadata now (release date, ids, expected episodes) so it can be swapped in
+            // right away when it is already in the library.
+            var linkFresh = link != null && HasTmdb(link)
+                && (await ReadCompletionMetadataAsync(new[] { link }, DateTime.UtcNow, cancellationToken).ConfigureAwait(false)).Count > 0;
             var visibility = await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
-            return await RunLockedAsync(access.ListIdN, access.ListIdN, requestId, access.UserIdN, cancellationToken, () =>
+            var outcome = await RunLockedAsync(access.ListIdN, access.ListIdN, requestId, access.UserIdN, cancellationToken, async () =>
             {
                 var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
                 if (doc.Rev != rev)
                 {
-                    return Task.FromResult(Conflict(access, "rev_conflict", "The list changed; reload it.", visibility));
+                    return Conflict(access, "rev_conflict", "The list changed; reload it.", visibility);
                 }
 
                 var placeholder = doc.Items.FirstOrDefault(p => p.Id == placeholderId);
                 if (placeholder == null || !visibility.IsVisible(placeholder))
                 {
-                    return Task.FromResult(ListOutcome.Error(404, "not_found", "Placeholder not found."));
+                    return ListOutcome.Error(404, "not_found", "Placeholder not found.");
                 }
 
                 if (link != null)
                 {
                     if (placeholder.Kind != PlaceholderKinds.Custom)
                     {
-                        return Task.FromResult(ListOutcome.Error(400, "not_custom", "Only custom entries can be linked to a title."));
+                        return ListOutcome.Error(400, "not_custom", "Only custom entries can be linked to a title.");
                     }
 
                     var key = PlaceholderRules.IdentityKey(link);
                     if (doc.Items.Any(p => p.Id != placeholderId && PlaceholderRules.IdentityKey(p) == key))
                     {
-                        return Task.FromResult(Conflict(access, "duplicate", "This title is already in the list.", visibility));
+                        return Conflict(access, "duplicate", "This title is already in the list.", visibility);
                     }
 
                     placeholder.Kind = link.Kind;
@@ -601,9 +771,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     placeholder.SeasonNumber = link.SeasonNumber;
                     placeholder.Episodes = link.Episodes;
                     placeholder.EpisodeTotal = link.EpisodeTotal;
-                    placeholder.Expected = new List<PlaceholderEpisode>();
+                    placeholder.Expected = link.Expected;
                     placeholder.Filled = new List<FilledEpisode>();
-                    placeholder.InProduction = null;
+                    placeholder.InProduction = link.InProduction;
                     if (link.Note != null && note == null)
                     {
                         placeholder.Note = link.Note;
@@ -617,6 +787,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     placeholder.Note = note.Length == 0 ? null : note;
                 }
 
+                if (link != null && _swap != null)
+                {
+                    // Whatever of the linked scope is already in the library goes in at the entry's spot now (C1). This
+                    // is the swap-in of §9, so it runs as the playlist owner (collections: unscoped), exactly like the
+                    // background pass queued below would a moment later; the caller's own library access is not what
+                    // decides (C5's caller checks cover items the client sends, not swap-in).
+                    var fresh = linkFresh ? new HashSet<string>(StringComparer.Ordinal) { placeholderId } : null;
+                    var swapped = await _swap.SwapLockedAsync(access.List, access.Owner, doc, new[] { placeholderId }, null, fresh, linkFresh ? MetadataMode.Completion : MetadataMode.None, cancellationToken).ConfigureAwait(false);
+                    doc = swapped.Doc;
+                }
+
                 var canonical = access.List.Kind == ListKinds.Playlist ? Canonical(access, doc) : null;
                 if (canonical != null)
                 {
@@ -624,8 +805,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
 
                 var saved = _store.Save(doc);
-                return Task.FromResult(ListOutcome.Ok(BuildView(access, saved, canonical, visibility)));
+                return ListOutcome.Ok(BuildView(access, saved, canonical, visibility));
             }).ConfigureAwait(false);
+            if (link != null && outcome.StatusCode < 300)
+            {
+                _swap?.QueuePass(access.ListIdN, new[] { placeholderId }, MetadataMode.New);
+            }
+
+            return outcome;
         }
 
         /// <summary>DELETE /{listId}/items/{phId}.</summary>
@@ -942,11 +1129,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             };
 
             var today = DateTime.UtcNow;
+            var callerVisible = new Dictionary<Guid, bool>(); // rows (playlists) / access (collections), per item
             var byId = items.ToDictionary(p => p.Id, StringComparer.Ordinal);
             IEnumerable<Placeholder> ordered;
             if (access.List.Kind == ListKinds.Playlist && canonical != null)
             {
-                var callerVisible = new Dictionary<Guid, bool>();
                 var placeholderVisible = visibility.For(items);
                 view.Order = ListPlaceholderOrder.Project(canonical, t => IsVisibleToken(t, access.User, placeholderVisible, callerVisible));
                 ordered = view.Order.Select(ListPlaceholderOrder.PlaceholderIdOf).OfType<string>().Where(byId.ContainsKey).Select(id => byId[id]);
@@ -983,15 +1170,73 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     SeasonNumber = placeholder.SeasonNumber,
                     Episodes = placeholder.Episodes,
                     EpisodeTotal = placeholder.EpisodeTotal,
-                    FilledCount = placeholder.Filled.Count,
+                    FilledCount = VisibleFilledCount(access, placeholder, callerVisible),
                     Note = placeholder.Note,
                     AddedByMe = string.Equals(placeholder.AddedBy, access.UserIdN, StringComparison.Ordinal),
                     AddedAt = placeholder.AddedAt,
                     Status = status,
+                    ExpectedCount = PlaceholderProgress.ExpectedCount(placeholder),
+                    AiredCount = PlaceholderProgress.AiredCount(placeholder, today),
+                    InProduction = placeholder.InProduction,
+                    InLibraryItemId = PendingMatchFor(access, placeholder.Id),
                 });
             }
 
             return view;
+        }
+
+        // A2: filled episodes were inserted with the OWNER's rights, so only those the caller may see count: in a
+        // playlist the episodes whose rows the caller sees (the same rule as the projected order, i.e. Jellyfin's own
+        // playlist rows), in a collection the episodes the caller can access. The count never reveals hidden items.
+        private int VisibleFilledCount(ListAccess access, Placeholder placeholder, Dictionary<Guid, bool> memo)
+        {
+            var count = 0;
+            foreach (var filled in placeholder.Filled)
+            {
+                if (!Guid.TryParseExact(filled.ItemId, "N", out var itemId))
+                {
+                    continue;
+                }
+
+                if (!memo.TryGetValue(itemId, out var accessible))
+                {
+                    try
+                    {
+                        accessible = access.List.Kind == ListKinds.Playlist
+                            ? _host.IsEntryVisible(itemId, access.User)
+                            : _host.CanAccessItem(itemId, access.User);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Debug($"[ListPlaceholders] Access check failed for {itemId:N}: {ex.Message}");
+                        accessible = false;
+                    }
+
+                    memo[itemId] = accessible;
+                }
+
+                if (accessible)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        // The library item a pending swap-in matched, only when the caller can access it.
+        private string? PendingMatchFor(ListAccess access, string placeholderId)
+        {
+            var itemId = _swap?.GetPendingMatch(access.ListIdN, placeholderId);
+            try
+            {
+                return itemId.HasValue && _host.CanAccessItem(itemId.Value, access.User) ? itemId.Value.ToString("N", CultureInfo.InvariantCulture) : null;
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug($"[ListPlaceholders] Access check failed for {itemId:N}: {ex.Message}");
+                return null;
+            }
         }
 
         private ListOutcome Conflict(ListAccess access, string code, string message, PlaceholderVisibility visibility, IReadOnlyList<string>? canonical = null, ListDoc? doc = null)

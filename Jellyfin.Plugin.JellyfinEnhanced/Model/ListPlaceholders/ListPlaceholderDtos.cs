@@ -75,7 +75,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("episodes")] public List<PlaceholderEpisode> Episodes { get; set; } = new();
         /// <summary>Season/series fill target.</summary>
         [JsonPropertyName("episodeTotal")] public int? EpisodeTotal { get; set; }
-        /// <summary>How many episodes were already swapped in.</summary>
+        /// <summary>How many episodes of the scope are in the list (only those the caller can access are counted).</summary>
         [JsonPropertyName("filledCount")] public int FilledCount { get; set; }
         /// <summary>Note.</summary>
         [JsonPropertyName("note")] public string? Note { get; set; }
@@ -85,6 +85,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("addedAt")] public string AddedAt { get; set; } = string.Empty;
         /// <summary>Seerr media status (1 unknown … 5 available, 6 blocklisted, 7 deleted); null = not known (yet).</summary>
         [JsonPropertyName("status")] public int? Status { get; set; }
+        /// <summary>
+        /// Episode-filling kinds: how many episodes the placeholder stands for — the listed episodes (episodes kind) or
+        /// the expected set from Seerr (season/series; includes an announced next episode); 0 = not known yet.
+        /// </summary>
+        [JsonPropertyName("expectedCount")] public int ExpectedCount { get; set; }
+        /// <summary>How many of those have aired (air date today or earlier, UTC): the "m" of "n of m aired".</summary>
+        [JsonPropertyName("airedCount")] public int AiredCount { get; set; }
+        /// <summary>TV: whether the show is still in production (null = unknown). A season/series placeholder stays until finished.</summary>
+        [JsonPropertyName("inProduction")] public bool? InProduction { get; set; }
+        /// <summary>A library item that matched this placeholder and is being added right now ("Available — adding…"); only when the caller can access it.</summary>
+        [JsonPropertyName("inLibraryItemId")] public string? InLibraryItemId { get; set; }
     }
 
     /// <summary>Client-visible summary of a linked source.</summary>

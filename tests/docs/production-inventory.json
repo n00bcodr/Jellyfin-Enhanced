@@ -287,6 +287,10 @@
       "category": "ScheduledTasks"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ListPlaceholdersMaintenanceTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/MdblistRatingsFetchRunner.cs",
       "category": "ScheduledTasks"
     },
@@ -383,7 +387,15 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderMetadata.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderOrder.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderResolver.cs",
       "category": "Services"
     },
     {
@@ -392,6 +404,22 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderStore.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderSwapMonitor.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderSwapService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaylistPlacement.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListSourceProvenance.cs",
       "category": "Services"
     },
     {
@@ -7550,6 +7578,11 @@
       "key": "JellyfinEnhancedJellyseerrWatchlistSync"
     },
     {
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ListPlaceholdersMaintenanceTask.cs",
+      "class": "ListPlaceholdersMaintenanceTask",
+      "key": "JellyfinEnhancedListPlaceholdersMaintenance"
+    },
+    {
       "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/MdblistRatingsFetchTask.cs",
       "class": "MdblistRatingsFetchTask",
       "key": "JellyfinEnhancedMdblistRatingsFetch"
@@ -7678,11 +7711,11 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 370,
+    "files": 377,
     "routes": 179,
     "configuration_properties": 513,
     "storage_references": 64,
-    "scheduled_tasks": 13,
+    "scheduled_tasks": 14,
     "locales": 33
   }
 }

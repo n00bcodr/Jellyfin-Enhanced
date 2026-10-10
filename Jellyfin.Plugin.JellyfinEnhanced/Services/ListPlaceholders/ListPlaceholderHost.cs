@@ -8,6 +8,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using MediaBrowser.Controller.Collections;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Playlists;
 using MediaBrowser.Model.Entities;
@@ -33,6 +34,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
     /// <param name="Id">Item id.</param>
     /// <param name="Kind">Jellyfin item kind.</param>
     public sealed record LibraryItemInfo(Guid Id, BaseItemKind Kind);
+
+    /// <summary>A real (non-virtual) library episode and its coordinates.</summary>
+    /// <param name="Id">Episode item id.</param>
+    /// <param name="SeriesId">The series it belongs to.</param>
+    /// <param name="Season">Season number (<c>ParentIndexNumber</c>).</param>
+    /// <param name="Episode">First episode number (<c>IndexNumber</c>).</param>
+    /// <param name="EpisodeEnd">Last episode number of a multi-episode file (<c>IndexNumberEnd</c>), else null.</param>
+    public sealed record LibraryEpisode(Guid Id, Guid SeriesId, int Season, int Episode, int? EpisodeEnd);
+
+    /// <summary>
+    /// What swap-in needs to know about a library item that just changed: its kind, its own provider ids and, for
+    /// episodes and seasons, the SERIES' provider ids and the coordinates (episode-level TMDB ids are never used).
+    /// </summary>
+    /// <param name="Id">Item id.</param>
+    /// <param name="Kind">Jellyfin item kind.</param>
+    /// <param name="ProviderIds">The item's own provider ids (Movie, Series).</param>
+    /// <param name="SeriesId">Series of an episode/season, else null.</param>
+    /// <param name="SeriesProviderIds">Provider ids of that series (episodes/seasons), else null.</param>
+    /// <param name="Season">Season number (episode: <c>ParentIndexNumber</c>; season: <c>IndexNumber</c>).</param>
+    /// <param name="Episode">Episode number (<c>IndexNumber</c>), episodes only.</param>
+    /// <param name="EpisodeEnd">Last episode of a multi-episode file, episodes only.</param>
+    /// <param name="IsVirtual">Jellyfin "missing" placeholder item (no file); never swapped in.</param>
+    public sealed record LibraryItemFacts(
+        Guid Id,
+        BaseItemKind Kind,
+        IReadOnlyDictionary<string, string> ProviderIds,
+        Guid? SeriesId,
+        IReadOnlyDictionary<string, string>? SeriesProviderIds,
+        int? Season,
+        int? Episode,
+        int? EpisodeEnd,
+        bool IsVirtual);
 
     /// <summary>
     /// Everything the placeholder service needs from Jellyfin, behind one seam so the list logic (coordinates, moves,
@@ -127,6 +160,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <param name="user">User.</param>
         /// <returns>Collections.</returns>
         IReadOnlyList<ListInfo> GetVisibleCollections(User user);
+
+        /// <summary>Swap-in facts of a library item (null when it doesn't exist).</summary>
+        /// <param name="itemId">Item.</param>
+        /// <returns>The facts or null.</returns>
+        LibraryItemFacts? GetItemFacts(Guid itemId);
+
+        /// <summary>
+        /// Library movies with this TMDB id or (else) IMDb id, in library order. Each id is its own single-key query
+        /// (jf10 and jf12 combine mixed provider filters differently).
+        /// </summary>
+        /// <param name="tmdbId">TMDB id, or null.</param>
+        /// <param name="imdbId">IMDb id, or null.</param>
+        /// <param name="user">User the query is scoped to (library access + parental), or null for the whole library.</param>
+        /// <returns>Movie item ids (distinct).</returns>
+        IReadOnlyList<Guid> FindMovies(int? tmdbId, string? imdbId, User? user);
+
+        /// <summary>Library series matching ANY of the ids (one single-key query per id).</summary>
+        /// <param name="tmdbId">TMDB id, or null.</param>
+        /// <param name="tvdbId">TVDB id, or null.</param>
+        /// <param name="imdbId">IMDb id, or null.</param>
+        /// <param name="user">User the query is scoped to, or null for the whole library.</param>
+        /// <returns>Series item ids (distinct).</returns>
+        IReadOnlyList<Guid> FindSeries(int? tmdbId, int? tvdbId, string? imdbId, User? user);
+
+        /// <summary>The real (non-virtual) episodes of a series with known coordinates, optionally of one season.</summary>
+        /// <param name="seriesId">Series.</param>
+        /// <param name="seasonNumber">Season filter, or null for every season.</param>
+        /// <param name="user">User the query is scoped to, or null for the whole library.</param>
+        /// <returns>Episodes (any order).</returns>
+        IReadOnlyList<LibraryEpisode> GetEpisodes(Guid seriesId, int? seasonNumber, User? user);
+
+        /// <summary>The Season item of a series (a real season preferred over a virtual one).</summary>
+        /// <param name="seriesId">Series.</param>
+        /// <param name="seasonNumber">Season number.</param>
+        /// <param name="user">User the query is scoped to, or null for the whole library.</param>
+        /// <returns>The season id or null.</returns>
+        Guid? FindSeason(Guid seriesId, int seasonNumber, User? user);
     }
 
     /// <summary>The production <see cref="IListPlaceholderHost"/> over Jellyfin's library, playlist and collection managers.</summary>
@@ -306,6 +376,134 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             .Select(ToInfo)
             .OfType<ListInfo>()
             .ToList();
+
+        /// <inheritdoc />
+        public LibraryItemFacts? GetItemFacts(Guid itemId)
+        {
+            var item = _libraryManager.GetItemById(itemId);
+            if (item == null)
+            {
+                return null;
+            }
+
+            var ids = CopyIds(item);
+            switch (item)
+            {
+                case Episode episode:
+                {
+                    var series = episode.SeriesId == Guid.Empty ? null : _libraryManager.GetItemById(episode.SeriesId);
+                    return new LibraryItemFacts(item.Id, BaseItemKind.Episode, ids, series?.Id, series == null ? null : CopyIds(series), episode.ParentIndexNumber, episode.IndexNumber, episode.IndexNumberEnd, item.IsVirtualItem);
+                }
+
+                case Season season:
+                {
+                    var series = season.SeriesId == Guid.Empty ? null : _libraryManager.GetItemById(season.SeriesId);
+                    return new LibraryItemFacts(item.Id, BaseItemKind.Season, ids, series?.Id, series == null ? null : CopyIds(series), season.IndexNumber, null, null, item.IsVirtualItem);
+                }
+
+                default:
+                    return new LibraryItemFacts(item.Id, item.GetBaseItemKind(), ids, null, null, null, null, null, item.IsVirtualItem);
+            }
+        }
+
+        /// <inheritdoc />
+        public IReadOnlyList<Guid> FindMovies(int? tmdbId, string? imdbId, User? user)
+        {
+            var result = new List<Guid>();
+            if (tmdbId is > 0)
+            {
+                AddMatches(result, BaseItemKind.Movie, MetadataProvider.Tmdb, tmdbId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture), user);
+            }
+
+            if (!string.IsNullOrEmpty(imdbId))
+            {
+                AddMatches(result, BaseItemKind.Movie, MetadataProvider.Imdb, imdbId, user);
+            }
+
+            return result;
+        }
+
+        /// <inheritdoc />
+        public IReadOnlyList<Guid> FindSeries(int? tmdbId, int? tvdbId, string? imdbId, User? user)
+        {
+            var result = new List<Guid>();
+            if (tmdbId is > 0)
+            {
+                AddMatches(result, BaseItemKind.Series, MetadataProvider.Tmdb, tmdbId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture), user);
+            }
+
+            if (tvdbId is > 0)
+            {
+                AddMatches(result, BaseItemKind.Series, MetadataProvider.Tvdb, tvdbId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture), user);
+            }
+
+            if (!string.IsNullOrEmpty(imdbId))
+            {
+                AddMatches(result, BaseItemKind.Series, MetadataProvider.Imdb, imdbId, user);
+            }
+
+            return result;
+        }
+
+        /// <inheritdoc />
+        public IReadOnlyList<LibraryEpisode> GetEpisodes(Guid seriesId, int? seasonNumber, User? user)
+        {
+            var query = Query(user, BaseItemKind.Episode);
+            query.AncestorIds = new[] { seriesId };
+            query.IsVirtualItem = false;
+            query.ParentIndexNumber = seasonNumber;
+            return _libraryManager.GetItemList(query)
+                .OfType<Episode>()
+                .Where(e => e.ParentIndexNumber.HasValue && e.IndexNumber.HasValue && !e.IsVirtualItem)
+                .Select(e => new LibraryEpisode(e.Id, seriesId, e.ParentIndexNumber!.Value, e.IndexNumber!.Value, e.IndexNumberEnd))
+                .ToList();
+        }
+
+        /// <inheritdoc />
+        public Guid? FindSeason(Guid seriesId, int seasonNumber, User? user)
+        {
+            var query = Query(user, BaseItemKind.Season);
+            query.AncestorIds = new[] { seriesId };
+            query.IndexNumber = seasonNumber;
+            var seasons = _libraryManager.GetItemList(query).OfType<Season>().Where(s => s.IndexNumber == seasonNumber).ToList();
+            return (seasons.FirstOrDefault(s => !s.IsVirtualItem) ?? seasons.FirstOrDefault())?.Id;
+        }
+
+        private static InternalItemsQuery Query(User? user, BaseItemKind kind)
+        {
+            var query = user == null ? new InternalItemsQuery() : new InternalItemsQuery(user);
+            query.IncludeItemTypes = new[] { kind };
+            query.Recursive = true;
+            return query;
+        }
+
+        // One provider per query: jf10 ANDs and jf12 ORs mixed provider filters, single keys behave the same.
+        private void AddMatches(List<Guid> result, BaseItemKind kind, MetadataProvider provider, string value, User? user)
+        {
+            var query = Query(user, kind);
+            query.HasAnyProviderId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { { provider.ToString(), value } };
+            foreach (var item in _libraryManager.GetItemList(query))
+            {
+                if (!item.IsVirtualItem && !result.Contains(item.Id))
+                {
+                    result.Add(item.Id);
+                }
+            }
+        }
+
+        private static Dictionary<string, string> CopyIds(BaseItem item)
+        {
+            var ids = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in item.ProviderIds ?? new Dictionary<string, string>())
+            {
+                if (!string.IsNullOrEmpty(pair.Key) && !string.IsNullOrEmpty(pair.Value))
+                {
+                    ids[pair.Key] = pair.Value;
+                }
+            }
+
+            return ids;
+        }
 
         private static ListInfo? ToInfo(BaseItem? item) => item switch
         {

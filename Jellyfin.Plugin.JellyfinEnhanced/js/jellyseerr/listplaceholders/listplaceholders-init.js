@@ -10,6 +10,13 @@
     const lp = JE.internals.listPlaceholders = JE.internals.listPlaceholders || {};
     const logPrefix = '🪼 Jellyfin Enhanced: List placeholders:';
 
+    /**
+     * Re-GET delay after library arrivals that don't name the list: swaps that only change
+     * placeholders (collection season progress, a title already in the list, metadata) never
+     * touch the list item itself, so its id isn't in the message.
+     */
+    const LIBRARY_ADDED_REFETCH_MS = 3000;
+
     let initialized = false;
     let unsubscribeLibrary = null;
 
@@ -92,15 +99,26 @@
     }
 
     /**
-     * WebSocket LibraryChanged: a change to a list shown here re-fetches its view (B3).
+     * WebSocket LibraryChanged (B3): a change to a list shown here re-fetches its view (1 s);
+     * new library items re-fetch every shown list that has placeholders (3 s), and updated ones
+     * every shown list with placeholders a library item can match (not custom entries), because
+     * a swap that only changes placeholders doesn't name the list (e.g. a later episode of a
+     * season whose Season item is already in a collection, or an episode re-identified by a
+     * metadata refresh). Jellyfin sends ids in "N" form and batches the message (~30 s after the
+     * change); the earliest pending re-fetch wins, so it is one GET per list and message at most.
      * @param {Object} message - {MessageType, Data}.
      */
     function onLibraryChanged(message) {
         const data = message?.Data;
         if (!data) return;
+        const added = Array.isArray(data.ItemsAdded) && data.ItemsAdded.length > 0;
         const ids = new Set([].concat(data.ItemsUpdated || [], data.ItemsAdded || []).map(lp.normalizeId).filter(Boolean));
         if (!ids.size) return;
-        forEachController((ctrl) => { if (ids.has(ctrl.listId)) ctrl.scheduleRefetch(); });
+        forEachController((ctrl) => {
+            const placeholders = ctrl.view?.placeholders || [];
+            if (ids.has(ctrl.listId)) ctrl.scheduleRefetch();
+            else if (added ? placeholders.length > 0 : placeholders.some(p => p.kind !== 'custom')) ctrl.scheduleRefetch(LIBRARY_ADDED_REFETCH_MS);
+        });
     }
 
     /**

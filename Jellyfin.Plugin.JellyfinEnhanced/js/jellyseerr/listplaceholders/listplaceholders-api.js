@@ -306,6 +306,51 @@
         return JE.t(keys[reason] || 'listPlaceholders_skip_other');
     }
 
+    /**
+     * Re-GET delay once a view reports a title being swapped in (`inLibraryItemId`): the server
+     * swaps ~2 s after the library event, so one look a moment later shows the result.
+     */
+    const ADDING_RECHECK_MS = 3000;
+
+    /**
+     * Schedules a page controller's re-fetch. Pages jellyfin-web keeps hidden are skipped (they
+     * re-fetch on viewshow); an earlier pending re-fetch is kept, a later one replaced.
+     * @param {Object} ctrl - Page controller ({isShown(), load(), refetchTimer, refetchAt}).
+     * @param {number} delayMs
+     */
+    function scheduleRefetch(ctrl, delayMs) {
+        if (!ctrl.isShown()) return;
+        const at = Date.now() + delayMs;
+        if (ctrl.refetchTimer && ctrl.refetchAt <= at) return;
+        clearTimeout(ctrl.refetchTimer);
+        ctrl.refetchAt = at;
+        ctrl.refetchTimer = setTimeout(() => {
+            ctrl.refetchTimer = null;
+            ctrl.refetchAt = 0;
+            ctrl.load();
+        }, delayMs);
+    }
+
+    /**
+     * "Available — adding…": when a view reports a placeholder being swapped for a library item
+     * the page hasn't seen yet, look again shortly (once per placeholder and item, so a swap that
+     * waits for a retry doesn't poll).
+     * @param {Object} ctrl - Page controller ({addingSeen: Set, scheduleRefetch(delayMs)}).
+     * @param {Object} view - ListViewDto.
+     */
+    function checkAdding(ctrl, view) {
+        let fresh = false;
+        for (const ph of view?.placeholders || []) {
+            const itemId = lp.render.addingItemId(ph);
+            if (!itemId) continue;
+            const key = `${ph.id}|${itemId}`;
+            if (ctrl.addingSeen.has(key)) continue;
+            ctrl.addingSeen.add(key);
+            fresh = true;
+        }
+        if (fresh) ctrl.scheduleRefetch(ADDING_RECHECK_MS);
+    }
+
     /** Live page controllers (playlist/collection pages); pruned when their page is gone. */
     lp.controllers = lp.controllers || new Set();
     lp.events = { VIEW: VIEW_EVENT };
@@ -319,6 +364,7 @@
     lp.isStaleIdentityError = isStaleIdentityError;
     lp.isOlderView = isOlderView;
     lp.skipReasonText = skipReasonText;
+    lp.freshness = { schedule: scheduleRefetch, checkAdding, ADDING_RECHECK_MS };
     lp.api = {
         getView,
         addPlaceholders,

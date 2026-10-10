@@ -51,7 +51,9 @@
     function reportPicked(result, listId, listName) {
         const esc = lp.render.esc;
         const link = `<a href="#/details?id=${esc(listId)}" class="je-lp-toast-link">${esc(listName)}</a>`;
-        if (result?.addedAsItems?.length) {
+        if (result?.addedAsItems?.length && result?.added?.length) {
+            JE.toast(JE.t('listPlaceholders_picked_partly', { list: link }), 5000);
+        } else if (result?.addedAsItems?.length) {
             JE.toast(JE.t('listPlaceholders_picked_as_item', { list: link }), 5000);
         } else if (result?.added?.length) {
             JE.toast(JE.t('listPlaceholders_picked', { list: link }), 5000);
@@ -140,6 +142,11 @@
                         const result = await lp.api.addPlaceholders(listId, [dto], position);
                         const list = (kind === 'playlist' ? lists.playlists : lists.collections).find(l => l.id === listId);
                         reportPicked(result, listId, list?.name || '');
+                        if (result?.addedAsItems?.length) {
+                            // That list's page may be open behind the modal: reload its library rows/cards.
+                            const id = lp.normalizeId(listId);
+                            lp.forEachController?.((ctrl) => { if (ctrl.listId === id) ctrl.afterRealItemsAdded?.(); });
+                        }
                     }
                     history.back();
                 } catch (error) {

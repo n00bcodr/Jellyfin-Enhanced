@@ -84,8 +84,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.ListPlaceholders.IListPlaceholderHost, Services.ListPlaceholders.JellyfinListPlaceholderHost>();
             serviceCollection.AddSingleton<Services.ListPlaceholders.ListAccessService>();
             serviceCollection.AddSingleton<Services.ListPlaceholders.SeerrMediaIndex>();
+            // Swap-in (phase 3): granularity resolver, Seerr metadata, the swap service and its library-event monitor.
+            serviceCollection.AddSingleton<Services.ListPlaceholders.ListPlaceholderResolver>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.ListPlaceholderMetadataService>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.ListPlaceholderSwapService>();
             serviceCollection.AddSingleton<Services.ListPlaceholders.ListPlaceholderService>();
-            serviceCollection.AddHostedService<Services.ListPlaceholders.ListPlaceholderLifecycle>();
+            // Singleton + hosted: the maintenance task runs its orphan sweep.
+            serviceCollection.AddSingleton<Services.ListPlaceholders.ListPlaceholderLifecycle>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.ListPlaceholders.ListPlaceholderLifecycle>());
+            serviceCollection.AddHostedService<Services.ListPlaceholders.ListPlaceholderSwapMonitor>();
             // Opt-in anonymous usage reporting: UsageEventCounterService holds the
             // current period's counters (debounced disk persistence, same pattern
             // as WikidataAwardsService); AnalyticsReportingService builds/sends the
@@ -104,6 +111,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddTransient<JellyfinToSeerrWatchlistSyncTask>();
             serviceCollection.AddTransient<JellyseerrUserImportTask>();
             serviceCollection.AddTransient<ClearTranslationCacheTask>();
+            serviceCollection.AddTransient<ListPlaceholdersMaintenanceTask>();
 
             // Hidden Content: server-side filter for every native Jellyfin endpoint that surfaces user-facing item lists
             // (Resume, Items, Latest, NextUp, Upcoming, Suggestions, SearchHints), plus the Home Screen Sections

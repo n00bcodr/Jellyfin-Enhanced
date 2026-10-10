@@ -20,7 +20,20 @@ internal sealed class FakeListHost : IListPlaceholderHost
         public List<RawEntry> Raw { get; } = new();
     }
 
+    public sealed record FakeSeries(Guid Id, int? Tmdb, int? Tvdb, string? Imdb);
+
+    public sealed record FakeEpisode(Guid Id, Guid SeriesId, int Season, int Episode, int? EpisodeEnd, bool Virtual, int? OwnTmdb);
+
     public bool SupportsPositionalInsert { get; set; } = true;
+    public Dictionary<string, Guid> MoviesByImdb { get; } = new();
+    public Dictionary<Guid, FakeSeries> Series { get; } = new();
+    public List<FakeEpisode> Episodes { get; } = new();
+    /// <summary>Season items: (series, season) → (id, virtual).</summary>
+    public Dictionary<(Guid Series, int Season), (Guid Id, bool Virtual)> Seasons { get; } = new();
+    /// <summary>Throws from AddToPlaylistAsync / AddToCollectionAsync when set (after optionally mutating).</summary>
+    public Exception? FailAdds { get; set; }
+    /// <summary>With <see cref="FailAdds"/>: still mutate the list before throwing (crash after Jellyfin's write).</summary>
+    public bool FailAfterMutating { get; set; }
     public Dictionary<Guid, FakeList> Lists { get; } = new();
     public Dictionary<Guid, BaseItemKind> Items { get; } = new();
     public Dictionary<int, Guid> MoviesByTmdb { get; } = new();
@@ -29,7 +42,11 @@ internal sealed class FakeListHost : IListPlaceholderHost
     /// <summary>Lists each user can't see (entity visibility).</summary>
     public Dictionary<Guid, HashSet<Guid>> ListHiddenFrom { get; } = new();
     public List<string> Calls { get; } = new();
+    // Items AddToCollectionAsync silently doesn't add (Jellyfin skips ids it can't resolve).
+    public HashSet<Guid> CollectionDrops { get; } = new();
     public Func<Guid, IReadOnlyList<Guid>, int?, Task>? BeforeAdd { get; set; }
+    // Runs right after a playlist add changed the entries (e.g. a native edit landing before JE re-reads them).
+    public Action<Guid>? AfterAdd { get; set; }
     public Action<Guid>? AfterCreate { get; set; }
 
     public static User MakeUser(string name, bool admin = false, bool collections = false)
@@ -76,6 +93,44 @@ internal sealed class FakeListHost : IListPlaceholderHost
         set.Add(itemId);
     }
 
+    public Guid AddSeries(int? tmdb = null, int? tvdb = null, string? imdb = null)
+    {
+        var id = Guid.NewGuid();
+        Items[id] = BaseItemKind.Series;
+        Series[id] = new FakeSeries(id, tmdb, tvdb, imdb);
+        return id;
+    }
+
+    public Guid AddEpisode(Guid seriesId, int season, int episode, int? episodeEnd = null, bool isVirtual = false, int? ownTmdb = null)
+    {
+        var id = Guid.NewGuid();
+        Items[id] = BaseItemKind.Episode;
+        Episodes.Add(new FakeEpisode(id, seriesId, season, episode, episodeEnd, isVirtual, ownTmdb));
+        if (!Seasons.ContainsKey((seriesId, season)))
+        {
+            var seasonId = Guid.NewGuid();
+            Items[seasonId] = BaseItemKind.Season;
+            Seasons[(seriesId, season)] = (seasonId, isVirtual);
+        }
+        else if (!isVirtual && Seasons[(seriesId, season)].Virtual)
+        {
+            Seasons[(seriesId, season)] = (Seasons[(seriesId, season)].Id, false);
+        }
+
+        return id;
+    }
+
+    public Guid AddMovie(int? tmdb = null, string? imdb = null)
+    {
+        var id = AddItem(BaseItemKind.Movie, tmdb);
+        if (imdb != null)
+        {
+            MoviesByImdb[imdb] = id;
+        }
+
+        return id;
+    }
+
     public IReadOnlyList<Guid> Resolved(Guid listId) =>
         Lists[listId].Raw.Where(r => r.Resolved).Select(r => r.ItemId!.Value).ToList();
 
@@ -103,6 +158,11 @@ internal sealed class FakeListHost : IListPlaceholderHost
             await BeforeAdd(playlistId, itemIds, rawPosition).ConfigureAwait(false);
         }
 
+        if (FailAdds != null && !FailAfterMutating)
+        {
+            throw FailAdds;
+        }
+
         var raw = Lists[playlistId].Raw;
         var add = itemIds.Where(id => IsEntryVisible(id, new User("x", "d", "d") { Id = userId })).ToList();
         if (!SupportsPositionalInsert)
@@ -110,6 +170,7 @@ internal sealed class FakeListHost : IListPlaceholderHost
             // 10.11: drops items already in the playlist and repeats within the batch, then appends.
             var existing = raw.Where(r => r.ItemId.HasValue).Select(r => r.ItemId!.Value).ToHashSet();
             raw.AddRange(add.Where(id => !existing.Contains(id)).Distinct().Select(id => new RawEntry(id, true)));
+            AfterAdd?.Invoke(playlistId);
             return;
         }
 
@@ -121,6 +182,12 @@ internal sealed class FakeListHost : IListPlaceholderHost
         else
         {
             raw.InsertRange(Math.Max(rawPosition.Value, 0), entries);
+        }
+
+        AfterAdd?.Invoke(playlistId);
+        if (FailAdds != null)
+        {
+            throw FailAdds;
         }
     }
 
@@ -163,8 +230,13 @@ internal sealed class FakeListHost : IListPlaceholderHost
     public Task AddToCollectionAsync(Guid collectionId, IReadOnlyList<Guid> itemIds)
     {
         Calls.Add($"collection:{string.Join(',', itemIds.Select(Short))}");
-        Lists[collectionId].Raw.AddRange(itemIds.Select(id => new RawEntry(id, true)));
-        return Task.CompletedTask;
+        if (FailAdds != null && !FailAfterMutating)
+        {
+            throw FailAdds;
+        }
+
+        Lists[collectionId].Raw.AddRange(itemIds.Where(id => !CollectionDrops.Contains(id)).Select(id => new RawEntry(id, true)));
+        return FailAdds != null ? Task.FromException(FailAdds) : Task.CompletedTask;
     }
 
     public Task<Guid> CreatePlaylistAsync(string name, Guid ownerId, bool isPublic)
@@ -187,6 +259,97 @@ internal sealed class FakeListHost : IListPlaceholderHost
 
     public IReadOnlyList<ListInfo> GetVisibleCollections(User user) =>
         Lists.Values.Select(l => l.Info).Where(i => i.Kind == ListKinds.Collection && IsListVisible(i.Id, user)).ToList();
+
+    public LibraryItemFacts? GetItemFacts(Guid itemId)
+    {
+        if (Lists.TryGetValue(itemId, out var list))
+        {
+            return new LibraryItemFacts(itemId, list.Info.Kind == ListKinds.Playlist ? BaseItemKind.Playlist : BaseItemKind.BoxSet, Ids(), null, null, null, null, null, false);
+        }
+
+        if (!Items.TryGetValue(itemId, out var kind))
+        {
+            return null;
+        }
+
+        switch (kind)
+        {
+            case BaseItemKind.Movie:
+                return new LibraryItemFacts(itemId, kind, Ids(
+                    MoviesByTmdb.Where(p => p.Value == itemId).Select(p => (int?)p.Key).FirstOrDefault(),
+                    null,
+                    MoviesByImdb.Where(p => p.Value == itemId).Select(p => p.Key).FirstOrDefault()), null, null, null, null, null, false);
+            case BaseItemKind.Series:
+                var series = Series[itemId];
+                return new LibraryItemFacts(itemId, kind, Ids(series.Tmdb, series.Tvdb, series.Imdb), null, null, null, null, null, false);
+            case BaseItemKind.Episode:
+                var episode = Episodes.First(e => e.Id == itemId);
+                var parent = Series[episode.SeriesId];
+                return new LibraryItemFacts(itemId, kind, Ids(episode.OwnTmdb), parent.Id, Ids(parent.Tmdb, parent.Tvdb, parent.Imdb), episode.Season, episode.Episode, episode.EpisodeEnd, episode.Virtual);
+            case BaseItemKind.Season:
+                var season = Seasons.First(p => p.Value.Id == itemId);
+                var owner = Series[season.Key.Series];
+                return new LibraryItemFacts(itemId, kind, Ids(), owner.Id, Ids(owner.Tmdb, owner.Tvdb, owner.Imdb), season.Key.Season, null, null, season.Value.Virtual);
+            default:
+                return new LibraryItemFacts(itemId, kind, Ids(), null, null, null, null, null, false);
+        }
+    }
+
+    public IReadOnlyList<Guid> FindMovies(int? tmdbId, string? imdbId, User? user)
+    {
+        var result = new List<Guid>();
+        if (tmdbId.HasValue && MoviesByTmdb.TryGetValue(tmdbId.Value, out var byTmdb))
+        {
+            result.Add(byTmdb);
+        }
+
+        if (imdbId != null && MoviesByImdb.TryGetValue(imdbId, out var byImdb) && !result.Contains(byImdb))
+        {
+            result.Add(byImdb);
+        }
+
+        return result.Where(id => user == null || CanAccessItem(id, user)).ToList();
+    }
+
+    public IReadOnlyList<Guid> FindSeries(int? tmdbId, int? tvdbId, string? imdbId, User? user) =>
+        Series.Values
+            .Where(s => (tmdbId.HasValue && s.Tmdb == tmdbId) || (tvdbId.HasValue && s.Tvdb == tvdbId) || (imdbId != null && s.Imdb == imdbId))
+            .Select(s => s.Id)
+            .Where(id => user == null || CanAccessItem(id, user))
+            .ToList();
+
+    public IReadOnlyList<LibraryEpisode> GetEpisodes(Guid seriesId, int? seasonNumber, User? user)
+    {
+        return Episodes
+            .Where(e => e.SeriesId == seriesId && !e.Virtual && (seasonNumber == null || e.Season == seasonNumber))
+            .Where(e => user == null || CanAccessItem(e.Id, user))
+            .Select(e => new LibraryEpisode(e.Id, seriesId, e.Season, e.Episode, e.EpisodeEnd))
+            .ToList();
+    }
+
+    public Guid? FindSeason(Guid seriesId, int seasonNumber, User? user) =>
+        Seasons.TryGetValue((seriesId, seasonNumber), out var season) && (user == null || CanAccessItem(season.Id, user)) ? season.Id : null;
+
+    private static Dictionary<string, string> Ids(int? tmdb = null, int? tvdb = null, string? imdb = null)
+    {
+        var ids = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (tmdb.HasValue)
+        {
+            ids["Tmdb"] = tmdb.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        if (tvdb.HasValue)
+        {
+            ids["Tvdb"] = tvdb.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        if (imdb != null)
+        {
+            ids["Imdb"] = imdb;
+        }
+
+        return ids;
+    }
 
     public static string Short(Guid id) => id.ToString("N")[..6];
 }

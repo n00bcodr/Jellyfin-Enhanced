@@ -77,13 +77,29 @@
      */
     function reportAdd(result, title) {
         const esc = lp.render.esc;
-        if (result?.addedAsItems?.length) {
+        if (result?.addedAsItems?.length && result?.added?.length) {
+            // A TV scope partly in the library: its episodes went in, the placeholder tracks the rest (C1).
+            JE.toast(JE.t('listPlaceholders_added_partly', { title: esc(title) }), 4000);
+        } else if (result?.addedAsItems?.length) {
             JE.toast(JE.t('listPlaceholders_added_as_item', { title: esc(title) }), 4000);
         } else if (result?.added?.length) {
             JE.toast(JE.t('listPlaceholders_added', { title: esc(title) }), 3000);
         } else if (result?.skipped?.length) {
             JE.toast(esc(lp.skipReasonText(result.skipped[0].reason)), 4000);
         }
+    }
+
+    /**
+     * Whether a link answer shows the entry already swapped in: gone from the view (a movie or a
+     * complete scope) or with episodes filled (C1: whatever is in the library goes in at once).
+     * @param {Object|null|undefined} view - ListViewDto the PATCH returned.
+     * @param {string} placeholderId
+     * @returns {boolean}
+     */
+    function linkedIntoLibrary(view, placeholderId) {
+        if (!view || !Array.isArray(view.placeholders)) return false;
+        const ph = view.placeholders.find(p => p.id === placeholderId);
+        return !ph || Number(ph.filledCount) > 0;
     }
 
     /**
@@ -166,10 +182,13 @@
                 button.disabled = true;
                 try {
                     if (linkMode) {
+                        // The answer (published to the page) already has the linked title's library
+                        // items in the list when it is there: the page reloads its rows/cards from it.
                         const ph = options.placeholder;
-                        await lp.actions.withRev(ctrl, view => lp.api.patchPlaceholder(ctrl.listId, ph.id, { rev: view.rev, link: dto }),
+                        const linked = await lp.actions.withRev(ctrl, view => lp.api.patchPlaceholder(ctrl.listId, ph.id, { rev: view.rev, link: dto }),
                             view => view.placeholders.some(p => p.id === ph.id));
-                        JE.toast(JE.t('listPlaceholders_linked', { title: esc(title) }), 3000);
+                        const inLibrary = linkedIntoLibrary(linked, ph.id);
+                        JE.toast(JE.t(inLibrary ? 'listPlaceholders_linked_in_library' : 'listPlaceholders_linked', { title: esc(title) }), inLibrary ? 4000 : 3000);
                     } else {
                         const value = modalEl.querySelector('.je-lp-position-select')?.value || 'end';
                         const pos = value === 'start' ? { atStart: true } : value === 'end' ? undefined : { afterToken: value };
@@ -264,6 +283,12 @@
         });
 
         modal.show();
+        const query = root.querySelector('.je-lp-query');
+        if (linkMode && query && options.placeholder?.title) {
+            // Start from the custom entry's own title.
+            query.value = String(options.placeholder.title).slice(0, 200);
+            runSearch();
+        }
         setTimeout(() => root.querySelector(seerrOn ? '.je-lp-query' : '.je-lp-custom-title')?.focus(), 50);
         return modal;
     }
@@ -309,7 +334,7 @@
         if (label) label.textContent = count > 0 ? JE.t('listPlaceholders_count', { count }) : '';
     }
 
-    lp.search = { open, readCustom, usableResults, resultsHtml, reportAdd };
+    lp.search = { open, readCustom, usableResults, resultsHtml, reportAdd, linkedIntoLibrary };
     lp.toolbar = { create: createToolbar, update: updateToolbar };
 
 })(window.JellyfinEnhanced);

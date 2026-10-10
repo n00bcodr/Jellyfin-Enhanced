@@ -116,6 +116,53 @@
     }
 
     /**
+     * A non-negative integer count from a view field (0 for anything else).
+     * @param {*} value
+     * @returns {number}
+     */
+    function count(value) {
+        const n = Number(value);
+        return Number.isInteger(n) && n > 0 ? n : 0;
+    }
+
+    /**
+     * Fill progress of a TV placeholder (C3): season/series "3 of 8 aired · 2 upcoming" once the
+     * server knows the expected episodes (before that "3 of 10 episodes" / "10 episodes" from the
+     * episode count given at creation, or "3 in list"); episodes "2 of 5 episodes" once some are
+     * in the list. Movies and custom entries have none.
+     * @param {Object} ph - PlaceholderDto (filledCount, expectedCount, airedCount, episodeTotal).
+     * @returns {string[]} Zero, one or two label parts.
+     */
+    function progressParts(ph) {
+        const filled = count(ph.filledCount);
+        const expected = count(ph.expectedCount);
+        if (ph.kind === 'season' || ph.kind === 'series') {
+            if (expected > 0) {
+                const aired = Math.min(count(ph.airedCount), expected);
+                const parts = [];
+                if (aired > 0) parts.push(JE.t('listPlaceholders_progress_aired', { filled, aired }));
+                else if (filled > 0) parts.push(JE.t('listPlaceholders_progress_in_list', { count: filled }));
+                if (expected > aired) parts.push(JE.t('listPlaceholders_progress_upcoming', { count: expected - aired }));
+                return parts;
+            }
+            // Expected set not known yet: the episode count given at creation, if any.
+            const total = count(ph.episodeTotal);
+            if (filled > 0) {
+                return [total > 0
+                    ? JE.t('listPlaceholders_episodes_of', { filled, total })
+                    : JE.t('listPlaceholders_progress_in_list', { count: filled })];
+            }
+            return total > 0 ? [JE.t('listPlaceholders_episode_count', { count: total })] : [];
+        }
+        if (ph.kind === 'episodes' && filled > 0) {
+            return [expected > 0
+                ? JE.t('listPlaceholders_episodes_of', { filled, total: expected })
+                : JE.t('listPlaceholders_progress_in_list', { count: filled })];
+        }
+        return [];
+    }
+
+    /**
      * The secondary line of a row: kind, episode title / fill progress, release text.
      * @param {Object} ph
      * @returns {string[]}
@@ -125,13 +172,31 @@
         if (ph.kind === 'episodes' && (ph.episodes || []).length === 1 && ph.episodes[0].title) {
             parts.push(ph.episodes[0].title);
         }
-        if ((ph.kind === 'season' || ph.kind === 'series') && ph.episodeTotal > 0) {
-            parts.push(ph.filledCount > 0
-                ? JE.t('listPlaceholders_episodes_of', { filled: ph.filledCount, total: ph.episodeTotal })
-                : JE.t('listPlaceholders_episode_count', { count: ph.episodeTotal }));
-        }
+        parts.push(...progressParts(ph));
         parts.push(dateLabel(ph));
         return parts.filter(Boolean);
+    }
+
+    /**
+     * The library item a placeholder is being swapped for right now (GET reports it while the
+     * swap runs, or until a failed swap is retried), as a 32-hex id.
+     * @param {Object} ph
+     * @returns {string|null}
+     */
+    function addingItemId(ph) {
+        return ph && ph.inLibraryItemId ? lp.normalizeId(ph.inLibraryItemId) : null;
+    }
+
+    /**
+     * The "Available — adding…" badge, linking to the library item.
+     * @param {string} itemId - 32-hex item id.
+     * @returns {string}
+     */
+    function addingHtml(itemId) {
+        const label = JE.t('listPlaceholders_available_adding');
+        return `<a class="je-lp-badge je-lp-adding status-available" href="#/details?id=${esc(itemId)}" title="${esc(label)}">`
+            + '<span class="material-icons" aria-hidden="true">library_add_check</span>'
+            + `<span class="je-lp-badge-text">${esc(label)}</span></a>`;
     }
 
     /**
@@ -161,6 +226,9 @@
      * @returns {string}
      */
     function statusHtml(ph, ctx) {
+        // Already in the library and being added to the list: nothing to request (any Seerr state).
+        const adding = addingItemId(ph);
+        if (adding) return addingHtml(adding);
         const info = statusInfo(ph, ctx);
         if (!info.show) return '';
         let html = '';
@@ -183,6 +251,15 @@
     }
 
     /**
+     * The secondary line of a playlist row as text (subtitle parts + "not in library").
+     * @param {Object} ph
+     * @returns {string}
+     */
+    function rowSubtitle(ph) {
+        return subtitleParts(ph).concat(JE.t('listPlaceholders_not_in_library_short')).join(' · ');
+    }
+
+    /**
      * Markup of one playlist row. Rows deliberately avoid `.listItem`, `data-id` and
      * `.itemAction` so jellyfin-web's play-from-here indexing, context menus,
      * multi-select and Move indices never see them.
@@ -192,7 +269,7 @@
      */
     function rowHtml(ph, ctx) {
         const isCustom = ph.kind === 'custom';
-        const sub = subtitleParts(ph).concat(JE.t('listPlaceholders_not_in_library_short')).join(' · ');
+        const sub = rowSubtitle(ph);
         const handle = ctx.draggable && !ctx.tv
             ? '<span class="listViewDragHandle material-icons listItemIcon listItemIcon-transparent drag_handle je-lp-drag" aria-hidden="true"></span>'
             : '';
@@ -248,6 +325,12 @@
         if (!Number.isInteger(id) || id <= 0 || !mediaType) return null;
         let status = ph.status;
         if (JE.seerrStatus?.isRequestable(status) && lp.requests?.isRequested?.(ph)) status = JE.seerrStatus.MEDIA.PROCESSING;
+        let mediaInfo = status === null || status === undefined ? null : { status, status4k: 1 };
+        const adding = addingItemId(ph);
+        if (adding && JE.seerrStatus) {
+            // Being swapped in: the card reads as available and its title links to the library item.
+            mediaInfo = { status: JE.seerrStatus.MEDIA.AVAILABLE, status4k: 1, jellyfinMediaId: adding };
+        }
         const item = {
             id,
             mediaType,
@@ -255,7 +338,7 @@
             name: ph.title,
             posterPath: isSafePoster(ph.posterPath) ? ph.posterPath : null,
             overview: ph.overview || '',
-            mediaInfo: status === null || status === undefined ? null : { status, status4k: 1 },
+            mediaInfo,
             __jeLp: true,
             __jeLpId: ph.id
         };
@@ -320,6 +403,16 @@
             chip.textContent = chipText;
             image.appendChild(chip);
         }
+        // Bottom chip: "Available — adding…" while the swap runs, else the fill progress.
+        const adding = addingItemId(ph);
+        const progressText = adding ? JE.t('listPlaceholders_available_adding') : progressParts(ph).join(' · ');
+        if (progressText && image) {
+            const chip = document.createElement('div');
+            chip.className = 'je-lp-progress-chip' + (adding ? ' je-lp-adding' : '');
+            chip.textContent = progressText;
+            chip.title = progressText;
+            image.appendChild(chip);
+        }
         if (ph.note) card.querySelector('.cardBox')?.setAttribute('title', ph.note);
         if (ctx.canEdit) {
             const meta = card.querySelector('.jellyseerr-meta');
@@ -336,7 +429,10 @@
         episodeLabel,
         kindLabel,
         dateLabel,
+        progressParts,
         subtitleParts,
+        rowSubtitle,
+        addingItemId,
         statusInfo,
         statusHtml,
         rowHtml,
