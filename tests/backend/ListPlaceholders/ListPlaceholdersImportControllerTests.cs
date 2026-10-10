@@ -341,4 +341,84 @@ public class ListPlaceholdersImportControllerTests
         using var third = f.H.ImportResolver.TryEnterCall(owner);
         Assert.NotNull(third);
     }
+
+    [Fact]
+    public async Task GroupedWatchOrdersComeBackPreparedAndImportWithEveryKey()
+    {
+        using var f = new Fixture();
+        f.H.Fetcher.Exact = true;
+        f.H.Fetcher.Provider = "chronolists";
+        SourceItem Ep(int e) => new("tv", 1412, "tt2193021", 257655, "Arrow", 2012, 1, e, null) { Details = new SourceItemDetails("E" + e, "2012-10-1" + e, "/a.jpg", null, "Season 1") };
+        f.H.Fetcher.Items = new List<SourceItem> { Ep(1), Ep(2), Ep(3), new("movie", 49521, null, null, "Man of Steel", 2013, null, null, null) { Details = new SourceItemDetails(null, "2013-06-12", null, null, null) } };
+        using var owner = f.Client(f.Owner);
+        using var viewer = f.Client(f.Viewer);
+
+        // The target list must be editable by the caller (its owner's visibility then counts for "in library").
+        Assert.Equal(HttpStatusCode.Forbidden, (await viewer.PostAsync("/JellyfinEnhanced/list-placeholders/source/fetch", Json("{\"url\":\"https://chronolists.com/dctv\",\"listId\":\"" + f.List + "\"}"))).StatusCode);
+        JsonElement fetched;
+        using (var ok = await owner.PostAsync("/JellyfinEnhanced/list-placeholders/source/fetch", Json("{\"url\":\"https://chronolists.com/dctv\",\"listId\":\"" + f.List + "\"}")))
+        {
+            Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+            fetched = (await Body(ok)).Clone();
+        }
+
+        Assert.True(fetched.GetProperty("grouped").GetBoolean());
+        Assert.Equal(4, fetched.GetProperty("snapshotKeys").GetArrayLength());
+        var season = fetched.GetProperty("entries")[0];
+        Assert.Equal(("season", "high", 3), (season.GetProperty("prepared").GetProperty("kind").GetString(), season.GetProperty("prepared").GetProperty("confidence").GetString(), season.GetProperty("sourceKeys").GetArrayLength()));
+
+        const string Body1 = "{\"type\":\"placeholder\",\"sourceKey\":\"tv|1412|1|1\",\"sourceKeys\":[\"tv|1412|1|1\",\"tv|1412|1|2\",\"tv|1412|1|3\"],\"placeholder\":{\"kind\":\"season\",\"tmdbId\":1412,\"title\":\"Arrow\",\"seasonNumber\":1,\"episodeTotal\":3}}";
+        const string Source = ",\"source\":{\"url\":\"https://chronolists.com/dctv\",\"syncEnabled\":true,\"snapshotKeys\":[\"tv|1412|1|1\",\"tv|1412|1|2\",\"tv|1412|1|3\",\"movie|49521||\"]}";
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsync($"/JellyfinEnhanced/list-placeholders/{f.List}/apply",
+            Json("{\"entries\":[" + Body1.Replace("tv|1412|1|3\"]", "rank 3\"]", StringComparison.Ordinal) + "]" + Source + "}"))).StatusCode);
+        // At most 5000 keys in total (the most a fetch hands out), however they are spread over the entries.
+        var half = string.Join(",", Enumerable.Range(1, 2501).Select(e => "\"tv|1412|1|" + e + "\""));
+        var halfEntry = Body1.Replace("\"sourceKeys\":[\"tv|1412|1|1\",\"tv|1412|1|2\",\"tv|1412|1|3\"]", "\"sourceKeys\":[" + half + "]", StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsync($"/JellyfinEnhanced/list-placeholders/{f.List}/apply",
+            Json("{\"entries\":[" + halfEntry + "," + halfEntry + "]" + Source + "}"))).StatusCode);
+        Assert.Null(f.H.Store.Load(f.List));
+
+        // Keys the fetched list doesn't have (here 3x99) are ignored, never stored.
+        var withUnknown = Body1.Replace("\"tv|1412|1|3\"]", "\"tv|1412|1|3\",\"tv|1412|1|99\"]", StringComparison.Ordinal);
+        using (var applied = await owner.PostAsync($"/JellyfinEnhanced/list-placeholders/{f.List}/apply", Json("{\"requestId\":\"chrono-1\",\"entries\":[" + withUnknown + "]" + Source + "}")))
+        {
+            Assert.Equal(HttpStatusCode.OK, applied.StatusCode);
+        }
+
+        var source = f.H.Store.Load(f.List)!.Source!;
+        var placeholder = f.H.Store.Load(f.List)!.Items.Single();
+        Assert.Equal(new[] { "tv|1412|1|1", "tv|1412|1|2", "tv|1412|1|3" }, source.Owned.Keys.OrderBy(k => k, StringComparer.Ordinal));
+        Assert.All(source.Owned.Values, o => Assert.Equal(placeholder.Id, o.PhId));
+        Assert.True(source.UserRemovedKeys.ContainsKey("movie|49521||")); // not imported: declined
+        Assert.Equal("chronolists", source.Kind);
+    }
+
+    [Fact]
+    public async Task AWholeSeasonOfMoreThanAThousandEpisodesImportsAsOneEntry()
+    {
+        using var f = new Fixture();
+        f.H.Fetcher.Exact = true;
+        f.H.Fetcher.Provider = "chronolists";
+        f.H.Fetcher.Items = Enumerable.Range(1, 1001).Select(e => new SourceItem("tv", 30983, null, null, "Long Show", 1999, 1, e, null) { Details = new SourceItemDetails(null, "1999-10-20", null, null, "Season 1") }).ToList();
+        using var owner = f.Client(f.Owner);
+        JsonElement entry;
+        using (var ok = await owner.PostAsync("/JellyfinEnhanced/list-placeholders/source/fetch", Json("{\"url\":\"https://chronolists.com/dctv\"}")))
+        {
+            Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+            entry = (await Body(ok)).GetProperty("entries")[0].Clone();
+        }
+
+        Assert.Equal(("season", 1001), (entry.GetProperty("prepared").GetProperty("kind").GetString(), entry.GetProperty("sourceKeys").GetArrayLength()));
+
+        // What the client sends for it: the prepared season with every key of the fetched entry.
+        var keys = entry.GetProperty("sourceKeys").GetRawText();
+        var body = "{\"entries\":[{\"type\":\"placeholder\",\"sourceKey\":\"tv|30983|1|1\",\"sourceKeys\":" + keys + ",\"placeholder\":{\"kind\":\"season\",\"tmdbId\":30983,\"title\":\"Long Show\",\"seasonNumber\":1,\"episodeTotal\":1001}}],"
+            + "\"source\":{\"url\":\"https://chronolists.com/dctv\",\"syncEnabled\":true,\"snapshotKeys\":" + keys + "}}";
+        using (var applied = await owner.PostAsync($"/JellyfinEnhanced/list-placeholders/{f.List}/apply", Json(body)))
+        {
+            Assert.Equal(HttpStatusCode.OK, applied.StatusCode);
+        }
+
+        Assert.Equal(1001, f.H.Store.Load(f.List)!.Source!.Owned.Count);
+    }
 }

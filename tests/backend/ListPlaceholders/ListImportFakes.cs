@@ -110,6 +110,13 @@ internal sealed class FakeLibraryLookup : IListLibraryLookup
 
         return Matches.TryGetValue((scope.Kind, scope.TmdbId), out var match) ? match : null;
     }
+
+    /// <summary>What library items stand for (besides the movie matches, which answer for themselves).</summary>
+    public Dictionary<Guid, List<string>> Identities { get; } = new();
+
+    public IReadOnlyList<string> SourceKeysOf(Guid itemId) =>
+        Identities.TryGetValue(itemId, out var keys) ? keys
+        : Matches.Where(m => m.Key.Kind == "movie" && m.Value.ItemId == itemId).Select(m => $"movie|{m.Key.Tmdb}||").ToList();
 }
 
 /// <summary>A list source whose content tests change between syncs.</summary>
@@ -118,20 +125,29 @@ internal sealed class FakeSourceFetcher : IListSourceFetcher
     public List<SourceItem> Items { get; set; } = new();
     public bool Truncated { get; set; }
     public bool Partial { get; set; }
+    public bool Exact { get; set; }
     public string? FailCode { get; set; }
     public int? RetryAfter { get; set; }
     public string Provider { get; set; } = "mdblist";
     public List<SourceFetchOptions> Calls { get; } = new();
 
-    public Task<SourceFetchResult> FetchAsync(ParsedSourceUrl source, SourceFetchOptions options, CancellationToken cancellationToken)
+    /// <summary>Runs during a fetch (what happens upstream or in the list while a sync is fetching).</summary>
+    public Func<Task>? OnFetch { get; set; }
+
+    public async Task<SourceFetchResult> FetchAsync(ParsedSourceUrl source, SourceFetchOptions options, CancellationToken cancellationToken)
     {
         Calls.Add(options);
-        if (FailCode != null)
+        if (OnFetch != null)
         {
-            return Task.FromResult(SourceFetchResult.Fail(source, FailCode, "Upstream says no.", RetryAfter));
+            await OnFetch().ConfigureAwait(false);
         }
 
-        return Task.FromResult(new SourceFetchResult
+        if (FailCode != null)
+        {
+            return SourceFetchResult.Fail(source, FailCode, "Upstream says no.", RetryAfter);
+        }
+
+        return new SourceFetchResult
         {
             Ok = true,
             Kind = source.Kind,
@@ -142,7 +158,8 @@ internal sealed class FakeSourceFetcher : IListSourceFetcher
             Total = Items.Count,
             Truncated = Truncated,
             Partial = Partial,
-        });
+            Exact = Exact,
+        };
     }
 
     public SourceProvidersDto Providers() => new() { MaxItems = ListSourceFetcher.MaxItems, SyncEnabled = true };

@@ -626,6 +626,27 @@ test('URL imports leave rows whose lookup failed out of the snapshot (the server
   assert.deepEqual(body.entries.map(e => e.sourceKey), ['movie|1||']);
 });
 
+test('a partial fetch that does not know how many entries it lost says so without a count (IMDb; review round)', async t => {
+  const fetched = {
+    kind: 'imdb', provider: 'imdb', url: 'https://www.imdb.com/list/ls000000001/', title: 'L', total: 5, truncated: false, partial: true, dropped: 0,
+    entries: [1, 2].map(n => ({ title: `M${n}`, year: 2020, typeHint: 'movie', ids: { tmdb: n, tmdbType: 'movie' }, sourceKey: `movie|${n}||` }))
+  };
+  const h = setupImport(t, { plugin: async (path, options = {}) => {
+    if (path === '/list-placeholders/source/providers') return { imdb: true, syncEnabled: true };
+    if (path === '/list-placeholders/source/fetch') return fetched;
+    if (path === '/list-placeholders/resolve') return { results: options.body.entries.map(e => ok(e.index, movie(e.ids.tmdb, e.title))) };
+    return {};
+  } });
+  const root = h.lp.importer.open({ mode: 'new' }).modalElement;
+  root.querySelector('.je-lp-tab[data-tab="url"]').click();
+  root.querySelector('.je-lp-import-url').value = fetched.url;
+  root.querySelector('.jellyseerr-modal-button-primary').click();
+  await until(() => root.querySelector('.je-lp-import-progress').hidden && root.querySelectorAll('.je-lp-irow').length === 2);
+  const note = root.querySelector('.je-lp-import-sync-note').textContent;
+  assert.match(note, /listPlaceholders_sourcePartialUnknown/);
+  assert.doesNotMatch(note, /"count":0/);
+});
+
 test('"Accept all high-confidence matches" keeps a match the user changed', async t => {
   const dune84 = movie(841, 'Dune', { year: 1984 });
   const dune21 = movie(438631, 'Dune', { year: 2021, releaseDate: '2021-09-15' });
@@ -753,4 +774,84 @@ test('source chip: callers who do not see every entry get no sync counts; a link
   h.lp.api.syncSource = async () => ({ state: 'paused', code: 'linker_cannot_see', message: 'raw' });
   await sourceUi.syncNow(ctrl, null);
   assert.ok(h.toasts.some(m => m.includes('listPlaceholders_sourcePausedLinkerCannotSee')), h.toasts.join('\n'));
+});
+
+test('exact sources (chronolists): prepared rows skip /resolve; runs send all their keys and the fetch snapshot; listId on the fetch', async t => {
+  const calls = [];
+  const arrow = { mediaType: 'tv', tmdbId: 1412, title: 'Arrow', year: 2012, releaseDate: '2012-10-10', tvdbId: 257655, season: { seasonNumber: 1, episodeCount: 3, airDate: '2012-10-10', name: 'Season 1' } };
+  const flash = {
+    mediaType: 'tv', tmdbId: 60735, title: 'The Flash', year: 2014, releaseDate: '2014-10-07',
+    season: { seasonNumber: 1, airDate: '2014-10-07' },
+    episodes: [{ s: 1, e: 1, title: 'Pilot', airDate: '2014-10-07' }, { s: 1, e: 2, title: 'Fastest Man Alive', airDate: '2014-10-14' }],
+    inLibrary: { itemId: 'e'.repeat(32), kind: 'episodes', episodeItemIds: ['e'.repeat(32)], complete: false }
+  };
+  const ironMan = movie(1726, 'Iron Man', { year: 2008, releaseDate: '2008-04-30', inLibrary: { itemId: 'd'.repeat(32), kind: 'movie', complete: true } });
+  const prepared = (index, kind, match) => ({ index, state: 'ok', confidence: 'high', kind, match, candidates: [], reasons: [], alternatives: false });
+  const fetched = {
+    kind: 'chronolists', provider: 'chronolists', url: 'https://chronolists.com/dctv', title: 'DC Arrowverse', total: 6, truncated: false, dropped: 1, partial: true, grouped: true,
+    snapshotKeys: ['tv|1412|1|1', 'tv|1412|1|2', 'tv|1412|1|3', 'movie|1726||', 'tv|60735|1|1', 'tv|60735|1|2'],
+    entries: [
+      { index: 0, title: 'Arrow', year: 2012, typeHint: 'tv', season: 1, ids: { tmdb: 1412, tmdbType: 'tv' }, sourceKey: 'tv|1412|1|1', sourceKeys: ['tv|1412|1|1', 'tv|1412|1|2', 'tv|1412|1|3'], prepared: prepared(0, 'season', arrow) },
+      { index: 1, title: 'Iron Man', year: 2008, typeHint: 'movie', ids: { tmdb: 1726, tmdbType: 'movie' }, sourceKey: 'movie|1726||', sourceKeys: ['movie|1726||'], prepared: prepared(1, 'movie', ironMan) },
+      { index: 2, title: 'The Flash', year: 2014, typeHint: 'tv', season: 1, episodes: [{ s: 1, e: 1 }, { s: 1, e: 2 }], ids: { tmdb: 60735, tmdbType: 'tv' }, sourceKey: 'tv|60735|1|1', sourceKeys: ['tv|60735|1|1', 'tv|60735|1|2'], prepared: prepared(2, 'episodes', flash) }
+    ]
+  };
+  const h = setupImport(t, { plugin: async (path, options = {}) => {
+    calls.push([path, plainJson(options.body ?? null)]);
+    if (path === '/list-placeholders/source/providers') return { mdblist: true, chronolists: true, syncEnabled: true };
+    if (path === '/list-placeholders/source/fetch') {
+      if (options.body.url.includes('/help')) throw Object.assign(new Error('x'), { status: 502, responseJSON: { code: 'source_format_changed', message: 'changed' } });
+      return fetched;
+    }
+    if (path === `/list-placeholders/${LIST}/apply`) return { added: ['a', 'b'], addedAsItems: ['d'.repeat(32), 'e'.repeat(32)], skipped: [], view: view() };
+    return {};
+  } });
+  const ctrl = { listId: LIST, listKind: 'playlist', listName: 'Arrowverse', view: view() };
+  const root = h.lp.importer.open({ ctrl }).modalElement;
+  root.querySelector('.je-lp-tab[data-tab="url"]').click();
+  await until(() => root.querySelector('.je-lp-import-providers').textContent.includes('chronolists.com'));
+  const url = root.querySelector('.je-lp-import-url');
+  url.value = 'https://chronolists.com/help';
+  root.querySelector('.jellyseerr-modal-button-primary').click();
+  await until(() => root.querySelector('.je-lp-import-url-error').textContent);
+  assert.equal(root.querySelector('.je-lp-import-url-error').textContent, 'listPlaceholders_sourceFormatChanged');
+  url.value = fetched.url;
+  root.querySelector('.jellyseerr-modal-button-primary').click();
+  await until(() => root.querySelector('.je-lp-import-progress').hidden && root.querySelectorAll('.je-lp-irow').length === 3);
+
+  // The fetch carried the target list; nothing went to /resolve.
+  assert.deepEqual(calls.filter(c => c[0] === '/list-placeholders/source/fetch').map(c => c[1]), [{ url: 'https://chronolists.com/help', listId: LIST }, { url: fetched.url, listId: LIST }]);
+  assert.equal(calls.filter(c => c[0] === '/list-placeholders/resolve').length, 0);
+  assert.match(root.querySelector('.je-lp-import-source').textContent, /^listPlaceholders_import_fetched_grouped.*"count":3.*"total":6/);
+  assert.match(root.querySelector('.je-lp-import-sync-note').textContent, /listPlaceholders_sourcePartial\{"count":1\}/);
+  // In-library movie and the partly present run are "From your library"; the season is a placeholder.
+  assert.deepEqual(Array.from(root.querySelectorAll('.je-lp-irow-action')).map(s => s.value), ['placeholder', 'item', 'item']);
+  assert.match(root.querySelector('.je-lp-irow[data-i="2"]').textContent, /listPlaceholders_import_in_library_part\{"count":1,"total":2\}/);
+
+  root.querySelector('.jellyseerr-modal-button-primary').click();
+  await until(() => calls.some(c => c[0].endsWith('/apply')));
+  const body = calls.find(c => c[0].endsWith('/apply'))[1];
+  assert.deepEqual(body.entries.map(e => [e.type, e.sourceKey, e.sourceKeys]), [
+    ['placeholder', 'tv|1412|1|1', ['tv|1412|1|1', 'tv|1412|1|2', 'tv|1412|1|3']],
+    ['item', 'movie|1726||', ['movie|1726||']],
+    ['placeholder', 'tv|60735|1|1', ['tv|60735|1|1', 'tv|60735|1|2']]
+  ]);
+  assert.deepEqual(body.entries[0].placeholder, { kind: 'season', mediaType: 'tv', tmdbId: 1412, title: 'Arrow', year: 2012, releaseDate: '2012-10-10', tvdbId: 257655, seasonNumber: 1, episodeTotal: 3 });
+  assert.deepEqual(body.entries[2].placeholder.episodes, [{ s: 1, e: 1, title: 'Pilot', airDate: '2014-10-07' }, { s: 1, e: 2, title: 'Fastest Man Alive', airDate: '2014-10-14' }]);
+  assert.deepEqual(body.source.snapshotKeys, fetched.snapshotKeys);
+});
+
+test('snapshotKeys: a grouped fetch with every row decided sends its own keys; otherwise each decided row sends all of its keys', t => {
+  const h = setupImport(t);
+  const imp = h.lp.importer;
+  const row = (keys, extra = {}) => ({ entry: { sourceKey: keys[0], sourceKeys: keys }, result: { state: 'ok' }, failed: false, ...extra });
+  const rows = [row(['tv|1|1|1', 'tv|1|1|2']), row(['movie|2||'])];
+  const fetched = { grouped: true, entries: [{}, {}], snapshotKeys: ['tv|1|1|1', 'tv|1|1|2', 'movie|2||'] };
+  assert.deepEqual(plainJson(imp.snapshotKeys(rows, fetched)), fetched.snapshotKeys);
+  // A row whose lookup failed stays out, with every key of its run.
+  rows[0].failed = true;
+  assert.deepEqual(plainJson(imp.snapshotKeys(rows, fetched)), ['movie|2||']);
+  rows[0].failed = false;
+  assert.deepEqual(plainJson(imp.snapshotKeys([...rows, { entry: { sourceKey: 'movie|3||' }, result: { state: 'ok' } }])), ['tv|1|1|1', 'tv|1|1|2', 'movie|2||', 'movie|3||']);
+  assert.equal(imp.sourceErrorKey('source_format_changed'), 'listPlaceholders_sourceFormatChanged');
 });

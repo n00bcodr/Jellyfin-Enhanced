@@ -245,6 +245,19 @@ https://www.themoviedb.org/list/8136-star-wars
   ]);
 });
 
+test('chronolists watch-order URLs go to the URL import; other chronolists pages do not', t => {
+  const { parse } = setup(t);
+  const result = parse(`https://chronolists.com/dctv
+chronolists.com/star-wars/
+<https://www.chronolists.com/mcu?ref=home>
+https://chronolists.com/dctv/extra
+Watch it all: https://chronolists.com/dctv`);
+  assert.deepEqual(result.skipped.filter(s => s.reason === 'listUrl').map(s => [s.line, s.provider]), [
+    [1, 'chronolists'], [2, 'chronolists'], [3, 'chronolists']
+  ]);
+  assert.ok(!result.skipped.some(s => s.reason === 'listUrl' && s.line > 3));
+});
+
 test('IMDb CSV exports: ids, title types, episodes and quoted fields', t => {
   const { parse } = setup(t);
   const csv = `Position,Const,Created,Modified,Description,Title,Original Title,URL,Title Type,IMDb Rating,Runtime (mins),Year,Genres,Num Votes,Release Date,Directors

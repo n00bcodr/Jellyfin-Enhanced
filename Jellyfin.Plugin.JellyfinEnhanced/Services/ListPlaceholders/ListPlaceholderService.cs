@@ -320,8 +320,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 users.Add(access.Owner);
             }
 
+            // One memo for the whole apply: an imported watch order has hundreds of entries of a few shows.
+            var memo = new ResolveMemo();
             var resolutions = accepted
-                .Select(e => e.Placeholder != null && HasTmdb(e.Placeholder) ? _resolver.Resolve(e.Placeholder, access.List.Kind, users) : ScopeResolution.None)
+                .Select(e => e.Placeholder != null && HasTmdb(e.Placeholder) ? _resolver.Resolve(e.Placeholder, access.List.Kind, users, memo) : ScopeResolution.None)
                 .ToList();
             var today = DateTime.UtcNow;
             var fresh = await ReadCompletionMetadataAsync(
@@ -511,10 +513,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var keys = new HashSet<string>(doc.Items.Select(PlaceholderRules.IdentityKey), StringComparer.Ordinal);
             var room = ListPlaceholderStore.MaxPlaceholders - doc.Items.Count;
             // Everything of one apply lands at the cursor, so the new real items form ONE contiguous run in Jellyfin's
-            // raw order (placeholders take no raw slot): one Jellyfin insert covers them all.
+            // raw order (placeholders take no raw slot): one Jellyfin insert covers them all. With a Place hook (the
+            // linked-list sync) the run is split into one segment per spot, each its own insert.
             var run = new List<NewEntry>();
+            var runIndexes = new List<int>(); // entry index of each run element (per-entry placement)
             var collectionItems = new List<Guid>();
             var changed = false;
+            var excluded = hooks?.Exclude?.Invoke(doc);
 
             // Expanded TV scopes (C1): a placeholder that is a duplicate takes its expanded items with it, and expanded
             // items already in the list are skipped quietly (they count as filled). An entry that ends up doing nothing
@@ -537,6 +542,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             {
                 foreach (var entry in orderedEntries)
                 {
+                    if (excluded?.Contains(entry.Index) == true)
+                    {
+                        // A C1-expanded entry has several applied parts with one request index: reported once.
+                        if (!skipped.Any(x => x.Index == entry.Index))
+                        {
+                            skipped.Add(Skip(entry, "duplicate"));
+                        }
+
+                        continue;
+                    }
+
                     if (entry.ItemId.HasValue)
                     {
                         if (entry.ExpandedFrom != null && duplicateGroups.Contains(entry.ExpandedFrom))
@@ -562,6 +578,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                         if (isPlaylist)
                         {
                             run.Add(new NewEntry(entry.ItemId.Value, null));
+                            runIndexes.Add(entry.Index);
                         }
                         else
                         {
@@ -595,16 +612,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     result.Added.Add(placeholder.Id);
                     changed = true;
                     run.Add(new NewEntry(null, ListPlaceholderOrder.PlaceholderToken(placeholder.Id)));
+                    runIndexes.Add(entry.Index);
                 }
 
                 if (isPlaylist && run.Count > 0)
                 {
-                    var anchor = ListPlaceholderOrder.RealAnchorBefore(order, cursor);
-                    var (desired, inserted) = ListPlaceholderOrder.InsertEntries(order, cursor, run);
-                    order = desired; // what a failure below is reconciled from
-                    if (inserted.Count > 0)
+                    var anchors = hooks?.Place?.Invoke(doc, order);
+                    // One segment per run of consecutive entries with the same spot; inserted from the last spot to the
+                    // first so earlier positions (and the tokens of earlier anchors) don't move.
+                    foreach (var (at, _, segment) in Segments(order, cursor, run, runIndexes, anchors).OrderByDescending(s => s.At).ThenByDescending(s => s.Order))
                     {
-                        order = await PlaceRealItemsAsync(access, run.Where(e => e.ItemId.HasValue).Select(e => e.ItemId!.Value).ToList(), anchor, desired, inserted).ConfigureAwait(false);
+                        var anchor = ListPlaceholderOrder.RealAnchorBefore(order, at);
+                        var (desired, inserted) = ListPlaceholderOrder.InsertEntries(order, at, segment);
+                        order = desired; // what a failure below is reconciled from
+                        if (inserted.Count > 0)
+                        {
+                            order = await PlaceRealItemsAsync(access, segment.Where(e => e.ItemId.HasValue).Select(e => e.ItemId!.Value).ToList(), anchor, desired, inserted).ConfigureAwait(false);
+                        }
                     }
                 }
 
@@ -679,6 +703,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var final = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed);
             result.View = BuildView(access, final, isPlaylist ? order : null, visibility);
             return ListOutcome.Ok(result);
+        }
+
+        // Splits the new entries of one apply into contiguous segments by where they go: without per-entry anchors the
+        // whole run goes to `cursor`; with them, each entry goes after/before its anchor token (missing or absent anchor →
+        // `cursor`). Returns (insert index in `order`, source-order rank, entries).
+        private static List<(int At, int Order, List<NewEntry> Entries)> Segments(IReadOnlyList<string> order, int cursor, List<NewEntry> run, List<int> runIndexes, IReadOnlyDictionary<int, EntryAnchor>? anchors)
+        {
+            if (anchors == null || anchors.Count == 0)
+            {
+                return new List<(int, int, List<NewEntry>)> { (cursor, 0, run) };
+            }
+
+            var positions = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (var i = 0; i < order.Count; i++)
+            {
+                positions.TryAdd(order[i], i);
+            }
+
+            int Spot(EntryAnchor? anchor) =>
+                anchor?.AfterToken != null && positions.TryGetValue(anchor.AfterToken, out var after) ? after + 1
+                : anchor?.BeforeToken != null && positions.TryGetValue(anchor.BeforeToken, out var before) ? before
+                : cursor;
+
+            var segments = new List<(int At, int Order, List<NewEntry> Entries)>();
+            for (var i = 0; i < run.Count; i++)
+            {
+                var at = Spot(anchors.GetValueOrDefault(runIndexes[i]));
+                if (segments.Count > 0 && segments[^1].At == at)
+                {
+                    segments[^1].Entries.Add(run[i]);
+                }
+                else
+                {
+                    segments.Add((at, segments.Count, new List<NewEntry> { run[i] }));
+                }
+            }
+
+            return segments;
         }
 
         // C1: a placeholder whose scope was already complete in the library goes once every expanded item really is in

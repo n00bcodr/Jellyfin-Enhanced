@@ -14,6 +14,7 @@
 
     const CHUNK_SIZE = 25;
     const MAX_APPLY = 2000;
+    const MAX_SNAPSHOT_KEYS = 5000;
     const MAX_CHUNK_RETRIES = 5;
     const RETRY_DELAY_MS = 2000;
     const PARSE_DEBOUNCE_MS = 400;
@@ -57,7 +58,8 @@
         upstream_error: 'listPlaceholders_import_err_upstream',
         unreachable: 'listPlaceholders_import_err_upstream',
         too_large: 'listPlaceholders_import_err_upstream',
-        timeout: 'listPlaceholders_import_err_upstream'
+        timeout: 'listPlaceholders_import_err_upstream',
+        source_format_changed: 'listPlaceholders_sourceFormatChanged'
     };
 
     // ── Pure helpers (exported for tests) ───────────────────────────────
@@ -401,7 +403,11 @@
                 return dto ? { type: 'placeholder', placeholder: dto } : null;
             }).filter(Boolean);
         }
-        if (out.length && row.entry?.sourceKey) out[0].sourceKey = row.entry.sourceKey;
+        if (out.length && row.entry?.sourceKey) {
+            out[0].sourceKey = row.entry.sourceKey;
+            // A grouped entry (a run of episodes of an exact source) stands for every key of the run.
+            if (Array.isArray(row.entry.sourceKeys) && row.entry.sourceKeys.length) out[0].sourceKeys = row.entry.sourceKeys.slice();
+        }
         return out;
     }
 
@@ -538,12 +544,22 @@
 
     /**
      * Source keys sent as a URL import's snapshot: only rows that were looked up (the reviewer could decide on them).
-     * The server declines snapshot keys that weren't imported, so a row whose lookup failed must stay out of it.
+     * The server declines snapshot keys that weren't imported, so a row whose lookup failed must stay out of it. A
+     * grouped entry contributes every key of its run; when every fetched entry of a grouped fetch has a decided row,
+     * the fetch's own snapshotKeys are sent as they are.
      * @param {Object[]} rows - Review rows.
+     * @param {Object} [fetched] - SourceFetchResponse of the import.
      * @returns {string[]}
      */
-    function snapshotKeys(rows) {
-        return (rows || []).filter(r => r.result && !r.failed).map(r => r.entry?.sourceKey).filter(k => typeof k === 'string' && k).slice(0, MAX_APPLY);
+    function snapshotKeys(rows, fetched) {
+        const list = rows || [];
+        const decided = list.filter(r => r.result && !r.failed);
+        if (fetched?.grouped && Array.isArray(fetched.snapshotKeys) && decided.length === list.length
+            && list.length === (fetched.entries || []).length) {
+            return fetched.snapshotKeys.filter(k => typeof k === 'string' && k).slice(0, MAX_SNAPSHOT_KEYS);
+        }
+        const keys = decided.flatMap(r => (Array.isArray(r.entry?.sourceKeys) && r.entry.sourceKeys.length ? r.entry.sourceKeys : [r.entry?.sourceKey]));
+        return Array.from(new Set(keys.filter(k => typeof k === 'string' && k))).slice(0, MAX_SNAPSHOT_KEYS);
     }
 
     /**
@@ -850,7 +866,7 @@
          * @returns {string}
          */
         function providerName(provider) {
-            return { mdblist: 'MDBList', tmdb: 'TMDB', trakt: 'Trakt', imdb: 'IMDb', letterboxd: 'Letterboxd' }[provider] || String(provider || '');
+            return { mdblist: 'MDBList', tmdb: 'TMDB', trakt: 'Trakt', imdb: 'IMDb', letterboxd: 'Letterboxd', chronolists: 'chronolists.com' }[provider] || String(provider || '');
         }
 
         /**
@@ -884,7 +900,7 @@
             }
             if (!alive()) return;
             const p = state.providers;
-            const names = [p.mdblist !== false && 'MDBList', (p.tmdbLists || p.tmdbCharts) && 'TMDB', p.trakt && 'Trakt', p.imdb && 'IMDb'].filter(Boolean);
+            const names = [p.mdblist !== false && 'MDBList', (p.tmdbLists || p.tmdbCharts) && 'TMDB', p.trakt && 'Trakt', p.chronolists && 'chronolists.com', p.imdb && 'IMDb'].filter(Boolean);
             const lines = [JE.t('listPlaceholders_import_url_sources', { sources: names.join(', ') }), JE.t('listPlaceholders_sourceLetterboxd')];
             if (p.imdb) lines.push(JE.t('listPlaceholders_sourceImdbUnofficial'));
             $('.je-lp-import-providers').innerHTML = lines.map(l => `<div>${esc(l)}</div>`).join('');
@@ -959,6 +975,9 @@
             }
             if (entries.length > MAX_APPLY) entries = entries.slice(0, MAX_APPLY);
             state.rows = makeRows(entries);
+            // Exact sources (chronolists): the server already resolved these entries; they skip /resolve.
+            const prepared = state.rows.filter(r => r.entry?.prepared && typeof r.entry.prepared === 'object');
+            if (prepared.length) applyResults(prepared, prepared.map(r => ({ ...r.entry.prepared, index: r.i })));
             state.requestId = lp.newRequestId();
             showReview();
             await resolveAll();
@@ -973,7 +992,7 @@
         async function fetchWithRetry(url, signal) {
             for (let attempt = 0; ; attempt++) {
                 try {
-                    return await lp.api.fetchSource(url, { signal });
+                    return await lp.api.fetchSource(url, { signal, listId });
                 } catch (error) {
                     if (error?.responseJSON?.code === 'parental_pending' && attempt < MAX_CHUNK_RETRIES) {
                         await sleep(retryDelay(error), signal);
@@ -999,12 +1018,22 @@
             $('.je-lp-import-only-review').checked = false;
             const fetched = state.fetched;
             const source = $('.je-lp-import-source');
-            source.textContent = fetched ? JE.t('listPlaceholders_import_fetched', { title: fetched.title || providerName(fetched.kind), count: (fetched.entries || []).length }) : '';
+            const fetchedCount = (fetched?.entries || []).length;
+            const fetchedTitle = fetched ? (fetched.title || providerName(fetched.kind)) : '';
+            source.textContent = !fetched ? ''
+                : fetched.grouped && Number(fetched.total) > fetchedCount
+                    ? JE.t('listPlaceholders_import_fetched_grouped', { title: fetchedTitle, count: fetchedCount, total: Number(fetched.total) })
+                    : JE.t('listPlaceholders_import_fetched', { title: fetchedTitle, count: fetchedCount });
             const syncBox = $('.je-lp-import-sync');
             syncBox.hidden = !fetched;
             if (fetched) {
                 const notes = [];
                 if (fetched.truncated) notes.push(JE.t('listPlaceholders_sourceSyncTruncated', { max: (fetched.entries || []).length }));
+                if (fetched.partial) {
+                    // Some sources (IMDb) say they are partial without knowing how many entries are missing.
+                    const dropped = Number(fetched.dropped) || 0;
+                    notes.push(dropped > 0 ? JE.t('listPlaceholders_sourcePartial', { count: dropped }) : JE.t('listPlaceholders_sourcePartialUnknown'));
+                }
                 if (fetched.unofficial) notes.push(JE.t('listPlaceholders_sourceImdbUnofficial'));
                 if (state.providers && state.providers.syncEnabled === false) notes.push(JE.t('listPlaceholders_import_sync_off'));
                 $('.je-lp-import-sync-note').textContent = notes.join(' ');
@@ -1031,7 +1060,10 @@
             $('.je-lp-import-progress-text').textContent = JE.t('listPlaceholders_import_looking_up', { done, total });
         }
 
-        /** Resolves every row in sequential chunks, then resubmits transient rows once. */
+        /**
+         * Resolves every row in sequential chunks, then resubmits transient rows once. Rows that already have a result
+         * (prepared by the server for exact sources) are only rendered, a chunk per task.
+         */
         async function resolveAll() {
             const controller = new AbortController();
             state.controller = controller;
@@ -1042,7 +1074,9 @@
             try {
                 for (let start = 0; start < rows.length; start += CHUNK_SIZE) {
                     const chunk = rows.slice(start, start + CHUNK_SIZE);
-                    await resolveChunk(chunk, signal);
+                    const pending = chunk.filter(r => !r.result);
+                    if (pending.length) await resolveChunk(pending, signal);
+                    else await sleep(0, signal); // keeps rendering hundreds of prepared rows in short tasks
                     if (!alive() || signal.aborted) return;
                     done += chunk.length;
                     appendRows(chunk);
@@ -1428,7 +1462,7 @@
                 url: fetched.url,
                 syncEnabled: !!$('.je-lp-import-keep-sync').checked,
                 removeDropped: !!$('.je-lp-import-remove-dropped').checked,
-                snapshotKeys: snapshotKeys(state.rows)
+                snapshotKeys: snapshotKeys(state.rows, fetched)
             } : undefined;
             if (isNew) {
                 const name = clip($('.je-lp-new-name').value, 200);

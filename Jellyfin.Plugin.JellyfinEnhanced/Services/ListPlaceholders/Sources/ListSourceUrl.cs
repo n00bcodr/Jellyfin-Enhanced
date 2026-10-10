@@ -22,11 +22,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
         /// <summary>Letterboxd (never fetched: guidance only).</summary>
         public const string Letterboxd = "letterboxd";
+
+        /// <summary>chronolists.com chronological watch order (one "universe" page).</summary>
+        public const string Chronolists = "chronolists";
     }
 
     /// <summary>A recognised list URL. Only these parts are used to build upstream requests — never the URL itself.</summary>
     /// <param name="Kind">One of <see cref="SourceKinds"/>.</param>
-    /// <param name="Shape">mdblist: user | external | official; tmdb: list | collection | chart | trending; trakt: list | watchlist | listid | chart; imdb: list | watchlist | chart.</param>
+    /// <param name="Shape">mdblist: user | external | official; tmdb: list | collection | chart | trending; trakt: list | watchlist | listid | chart; imdb: list | watchlist | chart; chronolists: universe.</param>
     /// <param name="CanonicalUrl">Normalised URL (what is stored when linking).</param>
     /// <param name="Parts">Validated path parts (user, slug, id, media, chart, period…).</param>
     public sealed record ParsedSourceUrl(string Kind, string Shape, string CanonicalUrl, IReadOnlyDictionary<string, string> Parts)
@@ -73,6 +76,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
         private static readonly Regex ImdbList = new(@"^/(?:[a-z]{2}(?:-[A-Za-z]{2})?/)?list/(?<id>ls\d{5,12})/?$", Options);
         private static readonly Regex ImdbWatchlist = new(@"^/(?:[a-z]{2}(?:-[A-Za-z]{2})?/)?user/(?<user>ur\d{5,12}|p\.[a-z0-9]{4,40})/watchlist/?$", Options);
         private static readonly Regex ImdbChart = new(@"^/(?:[a-z]{2}(?:-[A-Za-z]{2})?/)?chart/(?<chart>top|toptv|moviemeter|tvmeter|bottom|top-english-movies)/?$", Options);
+
+        private static readonly Regex ChronolistsUniverse = new(@"^/(?<slug>[a-z0-9][a-z0-9-]{0,63})/?$", Options);
 
         /// <summary>Parses a list URL.</summary>
         /// <param name="input">User input.</param>
@@ -122,6 +127,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                     break;
                 case "imdb.com" or "www.imdb.com" or "m.imdb.com":
                     source = Imdb(path);
+                    break;
+                case "chronolists.com" or "www.chronolists.com":
+                    source = Chronolists(path);
                     break;
                 case "letterboxd.com" or "www.letterboxd.com" or "boxd.it":
                     error = LetterboxdUnsupported;
@@ -268,6 +276,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             }
 
             return null;
+        }
+
+        // One watch order per page: https://chronolists.com/<universe> (e.g. /dctv, /mcu, /star-wars). Always fetched
+        // from the apex host (www redirects there; the fetcher never follows redirects).
+        private static ParsedSourceUrl? Chronolists(string path)
+        {
+            var m = ChronolistsUniverse.Match(path);
+            if (!m.Success)
+            {
+                return null;
+            }
+
+            var slug = m.Groups["slug"].Value.ToLowerInvariant();
+            return Make(SourceKinds.Chronolists, "universe", $"https://chronolists.com/{slug}", ("slug", slug));
         }
 
         private static string Id(Match m) => long.Parse(m.Groups["id"].Value, NumberStyles.None, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture);

@@ -290,13 +290,17 @@
     }
 
     /**
-     * Fetches a list URL (MDBList, TMDB, Trakt, IMDb) into import entries (POST /source/fetch).
+     * Fetches a list URL (MDBList, TMDB, Trakt, IMDb, chronolists) into import entries (POST /source/fetch).
      * @param {string} url
-     * @param {{signal?: AbortSignal}} [options]
+     * @param {{signal?: AbortSignal, listId?: string}} [options] - listId: the list imported into ("in library" then
+     *   also requires the playlist owner to see the item).
      * @returns {Promise<Object>} SourceFetchResponse.
      */
     function fetchSource(url, options = {}) {
-        return call('/source/fetch', { method: 'POST', body: { url }, skipRetry: true, skipCache: true, signal: options.signal });
+        const body = { url };
+        const listId = normalizeId(options.listId);
+        if (listId) body.listId = listId;
+        return call('/source/fetch', { method: 'POST', body, skipRetry: true, skipCache: true, signal: options.signal });
     }
 
     /**

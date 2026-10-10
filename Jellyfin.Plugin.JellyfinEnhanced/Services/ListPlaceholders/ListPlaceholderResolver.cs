@@ -212,6 +212,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
     }
 
     /// <summary>
+    /// Library query results shared by the resolutions of one operation (<see cref="ListPlaceholderResolver.Resolve"/>):
+    /// series, episodes and movies by their lookup keys. Single-threaded, short-lived.
+    /// </summary>
+    public sealed class ResolveMemo
+    {
+        internal Dictionary<(int? Tmdb, string? Imdb, Guid? User), IReadOnlyList<Guid>> Movies { get; } = new();
+
+        internal Dictionary<(int? Tmdb, int? Tvdb, string? Imdb, Guid? User), IReadOnlyList<Guid>> Series { get; } = new();
+
+        internal Dictionary<(Guid Series, int? Season, Guid? User), IReadOnlyList<LibraryEpisode>> Episodes { get; } = new();
+    }
+
+    /// <summary>
     /// The granularity-aware library resolver (design C1). For a placeholder's scope — movie, whole series, season n or
     /// episodes of season n — it returns the library items that represent it in a list plus the present episodes, as seen
     /// by every given user (all must be able to access an item; playlists pass the caller and the owner, swap-in the
@@ -244,8 +257,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <param name="scope">The placeholder (or link data) describing the scope; custom entries resolve to nothing.</param>
         /// <param name="listKind"><see cref="ListKinds.Playlist"/> or <see cref="ListKinds.Collection"/>.</param>
         /// <param name="users">Users that must all be able to access every returned item (empty = no user scope).</param>
+        /// <param name="memo">
+        /// Optional memo of the library queries, shared by the resolutions of ONE operation (an import of hundreds of
+        /// episodes of a few shows looks each show up once). Never keep it beyond that operation: it doesn't see library
+        /// changes.
+        /// </param>
         /// <returns>The resolution (never null; <see cref="ScopeResolution.None"/> on lookup failures).</returns>
-        public ScopeResolution Resolve(Placeholder scope, string listKind, IReadOnlyList<User> users)
+        public ScopeResolution Resolve(Placeholder scope, string listKind, IReadOnlyList<User> users, ResolveMemo? memo = null)
         {
             ArgumentNullException.ThrowIfNull(scope);
             if (scope.Kind == PlaceholderKinds.Custom)
@@ -256,8 +274,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             try
             {
                 return scope.Kind == PlaceholderKinds.Movie
-                    ? ResolveMovie(scope, users)
-                    : ResolveTv(scope, listKind == ListKinds.Collection, users);
+                    ? ResolveMovie(scope, users, memo)
+                    : ResolveTv(scope, listKind == ListKinds.Collection, users, memo);
             }
             catch (Exception ex)
             {
@@ -266,14 +284,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
         }
 
-        private ScopeResolution ResolveMovie(Placeholder scope, IReadOnlyList<User> users)
+        private ScopeResolution ResolveMovie(Placeholder scope, IReadOnlyList<User> users, ResolveMemo? memo)
         {
             if (scope.TmdbId is not > 0 && string.IsNullOrEmpty(scope.ImdbId))
             {
                 return ScopeResolution.None;
             }
 
-            foreach (var id in _host.FindMovies(scope.TmdbId, scope.ImdbId, users.Count > 0 ? users[0] : null))
+            var primary = users.Count > 0 ? users[0] : null;
+            var movies = memo == null
+                ? _host.FindMovies(scope.TmdbId, scope.ImdbId, primary)
+                : Memoized(memo.Movies, (scope.TmdbId, scope.ImdbId, primary?.Id), () => _host.FindMovies(scope.TmdbId, scope.ImdbId, primary));
+            foreach (var id in movies)
             {
                 if (AccessibleToRest(id, users))
                 {
@@ -284,7 +306,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             return ScopeResolution.None;
         }
 
-        private ScopeResolution ResolveTv(Placeholder scope, bool collection, IReadOnlyList<User> users)
+        private ScopeResolution ResolveTv(Placeholder scope, bool collection, IReadOnlyList<User> users, ResolveMemo? memo)
         {
             if (scope.TmdbId is not > 0 && scope.TvdbId is not > 0 && string.IsNullOrEmpty(scope.ImdbId))
             {
@@ -292,7 +314,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
 
             var primary = users.Count > 0 ? users[0] : null;
-            var seriesIds = _host.FindSeries(scope.TmdbId, scope.TvdbId, scope.ImdbId, primary).Where(id => AccessibleToRest(id, users)).ToList();
+            var found = memo == null
+                ? _host.FindSeries(scope.TmdbId, scope.TvdbId, scope.ImdbId, primary)
+                : Memoized(memo.Series, (scope.TmdbId, scope.TvdbId, scope.ImdbId, primary?.Id), () => _host.FindSeries(scope.TmdbId, scope.TvdbId, scope.ImdbId, primary));
+            var seriesIds = found.Where(id => AccessibleToRest(id, users)).ToList();
             if (seriesIds.Count == 0)
             {
                 return ScopeResolution.None;
@@ -310,8 +335,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             {
                 var own = new List<ResolvedItem>();
                 var ownCovered = new HashSet<EpisodeCoord>();
-                foreach (var episode in _host.GetEpisodes(seriesId, season, primary)
-                    .OrderBy(e => e.Season).ThenBy(e => e.Episode))
+                var library = memo == null
+                    ? _host.GetEpisodes(seriesId, season, primary)
+                    : Memoized(memo.Episodes, (seriesId, season, primary?.Id), () => _host.GetEpisodes(seriesId, season, primary));
+                foreach (var episode in library.OrderBy(e => e.Season).ThenBy(e => e.Episode))
                 {
                     var coords = PlaceholderProgress.CoordsInScope(scope, episode.Season, episode.Episode, episode.EpisodeEnd)
                         .Where(c => !ownCovered.Contains(c))
@@ -376,6 +403,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
             credited.Sort((a, b) => a.Coords[0].CompareTo(b.Coords[0]));
             return new ScopeResolution(seasonItems, credited);
+        }
+
+        private static TValue Memoized<TKey, TValue>(Dictionary<TKey, TValue> cache, TKey key, Func<TValue> load)
+            where TKey : notnull
+        {
+            if (!cache.TryGetValue(key, out var value))
+            {
+                value = load();
+                cache[key] = value;
+            }
+
+            return value;
         }
 
         // Merges per-copy episode lists in order: a coordinate goes to the first copy that has it; sorted by coordinate.

@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
+using MediaBrowser.Model.Entities;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
 {
@@ -39,6 +42,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
         /// <param name="expectedEpisodes">Series/season: how many episodes make it complete (TMDB count), if known.</param>
         /// <returns>The match or null.</returns>
         LibraryMatch? Find(LibraryScope scope, IReadOnlyList<User> users, int? expectedEpisodes);
+
+        /// <summary>
+        /// The list-source keys a library item stands for (no access check: it only says what an item already in a list
+        /// is). Movie: <c>movie|tmdb||</c>, <c>imdb|tt…||</c>; episode: <c>tv|show|s|e</c> (each episode of a
+        /// multi-episode file), <c>tvdb|show|s|e</c>; season: <c>tv|show|s|</c>; series: <c>tv|show||</c>.
+        /// </summary>
+        /// <param name="itemId">Library item.</param>
+        /// <returns>Keys (empty when unknown).</returns>
+        IReadOnlyList<string> SourceKeysOf(Guid itemId) => Array.Empty<string>();
     }
 
     /// <summary>
@@ -51,10 +63,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
     public sealed class ResolverListLibraryLookup : IListLibraryLookup
     {
         private readonly ListPlaceholderResolver _resolver;
+        private readonly IListPlaceholderHost _host;
 
         /// <summary>Creates the lookup.</summary>
         /// <param name="resolver">The granularity resolver.</param>
-        public ResolverListLibraryLookup(ListPlaceholderResolver resolver) => _resolver = resolver;
+        /// <param name="host">Jellyfin seam (item facts for <see cref="SourceKeysOf"/>).</param>
+        public ResolverListLibraryLookup(ListPlaceholderResolver resolver, IListPlaceholderHost host)
+        {
+            _resolver = resolver;
+            _host = host;
+        }
 
         /// <inheritdoc />
         public LibraryMatch? Find(LibraryScope scope, IReadOnlyList<User> users, int? expectedEpisodes)
@@ -116,6 +134,67 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                     return new LibraryMatch(episodes[0].ItemId, scope.Kind, episodeIds, wanted.All(found.Contains));
                 }
             }
+        }
+
+        /// <inheritdoc />
+        public IReadOnlyList<string> SourceKeysOf(Guid itemId)
+        {
+            var facts = _host.GetItemFacts(itemId);
+            var keys = new List<string>();
+            if (facts == null)
+            {
+                return keys;
+            }
+
+            void Add(string provider, IReadOnlyDictionary<string, string>? ids, string idName, string season, string episode)
+            {
+                if (ids != null && ids.TryGetValue(idName, out var id) && !string.IsNullOrEmpty(id))
+                {
+                    var key = provider + "|" + id + "|" + season + "|" + episode;
+                    if (Sources.SourceKeys.IsValid(key))
+                    {
+                        keys.Add(key);
+                    }
+                }
+            }
+
+            var tmdb = MetadataProvider.Tmdb.ToString();
+            var tvdb = MetadataProvider.Tvdb.ToString();
+            var imdb = MetadataProvider.Imdb.ToString();
+            switch (facts.Kind)
+            {
+                case BaseItemKind.Movie:
+                    Add("movie", facts.ProviderIds, tmdb, string.Empty, string.Empty);
+                    Add("imdb", facts.ProviderIds, imdb, string.Empty, string.Empty);
+                    break;
+                case BaseItemKind.Episode when facts.Season is int season && facts.Episode is int first:
+                {
+                    // Each episode of a multi-episode file (capped like the resolver's coordinates).
+                    var last = facts.EpisodeEnd is int end && end >= first ? Math.Min(end, first + 99) : first;
+                    var s = season.ToString(CultureInfo.InvariantCulture);
+                    for (var number = first; number <= last; number++)
+                    {
+                        var e = number.ToString(CultureInfo.InvariantCulture);
+                        Add("tv", facts.SeriesProviderIds, tmdb, s, e);
+                        Add("tvdb", facts.SeriesProviderIds, tvdb, s, e);
+                    }
+
+                    break;
+                }
+
+                case BaseItemKind.Season when facts.Season is int number:
+                    var seasonNumber = number.ToString(CultureInfo.InvariantCulture);
+                    Add("tv", facts.SeriesProviderIds, tmdb, seasonNumber, string.Empty);
+                    Add("tvdb", facts.SeriesProviderIds, tvdb, seasonNumber, string.Empty);
+                    break;
+                case BaseItemKind.Series:
+                    Add("tv", facts.ProviderIds, tmdb, string.Empty, string.Empty);
+                    Add("tvdb", facts.ProviderIds, tvdb, string.Empty, string.Empty);
+                    Add("imdb", facts.ProviderIds, imdb, string.Empty, string.Empty);
+                    break;
+            }
+
+            return keys;
         }
 
         // The scope as the resolver's input (only the fields it matches on); null when the scope is incomplete.

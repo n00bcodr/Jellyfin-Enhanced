@@ -97,7 +97,7 @@ internal sealed class ListPlaceholdersHarness : IDisposable
         Swap = new ListPlaceholderSwapService(Store, Host, Users.Object, Resolver, Metadata, Plugin.Core.Logger) { SettleDelay = TimeSpan.Zero };
         Service = new ListPlaceholderService(Store, Access, Host, Index, Users.Object, Plugin.Core.Logger, Resolver, Metadata, Swap);
         Remover = new FakeEntryRemover(Host);
-        ImportResolver = new ListImportResolver(Lookup, realLibrary ? new ResolverListLibraryLookup(Resolver) : Library, Access, Limiter, Plugin.Core.Logger);
+        ImportResolver = new ListImportResolver(Lookup, realLibrary ? new ResolverListLibraryLookup(Resolver, Host) : Library, Access, Limiter, Plugin.Core.Logger);
         Sources = new ListSourceService(Store, Access, Service, Host, Remover, Fetcher, ImportResolver, Users.Object, Plugin.Core.Logger);
     }
 

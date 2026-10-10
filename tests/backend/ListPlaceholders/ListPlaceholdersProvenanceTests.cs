@@ -170,6 +170,32 @@ public class ListPlaceholdersProvenanceTests
         Assert.Equal(0, ListSourceProvenance.DetectUserRemovals(doc, new Dictionary<string, int> { [N(item)] = 1 }, Now));
     }
 
+    // Phase 5 merge: overlapping keys (a season key and an episode key, 5f) on a placeholder whose fills are recorded
+    // per episode (p5c): an episode's item goes to that episode's key and to the season key, never to another episode's.
+    [Fact]
+    public void AFilledEpisodeGoesToItsOwnKeyAndToWiderScopesButNotToAnotherEpisodesKey()
+    {
+        var season = new Placeholder { Id = Guid.NewGuid().ToString("N"), Kind = PlaceholderKinds.Season, MediaType = "tv", TmdbId = 9, Title = "Show", SeasonNumber = 1 };
+        var doc = new ListDoc { Items = new List<Placeholder> { season }, Source = new ListSource { Url = "https://mdblist.com/lists/a/b" } };
+        ListSourceProvenance.RecordAdded(doc.Source, "tv|9|1|", season.Id, null);
+        ListSourceProvenance.RecordAdded(doc.Source, "tv|9|1|1", season.Id, null);
+        var e2 = Guid.NewGuid();
+        season.Filled.Add(new FilledEpisode { ItemId = N(e2), S = 1, E = 2 });
+
+        Assert.True(ListSourceProvenance.OnSwapped(doc, season, new[] { N(e2) }));
+
+        Assert.Equal(new[] { N(e2) }, doc.Source.Owned["tv|9|1|"].ItemIds);
+        Assert.Empty(doc.Source.Owned["tv|9|1|1"].ItemIds);
+
+        // A new episode key the placeholder already covers shares the placeholder and the item filled for it (only).
+        var e3 = Guid.NewGuid();
+        season.Filled.Add(new FilledEpisode { ItemId = N(e3), S = 1, E = 3 });
+        ListSourceProvenance.OnSwapped(doc, season, new[] { N(e3) });
+        ListSourceProvenance.AttachCovered(doc.Source, "tv|9|1|2", season);
+        Assert.Equal(season.Id, doc.Source.Owned["tv|9|1|2"].PhId);
+        Assert.Equal(new[] { N(e2) }, doc.Source.Owned["tv|9|1|2"].ItemIds);
+    }
+
     [Fact]
     public void TombstonesExpireAfterNinetyDaysAndAreCapped()
     {

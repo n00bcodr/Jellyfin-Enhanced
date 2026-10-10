@@ -51,7 +51,8 @@
         [/\btrakt\.tv\/(users\/[^/\s]+\/(lists|watchlist)|lists\/|movies\/|shows\/)/i, 'trakt'],
         [/\bletterboxd\.com\/[^/\s]+\/(list|watchlist)\b|\bboxd\.it\//i, 'letterboxd'],
         [/\bimdb\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(list\/ls\d+|chart\/|user\/[^/\s]+\/watchlist)/i, 'imdb'],
-        [/\bthemoviedb\.org\/(list|collection)\/\d+/i, 'tmdb']
+        [/\bthemoviedb\.org\/(list|collection)\/\d+/i, 'tmdb'],
+        [/\bchronolists\.com\/[a-z0-9][a-z0-9-]{0,63}\/?(?=$|[?#>)])/i, 'chronolists']
     ];
 
     // Episode notation: S01E08, S8E01–05, S01E01-E03, S1E5-S2E3 and 1x08, 8x01–05, 1x22-2x01.

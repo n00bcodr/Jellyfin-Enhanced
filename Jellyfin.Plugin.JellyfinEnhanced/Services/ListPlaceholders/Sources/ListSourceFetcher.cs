@@ -31,7 +31,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
     {
         /// <summary>The provenance key (F1), or null when the entry has no usable id.</summary>
         public string? Key => SourceKeys.For(this);
+
+        /// <summary>Exact metadata from sources that publish it (chronolists), so entries are built without a lookup.</summary>
+        public SourceItemDetails? Details { get; init; }
     }
+
+    /// <summary>Metadata a source publishes next to the ids (all optional, already validated).</summary>
+    /// <param name="EpisodeTitle">Episode title (episode entries).</param>
+    /// <param name="Date">Release date (movie) or air date (episode), yyyy-MM-dd.</param>
+    /// <param name="PosterPath">TMDB poster path (the movie's, or the season's for episode entries).</param>
+    /// <param name="Overview">Overview (movies).</param>
+    /// <param name="SeasonName">Season name (episode entries).</param>
+    public sealed record SourceItemDetails(string? EpisodeTitle, string? Date, string? PosterPath, string? Overview, string? SeasonName);
 
     /// <summary>Outcome of fetching one list.</summary>
     public sealed class SourceFetchResult
@@ -63,7 +74,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
         /// <summary>Unofficial access path (IMDb).</summary>
         public bool Unofficial { get; init; }
 
-        /// <summary>Entries in list order (≤ <see cref="ListSourceFetcher.MaxItems"/>).</summary>
+        /// <summary>Entries in list order (≤ <see cref="ListSourceFetcher.MaxItems"/>; exact sources ≤ <see cref="ChronolistsPage.MaxItems"/>).</summary>
         public IReadOnlyList<SourceItem> Items { get; init; } = Array.Empty<SourceItem>();
 
         /// <summary>Entries the source has (when known).</summary>
@@ -77,6 +88,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
         /// the list, so — like <see cref="Truncated"/> — sync adds but never removes or replaces its snapshot (F2).
         /// </summary>
         public bool Partial { get; init; }
+
+        /// <summary>
+        /// Every entry carries exact TMDB ids and the metadata a placeholder needs (<see cref="SourceItem.Details"/>):
+        /// entries are grouped (runs of episodes) and built without Seerr lookups (chronolists).
+        /// </summary>
+        public bool Exact { get; init; }
 
         /// <summary>An error result.</summary>
         /// <param name="source">Source.</param>
@@ -124,6 +141,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
         /// <param name="key">Key.</param>
         /// <returns>Valid.</returns>
         public static bool IsValid(string? key) => key != null && key.Length <= 40 && KeyRegex.IsMatch(key);
+
+        /// <summary>The season and episode of an episode key (<c>…|season|episode</c>), else null.</summary>
+        /// <param name="key">Key.</param>
+        /// <returns>The coordinate or null.</returns>
+        public static (int Season, int Episode)? EpisodeOf(string key)
+        {
+            var parts = key.Split('|');
+            return parts.Length == 4
+                && int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var season)
+                && int.TryParse(parts[3], NumberStyles.None, CultureInfo.InvariantCulture, out var episode)
+                ? (season, episode)
+                : null;
+        }
     }
 
     /// <summary>Fetch options.</summary>
@@ -165,6 +195,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
     /// <item><b>Trakt</b>: needs the admin's <c>TraktClientId</c>; public lists, watchlists, official lists and charts with
     /// season/episode granularity.</item>
     /// <item><b>IMDb</b>: only with <c>ListPlaceholdersImdbEnabled</c>, through IMDb's unofficial GraphQL API.</item>
+    /// <item><b>chronolists</b>: the watch-order page's embedded data (<see cref="ChronolistsPage"/>); exact ids, no key.</item>
     /// </list>
     /// Requests go only to fixed hosts built from the parsed parts (SSRF guard), without redirects, with a 20 s timeout,
     /// an 8 MiB body cap and a 1000-entry cap; a short Retry-After (≤ 5 s) is honoured once, longer ones are reported.
@@ -248,6 +279,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 TmdbCharts = (TmdbKey.Length > 0 && _tmdb != null) || seerr,
                 Trakt = !string.IsNullOrWhiteSpace(config?.TraktClientId),
                 Imdb = config?.ListPlaceholdersImdbEnabled == true,
+                Chronolists = true,
                 SyncEnabled = config?.ListPlaceholdersSyncEnabled == true,
                 MaxItems = MaxItems,
             };
@@ -280,6 +312,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                         SourceKinds.Tmdb => await TmdbAsync(source, options, cancellationToken).ConfigureAwait(false),
                         SourceKinds.Trakt => await TraktAsync(source, cancellationToken).ConfigureAwait(false),
                         SourceKinds.Imdb => await ImdbAsync(source, cancellationToken).ConfigureAwait(false),
+                        SourceKinds.Chronolists => await ChronolistsAsync(source, cancellationToken).ConfigureAwait(false),
                         _ => SourceFetchResult.Fail(source, ListSourceUrl.UnsupportedUrl, "This list URL isn't supported."),
                     };
                 }
@@ -1085,13 +1118,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             }
         }
 
+        // ── chronolists ─────────────────────────────────────────────────────
+
+        // No API: the universe page itself (same host only, no redirects, size/time limits like every source), read
+        // by ChronolistsPage. The entries carry exact TMDB ids and metadata, so the result is "exact".
+        private async Task<SourceFetchResult> ChronolistsAsync(ParsedSourceUrl source, CancellationToken cancellationToken)
+        {
+            var response = await SendAsync(HttpMethod.Get, "https://chronolists.com/" + Esc(source.Part("slug")), null, null, cancellationToken, "text/html").ConfigureAwait(false);
+            if (response.Status == 404)
+            {
+                return SourceFetchResult.Fail(source, "not_found", "chronolists.com has no watch order at this address.");
+            }
+
+            if (response.Status != 200 || response.Body == null)
+            {
+                throw Upstream(response, "chronolists.com");
+            }
+
+            if (!ChronolistsPage.TryRead(response.Body, out var list, out var error))
+            {
+                if (error == ChronolistsPage.NotAWatchOrder)
+                {
+                    return SourceFetchResult.Fail(source, "not_found", "This chronolists.com page isn't a watch order.");
+                }
+
+                _logger.Warning($"[ListPlaceholders] {source.CanonicalUrl} no longer has the watch-order data JE reads, or too many of its entries can't be read; chronolists.com may have changed its pages.");
+                return SourceFetchResult.Fail(source, ChronolistsPage.FormatChanged, "chronolists.com changed how its pages are built, so JE can't read this watch order any more. Nothing was changed; an update of Jellyfin Enhanced is needed.");
+            }
+
+            if (list!.Unusable > 0)
+            {
+                _logger.Info($"[ListPlaceholders] {source.CanonicalUrl}: {list.Unusable.ToString(CultureInfo.InvariantCulture)} of {list.Total.ToString(CultureInfo.InvariantCulture)} entries couldn't be read; the fetch counts as partial (nothing is removed).");
+            }
+
+            return new SourceFetchResult
+            {
+                Ok = true,
+                Kind = source.Kind,
+                Provider = "chronolists",
+                CanonicalUrl = source.CanonicalUrl,
+                Title = list.Title,
+                Items = list.Items,
+                Total = list.Total,
+                Truncated = list.Truncated,
+                Partial = list.Unusable > 0,
+                Exact = true,
+            };
+        }
+
         // ── HTTP ────────────────────────────────────────────────────────────
 
-        private async Task<HttpResult> SendAsync(HttpMethod method, string url, IReadOnlyDictionary<string, string>? headers, string? body, CancellationToken cancellationToken)
+        private async Task<HttpResult> SendAsync(HttpMethod method, string url, IReadOnlyDictionary<string, string>? headers, string? body, CancellationToken cancellationToken, string accept = "application/json")
         {
             for (var attempt = 0; ; attempt++)
             {
-                var result = await SendOnceAsync(method, url, headers, body, cancellationToken).ConfigureAwait(false);
+                var result = await SendOnceAsync(method, url, headers, body, accept, cancellationToken).ConfigureAwait(false);
                 if (result.Status == 429 && attempt == 0 && result.RetryAfter is >= 0 and <= MaxRetryWaitSeconds)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, result.RetryAfter.Value)), cancellationToken).ConfigureAwait(false);
@@ -1102,7 +1183,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             }
         }
 
-        private async Task<HttpResult> SendOnceAsync(HttpMethod method, string url, IReadOnlyDictionary<string, string>? headers, string? body, CancellationToken cancellationToken)
+        private async Task<HttpResult> SendOnceAsync(HttpMethod method, string url, IReadOnlyDictionary<string, string>? headers, string? body, string accept, CancellationToken cancellationToken)
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(Timeout);
@@ -1112,7 +1193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
                 using var request = new HttpRequestMessage(method, url);
                 request.Headers.UserAgent.ParseAdd(SeerrHttpHelper.UserAgent + " (+https://github.com/n00bcodr/Jellyfin-Enhanced)");
-                request.Headers.Accept.ParseAdd("application/json");
+                request.Headers.Accept.ParseAdd(accept);
                 if (headers != null)
                 {
                     foreach (var (name, value) in headers)

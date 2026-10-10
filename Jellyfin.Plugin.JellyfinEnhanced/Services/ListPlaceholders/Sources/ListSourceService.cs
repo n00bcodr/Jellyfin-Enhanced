@@ -20,14 +20,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
     /// <param name="Title">List title.</param>
     /// <param name="SyncEnabled">Keep in sync.</param>
     /// <param name="RemoveDropped">Remove entries that leave the list.</param>
-    public sealed record SourceLinkSpec(string Kind, string Url, string Provider, string? Title, bool SyncEnabled, bool RemoveDropped);
+    public sealed record SourceLinkSpec(string Kind, string Url, string Provider, string? Title, bool SyncEnabled, bool RemoveDropped)
+    {
+        /// <summary>
+        /// Grouped sources: a group's first key → every key of the group (a run of episodes is one entry). An import entry
+        /// or snapshot key that names a group stands for all of its keys.
+        /// </summary>
+        public IReadOnlyDictionary<string, IReadOnlyList<string>>? GroupKeys { get; init; }
+
+        /// <summary>Every key of the fetched list (client-sent entry keys outside it are ignored, never stored).</summary>
+        public IReadOnlySet<string>? Keys { get; init; }
+    }
+
+    /// <summary>The source keys of a URL import, settled before the apply.</summary>
+    /// <param name="EntryKeys">Entry index → the keys it stands for (first = its sourceKey).</param>
+    /// <param name="SnapshotKeys">The list's keys as the editor reviewed them (skipped ones are declined).</param>
+    public sealed record ImportKeyPlan(Dictionary<int, IReadOnlyList<string>> EntryKeys, List<string> SnapshotKeys);
 
     /// <summary>
     /// Linked lists (design §8, F1–F6): fetching list URLs for the import review, linking/unlinking a list to a source,
     /// import provenance, and the sync itself (scheduled or "Sync now"). A sync runs with the rights of the user who
-    /// linked the source and pauses itself when that user can no longer edit the list; it adds new source entries at
-    /// the end (real items when the library has them, else placeholders), never re-adds what an editor removed, and with
-    /// removeDropped removes only what the import/sync itself added — never on a partial or failed fetch.
+    /// linked the source and pauses itself when that user can no longer edit the list; it inserts new source entries
+    /// next to their neighbours in the source (after the nearest preceding entry that is in the list, else before the
+    /// nearest following one, else at the end; real items when the library has them, else placeholders), never re-adds
+    /// what an editor removed, and with removeDropped removes only what the import/sync itself added — never on a partial
+    /// or failed fetch. Exact sources (chronolists) are grouped into runs of episodes and built without Seerr.
     /// </summary>
     public sealed class ListSourceService
     {
@@ -101,12 +118,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
         // ── Fetch (POST /source/fetch) ──────────────────────────────────────
 
-        /// <summary>Fetches a list URL for the import review: entries with ids, filtered for restricted callers (C5).</summary>
+        /// <summary>
+        /// Fetches a list URL for the import review: entries with ids, filtered for restricted callers (C5). Exact sources
+        /// (chronolists) come back grouped, each entry with all its source keys and a prepared resolution (no /resolve
+        /// needed), plus every key of the list as <see cref="SourceFetchResponse.SnapshotKeys"/>.
+        /// </summary>
         /// <param name="caller">Caller.</param>
         /// <param name="url">List URL.</param>
         /// <param name="cancellationToken">Cancellation.</param>
+        /// <param name="libraryUsers">Users that must see an "in library" match (default: the caller; with a target
+        /// playlist also its owner).</param>
         /// <returns><see cref="SourceFetchResponse"/>, or an error (504 parental_pending when checks didn't finish).</returns>
-        public async Task<ListOutcome> FetchAsync(User caller, string? url, CancellationToken cancellationToken)
+        public async Task<ListOutcome> FetchAsync(User caller, string? url, CancellationToken cancellationToken, IReadOnlyList<User>? libraryUsers = null)
         {
             if (!ListSourceUrl.TryParse(url, out var source, out var parseError))
             {
@@ -128,6 +151,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 Unofficial = result.Unofficial,
                 Total = result.Total,
                 Truncated = result.Truncated,
+                Partial = result.Partial,
             };
 
             var items = result.Items.Where(i => i.Key != null).ToList();
@@ -143,8 +167,103 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 items = allowed;
             }
 
+            if (result.Exact)
+            {
+                PrepareGroupedEntries(response, result.Items, items, libraryUsers ?? new[] { caller });
+                return ListOutcome.Ok(response);
+            }
+
             response.Entries = items.Select((item, i) => ToEntry(item, i)).ToList();
             return ListOutcome.Ok(response);
+        }
+
+        // Exact sources: group the (allowed) entries by their positions in the whole list, prepare each group's
+        // resolution and library match, and hand out every key as the snapshot.
+        private void PrepareGroupedEntries(SourceFetchResponse response, IReadOnlyList<SourceItem> all, IReadOnlyList<SourceItem> allowed, IReadOnlyList<User> libraryUsers)
+        {
+            var (positioned, facts) = Positioned(all, allowed);
+            var groups = ListSourceGroups.Group(positioned, facts);
+            if (groups.Count > ListPlaceholderStore.MaxPlaceholders)
+            {
+                groups = groups.Take(ListPlaceholderStore.MaxPlaceholders).ToList();
+                response.Truncated = true;
+            }
+
+            var library = new GroupLibrary(_resolver, libraryUsers);
+            response.Grouped = true;
+            response.Entries = groups.Select((group, i) => ListSourceGroups.Entry(group, i, facts, library.Find(group))).ToList();
+            response.SnapshotKeys = groups.SelectMany(g => g.Keys).ToList();
+            response.Dropped += positioned.Count < allowed.Count ? allowed.Count - positioned.Count : 0;
+        }
+
+        // Keyed entries (first occurrence of each key) with their positions in the whole list, plus the list facts.
+        private static (List<(SourceItem Item, int Position)> Positioned, SourceListFacts Facts) Positioned(IReadOnlyList<SourceItem> all, IReadOnlyList<SourceItem>? subset = null)
+        {
+            var keep = subset == null ? null : new HashSet<SourceItem>(subset, ReferenceEqualityComparer.Instance);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var positioned = new List<(SourceItem, int)>();
+            var keyed = new List<SourceItem>();
+            for (var i = 0; i < all.Count; i++)
+            {
+                var item = all[i];
+                if (item.Key is not { } key || !seen.Add(key))
+                {
+                    continue;
+                }
+
+                keyed.Add(item);
+                if (keep == null || keep.Contains(item))
+                {
+                    positioned.Add((item, i));
+                }
+            }
+
+            return (positioned, ListSourceGroups.Facts(keyed));
+        }
+
+        /// <summary>
+        /// Library matches of groups, looking each show and each season up once: most shows of a watch order aren't in the
+        /// library, and a run is only looked up when its season is (a run lookup reads the season's episodes).
+        /// </summary>
+        private sealed class GroupLibrary(ListImportResolver resolver, IReadOnlyList<User> users)
+        {
+            private readonly Dictionary<int, bool> _shows = new();
+            private readonly Dictionary<(int, int), ImportLibraryDto?> _seasons = new();
+
+            public ImportLibraryDto? Find(SourceGroup group)
+            {
+                var first = group.First;
+                if (first.MediaType == "tv")
+                {
+                    var show = first.TmdbId!.Value;
+                    if (!_shows.TryGetValue(show, out var present))
+                    {
+                        present = resolver.FindInLibrary(new LibraryScope(PlaceholderKinds.Series, show, first.TvdbId, first.ImdbId, null, null), users, null) != null;
+                        _shows[show] = present;
+                    }
+
+                    if (!present)
+                    {
+                        return null;
+                    }
+
+                    if (first.Season is { } season && group.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes)
+                    {
+                        if (!_seasons.TryGetValue((show, season), out var seasonMatch))
+                        {
+                            seasonMatch = resolver.FindInLibrary(new LibraryScope(PlaceholderKinds.Season, show, first.TvdbId, first.ImdbId, season, null), users, group.Kind == PlaceholderKinds.Season ? group.Items.Count : null);
+                            _seasons[(show, season)] = seasonMatch;
+                        }
+
+                        if (seasonMatch == null || group.Kind == PlaceholderKinds.Season)
+                        {
+                            return seasonMatch;
+                        }
+                    }
+                }
+
+                return resolver.FindInLibrary(ListSourceGroups.Scope(group), users, group.Kind == PlaceholderKinds.Season ? group.Items.Count : null);
+            }
         }
 
         /// <summary>A fetched entry as an import entry (feed to /resolve; carries its source key).</summary>
@@ -182,19 +301,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             budget.CancelAfter(ListImportResolver.ParentalBudget);
             using var gate = new SemaphoreSlim(8);
-            var verdicts = await Task.WhenAll(items.Select(async item =>
+            // One check per title (a watch order lists hundreds of episodes of a few shows).
+            var titles = items.Where(i => i.TmdbId is > 0).Select(i => (i.MediaType, i.TmdbId!.Value)).Distinct().ToList();
+            var verdicts = await Task.WhenAll(titles.Select(async title =>
             {
-                if (item.TmdbId is not > 0)
-                {
-                    return false; // unverifiable for a restricted user: hidden
-                }
-
                 try
                 {
                     await gate.WaitAsync(budget.Token).ConfigureAwait(false);
                     try
                     {
-                        return !await _access.IsTitleBlockedAsync(item.MediaType, item.TmdbId.Value, caller, budget.Token).ConfigureAwait(false);
+                        return !await _access.IsTitleBlockedAsync(title.MediaType, title.Value, caller, budget.Token).ConfigureAwait(false);
                     }
                     finally
                     {
@@ -207,13 +323,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                     return false;
                 }
             })).ConfigureAwait(false);
-            for (var i = 0; i < items.Count; i++)
+            var verdict = new Dictionary<(string, int), bool>();
+            for (var i = 0; i < titles.Count; i++)
             {
-                if (verdicts[i])
-                {
-                    allowed.Add(items[i]);
-                }
+                verdict[titles[i]] = verdicts[i];
             }
+
+            // Entries without a TMDB id are unverifiable for a restricted user: hidden.
+            allowed.AddRange(items.Where(i => i.TmdbId is > 0 && verdict[(i.MediaType, i.TmdbId.Value)]));
 
             return (allowed, pending);
         }
@@ -240,7 +357,84 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 return (null, FetchFailure(result));
             }
 
-            return (new SourceLinkSpec(result.Kind, result.CanonicalUrl, result.Provider, result.Title, syncEnabled, removeDropped), null);
+            var spec = new SourceLinkSpec(result.Kind, result.CanonicalUrl, result.Provider, result.Title, syncEnabled, removeDropped)
+            {
+                Keys = result.Items.Select(i => i.Key).OfType<string>().ToHashSet(StringComparer.Ordinal),
+            };
+            if (result.Exact)
+            {
+                var (positioned, facts) = Positioned(result.Items);
+                spec = spec with
+                {
+                    GroupKeys = ListSourceGroups.Group(positioned, facts).Where(g => g.Keys.Count > 1).ToDictionary(g => g.Key, g => g.Keys, StringComparer.Ordinal),
+                };
+            }
+
+            return (spec, null);
+        }
+
+        /// <summary>
+        /// The source keys of a URL import. What the editor sent is used as sent; the server's grouping only fills in for a
+        /// client that sends each entry's first key alone. That grouping comes from a fetch that may be newer than the one
+        /// the editor reviewed (a run can have grown upstream meanwhile), so an entry only takes the group keys its
+        /// placeholder stands for, and a key that only the newer grouping adds is never declined: the next sync adds it.
+        /// <list type="bullet">
+        /// <item>Entry keys: its <c>sourceKey</c> plus the <c>sourceKeys</c> it sent that are in the fetched list; else
+        /// the keys of its group (<see cref="SourceLinkSpec.GroupKeys"/>) that its placeholder covers; else its one key.</item>
+        /// <item>Snapshot: as sent when it lists keys beyond the groups' first keys (the fetch's <c>snapshotKeys</c>).
+        /// Otherwise a sent entry's first key stands for that entry's keys, and a skipped group's first key for the whole
+        /// group (declining every episode of a skipped run).</item>
+        /// </list>
+        /// </summary>
+        /// <param name="spec">Prepared link.</param>
+        /// <param name="entries">The applied entries.</param>
+        /// <param name="keys">Entry index → its sourceKey (validated).</param>
+        /// <param name="sentKeys">Entry index → the sourceKeys it sent (validated), if any.</param>
+        /// <param name="snapshotKeys">The snapshot the client sent.</param>
+        /// <returns>The plan.</returns>
+        public static ImportKeyPlan PlanImportKeys(SourceLinkSpec spec, IReadOnlyList<ApplyEntry> entries, IReadOnlyDictionary<int, string> keys, IReadOnlyDictionary<int, IReadOnlyList<string>> sentKeys, IReadOnlyList<string> snapshotKeys)
+        {
+            var groups = spec.GroupKeys ?? new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+            var byIndex = entries.ToDictionary(e => e.Index);
+            var entryKeys = new Dictionary<int, IReadOnlyList<string>>();
+            foreach (var (index, key) in keys)
+            {
+                if (sentKeys.TryGetValue(index, out var sent) && sent.Count > 0)
+                {
+                    entryKeys[index] = new[] { key }.Concat(sent.Where(k => spec.Keys == null || spec.Keys.Contains(k))).Distinct(StringComparer.Ordinal).ToList();
+                }
+                else if (groups.TryGetValue(key, out var group))
+                {
+                    var placeholder = byIndex.GetValueOrDefault(index)?.Placeholder;
+                    entryKeys[index] = new[] { key }.Concat(group.Where(k => placeholder == null || ListSourceProvenance.Covering(new[] { placeholder }, k) != null)).Distinct(StringComparer.Ordinal).ToList();
+                }
+                else
+                {
+                    entryKeys[index] = new[] { key };
+                }
+            }
+
+            var valid = snapshotKeys.Where(SourceKeys.IsValid).Distinct(StringComparer.Ordinal).ToList();
+            var heads = new HashSet<string>(groups.Keys, StringComparer.Ordinal);
+            var members = new HashSet<string>(groups.Values.SelectMany(g => g), StringComparer.Ordinal);
+            if (groups.Count == 0 || valid.Any(k => members.Contains(k) && !heads.Contains(k)))
+            {
+                return new ImportKeyPlan(entryKeys, valid); // the full snapshot as reviewed
+            }
+
+            var sentHeads = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (var (index, key) in keys)
+            {
+                if (!sentHeads.TryGetValue(key, out var list))
+                {
+                    sentHeads[key] = list = new List<string>();
+                }
+
+                list.AddRange(entryKeys[index]);
+            }
+
+            var snapshot = valid.SelectMany(k => sentHeads.TryGetValue(k, out var own) ? own : groups.TryGetValue(k, out var group) ? group : new[] { k }).Distinct(StringComparer.Ordinal).ToList();
+            return new ImportKeyPlan(entryKeys, snapshot);
         }
 
         /// <summary>
@@ -323,10 +517,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
         /// </summary>
         /// <param name="spec">Prepared link.</param>
         /// <param name="linkedBy">Importing user ("N").</param>
-        /// <param name="entryKeys">Source key per entry index.</param>
-        /// <param name="snapshotKeys">Keys of the complete fetched list (from the client; validated).</param>
+        /// <param name="entryKeys">Source keys per entry index (several for a grouped entry; <see cref="PlanImportKeys"/>).</param>
+        /// <param name="snapshotKeys">Keys of the fetched list as reviewed (<see cref="PlanImportKeys"/>).</param>
         /// <returns>Hooks for the apply.</returns>
-        public static ApplyHooks ImportHooks(SourceLinkSpec spec, string linkedBy, IReadOnlyDictionary<int, string> entryKeys, IReadOnlyList<string> snapshotKeys)
+        public static ApplyHooks ImportHooks(SourceLinkSpec spec, string linkedBy, IReadOnlyDictionary<int, IReadOnlyList<string>> entryKeys, IReadOnlyList<string> snapshotKeys)
         {
             // A failed apply (Jellyfin threw part-way) records the same way with what did land: the list is linked and
             // owns it, so the same-requestId retry (which skips those placeholders as duplicates) or the next sync
@@ -338,7 +532,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 var source = doc.Source!;
                 var accounted = RecordApplyResult(doc, applied, entryKeys, result);
                 var snapshot = snapshotKeys.Where(SourceKeys.IsValid).Distinct(StringComparer.Ordinal).ToList();
-                var sent = new HashSet<string>(entryKeys.Values, StringComparer.Ordinal);
+                var sent = new HashSet<string>(entryKeys.Values.SelectMany(k => k), StringComparer.Ordinal);
                 // Rows the editor skipped in review are a decision: never add them back.
                 ListSourceProvenance.Decline(source, snapshot.Where(k => !accounted.Contains(k) && !sent.Contains(k)), now);
                 source.LastSnapshotKeys = snapshot.Where(k => accounted.Contains(k) || source.UserRemovedKeys.ContainsKey(k)).ToList();
@@ -359,14 +553,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             };
         }
 
-        // Records owned entries of an apply; returns the keys it accounted for (added, already present or blocked).
+        // Records owned entries of an apply (every key of a grouped entry owns its one placeholder); returns the keys it
+        // accounted for (added, already present or blocked).
         // `applied` are the entries after C1 expansion, so a key owns everything its entry turned into: the placeholder
         // and/or the real items JE added for it (an in-library movie, the present episodes of a TV scope, a collection's
         // Season / Series item). Items that were already in the list stay "present" (F1) — unless another key of this
         // source owns them (overlapping scopes: "Show S1" and "Show S1E1", a series and its season, or two ids of one
         // title): then this key shares the ownership, so the entry is removed only once EVERY key that wants it left
         // the source (PlanDrops keeps what a current key still owns).
-        private static HashSet<string> RecordApplyResult(ListDoc doc, IReadOnlyList<ApplyEntry> applied, IReadOnlyDictionary<int, string> entryKeys, ApplyResultDto result)
+        private static HashSet<string> RecordApplyResult(ListDoc doc, IReadOnlyList<ApplyEntry> applied, IReadOnlyDictionary<int, IReadOnlyList<string>> entryKeys, ApplyResultDto result)
         {
             var source = doc.Source!;
             var accounted = new HashSet<string>(StringComparer.Ordinal);
@@ -376,27 +571,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             var notAdded = new List<(ApplyEntry Entry, string Key)>();
             foreach (var entry in applied)
             {
-                if (!entryKeys.TryGetValue(entry.Index, out var key))
+                if (!entryKeys.TryGetValue(entry.Index, out var keys))
                 {
                     continue;
                 }
 
-                if (entry.Placeholder != null && added.Contains(entry.Placeholder.Id))
+                foreach (var key in KeysFor(entry, keys))
                 {
-                    ListSourceProvenance.RecordAdded(source, key, entry.Placeholder.Id, null);
-                    accounted.Add(key);
-                }
-                else if (entry.ItemId.HasValue && addedItems.Contains(entry.ItemId.Value.ToString("N", CultureInfo.InvariantCulture)))
-                {
-                    ListSourceProvenance.RecordAdded(source, key, null, entry.ItemId.Value.ToString("N", CultureInfo.InvariantCulture));
-                    accounted.Add(key);
-                }
-                else
-                {
-                    notAdded.Add((entry, key));
-                    if (skipped.TryGetValue(entry.Index, out var reason) && reason is "duplicate" or "alreadyInList" or "blocked")
+                    if (entry.Placeholder != null && added.Contains(entry.Placeholder.Id))
                     {
-                        accounted.Add(key); // present (or not allowed): never re-tried
+                        ListSourceProvenance.RecordAdded(source, key, entry.Placeholder.Id, null);
+                        accounted.Add(key);
+                    }
+                    else if (entry.ItemId.HasValue && addedItems.Contains(entry.ItemId.Value.ToString("N", CultureInfo.InvariantCulture)))
+                    {
+                        ListSourceProvenance.RecordAdded(source, key, null, entry.ItemId.Value.ToString("N", CultureInfo.InvariantCulture));
+                        accounted.Add(key);
+                    }
+                    else
+                    {
+                        notAdded.Add((entry, key));
+                        if (skipped.TryGetValue(entry.Index, out var reason) && reason is "duplicate" or "alreadyInList" or "blocked")
+                        {
+                            accounted.Add(key); // present (or not allowed): never re-tried
+                        }
                     }
                 }
             }
@@ -424,6 +622,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             }
 
             return accounted;
+        }
+
+        // A C1-expanded item stands for the episodes it covers: of a grouped entry's per-episode keys only those episodes'
+        // keys own it (keys of a wider scope, a season or series, own every item of their entry).
+        private static IReadOnlyList<string> KeysFor(ApplyEntry entry, IReadOnlyList<string> keys)
+        {
+            if (keys.Count < 2 || !entry.ItemId.HasValue || entry.Covers is not { Count: > 0 } covers)
+            {
+                return keys;
+            }
+
+            var coords = covers.Select(c => (c.S, c.E)).ToHashSet();
+            var matching = keys.Where(k => SourceKeys.EpisodeOf(k) is not { } episode || coords.Contains(episode)).ToList();
+            return matching.Count > 0 ? matching : keys;
         }
 
         private static bool OwnedByOtherKey(ListSource source, string key, Func<SourceOwnership, bool> owns) =>
@@ -707,7 +919,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             }
 
             var toAdd = ListSourceProvenance.KeysToAdd(source, keys);
-            if (toAdd.Count > 0 && !_resolver.IsAvailable)
+            // F1: a key an equivalent placeholder in the list already stands for (e.g. a new episode of a season that is
+            // in the list as a season placeholder) gets no entry of its own; it is attached under the lock below.
+            var covered = toAdd.Where(k => ListSourceProvenance.Covering(doc!, k) != null).ToHashSet(StringComparer.Ordinal);
+            var addKeys = toAdd.Where(k => !covered.Contains(k)).ToList();
+            if (addKeys.Count > 0 && !fetched.Exact && !_resolver.IsAvailable)
             {
                 const string unavailable = "Seerr isn't set up, so new entries can't be looked up; nothing was synced.";
                 await RecordFailureAsync(listIdN, list.Kind, generation, "seerr_unavailable", unavailable, cancellationToken).ConfigureAwait(false);
@@ -715,7 +931,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             }
 
             var byKey = items.ToDictionary(i => i.Key!, StringComparer.Ordinal);
-            var (entries, entryKeys, unaccounted) = await BuildEntriesAsync(access, toAdd.Select(k => byKey[k]).ToList(), listIdN, background, cancellationToken).ConfigureAwait(false);
+            var (entries, entryKeys, unaccounted) = fetched.Exact
+                ? BuildExactEntries(access, fetched.Items, addKeys)
+                : await BuildEntriesAsync(access, addKeys.Select(k => byKey[k]).ToList(), listIdN, background, cancellationToken).ConfigureAwait(false);
+
+            // Ordered insertion: each new entry goes next to its neighbours in the source (decided under the lock).
+            var keyPosition = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (var i = 0; i < keys.Count; i++)
+            {
+                keyPosition[keys[i]] = i;
+            }
+
+            var entryPositions = entryKeys.ToDictionary(e => e.Key, e => keyPosition.GetValueOrDefault(e.Value[0], -1));
 
             // F3 again: fetching and resolving can take minutes, during which the linker may have lost edit rights.
             access = EvaluateLinker(list.Id, linkedById, out linkerMissing);
@@ -728,6 +955,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             var complete = !fetched.Truncated && !fetched.Partial;
             var stats = new SourceSyncResultDto { Unresolved = unaccounted.Count };
             string? pausedCode = null;
+            var lateCovered = new HashSet<string>(StringComparer.Ordinal);
             var hooks = new ApplyHooks
             {
                 // Under the list lock: the same link, and the linker can still edit (else the link pauses, nothing applies).
@@ -740,6 +968,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
                     return EvaluateLinker(list.Id, linkedById, out _)?.Permissions.CanEdit == true ? null : LinkerCannotEdit;
                 },
+                Place = (d, order) => ListSourcePlacement.Anchors(d, order, keys, entryPositions, _resolver.SourceKeysOf),
+                // F1 again under the lock: `covered` was decided on the document read before the fetch; an equivalent
+                // placeholder an editor added meanwhile now stands for an entry's keys, so the entry isn't added twice.
+                Exclude = d =>
+                {
+                    var byTmdb = d.Items.Where(p => p.TmdbId.HasValue).ToLookup(p => p.TmdbId!.Value);
+                    var excluded = new HashSet<int>();
+                    foreach (var (index, entryKeyList) in entryKeys)
+                    {
+                        if (entryKeyList.All(k => ListSourcePlacement.TmdbOf(k) is { } tmdb && ListSourceProvenance.Covering(byTmdb[tmdb], k) != null))
+                        {
+                            excluded.Add(index);
+                            lateCovered.UnionWith(entryKeyList);
+                        }
+                    }
+
+                    return excluded;
+                },
                 AfterApplyAsync = async (d, result, applied) =>
                 {
                     var now = DateTime.UtcNow;
@@ -750,14 +996,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                     stats.ListFull = result.Skipped.Any(s => s.Reason == "listFull");
 
                     var missed = new HashSet<string>(unaccounted, StringComparer.Ordinal);
-                    foreach (var key in entryKeys.Values.Where(k => !accounted.Contains(k)))
+                    foreach (var key in entryKeys.Values.SelectMany(k => k).Where(k => !accounted.Contains(k) && !lateCovered.Contains(k)))
                     {
                         missed.Add(key);
                     }
 
+                    foreach (var key in covered.Concat(lateCovered))
+                    {
+                        var covering = ListSourceProvenance.Covering(d, key);
+                        if (covering == null)
+                        {
+                            missed.Add(key); // the placeholder went away meanwhile: retried next time
+                        }
+                        else if (src.Owned.Values.Any(o => o.PhId == covering.Id))
+                        {
+                            ListSourceProvenance.AttachCovered(src, key, covering); // part of a sync-added entry
+                        }
+                    }
+
                     if (complete)
                     {
-                        var plan = ListSourceProvenance.PlanDrops(d, keys, occurrences);
+                        var plan = ListSourceProvenance.PlanDrops(d, keys, occurrences, byKey);
                         if (plan.Any && await HiddenFromLinkerAsync(d, plan, access.User, cancellationToken).ConfigureAwait(false))
                         {
                             // F3: the sync acts as the linker, who must still see what it removes; else nothing is removed
@@ -864,10 +1123,67 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             return stats;
         }
 
-        private async Task<(List<ApplyEntry> Entries, Dictionary<int, string> Keys, List<string> Unaccounted)> BuildEntriesAsync(ListAccess access, IReadOnlyList<SourceItem> items, string listIdN, bool background, CancellationToken cancellationToken)
+        // Exact sources (chronolists): group the new entries (runs only across entries that are adjacent in the source)
+        // and build them from the source's own metadata; no Seerr. As below, a library movie (or, in a collection, a whole
+        // series) goes in as its item and every TV scope as a placeholder that the apply's C1 expansion turns into the
+        // present episodes plus the placeholder for the rest (each episode owned by its own key).
+        private (List<ApplyEntry> Entries, Dictionary<int, IReadOnlyList<string>> Keys, List<string> Unaccounted) BuildExactEntries(ListAccess access, IReadOnlyList<SourceItem> all, IReadOnlyList<string> addKeys)
         {
             var entries = new List<ApplyEntry>();
-            var keys = new Dictionary<int, string>();
+            var keys = new Dictionary<int, IReadOnlyList<string>>();
+            var unaccounted = new List<string>();
+            if (addKeys.Count == 0)
+            {
+                return (entries, keys, unaccounted);
+            }
+
+            var add = new HashSet<string>(addKeys, StringComparer.Ordinal);
+            var (positioned, facts) = Positioned(all);
+            var groups = ListSourceGroups.Group(positioned.Where(p => add.Contains(p.Item.Key!)).ToList(), facts);
+            var isPlaylist = access.List.Kind == ListKinds.Playlist;
+            var library = new GroupLibrary(_resolver, LibraryUsers(access));
+            foreach (var group in groups)
+            {
+                var index = entries.Count;
+                var asItem = group.Kind == PlaceholderKinds.Movie || (!isPlaylist && group.Kind == PlaceholderKinds.Series);
+                if (asItem && library.Find(group) is { } match && Guid.TryParse(match.ItemId, out var itemId))
+                {
+                    entries.Add(new ApplyEntry(index, itemId, null));
+                    keys[index] = group.Keys;
+                    continue;
+                }
+
+                var dto = ListSourceGroups.Placeholder(group, facts);
+                if (dto == null || !PlaceholderRules.TryCreate(dto, access.UserIdN, DateTime.UtcNow, out var placeholder, out _))
+                {
+                    unaccounted.AddRange(group.Keys);
+                    continue;
+                }
+
+                placeholder.SourceKey = group.Key;
+                entries.Add(new ApplyEntry(index, null, placeholder));
+                keys[index] = group.Keys;
+            }
+
+            return (entries, keys, unaccounted);
+        }
+
+        // Who must see a library item the sync inserts: the acting user and, for a playlist, its owner.
+        private static List<User> LibraryUsers(ListAccess access)
+        {
+            var users = new List<User> { access.User };
+            if (access.List.Kind == ListKinds.Playlist && access.Owner != null && access.Owner.Id != access.User.Id)
+            {
+                users.Add(access.Owner);
+            }
+
+            return users;
+        }
+
+        private async Task<(List<ApplyEntry> Entries, Dictionary<int, IReadOnlyList<string>> Keys, List<string> Unaccounted)> BuildEntriesAsync(ListAccess access, IReadOnlyList<SourceItem> items, string listIdN, bool background, CancellationToken cancellationToken)
+        {
+            var entries = new List<ApplyEntry>();
+            var keys = new Dictionary<int, IReadOnlyList<string>>();
             var unaccounted = new List<string>();
             if (items.Count == 0)
             {
@@ -880,12 +1196,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 return (entries, keys, unaccounted);
             }
 
-            var users = new List<User> { access.User };
-            if (access.List.Kind == ListKinds.Playlist && access.Owner != null && access.Owner.Id != access.User.Id)
-            {
-                users.Add(access.Owner);
-            }
-
+            var users = LibraryUsers(access);
             var context = new ImportCallContext("sync:" + listIdN, background);
             var isPlaylist = access.List.Kind == ListKinds.Playlist;
             for (var start = 0; start < items.Count; start += ListImportResolver.MaxEntriesPerCall)
@@ -918,7 +1229,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                         && (kind == PlaceholderKinds.Movie || (!isPlaylist && kind == PlaceholderKinds.Series)))
                     {
                         entries.Add(new ApplyEntry(index, itemId, null));
-                        keys[index] = key;
+                        keys[index] = new[] { key };
                         continue;
                     }
 
@@ -931,7 +1242,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
                     placeholder.SourceKey = key;
                     entries.Add(new ApplyEntry(index, null, placeholder));
-                    keys[index] = key;
+                    keys[index] = new[] { key };
                 }
             }
 
@@ -949,7 +1260,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                     return true;
                 }
 
-                var drop = new HashSet<string>(plan.PlaceholderIds, StringComparer.Ordinal);
+                // Placeholders it removes, and run or season placeholders it takes episodes out of.
+                var drop = new HashSet<string>(plan.PlaceholderIds.Concat(plan.Trims.Select(t => t.PhId)).Concat(plan.Narrowings.Select(n => n.PhId)), StringComparer.Ordinal);
                 var placeholders = doc.Items.Where(p => drop.Contains(p.Id)).ToList();
                 return placeholders.Count > 0 && (await _access.GetHiddenPlaceholderIdsAsync(placeholders, linker, cancellationToken).ConfigureAwait(false)).Count > 0;
             }
@@ -1070,7 +1382,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
         {
             ListSourceUrl.LetterboxdUnsupported => ListOutcome.Error(400, code, "Letterboxd doesn't offer an API Jellyfin Enhanced can use. Add the list to MDBList (My Lists → External Lists) and import the MDBList URL, or export the list as CSV on Letterboxd and paste it."),
             ListSourceUrl.InvalidUrl => ListOutcome.Error(400, code, "That isn't a valid list URL."),
-            _ => ListOutcome.Error(400, ListSourceUrl.UnsupportedUrl, "Supported list URLs: MDBList, TMDB (lists, collections, charts), Trakt (lists, watchlists, charts) and IMDb (when enabled)."),
+            _ => ListOutcome.Error(400, ListSourceUrl.UnsupportedUrl, "Supported list URLs: MDBList, TMDB (lists, collections, charts), Trakt (lists, watchlists, charts), chronolists.com watch orders and IMDb (when enabled)."),
         };
 
         private static ListOutcome FetchFailure(SourceFetchResult result)
@@ -1080,7 +1392,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 "not_found" => 404,
                 "rate_limited" or "quota_exhausted" => 429,
                 "timeout" => 504,
-                "upstream_error" or "unreachable" or "too_large" => 502,
+                "upstream_error" or "unreachable" or "too_large" or ChronolistsPage.FormatChanged => 502,
                 _ => 400, // configuration: trakt_not_configured, tmdb_key_required, tmdb_key_invalid, imdb_disabled, trakt_unauthorized
             };
             var outcome = ListOutcome.Error(status, result.ErrorCode ?? "upstream_error", result.Message ?? "The list couldn't be read.");

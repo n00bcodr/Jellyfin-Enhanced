@@ -311,15 +311,22 @@ internal sealed class FakeListHost : IListPlaceholderHost
         return result.Where(id => user == null || CanAccessItem(id, user)).ToList();
     }
 
-    public IReadOnlyList<Guid> FindSeries(int? tmdbId, int? tvdbId, string? imdbId, User? user) =>
-        Series.Values
+    /// <summary>Library queries made (series and episode lookups), to check that one operation memoises them.</summary>
+    public int LibraryQueries { get; set; }
+
+    public IReadOnlyList<Guid> FindSeries(int? tmdbId, int? tvdbId, string? imdbId, User? user)
+    {
+        LibraryQueries++;
+        return Series.Values
             .Where(s => (tmdbId.HasValue && s.Tmdb == tmdbId) || (tvdbId.HasValue && s.Tvdb == tvdbId) || (imdbId != null && s.Imdb == imdbId))
             .Select(s => s.Id)
             .Where(id => user == null || CanAccessItem(id, user))
             .ToList();
+    }
 
     public IReadOnlyList<LibraryEpisode> GetEpisodes(Guid seriesId, int? seasonNumber, User? user)
     {
+        LibraryQueries++;
         return Episodes
             .Where(e => e.SeriesId == seriesId && !e.Virtual && (seasonNumber == null || e.Season == seasonNumber))
             .Where(e => user == null || CanAccessItem(e.Id, user))

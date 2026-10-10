@@ -80,6 +80,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("note")] public string? Note { get; set; }
         /// <summary>URL sources: the provenance key (<c>type|tmdbId|season|episode</c>).</summary>
         [JsonPropertyName("sourceKey")] public string? SourceKey { get; set; }
+        /// <summary>
+        /// Grouped sources (a run of episodes as one entry): every source key the entry stands for, in order (the first
+        /// is <see cref="SourceKey"/>). Send them back with the apply entry.
+        /// </summary>
+        [JsonPropertyName("sourceKeys")][JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? SourceKeys { get; set; }
+        /// <summary>
+        /// Sources with exact ids and full metadata (chronolists): the resolution, prepared by the server without any
+        /// Seerr lookup. Use it as this entry's /resolve result (its <c>index</c> is the entry's position); its
+        /// <c>match</c> is the only candidate and is not repeated in <c>candidates</c>.
+        /// </summary>
+        [JsonPropertyName("prepared")][JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public ResolvedEntryDto? Prepared { get; set; }
     }
 
     /// <summary>Body of POST /resolve.</summary>
@@ -200,8 +211,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
     /// <summary>Body of POST /source/fetch.</summary>
     public sealed class SourceFetchRequest
     {
-        /// <summary>The list URL (MDBList, TMDB, Trakt, IMDb; Letterboxd answers with guidance).</summary>
+        /// <summary>The list URL (MDBList, TMDB, Trakt, IMDb, chronolists; Letterboxd answers with guidance).</summary>
         [JsonPropertyName("url")] public string? Url { get; set; }
+        /// <summary>Optional target list: prepared entries' "in library" then also requires visibility to the playlist's owner.</summary>
+        [JsonPropertyName("listId")] public string? ListId { get; set; }
     }
 
     /// <summary>Response of POST /source/fetch.</summary>
@@ -225,6 +238,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("truncated")] public bool Truncated { get; set; }
         /// <summary>Entries hidden by the caller's parental controls are dropped; this counts other dropped entries (no usable id).</summary>
         [JsonPropertyName("dropped")] public int Dropped { get; set; }
+        /// <summary>
+        /// The source answered only partly (entries it couldn't read, counted in <see cref="Dropped"/>, or upstream
+        /// errors next to data): the review should say the list may be incomplete. Omitted when false.
+        /// </summary>
+        [JsonPropertyName("partial")][JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool Partial { get; set; }
+        /// <summary>
+        /// Entries are grouped runs (chronolists: consecutive episodes of one season → one entry), each carrying
+        /// <see cref="ImportEntryDto.SourceKeys"/> and a <see cref="ImportEntryDto.Prepared"/> resolution.
+        /// </summary>
+        [JsonPropertyName("grouped")] public bool Grouped { get; set; }
+        /// <summary>Grouped sources: every source key of the fetched list, in order (send as <c>source.snapshotKeys</c>).</summary>
+        [JsonPropertyName("snapshotKeys")][JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? SnapshotKeys { get; set; }
     }
 
     /// <summary>A source to link while importing (POST /{listId}/apply, POST /playlists, POST /collections).</summary>
@@ -291,6 +316,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("trakt")] public bool Trakt { get; set; }
         /// <summary>IMDb (admin opt-in, unofficial).</summary>
         [JsonPropertyName("imdb")] public bool Imdb { get; set; }
+        /// <summary>chronolists.com chronological watch orders (always; no key).</summary>
+        [JsonPropertyName("chronolists")] public bool Chronolists { get; set; } = true;
         /// <summary>Scheduled sync of linked lists is on.</summary>
         [JsonPropertyName("syncEnabled")] public bool SyncEnabled { get; set; }
         /// <summary>Entry cap per fetch.</summary>

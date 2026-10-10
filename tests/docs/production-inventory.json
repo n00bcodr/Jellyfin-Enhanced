@@ -495,11 +495,23 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Sources/ChronolistsPage.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Sources/ListEntryRemover.cs",
       "category": "Services"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Sources/ListSourceFetcher.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Sources/ListSourceGroups.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Sources/ListSourcePlacement.cs",
       "category": "Services"
     },
     {
@@ -7922,7 +7934,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 401,
+    "files": 404,
     "routes": 185,
     "configuration_properties": 520,
     "storage_references": 64,

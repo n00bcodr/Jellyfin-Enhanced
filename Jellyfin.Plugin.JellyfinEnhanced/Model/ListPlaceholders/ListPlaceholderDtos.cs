@@ -191,6 +191,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("placeholder")] public NewPlaceholderDto? Placeholder { get; set; }
         /// <summary>URL imports: the entry's source key (provenance for a linked list).</summary>
         [JsonPropertyName("sourceKey")] public string? SourceKey { get; set; }
+        /// <summary>Grouped URL imports: every source key the entry stands for (a run of episodes; see the fetched entry's sourceKeys).</summary>
+        [JsonPropertyName("sourceKeys")] public List<string>? SourceKeys { get; set; }
     }
 
     /// <summary>Body of POST /{listId}/apply.</summary>

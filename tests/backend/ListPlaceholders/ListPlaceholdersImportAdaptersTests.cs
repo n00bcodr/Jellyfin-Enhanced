@@ -21,7 +21,7 @@ public class ListPlaceholdersImportAdaptersTests
         var host = new FakeListHost();
         var caller = FakeListHost.MakeUser("caller");
         var owner = FakeListHost.MakeUser("owner");
-        var lookup = new ResolverListLibraryLookup(new ListPlaceholderResolver(host, plugin.Core.Logger));
+        var lookup = new ResolverListLibraryLookup(new ListPlaceholderResolver(host, plugin.Core.Logger), host);
         var both = new[] { caller, owner };
 
         // Movies: TMDB first, then IMDb; every user must be able to access the item.

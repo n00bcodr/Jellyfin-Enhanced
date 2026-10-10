@@ -638,28 +638,53 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                 return dto; // the episode itself is unknown: nothing to look for in the library yet
             }
 
+            var episodes = wanted.OpenEnded && candidate.Episodes is { Count: > 0 } ? candidate.Episodes.Select(e => e.Episode).ToList() : wanted.Episodes;
+            dto.InLibrary = FindInLibrary(new LibraryScope(kind, hit.TmdbId, dto.TvdbId, dto.ImdbId, kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes ? wanted.Season : null, kind == PlaceholderKinds.Episodes ? episodes : null), libraryUsers, dto.EpisodeTotal);
+            return dto;
+        }
+
+        /// <summary>The list-source keys a library item stands for (<see cref="IListLibraryLookup.SourceKeysOf"/>).</summary>
+        /// <param name="itemId">Library item.</param>
+        /// <returns>Keys (empty when the lookup fails).</returns>
+        public IReadOnlyList<string> SourceKeysOf(Guid itemId)
+        {
             try
             {
-                var episodes = wanted.OpenEnded && candidate.Episodes is { Count: > 0 } ? candidate.Episodes.Select(e => e.Episode).ToList() : wanted.Episodes;
-                var scope = new LibraryScope(kind, hit.TmdbId, dto.TvdbId, dto.ImdbId, kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes ? wanted.Season : null, kind == PlaceholderKinds.Episodes ? episodes : null);
-                var match = _library.Find(scope, libraryUsers, dto.EpisodeTotal);
-                if (match != null)
-                {
-                    dto.InLibrary = new ImportLibraryDto
-                    {
-                        ItemId = match.ItemId.ToString("N", CultureInfo.InvariantCulture),
-                        Kind = match.Kind,
-                        EpisodeItemIds = match.EpisodeIds.Count > 0 ? match.EpisodeIds.Select(id => id.ToString("N", CultureInfo.InvariantCulture)).ToList() : null,
-                        Complete = match.Complete,
-                    };
-                }
+                return _library.SourceKeysOf(itemId);
             }
             catch (Exception ex)
             {
-                _logger.Debug($"[ListPlaceholders] Library lookup for {hit.MediaType} {hit.TmdbId} failed: {ex.Message}");
+                _logger.Debug($"[ListPlaceholders] Library lookup of item {itemId:N} failed: {ex.Message}");
+                return Array.Empty<string>();
             }
+        }
 
-            return dto;
+        /// <summary>
+        /// "Already in the library?" for one scope, as the candidate's <c>inLibrary</c> (also used for the prepared
+        /// entries of exact sources). Lookup failures count as "not in the library".
+        /// </summary>
+        /// <param name="scope">What to look for.</param>
+        /// <param name="libraryUsers">Users that must all see it.</param>
+        /// <param name="expectedEpisodes">Series/season: episodes that make it complete, if known.</param>
+        /// <returns>The match, or null.</returns>
+        public ImportLibraryDto? FindInLibrary(LibraryScope scope, IReadOnlyList<User> libraryUsers, int? expectedEpisodes)
+        {
+            try
+            {
+                var match = _library.Find(scope, libraryUsers, expectedEpisodes);
+                return match == null ? null : new ImportLibraryDto
+                {
+                    ItemId = match.ItemId.ToString("N", CultureInfo.InvariantCulture),
+                    Kind = match.Kind,
+                    EpisodeItemIds = match.EpisodeIds.Count > 0 ? match.EpisodeIds.Select(id => id.ToString("N", CultureInfo.InvariantCulture)).ToList() : null,
+                    Complete = match.Complete,
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug($"[ListPlaceholders] Library lookup for {scope.Kind} {scope.TmdbId} failed: {ex.Message}");
+                return null;
+            }
         }
 
         // C5: restricted callers never see blocked or unverifiable candidates. Returns true when checks are pending.

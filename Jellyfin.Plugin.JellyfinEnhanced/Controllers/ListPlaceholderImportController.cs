@@ -122,10 +122,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return Ok(outcome.Response);
             });
 
-        /// <summary>Fetches a list URL (MDBList, TMDB, Trakt, IMDb when enabled) into import entries with ids.</summary>
-        /// <param name="request">The URL.</param>
+        /// <summary>Fetches a list URL (MDBList, TMDB, Trakt, chronolists, IMDb when enabled) into import entries with ids.</summary>
+        /// <param name="request">The URL and optional target list.</param>
         /// <param name="cancellationToken">Request aborted.</param>
-        /// <returns><see cref="SourceFetchResponse"/> or an error with a code (letterboxd_unsupported, unsupported_url, not_found, trakt_not_configured, tmdb_key_required, imdb_disabled, rate_limited…).</returns>
+        /// <returns><see cref="SourceFetchResponse"/> or an error with a code (letterboxd_unsupported, unsupported_url, not_found, trakt_not_configured, tmdb_key_required, imdb_disabled, rate_limited, source_format_changed…).</returns>
         [HttpPost("source/fetch")]
         [Authorize]
         public Task<IActionResult> FetchSource([FromBody] SourceFetchRequest request, CancellationToken cancellationToken) =>
@@ -142,7 +142,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return Bad("invalid_body", "A list URL is required.");
                 }
 
-                return ToResult(await _sources.FetchAsync(user!, request.Url, cancellationToken).ConfigureAwait(false));
+                // Prepared entries (grouped sources) say "in library" only for what the target playlist's owner sees too.
+                var libraryUsers = new List<User> { user! };
+                if (!string.IsNullOrEmpty(request.ListId))
+                {
+                    var (listError, access) = ResolveList(user!, request.ListId, edit: true);
+                    if (listError != null)
+                    {
+                        return listError;
+                    }
+
+                    if (access!.List.Kind == ListKinds.Playlist && access.Owner != null && access.Owner.Id != user!.Id)
+                    {
+                        libraryUsers.Add(access.Owner);
+                    }
+                }
+
+                return ToResult(await _sources.FetchAsync(user!, request.Url, cancellationToken, libraryUsers).ConfigureAwait(false));
             });
 
         /// <summary>Which URL sources work on this server (no secrets).</summary>

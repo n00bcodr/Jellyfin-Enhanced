@@ -95,7 +95,7 @@ public class ListPlaceholdersSyncTests
     }
 
     [Fact]
-    public async Task NewEntriesAreAppendedAndDroppedOnesRemovedOnlyIfTheSyncAddedThem()
+    public async Task NewEntriesAreInsertedInSourceOrderAndDroppedOnesRemovedOnlyIfTheSyncAddedThem()
     {
         using var w = new World();
         w.Source(World.M(1), World.M(2), World.M(862));
@@ -109,7 +109,8 @@ public class ListPlaceholdersSyncTests
         var result = await w.Sync();
 
         Assert.Equal(("ok", 1, 2), (result.State, result.Added, result.Removed));
-        Assert.Equal(new[] { "Movie 2", "Movie 4", "Movie 3" }, w.Titles());
+        // Ordered insertion: Movie 3 goes right after its preceding source entry (Movie 2), not at the end.
+        Assert.Equal(new[] { "Movie 2", "Movie 3", "Movie 4" }, w.Titles());
         Assert.Empty(w.H.Host.Resolved(w.List.Info.Id)); // the sync-added real item left the source: removed
         Assert.Equal(new[] { w.InLibrary }, w.H.Remover.Removed);
         Assert.False(w.Doc.Source!.Owned.ContainsKey("movie|4||"));
@@ -123,7 +124,7 @@ public class ListPlaceholdersSyncTests
         // An entry the sync removed comes back when the source adds it again (no tombstone).
         w.Source(World.M(2), World.M(3), World.M(1));
         Assert.Equal(1, (await w.Sync()).Added);
-        Assert.Equal("Movie 1", w.Titles().Last());
+        Assert.Equal(new[] { "Movie 2", "Movie 3", "Movie 1", "Movie 4" }, w.Titles());
     }
 
     [Fact]
@@ -337,7 +338,7 @@ public class ListPlaceholdersSyncTests
         var p1 = Movie(1);
         p1.SourceKey = "movie|1||";
         var entries = new List<ApplyEntry> { new(0, null, p1), new(1, w.InLibrary, null) };
-        var keys = new Dictionary<int, string> { [0] = "movie|1||", [1] = "movie|862||" };
+        var keys = new Dictionary<int, IReadOnlyList<string>> { [0] = new[] { "movie|1||" }, [1] = new[] { "movie|862||" } };
         var spec = new SourceLinkSpec("mdblist", Url, "mdblist", "DC", SyncEnabled: true, RemoveDropped: true);
         // The fetched list had a third entry that the editor skipped in review.
         var hooks = ListSourceService.ImportHooks(spec, w.Owner.Id.ToString("N"), keys, new[] { "movie|1||", "movie|862||", "movie|2||", "bogus" });
@@ -386,7 +387,7 @@ public class ListPlaceholdersSyncTests
     {
         using var w = new World();
         var spec = new SourceLinkSpec("mdblist", Url, "mdblist", null, SyncEnabled: true, RemoveDropped: false);
-        ApplyHooks Hooks() => ListSourceService.ImportHooks(spec, w.Owner.Id.ToString("N"), new Dictionary<int, string> { [0] = "movie|1||" }, new[] { "movie|1||" });
+        ApplyHooks Hooks() => ListSourceService.ImportHooks(spec, w.Owner.Id.ToString("N"), new Dictionary<int, IReadOnlyList<string>> { [0] = new[] { "movie|1||" } }, new[] { "movie|1||" });
         var first = Movie(1);
         Ok<ApplyResultDto>(await w.H.Service.ApplyAsync(w.Access, new[] { new ApplyEntry(0, null, first) }, null, null, "import-x", None, Hooks()));
         var generation = w.Doc.Source!.Generation;
@@ -427,7 +428,7 @@ public class ListPlaceholdersSyncTests
             var p2 = Movie(2);
             p2.SourceKey = "movie|2||";
             var entries = new List<ApplyEntry> { new(0, null, p1), new(1, w.InLibrary, null), new(2, null, p2) };
-            var keys = new Dictionary<int, string> { [0] = "movie|1||", [1] = "movie|862||", [2] = "movie|2||" };
+            var keys = new Dictionary<int, IReadOnlyList<string>> { [0] = new[] { "movie|1||" }, [1] = new[] { "movie|862||" }, [2] = new[] { "movie|2||" } };
             return (entries, ListSourceService.ImportHooks(spec, w.Owner.Id.ToString("N"), keys, snapshot));
         }
 
@@ -676,9 +677,9 @@ public class ListPlaceholdersSyncTests
         var both = Ph("{\"kind\":\"episodes\",\"mediaType\":\"tv\",\"tmdbId\":110492,\"title\":\"Peacemaker\",\"seasonNumber\":1,\"episodes\":[{\"s\":1,\"e\":1},{\"s\":1,\"e\":2}]}");
         var partly = Ph("{\"kind\":\"episodes\",\"mediaType\":\"tv\",\"tmdbId\":110492,\"title\":\"Peacemaker\",\"seasonNumber\":1,\"episodes\":[{\"s\":1,\"e\":5},{\"s\":1,\"e\":6}]}");
         var entries = new List<ApplyEntry> { new(0, null, movie), new(1, null, both), new(2, null, partly) };
-        var keys = new Dictionary<int, string> { [0] = "movie|862||", [1] = "tv|110492|1|1", [2] = "tv|110492|1|5" };
+        var keys = new Dictionary<int, IReadOnlyList<string>> { [0] = new[] { "movie|862||" }, [1] = new[] { "tv|110492|1|1" }, [2] = new[] { "tv|110492|1|5" } };
         var spec = new SourceLinkSpec("mdblist", Url, "mdblist", null, SyncEnabled: true, RemoveDropped: true);
-        var hooks = ListSourceService.ImportHooks(spec, w.Owner.Id.ToString("N"), keys, keys.Values.ToList());
+        var hooks = ListSourceService.ImportHooks(spec, w.Owner.Id.ToString("N"), keys, keys.Values.SelectMany(k => k).ToList());
 
         var applied = Ok<ApplyResultDto>(await w.H.Service.ApplyAsync(w.Access, entries, null, null, "import-tv", None, hooks));
 
@@ -691,7 +692,7 @@ public class ListPlaceholdersSyncTests
         Assert.Equal(new[] { e1.ToString("N"), e2.ToString("N") }, source.Owned["tv|110492|1|1"].ItemIds);
         // E5 was already in the list: the placeholder is owned, the episode only "present".
         Assert.Equal((partly.Id, 0), (source.Owned["tv|110492|1|5"].PhId, source.Owned["tv|110492|1|5"].ItemIds.Count));
-        Assert.Equal(keys.Values.ToList(), source.LastSnapshotKeys);
+        Assert.Equal(keys.Values.SelectMany(k => k).ToList(), source.LastSnapshotKeys);
         Assert.Empty(source.UserRemovedKeys);
         Assert.Equal(4, source.LastSync!.Added);
     }

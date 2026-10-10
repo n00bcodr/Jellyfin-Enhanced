@@ -21,7 +21,7 @@
         linker_cannot_see: 'listPlaceholders_sourcePausedLinkerCannotSee',
         url_unsupported: 'listPlaceholders_sourcePausedUrlUnsupported'
     };
-    const SITE_NAMES = { mdblist: 'MDBList', tmdb: 'TMDB', trakt: 'Trakt', imdb: 'IMDb' };
+    const SITE_NAMES = { mdblist: 'MDBList', tmdb: 'TMDB', trakt: 'Trakt', imdb: 'IMDb', chronolists: 'chronolists.com' };
     /** Sync-only failure codes (fetch codes are shared with the importer's messages). */
     const SYNC_FAILURE_KEYS = {
         seerr_unavailable: 'listPlaceholders_import_err_seerr',

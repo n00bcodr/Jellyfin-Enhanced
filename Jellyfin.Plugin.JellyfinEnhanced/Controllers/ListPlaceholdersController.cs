@@ -28,6 +28,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
     {
         private const int MaxEntries = ListPlaceholderStore.MaxPlaceholders;
         private const int MaxOrderTokens = 20000;
+        private const int MaxSnapshotKeys = ChronolistsPage.MaxItems;
+        private const int MaxKeysPerEntry = ChronolistsPage.MaxItems; // a whole season of a long-running show is one entry
 
         private readonly IUserManager _userManager;
         private readonly ListAccessService _access;
@@ -329,11 +331,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ToResult(await _service.CreateListAsync(user, kind, name, request.IsPublic, entries!, request.RequestId, cancellationToken, hooks == null ? null : access => hooks(access.UserIdN)).ConfigureAwait(false));
         }
 
-        // URL imports: entries carry source keys; with a source, the list is linked and the imported entries recorded as
-        // sync-owned in the same locked write as the apply (F1).
+        // URL imports: entries carry source keys (a grouped entry several); with a source, the list is linked and the
+        // imported entries recorded as sync-owned in the same locked write as the apply (F1).
         private async Task<(IActionResult? Error, Func<string, ApplyHooks>? Hooks)> ImportSourceHooksAsync(User user, ImportSourceDto? source, IReadOnlyList<ApplyEntryDto> dtos, List<ApplyEntry> entries, CancellationToken cancellationToken)
         {
             var keys = new Dictionary<int, string>();
+            var groupKeys = new Dictionary<int, IReadOnlyList<string>>();
+            if (dtos.Sum(d => d?.SourceKeys?.Count ?? 0) > MaxSnapshotKeys)
+            {
+                return (Bad("invalid_entry", $"At most {MaxSnapshotKeys} sourceKeys in total."), null);
+            }
+
             for (var i = 0; i < dtos.Count; i++)
             {
                 var key = dtos[i]?.SourceKey;
@@ -347,7 +355,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return (Bad("invalid_entry", $"Entry {i}: invalid sourceKey."), null);
                 }
 
+                var more = dtos[i]!.SourceKeys;
+                if (more != null && (more.Count > MaxKeysPerEntry || more.Any(k => !SourceKeys.IsValid(k))))
+                {
+                    return (Bad("invalid_entry", $"Entry {i}: invalid sourceKeys (at most {MaxKeysPerEntry})."), null);
+                }
+
                 keys[i] = key;
+                if (more is { Count: > 0 })
+                {
+                    groupKeys[i] = more;
+                }
+
                 if (entries[i].Placeholder is { } placeholder)
                 {
                     placeholder.SourceKey = key;
@@ -359,9 +378,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return (null, null);
             }
 
-            if (string.IsNullOrWhiteSpace(source.Url) || source.Url.Length > 500 || (source.SnapshotKeys?.Count ?? 0) > MaxEntries)
+            if (string.IsNullOrWhiteSpace(source.Url) || source.Url.Length > 500 || (source.SnapshotKeys?.Count ?? 0) > MaxSnapshotKeys)
             {
-                return (Bad("invalid_body", "source needs a list URL (and at most 2000 snapshot keys)."), null);
+                return (Bad("invalid_body", $"source needs a list URL (and at most {MaxSnapshotKeys} snapshot keys)."), null);
             }
 
             var (spec, error) = await _sources.PrepareLinkAsync(user, source.Url, source.SyncEnabled, source.RemoveDropped, cancellationToken).ConfigureAwait(false);
@@ -370,8 +389,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return (ToResult(error), null);
             }
 
-            var snapshot = source.SnapshotKeys ?? new List<string>();
-            return (null, linkedBy => ListSourceService.ImportHooks(spec!, linkedBy, keys, snapshot));
+            var plan = ListSourceService.PlanImportKeys(spec!, entries, keys, groupKeys, source.SnapshotKeys ?? new List<string>());
+            return (null, linkedBy => ListSourceService.ImportHooks(spec!, linkedBy, plan.EntryKeys, plan.SnapshotKeys));
         }
 
         // ── Helpers ──────────────────────────────────────────────────────────
