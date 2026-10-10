@@ -18,6 +18,8 @@ JEAdmin.define({
                   desc: 'Display the file size of each item on item detail pages or collections pages.' },
                 { id: 'showAudioLanguages', prop: 'ShowAudioLanguages', type: 'toggle', perUser: true, label: 'Show available audio languages on item detail page',
                   desc: 'List the audio language flags available for each title on its detail page.' },
+                { id: 'simplifyDubLanguageFlags', prop: 'SimplifyDubLanguageFlags', type: 'toggle', perUser: true, label: 'Simplify dub language flags',
+                  desc: 'Show a single flag per language instead of separate regional flags (e.g. one flag for all English audio), matching Jellyfin\'s own language grouping.' },
                 { id: 'removeContinueWatchingEnabled', prop: 'RemoveContinueWatchingEnabled', type: 'toggle', perUser: true, label: 'Enable "Remove from Continue Watching"',
                   desc: 'Adds a "Remove from Continue Watching" option to the right-click / long-press context menu. Hides items non-destructively, so playback position is preserved and entries appear in Hidden Content\'s management page (look for "Add back to Continue Watching" on each entry). Items also unhide automatically when you resume playback.' }
             ]

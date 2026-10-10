@@ -213,14 +213,17 @@
         const code = typeof lang === 'string' ? lang : (lang && (lang.code || lang.Code)) || '';
         const name = (typeof lang === 'object' && lang && (lang.name || lang.Name)) || '';
 
-        if (JE.currentSettings && JE.currentSettings.simplifyDubLanguageFlags) {
-            const parsedBase = parseLanguageTag(code);
-            if (parsedBase && baseLanguageFlags[parsedBase.base]) {
-                return baseLanguageFlags[parsedBase.base];
-            }
+        const parsed = parseLanguageTag(code);
+
+        // "Simplify dub language flags": collapse region/script variants onto the
+        // base language's flag so a language Jellyfin treats as one shows one
+        // flag (`pt-BR`, `pt-PT` and `pt` all become `pt`). Languages the map
+        // doesn't know stay on the normal path and remain flagless.
+        if (parsed && JE.currentSettings && JE.currentSettings.simplifyDubLanguageFlags
+            && baseLanguageFlags[parsed.base]) {
+            return baseLanguageFlags[parsed.base];
         }
 
-        const parsed = parseLanguageTag(code);
         if (parsed) {
             // The code itself, else its canonical language (ISO 639-2/B "gre" is "el"): the flag never depends
             // on a display name, which follows the viewer's language.
