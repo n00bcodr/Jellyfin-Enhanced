@@ -80,7 +80,7 @@ public class ListPlaceholdersControllerTests
                 services.AddAuthorization();
                 services.AddControllers().AddApplicationPart(typeof(ListPlaceholdersController).Assembly);
                 services.AddSingleton<IControllerActivator>(new Activator(type => type == typeof(ListPlaceholdersController)
-                    ? new ListPlaceholdersController(H.Users.Object, H.Access, H.Service, H.Plugin.Core.Logger)
+                    ? new ListPlaceholdersController(H.Users.Object, H.Access, H.Service, H.Sources, H.Plugin.Core.Logger)
                     : throw new InvalidOperationException("Unexpected controller " + type)));
             }).Configure(app =>
             {

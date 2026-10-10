@@ -67,6 +67,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholderImportController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersController.cs",
       "category": "Controllers"
     },
@@ -211,6 +215,10 @@
       "category": "Model"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/ListPlaceholders/ListImportDtos.cs",
+      "category": "Model"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/ListPlaceholders/ListPlaceholderDtos.cs",
       "category": "Model"
     },
@@ -292,6 +300,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ListPlaceholdersMaintenanceTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ListPlaceholdersSyncTask.cs",
       "category": "ScheduledTasks"
     },
     {
@@ -379,7 +391,39 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ApplyHooks.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/AutoRequestLibrary.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Import/ImportLookup.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Import/ImportPlaceholders.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Import/ImportScoring.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Import/ListImportResolver.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Import/ListLibraryLookup.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Import/SeerrCallLimiter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Import/SeerrUserLink.cs",
       "category": "Services"
     },
     {
@@ -435,10 +479,6 @@
       "category": "Services"
     },
     {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListSourceProvenance.cs",
-      "category": "Services"
-    },
-    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/PlaceholderRules.cs",
       "category": "Services"
     },
@@ -452,6 +492,26 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/SeerrRequestLocks.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Sources/ListEntryRemover.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Sources/ListSourceFetcher.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Sources/ListSourceProvenance.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Sources/ListSourceService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/Sources/ListSourceUrl.cs",
       "category": "Services"
     },
     {
@@ -1203,7 +1263,15 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-import.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-init.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-parser.js",
       "category": "js"
     },
     {
@@ -1224,6 +1292,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-search.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-source.js",
       "category": "js"
     },
     {
@@ -3115,6 +3187,60 @@
       "following_attributes": []
     },
     {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/list-placeholders/resolve",
+      "method": "Resolve",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholderImportController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/list-placeholders/source/fetch",
+      "method": "FetchSource",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholderImportController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/list-placeholders/source/providers",
+      "method": "GetSourceProviders",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholderImportController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "PUT",
+      "path": "/JellyfinEnhanced/list-placeholders/{listId}/source",
+      "method": "LinkSource",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholderImportController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "DELETE",
+      "path": "/JellyfinEnhanced/list-placeholders/{listId}/source",
+      "method": "UnlinkSource",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholderImportController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/list-placeholders/{listId}/source/sync",
+      "method": "SyncSource",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholderImportController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
       "verb": "GET",
       "path": "/JellyfinEnhanced/list-placeholders/{listId}",
       "method": "GetList",
@@ -4331,6 +4457,30 @@
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ListPlaceholdersSyncEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ListPlaceholdersImdbEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TraktClientId",
+      "type": "string",
+      "initializer": null,
+      "constructor_assignment": "string.Empty",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -7639,6 +7789,11 @@
       "key": "JellyfinEnhancedListPlaceholdersMaintenance"
     },
     {
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/ListPlaceholdersSyncTask.cs",
+      "class": "ListPlaceholdersSyncTask",
+      "key": "JellyfinEnhancedListPlaceholdersSync"
+    },
+    {
       "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/MdblistRatingsFetchTask.cs",
       "class": "MdblistRatingsFetchTask",
       "key": "JellyfinEnhancedMdblistRatingsFetch"
@@ -7767,11 +7922,11 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 383,
-    "routes": 179,
-    "configuration_properties": 517,
+    "files": 401,
+    "routes": 185,
+    "configuration_properties": 520,
     "storage_references": 64,
-    "scheduled_tasks": 14,
+    "scheduled_tasks": 15,
     "locales": 33
   }
 }

@@ -10,6 +10,7 @@
     const lp = JE.internals.listPlaceholders = JE.internals.listPlaceholders || {};
 
     const NEW_PLAYLIST = '__new_playlist__';
+    const NEW_FROM_LIST = '__new_from_list__';
 
     /**
      * Whether a Seerr item may get the action.
@@ -39,7 +40,8 @@
         const collections = (lists?.collections || []).map(c => `<option value="collection:${esc(c.id)}">${esc(c.name)}</option>`).join('');
         return (playlists ? `<optgroup label="${esc(JE.t('listPlaceholders_playlists'))}">${playlists}</optgroup>` : '')
             + (collections ? `<optgroup label="${esc(JE.t('listPlaceholders_collections'))}">${collections}</optgroup>` : '')
-            + `<option value="${NEW_PLAYLIST}">${esc(JE.t('listPlaceholders_new_playlist'))}</option>`;
+            + `<option value="${NEW_PLAYLIST}">${esc(JE.t('listPlaceholders_new_playlist'))}</option>`
+            + (lp.importer && JE.pluginConfig?.JellyseerrEnabled === true ? `<option value="${NEW_FROM_LIST}">${esc(JE.t('listPlaceholders_import_picker_option'))}</option>` : '');
     }
 
     /**
@@ -115,6 +117,12 @@
             onSave: async (modalEl, button) => {
                 if (busy) return;
                 const choice = modalEl.querySelector('.je-lp-list-select').value;
+                if (choice === NEW_FROM_LIST) {
+                    // B9: the import modal creates the playlist; it opens once this modal has closed.
+                    history.back();
+                    setTimeout(() => lp.importer?.open({ mode: 'new' }), 350);
+                    return;
+                }
                 const dto = lp.granularity.toPlaceholder(media, granularity ? granularity.getSelection() : undefined, granularity ? granularity.getDetails() : null);
                 if (!dto) { JE.toast(esc(JE.t('listPlaceholders_pick_episode')), 3000); return; }
                 busy = true;
@@ -164,6 +172,10 @@
             const value = select.value;
             root.querySelector('.je-lp-new-playlist').hidden = value !== NEW_PLAYLIST;
             root.querySelector('.je-lp-position').hidden = !value.startsWith('playlist:');
+            const fromList = value === NEW_FROM_LIST;
+            root.querySelector('.je-lp-picker-gran').hidden = fromList;
+            const primary = root.querySelector('.jellyseerr-modal-button-primary');
+            if (primary) primary.textContent = JE.t(fromList ? 'listPlaceholders_import_next' : 'listPlaceholders_add_button');
         };
         select.addEventListener('change', sync);
         sync();

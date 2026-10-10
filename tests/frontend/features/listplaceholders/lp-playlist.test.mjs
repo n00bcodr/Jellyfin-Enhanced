@@ -388,7 +388,7 @@ test('editors see "Auto-request: next N" while list auto-requests are on and the
   const on = await make({ ListPlaceholdersAutoRequestEnabled: true, ListPlaceholdersAutoRequestCount: 3 });
   assert.equal(on.hint.textContent, 'listPlaceholders_auto_request_hint{"count":3}');
   assert.equal(on.hint.title, 'listPlaceholders_auto_request_hint_tip{"count":3}');
-  assert.deepEqual([...on.bar.children].map(el => el.className), ['je-lp-toolbar-label', 'je-lp-toolbar-auto', 'je-lp-toolbar-btn']);
+  assert.deepEqual([...on.bar.children].map(el => el.className), ['je-lp-toolbar-label', 'je-lp-toolbar-auto', 'je-lp-toolbar-btn', 'je-lp-toolbar-btn je-lp-import-btn']);
   // updates keep one hint and drop it once the list has no placeholders left
   on.h.lp.toolbar.update(on.bar, 2);
   assert.equal(on.bar.querySelectorAll('.je-lp-toolbar-auto').length, 1);

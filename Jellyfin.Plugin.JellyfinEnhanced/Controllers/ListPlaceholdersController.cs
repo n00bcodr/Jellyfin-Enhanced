@@ -9,6 +9,7 @@ using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources;
 using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -31,18 +32,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly IUserManager _userManager;
         private readonly ListAccessService _access;
         private readonly ListPlaceholderService _service;
+        private readonly ListSourceService _sources;
         private readonly Logger _logger;
 
         /// <summary>Creates the controller.</summary>
         /// <param name="userManager">User manager.</param>
         /// <param name="access">Access service.</param>
         /// <param name="service">Placeholder service.</param>
+        /// <param name="sources">Linked-source service (URL imports link the list in the same write).</param>
         /// <param name="logger">JE logger.</param>
-        public ListPlaceholdersController(IUserManager userManager, ListAccessService access, ListPlaceholderService service, Logger logger)
+        public ListPlaceholdersController(IUserManager userManager, ListAccessService access, ListPlaceholderService service, ListSourceService sources, Logger logger)
         {
             _userManager = userManager;
             _access = access;
             _service = service;
+            _sources = sources;
             _logger = logger;
         }
 
@@ -136,7 +140,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return entryError;
                 }
 
-                return ToResult(await _service.ApplyAsync(access, entries!, request.Position, request.Rev, request.RequestId, cancellationToken).ConfigureAwait(false));
+                // B10: a retried URL import replays before the source is fetched again.
+                if (request.Source != null && _sources.TryReplayImport(access.ListIdN, request.RequestId, access.UserIdN) is { } replay)
+                {
+                    return ToResult(replay);
+                }
+
+                var (sourceError, hooks) = await ImportSourceHooksAsync(access.User, request.Source, request.Entries, entries!, cancellationToken).ConfigureAwait(false);
+                if (sourceError != null)
+                {
+                    return sourceError;
+                }
+
+                return ToResult(await _service.ApplyAsync(access, entries!, request.Position, request.Rev, request.RequestId, cancellationToken, hooks?.Invoke(access.UserIdN)).ConfigureAwait(false));
             });
 
         /// <summary>Edits a placeholder: note, or link a custom entry to a TMDB title.</summary>
@@ -291,13 +307,71 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return Bad("invalid_body", "A name of 1-200 characters is required.");
             }
 
-            var (entryError, entries) = ParseEntries(request.Entries ?? new List<ApplyEntryDto>(), user!.Id.ToString("N", CultureInfo.InvariantCulture));
+            var entryDtos = request.Entries ?? new List<ApplyEntryDto>();
+            var (entryError, entries) = ParseEntries(entryDtos, user!.Id.ToString("N", CultureInfo.InvariantCulture));
             if (entryError != null)
             {
                 return entryError;
             }
 
-            return ToResult(await _service.CreateListAsync(user, kind, name, request.IsPublic, entries!, request.RequestId, cancellationToken).ConfigureAwait(false));
+            // B10: a retried URL import replays before the source is fetched again (same scope as CreateListAsync).
+            if (request.Source != null && _sources.TryReplayImport("create-" + kind, request.RequestId, user.Id.ToString("N", CultureInfo.InvariantCulture)) is { } replay)
+            {
+                return ToResult(replay);
+            }
+
+            var (sourceError, hooks) = await ImportSourceHooksAsync(user, request.Source, entryDtos, entries!, cancellationToken).ConfigureAwait(false);
+            if (sourceError != null)
+            {
+                return sourceError;
+            }
+
+            return ToResult(await _service.CreateListAsync(user, kind, name, request.IsPublic, entries!, request.RequestId, cancellationToken, hooks == null ? null : access => hooks(access.UserIdN)).ConfigureAwait(false));
+        }
+
+        // URL imports: entries carry source keys; with a source, the list is linked and the imported entries recorded as
+        // sync-owned in the same locked write as the apply (F1).
+        private async Task<(IActionResult? Error, Func<string, ApplyHooks>? Hooks)> ImportSourceHooksAsync(User user, ImportSourceDto? source, IReadOnlyList<ApplyEntryDto> dtos, List<ApplyEntry> entries, CancellationToken cancellationToken)
+        {
+            var keys = new Dictionary<int, string>();
+            for (var i = 0; i < dtos.Count; i++)
+            {
+                var key = dtos[i]?.SourceKey;
+                if (key == null)
+                {
+                    continue;
+                }
+
+                if (!SourceKeys.IsValid(key))
+                {
+                    return (Bad("invalid_entry", $"Entry {i}: invalid sourceKey."), null);
+                }
+
+                keys[i] = key;
+                if (entries[i].Placeholder is { } placeholder)
+                {
+                    placeholder.SourceKey = key;
+                }
+            }
+
+            if (source == null)
+            {
+                return (null, null);
+            }
+
+            if (string.IsNullOrWhiteSpace(source.Url) || source.Url.Length > 500 || (source.SnapshotKeys?.Count ?? 0) > MaxEntries)
+            {
+                return (Bad("invalid_body", "source needs a list URL (and at most 2000 snapshot keys)."), null);
+            }
+
+            var (spec, error) = await _sources.PrepareLinkAsync(user, source.Url, source.SyncEnabled, source.RemoveDropped, cancellationToken).ConfigureAwait(false);
+            if (error != null)
+            {
+                return (ToResult(error), null);
+            }
+
+            var snapshot = source.SnapshotKeys ?? new List<string>();
+            return (null, linkedBy => ListSourceService.ImportHooks(spec!, linkedBy, keys, snapshot));
         }
 
         // ── Helpers ──────────────────────────────────────────────────────────
@@ -422,6 +496,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private IActionResult ToResult(ListOutcome outcome)
         {
+            if (outcome.RetryAfterSeconds.HasValue)
+            {
+                Response.Headers["Retry-After"] = outcome.RetryAfterSeconds.Value.ToString(CultureInfo.InvariantCulture);
+            }
+
             if (outcome.RawJson != null)
             {
                 return new ContentResult { StatusCode = outcome.StatusCode, Content = outcome.RawJson, ContentType = "application/json" };

@@ -117,6 +117,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("lastSyncResult")] public string? LastSyncResult { get; set; }
         /// <summary>Why the link is paused.</summary>
         [JsonPropertyName("pausedReason")] public string? PausedReason { get; set; }
+        /// <summary>Structured last sync outcome (localise from this; lastSyncResult is the English fallback).</summary>
+        [JsonPropertyName("lastSync")] public SourceSyncSummary? LastSync { get; set; }
+        /// <summary>Machine code of the pause.</summary>
+        [JsonPropertyName("pausedCode")] public string? PausedCode { get; set; }
+        /// <summary>True when the caller doesn't see every entry of the list: the sync counts and the English summary are left out (A2).</summary>
+        [JsonPropertyName("countsHidden")] public bool? CountsHidden { get; set; }
     }
 
     /// <summary>A placeholder to create (client input; validated server-side).</summary>
@@ -183,6 +189,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("itemId")] public string? ItemId { get; set; }
         /// <summary>The placeholder (type placeholder).</summary>
         [JsonPropertyName("placeholder")] public NewPlaceholderDto? Placeholder { get; set; }
+        /// <summary>URL imports: the entry's source key (provenance for a linked list).</summary>
+        [JsonPropertyName("sourceKey")] public string? SourceKey { get; set; }
     }
 
     /// <summary>Body of POST /{listId}/apply.</summary>
@@ -196,6 +204,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("entries")] public List<ApplyEntryDto>? Entries { get; set; }
         /// <summary>Playlist position.</summary>
         [JsonPropertyName("position")] public PositionDto? Position { get; set; }
+        /// <summary>URL imports: link the list to the source in the same write.</summary>
+        [JsonPropertyName("source")] public ImportSourceDto? Source { get; set; }
     }
 
     /// <summary>Body of POST /playlists and POST /collections.</summary>
@@ -209,6 +219,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("isPublic")] public bool IsPublic { get; set; }
         /// <summary>Optional initial entries, applied in order.</summary>
         [JsonPropertyName("entries")] public List<ApplyEntryDto>? Entries { get; set; }
+        /// <summary>URL imports: link the new list to the source in the same write.</summary>
+        [JsonPropertyName("source")] public ImportSourceDto? Source { get; set; }
     }
 
     /// <summary>Link a custom placeholder to a TMDB title.</summary>

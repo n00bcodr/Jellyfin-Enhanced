@@ -271,6 +271,58 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         /// <summary>Source keys an editor removed after sync added them (never re-added), with removal time.</summary>
         [JsonPropertyName("userRemovedKeys")]
         public Dictionary<string, string> UserRemovedKeys { get; set; } = new(StringComparer.Ordinal);
+
+        /// <summary>Structured outcome of the last sync/import, for localised display (<see cref="LastSyncResult"/> is the English fallback).</summary>
+        [JsonPropertyName("lastSync")]
+        public SourceSyncSummary? LastSync { get; set; }
+
+        /// <summary>Machine code of <see cref="PausedReason"/>: linker_missing | linker_cannot_edit | linker_cannot_see | url_unsupported.</summary>
+        [JsonPropertyName("pausedCode")]
+        public string? PausedCode { get; set; }
+    }
+
+    /// <summary>Structured outcome of a linked list's last sync or import (no user names, no English).</summary>
+    public sealed class SourceSyncSummary
+    {
+        /// <summary>ok | imported | failed | paused.</summary>
+        [JsonPropertyName("state")]
+        public string State { get; set; } = "ok";
+
+        /// <summary>Failure/pause code (fetch error codes such as not_found or rate_limited, seerr_unavailable, apply_failed, or a pause code).</summary>
+        [JsonPropertyName("code")]
+        public string? Code { get; set; }
+
+        /// <summary>Entries added.</summary>
+        [JsonPropertyName("added")]
+        public int Added { get; set; }
+
+        /// <summary>Entries removed because they left the source.</summary>
+        [JsonPropertyName("removed")]
+        public int Removed { get; set; }
+
+        /// <summary>Entries that left the source but were kept.</summary>
+        [JsonPropertyName("kept")]
+        public int Kept { get; set; }
+
+        /// <summary>Source entries not found (no usable id, or no confident match).</summary>
+        [JsonPropertyName("unresolved")]
+        public int Unresolved { get; set; }
+
+        /// <summary>Duplicate source entries ignored.</summary>
+        [JsonPropertyName("duplicates")]
+        public int Duplicates { get; set; }
+
+        /// <summary>The list reached its placeholder cap.</summary>
+        [JsonPropertyName("listFull")]
+        public bool ListFull { get; set; }
+
+        /// <summary>The source has more entries than are synced.</summary>
+        [JsonPropertyName("truncated")]
+        public bool Truncated { get; set; }
+
+        /// <summary>The source answered only partly (nothing was removed).</summary>
+        [JsonPropertyName("partial")]
+        public bool Partial { get; set; }
     }
 
     /// <summary>What a sync-added source key currently owns in the list.</summary>

@@ -101,6 +101,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, ListPlaceholderPlaybackStartConsumer>();
             serviceCollection.AddScoped<IEventConsumer<PlaybackProgressEventArgs>, ListPlaceholderPlaybackProgressConsumer>();
             serviceCollection.AddScoped<IEventConsumer<PlaybackStopEventArgs>, ListPlaceholderPlaybackStopConsumer>();
+            // List import (paste + URL sources) and linked-list sync: one shared Seerr call limiter for imports and
+            // syncs, Seerr lookups with a sanitized cache, the library lookup (the granularity resolver behind
+            // IListLibraryLookup), source fetchers and the sync service (ListPlaceholdersSyncTask runs it).
+            serviceCollection.AddSingleton<Services.ListPlaceholders.Import.SeerrCallLimiter>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.Import.IImportLookup, Services.ListPlaceholders.Import.SeerrImportLookup>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.Import.IListLibraryLookup, Services.ListPlaceholders.Import.ResolverListLibraryLookup>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.Import.ListImportResolver>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.Import.SeerrUserLink>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.Sources.IListSourceFetcher, Services.ListPlaceholders.Sources.ListSourceFetcher>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.Sources.IListEntryRemover, Services.ListPlaceholders.Sources.JellyfinListEntryRemover>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.Sources.ListSourceService>();
             // Opt-in anonymous usage reporting: UsageEventCounterService holds the
             // current period's counters (debounced disk persistence, same pattern
             // as WikidataAwardsService); AnalyticsReportingService builds/sends the
@@ -120,6 +131,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddTransient<JellyseerrUserImportTask>();
             serviceCollection.AddTransient<ClearTranslationCacheTask>();
             serviceCollection.AddTransient<ListPlaceholdersMaintenanceTask>();
+            serviceCollection.AddTransient<ListPlaceholdersSyncTask>();
 
             // Hidden Content: server-side filter for every native Jellyfin endpoint that surfaces user-facing item lists
             // (Resume, Items, Latest, NextUp, Upcoming, Suggestions, SearchHints), plus the Home Screen Sections

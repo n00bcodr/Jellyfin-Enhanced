@@ -185,6 +185,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrShowPersonDiscovery = true;
             JellyseerrShowCollectionDiscovery = true;
             ListPlaceholdersEnabled = false;
+            ListPlaceholdersSyncEnabled = false;
+            ListPlaceholdersImdbEnabled = false;
+            TraktClientId = string.Empty;
             JellyseerrShowDetailPageLink = true;
             JellyseerrShowDetailPageLinkAsText = false;
             ShowElsewhereOnJellyseerr = false;
@@ -728,6 +731,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // "Not in your library" placeholders on collections and playlists (master switch; off = every
         // /JellyfinEnhanced/list-placeholders route answers 404 and no client UI loads).
         public bool ListPlaceholdersEnabled { get; set; }
+        // Scheduled re-fetch of lists linked to an external source (MDBList / TMDB / Trakt / IMDb); off = linked
+        // lists only sync when an editor presses "Sync now".
+        public bool ListPlaceholdersSyncEnabled { get; set; }
+        // IMDb list/watchlist/chart URLs through IMDb's unofficial GraphQL API (best effort; may break).
+        public bool ListPlaceholdersImdbEnabled { get; set; }
+        // Trakt API client id (developer.trakt.tv/apps) for Trakt list URLs. Server-side only: never in public config.
+        public string TraktClientId { get; set; }
         public bool JellyseerrShowDetailPageLink { get; set; }
         public bool JellyseerrShowDetailPageLinkAsText { get; set; }
         public bool JellyseerrExcludeLibraryItems { get; set; } = true;

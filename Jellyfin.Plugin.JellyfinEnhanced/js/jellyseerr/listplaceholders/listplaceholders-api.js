@@ -256,7 +256,83 @@
      */
     function createList(kind, data) {
         const path = kind === 'collection' ? '/collections' : '/playlists';
-        return mutate('POST', path, { requestId: data.requestId || newRequestId(), name: data.name, isPublic: !!data.isPublic, entries: data.entries || [] });
+        const body = { requestId: data.requestId || newRequestId(), name: data.name, isPublic: !!data.isPublic, entries: data.entries || [] };
+        if (data.source) body.source = data.source;
+        return mutate('POST', path, body);
+    }
+
+    /**
+     * Applies reviewed import entries to an existing list, in order (POST /{listId}/apply).
+     * @param {string} listId
+     * @param {{requestId: string, entries: Array<Object>, position?: Object, source?: Object}} data - Reuse the
+     *   `requestId` when retrying: the server replays the first result instead of applying twice (B10).
+     * @returns {Promise<Object>} ApplyResultDto.
+     */
+    function applyEntries(listId, data) {
+        const body = { requestId: data.requestId || newRequestId(), entries: data.entries };
+        if (data.position) body.position = data.position;
+        if (data.source) body.source = data.source;
+        return mutate('POST', `/${normalizeId(listId)}/apply`, body);
+    }
+
+    /**
+     * Resolves up to 25 parsed import entries through Seerr (POST /resolve). Read-only and never retried by the
+     * API layer: the importer handles 429/504 itself and resubmits transient entries.
+     * @param {Array<Object>} entries - ImportEntryDto list.
+     * @param {{listId?: string, signal?: AbortSignal}} [options]
+     * @returns {Promise<Object>} ResolveResponse.
+     */
+    function resolveEntries(entries, options = {}) {
+        const body = { entries };
+        const listId = normalizeId(options.listId);
+        if (listId) body.listId = listId;
+        return call('/resolve', { method: 'POST', body, skipRetry: true, skipCache: true, signal: options.signal });
+    }
+
+    /**
+     * Fetches a list URL (MDBList, TMDB, Trakt, IMDb) into import entries (POST /source/fetch).
+     * @param {string} url
+     * @param {{signal?: AbortSignal}} [options]
+     * @returns {Promise<Object>} SourceFetchResponse.
+     */
+    function fetchSource(url, options = {}) {
+        return call('/source/fetch', { method: 'POST', body: { url }, skipRetry: true, skipCache: true, signal: options.signal });
+    }
+
+    /**
+     * Which URL sources work on this server.
+     * @returns {Promise<Object>} SourceProvidersDto.
+     */
+    function getSourceProviders() {
+        return call('/source/providers', { skipCache: true });
+    }
+
+    /**
+     * Links (or re-links / changes the options of) a list's source (PUT /{listId}/source).
+     * @param {string} listId
+     * @param {{url: string, syncEnabled: boolean, removeDropped: boolean}} data
+     * @returns {Promise<Object>} ListViewDto.
+     */
+    function linkSource(listId, data) {
+        return mutate('PUT', `/${normalizeId(listId)}/source`, { requestId: newRequestId(), url: data.url, syncEnabled: !!data.syncEnabled, removeDropped: !!data.removeDropped });
+    }
+
+    /**
+     * Unlinks a list's source (its entries stay).
+     * @param {string} listId
+     * @returns {Promise<Object>} ListViewDto.
+     */
+    function unlinkSource(listId) {
+        return mutate('DELETE', `/${normalizeId(listId)}/source?requestId=${encodeURIComponent(newRequestId())}`);
+    }
+
+    /**
+     * Runs a sync of the linked source now (200 with the result and view, or 202 while it keeps running).
+     * @param {string} listId
+     * @returns {Promise<Object>} SourceSyncResultDto.
+     */
+    function syncSource(listId) {
+        return mutate('POST', `/${normalizeId(listId)}/source/sync?requestId=${encodeURIComponent(newRequestId())}`);
     }
 
     /** Forgets every cached view (user switch). */
@@ -373,6 +449,13 @@
         reorder,
         getEditableLists,
         createList,
+        applyEntries,
+        resolveEntries,
+        fetchSource,
+        getSourceProviders,
+        linkSource,
+        unlinkSource,
+        syncSource,
         resetCaches,
         publish
     };

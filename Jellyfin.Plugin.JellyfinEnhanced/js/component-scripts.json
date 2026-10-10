@@ -192,6 +192,11 @@
     "jellyseerr/listplaceholders/listplaceholders-picker.js",
     "jellyseerr/listplaceholders/listplaceholders-playlist.js",
     "jellyseerr/listplaceholders/listplaceholders-collection.js",
+    "// List placeholders bulk-import parser: pure, publishes JE.internals.listPlaceholders.parser (no load-time work).",
+    "jellyseerr/listplaceholders/listplaceholders-parser.js",
+    "// Import list (review UI) and the linked-source chip / Import entry points; read lp.* at call time only.",
+    "jellyseerr/listplaceholders/listplaceholders-import.js",
+    "jellyseerr/listplaceholders/listplaceholders-source.js",
     "jellyseerr/listplaceholders/listplaceholders-init.js",
 
     "// tags",

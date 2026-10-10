@@ -4,7 +4,8 @@ import { createHarness, plain } from '../../helpers/harness.mjs';
 export const MODULES = [
   'listplaceholders-api.js', 'listplaceholders-styles.js', 'listplaceholders-render.js', 'listplaceholders-requests.js',
   'listplaceholders-granularity.js', 'listplaceholders-actions.js', 'listplaceholders-search.js', 'listplaceholders-picker.js',
-  'listplaceholders-playlist.js', 'listplaceholders-collection.js', 'listplaceholders-init.js'
+  'listplaceholders-playlist.js', 'listplaceholders-collection.js', 'listplaceholders-parser.js', 'listplaceholders-import.js',
+  'listplaceholders-source.js', 'listplaceholders-init.js'
 ];
 
 export const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

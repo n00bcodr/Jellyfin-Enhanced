@@ -80,6 +80,7 @@
      */
     async function onViewShow(element, hash) {
         pruneControllers();
+        lp.sourceUi?.onViewShow(element, hash || window.location.hash);
         const id = idFromHash(hash || window.location.hash);
         if (!id) return;
         const page = element?.classList?.contains('itemDetailPage') ? element : document.querySelector('.itemDetailPage:not(.hide)');
@@ -166,7 +167,9 @@
         openPicker: (options) => lp.picker.openPicker(options),
         appendCardAction: (card, item) => lp.picker.appendCardAction(card, item),
         appendModalAction: (mount, data, mediaType) => lp.picker.appendModalAction(mount, data, mediaType),
-        getPlaceholderTmdbIds: (listId, mediaType) => lp.collection.placeholderTmdbIds(listId, mediaType)
+        getPlaceholderTmdbIds: (listId, mediaType) => lp.collection.placeholderTmdbIds(listId, mediaType),
+        openImport: (options) => lp.importer.open(options),
+        parser: lp.parser
     };
 
 })(window.JellyfinEnhanced);

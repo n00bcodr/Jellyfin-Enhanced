@@ -2000,6 +2000,23 @@
                             <div class="je-setting-description" data-desc-for="listPlaceholdersEnabled">
                                 <div class="fieldDescription je-field-desc-xl">Lets users add movies, series, seasons or episodes that aren't in your library to collections and playlists. They show up as "Not in your library" entries with their Seerr status and a request button, and are replaced by the real item once it arrives. Users who can edit a list can add and arrange them: the playlist's owner and anyone it's shared with as an editor, and administrators; for collections, administrators and users allowed to manage collections. Parental controls hide titles a restricted user may not see.</div>
                             </div>
+                            <div class="checkboxContainer"><label><input id="listPlaceholdersSyncEnabled" is="emby-checkbox" type="checkbox"/><span>Keep linked lists in sync</span></label></div>
+                            <div class="je-setting-description" data-desc-for="listPlaceholdersSyncEnabled">
+                                <div class="fieldDescription je-field-desc-xl">Playlists and collections imported from an MDBList, TMDB, Trakt or IMDb list can stay linked to it. When this is on, the "Sync linked lists" scheduled task (every 12 hours by default) adds titles that were added to the source list, and removes the ones that left it if the link asks for that. Only entries the import or sync added are ever removed. Editors can always press "Sync now".</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="traktClientId">Trakt Client ID</label>
+                                <div class="je-api-row">
+                                    <input id="traktClientId" is="emby-input" type="text" autocomplete="off" class="je-api-input"/>
+                                </div>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="traktClientId">
+                                <div class="fieldDescription">Needed to import Trakt lists, watchlists and charts. Create an API app at <a class="sectionTitle" href="https://developer.trakt.tv/apps" target="_blank" rel="noopener">developer.trakt.tv/apps</a> and paste its Client ID (not the secret). Trakt deletes apps that aren't used for 30 days; linked lists that sync keep it in use. Only public lists can be imported.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="listPlaceholdersImdbEnabled" is="emby-checkbox" type="checkbox"/><span>Allow IMDb list URLs (unofficial)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="listPlaceholdersImdbEnabled">
+                                <div class="fieldDescription je-field-desc-xl">IMDb has no public API. With this on, IMDb lists, public watchlists and charts are read through IMDb's unofficial website API, which may stop working at any time and is for personal use only. Without it, mirror the list on MDBList or paste an IMDb CSV export instead.</div>
+                            </div>
                         </div>
                     </fieldset>
 
@@ -6162,6 +6179,9 @@
                 document.querySelector('#jellyseerrShowPersonDiscovery').checked = config.JellyseerrShowPersonDiscovery !== false;
                 document.querySelector('#jellyseerrShowCollectionDiscovery').checked = config.JellyseerrShowCollectionDiscovery !== false;
                 document.querySelector('#listPlaceholdersEnabled').checked = config.ListPlaceholdersEnabled || false;
+                document.querySelector('#listPlaceholdersSyncEnabled').checked = config.ListPlaceholdersSyncEnabled || false;
+                document.querySelector('#listPlaceholdersImdbEnabled').checked = config.ListPlaceholdersImdbEnabled || false;
+                document.querySelector('#traktClientId').value = config.TraktClientId || '';
                 document.querySelector('#jellyseerrShowReportButton').checked = !!config.JellyseerrShowReportButton;
                 document.querySelector('#jellyseerrShowIssueIndicator').checked = !!config.JellyseerrShowIssueIndicator;
                 document.querySelector('#jellyseerrShowDetailPageLink').checked = config.JellyseerrShowDetailPageLink !== false;
@@ -6730,6 +6750,9 @@
             config.JellyseerrShowPersonDiscovery = document.querySelector('#jellyseerrShowPersonDiscovery').checked;
             config.JellyseerrShowCollectionDiscovery = document.querySelector('#jellyseerrShowCollectionDiscovery').checked;
             config.ListPlaceholdersEnabled = document.querySelector('#listPlaceholdersEnabled').checked;
+            config.ListPlaceholdersSyncEnabled = document.querySelector('#listPlaceholdersSyncEnabled').checked;
+            config.ListPlaceholdersImdbEnabled = document.querySelector('#listPlaceholdersImdbEnabled').checked;
+            config.TraktClientId = document.querySelector('#traktClientId').value.trim();
             config.JellyseerrShowReportButton = document.querySelector('#jellyseerrShowReportButton').checked;
             config.JellyseerrShowIssueIndicator = document.querySelector('#jellyseerrShowIssueIndicator').checked;
             config.JellyseerrShowDetailPageLink = document.querySelector('#jellyseerrShowDetailPageLink').checked;
@@ -8236,7 +8259,7 @@
             { parent: 'catchUpEnabled', label: 'Enable Catch Up', children: ['catchUpLogEnabled', 'catchUpUseNativeTab', 'catchUpUsePluginPages', 'catchUpUseCustomTabs', 'catchUpAutoCreateCustomTab'] },
             { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
             { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
-            { parent: 'listPlaceholdersEnabled', label: "Show titles you don't have on collections and playlists", children: ['listPlaceholdersAutoRequestEnabled', 'listPlaceholdersAutoRequestCount', 'listPlaceholdersAutoRequestMinutes', 'listPlaceholdersAutoRequestOnlyReleased'] },
+            { parent: 'listPlaceholdersEnabled', label: "Show titles you don't have on collections and playlists", children: ['listPlaceholdersAutoRequestEnabled', 'listPlaceholdersAutoRequestCount', 'listPlaceholdersAutoRequestMinutes', 'listPlaceholdersAutoRequestOnlyReleased', 'listPlaceholdersSyncEnabled', 'traktClientId', 'listPlaceholdersImdbEnabled'] },
             { parent: 'listPlaceholdersAutoRequestEnabled', label: "Request the next titles of a list while it's being watched", children: ['listPlaceholdersAutoRequestCount', 'listPlaceholdersAutoRequestMinutes', 'listPlaceholdersAutoRequestOnlyReleased'] },
             { parent: 'preventWatchlistReAddition', label: 'Prevent re-adding removed items', children: ['watchlistMemoryRetentionDays'] },
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },

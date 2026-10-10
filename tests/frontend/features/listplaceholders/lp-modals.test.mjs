@@ -61,7 +61,7 @@ test('picker adds a movie to the chosen playlist at the start and links the list
   h.JE.listPlaceholders.appendCardAction(card, { id: 151960, mediaType: 'movie', title: 'Planes', releaseDate: '2013-08-09', posterPath: '/p.jpg', overview: 'o' });
   card.querySelector('.je-lp-card-add').click();
   const select = await until(() => h.document.querySelector('.je-lp-list-select'));
-  assert.deepEqual([...select.options].map(o => o.textContent), ['Mine <i>', 'listPlaceholders_owned_by{"name":"Theirs","owner":"bob"}', 'Cars', 'listPlaceholders_new_playlist']);
+  assert.deepEqual([...select.options].map(o => o.textContent), ['Mine <i>', 'listPlaceholders_owned_by{"name":"Theirs","owner":"bob"}', 'Cars', 'listPlaceholders_new_playlist', 'listPlaceholders_import_picker_option']);
   h.document.querySelector('.je-lp-position-select').value = 'start';
   h.document.querySelector('.jellyseerr-modal-button-primary').click();
   await until(() => posts.length);

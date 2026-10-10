@@ -3,6 +3,7 @@ using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
@@ -537,18 +538,22 @@ public class ListPlaceholdersSwapTests
     {
         var placeholder = Movie(1);
         placeholder.SourceKey = "movie|1||";
-        var doc = new ListDoc { Source = new ListSource() };
+        var doc = new ListDoc { Source = new ListSource(), Items = { placeholder } };
         doc.Source.Owned[placeholder.SourceKey] = new SourceOwnership { PhId = placeholder.Id };
+        var aa = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var bb = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
 
-        Assert.True(ListSourceProvenance.OnSwapped(doc, placeholder, new[] { "aa" }, retired: false));
-        Assert.False(ListSourceProvenance.OnSwapped(doc, placeholder, new[] { "aa" }, retired: false));
-        Assert.True(ListSourceProvenance.OnSwapped(doc, placeholder, new[] { "bb" }, retired: true));
-        Assert.Equal(new[] { "aa", "bb" }, doc.Source.Owned[placeholder.SourceKey].ItemIds);
+        Assert.True(ListSourceProvenance.OnSwapped(doc, placeholder, new[] { aa }));
+        Assert.False(ListSourceProvenance.OnSwapped(doc, placeholder, new[] { aa }));
+        Assert.Equal(placeholder.Id, doc.Source.Owned[placeholder.SourceKey].PhId);
+        doc.Items.Remove(placeholder); // retired: the swap service calls the hook after removing it
+        Assert.True(ListSourceProvenance.OnSwapped(doc, placeholder, new[] { bb }));
+        Assert.Equal(new[] { aa, bb }, doc.Source.Owned[placeholder.SourceKey].ItemIds);
         Assert.Null(doc.Source.Owned[placeholder.SourceKey].PhId);
 
         var userAdded = Movie(2);
-        Assert.False(ListSourceProvenance.OnSwapped(doc, userAdded, new[] { "cc" }, retired: true));
-        Assert.False(ListSourceProvenance.OnSwapped(new ListDoc(), placeholder, new[] { "cc" }, retired: true));
+        Assert.False(ListSourceProvenance.OnSwapped(doc, userAdded, new[] { bb }));
+        Assert.False(ListSourceProvenance.OnSwapped(new ListDoc(), placeholder, new[] { bb }));
     }
 
     [Fact]

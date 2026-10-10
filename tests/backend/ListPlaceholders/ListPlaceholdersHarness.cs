@@ -3,6 +3,8 @@ using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Configuration;
@@ -34,6 +36,13 @@ internal sealed class ListPlaceholdersHarness : IDisposable
     public ListPlaceholderMetadataService Metadata { get; }
     public ListPlaceholderSwapService Swap { get; }
     public ListPlaceholderService Service { get; }
+    public FakeImportLookup Lookup { get; } = new();
+    public FakeLibraryLookup Library { get; } = new();
+    public FakeSourceFetcher Fetcher { get; } = new();
+    public FakeEntryRemover Remover { get; }
+    public SeerrCallLimiter Limiter { get; } = new(4, TimeSpan.Zero, TimeProvider.System);
+    public ListImportResolver ImportResolver { get; }
+    public ListSourceService Sources { get; }
 
     /// <summary>Synthetic Seerr TV details by TMDB id (JSON), served at /api/v1/tv/{id}.</summary>
     public Dictionary<int, string> TvDetails { get; } = new();
@@ -47,7 +56,9 @@ internal sealed class ListPlaceholdersHarness : IDisposable
     /// <summary>TMDB certification per movie id for the synthetic Seerr detail endpoint.</summary>
     public Dictionary<int, string> MovieCertifications { get; } = new();
 
-    public ListPlaceholdersHarness(bool seerr = false)
+    /// <param name="seerr">Configure a (synthetic) Seerr.</param>
+    /// <param name="realLibrary">Import lookups use the production library lookup over <see cref="Host"/> instead of <see cref="Library"/>.</param>
+    public ListPlaceholdersHarness(bool seerr = false, bool realLibrary = false)
     {
         Plugin.Plugin.Configuration.ListPlaceholdersEnabled = true;
         if (seerr)
@@ -85,6 +96,9 @@ internal sealed class ListPlaceholdersHarness : IDisposable
         Metadata = new ListPlaceholderMetadataService(Transport, Plugin.Core.Logger);
         Swap = new ListPlaceholderSwapService(Store, Host, Users.Object, Resolver, Metadata, Plugin.Core.Logger) { SettleDelay = TimeSpan.Zero };
         Service = new ListPlaceholderService(Store, Access, Host, Index, Users.Object, Plugin.Core.Logger, Resolver, Metadata, Swap);
+        Remover = new FakeEntryRemover(Host);
+        ImportResolver = new ListImportResolver(Lookup, realLibrary ? new ResolverListLibraryLookup(Resolver) : Library, Access, Limiter, Plugin.Core.Logger);
+        Sources = new ListSourceService(Store, Access, Service, Host, Remover, Fetcher, ImportResolver, Users.Object, Plugin.Core.Logger);
     }
 
     public User NewUser(string name, bool admin = false, bool collections = false, int? maxRating = null)

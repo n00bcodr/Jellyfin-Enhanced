@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
 
@@ -852,7 +853,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             if (added)
             {
                 placeholder.Filled.Sort((a, b) => new EpisodeCoord(a.S, a.E).CompareTo(new EpisodeCoord(b.S, b.E)));
-                ListSourceProvenance.OnSwapped(context.Doc, placeholder, ownedItem.HasValue ? new[] { N(ownedItem.Value) } : Array.Empty<string>(), retired: false);
+                ListSourceProvenance.OnSwapped(context.Doc, placeholder, ownedItem.HasValue ? new[] { N(ownedItem.Value) } : Array.Empty<string>());
                 context.Dirty = true;
             }
         }
@@ -940,9 +941,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
         private void Retire(PassContext context, Placeholder placeholder, IReadOnlyCollection<string>? itemIds = null)
         {
-            ListSourceProvenance.OnSwapped(context.Doc, placeholder, itemIds ?? Array.Empty<string>(), retired: true);
             context.Doc.Items.Remove(placeholder);
             context.Doc.Order.Remove(ListPlaceholderOrder.PlaceholderToken(placeholder.Id));
+            // After the removal: a sync-owned key then owns only the items (F1).
+            ListSourceProvenance.OnSwapped(context.Doc, placeholder, itemIds ?? Array.Empty<string>());
             _pendingMatches.TryRemove(MatchKey(context.ListIdN, placeholder.Id), out _);
             context.Retired++;
             context.Dirty = true;

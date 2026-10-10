@@ -294,7 +294,7 @@
     }
 
     /**
-     * Editor toolbar of a list page ("Add title"; later phases add Import).
+     * Editor toolbar of a list page ("Add title"; listplaceholders-source.js adds "Import list" and the source chip).
      * @param {Object} ctrl - Page controller.
      * @returns {HTMLElement}
      */
@@ -321,6 +321,8 @@
             open(ctrl);
         });
         bar.append(label, button);
+        bar.__jeLpCtrl = ctrl;
+        lp.sourceUi?.decorateToolbar(bar, ctrl);
         return bar;
     }
 
@@ -358,6 +360,7 @@
         updateAutoRequestHint(bar, listed);
         const label = bar.querySelector('.je-lp-toolbar-label');
         if (label) label.textContent = count > 0 ? JE.t('listPlaceholders_count', { count }) : '';
+        if (bar.__jeLpCtrl) lp.sourceUi?.decorateToolbar(bar, bar.__jeLpCtrl);
     }
 
     lp.search = { open, readCustom, usableResults, resultsHtml, reportAdd, linkedIntoLibrary };

@@ -42,6 +42,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <summary>A replayed response body (already JSON).</summary>
         public string? RawJson { get; init; }
 
+        /// <summary>Seconds for a Retry-After header (rate limits, pending parental checks).</summary>
+        public int? RetryAfterSeconds { get; init; }
+
         /// <summary>Success with a body.</summary>
         /// <param name="value">Body.</param>
         /// <returns>Outcome.</returns>
@@ -278,8 +281,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <param name="expectedRev">Optional expected revision.</param>
         /// <param name="requestId">Client request id.</param>
         /// <param name="cancellationToken">Cancellation.</param>
+        /// <param name="hooks">Optional precondition / same-write follow-up (linked-source provenance and sync).</param>
         /// <returns>The outcome (<see cref="ApplyResultDto"/>).</returns>
-        public async Task<ListOutcome> ApplyAsync(ListAccess access, IReadOnlyList<ApplyEntry> entries, PositionDto? position, int? expectedRev, string? requestId, CancellationToken cancellationToken)
+        public async Task<ListOutcome> ApplyAsync(ListAccess access, IReadOnlyList<ApplyEntry> entries, PositionDto? position, int? expectedRev, string? requestId, CancellationToken cancellationToken, ApplyHooks? hooks = null)
         {
             var skipped = new List<SkippedEntryDto>();
             var accepted = await PrevalidateAsync(access, entries, skipped, cancellationToken).ConfigureAwait(false);
@@ -287,7 +291,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var visibility = await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
 
             var outcome = await RunLockedAsync(access.ListIdN, access.ListIdN, requestId, access.UserIdN, cancellationToken, () =>
-                ApplyLockedAsync(access, accepted, skipped, position, expectedRev, visibility)).ConfigureAwait(false);
+                ApplyLockedAsync(access, accepted, skipped, position, expectedRev, visibility, hooks)).ConfigureAwait(false);
             if (outcome.Value is ApplyResultDto { Added.Count: > 0 } applied)
             {
                 // Seerr metadata (dates, ids, expected episodes) for the new placeholders, then a swap check, in the background.
@@ -464,12 +468,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             List<SkippedEntryDto> skipped,
             PositionDto? position,
             int? expectedRev,
-            PlaceholderVisibility visibility)
+            PlaceholderVisibility visibility,
+            ApplyHooks? hooks = null)
         {
             var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
             if (expectedRev.HasValue && expectedRev.Value != doc.Rev)
             {
                 return Conflict(access, "rev_conflict", "The list changed; reload it.", visibility);
+            }
+
+            if (hooks?.Precondition?.Invoke(doc) is { } preconditionFailure)
+            {
+                return Conflict(access, preconditionFailure, "The list's linked source changed; try again.", visibility);
             }
 
             var isPlaylist = access.List.Kind == ListKinds.Playlist;
@@ -613,6 +623,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     order = Canonical(access, new ListDoc { Order = order, Items = doc.Items });
                 }
 
+                if (hooks?.AfterFailedApply != null && RecordPartialApply(access, hooks.AfterFailedApply, doc, result, skipped, accepted))
+                {
+                    changed = true;
+                }
+
                 var saved = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed);
                 return ListOutcome.Error(500, "list_update_failed", "Jellyfin could not update the list.", BuildView(access, saved, isPlaylist ? order : null, visibility));
             }
@@ -650,8 +665,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
             }
 
-            var final = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed);
             result.Skipped = skipped.OrderBy(s => s.Index).ToList();
+            if (hooks?.AfterApplyAsync != null && await hooks.AfterApplyAsync(doc, result, accepted).ConfigureAwait(false))
+            {
+                // Same locked write: provenance and sync removals; re-read Jellyfin if real entries were removed.
+                changed = true;
+                if (isPlaylist)
+                {
+                    order = Canonical(access, new ListDoc { Order = order, Items = doc.Items });
+                }
+            }
+
+            var final = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed);
             result.View = BuildView(access, final, isPlaylist ? order : null, visibility);
             return ListOutcome.Ok(result);
         }
@@ -1000,8 +1025,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <param name="entries">Validated entries.</param>
         /// <param name="requestId">Client request id.</param>
         /// <param name="cancellationToken">Cancellation.</param>
+        /// <param name="hooks">Optional same-write follow-up of the initial apply (linked-source provenance).</param>
         /// <returns>The outcome (<see cref="CreateListResultDto"/>).</returns>
-        public async Task<ListOutcome> CreateListAsync(User user, string kind, string name, bool isPublic, IReadOnlyList<ApplyEntry> entries, string? requestId, CancellationToken cancellationToken)
+        public async Task<ListOutcome> CreateListAsync(User user, string kind, string name, bool isPublic, IReadOnlyList<ApplyEntry> entries, string? requestId, CancellationToken cancellationToken, Func<ListAccess, ApplyHooks?>? hooks = null)
         {
             var userIdN = user.Id.ToString("N", CultureInfo.InvariantCulture);
             var scope = "create-" + kind;
@@ -1054,7 +1080,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
 
                 var listIdN = id.ToString("N", CultureInfo.InvariantCulture);
-                var applied = await ApplyAsync(access, entries, null, null, null, cancellationToken).ConfigureAwait(false);
+                var applied = await ApplyAsync(access, entries, null, null, null, cancellationToken, hooks?.Invoke(access)).ConfigureAwait(false);
                 if (applied.StatusCode >= 300 || applied.Value is not ApplyResultDto result)
                 {
                     // The list exists but its entries didn't (all) apply: report the failure with the list to reload,
@@ -1115,17 +1141,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 NativeCanEdit = access.Permissions.NativeCanEdit,
                 SeerrEnabled = seerrEnabled,
                 SeerrStatusReady = !seerrEnabled || !items.Any(HasTmdb) || _seerrIndex.IsReady,
-                Source = doc?.Source == null ? null : new ListSourceDto
-                {
-                    Kind = doc.Source.Kind,
-                    Url = doc.Source.Url,
-                    Title = doc.Source.Title,
-                    SyncEnabled = doc.Source.SyncEnabled,
-                    RemoveDropped = doc.Source.RemoveDropped,
-                    LastSyncAt = doc.Source.LastSyncAt,
-                    LastSyncResult = doc.Source.LastSyncResult,
-                    PausedReason = doc.Source.PausedReason,
-                },
             };
 
             var today = DateTime.UtcNow;
@@ -1182,7 +1197,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 });
             }
 
+            if (doc?.Source != null)
+            {
+                view.Source = SourceView(doc.Source, SeesWholeList(access, doc, items.Count, canonical, view.Order));
+            }
+
             return view;
+        }
+
+        // A2: a linked source's sync counts (added/removed/kept/not found) and its English summary describe the whole
+        // list, so they are shown only to callers who see every entry; others get the state, codes and timestamps.
+        private static ListSourceDto SourceView(ListSource source, bool fullDetail)
+        {
+            var last = source.LastSync;
+            var countFree = last?.State is "failed" or "paused" && last.Code != "apply_failed";
+            return new ListSourceDto
+            {
+                Kind = source.Kind,
+                Url = source.Url,
+                Title = source.Title,
+                SyncEnabled = source.SyncEnabled,
+                RemoveDropped = source.RemoveDropped,
+                LastSyncAt = source.LastSyncAt,
+                LastSyncResult = fullDetail || countFree ? source.LastSyncResult : null,
+                PausedReason = source.PausedReason,
+                LastSync = fullDetail || last == null ? last : new SourceSyncSummary { State = last.State, Code = last.Code, Truncated = last.Truncated, Partial = last.Partial },
+                PausedCode = source.PausedCode,
+                CountsHidden = fullDetail ? null : true,
+            };
+        }
+
+        // Whether the caller sees every entry of the list: no placeholder hidden by the parental filter and, in a
+        // playlist, every row of the canonical order (in a collection, every item).
+        private bool SeesWholeList(ListAccess access, ListDoc doc, int visiblePlaceholders, IReadOnlyList<string>? canonical, IReadOnlyList<string>? projected)
+        {
+            if (visiblePlaceholders != doc.Items.Count)
+            {
+                return false;
+            }
+
+            if (access.List.Kind == ListKinds.Playlist && canonical != null && projected != null)
+            {
+                return projected.Count == canonical.Count;
+            }
+
+            try
+            {
+                return _host.GetRawEntries(access.List.Id)
+                    .Where(r => r.Resolved && r.ItemId.HasValue)
+                    .All(r => access.List.Kind == ListKinds.Playlist ? _host.IsEntryVisible(r.ItemId!.Value, access.User) : _host.CanAccessItem(r.ItemId!.Value, access.User));
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug($"[ListPlaceholders] Access check of list {access.ListIdN} failed: {ex.Message}");
+                return false;
+            }
         }
 
         // A2: filled episodes were inserted with the OWNER's rights, so only those the caller may see count: in a
@@ -1248,6 +1317,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
 
             return ListOutcome.Error(409, code, message, BuildView(access, current, canonical, visibility));
+        }
+
+        // A failed apply still saves the placeholders it added (and Jellyfin may have added some real items): narrow the
+        // result to what is in the list now and let the hook record its provenance in the same write. Nothing landed →
+        // nothing to record. Never throws: the caller is already reporting the original failure.
+        private bool RecordPartialApply(ListAccess access, Func<ListDoc, ApplyResultDto, IReadOnlyList<ApplyEntry>, bool> hook, ListDoc doc, ApplyResultDto result, List<SkippedEntryDto> skipped, IReadOnlyList<ApplyEntry> applied)
+        {
+            try
+            {
+                if (result.AddedAsItems.Count > 0)
+                {
+                    var landed = new HashSet<string>(
+                        _host.GetRawEntries(access.List.Id).Where(r => r.Resolved && r.ItemId.HasValue).Select(r => r.ItemId!.Value.ToString("N", CultureInfo.InvariantCulture)),
+                        StringComparer.Ordinal);
+                    result.AddedAsItems.RemoveAll(id => !landed.Contains(id));
+                }
+
+                if (result.Added.Count == 0 && result.AddedAsItems.Count == 0)
+                {
+                    return false;
+                }
+
+                result.Skipped = skipped.OrderBy(s => s.Index).ToList();
+                return hook(doc, result, applied);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[ListPlaceholders] Recording what a failed update of list {access.ListIdN} added failed: {ex.Message}");
+                return false;
+            }
         }
 
         private ListDoc? SaveIfChanged(ListDoc doc, List<string>? order, List<string> originalOrder, bool placeholdersChanged)
