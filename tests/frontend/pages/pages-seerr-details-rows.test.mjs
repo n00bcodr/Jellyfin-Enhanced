@@ -509,7 +509,7 @@ test('the cards are built while the rows wait, when idle, and Jellyfin\'s render
  assert.equal(h.counts.cards,0,'nothing built at data time');assert.equal(h.idles(),1);
  h.idle();
  assert.equal(h.counts.cards,40);assert.deepEqual(h.after(),['marker'],'nothing inserted yet');assert.equal(h.idles(),0);
- assert.ok(h.made.every(card=>!card.isConnected&&card.getRootNode() instanceof h.window.DocumentFragment),'held in a fragment');
+ assert.ok(h.made.every(card=>!card.isConnected && card.getRootNode() instanceof h.window.DocumentFragment),'held in a fragment');
  await h.render({card:false});
  assert.deepEqual(h.after(),['Recommended','Similar']);assert.deepEqual(h.cards(),[20,20]);assert.equal(h.marker(),null);
  assert.equal(h.counts.cards,40,'none built with the render');assert.deepEqual(h.inserted(),h.made,'the prebuilt cards, in order');
@@ -636,7 +636,7 @@ test('with the real cards: prebuilt rows are what the render builds, and their p
   assert.equal(observer.targets.size,40);
   observer.deliver();
   assert.equal(observer.targets.size,0);assert.deepEqual(html(h),loaded,'loaded as the render\'s own build loads them');
-  assert.match(h.inserted()[1].querySelector('.cardImageContainer').style.backgroundImage,/image\.tmdb\.org\/t\/p\/w400\/p1\.jpg/);
+  assert.match(h.inserted()[1].querySelector('.cardImageContainer').style.backgroundImage,/^url\("?https:\/\/image\.tmdb\.org\/t\/p\/w400\/p1\.jpg"?\)$/);
  }
  // Hidden meanwhile (shown with a hide button, not filtered): built again, with the hide button's new state.
  const hide=h=>{h.JE.hiddenContent.filterJellyseerrResults=list=>list;h.hidden.add(2);};
