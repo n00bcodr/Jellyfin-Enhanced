@@ -3370,6 +3370,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ShowFileSizes,
                 config.RemoveContinueWatchingEnabled,
                 config.ShowAudioLanguages,
+                config.SimplifyDubLanguageFlags,
                 config.Shortcuts,
                 config.ShowReviews,
                 config.ShowUserReviews,
