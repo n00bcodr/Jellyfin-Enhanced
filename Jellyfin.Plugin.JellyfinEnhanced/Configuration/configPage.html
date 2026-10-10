@@ -2124,6 +2124,48 @@
                                     </div>
                                 </div>
                             </details>
+
+                            <details class="je-details-section">
+                                <summary>List Placeholder Requests</summary>
+                                <div class="je-details-body">
+                                    <div class="checkboxContainer"><label><input id="listPlaceholdersAutoRequestEnabled" is="emby-checkbox" type="checkbox"/><span>Request the next titles of a list while it's being watched</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="listPlaceholdersAutoRequestEnabled">
+                                        <div class="fieldDescription je-field-desc-xl">
+                                            When someone plays an item of a playlist or collection that has "Not in your library" titles, request the titles that come next in that list from Seerr, as that user. A season requests that season, specific episodes request the season they belong to, and a whole series requests its first season (or, once part of it is in the list, the first season that still has episodes missing). Each user's Seerr permissions, approval rules and quotas apply.
+                                            <br/><br/>
+                                            Skipped (and not counted): titles that are already requested or available, custom entries without a TMDB match, titles the user's parental controls hide, and users who aren't linked to Seerr, are excluded from Seerr, or may not request that kind of title.
+                                            <br/><br/>
+                                            <strong>Requirements:</strong> Seerr and "Show titles you don't have on collections and playlists" (List Placeholders).
+                                        </div>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel" for="listPlaceholdersAutoRequestCount">Titles to request each time</label>
+                                        <input id="listPlaceholdersAutoRequestCount" is="emby-input" type="number" min="1" max="10" value="1"/>
+                                    </div>
+                                    <div class="je-setting-description" data-desc-for="listPlaceholdersAutoRequestCount">
+                                        <div class="fieldDescription je-field-desc-mt-sm">How many of the next titles to request when the trigger is reached (1-10). Default: 1.</div>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel" for="listPlaceholdersAutoRequestMinutes">Minutes watched before requesting</label>
+                                        <input id="listPlaceholdersAutoRequestMinutes" is="emby-input" type="number" min="0" max="600" value="5"/>
+                                    </div>
+                                    <div class="je-setting-description" data-desc-for="listPlaceholdersAutoRequestMinutes">
+                                        <div class="fieldDescription je-field-desc-mt-sm">Request once playback reaches this position (0-600 minutes). 0 requests as soon as playback starts. Default: 5.</div>
+                                    </div>
+                                    <div class="checkboxContainer"><label><input id="listPlaceholdersAutoRequestOnlyReleased" is="emby-checkbox" type="checkbox"/><span>Only request released titles</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="listPlaceholdersAutoRequestOnlyReleased">
+                                        <div class="fieldDescription je-field-desc-mt-sm">Skip titles that aren't out yet, including ones without a date (TBA). A movie counts from its release date, a series from its first air date, a season from its premiere and specific episodes from the first one's air date.</div>
+                                        <div class="je-info-banner-inline">
+                                        <i class="material-icons je-info-icon-sm">info</i>
+                                        <div>
+                                            • Independent of Auto Season Requests and Auto Movie Requests. With Auto Season Requests also on, a series requested here gets its later seasons from that feature<br/>
+                                            • Up to 50 entries after the played item are looked at, and each title's Seerr status is checked again right before it is requested<br/>
+                                            • When the item is in several lists, the user's own and editable lists come first, and each title is requested only once<br/>
+                                        </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </details>
                         </div>
                     </fieldset>
 
@@ -6144,6 +6186,10 @@
                 document.querySelector('#autoMovieRequestCheckReleaseDate').checked = config.AutoMovieRequestCheckReleaseDate !== false;
                 document.querySelector('#autoMovieRequestQualityMode').value = config.AutoMovieRequestQualityMode || 'default';
                 document.querySelector('#autoMovieRequestFallbackOn4k').checked = config.AutoMovieRequestFallbackOn4k !== false;
+                document.querySelector('#listPlaceholdersAutoRequestEnabled').checked = config.ListPlaceholdersAutoRequestEnabled || false;
+                document.querySelector('#listPlaceholdersAutoRequestCount').value = config.ListPlaceholdersAutoRequestCount || 1;
+                document.querySelector('#listPlaceholdersAutoRequestMinutes').value = typeof config.ListPlaceholdersAutoRequestMinutes === 'number' ? config.ListPlaceholdersAutoRequestMinutes : 5;
+                document.querySelector('#listPlaceholdersAutoRequestOnlyReleased').checked = config.ListPlaceholdersAutoRequestOnlyReleased !== false;
                 if ((config.AutoMovieRequestQualityMode || 'default') === 'custom') {
                     document.querySelector('#autoMovieRequestCustomSettings').style.display = 'block';
                     loadAutoMovieRadarrServers(config);
@@ -6749,6 +6795,12 @@
             var profileVal = parseInt(document.querySelector('#autoMovieRequestProfile').value);
             config.AutoMovieRequestCustomProfileId = (!isNaN(profileVal) && profileVal > 0) ? profileVal : 0;
             config.AutoMovieRequestCustomRootFolder = document.querySelector('#autoMovieRequestRootFolder').value || '';
+            config.ListPlaceholdersAutoRequestEnabled = document.querySelector('#listPlaceholdersAutoRequestEnabled').checked;
+            const lpRequestCount = parseInt(document.querySelector('#listPlaceholdersAutoRequestCount').value, 10);
+            config.ListPlaceholdersAutoRequestCount = isNaN(lpRequestCount) ? 1 : Math.min(Math.max(lpRequestCount, 1), 10);
+            const lpRequestMinutes = parseInt(document.querySelector('#listPlaceholdersAutoRequestMinutes').value, 10);
+            config.ListPlaceholdersAutoRequestMinutes = isNaN(lpRequestMinutes) ? 5 : Math.min(Math.max(lpRequestMinutes, 0), 600);
+            config.ListPlaceholdersAutoRequestOnlyReleased = document.querySelector('#listPlaceholdersAutoRequestOnlyReleased').checked;
             config.AddRequestedMediaToWatchlist = document.querySelector('#addRequestedMediaToWatchlist').checked;
             config.SyncJellyseerrWatchlist = document.querySelector('#syncJellyseerrWatchlist').checked;
             config.SyncJellyfinWatchlistToSeerr = document.querySelector('#syncJellyfinWatchlistToSeerr').checked;
@@ -8184,6 +8236,8 @@
             { parent: 'catchUpEnabled', label: 'Enable Catch Up', children: ['catchUpLogEnabled', 'catchUpUseNativeTab', 'catchUpUsePluginPages', 'catchUpUseCustomTabs', 'catchUpAutoCreateCustomTab'] },
             { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
             { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
+            { parent: 'listPlaceholdersEnabled', label: "Show titles you don't have on collections and playlists", children: ['listPlaceholdersAutoRequestEnabled', 'listPlaceholdersAutoRequestCount', 'listPlaceholdersAutoRequestMinutes', 'listPlaceholdersAutoRequestOnlyReleased'] },
+            { parent: 'listPlaceholdersAutoRequestEnabled', label: "Request the next titles of a list while it's being watched", children: ['listPlaceholdersAutoRequestCount', 'listPlaceholdersAutoRequestMinutes', 'listPlaceholdersAutoRequestOnlyReleased'] },
             { parent: 'preventWatchlistReAddition', label: 'Prevent re-adding removed items', children: ['watchlistMemoryRetentionDays'] },
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
             { parent: 'bookmarksEnabled', label: 'Enable Bookmarks', children: ['bookmarksUsePluginPages', 'bookmarksUseNativeTab', 'bookmarksUseCustomTabs'] },

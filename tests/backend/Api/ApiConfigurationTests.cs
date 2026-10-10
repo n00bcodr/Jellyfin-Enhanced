@@ -57,6 +57,9 @@ public class ApiConfigurationTests
         using var document = JsonDocument.Parse(json);
         Assert.True(document.RootElement.GetProperty("TmdbEnabled").GetBoolean());
         Assert.True(document.RootElement.GetProperty("MdblistEnabled").GetBoolean());
+        // List auto-request flags for the editors' toolbar hint (defaults: off, next 1).
+        Assert.False(document.RootElement.GetProperty("ListPlaceholdersAutoRequestEnabled").GetBoolean());
+        Assert.Equal(1, document.RootElement.GetProperty("ListPlaceholdersAutoRequestCount").GetInt32());
         Assert.Equal(authenticated, json.Contains("private-seerr", StringComparison.Ordinal));
         Assert.Equal(authenticated, json.Contains("private-mapping-sentinel", StringComparison.Ordinal));
     }

@@ -3495,6 +3495,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrExcludeLibraryItems,
                 config.JellyseerrExcludeBlocklistedItems,
                 config.JellyseerrDisableCache,
+                config.ListPlaceholdersAutoRequestEnabled,
+                config.ListPlaceholdersAutoRequestCount,
                 JellyseerrBaseUrl = jellyseerrBaseUrl,
                 JellyseerrUrlMappings = jellyseerrUrlMappings,
 

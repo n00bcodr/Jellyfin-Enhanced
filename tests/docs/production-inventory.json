@@ -79,6 +79,10 @@
       "category": "EventHandlers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/EventHandlers/ListPlaceholderAutoRequestConsumers.cs",
+      "category": "EventHandlers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/EventHandlers/MaintenancePlaybackReminder.cs",
       "category": "EventHandlers"
     },
@@ -375,7 +379,19 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/AutoRequestLibrary.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListAccessService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderAutoRequestRules.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderAutoRequestService.cs",
       "category": "Services"
     },
     {
@@ -428,6 +444,14 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/SeerrMediaIndex.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/SeerrRequestGateway.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/SeerrRequestLocks.cs",
       "category": "Services"
     },
     {
@@ -4815,6 +4839,38 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ListPlaceholdersAutoRequestEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ListPlaceholdersAutoRequestCount",
+      "type": "int",
+      "initializer": null,
+      "constructor_assignment": "1",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ListPlaceholdersAutoRequestMinutes",
+      "type": "int",
+      "initializer": null,
+      "constructor_assignment": "5",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ListPlaceholdersAutoRequestOnlyReleased",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "AddRequestedMediaToWatchlist",
       "type": "bool",
       "initializer": null,
@@ -7711,9 +7767,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 377,
+    "files": 383,
     "routes": 179,
-    "configuration_properties": 513,
+    "configuration_properties": 517,
     "storage_references": 64,
     "scheduled_tasks": 14,
     "locales": 33

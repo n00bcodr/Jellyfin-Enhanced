@@ -371,3 +371,44 @@ test('controllers of pages jellyfin-web dropped are disposed on the next view sh
   assert.equal(h.ctrl.view.rev, 1);
   assert.equal(h.ctrl.user?.active, true, 'Seerr user status fetched again for the new user');
 });
+
+test('editors see "Auto-request: next N" while list auto-requests are on and the list has placeholders', async t => {
+  const make = async (config, placeholders = [ph('x')], extra = {}) => {
+    const h = setup(t, {
+      config,
+      html: playlistPage([ITEM_A]),
+      plugin: async () => view({ placeholders, order: [`e:${ITEM_A}:0`, ...placeholders.map(p => p.token)], ...extra })
+    });
+    const page = h.document.querySelector('.itemDetailPage');
+    h.lp.playlist.attach(page, ITEM);
+    await tick(); await tick();
+    return { h, bar: page.querySelector('.je-lp-toolbar'), hint: page.querySelector('.je-lp-toolbar-auto') };
+  };
+
+  const on = await make({ ListPlaceholdersAutoRequestEnabled: true, ListPlaceholdersAutoRequestCount: 3 });
+  assert.equal(on.hint.textContent, 'listPlaceholders_auto_request_hint{"count":3}');
+  assert.equal(on.hint.title, 'listPlaceholders_auto_request_hint_tip{"count":3}');
+  assert.deepEqual([...on.bar.children].map(el => el.className), ['je-lp-toolbar-label', 'je-lp-toolbar-auto', 'je-lp-toolbar-btn']);
+  // updates keep one hint and drop it once the list has no placeholders left
+  on.h.lp.toolbar.update(on.bar, 2);
+  assert.equal(on.bar.querySelectorAll('.je-lp-toolbar-auto').length, 1);
+  on.h.lp.toolbar.update(on.bar, 0);
+  assert.equal(on.bar.querySelector('.je-lp-toolbar-auto'), null);
+
+  // the count is shown as the server clamps it (1..10)
+  const many = await make({ ListPlaceholdersAutoRequestEnabled: true, ListPlaceholdersAutoRequestCount: 99 });
+  assert.equal(many.hint.textContent, 'listPlaceholders_auto_request_hint{"count":10}');
+  const unset = await make({ ListPlaceholdersAutoRequestEnabled: true });
+  assert.equal(unset.hint.textContent, 'listPlaceholders_auto_request_hint{"count":1}');
+
+  // off, Seerr off, an empty list, or a viewer (no toolbar): no hint
+  for (const [config, placeholders, extra] of [
+    [{ ListPlaceholdersAutoRequestEnabled: false, ListPlaceholdersAutoRequestCount: 3 }],
+    [{ ListPlaceholdersAutoRequestEnabled: true, JellyseerrEnabled: false }],
+    [{ ListPlaceholdersAutoRequestEnabled: true }, []],
+    [{ ListPlaceholdersAutoRequestEnabled: true }, [ph('x')], { canEdit: false, nativeCanEdit: false }]
+  ]) {
+    const off = await make(config, placeholders, extra);
+    assert.equal(off.hint, null, JSON.stringify(config));
+  }
+});

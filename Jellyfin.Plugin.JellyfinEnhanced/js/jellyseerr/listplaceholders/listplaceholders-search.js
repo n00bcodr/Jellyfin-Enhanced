@@ -325,11 +325,37 @@
     }
 
     /**
+     * Shows "Auto-request: next N" in the toolbar while list auto-requests are on (server setting, needs Seerr) and the
+     * list has placeholders; removes it otherwise.
+     * @param {HTMLElement} bar - Toolbar.
+     * @param {number} count - Placeholders in the list.
+     */
+    function updateAutoRequestHint(bar, count) {
+        const config = JE.pluginConfig || {};
+        const on = config.ListPlaceholdersAutoRequestEnabled === true && config.JellyseerrEnabled === true && count > 0;
+        let hint = bar.querySelector('.je-lp-toolbar-auto');
+        if (!on) {
+            hint?.remove();
+            return;
+        }
+        const next = Math.min(10, Math.max(1, parseInt(config.ListPlaceholdersAutoRequestCount, 10) || 1));
+        if (!hint) {
+            hint = document.createElement('span');
+            hint.className = 'je-lp-toolbar-auto';
+            bar.querySelector('.je-lp-toolbar-label')?.after(hint);
+        }
+        hint.textContent = JE.t('listPlaceholders_auto_request_hint', { count: next });
+        hint.title = JE.t('listPlaceholders_auto_request_hint_tip', { count: next });
+    }
+
+    /**
      * Updates the toolbar's "n not in your library" label.
      * @param {HTMLElement} bar
-     * @param {number} count
+     * @param {number} count - Count for the label (0 hides it).
+     * @param {number} [listed=count] - Placeholders in the list (auto-request hint), when the label is hidden.
      */
-    function updateToolbar(bar, count) {
+    function updateToolbar(bar, count, listed = count) {
+        updateAutoRequestHint(bar, listed);
         const label = bar.querySelector('.je-lp-toolbar-label');
         if (label) label.textContent = count > 0 ? JE.t('listPlaceholders_count', { count }) : '';
     }

@@ -60,6 +60,8 @@
 
         .je-lp-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 1em; margin: 0.25em 0 0.5em; }
         .je-lp-toolbar-label { margin-right: auto; opacity: 0.7; font-size: 0.9em; }
+        .je-lp-toolbar-auto { opacity: 0.7; font-size: 0.85em; white-space: nowrap; }
+        .je-lp-toolbar:has(.je-lp-toolbar-auto) { flex-wrap: wrap; row-gap: 0.4em; }
         .je-lp-toolbar-btn { display: inline-flex; align-items: center; gap: 0.35em; padding: 0.4em 1em; border-radius: 999px; border: 1px solid rgba(128, 128, 128, 0.45); background: transparent; color: inherit; font: inherit; font-size: 0.9em; cursor: pointer; }
         .je-lp-toolbar-btn:hover, .je-lp-toolbar-btn:focus-visible { background: rgba(128, 128, 128, 0.18); }
         .je-lp-toolbar-btn .material-icons { font-size: 1.2em; }

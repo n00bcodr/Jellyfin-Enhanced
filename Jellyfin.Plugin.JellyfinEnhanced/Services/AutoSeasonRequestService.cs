@@ -599,6 +599,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var urls = GetConfiguredUrls(config.JellyseerrUrls);
             var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
 
+            // Serialised with list placeholder auto-requests for the same title (Seerr's duplicate check isn't atomic).
+            using var titleLock = await ListPlaceholders.SeerrRequestLocks.AcquireAsync(ListPlaceholders.SeerrRequestLocks.TitleKey("tv", tmdbId), default);
             foreach (var url in urls)
             {
                 try
@@ -609,7 +611,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         mediaType = "tv",
                         mediaId = int.Parse(tmdbId),
-                        seasons = new[] { seasonNumber }
+                        seasons = new[] { seasonNumber },
+                        is4k = false // explicit, or Seerr skips its duplicate-request check
                     };
 
                     var jsonContent = JsonSerializer.Serialize(requestBody);

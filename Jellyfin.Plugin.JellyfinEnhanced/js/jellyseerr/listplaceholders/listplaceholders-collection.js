@@ -133,7 +133,7 @@
                 bar.remove();
                 bar = null;
             }
-            if (bar) lp.toolbar.update(bar, 0);
+            if (bar) lp.toolbar.update(bar, 0, placeholders.length);
             const cards = section.querySelector('.je-lp-cards');
             JE.jellyseerrUI?.releasePosters?.(cards);
             cards.textContent = '';

@@ -69,6 +69,7 @@ public class TaskAutoRequestTests
             Assert.Equal(0, payload.RootElement.GetProperty("serverId").GetInt32());
             Assert.Equal(7, payload.RootElement.GetProperty("profileId").GetInt32());
             Assert.Equal("/movies", payload.RootElement.GetProperty("rootFolder").GetString());
+            Assert.False(payload.RootElement.GetProperty("is4k").GetBoolean()); // explicit, so Seerr's duplicate check runs
         }
         if (expectedPosts == 1)
         {
@@ -233,6 +234,7 @@ public class TaskAutoRequestTests
                 Assert.Equal("tv", payload.RootElement.GetProperty("mediaType").GetString());
                 Assert.Equal(42, payload.RootElement.GetProperty("mediaId").GetInt32());
                 Assert.Equal(2, Assert.Single(payload.RootElement.GetProperty("seasons").EnumerateArray()).GetInt32());
+                Assert.False(payload.RootElement.GetProperty("is4k").GetBoolean()); // explicit, so Seerr's duplicate check runs
             }
         }
         finally { BaseItem.LibraryManager = previousLibrary; }

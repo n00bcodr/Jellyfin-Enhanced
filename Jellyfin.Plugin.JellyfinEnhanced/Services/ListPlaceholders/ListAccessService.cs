@@ -146,7 +146,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <param name="list">List.</param>
         /// <param name="user">Caller.</param>
         /// <returns>The access.</returns>
-        public ListAccess Evaluate(ListInfo list, User user)
+        public ListAccess Evaluate(ListInfo list, User user) => Evaluate(list, user, adminOverride: true);
+
+        /// <summary>
+        /// Evaluates the caller's permissions with Jellyfin's own rules only: no JE admin extension, so an administrator
+        /// sees and edits another user's private playlist only when Jellyfin itself would let them (public, owner or
+        /// share). Collections are unchanged (administrators manage collections natively). Used where acting on a list
+        /// must not rely on the admin override, e.g. requests made in the playing user's name.
+        /// </summary>
+        /// <param name="list">List.</param>
+        /// <param name="user">Caller.</param>
+        /// <returns>The access (<see cref="ListAccess.IsAdmin"/> still reports the real role).</returns>
+        public ListAccess EvaluateNative(ListInfo list, User user) => Evaluate(list, user, adminOverride: false);
+
+        private ListAccess Evaluate(ListInfo list, User user, bool adminOverride)
         {
             var admin = IsAdmin(user);
             var share = list.Shares.FirstOrDefault(s => s.UserId == user.Id);
@@ -164,7 +177,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
             var permissions = ListAccessRules.Evaluate(new ListAccessFacts(
                 list.Kind,
-                admin,
+                admin && adminOverride,
                 CanManageCollections(user),
                 list.Kind == ListKinds.Playlist && list.OwnerId == user.Id,
                 hasShare,

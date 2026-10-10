@@ -266,6 +266,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             AutoMovieRequestCustomRootFolder = ""; // Root folder path for "custom" mode
             AutoMovieRequestFallbackOn4k = true; // When original mode finds a 4K profile, fall back to default instead
 
+            // List placeholder auto-requests (needs ListPlaceholdersEnabled + Seerr)
+            ListPlaceholdersAutoRequestEnabled = false;
+            ListPlaceholdersAutoRequestCount = 1; // Next N placeholders per playback (1-10)
+            ListPlaceholdersAutoRequestMinutes = 5; // Minutes watched before requesting (0 = on playback start, max 600)
+            ListPlaceholdersAutoRequestOnlyReleased = true; // Skip unreleased and TBA titles
+
             // Watchlist Settings
             AddRequestedMediaToWatchlist = false;
             SyncJellyseerrWatchlist = false;
@@ -817,6 +823,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int AutoMovieRequestCustomProfileId { get; set; } // Quality profile ID for "custom" mode
         public string AutoMovieRequestCustomRootFolder { get; set; } // Root folder path for "custom" mode
         public bool AutoMovieRequestFallbackOn4k { get; set; } // When original mode finds a 4K profile, fall back to default
+
+        // List placeholder auto-requests: when a user plays an item of a playlist/collection, request the next
+        // placeholders of that list through Seerr as that user. Independent of the Auto Season/Movie switches.
+        public bool ListPlaceholdersAutoRequestEnabled { get; set; }
+        public int ListPlaceholdersAutoRequestCount { get; set; }
+        public int ListPlaceholdersAutoRequestMinutes { get; set; }
+        public bool ListPlaceholdersAutoRequestOnlyReleased { get; set; }
 
         // Watchlist Settings
         public bool AddRequestedMediaToWatchlist { get; set; }

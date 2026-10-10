@@ -147,3 +147,17 @@ test('movie request buttons on placeholder cards use the placeholder flow: a 409
   assert.equal(card.__item.mediaInfo.status, 3, 'rebuilt as requested');
   assert.equal(h.toasts.length, 0);
 });
+
+test('collection editors see the auto-request hint next to Add title while the list has placeholders', async t => {
+  const h = await mount(t, [ph('a'), ph('b')]);
+  const bar = h.page.querySelector('.je-lp-collection-section .je-lp-toolbar');
+  assert.equal(bar.querySelector('.je-lp-toolbar-auto'), null); // setting off by default
+  h.JE.pluginConfig.ListPlaceholdersAutoRequestEnabled = true;
+  h.JE.pluginConfig.ListPlaceholdersAutoRequestCount = 4;
+  h.ctrl.render();
+  assert.equal(bar.querySelector('.je-lp-toolbar-auto').textContent, 'listPlaceholders_auto_request_hint{"count":4}');
+  assert.equal(bar.querySelector('.je-lp-toolbar-label').textContent, ''); // the section title already says it
+  h.ctrl.view = { ...h.ctrl.view, placeholders: [] };
+  h.ctrl.render();
+  assert.equal(bar.querySelector('.je-lp-toolbar-auto'), null);
+});

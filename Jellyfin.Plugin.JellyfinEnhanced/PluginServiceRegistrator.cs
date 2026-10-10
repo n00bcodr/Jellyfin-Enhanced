@@ -93,6 +93,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.ListPlaceholders.ListPlaceholderLifecycle>();
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.ListPlaceholders.ListPlaceholderLifecycle>());
             serviceCollection.AddHostedService<Services.ListPlaceholders.ListPlaceholderSwapMonitor>();
+            // List placeholder auto-requests: always-registered playback consumers (settings checked per event)
+            // request the next placeholders of a played list through Seerr as the playing user.
+            serviceCollection.AddSingleton<Services.ListPlaceholders.SeerrRequestGateway>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.IAutoRequestLibrary, Services.ListPlaceholders.JellyfinAutoRequestLibrary>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.ListPlaceholderAutoRequestService>();
+            serviceCollection.AddScoped<IEventConsumer<PlaybackStartEventArgs>, ListPlaceholderPlaybackStartConsumer>();
+            serviceCollection.AddScoped<IEventConsumer<PlaybackProgressEventArgs>, ListPlaceholderPlaybackProgressConsumer>();
+            serviceCollection.AddScoped<IEventConsumer<PlaybackStopEventArgs>, ListPlaceholderPlaybackStopConsumer>();
             // Opt-in anonymous usage reporting: UsageEventCounterService holds the
             // current period's counters (debounced disk persistence, same pattern
             // as WikidataAwardsService); AnalyticsReportingService builds/sends the

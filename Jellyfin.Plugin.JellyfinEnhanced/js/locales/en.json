@@ -762,6 +762,8 @@
     "listPlaceholders_section_title": "Not in your library",
     "listPlaceholders_not_in_library_short": "Not in library",
     "listPlaceholders_count": "{count} not in your library",
+    "listPlaceholders_auto_request_hint": "Auto-request: next {count}",
+    "listPlaceholders_auto_request_hint_tip": "Playing something in this list requests the next {count} titles after it in Seerr, for the person playing",
     "listPlaceholders_kind_movie": "Movie",
     "listPlaceholders_kind_series": "Series",
     "listPlaceholders_kind_custom": "Custom entry",
