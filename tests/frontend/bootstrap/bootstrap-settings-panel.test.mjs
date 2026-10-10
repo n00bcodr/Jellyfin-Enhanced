@@ -4,7 +4,7 @@ import { createHarness } from '../helpers/harness.mjs';
 
 const toggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle',
   'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle',
-  'showAudioLanguagesToggle', 'removeContinueWatchingToggle', 'qualityTagsToggle', 'genreTagsToggle', 'pauseScreenToggle',
+  'showAudioLanguagesToggle', 'simplifyDubLanguageFlagsToggle', 'removeContinueWatchingToggle', 'qualityTagsToggle', 'genreTagsToggle', 'pauseScreenToggle',
   'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'peopleTagsToggle', 'tagsHideOnHoverToggle',
   'disableCustomSubtitleStyles', 'longPress2xEnabled', 'nativePosterTagsToggle'];
 function setup(t, config = {}) {
