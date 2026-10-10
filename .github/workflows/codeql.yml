@@ -53,6 +53,7 @@ jobs:
         languages: ${{ matrix.language }}
         build-mode: ${{ matrix.build-mode }}
         queries: +security-and-quality
+        config-file: ./.github/codeql/codeql-config.yml
 
     - if: matrix.build-mode == 'manual'
       name: Setup .NET

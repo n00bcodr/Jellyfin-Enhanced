@@ -1,0 +1,10 @@
+name: "Jellyfin Enhanced CodeQL config"
+
+# The workflow runs the security-and-quality suite. Its "recommendation"
+# (note) queries are code-style suggestions (catch-all handlers, LINQ Where/Select
+# hints, nested ifs, missing XML docs, ...). Leave them out so only errors and
+# warnings are reported.
+query-filters:
+  - exclude:
+      problem.severity:
+        - recommendation
