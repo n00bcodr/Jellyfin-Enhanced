@@ -77,6 +77,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // (details-page media-info chips) -- see ItemStatsService.
             serviceCollection.AddSingleton<ItemStatsService>();
             serviceCollection.AddSingleton<SeerrParentalFilter>();
+            // List placeholders ("Not in your library" titles on playlists/collections, gated by
+            // ListPlaceholdersEnabled): one JSON document per list, the Seerr media status index, and a
+            // hosted lifecycle hook that drops a list's document when the list is deleted.
+            serviceCollection.AddSingleton<Services.ListPlaceholders.ListPlaceholderStore>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.IListPlaceholderHost, Services.ListPlaceholders.JellyfinListPlaceholderHost>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.ListAccessService>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.SeerrMediaIndex>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.ListPlaceholderService>();
+            serviceCollection.AddHostedService<Services.ListPlaceholders.ListPlaceholderLifecycle>();
             // Opt-in anonymous usage reporting: UsageEventCounterService holds the
             // current period's counters (debounced disk persistence, same pattern
             // as WikidataAwardsService); AnalyticsReportingService builds/sends the

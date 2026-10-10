@@ -1994,6 +1994,16 @@
                     </fieldset>
 
                     <fieldset>
+                        <legend class="sectionTitle">List Placeholders</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer"><label><input id="listPlaceholdersEnabled" is="emby-checkbox" type="checkbox"/><span>Show titles you don't have on collections and playlists</span></label></div>
+                            <div class="je-setting-description" data-desc-for="listPlaceholdersEnabled">
+                                <div class="fieldDescription je-field-desc-xl">Lets users add movies, series, seasons or episodes that aren't in your library to collections and playlists. They show up as "Not in your library" entries with their Seerr status and a request button, and are replaced by the real item once it arrives. Users who can edit a list can add and arrange them: the playlist's owner and anyone it's shared with as an editor, and administrators; for collections, administrators and users allowed to manage collections. Parental controls hide titles a restricted user may not see.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
                         <legend class="sectionTitle">Automatic Requests</legend>
                         <div class="configSection">
                             <details class="je-details-section">
@@ -6109,6 +6119,7 @@
                 document.querySelector('#jellyseerrShowTagDiscovery').checked = config.JellyseerrShowTagDiscovery !== false;
                 document.querySelector('#jellyseerrShowPersonDiscovery').checked = config.JellyseerrShowPersonDiscovery !== false;
                 document.querySelector('#jellyseerrShowCollectionDiscovery').checked = config.JellyseerrShowCollectionDiscovery !== false;
+                document.querySelector('#listPlaceholdersEnabled').checked = config.ListPlaceholdersEnabled || false;
                 document.querySelector('#jellyseerrShowReportButton').checked = !!config.JellyseerrShowReportButton;
                 document.querySelector('#jellyseerrShowIssueIndicator').checked = !!config.JellyseerrShowIssueIndicator;
                 document.querySelector('#jellyseerrShowDetailPageLink').checked = config.JellyseerrShowDetailPageLink !== false;
@@ -6672,6 +6683,7 @@
             config.JellyseerrShowTagDiscovery = document.querySelector('#jellyseerrShowTagDiscovery').checked;
             config.JellyseerrShowPersonDiscovery = document.querySelector('#jellyseerrShowPersonDiscovery').checked;
             config.JellyseerrShowCollectionDiscovery = document.querySelector('#jellyseerrShowCollectionDiscovery').checked;
+            config.ListPlaceholdersEnabled = document.querySelector('#listPlaceholdersEnabled').checked;
             config.JellyseerrShowReportButton = document.querySelector('#jellyseerrShowReportButton').checked;
             config.JellyseerrShowIssueIndicator = document.querySelector('#jellyseerrShowIssueIndicator').checked;
             config.JellyseerrShowDetailPageLink = document.querySelector('#jellyseerrShowDetailPageLink').checked;

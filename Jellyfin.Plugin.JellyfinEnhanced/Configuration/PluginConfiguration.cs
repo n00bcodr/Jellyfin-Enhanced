@@ -184,6 +184,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrShowTagDiscovery = true;
             JellyseerrShowPersonDiscovery = true;
             JellyseerrShowCollectionDiscovery = true;
+            ListPlaceholdersEnabled = false;
             JellyseerrShowDetailPageLink = true;
             JellyseerrShowDetailPageLinkAsText = false;
             ShowElsewhereOnJellyseerr = false;
@@ -718,6 +719,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrShowTagDiscovery { get; set; }
         public bool JellyseerrShowPersonDiscovery { get; set; }
         public bool JellyseerrShowCollectionDiscovery { get; set; }
+        // "Not in your library" placeholders on collections and playlists (master switch; off = every
+        // /JellyfinEnhanced/list-placeholders route answers 404 and no client UI loads).
+        public bool ListPlaceholdersEnabled { get; set; }
         public bool JellyseerrShowDetailPageLink { get; set; }
         public bool JellyseerrShowDetailPageLinkAsText { get; set; }
         public bool JellyseerrExcludeLibraryItems { get; set; } = true;

@@ -25,6 +25,7 @@ public class ApiSeerrTests
         public Func<HttpRequestMessage, HttpResponseMessage> Reply { get; set; } = _ => IntegrationTransport.Response("{\"id\":99}");
         public IntegrationTransport Transport { get; }
         public JellyfinEnhancedController Controller { get; }
+        public Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.SeerrMediaIndex Index { get; }
         public SeerrFixture()
         {
             JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
@@ -48,7 +49,8 @@ public class ApiSeerrTests
             });
             var users = Mock.Of<IUserManager>();
             var filter = new SeerrParentalFilter(Transport, users, Mock.Of<ILocalizationManager>(), Mock.Of<IServerConfigurationManager>(), Plugin.Core.Logger);
-            Controller = ApiAssetTests.Controller(Plugin.Core, Transport, users, filter);
+            Index = new Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.SeerrMediaIndex(Transport, Plugin.Core.Logger);
+            Controller = ApiAssetTests.Controller(Plugin.Core, Transport, users, filter, Index);
             SetUser(UserId);
         }
         public void SetUser(Guid user, bool admin = false) => Controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([
@@ -82,6 +84,35 @@ public class ApiSeerrTests
         foreach (var field in new[] { "serverId", "profileId", "rootFolder", "languageProfileId", "tags" })
             Assert.Equal(advanced, request.RootElement.TryGetProperty(field, out _));
         Assert.Single(f.Calls, c => c.Path.StartsWith("/api/v1/user?"));
+    }
+
+    [Theory]
+    [InlineData("{\"mediaType\":\"movie\",\"mediaId\":5}", false)]
+    [InlineData("{\"mediaType\":\"tv\",\"mediaId\":5,\"seasons\":[1]}", false)]
+    [InlineData("{\"mediaType\":\"movie\",\"mediaId\":5,\"is4k\":true}", true)]
+    [InlineData("{\"mediaType\":\"movie\",\"mediaId\":5,\"is4k\":false}", false)]
+    public async Task RequestsWithoutIs4kSendAnExplicitFalseSoSeerrChecksDuplicates(string body, bool expected)
+    {
+        using var f = new SeerrFixture();
+        await f.Controller.JellyseerrRequest(Body(body));
+        var call = Assert.Single(f.Calls, c => c.Method == "POST");
+        using var sent = JsonDocument.Parse(call.Body!);
+        Assert.Equal(expected, sent.RootElement.GetProperty("is4k").GetBoolean());
+        Assert.Equal(5, sent.RootElement.GetProperty("mediaId").GetInt32());
+        Assert.Equal("[]", JellyfinEnhancedController.WithDefaultIs4k(Body("[]")));
+    }
+
+    [Fact]
+    public async Task SuccessfulRequestsUpdateTheListPlaceholderStatusIndexOnlyWhileTheFeatureIsOn()
+    {
+        using var f = new SeerrFixture();
+        f.Reply = _ => IntegrationTransport.Response("{\"id\":99,\"media\":{\"tmdbId\":5,\"mediaType\":\"movie\",\"status\":2,\"status4k\":1}}", 201);
+        await f.Controller.JellyseerrRequest(Body("{\"mediaType\":\"movie\",\"mediaId\":5}"));
+        Assert.Null(f.Index.Lookup("movie", 5).StatusFor(null));
+
+        f.Plugin.Plugin.Configuration.ListPlaceholdersEnabled = true;
+        await f.Controller.JellyseerrRequest(Body("{\"mediaType\":\"movie\",\"mediaId\":5}"));
+        Assert.Equal(2, f.Index.Lookup("movie", 5).StatusFor(null));
     }
 
     [Fact]

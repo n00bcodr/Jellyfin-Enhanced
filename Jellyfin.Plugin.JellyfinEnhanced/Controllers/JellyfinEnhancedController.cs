@@ -76,6 +76,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.SpoilerExistingTitlesApplier _spoilerExistingApplier;
         private readonly MediaBrowser.Model.Tasks.ITaskManager _taskManager;
         private readonly IPluginManager _pluginManager;
+        private readonly Services.ListPlaceholders.SeerrMediaIndex? _seerrMediaIndex;
 
         // Server-side cache for proxied avatar images to avoid re-fetching from
         // upstream Seerr on every request. Entries expire after 1 hour.
@@ -196,7 +197,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             INetworkManager networkManager,
             Services.SpoilerExistingTitlesApplier spoilerExistingApplier,
             MediaBrowser.Model.Tasks.ITaskManager taskManager,
-            IPluginManager pluginManager)
+            IPluginManager pluginManager,
+            Services.ListPlaceholders.SeerrMediaIndex seerrMediaIndex)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
@@ -227,6 +229,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _spoilerExistingApplier = spoilerExistingApplier;
             _taskManager = taskManager;
             _pluginManager = pluginManager;
+            _seerrMediaIndex = seerrMediaIndex;
         }
 
         /// <summary>
@@ -1662,7 +1665,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public async Task<IActionResult> JellyseerrRequest([FromBody] JsonElement requestBody)
         {
-            var result = await ProxyJellyseerrRequest("/api/v1/request", HttpMethod.Post, requestBody.ToString());
+            var result = await ProxyJellyseerrRequest("/api/v1/request", HttpMethod.Post, WithDefaultIs4k(requestBody));
+
+            // Keep the list-placeholder status index current with what was just requested (best effort).
+            if (JellyfinEnhanced.Instance?.Configuration?.ListPlaceholdersEnabled == true
+                && result is ContentResult { Content: { } requested } && IsSeerrRequestResultSuccessful(result))
+            {
+                _seerrMediaIndex?.RecordRequestResponse(requested);
+            }
 
             // Auto-on-request Spoiler Guard pending — best-effort, never blocks
             // the request. Gated by SpoilerBlurEnabled + SpoilerAutoEnableOnSeerrRequest.
@@ -1700,6 +1710,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return result;
+        }
+
+        // Seerr skips its duplicate-request check when a request body has no is4k
+        // (the lookup compares against undefined), so an omitted flag let the same
+        // movie/season be requested twice. Send an explicit false unless the client
+        // chose a value; anything that isn't a JSON object is forwarded unchanged.
+        internal static string WithDefaultIs4k(JsonElement requestBody)
+        {
+            if (requestBody.ValueKind != JsonValueKind.Object || requestBody.TryGetProperty("is4k", out _))
+            {
+                return requestBody.ToString();
+            }
+
+            var node = System.Text.Json.Nodes.JsonNode.Parse(requestBody.GetRawText())!.AsObject();
+            node["is4k"] = false;
+            return node.ToJsonString();
         }
 
         // True only for a 2xx proxy result. 409 fails closed: it's an ambiguous
@@ -3463,6 +3489,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrShowTagDiscovery,
                 config.JellyseerrShowPersonDiscovery,
                 config.JellyseerrShowCollectionDiscovery,
+                config.ListPlaceholdersEnabled,
                 config.JellyseerrShowDetailPageLink,
                 config.JellyseerrShowDetailPageLinkAsText,
                 config.JellyseerrExcludeLibraryItems,

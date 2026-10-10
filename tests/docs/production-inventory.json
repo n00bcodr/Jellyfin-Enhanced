@@ -67,6 +67,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/EventHandlers/ActivityPlaybackConsumer.cs",
       "category": "EventHandlers"
     },
@@ -196,6 +200,14 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/Jellyseerr/JellyseerrUser.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/ListPlaceholders/ListDoc.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/ListPlaceholders/ListPlaceholderDtos.cs",
       "category": "Model"
     },
     {
@@ -356,6 +368,38 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ItemStatsService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListAccessService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderHost.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderLifecycle.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderOrder.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderStore.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/PlaceholderRules.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/SeerrMediaIndex.cs",
       "category": "Services"
     },
     {
@@ -2973,6 +3017,87 @@
       "method": "GetView",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/list-placeholders/{listId}",
+      "method": "GetList",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/list-placeholders/{listId}/items",
+      "method": "AddItems",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/list-placeholders/{listId}/apply",
+      "method": "Apply",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/list-placeholders/{listId}/items/{placeholderId}",
+      "method": "PatchItem",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "DELETE",
+      "path": "/JellyfinEnhanced/list-placeholders/{listId}/items/{placeholderId}",
+      "method": "DeleteItem",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "PUT",
+      "path": "/JellyfinEnhanced/list-placeholders/{listId}/order",
+      "method": "PutOrder",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/list-placeholders/editable-lists",
+      "method": "GetEditableLists",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/list-placeholders/playlists",
+      "method": "CreatePlaylist",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/list-placeholders/collections",
+      "method": "CreateCollection",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
     }
   ],
   "configuration_properties": [
@@ -4102,6 +4227,14 @@
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ListPlaceholdersEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -7195,6 +7328,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/HostCompatibilityService.cs"
     },
     {
+      "literal": "*.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderStore.cs"
+    },
+    {
       "literal": "maintenance-state.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintenanceModeService.cs"
     },
@@ -7497,10 +7634,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 348,
-    "routes": 170,
-    "configuration_properties": 512,
-    "storage_references": 63,
+    "files": 359,
+    "routes": 179,
+    "configuration_properties": 513,
+    "storage_references": 64,
     "scheduled_tasks": 13,
     "locales": 33
   }
