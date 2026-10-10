@@ -13,3 +13,12 @@ test('audio preference matching canonicalizes ISO names while preserving region 
 test('no-dialogue flags remain self-contained and localized; regular flags use CDN',t=>{
  const m=setup(t);assert.match(m.flagSrc('zxx'),/^data:image\/svg\+xml,/);assert.equal(m.flagSrc('br'),'/flags/br.svg');assert.equal(m.displayName('zxx'),'No dialogue');assert.equal(m.displayName('en'),'English');
 });
+test('simplifyDubLanguageFlags collapses regional and script variants onto the base flag',t=>{
+ const h=createHarness({JE:{currentSettings:{simplifyDubLanguageFlags:true},cdn:{flagSvg:code=>`/flags/${code}.svg`},t:key=>key}});t.after(()=>h.close());h.load('core/media-language.js');
+ const m=h.JE.core.mediaLanguage;
+ for(const [input,expected] of [['en','gb'],['en-US','gb'],['en-UK','gb'],['pt','pt'],['pt-BR','pt'],['pt-PT','pt'],['pob','pt'],['es-419','es'],['zh-Hant','cn'],['zh-Hans','cn'],['ja-Hans','jp'],['pt-XA','pt'],['ca-ES','es-ct'],['zxx-US','zxx'],['und-US',null],[{name:'Japanese'},'jp']]) assert.equal(m.resolveFlag(input),expected,JSON.stringify(input));
+});
+test('simplifyDubLanguageFlags off keeps the region-specific resolution',t=>{
+ const h=createHarness({JE:{currentSettings:{simplifyDubLanguageFlags:false},cdn:{flagSvg:code=>`/flags/${code}.svg`},t:key=>key}});t.after(()=>h.close());h.load('core/media-language.js');
+ assert.equal(h.JE.core.mediaLanguage.resolveFlag('pt-BR'),'br');assert.equal(h.JE.core.mediaLanguage.resolveFlag('zh-Hant'),'tw');
+});

@@ -3429,6 +3429,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "SimplifyDubLanguageFlags",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ShowReviews",
       "type": "bool",
       "initializer": null,
@@ -6093,6 +6101,14 @@
     },
     {
       "class": "UserSettings",
+      "name": "SimplifyDubLanguageFlags",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSettings",
       "name": "UseNativePosterTags",
       "type": "bool?",
       "initializer": null,
@@ -7622,7 +7638,7 @@
     "build_targets": 2,
     "files": 352,
     "routes": 173,
-    "configuration_properties": 521,
+    "configuration_properties": 523,
     "storage_references": 65,
     "scheduled_tasks": 13,
     "locales": 33

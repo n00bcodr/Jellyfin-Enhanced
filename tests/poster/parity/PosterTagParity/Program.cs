@@ -159,6 +159,7 @@ static UserSettings ControllerDefaults(PluginConfiguration defaultConfig) => new
     WatchProgressTimeFormat = string.IsNullOrWhiteSpace(defaultConfig.WatchProgressTimeFormat) ? "hours" : defaultConfig.WatchProgressTimeFormat,
     ShowFileSizes = defaultConfig.ShowFileSizes,
     ShowAudioLanguages = defaultConfig.ShowAudioLanguages,
+    SimplifyDubLanguageFlags = defaultConfig.SimplifyDubLanguageFlags,
     UseNativePosterTags = null,
     QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
     ShowResolutionTag = defaultConfig.ShowResolutionTag,
