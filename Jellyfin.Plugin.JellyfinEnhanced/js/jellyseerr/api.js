@@ -19,6 +19,50 @@
     let overrideRulesCachedAt = 0;
     const OVERRIDE_RULES_TTL = 5 * 60 * 1000; // 5 minutes
 
+    // Collection membership per movie (TMDB id -> collection, or null for
+    // none) as answered by the batched lookup, for the signed-in user. Kept
+    // as long as the core client kept the per-movie detail responses it
+    // replaces, so a movie seen again (the same query retyped, a later page)
+    // costs no request.
+    /** @type {Map<number, {collection: Object|null, at: number}>} */
+    const movieCollections = new Map();
+    const MOVIE_COLLECTIONS_TTL_MS = 30 * 60 * 1000;
+    const MOVIE_COLLECTIONS_MAX_ENTRIES = 1000;
+    // Ids per request: the server answers up to 100 (MovieCollectionsBatch.MaxIds),
+    // but 40 keep the query string under ~330 bytes, inside even strict proxy
+    // query-length limits (e.g. 512); a search page (20 results) is one request.
+    const MOVIE_COLLECTIONS_IDS_PER_REQUEST = 40;
+    JE.session?.onUserChange('jellyseerr-movie-collections', () => movieCollections.clear());
+
+    /**
+     * Looks up a remembered collection answer.
+     * @param {number} tmdbId - TMDB movie id.
+     * @returns {Object|null|undefined} The movie's collection, null when it is
+     *   in none, undefined when not known (never asked, or expired).
+     */
+    function recallMovieCollection(tmdbId) {
+        const entry = movieCollections.get(tmdbId);
+        if (!entry) return undefined;
+        if (Date.now() - entry.at >= MOVIE_COLLECTIONS_TTL_MS) {
+            movieCollections.delete(tmdbId);
+            return undefined;
+        }
+        return entry.collection;
+    }
+
+    /**
+     * Remembers a collection answer, evicting the oldest one at capacity.
+     * @param {number} tmdbId - TMDB movie id.
+     * @param {Object|null} collection - The movie's collection, null for none.
+     */
+    function rememberMovieCollection(tmdbId, collection) {
+        movieCollections.delete(tmdbId);
+        if (movieCollections.size >= MOVIE_COLLECTIONS_MAX_ENTRIES) {
+            movieCollections.delete(movieCollections.keys().next().value);
+        }
+        movieCollections.set(tmdbId, { collection, at: Date.now() });
+    }
+
     /**
      * Internal fetch helper — delegates to the shared core API client, which
      * owns the auth headers, retry/backoff, in-flight dedup, response cache
@@ -144,7 +188,9 @@
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const isCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
         try {
-            const status = await get('/user-status', { skipCache: true });
+            // The page-load bootstrap carries this answer when it needed no Seerr
+            // lookup (same body as the endpoint); handed out once.
+            const status = JE.takePrefetched?.('SeerrUserStatus') || await get('/user-status', { skipCache: true });
             if (isCurrent()) {
                 cachedUserStatus = status;
                 cachedUserStatusAt = Date.now();
@@ -297,31 +343,56 @@
     };
 
     /**
-     * Adds collection membership information to movie items in search results
+     * Adds collection membership information to movie items in search results.
+     * One batched server lookup (jellyseerr/movie-collections) covers every
+     * movie not already answered this session; it reads Seerr's movie detail,
+     * then TMDB's when Seerr names no collection, exactly as
+     * fetchMovieCollection does per movie.
      * @param {Array} results
-     * @returns {Promise<Array>}
+     * @param {{signal?: AbortSignal|null}} [options]
+     * @returns {Promise<Array>} A copy with `collection` set on member movies.
      */
     api.addCollections = async function(results, options = {}) {
         if (!results || results.length === 0) return results;
         const { signal } = options;
 
-        // Look movies up a few at a time so the per-movie detail calls leave
-        // request slots free for the result pages infinite scroll is loading.
         const out = results.slice();
-        const movieIndexes = [];
-        results.forEach((item, i) => { if (item.mediaType === 'movie') movieIndexes.push(i); });
-        const CHUNK = 4;
-        for (let c = 0; c < movieIndexes.length; c += CHUNK) {
-            if (signal?.aborted) break;
-            await Promise.all(movieIndexes.slice(c, c + CHUNK).map(async (i) => {
-                try {
-                    const collection = await api.fetchMovieCollection(results[i].id, { signal });
-                    if (collection) out[i] = { ...results[i], collection };
-                } catch (e) {
-                    // ignore per-movie errors (including AbortError — superseded search)
-                }
-            }));
+        /** @type {Set<number>} */
+        const unknown = new Set();
+        results.forEach(item => {
+            const id = Number(item.id);
+            if (item.mediaType === 'movie' && Number.isInteger(id) && id > 0 && recallMovieCollection(id) === undefined) {
+                unknown.add(id);
+            }
+        });
+        const ids = Array.from(unknown);
+
+        // Answers that land after a user switch belong to the previous user
+        // (Seerr permissions, parental gating): use them, never keep them.
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const answered = new Map();
+        try {
+            for (let c = 0; c < ids.length; c += MOVIE_COLLECTIONS_IDS_PER_REQUEST) {
+                const chunk = ids.slice(c, c + MOVIE_COLLECTIONS_IDS_PER_REQUEST);
+                // skipCache: answers are kept per movie below rather than per id set.
+                const data = await get(`/movie-collections?ids=${chunk.join(',')}`, { signal, skipCache: true });
+                Object.entries(data?.results || {}).forEach(([id, collection]) => answered.set(Number(id), collection || null));
+            }
+        } catch (e) {
+            // Superseded search (AbortError) or a failed lookup: the movies it
+            // didn't answer just get no collection this time.
+            if (e?.name !== 'AbortError') console.debug(`${logPrefix} Collection lookup failed:`, e);
         }
+        if (!JE.session || JE.session.isCurrent(requestEpoch)) {
+            answered.forEach((collection, id) => rememberMovieCollection(id, collection));
+        }
+
+        results.forEach((item, i) => {
+            if (item.mediaType !== 'movie') return;
+            const id = Number(item.id);
+            const collection = answered.has(id) ? answered.get(id) : recallMovieCollection(id);
+            if (collection) out[i] = { ...item, collection };
+        });
         return out;
     };
 

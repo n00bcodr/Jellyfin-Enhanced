@@ -371,6 +371,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MovieCollectionsBatch.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/CompositeImageCache.cs",
       "category": "Services"
     },
@@ -572,6 +576,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCachePendingChanges.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheResponseBody.cs",
       "category": "Services"
     },
     {
@@ -1602,6 +1610,15 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/jellyseerr/movie/{tmdbId}",
       "method": "GetMovie",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/jellyseerr/movie-collections",
+      "method": "GetMovieCollectionsBatch",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
@@ -7497,8 +7514,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 348,
-    "routes": 170,
+    "files": 350,
+    "routes": 171,
     "configuration_properties": 512,
     "storage_references": 63,
     "scheduled_tasks": 13,

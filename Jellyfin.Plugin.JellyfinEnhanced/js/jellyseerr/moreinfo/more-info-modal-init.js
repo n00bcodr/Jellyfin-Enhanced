@@ -234,6 +234,9 @@ function closeCurrentModal() {
         setTimeout(() => {
             closingModal.remove();
             if (state.currentModal === closingModal) state.currentModal = null;
+            // Work held back while the modal covered the page (the
+            // seamless-scroll fill) resumes on this.
+            document.dispatchEvent(new CustomEvent('jellyseerr-more-info-closed'));
         }, 300);
     }
 }

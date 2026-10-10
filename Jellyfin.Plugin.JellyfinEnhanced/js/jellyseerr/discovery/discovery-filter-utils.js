@@ -403,19 +403,264 @@
         });
     }
 
+    // The TMDB genre lists ({id, name} per genre, one list for TV and one for
+    // movies) are prefetched at startup so genre discovery has them at once.
+    // They rarely change, so they are also kept in sessionStorage, per server
+    // and user, for as long as the in-memory response cache keeps them (30
+    // minutes): a reload in the same tab then reuses them instead of asking
+    // the server again on every page load.
+    const GENRE_LIST_STORAGE_PREFIX = 'je-tmdb-genres:';
+    const GENRE_LIST_STORAGE_TTL_MS = 30 * 60 * 1000;
+
     /**
-     * Creates cards and returns a DocumentFragment for batch DOM insertion
-     * @param {Array} results - Array of items to create cards for
-     * @param {object} [options] - Options
-     * @param {string} [options.cardClass] - Card class to use ('portraitCard' or 'overflowPortraitCard')
-     * @returns {DocumentFragment}
+     * Builds the sessionStorage key for one TMDB genre list.
+     * @param {'tv'|'movie'} mediaType - Which list
+     * @returns {string|null} The key, or null while the server or user is unknown
      */
-    function createCardsFragment(results, options = {}) {
-        const { cardClass = 'portraitCard' } = options;
-        const fragment = document.createDocumentFragment();
+    function genreListStorageKey(mediaType) {
+        const serverId = JE.session?.getServerId?.();
+        const userId = JE.session?.getUserId?.();
+        if (!serverId || !userId) return null;
+        return `${GENRE_LIST_STORAGE_PREFIX}${serverId}:${userId}:${mediaType}`;
+    }
+
+    /**
+     * Reads a stored TMDB genre list. Anything missing, expired, unreadable or
+     * not shaped like a genre list counts as absent.
+     * @param {string} key - Key from genreListStorageKey
+     * @returns {Array<{id: number, name: string}>|null} The list, or null when absent
+     */
+    function readStoredGenreList(key) {
+        try {
+            const raw = sessionStorage.getItem(key);
+            if (!raw) return null;
+            const entry = JSON.parse(raw);
+            const age = Date.now() - (typeof entry?.storedAt === 'number' ? entry.storedAt : NaN);
+            if (!(age >= 0 && age < GENRE_LIST_STORAGE_TTL_MS)) return null;
+            const genres = entry.genres;
+            if (!Array.isArray(genres) || genres.length === 0) return null;
+            const wellFormed = genres.every(g => g && typeof g.id === 'number' && typeof g.name === 'string');
+            return wellFormed ? genres : null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    /**
+     * Fetches one TMDB genre list, from sessionStorage when this tab already
+     * has a fresh copy, otherwise through fetchWithManagedRequest (shared
+     * cache and in-flight dedup under the 'genre' prefix, as before) and then
+     * stores it.
+     * @param {'tv'|'movie'} mediaType - Which list
+     * @param {object} [options] - Fetch options including signal
+     * @returns {Promise<any>} The genre list (the endpoint's body when fetched)
+     */
+    async function fetchTmdbGenreList(mediaType, options = {}) {
+        const storageKey = genreListStorageKey(mediaType);
+        const stored = storageKey ? readStoredGenreList(storageKey) : null;
+        if (stored) return stored;
+
+        // Only keep a list fetched for the identity it was keyed under.
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const data = await fetchWithManagedRequest(`/JellyfinEnhanced/tmdb/genres/${mediaType}`, 'genre', options);
+        if (storageKey && Array.isArray(data) && data.length > 0
+            && (!JE.session || JE.session.isCurrent(requestEpoch))) {
+            try {
+                sessionStorage.setItem(storageKey, JSON.stringify({ storedAt: Date.now(), genres: data }));
+            } catch (_) {
+                // Storage full or unavailable: the next page load fetches again.
+            }
+        }
+        return data;
+    }
+
+    // ---- Discovery resolution caches kept for the tab --------------------------
+    // Which genre, studio or person a Jellyfin page is, and which TMDB genre,
+    // company or person that maps to, rarely changes, yet resolving it costs
+    // one or two round trips before a discovery section can fetch its first
+    // page. The modules' lookup caches therefore also live in sessionStorage,
+    // for RESOLUTION_STORAGE_TTL_MS: a reload in the same tab resolves at once.
+    // They are kept per server AND per user: the lookups run as the signed-in
+    // user (library access, Seerr results filtered by the user's policy), so
+    // one user's resolution must never be handed to the next user signing in
+    // in the same tab.
+    const RESOLUTION_STORAGE_PREFIX = 'je-discovery-resolution-v2:';
+    // Entries written per server only (before they were scoped by user):
+    // never read, removed on first use.
+    const RESOLUTION_STORAGE_LEGACY_PREFIX = 'je-discovery-resolution:';
+    const RESOLUTION_STORAGE_TTL_MS = 30 * 60 * 1000;
+    const RESOLUTION_STORAGE_MAX_ENTRIES = 200;
+    // Stands in for the server id while it is unknown (no Jellyfin server id
+    // is empty): those entries are never written to sessionStorage.
+    const MEMORY_ONLY_SERVER = '';
+    let legacyResolutionStoragePurged = false;
+
+    /**
+     * Removes the resolution entries stored under the old server-only keys
+     * (once per page load).
+     */
+    function purgeLegacyResolutionStorage() {
+        if (legacyResolutionStoragePurged) return;
+        legacyResolutionStoragePurged = true;
+        try {
+            for (let i = sessionStorage.length - 1; i >= 0; i--) {
+                const key = sessionStorage.key(i);
+                if (key && key.startsWith(RESOLUTION_STORAGE_LEGACY_PREFIX)) sessionStorage.removeItem(key);
+            }
+        } catch (_) {
+            // Storage unavailable: nothing to clean up.
+        }
+    }
+
+    /**
+     * A lookup cache whose entries are also kept in sessionStorage, one entry
+     * set per server and user. `scope()` binds has / get / set to the user
+     * signed in when it is called: a lookup takes its scope before it awaits
+     * anything, so a result that lands after a user switch is stored for the
+     * user it was fetched for. While no user is known nothing is cached; while
+     * the server is unknown the user's entries stay in memory only. Stored
+     * entries that are expired, malformed or rejected by `isValid` are
+     * ignored; storage that is full or unavailable leaves the cache working
+     * from memory. Only the signed-in user's entries are kept in memory.
+     * @param {string} name - Cache name, part of the storage key
+     * @param {function(*): boolean} isValid - Whether a stored value is well-formed
+     * @returns {{scope: function(): {has: function(string): boolean, get: function(string): *, set: function(string, *): void}}}
+     */
+    function createSessionCache(name, isValid) {
+        /** @type {string|null} Storage key of the entries held in memory */
+        let memoryKey = null;
+        /** @type {Map<string, {value: *, storedAt: number}>|null} */
+        let memoryEntries = null;
+
+        /**
+         * Key of the signed-in user's entries: their sessionStorage key, or a
+         * memory-only key (MEMORY_ONLY_SERVER as the server) while the server
+         * is unknown; null while no user is signed in.
+         * @returns {string|null}
+         */
+        const storageKey = () => {
+            const userId = JE.session?.getUserId?.();
+            if (!userId) return null;
+            const serverId = JE.session?.getServerId?.() || MEMORY_ONLY_SERVER;
+            return `${RESOLUTION_STORAGE_PREFIX}${serverId}:${userId}:${name}`;
+        };
+        /**
+         * @param {string} key
+         * @returns {boolean} The key's entries are kept in sessionStorage
+         */
+        const persisted = (key) => !key.startsWith(`${RESOLUTION_STORAGE_PREFIX}${MEMORY_ONLY_SERVER}:`);
+
+        /**
+         * Reads the stored entries for one storage key, keeping only fresh,
+         * well-formed ones.
+         * @param {string} key
+         * @returns {Map<string, {value: *, storedAt: number}>}
+         */
+        const load = (key) => {
+            const entries = new Map();
+            if (!persisted(key)) return entries;
+            purgeLegacyResolutionStorage();
+            try {
+                const parsed = JSON.parse(sessionStorage.getItem(key) || 'null');
+                const stored = parsed && typeof parsed === 'object' ? parsed.entries : null;
+                if (!stored || typeof stored !== 'object') return entries;
+                const now = Date.now();
+                for (const [k, entry] of Object.entries(stored)) {
+                    const age = now - (typeof entry?.storedAt === 'number' ? entry.storedAt : NaN);
+                    if (!(age >= 0 && age < RESOLUTION_STORAGE_TTL_MS)) continue;
+                    if (!isValid(entry.value)) continue;
+                    entries.set(k, { value: entry.value, storedAt: entry.storedAt });
+                }
+            } catch (_) {
+                // Unreadable or not ours: start empty.
+            }
+            return entries;
+        };
+
+        /**
+         * The entries for a storage key: the in-memory set when it is the
+         * signed-in user's (loaded on first use, replacing the previous
+         * user's), straight from storage otherwise (a lookup that outlived a
+         * user switch).
+         * @param {string} key
+         * @returns {Map<string, {value: *, storedAt: number}>}
+         */
+        const entriesFor = (key) => {
+            if (key === memoryKey && memoryEntries) return memoryEntries;
+            const entries = load(key);
+            if (key === storageKey()) {
+                memoryKey = key;
+                memoryEntries = entries;
+            }
+            return entries;
+        };
+
+        /**
+         * @param {Map<string, {value: *, storedAt: number}>} entries
+         * @param {string} k
+         * @returns {boolean} The entry exists and has not expired
+         */
+        const fresh = (entries, k) => {
+            const entry = entries.get(k);
+            if (!entry) return false;
+            if (Date.now() - entry.storedAt < RESOLUTION_STORAGE_TTL_MS) return true;
+            entries.delete(k);
+            return false;
+        };
+
+        /**
+         * has / get / set for the user signed in now.
+         * @returns {{has: function(string): boolean, get: function(string): *, set: function(string, *): void}}
+         */
+        const scope = () => {
+            const key = storageKey();
+            return {
+                has(k) {
+                    return !!key && fresh(entriesFor(key), String(k));
+                },
+                get(k) {
+                    if (!key) return undefined;
+                    const entries = entriesFor(key);
+                    return fresh(entries, String(k)) ? entries.get(String(k)).value : undefined;
+                },
+                set(k, value) {
+                    if (!key) return;
+                    const entries = entriesFor(key);
+                    entries.delete(String(k));
+                    entries.set(String(k), { value, storedAt: Date.now() });
+                    // Oldest first (insertion order): drop the oldest over the cap.
+                    while (entries.size > RESOLUTION_STORAGE_MAX_ENTRIES) {
+                        entries.delete(entries.keys().next().value);
+                    }
+                    if (!persisted(key) || !isValid(value)) return;
+                    try {
+                        const stored = {};
+                        entries.forEach((entry, entryKey) => {
+                            if (isValid(entry.value)) stored[entryKey] = entry;
+                        });
+                        sessionStorage.setItem(key, JSON.stringify({ entries: stored }));
+                    } catch (_) {
+                        // Storage full or unavailable: the cache keeps working from memory.
+                    }
+                }
+            };
+        };
+
+        return { scope };
+    }
+
+    /**
+     * The results a discovery batch renders cards for, in order: hidden
+     * content, duplicates within the batch and (when the admin excludes them)
+     * library and blocklisted items are dropped.
+     * @param {Array} results - Array of items
+     * @returns {Array} The items to create cards for
+     */
+    function filterCardResults(results) {
         const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
         const excludeBlocklistedItems = JE.pluginConfig?.JellyseerrExcludeBlocklistedItems === true;
         const seen = new Set();
+        const items = [];
 
         // Filter hidden content before rendering
         const filteredResults = JE.hiddenContent
@@ -437,38 +682,248 @@
             if (excludeBlocklistedItems && item.mediaInfo?.status === JE.seerrStatus.MEDIA.BLOCKED) {
                 continue;
             }
-            const card = JE.jellyseerrUI?.createJellyseerrCard?.(item, true, true);
-            if (!card) continue;
+            items.push(item);
+        }
+        return items;
+    }
 
-            const classList = card.classList;
-            // Remove both possible classes and add the desired one
-            classList.remove('portraitCard', 'overflowPortraitCard');
-            classList.add(cardClass);
+    /**
+     * Creates one discovery card: the shared Seerr card with the section's
+     * card class, its media type for CSS filtering, and the title linking to
+     * the Jellyfin item when the item is in the library.
+     * @param {Object} item - Seerr result
+     * @param {string} cardClass - 'portraitCard' or 'overflowPortraitCard'
+     * @returns {HTMLElement|null}
+     */
+    function createDiscoveryCard(item, cardClass) {
+        const card = JE.jellyseerrUI?.createJellyseerrCard?.(item, true, true);
+        if (!card) return null;
 
-            // Add media type for fast CSS-based filtering
-            card.setAttribute('data-media-type', item.mediaType);
+        const classList = card.classList;
+        // Remove both possible classes and add the desired one
+        classList.remove('portraitCard', 'overflowPortraitCard');
+        classList.add(cardClass);
 
-            const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
-            if (jellyfinMediaId) {
-                card.setAttribute('data-library-item', 'true');
-                card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
-                classList.add('jellyseerr-card-in-library');
+        // Add media type for fast CSS-based filtering
+        card.setAttribute('data-media-type', item.mediaType);
 
-                const titleLink = card.querySelector('.cardText-first a');
-                if (titleLink) {
-                    const itemName = item.title || item.name;
-                    titleLink.textContent = itemName;
-                    titleLink.title = itemName;
-                    titleLink.href = `#!/details?id=${jellyfinMediaId}`;
-                    titleLink.removeAttribute('target');
-                    titleLink.removeAttribute('rel');
+        const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
+        if (jellyfinMediaId) {
+            card.setAttribute('data-library-item', 'true');
+            card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
+            classList.add('jellyseerr-card-in-library');
+
+            const titleLink = card.querySelector('.cardText-first a');
+            if (titleLink) {
+                const itemName = item.title || item.name;
+                titleLink.textContent = itemName;
+                titleLink.title = itemName;
+                titleLink.href = `#!/details?id=${jellyfinMediaId}`;
+                titleLink.removeAttribute('target');
+                titleLink.removeAttribute('rel');
+            }
+        }
+        return card;
+    }
+
+    /**
+     * Creates cards and returns a DocumentFragment for batch DOM insertion
+     * @param {Array} results - Array of items to create cards for
+     * @param {object} [options] - Options
+     * @param {string} [options.cardClass] - Card class to use ('portraitCard' or 'overflowPortraitCard')
+     * @returns {DocumentFragment}
+     */
+    function createCardsFragment(results, options = {}) {
+        const { cardClass = 'portraitCard' } = options;
+        const fragment = document.createDocumentFragment();
+        for (const item of filterCardResults(results)) {
+            const card = createDiscoveryCard(item, cardClass);
+            if (card) fragment.appendChild(card);
+        }
+        return fragment;
+    }
+
+    // ---- Batches built in short slices ------------------------------------------
+    // A load can bring 80-160 cards, and building them all in one go was one
+    // long task. The cards that land where the viewer can see them (or within
+    // half a screen of it) are still built and appended at once. The rest of
+    // the batch, which the scroll engine renders well below the fold, is built
+    // off-document in slices of BUILD_SLICE_MS with the browser free to handle
+    // input and draw frames in between, then appended in one go — so it is
+    // still laid out in a single frame: every frame that changes the page costs
+    // a share proportional to the whole page (layout, paint, layerization), and
+    // appending slice by slice would pay that share once per slice.
+    const BUILD_SLICE_MS = 8;
+
+    // Task-queue yield (no timer clamping, no throttling in hidden tabs).
+    const yieldChannel = typeof MessageChannel !== 'undefined' ? new MessageChannel() : null;
+    const yieldWaiters = [];
+    if (yieldChannel) {
+        yieldChannel.port1.onmessage = () => {
+            const resume = yieldWaiters.shift();
+            if (resume) resume();
+        };
+    }
+
+    /**
+     * Resolves in a later task, letting the browser run input handlers and
+     * render a frame in between.
+     * @returns {Promise<void>}
+     */
+    function yieldToBrowser() {
+        if (!yieldChannel) return new Promise(resolve => setTimeout(resolve, 0));
+        return new Promise((resolve) => {
+            yieldWaiters.push(resolve);
+            yieldChannel.port2.postMessage(null);
+        });
+    }
+
+    /**
+     * The viewport box of the first of `elements` that has a size.
+     * @param {Array<Element|null>} elements - Candidates, innermost first
+     * @returns {DOMRect|null} Null when none is laid out with a size
+     */
+    function firstSizedBox(elements) {
+        for (const el of elements) {
+            if (!el) continue;
+            const box = el.getBoundingClientRect();
+            if (box.width > 0 && box.height > 0) return box;
+        }
+        return null;
+    }
+
+    /**
+     * How many cards appended to the end of a container would land on screen
+     * or within half a screen past its edge: the part of a batch that must be
+     * appended at once so nothing pops in where the viewer is looking. While
+     * the container holds no card to measure (e.g. filtering removed every
+     * card of the first page), there is no telling how many cards cover the
+     * screen, so a container in view takes the whole batch at once.
+     * @param {HTMLElement} container - Element holding the .card elements
+     * @param {object} [options]
+     * @param {boolean} [options.horizontal=false] - A horizontal row (cards extend to the right)
+     * @returns {number} May be Infinity (every card of the batch)
+     */
+    function cardsInView(container, options = {}) {
+        const scroll = JE.seamlessScroll;
+        if (!scroll?.cardsNeeded || !container.isConnected) return 0;
+        const rect = container.getBoundingClientRect();
+        if (options.horizontal) {
+            // A row above or below the screen shows none of its new cards. An
+            // empty track measures zero high while its row (header, scroller)
+            // is on screen: judge the row by its scroller or section then.
+            const row = firstSizedBox([container, container.closest('.emby-scroller'), container.closest('.verticalSection')]);
+            if (!row || row.bottom <= 0 || row.top >= window.innerHeight) return 0;
+            let last = container.lastElementChild;
+            while (last && !last.classList.contains('card')) last = last.previousElementSibling;
+            const end = last ? last.getBoundingClientRect().right : rect.left;
+            const gapPx = window.innerWidth * 1.5 - end;
+            return gapPx > 0 ? scroll.cardsNeeded(container, { deficitPx: gapPx, horizontal: true }, Infinity) : 0;
+        }
+        const gapPx = window.innerHeight * 1.5 - rect.bottom;
+        return gapPx > 0 ? scroll.cardsNeeded(container, { deficitPx: gapPx }, Infinity) : 0;
+    }
+
+    /**
+     * Appends cards for `items` to the end of `container`: the first
+     * `syncCount` (the ones in view) at once, the rest built in short slices
+     * across tasks and appended together at the end. The returned promise
+     * settles once every card is in, so a caller reporting to the scroll
+     * engine measures the whole batch. A card that fails to build rejects
+     * the promise with the batch's cards taken out again (a batch built in
+     * one go added nothing either); a dropped batch keeps the cards already
+     * appended. Either way the posters of the cards left out are released.
+     * @param {HTMLElement} container
+     * @param {Array} items - Items to render, in order
+     * @param {function(Object): (HTMLElement|null)} createCard - Builds one item's card
+     * @param {object} [options]
+     * @param {number} [options.syncCount=0] - Cards that must be appended synchronously
+     * @param {function(): boolean} [options.isCurrent] - False once the batch is
+     *   superseded (navigation, re-sort): the cards not appended yet are dropped
+     * @returns {Promise<number>} Number of cards appended
+     */
+    async function appendInSlices(container, items, createCard, options = {}) {
+        const { syncCount = 0, isCurrent = () => true } = options;
+        let index = 0;
+        /**
+         * Builds cards into a fragment: at least `minCount`, then more while
+         * the slice is under `budgetMs` of script time.
+         * @param {DocumentFragment} fragment
+         * @param {number} minCount
+         * @param {number} budgetMs
+         * @returns {number} Cards built
+         */
+        const build = (fragment, minCount, budgetMs) => {
+            const start = performance.now();
+            let count = 0;
+            while (index < items.length && (count < minCount || performance.now() - start < budgetMs)) {
+                const card = createCard(items[index++]);
+                if (card) {
+                    fragment.appendChild(card);
+                    count++;
                 }
             }
+            return count;
+        };
 
-            fragment.appendChild(card);
+        // Cards built but not in the container yet.
+        let pending = document.createDocumentFragment();
+        // The cards appended at once.
+        let syncCards = [];
+        let settled = false;
+        try {
+            let appended = 0;
+            if (syncCount > 0) {
+                appended = build(pending, syncCount, 0);
+                if (appended > 0) {
+                    syncCards = Array.from(pending.children);
+                    container.appendChild(pending);
+                }
+                pending = document.createDocumentFragment();
+            }
+            let built = build(pending, 0, BUILD_SLICE_MS);
+            while (index < items.length) {
+                await yieldToBrowser();
+                if (!isCurrent()) {
+                    // Dropped: the cards built so far are released below.
+                    settled = true;
+                    return appended;
+                }
+                built += build(pending, 1, BUILD_SLICE_MS);
+            }
+            if (built > 0) container.appendChild(pending);
+            settled = true;
+            return appended + built;
+        } finally {
+            // Stop watching the posters of cards that never made it in (the
+            // poster sweep leaves cards inside a fragment alone).
+            if (pending.firstChild) JE.jellyseerrUI?.releasePosters?.(pending);
+            if (!settled && syncCards.length > 0) {
+                syncCards.forEach(card => card.remove());
+                JE.jellyseerrUI?.releasePosters?.();
+            }
         }
+    }
 
-        return fragment;
+    /**
+     * Renders a discovery batch into a grid: the same cards as
+     * createCardsFragment, the ones the viewer can see appended at once and
+     * the rest built in short slices (appendInSlices).
+     * @param {HTMLElement} container - The section's itemsContainer
+     * @param {Array} results - The batch
+     * @param {object} [options]
+     * @param {string} [options.cardClass='portraitCard'] - Card class
+     * @param {function(): boolean} [options.isCurrent] - See appendInSlices
+     * @returns {Promise<number>} Number of cards appended
+     */
+    function appendCards(container, results, options = {}) {
+        const { cardClass = 'portraitCard', isCurrent } = options;
+        const items = filterCardResults(results);
+        if (items.length === 0) return Promise.resolve(0);
+        return appendInSlices(container, items, item => createDiscoveryCard(item, cardClass), {
+            syncCount: cardsInView(container),
+            isCurrent
+        });
     }
 
     /**
@@ -668,7 +1123,12 @@
         createSectionHeader,
         // Shared utilities
         fetchWithManagedRequest,
+        fetchTmdbGenreList,
+        createSessionCache,
         createCardsFragment,
+        appendCards,
+        appendInSlices,
+        cardsInView,
         waitForPageReady,
         setupInfiniteScroll,
         cleanupScrollObserver,

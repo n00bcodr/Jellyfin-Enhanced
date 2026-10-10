@@ -99,15 +99,40 @@
         }
     }
 
+    // Player chrome jellyfin-web rewrites with innerHTML all through playback:
+    // the position/duration/ends-at clocks of the OSD once a second and the
+    // subtitle cue boxes on every cue (jellyfin-web 12 videoosd template and
+    // htmlVideoPlayer). Each rewrite is a childList mutation (text node, or
+    // text plus <br>/<i> for a styled cue) that no subscriber has any use for
+    // — they wait for elements such as the OSD, its favourite button or the
+    // subtitle container itself, all of which appear outside these nodes — yet
+    // it used to wake every subscriber (card scans, header layout...) at
+    // cue/clock rate for the whole of playback.
+    const PLAYER_NOISE_SELECTOR = '.osdPositionText, .osdDurationText, .startTimeText, .endTimeText, .endsAtText, .videoSubtitlesInner, .videoSecondarySubtitlesInner';
+
+    /**
+     * Whether a mutation record is one the subscribers should hear about: it
+     * added or removed nodes, somewhere other than inside the player's clock
+     * and subtitle cue nodes.
+     * @param {MutationRecord} record
+     * @returns {boolean}
+     */
+    function isStructuralChange(record) {
+        if (record.addedNodes.length === 0 && record.removedNodes.length === 0) return false;
+        const target = record.target;
+        return !(target.nodeType === 1 && /** @type {Element} */ (target).closest(PLAYER_NOISE_SELECTOR));
+    }
+
     function ensureBodyObserver() {
         if (bodyObserver) return;
         bodyObserver = new MutationObserver((mutations) => {
             // Fast-path: skip dispatch entirely if no nodes were added or removed.
             // This filters out attribute changes, text changes, hover effects, focus
-            // changes, etc. that fire frequently but never add new content.
+            // changes, etc. that fire frequently but never add new content — and
+            // the player's clock/cue rewrites, which add nodes nobody listens for.
             let hasStructuralChange = false;
             for (let i = 0; i < mutations.length; i++) {
-                if (mutations[i].addedNodes.length > 0 || mutations[i].removedNodes.length > 0) {
+                if (isStructuralChange(mutations[i])) {
                     hasStructuralChange = true;
                     break;
                 }

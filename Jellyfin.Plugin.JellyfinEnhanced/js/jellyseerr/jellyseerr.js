@@ -25,6 +25,40 @@
         // STATE MANAGEMENT VARIABLES
         // ================================
         let lastProcessedQuery = null;
+        // Query whose page-1 fetch is in flight (null once its response is in,
+        // or it was dropped): the navigation-settle rebuild must not start a second
+        // search for a query the input handler is already fetching.
+        let fetchingQuery = null;
+        // Page-1 results that arrived while the viewer was still typing, held
+        // until they pause (see renderWhenQuiet); null when nothing is held.
+        /** @type {{query: string, apply: Function}|null} */
+        let pendingRender = null;
+        let pendingRenderTimer = null;
+        // The viewer's typing rhythm (see noteTyping): when the box last
+        // changed, the gap before that change, and the longer of the last two
+        // gaps (0 after a pause).
+        let lastInputAt = 0;
+        let lastInputGapMs = 0;
+        let typingGapMs = 0;
+        // When the rendered query's collection lookups may start, and the chain
+        // that runs them one rendered batch after another.
+        let collectionsSettleAt = 0;
+        let collectionQueue = Promise.resolve();
+        // The row a collection lookup belongs to: bumped whenever a search
+        // starts or the row is torn down or rebuilt, so a lookup only ever
+        // inserts into the row it was queued for.
+        let collectionRowId = 0;
+        // That row's batches whose lookup hasn't completed because the box was
+        // off its query when their turn came (or a navigation abort cut them
+        // short), in render order; resumeCollections runs them once the box
+        // has settled back on the query.
+        /** @type {Array<{results: Array, query: string, rowId: number, epoch: number}>} */
+        let unfinishedCollections = [];
+        // While a batch's off-screen cards are still being built (see
+        // loadMoreSearchResults), the promise that settles once they are in
+        // the row; null otherwise.
+        /** @type {Promise<number>|null} */
+        let batchRendering = null;
         let debounceTimeout = null;
         let isJellyseerrActive = false;
         let jellyseerrUserFound = false;
@@ -53,6 +87,25 @@
         const MAX_SEARCH_PAGES_PER_LOAD = 4;
         // TMDB refuses search pages beyond 500; never ask for them.
         const TMDB_MAX_PAGE = 500;
+        // How long a rendered query must stand before its collection lookup
+        // (one batched request per rendered batch of results) starts. A query
+        // the viewer rendered and then typed on from is replaced within this
+        // time and its lookup would only be aborted half-way; a settled query
+        // loses this much on its collection cards.
+        const COLLECTION_SETTLE_MS = 300;
+        // A search starts once the box has been quiet this long.
+        const SEARCH_DEBOUNCE_MS = 200;
+        // Page-1 results replace the row only once the box has been quiet for
+        // the viewer's own gap between keys plus RENDER_HOLD_MARGIN_MS, so a
+        // viewer typing slower than the debounce no longer gets a full row
+        // rebuild (plus its next pages) for every prefix. A gap longer than
+        // TYPING_GAP_MAX_MS is a pause, not typing, and holds nothing. The
+        // search itself still starts after SEARCH_DEBOUNCE_MS and the hold runs
+        // during its round trip, so a settled query only waits for whatever
+        // part of (gap + margin - debounce) the round trip didn't cover: none
+        // for keys up to 170 ms apart, at most 130 ms at 300 ms per key.
+        const TYPING_GAP_MAX_MS = 450;
+        const RENDER_HOLD_MARGIN_MS = 30;
 
 
         // Destructure modules for easy access
@@ -206,18 +259,249 @@
                 const anchor = prev
                     ? container.querySelector(`.jellyseerr-more-info-link[data-tmdb-id="${prev.id}"][data-media-type="${prev.mediaType}"]`)?.closest('.card')
                     : null;
-                const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
-                if (anchor) anchor.after(card); else container.appendChild(card);
+                if (anchor) {
+                    anchor.after(createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound));
+                } else if (batchRendering) {
+                    // No card to follow, so it goes at the end of the row; a
+                    // batch still being built goes in first (as a batch
+                    // appended in one go would have).
+                    const rowId = collectionRowId;
+                    const append = () => {
+                        if (rowId === collectionRowId && container.isConnected) {
+                            container.appendChild(createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound));
+                        }
+                    };
+                    batchRendering.then(append, append);
+                } else {
+                    container.appendChild(createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound));
+                }
             }
         }
 
         /**
-         * Fetches and renders search results (page 1), then sets up infinite scroll.
+         * Records a change of the search box (a key, or an alphabet-picker
+         * letter) for renderHoldRemaining: when it happened and the viewer's
+         * current gap between changes.
+         */
+        function noteTyping() {
+            const now = performance.now();
+            const gap = now - lastInputAt;
+            const steadyGap = gap <= TYPING_GAP_MAX_MS ? gap : 0;
+            // The longer of the last two gaps, so one quick pair of keys does
+            // not shorten the hold; a pause resets it.
+            typingGapMs = steadyGap && lastInputGapMs ? Math.max(steadyGap, lastInputGapMs) : steadyGap;
+            lastInputGapMs = steadyGap;
+            lastInputAt = now;
+        }
+
+        /**
+         * How much longer page-1 results must wait before they replace the
+         * row: while the viewer types at a steady rhythm, until the box has
+         * been quiet a little longer than their gap between keys, so a prefix
+         * they are about to type past is never rendered.
+         * @returns {number} Milliseconds still to wait; 0 to render now.
+         */
+        function renderHoldRemaining() {
+            if (!typingGapMs) return 0;
+            return Math.max(0, lastInputAt + typingGapMs + RENDER_HOLD_MARGIN_MS - performance.now());
+        }
+
+        /**
+         * Applies a query's page-1 results now, or once the viewer has paused
+         * (renderHoldRemaining). A newer search drops them (dropPendingRender).
+         * @param {string} query The query the results belong to.
+         * @param {Function} apply Renders them.
+         */
+        function renderWhenQuiet(query, apply) {
+            pendingRender = { query, apply };
+            flushPendingRender();
+        }
+
+        /**
+         * Renders the held page-1 results if the box is still quiet and on
+         * their query; otherwise checks again when it may be.
+         */
+        function flushPendingRender() {
+            clearTimeout(pendingRenderTimer);
+            pendingRenderTimer = null;
+            const pending = pendingRender;
+            if (!pending) return;
+            if (lastProcessedQuery !== pending.query) {
+                pendingRender = null;
+                return;
+            }
+            let wait = renderHoldRemaining();
+            // The box has moved on since this search: its debounce is about to
+            // replace these results, or keep them if the viewer typed back to
+            // this query (handleSearch leaves a held query alone).
+            const searchInput = document.querySelector('#searchPage #searchTextInput');
+            if (searchInput && searchInput.value !== pending.query) {
+                wait = Math.max(wait, lastInputAt + SEARCH_DEBOUNCE_MS + RENDER_HOLD_MARGIN_MS - performance.now());
+            }
+            if (wait > 0) {
+                pendingRenderTimer = setTimeout(flushPendingRender, wait);
+                return;
+            }
+            pendingRender = null;
+            pending.apply();
+        }
+
+        /**
+         * Forgets held page-1 results (a newer search started, or the search
+         * box was emptied or left).
+         */
+        function dropPendingRender() {
+            clearTimeout(pendingRenderTimer);
+            pendingRenderTimer = null;
+            pendingRender = null;
+        }
+
+        /**
+         * Whether the row for a processed query is missing with nothing on its
+         * way: its search is neither running nor held for a pause, and no row
+         * is on the page (a view re-render removed it, or its search was
+         * aborted when the viewer typed past the query and then back to it).
+         * @param {string} query
+         * @returns {boolean}
+         */
+        function isRowMissing(query) {
+            return fetchingQuery !== query && pendingRender?.query !== query
+                && !document.querySelector('.jellyseerr-section');
+        }
+
+        /**
+         * The signal the rendered query's follow-up requests (more pages,
+         * collection lookups) run under. The global navigation abort cancels it
+         * whenever the URL changes, even if the search page still shows this
+         * very query (jellyfin-web rewrote the URL's query param, or a key was
+         * typed and deleted again); it is re-armed then.
+         * @param {string} query The rendered query.
+         * @returns {AbortSignal|null|false} False when the visible search page
+         *   no longer shows this query: the row is stale and must stop.
+         */
+        function liveSearchSignal(query) {
+            if (!searchSignal?.aborted) return searchSignal;
+            const visibleInput = document.querySelector('#searchPage:not(.hide) #searchTextInput');
+            if (!visibleInput || visibleInput.value !== query) return false;
+            searchSignal = JE.requestManager?.getAbortSignal('jellyseerr-search') || null;
+            return searchSignal;
+        }
+
+        /**
+         * Slots the collection cards for one rendered batch of results (page 1,
+         * or a batch infinite scroll appended) into the row: one batched lookup
+         * for the batch's movies, once the query has stood for
+         * COLLECTION_SETTLE_MS. Batches run in the order they were rendered, so
+         * a collection spanning several pages keeps its card after its first
+         * movie.
+         * @param {Array} results The batch as rendered (already filtered).
+         * @param {string} query The query it belongs to.
+         */
+        function enrichWithCollections(results, query) {
+            if (JE.pluginConfig.ShowCollectionsInSearch === false || !results.some(item => item.mediaType === 'movie')) return;
+            const epoch = JE.session ? JE.session.getEpoch() : 0;
+            queueCollectionLookup({ results, query, rowId: collectionRowId, epoch }, collectionsSettleAt);
+        }
+
+        /**
+         * Appends one batch's collection lookup to the row's chain.
+         * @param {{results: Array, query: string, rowId: number, epoch: number}} batch
+         * @param {number} settleAt Time (performance.now) before which it must not start.
+         */
+        function queueCollectionLookup(batch, settleAt) {
+            collectionQueue = collectionQueue.then(async () => {
+                const wait = Math.min(COLLECTION_SETTLE_MS, settleAt - performance.now());
+                if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+                await lookUpCollections(batch);
+            }).catch(() => {});
+        }
+
+        /**
+         * Whether a batch's row is still the one on the page: same search, not
+         * torn down since, and the same signed-in user.
+         * @param {{query: string, rowId: number, epoch: number}} batch
+         * @returns {boolean}
+         */
+        function isCollectionRowCurrent(batch) {
+            return batch.rowId === collectionRowId && lastProcessedQuery === batch.query
+                && (!JE.session || JE.session.isCurrent(batch.epoch));
+        }
+
+        /**
+         * Runs one batch's collection lookup and inserts its cards, or keeps
+         * the batch in unfinishedCollections when it can't complete now but
+         * its row may still want it.
+         * @param {{results: Array, query: string, rowId: number, epoch: number}} batch
+         */
+        async function lookUpCollections(batch) {
+            if (!isCollectionRowCurrent(batch)) return;
+            // Typed on from since it rendered: its successor is about to replace
+            // it, unless the viewer types back to it before the debounce runs,
+            // so keep the batch for then. Likewise while a navigation settles
+            // (nothing may re-arm the search signal then; handleNavigate
+            // resumes or drops it). An earlier batch already kept means this
+            // one waits behind it (render order decides card placement).
+            unfinishedCollections = unfinishedCollections.filter(isCollectionRowCurrent);
+            const visibleInput = document.querySelector('#searchPage:not(.hide) #searchTextInput');
+            if ((visibleInput && visibleInput.value !== batch.query) || searchSuspended || unfinishedCollections.length > 0) {
+                unfinishedCollections.push(batch);
+                return;
+            }
+            const signal = liveSearchSignal(batch.query);
+            if (signal === false) return;
+            let enrichedResults = await prepareResultsWithCollections(batch.results, { signal });
+            if (!isCollectionRowCurrent(batch)) return;
+            // A navigation abort (jellyfin-web rewrites the URL as the viewer
+            // types) cut the lookup short while the row still stands: keep it.
+            // The movies it did answer are remembered, so the retry only asks
+            // for the rest.
+            if (signal?.aborted) {
+                unfinishedCollections.push(batch);
+                return;
+            }
+            if (JE.hiddenContent) enrichedResults = JE.hiddenContent.filterJellyseerrResults(enrichedResults, 'search');
+            if (enrichedResults.length > batch.results.length) {
+                insertCollectionCards(enrichedResults);
+            }
+        }
+
+        /**
+         * Runs the rendered row's unfinished collection lookups again, in render
+         * order, now that the box has settled back on its query (the search
+         * debounce found the row already there, or a navigation settled on it).
+         */
+        function resumeCollections() {
+            if (unfinishedCollections.length === 0) return;
+            const visibleInput = document.querySelector('#searchPage:not(.hide) #searchTextInput');
+            if (!visibleInput || visibleInput.value !== lastProcessedQuery) return;
+            const batches = unfinishedCollections;
+            unfinishedCollections = [];
+            // Each re-checks its row as it runs, and any the box moves off again
+            // goes back into unfinishedCollections, still in order.
+            batches.forEach(batch => queueCollectionLookup(batch, 0));
+        }
+
+        /**
+         * Detaches every queued or kept collection lookup from the row (a new
+         * search started, or the row was torn down or rebuilt): none of them
+         * inserts anything after this.
+         */
+        function forgetCollections() {
+            collectionRowId++;
+            unfinishedCollections = [];
+        }
+
+        /**
+         * Fetches search results (page 1) and renders them once the viewer has
+         * stopped typing (renderWhenQuiet).
          * @param {string} query The search query.
          */
         async function fetchAndRenderResults(query, options = {}) {
             const { skipCache = false } = options;
             lastProcessedQuery = query;
+            fetchingQuery = query;
+            dropPendingRender();
+            forgetCollections();
             resetSearchPagination();
             searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
             const { title: apiQuery, year: yearFilter } = parseYearedQuery(query);
@@ -233,9 +517,25 @@
             } catch (error) {
                 if (error.name === 'AbortError') return; // superseded by a newer search
                 throw error;
+            } finally {
+                // The hold below is registered synchronously, so nothing can slip in between.
+                if (fetchingQuery === query) fetchingQuery = null;
             }
             if (lastProcessedQuery !== query) return; // superseded by a newer search while this was in flight
 
+            // A prefix the viewer types past is never rendered, nor are its
+            // next pages or collections fetched: the results wait for a pause.
+            renderWhenQuiet(query, () => renderFirstPage(query, data, yearFilter));
+        }
+
+        /**
+         * Renders a query's page-1 results, then starts its collection lookups
+         * and infinite scroll.
+         * @param {string} query The search query.
+         * @param {Object} data The page-1 search response.
+         * @param {string|null} yearFilter Release year from a "Title (YYYY)" query.
+         */
+        function renderFirstPage(query, data, yearFilter) {
             let results = filterResultsByYear(data.results || [], yearFilter);
             searchCurrentPage = data.page || 1;
             searchTotalPages = Math.min(data.totalPages || 1, TMDB_MAX_PAGE);
@@ -256,15 +556,13 @@
             }
 
             if (results.length > 0) {
-                // Enrich with collections in the background, then slot the
-                // collection cards into the existing row.
-                prepareResultsWithCollections(results, { signal }).then(enrichedResults => {
-                    if (lastProcessedQuery !== query) return;
-                    if (JE.hiddenContent) enrichedResults = JE.hiddenContent.filterJellyseerrResults(enrichedResults, 'search');
-                    if (enrichedResults.length > results.length) {
-                        insertCollectionCards(enrichedResults);
-                    }
-                }).catch(() => {});
+                // Enrich with collections in the background once the query has
+                // stood for COLLECTION_SETTLE_MS, then slot the collection cards
+                // into the existing row. Later batches (infinite scroll) queue
+                // behind this one.
+                collectionsSettleAt = performance.now() + COLLECTION_SETTLE_MS;
+                collectionQueue = Promise.resolve();
+                enrichWithCollections(results, query);
             }
 
             // Start the engine whenever pages remain, even if this page rendered
@@ -293,16 +591,13 @@
             // rewrote the URL's query param), re-arm a fresh signal for it;
             // otherwise the row is stale and must stop, not carry on unabortable.
             if (searchSuspended) return;
-            if (searchSignal?.aborted) {
-                const visibleInput = document.querySelector('#searchPage:not(.hide) #searchTextInput');
-                if (!visibleInput || visibleInput.value !== query) {
-                    searchHasMore = false;
-                    return;
-                }
-                searchSignal = JE.requestManager?.getAbortSignal('jellyseerr-search') || null;
+            const liveSignal = liveSearchSignal(query);
+            if (liveSignal === false) {
+                searchHasMore = false;
+                return;
             }
             searchIsLoading = true;
-            const signal = searchSignal || undefined;
+            const signal = liveSignal || undefined;
             const firstPage = searchCurrentPage + 1;
             const { title: apiQuery, year: yearFilter } = parseYearedQuery(query);
 
@@ -360,12 +655,34 @@
                 }
 
                 if (results.length > 0 && itemsContainer) {
-                    const fragment = document.createDocumentFragment();
-                    results.forEach(item => {
-                        const card = createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
-                        fragment.appendChild(card);
-                    });
-                    itemsContainer.appendChild(fragment);
+                    const createCard = item => createJellyseerrCard(item, isJellyseerrActive, jellyseerrUserFound);
+                    const slices = JE.discoveryFilter?.appendInSlices;
+                    if (slices) {
+                        // The cards in view go in at once; the rest of the batch
+                        // (off to the right of the row) is built in short slices
+                        // and goes in after them. The load resolves once every
+                        // card is in; a new search or a rebuilt row drops the rest.
+                        const rowId = collectionRowId;
+                        const isCurrent = () => rowId === collectionRowId && lastProcessedQuery === query && itemsContainer.isConnected;
+                        const rendering = slices(itemsContainer, results, createCard, {
+                            syncCount: JE.discoveryFilter.cardsInView(itemsContainer, { horizontal: true }),
+                            isCurrent
+                        });
+                        batchRendering = rendering;
+                        try {
+                            await rendering;
+                        } finally {
+                            if (batchRendering === rendering) batchRendering = null;
+                        }
+                        // Dropped (new search, row rebuilt): nothing more to do for it.
+                        if (!isCurrent()) return;
+                    } else {
+                        const fragment = document.createDocumentFragment();
+                        results.forEach(item => fragment.appendChild(createCard(item)));
+                        itemsContainer.appendChild(fragment);
+                    }
+                    // This batch's collection cards, one lookup for the batch.
+                    enrichWithCollections(results, query);
                 }
                 return { pages: committed, rendered: itemsContainer ? results.length : 0 };
             } catch (error) {
@@ -468,6 +785,8 @@
 
             console.log(`${logPrefix} Refreshing data for query: "${query}"`);
             try {
+                // The rebuilt row carries page 1's collections itself.
+                forgetCollections();
                 resetSearchPagination();
                 searchDeduplicator = JE.seamlessScroll?.createDeduplicator() || null;
 
@@ -510,16 +829,35 @@
                 const searchInput = document.querySelector('#searchPage #searchTextInput');
                 const isSearchPage = searchInput !== null;
                 const currentQuery = isSearchPage ? searchInput.value : null;
+                noteTyping();
+                // The viewer typed past a query whose first page is still on
+                // its way: abort it now instead of when the next search starts
+                // (jellyfin-web 12 also aborts it by rewriting the URL; a search
+                // page that doesn't rewrite it would otherwise let it finish).
+                if (fetchingQuery !== null && fetchingQuery !== currentQuery) {
+                    JE.requestManager?.abortRequest?.('jellyseerr-search');
+                }
 
                 if (isSearchPage && currentQuery?.trim()) {
                     clearTimeout(debounceTimeout);
                     debounceTimeout = setTimeout(() => {
                         if (!isJellyseerrActive) {
+                            dropPendingRender();
+                            forgetCollections();
                             clearInjectedSearchResults();
                             return;
                         }
                         const latestQuery = searchInput.value;
-                        if (latestQuery === lastProcessedQuery) return;
+                        // Already processed and its row is on the page or on its
+                        // way (held results render once the box is quiet). One
+                        // whose search was aborted as the viewer typed past it,
+                        // and which they then typed back to, is searched again.
+                        // A row kept this way finishes the collection lookups
+                        // it skipped while the box was off its query.
+                        if (latestQuery === lastProcessedQuery && !isRowMissing(latestQuery)) {
+                            resumeCollections();
+                            return;
+                        }
 
                         if (isJellyseerrOnlyMode) {
                             isJellyseerrOnlyMode = false;
@@ -531,9 +869,11 @@
                         resetSearchPagination();
                         clearInjectedSearchResults();
                         fetchAndRenderResults(latestQuery);
-                    }, 200);
+                    }, SEARCH_DEBOUNCE_MS);
                 } else {
                     clearTimeout(debounceTimeout);
+                    dropPendingRender();
+                    forgetCollections();
                     lastProcessedQuery = null;
                     isJellyseerrOnlyMode = false;
                     resetSearchPagination();
@@ -582,6 +922,8 @@
                 const searchInput = document.querySelector('#searchPage:not(.hide) #searchTextInput');
                 if (!searchInput) {
                     clearTimeout(debounceTimeout);
+                    dropPendingRender();
+                    forgetCollections();
                     lastProcessedQuery = null;
                     isJellyseerrOnlyMode = false;
                     resetSearchPagination();
@@ -590,13 +932,21 @@
                 }
                 tryAttachSearchListener();
                 // The row itself was removed (e.g. by a view re-render) while the
-                // query is unchanged: handleSearch would skip it as already
-                // processed, so rebuild it here.
+                // query is unchanged: no input event comes to rebuild it, so
+                // rebuild it here. Not while the input handler's
+                // own fetch for this query is still in flight or its results are
+                // held for a pause — jellyfin-web rewrites the URL on each
+                // keystroke, so this settle timer and the input debounce fire
+                // together, and the row simply isn't rendered yet.
                 if (isJellyseerrActive && searchInput.value.trim() && searchInput.value === lastProcessedQuery
-                    && !document.querySelector('.jellyseerr-section')) {
+                    && isRowMissing(searchInput.value)) {
                     resetSearchPagination();
                     fetchAndRenderResults(searchInput.value);
+                    return;
                 }
+                // Still on the rendered query: collection lookups the
+                // navigation's abort cut short pick up again.
+                resumeCollections();
             }
 
             // Listen for manual refresh events from the UI
@@ -656,10 +1006,12 @@
                     initializePageObserver();
 
                     // Prefetch TMDB genres in the background for instant discovery
+                    // (no request when this tab already keeps fresh copies in
+                    // sessionStorage, e.g. after a reload)
                     if (isJellyseerrActive && JE.pluginConfig?.JellyseerrShowGenreDiscovery !== false) {
                         Promise.all([
-                            JE.discoveryFilter?.fetchWithManagedRequest?.('/JellyfinEnhanced/tmdb/genres/tv', 'genre', {})?.catch(() => {}),
-                            JE.discoveryFilter?.fetchWithManagedRequest?.('/JellyfinEnhanced/tmdb/genres/movie', 'genre', {})?.catch(() => {})
+                            JE.discoveryFilter?.fetchTmdbGenreList?.('tv', {})?.catch(() => {}),
+                            JE.discoveryFilter?.fetchTmdbGenreList?.('movie', {})?.catch(() => {})
                         ]).catch(() => {});
                     }
                 } else if (Date.now() - startTime > timeout) {

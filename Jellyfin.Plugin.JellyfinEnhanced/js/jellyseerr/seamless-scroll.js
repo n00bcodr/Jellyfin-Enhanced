@@ -35,8 +35,13 @@
         idleRowWidths: 1.5,
 
         // Horizontal rows scrolled by transforms (emby-scroller) emit no scroll
-        // events, so also poll the geometry at this interval while set up.
+        // events, so also poll the geometry at this interval while set up...
         horizontalPollMs: 400,
+        // ...until this many polls in a row found nothing to load (the row is
+        // full, off screen, under a modal or paused). Any scroll, wheel, swipe,
+        // key, focus, press or resize, a card hidden or added / removed — and
+        // anything that asks for a fill — starts the poll again.
+        horizontalPollIdleLimit: 3,
 
         // Safety valve against hammering Seerr/TMDB: after this many
         // consecutive *pages* that rendered no cards (every item filtered out
@@ -414,11 +419,24 @@
          * Keeps loading until the content buffer ahead of the viewer is full,
          * the feed is exhausted, or a load fails permanently.
          */
-        const fill = async () => {
+        // A More Info modal covers the page: nobody is reading the row behind
+        // it, and its own requests should not queue behind the row's pages.
+        // A fill it stopped is resumed when the modal closes (see the
+        // 'jellyseerr-more-info-closed' listener below) — a grid too short to
+        // scroll would otherwise never be asked to fill again — and a
+        // horizontal row's poll resumes it too.
+        const modalOpen = () => !!document.querySelector('.je-more-info-modal');
+        let suspendedByModal = false;
+        // Loads started by the fill loop; the horizontal poll compares it
+        // before and after a fill to tell an idle row from a filling one.
+        let loadsStarted = 0;
+
+        const runFill = async () => {
             if (filling || destroyed || paused) return;
             filling = true;
             try {
                 while (!destroyed && !paused && sentinel.isConnected && hasMoreCheck() && !isLoadingCheck()) {
+                    if (modalOpen()) { suspendedByModal = true; break; }
                     const g = measure();
                     if (!g.inRange) break;
                     const deficit = g.target - g.ahead;
@@ -446,6 +464,7 @@
                     // pageBudget: how many more pages may be fetched before the
                     // empty-page valve trips; consumers clamp batch + prefetch to it.
                     const pageBudget = CONFIG.maxConsecutiveEmptyPages - emptyPages;
+                    loadsStarted++;
                     const result = await wrappedLoad({ deficitPx: deficit, aheadPx: g.ahead, spanPx: g.span, horizontal, engaged, pageBudget });
                     if (!result) break;
                     if (typeof result === 'object' && typeof result.pages === 'number') {
@@ -461,6 +480,39 @@
             } finally {
                 filling = false;
             }
+        };
+
+        // Horizontal rows: geometry poll for transform scrolling (see
+        // CONFIG.horizontalPollMs), stopped while the row is idle.
+        let pollTimer = null;
+        let idlePolls = 0;
+        const pollTick = async () => {
+            if (!sentinel.isConnected) { teardown(); return; }
+            if (filling) { idlePolls = 0; return; }
+            const before = loadsStarted;
+            await runFill();
+            if (loadsStarted !== before) {
+                idlePolls = 0;
+            } else if (++idlePolls >= CONFIG.horizontalPollIdleLimit && pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+        };
+        /** (Re)starts the horizontal poll after something that can move or grow the row. */
+        const armPoll = () => {
+            if (!horizontal || destroyed) return;
+            idlePolls = 0;
+            if (!pollTimer) pollTimer = setInterval(pollTick, CONFIG.horizontalPollMs);
+        };
+
+        /**
+         * Runs the fill loop on request (observer, scroll, resize, consumers,
+         * the retry button) and re-arms a horizontal row's poll.
+         * @returns {Promise<void>}
+         */
+        const fill = () => {
+            armPoll();
+            return runFill();
         };
 
         // Observer: wakes the fill loop when the sentinel (or, for rows, the
@@ -495,8 +547,15 @@
             fill();
         }, 100);
         // Interaction with a horizontal row switches it from the idle buffer to
-        // the full read-ahead buffer.
-        const onEngage = () => {
+        // the full read-ahead buffer. A press, tap or focus landing on a card is
+        // the viewer picking a title (opening its More Info modal), not reading
+        // along the row: it must not switch the buffer and fetch pages (plus
+        // prefetch) behind the modal. Scrolling, wheeling, swiping and keyboard
+        // navigation of the row still do, as does pressing the row's own
+        // scroll buttons.
+        const CARD_EVENT_TYPES = new Set(['pointerdown', 'touchstart', 'focusin']);
+        const onEngage = (event) => {
+            if (CARD_EVENT_TYPES.has(event.type) && event.target?.closest?.('.card')) return;
             if (!engaged) { engaged = true; fill(); }
         };
 
@@ -507,7 +566,11 @@
         };
         listen(window, 'scroll', onUserScroll, { passive: true });
         listen(window, 'resize', onUserScroll, { passive: true });
-        let pollTimer = null;
+        listen(document, 'jellyseerr-more-info-closed', () => {
+            if (!suspendedByModal) return;
+            suspendedByModal = false;
+            fill();
+        });
         if (horizontal) {
             // emby-scroller scrolls an inner element (native) or translates the
             // track (transform); catch both plus the input that drives them.
@@ -516,12 +579,26 @@
             listen(section, 'touchmove', onUserScroll, { passive: true });
             listen(section, 'keydown', onUserScroll, { passive: true });
             listen(section, 'focusin', onUserScroll, { passive: true });
-            ['scroll', 'wheel', 'touchstart', 'keydown', 'focusin', 'pointerdown'].forEach(type =>
+            // A press (e.g. the scroller's own arrow buttons, which may
+            // translate the track) only re-arms the poll: like the poll always
+            // did, it fills on its next tick, not on the press itself.
+            listen(section, 'pointerdown', armPoll, { passive: true, capture: true });
+            // The row can also shrink with no input on it: a card hidden through
+            // the hide dialog (confirmed long after the press), or cards taken
+            // out of the track. Re-arm the poll then too, so it refills on its
+            // next tick as the always-running poll did.
+            listen(window, 'je-hidden-content-changed', armPoll);
+            const track = section.querySelector(trackSelector);
+            if (track && typeof MutationObserver !== 'undefined') {
+                // The track's own children only: no subtree, no attributes.
+                const trackObserver = new MutationObserver(() => armPoll());
+                trackObserver.observe(track, { childList: true });
+                listeners.push(() => trackObserver.disconnect());
+            }
+            // touchmove: a swipe that starts on a card is still reading the row.
+            ['scroll', 'wheel', 'touchstart', 'touchmove', 'keydown', 'focusin', 'pointerdown'].forEach(type =>
                 listen(section, type, onEngage, { passive: true, capture: true }));
-            pollTimer = setInterval(() => {
-                if (!sentinel.isConnected) { teardown(); return; }
-                fill();
-            }, CONFIG.horizontalPollMs);
+            armPoll();
         }
 
         const teardown = () => {
