@@ -483,6 +483,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/TagStyles.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/RadarrService.cs",
       "category": "Services"
     },
@@ -1395,6 +1399,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-styles.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/userreviewtags.js",
       "category": "js"
     },
@@ -1439,6 +1447,24 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/jellyseerr/status",
       "method": "GetJellyseerrStatus",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/tag-styles",
+      "method": "GetTagStyles",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/tag-styles/catalog",
+      "method": "GetTagStyleCatalog",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
@@ -3718,6 +3744,46 @@
       "type": "string",
       "initializer": null,
       "constructor_assignment": "string.Empty",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TagStylesEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TagStyleOverrides",
+      "type": "string",
+      "initializer": null,
+      "constructor_assignment": "string.Empty",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TagStyleTarget",
+      "type": "string",
+      "initializer": null,
+      "constructor_assignment": "\"both\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TagStylePreset",
+      "type": "string",
+      "initializer": null,
+      "constructor_assignment": "\"default\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TagStyleApplyScope",
+      "type": "string",
+      "initializer": null,
+      "constructor_assignment": "\"all\"",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -7223,6 +7289,14 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagAssets.cs"
     },
     {
+      "literal": "age-rating-colours.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/TagStyles.cs"
+    },
+    {
+      "literal": "quality-colours.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/TagStyles.cs"
+    },
+    {
       "literal": "spoilerblur.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerBlurImageFilter.cs"
     },
@@ -7497,10 +7571,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 348,
-    "routes": 170,
-    "configuration_properties": 512,
-    "storage_references": 63,
+    "files": 350,
+    "routes": 172,
+    "configuration_properties": 517,
+    "storage_references": 65,
     "scheduled_tasks": 13,
     "locales": 33
   }

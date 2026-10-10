@@ -25,6 +25,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.StaticFiles;
 using Newtonsoft.Json.Linq;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Common.Net;
@@ -1173,6 +1174,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             _logger.Warning("Could not establish a connection with any configured Seerr URL. Status is inactive.");
             return false;
+        }
+
+        /// <summary>Tag colour overrides for the Jellyfin Web overlays (empty unless the target includes web).</summary>
+        [HttpGet("tag-styles")]
+        [Authorize]
+        public ActionResult GetTagStyles()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null) return StatusCode(503);
+            var set = config.TagStylesEnabled && config.TagStyleTarget is "web" or "both" ? TagStyleSet.Parse(config.TagStyleOverrides) : TagStyleSet.Empty;
+            return new JsonResult(set.ToWebModel());
+        }
+
+        /// <summary>The shipped default tag colours the config page's style editor starts from.</summary>
+        [HttpGet("tag-styles/catalog")]
+        [Authorize]
+        public ActionResult GetTagStyleCatalog()
+        {
+            if (!IsAdminUser()) return Forbid();
+            return new JsonResult(new
+            {
+                quality = TagStyleCatalog.Quality.Select(q => new { label = q.Label, background = q.Background, color = q.Text }),
+                age = TagStyleCatalog.AgeGroups.Select(g => new { id = g.Id, background = g.Background, border = g.Border, color = g.Text, ratings = g.Ratings }),
+            });
         }
 
         [HttpGet("jellyseerr/validate")]
@@ -3389,6 +3414,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.PauseScreenDelaySeconds,
                 config.ShowPlaybackRatingBadge,
                 config.NativePosterTagsEnabled,
+                TagStyleWebActive = config.TagStylesEnabled && config.TagStyleTarget is "web" or "both" && !TagStyleSet.Parse(config.TagStyleOverrides).IsEmpty,
                 config.QualityTagsEnabled,
                 config.ShowResolutionTag,
                 config.ShowSourceTag,

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection;
@@ -268,7 +269,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             var styles = new List<AgeRatingStyle>();
             foreach (var s in doc.RootElement.GetProperty("styles").EnumerateArray())
             {
-                styles.Add(AgeRatingStyle.Default.With(
+                styles.Add((AgeRatingStyle.Default with { Group = styles.Count.ToString(CultureInfo.InvariantCulture) }).With(
                     s.TryGetProperty("background-color", out var bg) ? bg.GetString() : null,
                     s.TryGetProperty("border-color", out var border) ? border.GetString() : null,
                     s.TryGetProperty("color", out var color) ? color.GetString() : null,
@@ -364,7 +365,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
     }
 
     /// <summary>Colours of an age rating badge (ageratingtags.js base rule overridden by a ratings.css rule).</summary>
-    internal sealed record AgeRatingStyle(SKColor Background, SKColor Border, SKColor Text, bool TextShadow)
+    internal sealed record AgeRatingStyle(SKColor Background, SKColor Border, SKColor Text, bool TextShadow, string Group = "")
     {
         /// <summary>The badge's own rule: #607D8B, 1px rgba(255,255,255,.25) border, white text with a 2px shadow.</summary>
         public static AgeRatingStyle Default { get; } = new(
@@ -379,7 +380,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 CssColor.Parse(background, Background),
                 CssColor.Parse(border, Border),
                 CssColor.Parse(text, Text),
-                textShadow is null ? TextShadow : !string.Equals(textShadow.Trim(), "none", StringComparison.OrdinalIgnoreCase));
+                textShadow is null ? TextShadow : !string.Equals(textShadow.Trim(), "none", StringComparison.OrdinalIgnoreCase),
+                Group);
         }
     }
 }

@@ -73,7 +73,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// <paramref name="TopRightOffset"/> mirrors the web rule that pushes top-right tags down when the card shows a
     /// played or unplayed-count indicator. <paramref name="Landscape"/> selects the landscape logical card width.
     /// </summary>
-    public sealed record PosterTagLayout(IReadOnlyList<PosterTagGroupLayout> Groups, bool TopRightOffset, bool Landscape)
+    public sealed record PosterTagLayout(IReadOnlyList<PosterTagGroupLayout> Groups, bool TopRightOffset, bool Landscape, TagStyleSet? Styles = null)
     {
         /// <summary>True when nothing would be drawn.</summary>
         public bool IsEmpty

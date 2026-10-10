@@ -2319,3 +2319,62 @@ div#radarrMappingsValidationResult,
 div#bazarrMappingsValidationResult {
     padding: 10px;
 }
+
+/* ---------------------------------------------------------------------------
+   Tag Styles editor (Media Tags section)
+   --------------------------------------------------------------------------- */
+.je-ts-editor { margin: 8px 0 16px 0; padding: 12px 16px; background: var(--je-surface-1); border: 1px solid var(--je-border); border-radius: 6px; }
+.je-ts-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.je-ts-tab { padding: 4px 12px; border: 1px solid var(--je-border-strong); border-radius: 14px; background: transparent; color: inherit; cursor: pointer; font: inherit; }
+.je-ts-tab.active { background: var(--je-surface-3); border-color: var(--je-border-focus); font-weight: 600; }
+.je-ts-grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px; background: var(--je-surface-2); border-radius: 6px; }
+.je-ts-cell { position: relative; padding: 4px; border: 2px solid transparent; border-radius: 6px; background: transparent; cursor: pointer; }
+.je-ts-cell.selected { border-color: var(--primary-accent-color, #00a4dc); }
+.je-ts-cell.changed::after { content: ""; position: absolute; top: 0; right: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--primary-accent-color, #00a4dc); }
+.je-ts-q, .je-ts-age, .je-ts-rate { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.je-ts-q { font-weight: bold; font-variant-caps: small-caps; font-size: 0.85rem; line-height: 1.2; padding: 2px 10px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
+.je-ts-age { font-size: 13px; font-weight: 700; line-height: 1; letter-spacing: 0.02em; text-transform: uppercase; padding: 4px 8px; border-radius: 4px; border: 1px solid; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+.je-ts-rate { font-size: 13px; font-weight: 600; line-height: 1; padding: 4px 8px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+.je-ts-rate .material-icons { font-size: 14px; }
+.je-ts-tomato { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #fa320a; }
+.je-ts-genre { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid; box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
+.je-ts-genre .material-icons { font-size: 16px; }
+.je-ts-panel { margin-top: 12px; padding: 12px; border: 1px solid var(--je-border); border-radius: 6px; }
+.je-ts-panel-title { font-weight: 600; margin-bottom: 8px; }
+.je-ts-field { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.je-ts-field label { min-width: 90px; }
+.je-ts-field input[type="color"] { width: 40px; height: 28px; padding: 0; border: 0; background: none; cursor: pointer; }
+.je-ts-field input[type="range"] { width: 140px; }
+.je-ts-field .je-ts-alpha { min-width: 38px; opacity: 0.7; }
+
+.je-ts-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.je-ts-presets-label { font-weight: 600; }
+.je-ts-select { padding: 6px 8px; border-radius: 4px; border: 1px solid var(--je-border-strong); background: var(--je-surface-2); color: inherit; font: inherit; }
+
+/* Preview tag sizing, the selected-tag ring, and dropdown option colours (native selects ignore the theme). */
+.je-ts-cell { padding: 6px; border-radius: 8px; }
+.je-ts-cell.selected { border-color: #fff; background: rgba(0, 0, 0, 0.45); box-shadow: 0 0 0 2px var(--primary-accent-color, #00a4dc); }
+.je-ts-q { padding: 5px 14px; font-size: 1rem; border-radius: 6px; }
+.je-ts-age { padding: 7px 12px; font-size: 14px; }
+.je-ts-rate { padding: 7px 12px; font-size: 14px; }
+.je-ts-genre { width: 34px; height: 34px; }
+.je-ts-select option { background: #1e1e1e; color: #fff; }
+
+/* Media Tags holds the Tag Styles editor: give it two columns when the grid has room. */
+@media (min-width: 1100px) {
+    .jellyfin-tab-content.active > fieldset:has(#tagStyleEditor) { grid-column: span 2; }
+}
+
+.je-ts-presets { flex-direction: column; align-items: stretch; }
+.je-ts-presets-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.je-ts-presets-row .je-ts-presets-label { min-width: 70px; }
+.je-ts-pick { display: inline-flex; align-items: center; gap: 6px; }
+.je-ts-pick input[type="color"] { width: 36px; height: 26px; padding: 0; border: 0; background: none; cursor: pointer; }
+.je-ts-pick input[type="range"] { width: 90px; }
+
+.je-ts-pick { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--je-border); border-radius: 6px; }
+.je-ts-pick-head { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
+.je-ts-pick-head input { margin: 0; }
+.je-ts-pick-controls { display: flex; align-items: center; gap: 8px; }
+.je-ts-pick-controls input:disabled { opacity: 0.4; }
+#tagStylePresets .je-ts-presets-row:last-child { align-items: stretch; }

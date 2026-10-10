@@ -121,7 +121,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (reviewOnly is not null) groups.Add(reviewOnly);
             if (groups.Count == 0) return null;
 
-            return new PosterTagLayout(groups, HasTopRightOffset(groups, settings, context), landscape);
+            return new PosterTagLayout(groups, HasTopRightOffset(groups, settings, context), landscape, settings.Styles);
         }
 
         /// <summary>
