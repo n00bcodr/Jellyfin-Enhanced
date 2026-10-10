@@ -116,6 +116,12 @@
         .je-lp-result-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
         .je-lp-muted { color: #94a3b8; font-size: 0.85em; }
         .je-lp-inlib { color: #4ade80; }
+        .je-lp-results-group, .je-lp-results-body { display: flex; flex-direction: column; gap: 4px; }
+        .je-lp-results-heading { margin: 8px 0 2px; font-size: 0.78em; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #94a3b8; }
+        .je-lp-arr-result { display: flex; align-items: center; gap: 6px; }
+        .je-lp-arr-result .je-lp-result { flex: 1 1 auto; min-width: 0; }
+        .je-lp-arr-result-add { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; padding: 0.5em; border: 0; border-radius: 50%; background: transparent; color: #a5b4fc; cursor: pointer; }
+        .je-lp-arr-result-add:hover, .je-lp-arr-result-add:focus-visible { background: rgba(99, 102, 241, 0.22); }
         .je-lp-selected { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid rgba(148, 163, 184, 0.14); }
         .je-lp-selected-title { font-weight: 700; }
         .je-lp-granularity { display: flex; flex-direction: column; gap: 10px; }

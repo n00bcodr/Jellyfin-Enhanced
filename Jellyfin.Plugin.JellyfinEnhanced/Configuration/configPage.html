@@ -2017,6 +2017,10 @@
                             <div class="je-setting-description" data-desc-for="listPlaceholdersImdbEnabled">
                                 <div class="fieldDescription je-field-desc-xl">IMDb has no public API. With this on, IMDb lists, public watchlists and charts are read through IMDb's unofficial website API, which may stop working at any time and is for personal use only. Without it, mirror the list on MDBList or paste an IMDb CSV export instead.</div>
                             </div>
+                            <div class="checkboxContainer"><label><input id="listPlaceholdersArrEnabled" is="emby-checkbox" type="checkbox"/><span>Let administrators add placeholders to Radarr and Sonarr</span></label></div>
+                            <div class="je-setting-description" data-desc-for="listPlaceholdersArrEnabled">
+                                <div class="fieldDescription je-field-desc-xl">Adds "Add to Radarr" / "Add to Sonarr" to placeholder menus and Radarr/Sonarr search results to "Add title", for administrators only. Uses the Radarr and Sonarr instances on the *arr tab (enabled ones), with a choice of instance, quality profile and root folder. A season or episode placeholder only monitors that season or those episodes, also on a series Sonarr already has. Works without Seerr.</div>
+                            </div>
                         </div>
                     </fieldset>
 
@@ -6182,6 +6186,7 @@
                 document.querySelector('#listPlaceholdersSyncEnabled').checked = config.ListPlaceholdersSyncEnabled || false;
                 document.querySelector('#listPlaceholdersImdbEnabled').checked = config.ListPlaceholdersImdbEnabled || false;
                 document.querySelector('#traktClientId').value = config.TraktClientId || '';
+                document.querySelector('#listPlaceholdersArrEnabled').checked = config.ListPlaceholdersArrEnabled || false;
                 document.querySelector('#jellyseerrShowReportButton').checked = !!config.JellyseerrShowReportButton;
                 document.querySelector('#jellyseerrShowIssueIndicator').checked = !!config.JellyseerrShowIssueIndicator;
                 document.querySelector('#jellyseerrShowDetailPageLink').checked = config.JellyseerrShowDetailPageLink !== false;
@@ -6753,6 +6758,7 @@
             config.ListPlaceholdersSyncEnabled = document.querySelector('#listPlaceholdersSyncEnabled').checked;
             config.ListPlaceholdersImdbEnabled = document.querySelector('#listPlaceholdersImdbEnabled').checked;
             config.TraktClientId = document.querySelector('#traktClientId').value.trim();
+            config.ListPlaceholdersArrEnabled = document.querySelector('#listPlaceholdersArrEnabled').checked;
             config.JellyseerrShowReportButton = document.querySelector('#jellyseerrShowReportButton').checked;
             config.JellyseerrShowIssueIndicator = document.querySelector('#jellyseerrShowIssueIndicator').checked;
             config.JellyseerrShowDetailPageLink = document.querySelector('#jellyseerrShowDetailPageLink').checked;
@@ -8259,7 +8265,7 @@
             { parent: 'catchUpEnabled', label: 'Enable Catch Up', children: ['catchUpLogEnabled', 'catchUpUseNativeTab', 'catchUpUsePluginPages', 'catchUpUseCustomTabs', 'catchUpAutoCreateCustomTab'] },
             { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
             { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
-            { parent: 'listPlaceholdersEnabled', label: "Show titles you don't have on collections and playlists", children: ['listPlaceholdersAutoRequestEnabled', 'listPlaceholdersAutoRequestCount', 'listPlaceholdersAutoRequestMinutes', 'listPlaceholdersAutoRequestOnlyReleased', 'listPlaceholdersSyncEnabled', 'traktClientId', 'listPlaceholdersImdbEnabled'] },
+            { parent: 'listPlaceholdersEnabled', label: "Show titles you don't have on collections and playlists", children: ['listPlaceholdersAutoRequestEnabled', 'listPlaceholdersAutoRequestCount', 'listPlaceholdersAutoRequestMinutes', 'listPlaceholdersAutoRequestOnlyReleased', 'listPlaceholdersSyncEnabled', 'traktClientId', 'listPlaceholdersImdbEnabled', 'listPlaceholdersArrEnabled'] },
             { parent: 'listPlaceholdersAutoRequestEnabled', label: "Request the next titles of a list while it's being watched", children: ['listPlaceholdersAutoRequestCount', 'listPlaceholdersAutoRequestMinutes', 'listPlaceholdersAutoRequestOnlyReleased'] },
             { parent: 'preventWatchlistReAddition', label: 'Prevent re-adding removed items', children: ['watchlistMemoryRetentionDays'] },
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },
@@ -9041,6 +9047,11 @@
             feat('*arr tags sync', bool('arrTagsSyncEnabled'), 'arr',
                 tagsSyncWarn ? 'Enabled but no *arr instance is configured' : 'Enabled',
                 tagsSyncWarn);
+            var lpArrOn = bool('listPlaceholdersEnabled') && bool('listPlaceholdersArrEnabled');
+            var lpArrWarn = lpArrOn && !anyArrConfigured();
+            feat('Add placeholders to *arr', lpArrOn, 'seerr',
+                lpArrWarn ? 'Enabled but no *arr instance is configured' : 'Enabled',
+                lpArrWarn);
 
             // Stable ordering: warnings first, then on, then off
             features.sort(function(a, b) {

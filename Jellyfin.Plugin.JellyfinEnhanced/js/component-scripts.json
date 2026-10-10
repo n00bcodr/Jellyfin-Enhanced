@@ -198,6 +198,8 @@
     "jellyseerr/listplaceholders/listplaceholders-import.js",
     "jellyseerr/listplaceholders/listplaceholders-source.js",
     "jellyseerr/listplaceholders/listplaceholders-init.js",
+    "// list placeholders: admin Add to Radarr/Sonarr (keep after listplaceholders-init.js; both merge into JE.listPlaceholders)",
+    "jellyseerr/listplaceholders/listplaceholders-arr.js",
 
     "// tags",
     "tags/genretags.js",

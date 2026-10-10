@@ -3490,6 +3490,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.JellyseerrShowPersonDiscovery,
                 config.JellyseerrShowCollectionDiscovery,
                 config.ListPlaceholdersEnabled,
+                config.ListPlaceholdersArrEnabled,
                 config.JellyseerrShowDetailPageLink,
                 config.JellyseerrShowDetailPageLinkAsText,
                 config.JellyseerrExcludeLibraryItems,

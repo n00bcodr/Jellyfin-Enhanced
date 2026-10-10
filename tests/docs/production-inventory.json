@@ -71,6 +71,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersArrController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersController.cs",
       "category": "Controllers"
     },
@@ -216,6 +220,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/ListPlaceholders/ListImportDtos.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/ListPlaceholders/ListPlaceholderArrDtos.cs",
       "category": "Model"
     },
     {
@@ -428,6 +436,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListAccessService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderArrService.cs",
       "category": "Services"
     },
     {
@@ -1264,6 +1276,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-api.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/listplaceholders/listplaceholders-arr.js",
       "category": "js"
     },
     {
@@ -3254,6 +3270,33 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/list-placeholders/arr/options",
+      "method": "GetOptions",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersArrController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/list-placeholders/arr/lookup",
+      "method": "Lookup",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersArrController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/list-placeholders/arr/add",
+      "method": "Add",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersArrController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/list-placeholders/{listId}",
       "method": "GetList",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ListPlaceholdersController.cs",
@@ -4493,6 +4536,14 @@
       "type": "string",
       "initializer": null,
       "constructor_assignment": "string.Empty",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ListPlaceholdersArrEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -7934,9 +7985,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 404,
-    "routes": 185,
-    "configuration_properties": 520,
+    "files": 408,
+    "routes": 188,
+    "configuration_properties": 521,
     "storage_references": 64,
     "scheduled_tasks": 15,
     "locales": 33

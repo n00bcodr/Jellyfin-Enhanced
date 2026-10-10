@@ -112,6 +112,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.ListPlaceholders.Sources.IListSourceFetcher, Services.ListPlaceholders.Sources.ListSourceFetcher>();
             serviceCollection.AddSingleton<Services.ListPlaceholders.Sources.IListEntryRemover, Services.ListPlaceholders.Sources.JellyfinListEntryRemover>();
             serviceCollection.AddSingleton<Services.ListPlaceholders.Sources.ListSourceService>();
+            // Admin direct add of placeholders to Radarr/Sonarr (ListPlaceholdersArrEnabled).
+            serviceCollection.AddSingleton<Services.ListPlaceholders.ListPlaceholderArrService>();
             // Opt-in anonymous usage reporting: UsageEventCounterService holds the
             // current period's counters (debounced disk persistence, same pattern
             // as WikidataAwardsService); AnalyticsReportingService builds/sends the

@@ -162,7 +162,8 @@
     lp.getLibraryUnsubscribe = () => unsubscribeLibrary;
 
     JE.initializeListPlaceholders = initialize;
-    JE.listPlaceholders = {
+    // Merge, never replace: other modules (e.g. listplaceholders-arr.js) add their own members.
+    JE.listPlaceholders = Object.assign(JE.listPlaceholders || {}, {
         isEnabled: lp.isEnabled,
         openPicker: (options) => lp.picker.openPicker(options),
         appendCardAction: (card, item) => lp.picker.appendCardAction(card, item),
@@ -170,6 +171,6 @@
         getPlaceholderTmdbIds: (listId, mediaType) => lp.collection.placeholderTmdbIds(listId, mediaType),
         openImport: (options) => lp.importer.open(options),
         parser: lp.parser
-    };
+    });
 
 })(window.JellyfinEnhanced);

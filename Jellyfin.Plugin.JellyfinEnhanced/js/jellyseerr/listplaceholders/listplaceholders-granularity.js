@@ -35,18 +35,20 @@
 
     /**
      * Base placeholder fields from a Seerr search result / details object.
-     * @param {Object} media - Seerr item (`id`, `mediaType`, `title|name`, dates, posterPath, overview).
+     * @param {Object} media - Seerr item (`id`, `mediaType`, `title|name`, dates, posterPath, overview);
+     *   an arr candidate (search.arrMedia) may also carry `year` for titles without a date yet.
      * @returns {Object} Partial NewPlaceholderDto.
      */
     function basePlaceholder(media) {
         const tv = media.mediaType === 'tv';
         const date = cleanDate(tv ? (media.firstAirDate || media.releaseDate) : (media.releaseDate || media.firstAirDate));
+        const knownYear = Number(media.year);
         const base = {
             mediaType: tv ? 'tv' : 'movie',
             tmdbId: Number(media.id),
             title: String(media.title || media.name || '').trim().slice(0, 200),
             releaseDate: date,
-            year: date ? Number(date.slice(0, 4)) : undefined,
+            year: date ? Number(date.slice(0, 4)) : (Number.isInteger(knownYear) && knownYear >= 1870 && knownYear <= 2100 ? knownYear : undefined),
             overview: media.overview ? String(media.overview).slice(0, 1000) : undefined
         };
         if (lp.render.isSafePoster(media.posterPath)) base.posterPath = media.posterPath;

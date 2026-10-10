@@ -179,6 +179,9 @@
         if (ph.tmdbId && JE.jellyseerrMoreInfo?.open && JE.pluginConfig?.JellyseerrEnabled) {
             items.push({ icon: 'info', label: JE.t('listPlaceholders_more_info'), onClick: () => JE.jellyseerrMoreInfo.open(Number(ph.tmdbId), ph.mediaType) });
         }
+        // Admin "Add to Radarr/Sonarr" (listplaceholders-arr.js; null for non-admins, custom entries or when off).
+        const arrEntry = JE.listPlaceholders?.arr?.menuItemFor?.(ph);
+        if (arrEntry) items.push({ icon: arrEntry.icon, label: arrEntry.label, onClick: () => arrEntry.onSelect() });
         if (view.canEdit) {
             if (ctrl.listKind === 'playlist' && !(ctrl.canDragPlaceholders && ctrl.canDragPlaceholders())) {
                 const order = view.order || [];

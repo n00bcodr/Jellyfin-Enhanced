@@ -188,6 +188,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ListPlaceholdersSyncEnabled = false;
             ListPlaceholdersImdbEnabled = false;
             TraktClientId = string.Empty;
+            ListPlaceholdersArrEnabled = false;
             JellyseerrShowDetailPageLink = true;
             JellyseerrShowDetailPageLinkAsText = false;
             ShowElsewhereOnJellyseerr = false;
@@ -738,6 +739,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ListPlaceholdersImdbEnabled { get; set; }
         // Trakt API client id (developer.trakt.tv/apps) for Trakt list URLs. Server-side only: never in public config.
         public string TraktClientId { get; set; }
+        // Admins can add placeholders straight to Radarr/Sonarr (JE's configured instances); needs the master switch.
+        public bool ListPlaceholdersArrEnabled { get; set; }
         public bool JellyseerrShowDetailPageLink { get; set; }
         public bool JellyseerrShowDetailPageLinkAsText { get; set; }
         public bool JellyseerrExcludeLibraryItems { get; set; } = true;
