@@ -211,6 +211,7 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Sammligsdetail konnte nöd glade werde",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} Kei Filme i dr Sammlig gfunde",
     "jellyseerr_select_all_seasons": "Alli Staffle uswähle",
+    "jellyseerr_select_all_episodes": "Select All Episodes",
     "jellyseerr_season_specials": "Specials",
     "jellyseerr_season_name": "Staffle {number}",
     "jellyseerr_season_status_not_requested": "Nöd aagfrogt",
@@ -400,6 +401,7 @@
     "toast_bookmark_updated": "{{icon:success}} Lesezeiche aktualisiert",
     "toast_bookmark_deleted": "{{icon:trash}} Lesezeiche glöscht",
     "toast_bookmark_save_failed": "{{icon:error}} Lesezeiche konnt nöd gspicheret werde",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Zum Lesezeiche gsprunge",
     "bookmark_cleanup_complete": "Ufruume abgschlosse: {count} verwaisti Lesezeiche entfernt",
     "bookmark_cleanup_failed": "Ufruume fählgschlage",
@@ -755,5 +757,6 @@
     "catchup_top_watched": "Am meischte gluegt",
     "catchup_top_dismissed": "Am meischte übersprunge",
     "catchup_top_watchlisted": "Am meischte uf de Watchlist",
-    "catchup_failed": "Fählgschlage: {error}"
+    "catchup_failed": "Fählgschlage: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

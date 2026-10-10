@@ -211,6 +211,7 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} കളക്ഷൻ വിവരങ്ങൾ ലോഡ് ചെയ്യുന്നതിൽ പരാജയപ്പെട്ടു",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} കളക്ഷനിൽ സിനിമകളൊന്നും കണ്ടെത്തിയില്ല",
     "jellyseerr_select_all_seasons": "എല്ലാ സീസണുകളും തിരഞ്ഞെടുക്കുക",
+    "jellyseerr_select_all_episodes": "Select All Episodes",
     "jellyseerr_season_specials": "സ്‌പെഷ്യലുകൾ",
     "jellyseerr_season_name": "സീസൺ {number}",
     "jellyseerr_season_status_not_requested": "അഭ്യർത്ഥിച്ചിട്ടില്ല",
@@ -400,6 +401,7 @@
     "toast_bookmark_updated": "{{icon:success}} ബുക്ക്മാർക്ക് പുതുക്കി",
     "toast_bookmark_deleted": "{{icon:trash}} ബുക്ക്മാർക്ക് ഇല്ലാതാക്കി",
     "toast_bookmark_save_failed": "{{icon:error}} ബുക്ക്മാർക്ക് സേവ് ചെയ്യുന്നതിൽ പരാജയപ്പെട്ടു",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} ബുക്ക്മാർക്കിലേക്ക് പോയി",
     "bookmark_cleanup_complete": "വൃത്തിയാക്കൽ പൂർത്തിയായി: {count} അനാഥ ബുക്ക്മാർക്കുകൾ നീക്കം ചെയ്തു",
     "bookmark_cleanup_failed": "വൃത്തിയാക്കൽ പരാജയപ്പെട്ടു",
@@ -755,5 +757,6 @@
     "catchup_top_watched": "ഏറ്റവും കൂടുതൽ കണ്ടത്",
     "catchup_top_dismissed": "ഏറ്റവും കൂടുതൽ ഒഴിവാക്കിയത്",
     "catchup_top_watchlisted": "വാച്ച്‌ലിസ്റ്റിൽ ഏറ്റവും കൂടുതൽ",
-    "catchup_failed": "പരാജയപ്പെട്ടു: {error}"
+    "catchup_failed": "പരാജയപ്പെട്ടു: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

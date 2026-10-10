@@ -17,12 +17,62 @@ concurrency:
 
 jobs:
   # Separate job: a stale inventory fails this check without skipping the tests.
+  # Pushes to main are handled by inventory-sync instead.
   inventory:
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - run: python3 tests/inventory/generate.py --check
+        with:
+          fetch-depth: 2
+      - name: Check inventory
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            # The PR merge commit's first parent is the base branch; drift already there only warns.
+            git worktree add --detach "$RUNNER_TEMP/base" HEAD^1
+            python3 tests/inventory/generate.py --check --base "$RUNNER_TEMP/base"
+          else
+            python3 tests/inventory/generate.py --check
+          fi
+
+  # Commits a regenerated inventory when a push to main left it stale.
+  inventory-sync:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'n00bcodr/Jellyfin-Enhanced'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Generate bot token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          token: ${{ steps.app-token.outputs.token }}
+      - name: Regenerate and commit if stale
+        run: |
+          git config user.name 'jellyfin-enhanced-bot[bot]'
+          git config user.email '340227967+jellyfin-enhanced-bot[bot]@users.noreply.github.com'
+          # Regenerate against the latest main and retry if another push lands first.
+          for attempt in 1 2 3; do
+            git fetch -q --depth=1 origin main
+            git reset -q --hard FETCH_HEAD
+            python3 tests/inventory/generate.py
+            git add tests/docs/production-inventory.json
+            if git diff --cached --quiet; then
+              echo 'Production inventory is current.'
+              exit 0
+            fi
+            git commit -q -m 'chore(tests): regenerate production inventory'
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          exit 1
 
   backend:
     runs-on: ubuntu-24.04

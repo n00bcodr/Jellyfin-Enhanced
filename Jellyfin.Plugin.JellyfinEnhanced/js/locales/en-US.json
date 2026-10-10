@@ -211,6 +211,7 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Failed to load collection details",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} No movies found in collection",
     "jellyseerr_select_all_seasons": "Select All Seasons",
+    "jellyseerr_select_all_episodes": "Select All Episodes",
     "jellyseerr_season_specials": "Specials",
     "jellyseerr_season_name": "Season {number}",
     "jellyseerr_season_status_not_requested": "Not Requested",
@@ -384,6 +385,7 @@
     "toast_bookmark_updated": "{{icon:success}} Bookmark updated",
     "toast_bookmark_deleted": "{{icon:trash}} Bookmark deleted",
     "toast_bookmark_save_failed": "{{icon:error}} Failed to save bookmark",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Jumped to bookmark",
     "bookmark_cleanup_complete": "Cleanup complete: removed {count} orphaned bookmarks",
     "bookmark_cleanup_failed": "Cleanup failed",
@@ -755,5 +757,6 @@
     "catchup_top_watched": "Most watched",
     "catchup_top_dismissed": "Most dismissed",
     "catchup_top_watchlisted": "Most watchlisted",
-    "catchup_failed": "Failed: {error}"
+    "catchup_failed": "Failed: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

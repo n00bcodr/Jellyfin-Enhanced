@@ -165,6 +165,7 @@
     "jellyseerr_report_issue_message_placeholder": "Детально опишіть проблему…",
     "feature_watch_progress_display": "{{icon:eye}} Відображення прогресу перегляду",
     "jellyseerr_select_all_seasons": "Вибрати всі сезони",
+    "jellyseerr_select_all_episodes": "Select All Episodes",
     "hidden_content_admin_add_title": "Додати до прихованого вмісту користувача {userName}",
     "requests_episodes": "епізодів",
     "jellyseerr_modal_request_selected_movies": "Запросити вибрані фільми",
@@ -391,6 +392,7 @@
     "feature_language_tags": "{{icon:flag}} Теги мови",
     "hidden_content_group_movies": "Фільми",
     "toast_bookmark_save_failed": "{{icon:error}} Не вдалося зберегти закладку",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "panel_settings_random_button_unwatched": "Тільки «Непереглянуті»",
     "hidden_content_admin_editing_user": "Редагування: {userName}",
     "jellyseerr_card_badge_collection": "Колекція",
@@ -755,5 +757,6 @@
     "catchup_top_watched": "Найпереглядуваніші",
     "catchup_top_dismissed": "Найчастіше відхилені",
     "catchup_top_watchlisted": "Найчастіше у списку перегляду",
-    "catchup_failed": "Помилка: {error}"
+    "catchup_failed": "Помилка: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

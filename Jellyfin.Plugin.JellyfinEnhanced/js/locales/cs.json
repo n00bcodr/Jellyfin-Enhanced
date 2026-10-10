@@ -211,6 +211,7 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Nepodařilo se načíst detaily kolekce",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} V kolekci nebyly nalezeny žádné filmy",
     "jellyseerr_select_all_seasons": "Vybrat všechny řady",
+    "jellyseerr_select_all_episodes": "Select All Episodes",
     "jellyseerr_season_specials": "Speciály",
     "jellyseerr_season_name": "Řada {number}",
     "jellyseerr_season_status_not_requested": "Nepožádáno",
@@ -395,6 +396,7 @@
     "toast_bookmark_updated": "{{icon:success}} Záložka aktualizována",
     "toast_bookmark_deleted": "{{icon:trash}} Záložka smazána",
     "toast_bookmark_save_failed": "{{icon:error}} Nepodařilo se uložit záložku",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Přeskočeno na záložku",
     "bookmark_cleanup_complete": "Čištění dokončeno: odstraněno {count} osiřelých záložek",
     "bookmark_cleanup_failed": "Čištění selhalo",
@@ -755,5 +757,6 @@
     "catchup_top_watched": "Nejsledovanější",
     "catchup_top_dismissed": "Nejčastěji zamítnuté",
     "catchup_top_watchlisted": "Nejčastěji na seznamu sledování",
-    "catchup_failed": "Selhalo: {error}"
+    "catchup_failed": "Selhalo: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

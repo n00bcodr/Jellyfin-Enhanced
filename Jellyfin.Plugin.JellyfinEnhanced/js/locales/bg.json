@@ -211,6 +211,7 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Неуспешно зареждане на данните за колекцията",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} В колекцията не са намерени филми",
     "jellyseerr_select_all_seasons": "Избери всички сезони",
+    "jellyseerr_select_all_episodes": "Select All Episodes",
     "jellyseerr_season_specials": "Специални",
     "jellyseerr_season_name": "Сезон {number}",
     "jellyseerr_season_status_not_requested": "Не е заявено",
@@ -395,6 +396,7 @@
     "toast_bookmark_updated": "{{icon:success}} Отметката е актуализирана",
     "toast_bookmark_deleted": "{{icon:trash}} Отметката е изтрита",
     "toast_bookmark_save_failed": "{{icon:error}} Неуспешно запазване на отметката",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Прескачане до отметка",
     "bookmark_cleanup_complete": "Почистването завърши: премахнати са {count} изоставени отметки",
     "bookmark_cleanup_failed": "Почистването е неуспешно",
@@ -755,5 +757,6 @@
     "catchup_top_watched": "Най-гледани",
     "catchup_top_dismissed": "Най-често отхвърляни",
     "catchup_top_watchlisted": "Най-често в списъка за гледане",
-    "catchup_failed": "Неуспешно: {error}"
+    "catchup_failed": "Неуспешно: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

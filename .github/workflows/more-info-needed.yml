@@ -1,0 +1,93 @@
+name: "More info needed"
+
+# When `more-info-needed` is added to an issue, ask the reporter for details.
+# An hourly sweep closes issues whose reporter has not replied within CLOSE_AFTER_HOURS,
+# and drops the label once the reporter does reply.
+on:
+  issues:
+    types: [labeled]
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  LABEL: more-info-needed
+  CLOSE_AFTER_HOURS: 24
+
+jobs:
+  ask:
+    if: github.event_name == 'issues' && github.event.label.name == 'more-info-needed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate bot token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      - uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: [
+                `Hi @${context.payload.issue.user.login}, thanks for opening this. More information is needed before this can be looked into, so please reply with the details requested above or in the issue template.`,
+                '',
+                `If there is no reply within ${process.env.CLOSE_AFTER_HOURS} hours, this issue will be closed automatically. You can reopen it any time once you have the details.`,
+              ].join('\n'),
+            });
+
+  sweep:
+    if: github.event_name != 'issues'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate bot token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      - uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const label = process.env.LABEL;
+            const cutoff = Date.now() - Number(process.env.CLOSE_AFTER_HOURS) * 3600 * 1000;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              ...context.repo, state: 'open', labels: label, per_page: 100,
+            });
+            for (const issue of issues) {
+              if (issue.pull_request) continue;
+              const events = await github.paginate(github.rest.issues.listEvents, {
+                ...context.repo, issue_number: issue.number, per_page: 100,
+              });
+              const labeledAt = events
+                .filter(e => e.event === 'labeled' && e.label.name === label)
+                .map(e => new Date(e.created_at).getTime())
+                .pop();
+              if (!labeledAt) continue;
+
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo, issue_number: issue.number, since: new Date(labeledAt).toISOString(), per_page: 100,
+              });
+              const replied = comments.some(c => c.user.login === issue.user.login);
+
+              if (replied) {
+                await github.rest.issues.removeLabel({ ...context.repo, issue_number: issue.number, name: label });
+              } else if (labeledAt < cutoff) {
+                await github.rest.issues.createComment({
+                  ...context.repo, issue_number: issue.number,
+                  body: 'Closing this because the requested information was not provided. Feel free to reopen it with the details and it will be looked at again.',
+                });
+                await github.rest.issues.update({
+                  ...context.repo, issue_number: issue.number, state: 'closed', state_reason: 'not_planned',
+                });
+              }
+            }

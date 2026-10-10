@@ -211,6 +211,7 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Nie udało się załadować szczegółów kolekcji",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} Nie znaleziono filmów w kolekcji",
     "jellyseerr_select_all_seasons": "Zaznacz wszystkie sezony",
+    "jellyseerr_select_all_episodes": "Select All Episodes",
     "jellyseerr_season_specials": "Odcinki specjalne",
     "jellyseerr_season_name": "Sezon {number}",
     "jellyseerr_season_status_not_requested": "Prośba niezgłoszona",
@@ -395,6 +396,7 @@
     "toast_bookmark_updated": "{{icon:success}} Zaktualizowano zakładkę",
     "toast_bookmark_deleted": "{{icon:trash}} Usunięto zakładkę",
     "toast_bookmark_save_failed": "{{icon:error}} Nie udało się zapisać zakładki",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Przeskoczono do zakładki",
     "bookmark_cleanup_complete": "Czyszczenie zakończone: usunięto {count} osieroconych zakładek",
     "bookmark_cleanup_failed": "Czyszczenie nie powiodło się",
@@ -755,5 +757,6 @@
     "catchup_top_watched": "Najczęściej oglądane",
     "catchup_top_dismissed": "Najczęściej odrzucane",
     "catchup_top_watchlisted": "Najczęściej dodawane do listy",
-    "catchup_failed": "Niepowodzenie: {error}"
+    "catchup_failed": "Niepowodzenie: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

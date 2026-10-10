@@ -211,6 +211,7 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Sammlungsdetails konnten nicht geladen werden",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} Keine Filme in Sammlung gefunden",
     "jellyseerr_select_all_seasons": "Alle Staffeln auswählen",
+    "jellyseerr_select_all_episodes": "Alle Folgen auswählen",
     "jellyseerr_season_specials": "Spezialfolgen",
     "jellyseerr_season_name": "Staffel {number}",
     "jellyseerr_season_status_not_requested": "Nicht angefragt",
@@ -395,6 +396,7 @@
     "toast_bookmark_updated": "{{icon:success}} Lesezeichen aktualisiert",
     "toast_bookmark_deleted": "{{icon:trash}} Lesezeichen gelöscht",
     "toast_bookmark_save_failed": "{{icon:error}} Fehler beim Speichern des Lesezeichens",
+    "toast_bookmark_delete_failed": "{{icon:error}} Fehler beim Löschen des Lesezeichens",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Zu Lesezeichen gesprungen",
     "bookmark_cleanup_complete": "Bereinigung abgeschlossen: {count} verwaiste Lesezeichen entfernt",
     "bookmark_cleanup_failed": "Bereinigung fehlgeschlagen",
@@ -755,5 +757,6 @@
     "catchup_top_watched": "Am häufigsten gesehen",
     "catchup_top_dismissed": "Am häufigsten verworfen",
     "catchup_top_watchlisted": "Am häufigsten gemerkt",
-    "catchup_failed": "Fehlgeschlagen: {error}"
+    "catchup_failed": "Fehlgeschlagen: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

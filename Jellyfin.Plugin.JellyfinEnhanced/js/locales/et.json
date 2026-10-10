@@ -211,6 +211,7 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Kogumiku üksikasjade laadimine ebaõnnestus",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} Kogumikust ei leitud filme",
     "jellyseerr_select_all_seasons": "Vali kõik hooajad",
+    "jellyseerr_select_all_episodes": "Select All Episodes",
     "jellyseerr_season_specials": "Lisaosad",
     "jellyseerr_season_name": "Hooaeg {number}",
     "jellyseerr_season_status_not_requested": "Taotlemata",
@@ -400,6 +401,7 @@
     "toast_bookmark_updated": "{{icon:success}} Järjehoidja uuendatud",
     "toast_bookmark_deleted": "{{icon:trash}} Järjehoidja kustutatud",
     "toast_bookmark_save_failed": "{{icon:error}} Järjehoidja salvestamine ebaõnnestus",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Hüpati järjehoidjasse",
     "bookmark_cleanup_complete": "Puhastamine lõpetatud: eemaldati {count} orvuks jäänud järjehoidjat",
     "bookmark_cleanup_failed": "Puhastamine ebaõnnestus",
@@ -755,5 +757,6 @@
     "catchup_top_watched": "Enim vaadatud",
     "catchup_top_dismissed": "Enim kõrvale jäetud",
     "catchup_top_watchlisted": "Enim vaatamisnimekirjas",
-    "catchup_failed": "Ebaõnnestus: {error}"
+    "catchup_failed": "Ebaõnnestus: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }

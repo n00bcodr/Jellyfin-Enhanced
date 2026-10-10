@@ -211,6 +211,7 @@
     "jellyseerr_toast_collection_fetch_failed": "{{icon:error}} Nem sikerült betölteni a gyűjtemény adatait",
     "jellyseerr_toast_no_movies_in_collection": "{{icon:warning}} Nincs film a gyűjteményben",
     "jellyseerr_select_all_seasons": "Összes évad kiválasztása",
+    "jellyseerr_select_all_episodes": "Select All Episodes",
     "jellyseerr_season_specials": "Különkiadások",
     "jellyseerr_season_name": "{number}. évad",
     "jellyseerr_season_status_not_requested": "Nincs kérve",
@@ -395,6 +396,7 @@
     "toast_bookmark_updated": "{{icon:success}} Könyvjelző frissítve",
     "toast_bookmark_deleted": "{{icon:trash}} Könyvjelző törölve",
     "toast_bookmark_save_failed": "{{icon:error}} Sikertelen könyvjelző mentés",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark",
     "toast_jumped_to_bookmark": "{{icon:bookmark}} Ugrás könyvjelzőhöz",
     "bookmark_cleanup_complete": "Takarítás befejezve: {count} árva könyvjelző eltávolítva",
     "bookmark_cleanup_failed": "Takarítás sikertelen",
@@ -755,5 +757,6 @@
     "catchup_top_watched": "Legtöbbet megtekintett",
     "catchup_top_dismissed": "Legtöbbet elvetett",
     "catchup_top_watchlisted": "Legtöbbször figyelőlistára téve",
-    "catchup_failed": "Sikertelen: {error}"
+    "catchup_failed": "Sikertelen: {error}",
+    "toast_bookmark_delete_failed": "{{icon:error}} Failed to delete bookmark"
 }
