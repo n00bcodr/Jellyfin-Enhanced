@@ -213,6 +213,13 @@
         const code = typeof lang === 'string' ? lang : (lang && (lang.code || lang.Code)) || '';
         const name = (typeof lang === 'object' && lang && (lang.name || lang.Name)) || '';
 
+        if (JE.currentSettings && JE.currentSettings.simplifyDubLanguageFlags) {
+            const parsedBase = parseLanguageTag(code);
+            if (parsedBase && baseLanguageFlags[parsedBase.base]) {
+                return baseLanguageFlags[parsedBase.base];
+            }
+        }
+
         const parsed = parseLanguageTag(code);
         if (parsed) {
             // The code itself, else its canonical language (ISO 639-2/B "gre" is "el"): the flag never depends
