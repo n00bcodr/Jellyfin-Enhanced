@@ -219,7 +219,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public static PosterTagSettings FromSettingsJson(string? settingsJson, PluginConfiguration config, string? jellyfinAudioLanguagePreference = null)
         {
             if (settingsJson is null) return FromUserSettings(null, config, jellyfinAudioLanguagePreference);
-            return FromUserSettings(ReadAsServer(settingsJson), config, jellyfinAudioLanguagePreference);
+            return FromUserSettings(ResolveAsServer(ReadAsServer(settingsJson), config), config, jellyfinAudioLanguagePreference);
         }
 
         /// <summary>
@@ -255,7 +255,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 parsed = ReadAsServer(json);
             }
 
-            return FromUserSettings(parsed, config, jellyfinAudioLanguagePreference);
+            return FromUserSettings(parsed == null ? null : ResolveAsServer(parsed, config), config, jellyfinAudioLanguagePreference);
+        }
+
+        /// <summary>
+        /// The values the server serves the web for the stored document (UserSettingsResolver), so native
+        /// posters and web overlays always agree. A legacy file (no "_je" block) resolves to itself.
+        /// </summary>
+        private static UserSettings ResolveAsServer(UserSettings stored, PluginConfiguration config)
+        {
+            ArgumentNullException.ThrowIfNull(config);
+            return UserSettingsResolver.Resolve(stored, config).Values;
         }
 
         /// <summary>UserConfigurationManager.GetUserConfiguration&lt;UserSettings&gt; for an existing file's text.</summary>

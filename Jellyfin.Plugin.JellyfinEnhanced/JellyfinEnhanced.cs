@@ -147,6 +147,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         public override Guid Id => Guid.Parse("f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b");
         public static JellyfinEnhanced? Instance { get; private set; }
 
+        /// <summary>
+        /// Gets a random token that changes on plugin load and on every admin config save, so a client
+        /// can tell that the configuration (defaults, master switches, gates) may have changed.
+        /// </summary>
+        public string ConfigEpoch { get; private set; } = NewConfigEpoch();
+
+        private static string NewConfigEpoch() => Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
+
         private string IndexHtmlPath => Path.Combine(_applicationPaths.WebPath, "index.html");
 
         public static string BrandingDirectory
@@ -271,6 +279,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
                 base.UpdateConfiguration(configuration);
             }
+            ConfigEpoch = NewConfigEpoch();
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);
 
             try

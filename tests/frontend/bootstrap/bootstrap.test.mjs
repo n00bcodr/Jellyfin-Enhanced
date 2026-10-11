@@ -376,3 +376,31 @@ for (const [label, answer] of [
   assert.equal(h.plugin.userConfig.settingsStatus, 'ok');
   assert.equal(h.plugin.currentSettings.autoPipEnabled, false);
 });
+
+// Design item C1: the bootstrap advertises the key-level save route and carries the settings Meta.
+for (const advertised of [true, false]) test(`settings saves use ${advertised ? 'the patch route' : 'the whole-document route'} when Capabilities ${advertised ? 'has' : 'lacks'} settingsPatch`, async t => {
+  const posts = [];
+  const meta = { Schema: 2, Following: ['AutoPipEnabled'], Chosen: ['QualityTagsEnabled'], Defaults: { AutoPipEnabled: false }, Unavailable: { UseNativePosterTags: 'NativePosterTagsEnabled' } };
+  const settings = { AutoPipEnabled: false, QualityTagsEnabled: true, IsAdmin: false };
+  const data = payload({ UserSettings: { Settings: settings, SettingsMeta: meta, SettingsStatus: 'ok' }, ...(advertised ? { Capabilities: ['settingsPatch'] } : {}) });
+  const h = setup(t, { ajax: async (path, request) => {
+    if (path.endsWith('/bootstrap')) return data;
+    posts.push({ path, body: JSON.parse(request.data) });
+    return path.endsWith('/patch') ? { success: true, Rejected: [], Settings: { ...settings, ...JSON.parse(request.data).Set }, Meta: meta } : undefined;
+  } });
+  await until(() => h.plugin.initialized);
+  assert.deepEqual(plain(h.plugin.serverCapabilities), advertised ? ['settingsPatch'] : []);
+  assert.deepEqual(plain(h.plugin.settingsMeta), { schema: 2, following: ['autoPipEnabled'], chosen: ['qualityTagsEnabled'],
+    defaults: { autoPipEnabled: false }, unavailable: { useNativePosterTags: 'NativePosterTagsEnabled' } });
+  h.plugin.currentSettings.autoPipEnabled = true;
+  const saved = h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings);
+  h.window.dispatchEvent(new h.window.Event('pagehide')); // send the merge window now
+  await saved;
+  if (advertised) {
+    assert.deepEqual(posts, [{ path: '/JellyfinEnhanced/user-settings/user-a/settings.json/patch', body: { Set: { AutoPipEnabled: true } } }]);
+  } else {
+    assert.deepEqual(posts.map(p => p.path), ['/JellyfinEnhanced/user-settings/user-a/settings.json']);
+    assert.equal(posts[0].body.AutoPipEnabled, true);
+    assert.equal(posts[0].body.QualityTagsEnabled, true);
+  }
+});

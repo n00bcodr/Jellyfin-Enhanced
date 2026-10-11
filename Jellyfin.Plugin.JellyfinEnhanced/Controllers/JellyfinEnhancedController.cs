@@ -3932,7 +3932,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var isAdmin = IsAdminUser();
-            var settingsDocument = TryLoadUserDocument("settings.json", authorizedUserId, () => LoadUserSettingsDocument(authorizedUserId));
+            var settingsSnapshot = TryLoadUserDocument("settings.json", authorizedUserId, () => LoadUserSettingsDocument(authorizedUserId)) as SettingsSnapshot;
 
             return new JsonResult(new
             {
@@ -3945,12 +3945,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Same name checks the client used to run against GET /Plugins.
                 HasCustomTabs = IsPluginInstalled("Custom Tabs"),
                 HasPluginPages = IsPluginInstalled("Plugin Pages"),
+                // What this server supports beyond the original endpoints, so a newer client can
+                // fall back when it talks to an older (rolled-back) server:
+                //   settingsPatch — POST user-settings/{userId}/settings.json/patch and SettingsMeta.
+                Capabilities = new[] { "settingsPatch" },
                 UserSettings = new
                 {
-                    Settings = settingsDocument,
+                    Settings = settingsSnapshot?.Settings,
+                    // Per-key state of Settings (same read): the GET's ?meta=true sibling.
+                    SettingsMeta = settingsSnapshot?.Meta,
                     // "unavailable": the stored settings could not be loaded, so the client shows
                     // them read-only instead of saving its fallback defaults over them.
-                    SettingsStatus = settingsDocument == null ? "unavailable" : "ok",
+                    SettingsStatus = settingsSnapshot == null ? "unavailable" : "ok",
                     Shortcuts = TryLoadUserDocument("shortcuts.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json")),
                     Bookmark = TryLoadUserDocument("bookmark.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json")),
                     Elsewhere = TryLoadUserDocument("elsewhere.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json")),
@@ -4910,7 +4916,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpGet("user-settings/{userId}/settings.json")]
         [Authorize]
         [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-        public IActionResult GetUserSettingsSettings(string userId)
+        public IActionResult GetUserSettingsSettings(string userId, [FromQuery] bool meta = false)
         {
             var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
             if (authorizationResult != null)
@@ -4918,20 +4924,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            var document = LoadUserSettingsDocument(authorizedUserId);
-            if (document == null)
+            var snapshot = LoadUserSettingsDocument(authorizedUserId);
+            if (snapshot == null)
             {
                 // The stored document exists but cannot be read right now. The client must not
                 // fall back to defaults and save them over it, so this is an error, not defaults.
-                return StatusCode(503, new { success = false, status = "unavailable", message = "Your settings could not be loaded right now. Please retry." });
+                return SettingsUnavailable();
             }
 
-            return Ok(document);
+            // The plain shape (resolved values plus IsAdmin) is what every client has always read;
+            // ?meta=true wraps it with the per-key state as a sibling.
+            return Ok(meta ? new System.Text.Json.Nodes.JsonObject { ["Settings"] = snapshot.Settings, ["Meta"] = snapshot.Meta } : snapshot.Settings);
         }
+
+        /// <summary>The served settings.json document (resolved values plus the caller's IsAdmin) and its Meta, from one read.</summary>
+        private sealed record SettingsSnapshot(System.Text.Json.Nodes.JsonObject Settings, System.Text.Json.Nodes.JsonObject Meta);
+
+        private ObjectResult SettingsUnavailable()
+            => StatusCode(503, new { success = false, status = "unavailable", message = "Your settings could not be loaded right now. Please retry." });
 
         /// <summary>
         /// Loads (seeding defaults on first access) the user's settings.json document
-        /// with the caller's IsAdmin flag applied. Shared by the settings.json
+        /// with the caller's IsAdmin flag applied, plus its Meta. Shared by the settings.json
         /// endpoint and /bootstrap so both return exactly the same shape.
         /// A malformed file (empty, literal null, unparseable) is quarantined and
         /// re-seeded from the admin defaults, never served as bare initializers.
@@ -4939,70 +4953,98 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// file that could not be moved aside or has no admin defaults to be re-seeded
         /// from): nothing is seeded or overwritten.
         /// </summary>
-        private object? LoadUserSettingsDocument(string authorizedUserId)
+        private SettingsSnapshot? LoadUserSettingsDocument(string authorizedUserId)
         {
-            UserSettings? userConfig;
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            // Read, quarantine and seed under the per-file lock, so a save that lands meanwhile
+            // (another tab's POST, a reset-all) is never overwritten with defaults, and the
+            // served document, its Revision and its Meta are exactly what was read or written.
+            UserSettings? stored;
+            string revision;
+            lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "settings.json"))
+            {
+                stored = ReadOrSeedUserSettings(authorizedUserId, config, out revision);
+            }
+
+            return stored == null ? null : BuildSettingsSnapshot(stored, revision, config);
+        }
+
+        /// <summary>
+        /// The stored settings.json, or the admin defaults written as the user's first document when
+        /// there is none (or a malformed one was just quarantined). Null when it is unavailable.
+        /// <paramref name="revision"/> is the revision of the bytes on disk (empty when nothing could
+        /// be stored because the plugin configuration is not loaded). The caller holds the file lock.
+        /// </summary>
+        private UserSettings? ReadOrSeedUserSettings(string authorizedUserId, PluginConfiguration? config, out string revision)
+        {
+            revision = string.Empty;
             // Without admin defaults there is nothing to re-seed a malformed file from, so it is
             // left in place (reported unavailable) rather than moved aside and then served or
             // saved as the bare initializers on the next request.
-            var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
-            // Read, quarantine and seed under the per-file lock, so a save that lands meanwhile
-            // (another tab's POST, a reset-all) is never overwritten with defaults, and the
-            // served document is exactly what was read or written.
-            lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "settings.json"))
+            var status = _userConfigurationManager.ReadUserConfigurationChecked<UserSettings>(authorizedUserId, "settings.json", out var userConfig, out var storedRevision, quarantine: config != null);
+            if (status == UserDocumentReadStatus.Unavailable)
             {
-                var status = _userConfigurationManager.ReadUserConfigurationChecked(authorizedUserId, "settings.json", out userConfig, quarantine: defaultConfig != null);
-                if (status == UserDocumentReadStatus.Unavailable)
-                {
-                    return null;
-                }
-
-                if (status != UserDocumentReadStatus.Loaded)
-                {
-                    if (defaultConfig == null)
-                    {
-                        // No admin defaults to seed from: a new user gets the unsaved initializers as before.
-                        userConfig = new UserSettings();
-                    }
-                    else
-                    {
-                        userConfig = UserSettingsRegistry.BuildDefaults(defaultConfig);
-                        try
-                        {
-                            _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfig);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.Error($"Could not save default settings.json for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
-                            return null;
-                        }
-
-                        if (status == UserDocumentReadStatus.Quarantined)
-                        {
-                            _logger.Warning($"Re-seeded settings.json for {ResolveUserDisplay(authorizedUserId)} from the admin defaults after its malformed file was quarantined.");
-                        }
-                        else
-                        {
-                            _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
-                        }
-                    }
-                }
+                return null;
             }
 
+            if (status == UserDocumentReadStatus.Loaded)
+            {
+                revision = storedRevision ?? string.Empty;
+                return userConfig;
+            }
+
+            if (config == null)
+            {
+                // No admin defaults to seed from: a new user gets the unsaved initializers as before.
+                return new UserSettings();
+            }
+
+            userConfig = UserSettingsRegistry.BuildDefaults(config);
+            try
+            {
+                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfig);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Could not save default settings.json for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return null;
+            }
+
+            if (status == UserDocumentReadStatus.Quarantined)
+            {
+                _logger.Warning($"Re-seeded settings.json for {ResolveUserDisplay(authorizedUserId)} from the admin defaults after its malformed file was quarantined.");
+            }
+            else
+            {
+                _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
+            }
+
+            revision = _userConfigurationManager.GetUserConfigurationRevision(authorizedUserId, "settings.json") ?? string.Empty;
+            return userConfig;
+        }
+
+        /// <summary>The served document and Meta for a stored settings.json, resolved against the current config.</summary>
+        private SettingsSnapshot BuildSettingsSnapshot(UserSettings stored, string revision, PluginConfiguration? config)
+        {
+            var resolved = UserSettingsResolver.Resolve(stored, config);
             // IsAdmin reflects the CALLER's admin status (not the target user's, in the
             // rare admin-viewing-another-user's-settings case allowed by
             // AuthorizeUserConfigAccess). Computed fresh on every request from the
             // authenticated principal, never persisted to the settings file. Single
             // source of truth for every admin-gated JS module (js/enhanced/helpers.js).
-            var settingsNode = System.Text.Json.JsonSerializer.SerializeToNode(userConfig) as System.Text.Json.Nodes.JsonObject;
-            if (settingsNode != null)
-            {
-                settingsNode["IsAdmin"] = IsAdminUser();
-                return settingsNode;
-            }
-
-            return userConfig;
+            var settingsNode = System.Text.Json.JsonSerializer.SerializeToNode(resolved.Values) as System.Text.Json.Nodes.JsonObject
+                ?? new System.Text.Json.Nodes.JsonObject();
+            settingsNode["IsAdmin"] = IsAdminUser();
+            var meta = UserSettingsResolver.DescribeMeta(resolved, stored, revision, JellyfinEnhanced.Instance?.ConfigEpoch ?? string.Empty, config);
+            return new SettingsSnapshot(settingsNode, meta);
         }
+
+        /// <summary>Whether the signed-in user is the owner of the settings being written (false for an admin writing another user's).</summary>
+        private bool IsSettingsOwner(string authorizedUserId)
+            => string.Equals(UserHelper.GetCurrentUserId(User)?.ToString("N"), authorizedUserId, StringComparison.OrdinalIgnoreCase);
+
+        private static System.Text.Json.Nodes.JsonArray RejectedNode(IEnumerable<SettingsRejection> rejected)
+            => new(rejected.Select(r => (System.Text.Json.Nodes.JsonNode?)new System.Text.Json.Nodes.JsonObject { ["Key"] = r.Key, ["Reason"] = r.Reason }).ToArray());
 
         [HttpGet("user-settings/{userId}/shortcuts.json")]
         [Authorize]
@@ -5034,12 +5076,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(userConfig);
         }
 
+        /// <summary>
+        /// Whole-document save, kept for cached bundles and other callers. A locked read-modify-write
+        /// over the registry keys present in the body only (design 7.5): absent keys stay as stored,
+        /// IsAdmin, provenance and non-registry keys are ignored, a value equal to the current one
+        /// changes nothing, and Following keys and invalid values are refused per key in the additive
+        /// Rejected list. Anything else is stored as the user's choice.
+        /// </summary>
         [HttpPost("user-settings/{userId}/settings.json")]
         [Authorize]
         [Produces("application/json")]
         [RequestSizeLimit(64 * 1024)]
         [RejectOversizedBody]
-        public IActionResult SaveUserSettingsSettings(string userId, [FromBody] UserSettings userConfiguration)
+        public IActionResult SaveUserSettingsSettings(string userId, [FromBody] JsonElement userConfiguration)
         {
             var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
             if (authorizationResult != null)
@@ -5047,52 +5096,189 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
+            if (userConfiguration.ValueKind != JsonValueKind.Object)
+            {
+                return BadRequest(new { success = false, message = "The settings document must be a JSON object." });
+            }
+
             try
             {
-                // Read, compare and save under the per-file lock, like every other settings.json
-                // writer (first-access seed, reset-all), so none of them interleaves with this one.
+                var config = JellyfinEnhanced.Instance?.Configuration;
+                UserSettingsWriteResult result;
+                // Read, apply and save under the per-file lock, like every other settings.json
+                // writer (first-access seed, reset-all, /patch), so none of them interleaves with this one.
                 lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "settings.json"))
                 {
-                    // Diff against the existing config so the log shows what actually changed
-                    var existing = _userConfigurationManager.GetUserConfiguration<UserSettings>(authorizedUserId, "settings.json");
-                    var changes = new System.Collections.Generic.List<string>();
-                    var isIdentical = false;
-                    if (existing != null)
+                    var stored = ReadOrSeedUserSettings(authorizedUserId, config, out _);
+                    if (stored == null)
                     {
-                        var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
-                        var newJson      = System.Text.Json.JsonSerializer.Serialize(userConfiguration);
-                        isIdentical = existingJson == newJson;
-                        if (!isIdentical)
-                        {
-                            var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson).RootElement;
-                            var newDoc      = System.Text.Json.JsonDocument.Parse(newJson).RootElement;
-                            foreach (var prop in newDoc.EnumerateObject())
-                            {
-                                if (!existingDoc.TryGetProperty(prop.Name, out var oldVal) ||
-                                    oldVal.ToString() != prop.Value.ToString())
-                                {
-                                    changes.Add($"{prop.Name}: {(existingDoc.TryGetProperty(prop.Name, out var ov) ? ov.ToString() : "—")} → {prop.Value}");
-                                }
-                            }
-                        }
+                        return SettingsUnavailable();
                     }
 
-                    if (!isIdentical)
+                    result = UserSettingsWriter.ApplyDocument(stored, config, userConfiguration, IsSettingsOwner(authorizedUserId), DateTime.UtcNow);
+                    if (result.Changed)
                     {
-                        _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfiguration);
-
-                        if (changes.Count > 0)
-                            _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
+                        _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", stored);
                     }
                 }
 
-                return Ok(new { success = true, file = "settings.json" });
+                // Diff of what actually changed, for the log
+                if (result.Changes.Count > 0)
+                    _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", result.Changes)}");
+
+                return Ok(new System.Text.Json.Nodes.JsonObject
+                {
+                    ["success"] = true,
+                    ["file"] = "settings.json",
+                    ["Rejected"] = RejectedNode(result.Rejected),
+                });
             }
             catch (Exception ex)
             {
                 _logger.Error($"Failed to save user settings for user {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save user settings." });
             }
+        }
+
+        /// <summary>
+        /// Key-level settings write (design 7.5): <c>{ "Set": { key: value }, "Follow": [key], "IfRevision": "…" }</c>.
+        /// Runs as a locked read-modify-write of the stored document. Each key is applied or rejected
+        /// on its own (unknown, invalid, locked) and the answer is still 200, with the resolved
+        /// document, Meta and the new Revision. Without IfRevision each key is last-writer-wins;
+        /// a stale IfRevision answers 409 with the current document and changes nothing. 400 only
+        /// for a malformed body, 413 for one over 64 KB.
+        /// </summary>
+        [HttpPost("user-settings/{userId}/settings.json/patch")]
+        [Authorize]
+        [Produces("application/json")]
+        [RequestSizeLimit(64 * 1024)]
+        [RejectOversizedBody]
+        public IActionResult PatchUserSettingsSettings(string userId, [FromBody] JsonElement patch)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null)
+            {
+                return authorizationResult;
+            }
+
+            if (!TryReadSettingsPatch(patch, out var set, out var follow, out var ifRevision, out var error))
+            {
+                return BadRequest(new { success = false, message = error });
+            }
+
+            try
+            {
+                var config = JellyfinEnhanced.Instance?.Configuration;
+                UserSettingsWriteResult result;
+                SettingsSnapshot snapshot;
+                string revision;
+                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "settings.json"))
+                {
+                    var stored = ReadOrSeedUserSettings(authorizedUserId, config, out revision);
+                    if (stored == null)
+                    {
+                        return SettingsUnavailable();
+                    }
+
+                    if (ifRevision != null && !string.Equals(ifRevision, revision, StringComparison.Ordinal))
+                    {
+                        var current = BuildSettingsSnapshot(stored, revision, config);
+                        return StatusCode(409, new System.Text.Json.Nodes.JsonObject
+                        {
+                            ["success"] = false,
+                            ["message"] = "The settings changed since that revision.",
+                            ["Revision"] = revision,
+                            ["Settings"] = current.Settings,
+                            ["Meta"] = current.Meta,
+                        });
+                    }
+
+                    result = UserSettingsWriter.ApplyPatch(stored, config, set, follow, IsSettingsOwner(authorizedUserId), DateTime.UtcNow);
+                    if (result.Changed)
+                    {
+                        _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", stored);
+                        revision = _userConfigurationManager.GetUserConfigurationRevision(authorizedUserId, "settings.json") ?? string.Empty;
+                    }
+
+                    snapshot = BuildSettingsSnapshot(stored, revision, config);
+                }
+
+                if (result.Changes.Count > 0)
+                    _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", result.Changes)}");
+
+                return Ok(new System.Text.Json.Nodes.JsonObject
+                {
+                    ["success"] = true,
+                    ["Revision"] = revision,
+                    ["Applied"] = new System.Text.Json.Nodes.JsonArray(result.Applied.Select(key => (System.Text.Json.Nodes.JsonNode?)key).ToArray()),
+                    ["Rejected"] = RejectedNode(result.Rejected),
+                    ["Settings"] = snapshot.Settings,
+                    ["Meta"] = snapshot.Meta,
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save user settings for user {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save user settings." });
+            }
+        }
+
+        /// <summary>
+        /// Reads a /patch body: an object with an optional "Set" object, an optional "Follow" array of
+        /// strings and an optional "IfRevision" string (names matched ignoring case; others ignored).
+        /// </summary>
+        private static bool TryReadSettingsPatch(JsonElement patch, out List<KeyValuePair<string, JsonElement>> set, out List<string> follow, out string? ifRevision, out string error)
+        {
+            set = new List<KeyValuePair<string, JsonElement>>();
+            follow = new List<string>();
+            ifRevision = null;
+            error = string.Empty;
+            if (patch.ValueKind != JsonValueKind.Object)
+            {
+                error = "The patch must be a JSON object.";
+                return false;
+            }
+
+            foreach (var part in patch.EnumerateObject())
+            {
+                if (part.Value.ValueKind == JsonValueKind.Null)
+                {
+                    continue;
+                }
+
+                if (string.Equals(part.Name, "Set", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (part.Value.ValueKind != JsonValueKind.Object)
+                    {
+                        error = "Set must be an object of settings keys and values.";
+                        return false;
+                    }
+
+                    set.AddRange(part.Value.EnumerateObject().Select(entry => new KeyValuePair<string, JsonElement>(entry.Name, entry.Value.Clone())));
+                }
+                else if (string.Equals(part.Name, "Follow", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (part.Value.ValueKind != JsonValueKind.Array || part.Value.EnumerateArray().Any(entry => entry.ValueKind != JsonValueKind.String))
+                    {
+                        error = "Follow must be an array of settings keys.";
+                        return false;
+                    }
+
+                    follow.AddRange(part.Value.EnumerateArray().Select(entry => entry.GetString()!));
+                }
+                else if (string.Equals(part.Name, "IfRevision", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (part.Value.ValueKind != JsonValueKind.String)
+                    {
+                        error = "IfRevision must be a string.";
+                        return false;
+                    }
+
+                    ifRevision = part.Value.GetString();
+                }
+            }
+
+            return true;
         }
 
         [HttpPost("user-settings/{userId}/shortcuts.json")]

@@ -19,7 +19,8 @@ public class CoreUserSettingsBuilderTests
         [nameof(UserSettings.LastOpenedTab)] = "shortcuts",
     };
 
-    private static readonly PropertyInfo[] UserProperties = typeof(UserSettings).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+    private static readonly PropertyInfo[] UserProperties = typeof(UserSettings).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+        .Where(p => p.Name != nameof(UserSettings.Meta)).ToArray(); // the "_je" provenance block, not a setting
 
     private static PropertyInfo? AdminProperty(string name) => typeof(PluginConfiguration).GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
 

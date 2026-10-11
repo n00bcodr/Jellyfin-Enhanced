@@ -14,7 +14,8 @@ namespace JE.Tests;
 /// </summary>
 public class CoreUserSettingsRegistryTests
 {
-    private static readonly PropertyInfo[] UserProperties = typeof(UserSettings).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+    private static readonly PropertyInfo[] UserProperties = typeof(UserSettings).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+        .Where(p => p.Name != nameof(UserSettings.Meta)).ToArray(); // the "_je" provenance block, not a setting
 
     private static readonly Dictionary<string, UserSettingDescriptor> Registered = UserSettingsRegistry.All.ToDictionary(d => d.Key);
 

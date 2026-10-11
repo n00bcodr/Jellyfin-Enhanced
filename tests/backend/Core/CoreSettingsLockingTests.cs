@@ -60,7 +60,12 @@ public class CoreSettingsLockingTests
         AutoPipEnabled = true,
         SubtitleVerticalPosition = 10 + (marker % 80),
         DisplayLanguage = "posted-" + marker,
+        // Not a registry key, so the POST never writes it: what the seed and reset-all write.
+        LastOpenedTab = "shortcuts",
     };
+
+    /// <summary>The body a whole-document POST sends for <see cref="Posted"/>.</summary>
+    private static System.Text.Json.JsonElement Body(int marker) => System.Text.Json.JsonSerializer.SerializeToElement(Posted(marker));
 
     private static JObject Typed(object value) => JObject.Parse(System.Text.Json.JsonSerializer.Serialize(value));
 
@@ -191,7 +196,7 @@ public class CoreSettingsLockingTests
         var before = File.Exists(path) ? File.ReadAllText(path) : null;
         Func<IActionResult> run = writer switch
         {
-            "post" => () => endpoints.Controller(UserA).SaveUserSettingsSettings(UserA.ToString(), Posted(2)),
+            "post" => () => endpoints.Controller(UserA).SaveUserSettingsSettings(UserA.ToString(), Body(2)),
             "seed" => () => endpoints.Controller(UserA).GetUserSettingsSettings(UserA.ToString()),
             _ => () => endpoints.Controller(UserA, admin: true).ResetAllUsersSettings(),
         };
@@ -221,7 +226,7 @@ public class CoreSettingsLockingTests
         Assert.False(JToken.DeepEquals(defaults, Typed(Posted(5))));
 
         using var held = new HeldLock(endpoints.Manager.GetUserFileLock(UserA.ToString("N"), "settings.json"));
-        var post = new BlockedWriter(() => endpoints.Controller(UserA).SaveUserSettingsSettings(UserA.ToString(), Posted(5)));
+        var post = new BlockedWriter(() => endpoints.Controller(UserA).SaveUserSettingsSettings(UserA.ToString(), Body(5)));
         post.WaitUntilBlocked("post");
         held.Release(() =>
         {
@@ -242,7 +247,7 @@ public class CoreSettingsLockingTests
         var get = new BlockedWriter(() => endpoints.Controller(UserA).GetUserSettingsSettings(UserA.ToString()));
         get.WaitUntilBlocked("seed");
         IActionResult? post = null;
-        held.Release(() => post = endpoints.Controller(UserA).SaveUserSettingsSettings(UserA.ToString(), Posted(7)));
+        held.Release(() => post = endpoints.Controller(UserA).SaveUserSettingsSettings(UserA.ToString(), Body(7)));
         AssertOk(post!);
 
         var served = Typed(Assert.IsType<OkObjectResult>(get.Result()).Value!);
@@ -260,7 +265,7 @@ public class CoreSettingsLockingTests
             var user = Guid.NewGuid();
             var getter = endpoints.Controller(user);
             var poster = endpoints.Controller(user);
-            var posted = Posted(i);
+            var posted = Body(i);
             using var start = new Barrier(2);
             var get = Task.Run(() => { start.SignalAndWait(); return getter.GetUserSettingsSettings(user.ToString()); });
             var post = Task.Run(() => { start.SignalAndWait(); return poster.SaveUserSettingsSettings(user.ToString(), posted); });
@@ -288,7 +293,7 @@ public class CoreSettingsLockingTests
         for (var i = 0; i < 50; i++)
         {
             endpoints.Manager.SaveUserConfiguration(UserA.ToString("N"), "settings.json", Posted(1000 + i));
-            var posted = Posted(i);
+            var posted = Body(i);
             using var start = new Barrier(2);
             var post = Task.Run(() => { start.SignalAndWait(); return poster.SaveUserSettingsSettings(UserA.ToString(), posted); });
             var reset = Task.Run(() => { start.SignalAndWait(); return admin.ResetAllUsersSettings(); });
@@ -396,6 +401,55 @@ public class CoreSettingsLockingTests
     }
 
     [Fact]
+    public void PatchDeclaresThe64KbBodyCap()
+    {
+        var action = typeof(JellyfinEnhancedController).GetMethod(nameof(JellyfinEnhancedController.PatchUserSettingsSettings))!;
+        var limit = action.GetCustomAttributes(typeof(RequestSizeLimitAttribute), false).Cast<Microsoft.AspNetCore.Http.Metadata.IRequestSizeLimitMetadata>().Single();
+        Assert.Equal(64L * 1024, limit.MaxRequestBodySize);
+        Assert.Single(action.GetCustomAttributes(typeof(RejectOversizedBodyAttribute), false));
+    }
+
+    [Fact]
+    public async Task OversizedOrMalformedBodiesAreClientErrorsOnBothSettingsWrites()
+    {
+        // Design item C1 (A2's deferred item): over real Kestrel, an oversized body on the legacy
+        // POST and on /patch is a 413 JSON answer and an unparseable one a 400, never a 500, and
+        // the stored file is left alone. A well-formed patch over HTTP still applies.
+        using var endpoints = new Endpoints();
+        var (app, client) = await Serve(endpoints);
+        await using var _ = app;
+        using var __ = client;
+        var url = $"/JellyfinEnhanced/user-settings/{UserA}/settings.json";
+        using (var ok = await client.PostAsync(url + "/patch", new StringContent("{\"Set\":{\"AutoPipEnabled\":true}}", Encoding.UTF8, "application/json")))
+        {
+            Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+            Assert.Equal(new[] { "AutoPipEnabled" }, JObject.Parse(await ok.Content.ReadAsStringAsync())["Applied"]!.Values<string>());
+        }
+        var stored = File.ReadAllText(endpoints.SettingsPath(UserA));
+
+        var oversized = "{\"Set\":{\"DisplayLanguage\":\"" + new string('x', 64 * 1024) + "\"}}";
+        foreach (var (path, body, status) in new[]
+        {
+            (url + "/patch", oversized, HttpStatusCode.RequestEntityTooLarge),
+            (url, oversized, HttpStatusCode.RequestEntityTooLarge),
+            (url + "/patch", "{\"Set\":{\"AutoPipEnabled\":tru", HttpStatusCode.BadRequest),
+            (url, "{\"AutoPipEnabled\":", HttpStatusCode.BadRequest),
+            (url + "/patch", "", HttpStatusCode.BadRequest),
+        })
+        {
+            using var response = await client.PostAsync(path, new StringContent(body, Encoding.UTF8, "application/json"));
+            Assert.Equal(status, response.StatusCode);
+            Assert.StartsWith("application/", response.Content.Headers.ContentType?.MediaType ?? string.Empty);
+            Assert.Contains("json", response.Content.Headers.ContentType!.MediaType!);
+            if (status == HttpStatusCode.RequestEntityTooLarge)
+            {
+                Assert.False(JObject.Parse(await response.Content.ReadAsStringAsync()).Value<bool>("success"));
+            }
+        }
+        Assert.Equal(stored, File.ReadAllText(endpoints.SettingsPath(UserA)));
+    }
+
+    [Fact]
     public void ReadsLeaveNoPhantomUserDirectories()
     {
         using var endpoints = new Endpoints();
@@ -428,7 +482,7 @@ public class CoreSettingsLockingTests
 
         // First POST for a user without a directory.
         var poster = Guid.NewGuid();
-        AssertOk(endpoints.Controller(poster).SaveUserSettingsSettings(poster.ToString(), Posted(4)));
+        AssertOk(endpoints.Controller(poster).SaveUserSettingsSettings(poster.ToString(), Body(4)));
         Assert.True(JToken.DeepEquals(Typed(Posted(4)), OnDisk(endpoints.SettingsPath(poster))));
 
         // First GET seeds the admin defaults.

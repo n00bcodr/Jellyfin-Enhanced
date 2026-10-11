@@ -1000,14 +1000,47 @@
     }
 
     /**
+     * Converts the server's settings Meta (setting names in PascalCase, as map
+     * keys and as array entries) to the client's camelCase names. Values are
+     * left as they are (Unavailable names admin config fields, which stay
+     * PascalCase like JE.pluginConfig).
+     * @param {object} meta - `SettingsMeta` / `Meta` from the server.
+     * @returns {object|null} The converted Meta, or null when there is none.
+     */
+    function camelCaseSettingsMeta(meta) {
+        if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null;
+        const camel = (name) => typeof name === 'string' ? name.charAt(0).toLowerCase() + name.slice(1) : name;
+        const converted = {};
+        for (const [name, value] of Object.entries(meta)) {
+            if (Array.isArray(value)) converted[camel(name)] = value.map(camel);
+            else if (value && typeof value === 'object') converted[camel(name)] = Object.fromEntries(Object.entries(value).map(([key, entry]) => [camel(key), entry]));
+            else converted[camel(name)] = value;
+        }
+        return converted;
+    }
+    JE.camelCaseSettingsMeta = camelCaseSettingsMeta;
+
+    /**
+     * Records what the server supports beyond the original endpoints
+     * (bootstrap `Capabilities`, e.g. 'settingsPatch'). A server without the
+     * field (an older or rolled-back one) supports none of them.
+     * @param {object} bootstrap - The bootstrap payload.
+     */
+    function applyCapabilities(bootstrap) {
+        JE.serverCapabilities = Array.isArray(bootstrap?.Capabilities) ? bootstrap.Capabilities.slice() : [];
+    }
+
+    /**
      * Builds the userConfig object from the bootstrap payload's UserSettings
-     * block (the same five documents the standalone endpoints return).
+     * block (the same five documents the standalone endpoints return), plus
+     * `settingsMeta`: the per-key state of the settings (camelCase names), when
+     * the server sends it.
      * @param {object} userSettings - `UserSettings` from the bootstrap payload.
      * @returns {object} A freshly-built userConfig object.
      */
     function buildUserConfigFromBootstrap(userSettings) {
         const docs = userSettings && typeof userSettings === 'object' ? userSettings : {};
-        return buildUserConfig({
+        const userConfig = buildUserConfig({
             // A server that reports the stored settings unavailable sends no document.
             settings: docs.SettingsStatus === 'unavailable' ? null : docs.Settings,
             shortcuts: docs.Shortcuts,
@@ -1015,6 +1048,9 @@
             elsewhere: docs.Elsewhere,
             hiddenContent: docs.HiddenContent
         });
+        const meta = userConfig.settingsStatus === 'ok' ? camelCaseSettingsMeta(docs.SettingsMeta) : null;
+        if (meta) userConfig.settingsMeta = meta;
+        return userConfig;
     }
 
     /**
@@ -1053,6 +1089,7 @@
         });
         if (!isCurrent()) return false;
         if (bootstrap && bootstrapMatchesUser(bootstrap, userId)) {
+            applyCapabilities(bootstrap);
             JE.userConfig = buildUserConfigFromBootstrap(bootstrap.UserSettings);
             applyPrivateConfig(bootstrap.PrivateConfig);
             return true;
@@ -1280,6 +1317,7 @@
             }
 
             // User-specific settings (from the bootstrap, else fetched per file)
+            applyCapabilities(bootstrap);
             JE.userConfig = bootstrap
                 ? buildUserConfigFromBootstrap(bootstrap.UserSettings)
                 : await fetchUserScopedConfig(userId);

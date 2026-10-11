@@ -639,7 +639,9 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET / POST | `user-settings/{userId}/settings.json` | Enhanced panel settings |
+| GET | `user-settings/{userId}/settings.json` | Enhanced panel settings (the values in effect, plus `IsAdmin`). Experimental: `?meta=true` returns `{ "Settings": …, "Meta": … }`, where `Meta` holds the per-key state (`Following`, `Chosen`, `Locked`, `Defaults`, …) and the document's `Revision` |
+| POST | `user-settings/{userId}/settings.json` | Whole-document save, kept for older clients: only the settings keys present in the body are considered, a value equal to the current one changes nothing, and refused keys are listed in `Rejected` |
+| POST | `user-settings/{userId}/settings.json/patch` | Experimental key-level save: `{ "Set": { "AutoPipEnabled": true }, "Follow": ["WatchProgressMode"], "IfRevision": "…" }`. Answers 200 with `Applied`, per-key `Rejected` (`unknown`, `invalid`, `locked`), the new `Settings`, `Meta` and `Revision`; 409 when `IfRevision` is stale; 400 for a malformed body; 413 over 64 KB |
 | GET / POST | `user-settings/{userId}/shortcuts.json` | Keyboard shortcut overrides |
 | GET / POST | `user-settings/{userId}/elsewhere.json` | Elsewhere (streaming provider) preferences |
 | GET / POST | `user-settings/{userId}/hidden-content.json` | Hidden Content list |

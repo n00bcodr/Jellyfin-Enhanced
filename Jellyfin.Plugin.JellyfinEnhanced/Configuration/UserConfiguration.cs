@@ -164,6 +164,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string CalendarDisplayMode { get; set; } = "list";
         [UserSetting(Inheritable = false, Choices = new[] { "agenda", "month", "week", "day" })]
         public string CalendarDefaultViewMode { get; set; } = "agenda";
+
+        /// <summary>
+        /// Per-key provenance, stored on disk as the optional "_je" block (absent in legacy files,
+        /// which read as all-Existing). Newtonsoft only: System.Text.Json ignores it, so the GET
+        /// document never carries it and a client cannot post it. Not a registry key.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("_je", NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(TolerantUserSettingsMetaConverter))]
+        [JsonIgnore]
+        public UserSettingsMeta? Meta { get; set; }
+
+        /// <summary>A shallow copy (every value is immutable) without the provenance block.</summary>
+        /// <returns>The copy.</returns>
+        internal UserSettings CloneValues()
+        {
+            var copy = (UserSettings)MemberwiseClone();
+            copy.Meta = null;
+            return copy;
+        }
     }
 
     // Per-user Spoiler Guard state. Stored in spoilerblur.json alongside

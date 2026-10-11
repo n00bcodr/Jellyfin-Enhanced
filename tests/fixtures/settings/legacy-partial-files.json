@@ -118,7 +118,7 @@
       }
     },
     "unknown, client-only and future keys are ignored": {
-      "Stored": "{\"IsAdmin\":true,\"DisableAllShortcuts\":true,\"FutureSetting\":1,\"_je\":{\"Schema\":2,\"Following\":[\"AutoPipEnabled\"]},\"PauseScreenEnabled\":true}",
+      "Stored": "{\"IsAdmin\":true,\"DisableAllShortcuts\":true,\"FutureSetting\":1,\"JeMeta\":{\"Following\":[\"AutoPipEnabled\"]},\"SettingsMeta\":{\"Locked\":[\"PauseScreenEnabled\"]},\"PauseScreenEnabled\":true}",
       "DiffersFromInitializers": {
         "PauseScreenEnabled": true
       }

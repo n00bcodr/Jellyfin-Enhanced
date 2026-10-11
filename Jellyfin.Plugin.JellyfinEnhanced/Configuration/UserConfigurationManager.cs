@@ -215,15 +215,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// hold <see cref="GetUserFileLock"/>.
         /// </summary>
         public UserDocumentReadStatus ReadUserConfigurationChecked<T>(string userId, string fileName, out T? value, bool quarantine = true) where T : class
+            => ReadUserConfigurationChecked(userId, fileName, out value, out _, quarantine);
+
+        /// <summary>
+        /// <see cref="ReadUserConfigurationChecked{T}(string, string, out T, bool)"/>, also returning the
+        /// <see cref="ComputeRevision">revision</see> of the bytes that were read (null unless Loaded).
+        /// </summary>
+        public UserDocumentReadStatus ReadUserConfigurationChecked<T>(string userId, string fileName, out T? value, out string? revision, bool quarantine = true) where T : class
         {
             value = null;
+            revision = null;
             var configPath = ResolveUserFile(userId, fileName);
 
             string json;
+            byte[] bytes;
             try
             {
                 if (!File.Exists(configPath)) return UserDocumentReadStatus.Missing;
-                json = File.ReadAllText(configPath);
+                bytes = File.ReadAllBytes(configPath);
+                json = DecodeText(bytes);
             }
             catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException)
             {
@@ -251,7 +261,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     {
                         NullValueHandling = NullValueHandling.Ignore
                     });
-                    if (value != null) return UserDocumentReadStatus.Loaded;
+                    if (value != null)
+                    {
+                        revision = ComputeRevision(bytes);
+                        return UserDocumentReadStatus.Loaded;
+                    }
+
                     problem = "deserialized to null";
                 }
                 catch (JsonException ex)
@@ -275,6 +290,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
             _logger.Error($"'{fileName}' for user '{userId}' {problem} and could not be moved aside; left in place and reported unavailable.");
             return UserDocumentReadStatus.Unavailable;
+        }
+
+        /// <summary>
+        /// The revision of a stored document: the first 12 lowercase hex digits of the SHA-256 of its
+        /// bytes, so it changes with every content change and needs no state of its own.
+        /// </summary>
+        public static string ComputeRevision(byte[] bytes)
+            => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).Substring(0, 12).ToLowerInvariant();
+
+        /// <summary>The <see cref="ComputeRevision">revision</see> of a per-user file as stored now; null when it does not exist.</summary>
+        public string? GetUserConfigurationRevision(string userId, string fileName)
+        {
+            var configPath = ResolveUserFile(userId, fileName);
+            try
+            {
+                return File.Exists(configPath) ? ComputeRevision(File.ReadAllBytes(configPath)) : null;
+            }
+            catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException)
+            {
+                return null;
+            }
+        }
+
+        // File.ReadAllText's decoding (byte-order mark detection, UTF-8 otherwise) for bytes already read.
+        private static string DecodeText(byte[] bytes)
+        {
+            using var reader = new StreamReader(new MemoryStream(bytes), System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            return reader.ReadToEnd();
         }
 
         // Locked read-modify-write: holds GetUserFileLock, strict-reads, mutates, and saves when the mutator returns > 0.

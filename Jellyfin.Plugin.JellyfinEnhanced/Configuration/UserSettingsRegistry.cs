@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 {
@@ -153,11 +156,126 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return published;
         }
 
+        /// <summary>
+        /// Coerces a posted JSON value to the key's property type and checks the key's constraints
+        /// (Min/Max, Choices, Pattern, MaxLength). Numbers and booleans are also accepted as strings,
+        /// as Jellyfin's JSON options read them for the typed model. JSON null is accepted only for a
+        /// nullable key (the *TagOrder and UseNativePosterTags sentinels).
+        /// </summary>
+        /// <param name="descriptor">The registry entry.</param>
+        /// <param name="value">The posted value.</param>
+        /// <param name="coerced">The value to store when valid.</param>
+        /// <returns>True when the value can be stored.</returns>
+        public static bool TryValidate(UserSettingDescriptor descriptor, JsonElement value, out object? coerced)
+        {
+            ArgumentNullException.ThrowIfNull(descriptor);
+            coerced = null;
+            var type = descriptor.Property.PropertyType;
+            var underlying = Nullable.GetUnderlyingType(type);
+            if (value.ValueKind == JsonValueKind.Null)
+            {
+                return underlying != null;
+            }
+
+            var target = underlying ?? type;
+            var setting = descriptor.Setting;
+            if (target == typeof(bool))
+            {
+                if (value.ValueKind == JsonValueKind.True || value.ValueKind == JsonValueKind.False)
+                {
+                    coerced = value.GetBoolean();
+                    return true;
+                }
+
+                if (value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var parsed))
+                {
+                    coerced = parsed;
+                    return true;
+                }
+
+                return false;
+            }
+
+            if (target == typeof(int))
+            {
+                int number;
+                if (value.ValueKind == JsonValueKind.Number)
+                {
+                    if (!value.TryGetInt32(out number))
+                    {
+                        return false;
+                    }
+                }
+                else if (value.ValueKind != JsonValueKind.String
+                    || !int.TryParse(value.GetString(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out number))
+                {
+                    return false;
+                }
+
+                if (number < setting.Min || number > setting.Max)
+                {
+                    return false;
+                }
+
+                coerced = number;
+                return true;
+            }
+
+            if (target == typeof(string))
+            {
+                if (value.ValueKind != JsonValueKind.String)
+                {
+                    return false;
+                }
+
+                var text = value.GetString() ?? string.Empty;
+                if (setting.Choices != null)
+                {
+                    if (!setting.Choices.Contains(text, StringComparer.Ordinal))
+                    {
+                        return false;
+                    }
+                }
+                else if (text.Length > setting.MaxLength
+                    || (setting.Pattern != null && !Regex.IsMatch(text, setting.Pattern, RegexOptions.None, TimeSpan.FromMilliseconds(100))))
+                {
+                    return false;
+                }
+
+                coerced = text;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Where a key takes effect under the current config: a key that also drives native poster
+        /// images only reaches them while the admin has native poster tags on.
+        /// </summary>
+        /// <param name="descriptor">The registry entry.</param>
+        /// <param name="config">The plugin configuration.</param>
+        /// <returns>The effective reach.</returns>
+        public static SettingReach EffectiveReach(UserSettingDescriptor descriptor, PluginConfiguration config)
+        {
+            ArgumentNullException.ThrowIfNull(descriptor);
+            ArgumentNullException.ThrowIfNull(config);
+            return descriptor.Setting.Reach == SettingReach.Both && !config.NativePosterTagsEnabled
+                ? SettingReach.Web
+                : descriptor.Setting.Reach;
+        }
+
         private static UserSettingDescriptor[] Build()
         {
             var descriptors = new List<UserSettingDescriptor>();
             foreach (var property in typeof(UserSettings).GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
+                if (property.Name == nameof(UserSettings.Meta))
+                {
+                    // The "_je" provenance block, not a setting.
+                    continue;
+                }
+
                 var setting = property.GetCustomAttribute<UserSettingAttribute>();
                 if (setting == null)
                 {

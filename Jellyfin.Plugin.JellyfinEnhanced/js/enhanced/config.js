@@ -54,8 +54,255 @@
         if (typeof JE.toast === 'function') JE.toast(message);
     }
 
+    // The per-key state of the signed-in user's settings from the server (Following, Chosen,
+    // Defaults, ...; camelCase names, see plugin.js camelCaseSettingsMeta), or null without one.
+    Object.defineProperty(JE, 'settingsMeta', {
+        configurable: true, enumerable: true,
+        get: () => JE.userConfig?.settingsMeta || null
+    });
+
+    // ---- Key-level settings.json saves (POST settings.json/patch) ----
+    // A save sends only the keys that differ from the last values the server confirmed (the
+    // baseline), so two devices or tabs no longer revert each other's unrelated settings, and an
+    // unrelated save no longer writes the defaults back as choices. Deltas made within
+    // PATCH_WINDOW_MS go out as one request. Servers without the route (no 'settingsPatch' in the
+    // bootstrap Capabilities, or a 404/405 from it) get the whole document as before.
+    const PATCH_WINDOW_MS = 250;
+    // Keys of the served document that are never written: the caller's admin flag, and the panel's
+    // last section (device-local since A7).
+    const NEVER_PATCHED = new Set(['isAdmin', 'lastOpenedTab']);
+    // Set once the server answered 404/405 to /patch (rolled back under an open tab).
+    let _patchUnsupported = false;
+    // Per user id: { baseline, baselineSource, pending, batch, timer, chain }.
+    const _sync = {};
+
+    /**
+     * Whether this server takes key-level saves.
+     * @returns {boolean}
+     */
+    function patchSupported() {
+        return !_patchUnsupported && Array.isArray(JE.serverCapabilities) && JE.serverCapabilities.includes('settingsPatch');
+    }
+
+    /**
+     * A flat copy of a settings object with every key's first letter upper- or lower-cased.
+     * @param {object} object Flat settings object.
+     * @param {boolean} upper PascalCase (for the server) or camelCase (from it).
+     * @returns {object}
+     */
+    function recase(object, upper) {
+        const result = {};
+        for (const [key, value] of Object.entries(object)) {
+            result[(upper ? key.charAt(0).toUpperCase() : key.charAt(0).toLowerCase()) + key.slice(1)] = value;
+        }
+        return result;
+    }
+
+    /**
+     * Whether two settings values are the same (null and undefined count as one).
+     * @param {*} a
+     * @param {*} b
+     * @returns {boolean}
+     */
+    function sameValue(a, b) {
+        return a === b || (a == null && b == null);
+    }
+
+    /**
+     * The sync state of the signed-in user (created on first use). Its baseline is a copy of
+     * JE.userConfig.settings, taken again whenever that object is replaced by a fresh server
+     * document (bootstrap, user switch, the panel's refresh), so local edits to the object itself
+     * never count as confirmed.
+     * @returns {object|null} The state, or null without a signed-in user.
+     */
+    function syncState() {
+        const userId = typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId ? ApiClient.getCurrentUserId() : null;
+        if (!userId) return null;
+        const state = _sync[userId] = _sync[userId]
+            || { userId, baseline: {}, baselineSource: null, pending: {}, batch: null, timer: null, chain: Promise.resolve() };
+        const source = JE.userConfig?.settings;
+        if (source && source !== state.baselineSource) {
+            state.baselineSource = source;
+            state.baseline = { ...source };
+        }
+        return state;
+    }
+
+    /**
+     * The keys of a whole settings object that differ from what the server last confirmed
+     * (merged with the defaults exactly as loadSettings shows it), or from an edit still pending.
+     * Keys the server document does not have are not sent.
+     * @param {object} state Sync state.
+     * @param {object} settings camelCase settings (normally JE.currentSettings).
+     * @returns {object} camelCase key → value to send.
+     */
+    function settingsDelta(state, settings) {
+        const shown = mergeSettings(state.baseline, JE.pluginConfig || {});
+        const delta = {};
+        for (const key of Object.keys(state.baseline)) {
+            if (NEVER_PATCHED.has(key) || !Object.prototype.hasOwnProperty.call(settings, key)) continue;
+            const expected = Object.prototype.hasOwnProperty.call(state.pending, key) ? state.pending[key] : shown[key];
+            if (!sameValue(settings[key], expected)) delta[key] = settings[key];
+        }
+        return delta;
+    }
+
+    /**
+     * Queues a delta for the user's next patch request and returns when that request is done.
+     * @param {object} state Sync state.
+     * @param {object} delta camelCase key → value.
+     * @returns {Promise<{rejected: Array<{key: string, reason: string}>}>} Resolves with the
+     *   rejections of this caller's keys; rejects when the request failed.
+     */
+    function queuePatch(state, delta) {
+        Object.assign(state.pending, delta);
+        if (!state.batch) state.batch = { set: {}, waiters: [] };
+        Object.assign(state.batch.set, delta);
+        const done = new Promise((resolve, reject) => state.batch.waiters.push({ keys: Object.keys(delta), resolve, reject }));
+        if (!state.timer) state.timer = setTimeout(() => sendBatch(state), PATCH_WINDOW_MS);
+        return done;
+    }
+
+    /**
+     * Sends the user's open batch now (after the earlier requests, in order).
+     * @param {object} state Sync state.
+     */
+    function sendBatch(state) {
+        if (state.timer) { clearTimeout(state.timer); state.timer = null; }
+        const batch = state.batch;
+        if (!batch) return;
+        state.batch = null;
+        state.chain = state.chain.then(() => postBatch(state, batch)).catch(() => {});
+    }
+
+    /**
+     * Drops pending entries that still hold the values a finished request carried.
+     * @param {object} state Sync state.
+     * @param {object} sent camelCase key → value that was sent.
+     */
+    function settlePending(state, sent) {
+        for (const [key, value] of Object.entries(sent)) {
+            if (Object.prototype.hasOwnProperty.call(state.pending, key) && sameValue(state.pending[key], value)) delete state.pending[key];
+        }
+    }
+
+    /**
+     * Posts one batch to /patch (or, on a server without it, the whole document to the old route)
+     * and settles its callers.
+     * @param {object} state Sync state.
+     * @param {{set: object, waiters: Array}} batch The merged deltas and their callers.
+     * @returns {Promise<void>}
+     */
+    async function postBatch(state, batch) {
+        const fail = (error) => {
+            settlePending(state, batch.set);
+            batch.waiters.forEach(w => w.reject(error));
+        };
+        // The user changed since these edits were made: they belong to the previous user.
+        if (ApiClient.getCurrentUserId() !== state.userId) {
+            state.pending = {};
+            batch.waiters.forEach(w => w.resolve({ rejected: [] }));
+            return;
+        }
+        if (!patchSupported()) {
+            await postWholeDocument(state, batch).catch(fail);
+            return;
+        }
+        let response;
+        try {
+            response = await ApiClient.ajax({
+                type: 'POST',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${state.userId}/settings.json/patch`),
+                data: JSON.stringify({ Set: recase(batch.set, true) }),
+                contentType: 'application/json',
+                dataType: 'json'
+            });
+        } catch (e) {
+            if (e?.status === 404 || e?.status === 405) {
+                // The server was rolled back under this tab: use the whole-document route from now on.
+                _patchUnsupported = true;
+                await postWholeDocument(state, batch).catch(fail);
+                return;
+            }
+            fail(e);
+            return;
+        }
+        try {
+            applyPatchResponse(state, batch, response);
+        } catch (e) {
+            // The save itself went through; only taking the answer in failed.
+            console.error('🪼 Jellyfin Enhanced: Could not apply the settings save answer:', e);
+            settlePending(state, batch.set);
+            batch.waiters.forEach(w => w.resolve({ rejected: [] }));
+        }
+    }
+
+    /**
+     * The fallback for a server without /patch: saves the whole current document the old way.
+     * @param {object} state Sync state.
+     * @param {{set: object, waiters: Array}} batch The batch being sent.
+     * @returns {Promise<void>}
+     */
+    async function postWholeDocument(state, batch) {
+        await postLegacy('settings.json', JE.currentSettings, state.userId);
+        settlePending(state, batch.set);
+        batch.waiters.forEach(w => w.resolve({ rejected: [] }));
+    }
+
+    /**
+     * Takes a /patch answer as the new baseline: keys another device or the admin changed land in
+     * JE.currentSettings (beneath edits still pending), rejected keys go back to the server's value,
+     * and both are announced with a `je:settings-changed` event ({ keys, rejected }).
+     * @param {object} state Sync state.
+     * @param {{set: object, waiters: Array}} batch The batch that was sent.
+     * @param {object} response The /patch answer.
+     */
+    function applyPatchResponse(state, batch, response) {
+        const camel = key => key.charAt(0).toLowerCase() + key.slice(1);
+        const rejected = Array.isArray(response?.Rejected)
+            ? response.Rejected.filter(r => r && typeof r.Key === 'string').map(r => ({ key: camel(r.Key), reason: r.Reason }))
+            : [];
+        const rejectedKeys = new Set(rejected.map(r => r.key));
+        // Sent values are settled whether applied or rejected; a newer edit of the same key stays pending.
+        settlePending(state, batch.set);
+
+        const settings = response?.Settings && typeof response.Settings === 'object' && !Array.isArray(response.Settings) ? recase(response.Settings, false) : null;
+        const changed = [];
+        if (settings && ApiClient.getCurrentUserId() === state.userId && JE.userConfig) {
+            const previous = state.baseline;
+            const shown = mergeSettings(settings, JE.pluginConfig || {});
+            for (const key of Object.keys(settings)) {
+                if (NEVER_PATCHED.has(key) || Object.prototype.hasOwnProperty.call(state.pending, key)) continue;
+                const serverChanged = !Object.prototype.hasOwnProperty.call(batch.set, key) && !sameValue(previous[key], settings[key]);
+                if ((serverChanged || rejectedKeys.has(key)) && JE.currentSettings && !sameValue(JE.currentSettings[key], shown[key])) {
+                    JE.currentSettings[key] = shown[key];
+                    changed.push(key);
+                }
+            }
+            JE.userConfig.settings = settings;
+            state.baselineSource = settings;
+            state.baseline = { ...settings };
+            if (response.Meta && typeof JE.camelCaseSettingsMeta === 'function') JE.userConfig.settingsMeta = JE.camelCaseSettingsMeta(response.Meta);
+        }
+        if (changed.length || rejected.length) {
+            if (rejected.length) console.warn('🪼 Jellyfin Enhanced: The server did not accept some settings:', rejected);
+            document.dispatchEvent(new CustomEvent('je:settings-changed', { detail: { keys: changed, rejected } }));
+        }
+        batch.waiters.forEach(w => w.resolve({ rejected: rejected.filter(r => w.keys.includes(r.key)) }));
+    }
+
+    // A batch still waiting for its window would be lost with the page: send it now.
+    const flushAllBatches = () => Object.values(_sync).forEach(sendBatch);
+    window.addEventListener('pagehide', flushAllBatches);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') flushAllBatches();
+    });
+
     /**
      * Saves user settings to the server.
+     * settings.json goes out key by key when the server supports it (see above): only what
+     * differs from the server's last confirmed values, merged with other saves made within
+     * PATCH_WINDOW_MS; the promise resolves once that request is done.
      * Skips the POST if the data is identical to the last value saved this session
      * (prevents redundant writes). The first save per session for a given file is
      * always allowed through since the cache starts empty.
@@ -101,40 +348,17 @@
                 return;
             }
 
-            // Convert data back to PascalCase for server C# deserialization
-            let dataToSave = settings;
-            // currentSettings carries the resolved native-poster value (on). Leave it
-            // unset on disk until the user explicitly switches it in the panel.
-            if (fileName === 'settings.json' && settings === JE.currentSettings
-                && JE.userConfig?.settings?.useNativePosterTags == null) {
-                dataToSave = { ...settings, useNativePosterTags: null };
-            }
-            if ((fileName === 'bookmark.json' || fileName === 'settings.json') && typeof window.JellyfinEnhanced?.toPascalCase === 'function') {
-                dataToSave = window.JellyfinEnhanced.toPascalCase(dataToSave);
-            }
-
-            const serialized = JSON.stringify(dataToSave);
-            const cacheKey = `${userId}:${fileName}`;
-
-            const post = async () => {
-                // Skip the POST if nothing has changed since the last save this session.
-                if (_lastSavedJson[cacheKey] === serialized) {
-                    return; // no-op — identical to last save
+            if (fileName === 'settings.json' && patchSupported()) {
+                const state = syncState();
+                const delta = settingsDelta(state, settings || {});
+                if (!Object.keys(delta).length) return; // nothing differs from the server or a pending edit
+                const { rejected } = await queuePatch(state, delta);
+                if (rejected.length && throwOnError) {
+                    throw new Error(`The server did not accept: ${rejected.map(r => `${r.key} (${r.reason})`).join(', ')}`);
                 }
-
-                await ApiClient.ajax({
-                    type: 'POST',
-                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}`),
-                    data: serialized,
-                    contentType: 'application/json'
-                });
-
-                // Update the cache on success so subsequent identical saves are skipped
-                _lastSavedJson[cacheKey] = serialized;
-            };
-            const save = (_saveChain[cacheKey] || Promise.resolve()).then(post);
-            _saveChain[cacheKey] = save.catch(() => {});
-            await save;
+                return;
+            }
+            await postLegacy(fileName, settings, userId);
         } catch (e) {
             if (notifyOnError) toastSaveFailed();
             if (throwOnError) throw e;
@@ -143,12 +367,58 @@
     };
 
     /**
-     * Loads and merges settings from user config, plugin defaults, and hardcoded fallbacks.
+     * Posts a whole per-user document (the original save path): skipped when identical to the
+     * last document saved this page load, and chained per file so saves reach the server in order.
+     * @param {string} fileName Per-user settings file.
+     * @param {object} settings The whole document (camelCase for settings.json and bookmark.json).
+     * @param {string} userId The user the document belongs to.
+     * @returns {Promise<void>} Rejects when the request failed.
      */
-    JE.loadSettings = () => {
-        const userSettings = JE.userConfig?.settings || {};
-        const pluginDefaults = JE.pluginConfig || {};
+    async function postLegacy(fileName, settings, userId) {
+        // Convert data back to PascalCase for server C# deserialization
+        let dataToSave = settings;
+        // currentSettings carries the resolved native-poster value (on). Leave it
+        // unset on disk until the user explicitly switches it in the panel.
+        if (fileName === 'settings.json' && settings === JE.currentSettings
+            && JE.userConfig?.settings?.useNativePosterTags == null) {
+            dataToSave = { ...settings, useNativePosterTags: null };
+        }
+        if ((fileName === 'bookmark.json' || fileName === 'settings.json') && typeof window.JellyfinEnhanced?.toPascalCase === 'function') {
+            dataToSave = window.JellyfinEnhanced.toPascalCase(dataToSave);
+        }
 
+        const serialized = JSON.stringify(dataToSave);
+        const cacheKey = `${userId}:${fileName}`;
+
+        const post = async () => {
+            // Skip the POST if nothing has changed since the last save this session.
+            if (_lastSavedJson[cacheKey] === serialized) {
+                return; // no-op — identical to last save
+            }
+
+            await ApiClient.ajax({
+                type: 'POST',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}`),
+                data: serialized,
+                contentType: 'application/json'
+            });
+
+            // Update the cache on success so subsequent identical saves are skipped
+            _lastSavedJson[cacheKey] = serialized;
+        };
+        const save = (_saveChain[cacheKey] || Promise.resolve()).then(post);
+        _saveChain[cacheKey] = save.catch(() => {});
+        await save;
+    }
+
+    /**
+     * Merges a settings document with the plugin defaults and the hardcoded fallbacks: what the
+     * client uses for each key (the document's value, else the admin default, else the fallback).
+     * @param {object} userSettings camelCase settings document (may be empty).
+     * @param {object} pluginDefaults The public plugin config.
+     * @returns {object} The merged settings.
+     */
+    function mergeSettings(userSettings, pluginDefaults) {
         const hardcodedDefaults = {
             autoPauseEnabled: true, autoResumeEnabled: false, autoPipEnabled: false,
             autoSkipIntro: false, autoSkipOutro: false,
@@ -279,6 +549,20 @@
         }
 
         return mergedSettings;
+    }
+
+    /**
+     * Loads and merges settings from user config, plugin defaults, and hardcoded fallbacks.
+     * Edits not yet confirmed by the server (key-level saves in flight or waiting to be sent) stay
+     * on top, so a refresh never undoes a change the user just made.
+     * @returns {object} The settings for JE.currentSettings.
+     */
+    JE.loadSettings = () => {
+        const merged = mergeSettings(JE.userConfig?.settings || {}, JE.pluginConfig || {});
+        // Also takes the baseline from a freshly loaded document, before any control edits it.
+        const state = syncState();
+        if (state) Object.assign(merged, state.pending);
+        return merged;
     };
 
     /** Shortcut combo for a keydown, e.g. "Ctrl+Shift+A". Shift is dropped for shifted symbols ("+", not "Shift++"). */
