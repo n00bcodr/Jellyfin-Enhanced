@@ -34,6 +34,21 @@
     const _saveChain = {};
     // Whether the "settings could not be loaded" warning was already logged this page load.
     let _warnedSettingsUnavailable = false;
+    // When the last "couldn't save" toast was shown; a burst of failed saves shows one.
+    let _lastSaveFailedToastAt = 0;
+    const SAVE_FAILED_TOAST_INTERVAL_MS = 3000;
+
+    /**
+     * Shows the translated "couldn't save" toast, at most once per SAVE_FAILED_TOAST_INTERVAL_MS.
+     */
+    function toastSaveFailed() {
+        const now = Date.now();
+        if (now - _lastSaveFailedToastAt < SAVE_FAILED_TOAST_INTERVAL_MS) return;
+        _lastSaveFailedToastAt = now;
+        if (typeof JE.toast === 'function' && typeof JE.t === 'function') {
+            JE.toast(JE.t('toast_settings_save_failed'));
+        }
+    }
 
     /**
      * Saves user settings to the server.
@@ -47,12 +62,16 @@
      * Failures are logged and swallowed unless the caller opts in to them.
      * @param {string} fileName Per-user settings file, e.g. 'settings.json'.
      * @param {object} settings The whole document to save.
-     * @param {{throwOnError?: boolean}} [options] throwOnError: reject (without logging) when
-     *   nothing was saved, so a caller can roll back its own optimistic change.
+     * @param {{throwOnError?: boolean, notifyOnError?: boolean}} [options] throwOnError: reject
+     *   (without logging) when nothing was saved, so a caller can roll back its own optimistic
+     *   change. notifyOnError: when the server request fails, also show a "couldn't save" toast
+     *   (the control is not reverted; the next refresh shows the stored value). Refusals while
+     *   the settings are loading or unavailable are not toasted: the panel shows those itself.
      * @returns {Promise<void>}
      */
     JE.saveUserSettings = async (fileName, settings, options = {}) => {
         const throwOnError = options?.throwOnError === true;
+        const notifyOnError = options?.notifyOnError === true;
         if (fileName === 'settings.json' && JE.userConfig?.settingsStatus === 'loading') {
             if (throwOnError) throw new Error('Settings are still loading; not saving');
             return;
@@ -113,6 +132,7 @@
             _saveChain[cacheKey] = save.catch(() => {});
             await save;
         } catch (e) {
+            if (notifyOnError) toastSaveFailed();
             if (throwOnError) throw e;
             console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, e);
         }

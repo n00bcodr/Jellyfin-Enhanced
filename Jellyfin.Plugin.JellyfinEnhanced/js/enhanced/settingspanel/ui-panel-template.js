@@ -33,6 +33,28 @@
         return result;
     }
 
+    // Inline reset for controls that are <button>s for keyboard and D-pad focus but keep the look
+    // of the plain elements they replaced.
+    const SHORTCUT_KEY_BUTTON_RESET = 'border:none; margin:0; color:inherit; font:inherit; line-height:inherit;';
+
+    // Tag position cells, in grid order, with the translation key of their accessible name.
+    const TAG_POSITIONS = [
+        ['top-left', 'panel_position_top_left'], ['top-right', 'panel_position_top_right'],
+        ['bottom-left', 'panel_position_bottom_left'], ['bottom-right', 'panel_position_bottom_right']
+    ];
+
+    /**
+     * Builds a 2x2 tag position picker: one button per corner, highlighted by
+     * wireMiscSettingsControls (which also sets aria-pressed).
+     * @param {string} settingKey The settings key the picker writes, e.g. 'qualityTagsPosition'.
+     * @returns {string} The picker's HTML.
+     */
+    function positionSelectorHtml(settingKey) {
+        const cells = TAG_POSITIONS.map(([pos, labelKey]) =>
+            `<button type="button" data-pos="${pos}" aria-label="${escapeHtml(JE.t(labelKey))}" aria-pressed="false" style="display:block; width:100%; height:100%; min-width:0; margin:0; padding:0; border:none; border-radius:2px; background:transparent; cursor:pointer; transition:background 0.2s;"></button>`).join('');
+        return `<div class="position-selector" data-setting="${escapeHtml(settingKey)}" role="group" aria-label="${escapeHtml(JE.t('panel_position_group'))}" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">${cells}</div>`;
+    }
+
     /**
      * Builds the panel's inner HTML.
      * @param {object} ctx Shared panel context (theme constants) assembled in ui-panel.js.
@@ -58,9 +80,9 @@
                     previewStyle = `color: #fff; font-size: 1.5em; background-color: #8a8a8a; padding: 0 8px; border-radius: 4px; text-shadow: ${JE.getSubtitleTextShadow('transparent', index)};`;
                 }
                 return `
-                    <div class="preset-box ${type}-preset" data-preset-index="${index}" title="${escapeHtml(preset.name)}" style="display: flex; justify-content: center; align-items: center; padding: 8px; border: 2px solid transparent; border-radius: 8px; cursor: pointer; transition: all 0.2s; background: ${presetBoxBackground}; min-height: 30px;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='${presetBoxBackground}'">
+                    <button type="button" class="preset-box ${type}-preset" data-preset-index="${index}" title="${escapeHtml(preset.name)}" aria-label="${escapeHtml(preset.name)}" aria-pressed="false" style="display: flex; justify-content: center; align-items: center; box-sizing: content-box; margin: 0; padding: 8px; border: 2px solid transparent; border-radius: 8px; cursor: pointer; transition: all 0.2s; background: ${presetBoxBackground}; min-height: 30px; color: inherit; font: inherit;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='${presetBoxBackground}'">
                         <span style="display: inline-block; ${type === 'style' ? `width: 40px; height: 25px; border-radius: 4px; line-height: 25px;` : ''} ${previewStyle} text-align: center; font-weight: bold;">${escapeHtml(preset.previewText)}</span>
-                    </div>`;
+                    </button>`;
             }).join('');
             return html;
         };
@@ -100,7 +122,7 @@
                 #jellyfin-enhanced-panel .je-pane-title { display: flex; align-items: center; gap: 8px; margin: 14px 0 12px 0; font-size: 17px; font-weight: 700; color: #fff; font-family: inherit; }
                 #jellyfin-enhanced-panel .je-pane-back { display: none; align-items: center; justify-content: center; margin: 12px 0 0 0; padding: 8px; border: none; border-radius: 50%; background: rgba(255,255,255,0.08); color: #fff; font-family: inherit; cursor: pointer; align-self: flex-start; }
                 @media (max-width: 760px) {
-                    #jellyfin-enhanced-panel { top: 0 !important; left: 0 !important; transform: none !important; width: 100vw !important; max-width: 100vw !important; height: 100dvh !important; max-height: 100dvh !important; border-radius: 0 !important; border: none !important; box-sizing: border-box !important; }
+                    #jellyfin-enhanced-panel { top: 0 !important; left: 0 !important; transform: none !important; width: 100vw !important; min-width: 0 !important; max-width: 100vw !important; height: 100dvh !important; max-height: 100dvh !important; border-radius: 0 !important; border: none !important; box-sizing: border-box !important; }
                     #jellyfin-enhanced-panel .je-panel-body { display: block; position: relative; overflow: hidden; }
                     #jellyfin-enhanced-panel .je-panel-nav { position: absolute; inset: 0; border-right: none; z-index: 1; }
                     /* The closed pane is parked off-screen by the transform alone —
@@ -110,21 +132,25 @@
                     #jellyfin-enhanced-panel .je-panel-body.je-pane-open .je-panel-main { transform: translateX(0); }
                     #jellyfin-enhanced-panel .je-panel-body.je-pane-open .je-pane-back { display: inline-flex; }
                 }
+                /* The keyboard hint (the footer's only content) means nothing on a touch-only device. */
+                @media (hover: none) and (pointer: coarse) {
+                    #jellyfin-enhanced-panel .panel-footer { display: none !important; }
+                }
                 @keyframes shake { 10%, 90% { transform: translateX(-1px); } 20%, 80% { transform: translateX(2px); } 30%, 50%, 70% { transform: translateX(-4px); } 40%, 60% { transform: translateX(4px); } }
                 .shake-error { animation: shake 0.5s ease-in-out; }
             </style>
             <div class="panel-header" style="position: relative; padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); background: ${headerFooterBg}; display: flex; align-items: baseline; gap: 10px; cursor: grab;">
                 <div style="font-size: 20px; font-weight: 700; background: ${primaryAccentColor}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${JE.icon(JE.IconName.JELLYFISH)} Jellyfin Enhanced</div>
                 <div style="font-size: 12px; color: rgba(255,255,255,0.7);">${escapeHtml(JE.t('panel_version', { version: JE.pluginVersion }))}</div>
-                <button id="closeSettingsPanel" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
+                <button type="button" id="closeSettingsPanel" aria-label="${escapeHtml(JE.t('panel_close'))}" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
             </div>
             <div class="je-panel-body">
                 <nav class="je-panel-nav" aria-label="${escapeHtml(JE.t('panel_settings_tab'))}">
-                    <input id="jePanelSearch" class="je-panel-search" type="text" placeholder="${escapeHtml(tWithFallback('panel_search_placeholder', 'Search settings…'))}" />
+                    <input id="jePanelSearch" class="je-panel-search" type="text" placeholder="${escapeHtml(tWithFallback('panel_search_placeholder', 'Search settings…'))}" aria-label="${escapeHtml(tWithFallback('panel_search_placeholder', 'Search settings…'))}" />
                     <div class="je-panel-nav-items"></div>
                 </nav>
                 <div class="je-panel-main">
-                <button id="jePanelBack" class="je-pane-back" type="button"><span class="material-icons" style="font-size:16px;" aria-hidden="true">arrow_back</span></button>
+                <button id="jePanelBack" class="je-pane-back" type="button" aria-label="${escapeHtml(JE.t('panel_back'))}"><span class="material-icons" style="font-size:16px;" aria-hidden="true">arrow_back</span></button>
                  ${!JE.pluginConfig.DisableAllShortcuts ? `
                  <div id="shortcuts-content" class="tab-content je-pane" data-pane="shortcuts" data-pane-label="${escapeHtml(JE.t('panel_shortcuts_tab'))}" style="padding-top: 4px; padding-bottom: 20px;">
                  <h3 class="je-pane-title">${JE.icon(JE.IconName.KEYBOARD)} ${JE.t('panel_shortcuts_tab')}</h3>
@@ -137,8 +163,8 @@
                                     return `
                                     <div style="display: flex; justify-content: space-between; align-items: center; ${isDisabled ? 'opacity: 0.5;' : ''}">
                                         <div style="display: flex; align-items: center; gap: 6px;">
-                                            <span class="shortcut-key" tabindex="0" data-action="${escapeHtml(action.Name)}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${escapeHtml(isDisabled ? tWithFallback('panel_shortcuts_disabled', 'Disabled') : (JE.state.activeShortcuts[action.Name] || ''))}</span>
-                                            <button class="shortcut-toggle" data-action="${escapeHtml(action.Name)}" style="background:transparent; border:none; color:rgba(255,255,255,0.5); cursor:pointer; padding:2px; display:flex; align-items:center;">${JE.icon(JE.IconName.NO_ENTRY)}</button>
+                                            <button type="button" class="shortcut-key" data-action="${escapeHtml(action.Name)}" style="${SHORTCUT_KEY_BUTTON_RESET} background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${escapeHtml(isDisabled ? tWithFallback('panel_shortcuts_disabled', 'Disabled') : (JE.state.activeShortcuts[action.Name] || ''))}</button>
+                                            <button type="button" class="shortcut-toggle" data-action="${escapeHtml(action.Name)}" aria-label="${escapeHtml(JE.t('panel_shortcuts_toggle', { shortcut: tWithFallback('shortcut_' + action.Name, action.Label) }))}" style="background:transparent; border:none; color:rgba(255,255,255,0.5); cursor:pointer; padding:2px; display:flex; align-items:center;">${JE.icon(JE.IconName.NO_ENTRY)}</button>
                                         </div>
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             ${userShortcuts.hasOwnProperty(action.Name) ? `<span title="Modified by user" class="modified-indicator" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
@@ -160,8 +186,10 @@
                                     return `
                                     <div style="display: flex; justify-content: space-between; align-items: center; ${isDisabled ? 'opacity: 0.5;' : ''}">
                                         <div style="display: flex; align-items: center; gap: 6px;">
-                                            <span class="shortcut-key" ${isReadonly ? 'data-readonly="1"' : 'tabindex="0"'} data-action="${escapeHtml(action)}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; ${isReadonly ? '' : 'cursor:pointer;'} transition: all 0.2s;">${escapeHtml(isDisabled ? tWithFallback('panel_shortcuts_disabled', 'Disabled') : (JE.state.activeShortcuts[action] || ''))}</span>
-                                            <button class="shortcut-toggle" data-action="${escapeHtml(action)}" style="background:transparent; border:none; color:rgba(255,255,255,0.5); cursor:pointer; padding:2px; display:flex; align-items:center;">${JE.icon(JE.IconName.NO_ENTRY)}</button>
+                                            ${isReadonly
+                                                ? `<span class="shortcut-key" data-readonly="1" data-action="${escapeHtml(action)}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; transition: all 0.2s;">${escapeHtml(isDisabled ? tWithFallback('panel_shortcuts_disabled', 'Disabled') : (JE.state.activeShortcuts[action] || ''))}</span>`
+                                                : `<button type="button" class="shortcut-key" data-action="${escapeHtml(action)}" style="${SHORTCUT_KEY_BUTTON_RESET} background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${escapeHtml(isDisabled ? tWithFallback('panel_shortcuts_disabled', 'Disabled') : (JE.state.activeShortcuts[action] || ''))}</button>`}
+                                            <button type="button" class="shortcut-toggle" data-action="${escapeHtml(action)}" aria-label="${escapeHtml(JE.t('panel_shortcuts_toggle', { shortcut: tWithFallback('shortcut_' + action, fallbackLabel) }))}" style="background:transparent; border:none; color:rgba(255,255,255,0.5); cursor:pointer; padding:2px; display:flex; align-items:center;">${JE.icon(JE.IconName.NO_ENTRY)}</button>
                                         </div>
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             ${userShortcuts.hasOwnProperty(action) ? `<span class="modified-indicator" title="Modified by user" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
@@ -277,7 +305,7 @@
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                                     <span style="font-weight: 600;">${JE.t('panel_settings_subtitles_position')}</span>
-                                    <button id="subtitlePositionReset" style="font-family:inherit; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:rgba(255,255,255,0.7); padding:3px 8px; border-radius:4px; font-size:11px; cursor:pointer; display:flex; align-items:center;"><span class="material-icons" style="font-size:16px;">restart_alt</span></button>
+                                    <button type="button" id="subtitlePositionReset" aria-label="${escapeHtml(JE.t('panel_settings_subtitles_position_reset'))}" title="${escapeHtml(JE.t('panel_settings_subtitles_position_reset'))}" style="font-family:inherit; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:rgba(255,255,255,0.7); padding:3px 8px; border-radius:4px; font-size:11px; cursor:pointer; display:flex; align-items:center;"><span class="material-icons" style="font-size:16px;" aria-hidden="true">restart_alt</span></button>
                                 </div>
                                 <div id="subtitlePositionGrid" style="position:relative; width:min(60vw,280px); height:min(34vw,158px); background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.15); border-radius:6px; cursor:crosshair; user-select:none; overflow:hidden; margin: 0 auto;">
                                     <!-- Crosshair guides -->
@@ -363,18 +391,13 @@
                                 </label>
                             </div>` : ''}
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
-                                    <div style="display: flex; align-items: center; gap: 12px;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                                    <label style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; cursor: pointer;">
                                         <input type="checkbox" id="qualityTagsToggle" ${JE.currentSettings.qualityTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                         <div><div style="font-weight:500;">${JE.t('panel_settings_ui_quality_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_quality_tags_desc')}</div></div>
-                                    </div>
-                                    <div class="position-selector" data-setting="qualityTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
-                                        <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                    </div>
-                                </label>
+                                    </label>
+                                    ${positionSelectorHtml('qualityTagsPosition')}
+                                </div>
                                 <div id="qualityTagsSubWrap" class="je-quality-cat-wrap" style="display: ${JE.currentSettings.qualityTagsEnabled ? 'block' : 'none'};">
                                     <button type="button" id="qualityTagsSubToggleExpander" class="je-quality-cat-expander" aria-expanded="false">
                                         <span class="material-icons je-cat-chevron" aria-hidden="true">chevron_right</span>
@@ -440,46 +463,31 @@
                                 </div>
                             </div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
-                                    <div style="display: flex; align-items: center; gap: 12px;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                                    <label style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; cursor: pointer;">
                                         <input type="checkbox" id="genreTagsToggle" ${JE.currentSettings.genreTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                         <div><div style="font-weight:500;">${JE.t('panel_settings_ui_genre_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_genre_tags_desc')}</div></div>
-                                    </div>
-                                    <div class="position-selector" data-setting="genreTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
-                                        <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                    </div>
-                                </label>
+                                    </label>
+                                    ${positionSelectorHtml('genreTagsPosition')}
+                                </div>
                             </div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
-                                    <div style="display: flex; align-items: center; gap: 12px;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                                    <label style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; cursor: pointer;">
                                         <input type="checkbox" id="languageTagsToggle" ${JE.currentSettings.languageTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                         <div><div style="font-weight:500;">${JE.t('panel_settings_ui_language_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_language_tags_desc')}</div></div>
-                                    </div>
-                                    <div class="position-selector" data-setting="languageTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
-                                        <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                    </div>
-                                </label>
+                                    </label>
+                                    ${positionSelectorHtml('languageTagsPosition')}
+                                </div>
                             </div>
                                 <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                    <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
-                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                                        <label style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; cursor: pointer;">
                                             <input type="checkbox" id="ratingTagsToggle" ${JE.currentSettings.ratingTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                             <div><div style="font-weight:500;">${JE.t('panel_settings_ui_rating_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_rating_tags_desc')}</div></div>
-                                        </div>
-                                        <div class="position-selector" data-setting="ratingTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
-                                            <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                            <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                            <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                            <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        </div>
-                                    </label>
+                                        </label>
+                                        ${positionSelectorHtml('ratingTagsPosition')}
+                                    </div>
                                     <div id="ratingTagsSubWrap" class="je-quality-cat-wrap" style="display: ${JE.currentSettings.ratingTagsEnabled ? 'block' : 'none'};">
                                         <button type="button" id="ratingTagsSubToggleExpander" class="je-quality-cat-expander" aria-expanded="false">
                                             <span class="material-icons je-cat-chevron" aria-hidden="true">chevron_right</span>
@@ -511,18 +519,13 @@
                                     </div>
                                 </div>
                                 <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                    <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
-                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                                        <label style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; cursor: pointer;">
                                             <input type="checkbox" id="ageRatingTagsToggle" ${JE.currentSettings.ageRatingTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                             <div><div style="font-weight:500;">${JE.t('panel_settings_ui_age_rating_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_age_rating_tags_desc')}</div></div>
-                                        </div>
-                                        <div class="position-selector" data-setting="ageRatingTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
-                                            <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                            <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                            <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                            <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        </div>
-                                    </label>
+                                        </label>
+                                        ${positionSelectorHtml('ageRatingTagsPosition')}
+                                    </div>
                                 </div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">

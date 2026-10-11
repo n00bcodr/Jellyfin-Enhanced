@@ -9,6 +9,9 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
 
+    // Panel saves report a failed request with a visible toast instead of only logging it.
+    const PANEL_SAVE_OPTIONS = { notifyOnError: true };
+
     /**
      * Wires the shortcut-key rebinding behaviour inside the open panel.
      * @param {object} ctx Shared panel context assembled in ui-panel.js.
@@ -62,10 +65,10 @@
                     JE.state.activeShortcuts[action] = defaultKey;
                 }
 
-                JE.saveUserSettings('shortcuts.json', JE.userConfig.shortcuts);
+                JE.saveUserSettings('shortcuts.json', JE.userConfig.shortcuts, PANEL_SAVE_OPTIONS);
 
                 const keyElement = help.querySelector(`.shortcut-key[data-action="${action}"]`);
-                if (keyElement && document.activeElement !== keyElement) {
+                if (keyElement && !keyElement.hasAttribute('data-listening')) {
                     keyElement.textContent = displayKey(JE.state.activeShortcuts[action]);
                 }
 
@@ -91,35 +94,66 @@
             shortcutKeys.forEach(keyElement => {
                 const getOriginalKey = () => JE.state.activeShortcuts[keyElement.dataset.action];
 
-                keyElement.addEventListener('click', () => keyElement.focus());
-
-                keyElement.addEventListener('focus', () => {
+                // Capture starts on a click (or Enter/Space on the button), never on focus, so
+                // keyboard users can Tab through the list; Tab leaves and Escape cancels a capture.
+                /** Puts the key in capture mode ("Waiting…"); a no-op while already capturing. */
+                const startListening = () => {
+                    if (keyElement.hasAttribute('data-listening')) return;
+                    keyElement.setAttribute('data-listening', '');
                     keyElement.textContent = JE.t('panel_shortcuts_listening');
                     keyElement.style.borderColor = primaryAccentColor;
                     keyElement.style.width = '100px';
-                });
-
-                keyElement.addEventListener('blur', () => {
+                };
+                /** Leaves capture mode and shows the current binding again. */
+                const stopListening = () => {
+                    if (!keyElement.hasAttribute('data-listening')) return;
+                    keyElement.removeAttribute('data-listening');
                     keyElement.textContent = displayKey(getOriginalKey());
                     keyElement.style.borderColor = 'transparent';
                     keyElement.style.width = 'auto';
+                };
+
+                keyElement.addEventListener('click', () => {
+                    keyElement.focus();
+                    startListening();
                 });
 
+                keyElement.addEventListener('blur', stopListening);
+
                 keyElement.addEventListener('keydown', (e) => {
+                    if (!keyElement.hasAttribute('data-listening')) {
+                        // Not capturing: Enter starts (a <button> also gets a click from it; the
+                        // guard in startListening makes that a no-op), every other key behaves
+                        // as usual (Tab moves on, Escape and ? close the panel).
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            startListening();
+                        }
+                        return;
+                    }
+                    if (e.key === 'Tab') {
+                        stopListening();
+                        return;
+                    }
                     e.preventDefault();
                     e.stopPropagation();
+                    if (e.key === 'Escape') {
+                        stopListening();
+                        return;
+                    }
 
                     const action = keyElement.dataset.action;
 
                     if (e.key === 'Backspace') {
                         setShortcutDisabled(action, false);
-                        keyElement.blur(); // Exit the "Listening..." mode
+                        stopListening();
                         return;
                     }
 
                     if (e.key === 'Delete') {
                         setShortcutDisabled(action, true);
-                        keyElement.blur(); // Exit the "Listening..." mode
+                        stopListening();
                         return;
                     }
 
@@ -157,7 +191,7 @@
                         const defaultConfig = pluginShortcuts.find(s => s.Name === action);
                         JE.userConfig.shortcuts.Shortcuts.push({ ...defaultConfig, Key: combo });
                     }
-                    JE.saveUserSettings('shortcuts.json', JE.userConfig.shortcuts);
+                    JE.saveUserSettings('shortcuts.json', JE.userConfig.shortcuts, PANEL_SAVE_OPTIONS);
 
                     // Update active shortcuts
                     JE.state.activeShortcuts[action] = combo;
@@ -173,7 +207,7 @@
                         labelWrapper.prepend(indicator);
                     }
                     applyDisabledVisuals(action);
-                    keyElement.blur(); // Triggers the blur event to clean up styles
+                    stopListening();
                 });
             });
 

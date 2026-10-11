@@ -11,6 +11,9 @@
 
     const { showReleaseNotesNotification } = internal;
 
+    // Panel saves report a failed request with a visible toast instead of only logging it.
+    const PANEL_SAVE_OPTIONS = { notifyOnError: true };
+
     // Position-tab preview text ("AaBbCcDd") mirrors the real font family, and
     // its size scaled relative to "Normal" so it stays legible in the small
     // preview box instead of rendering at the real on-video vw-based size.
@@ -51,7 +54,7 @@
         const addSettingToggleListener = (id, settingKey, featureKey, requiresRefresh = false) => {
             document.getElementById(id).addEventListener('change', (e) => {
                 JE.currentSettings[settingKey] = e.target.checked;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 let toastMessage = createToast(featureKey, e.target.checked);
 
                 // Handle tag features with dynamic re-initialization
@@ -147,14 +150,14 @@
                 if (modeSel) {
                     modeSel.addEventListener('change', (e) => {
                         JE.currentSettings.watchProgressMode = e.target.value;
-                        JE.saveUserSettings('settings.json', JE.currentSettings);
+                        JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                         resetAutoCloseTimer();
                     });
                 }
                 if (fmtSel) {
                     fmtSel.addEventListener('change', (e) => {
                         JE.currentSettings.watchProgressTimeFormat = e.target.value;
-                        JE.saveUserSettings('settings.json', JE.currentSettings);
+                        JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                         resetAutoCloseTimer();
                     });
                 }
@@ -169,7 +172,7 @@
             JE.userConfig.settings = JE.userConfig.settings || {};
             JE.userConfig.settings.useNativePosterTags = enabled;
             JE.currentSettings.useNativePosterTags = enabled;
-            JE.saveUserSettings('settings.json', JE.currentSettings);
+            JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
             JE.toast(JE.t('toast_native_poster_tags_saved'));
             resetAutoCloseTimer();
         });
@@ -210,7 +213,7 @@
                 const settingKey = row.dataset.catKey;
                 if (!settingKey) return;
                 JE.currentSettings[settingKey] = target.checked;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
                     JE.reinitializeQualityTags();
                 }
@@ -241,7 +244,7 @@
                     const orderKey = r.dataset.orderKey;
                     if (orderKey) JE.currentSettings[orderKey] = idx + 1;
                 });
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
 
                 refreshQualityCatArrowStates(qualitySubGroup);
                 if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
@@ -293,7 +296,7 @@
             })();
             audioLangSelect.addEventListener('change', (e) => {
                 JE.currentSettings.qualityTagsPreferredAudioLanguage = e.target.value;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
                     JE.reinitializeQualityTags();
                 }
@@ -337,7 +340,7 @@
                 const val = Math.max(1, Math.min(60, parseInt(pauseScreenDelayInput.value, 10) || 5));
                 pauseScreenDelayInput.value = val;
                 JE.currentSettings.pauseScreenDelaySeconds = val;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 // Push the new delay into the already-running pause-screen
                 // instance so it takes effect immediately, without a page reload.
                 if (JE.pauseScreenInstance) {
@@ -386,7 +389,7 @@
                 const settingKey = target.closest('.je-quality-cat-row')?.dataset.catKey;
                 if (!settingKey) return;
                 JE.currentSettings[settingKey] = target.checked;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 if (typeof JE.reinitializeRatingTags === 'function' && JE.currentSettings.ratingTagsEnabled) {
                     JE.reinitializeRatingTags();
                 }
@@ -495,6 +498,7 @@
             if (styleContainer) {
                 styleContainer.querySelectorAll('.preset-box').forEach(box => {
                     box.style.setProperty('border', '2px solid transparent', 'important');
+                    box.setAttribute('aria-pressed', 'false');
                 });
             }
 
@@ -511,15 +515,37 @@
             }
             syncPreviewTextShadow(bgColor);
 
-            JE.saveUserSettings('settings.json', JE.currentSettings);
             JE.applySavedStylesWhenReady();
+            scheduleColourSave();
             resetAutoCloseTimer();
         };
 
-        if (customTextColorPicker) customTextColorPicker.addEventListener('input', updateCustomSubtitleColors);
-        if (customTextAlpha) customTextAlpha.addEventListener('input', updateCustomSubtitleColors);
-        if (customBgColorPicker) customBgColorPicker.addEventListener('input', updateCustomSubtitleColors);
-        if (customBgAlpha) customBgAlpha.addEventListener('input', updateCustomSubtitleColors);
+        // The pickers and alpha sliders preview live on every 'input' but save once: on release
+        // ('change') or after COLOUR_SAVE_DELAY_MS without movement, and on panel close.
+        const COLOUR_SAVE_DELAY_MS = 300;
+        let colourSaveTimer = null;
+        /** Saves the colours now if a save is pending. */
+        const flushColourSave = () => {
+            if (!colourSaveTimer) return;
+            clearTimeout(colourSaveTimer);
+            colourSaveTimer = null;
+            JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
+        };
+        /** (Re)starts the delay before the pending colour save. */
+        const scheduleColourSave = () => {
+            if (colourSaveTimer) clearTimeout(colourSaveTimer);
+            colourSaveTimer = setTimeout(() => {
+                colourSaveTimer = null;
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
+            }, COLOUR_SAVE_DELAY_MS);
+        };
+        if (typeof ctx.onPanelClose === 'function') ctx.onPanelClose(flushColourSave);
+
+        [customTextColorPicker, customTextAlpha, customBgColorPicker, customBgAlpha].forEach((control) => {
+            if (!control) return;
+            control.addEventListener('input', updateCustomSubtitleColors);
+            control.addEventListener('change', flushColourSave);
+        });
 
         // --- Subtitle position drag grid ---
         const posGrid = document.getElementById('subtitlePositionGrid');
@@ -569,7 +595,7 @@
             document.addEventListener('mouseup', () => {
                 if (!dragging) return;
                 dragging = false;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
             });
 
             posGrid.addEventListener('touchstart', (e) => {
@@ -589,7 +615,7 @@
             document.addEventListener('touchend', () => {
                 if (!dragging) return;
                 dragging = false;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
             });
         }
 
@@ -599,7 +625,7 @@
                 JE.currentSettings.subtitleVerticalPosition = 95;
                 if (posPreview) { posPreview.style.left = '50%'; posPreview.style.top = 'auto'; posPreview.style.bottom = '5%'; }
                 if (typeof JE.applySubtitlePosition === 'function') JE.applySubtitlePosition();
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 resetAutoCloseTimer();
             });
         }
@@ -613,8 +639,8 @@
     internal.wireMiscSettingsControls = function(ctx) {
         const { help, primaryAccentColor, resetAutoCloseTimer } = ctx;
 
-        document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeMovies = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
-        document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
+        document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeMovies = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
+        document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
 
         // Random source picker: lists the user's playlists and collections; '' = whole library.
         const sourceSelect = document.getElementById('randomSourceSelect');
@@ -648,7 +674,7 @@
                 .catch(err => console.warn('🪼 Jellyfin Enhanced: Could not list playlists for the random source picker', err));
             sourceSelect.addEventListener('change', (e) => {
                 JE.currentSettings.randomSourceId = e.target.value;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 JE.toast(JE.t('toast_random_source_set', { name: JE.escapeHtml(e.target.selectedOptions[0]?.textContent || '') }));
                 resetAutoCloseTimer();
             });
@@ -671,6 +697,7 @@
                     } else {
                         cell.style.background = 'rgba(255,255,255,0.1)';
                     }
+                    cell.setAttribute('aria-pressed', String(cell.dataset.pos === currentPos));
                 });
             };
             updateHighlight();
@@ -684,7 +711,7 @@
 
                 const newPos = cell.dataset.pos;
                 JE.currentSettings[settingKey] = newPos;
-                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                 updateHighlight();
 
                 // Reinitialize tags dynamically based on which position changed
@@ -810,11 +837,13 @@
                         JE.toast(JE.t('toast_subtitle_text_effect', { effect: selectedPreset.name }));
                     }
 
-                    JE.saveUserSettings('settings.json', JE.currentSettings);
+                    JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
                     container.querySelectorAll('.preset-box').forEach(box => {
                         box.style.setProperty('border', '2px solid transparent', 'important');
+                        box.setAttribute('aria-pressed', 'false');
                     });
                     presetBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
+                    presetBox.setAttribute('aria-pressed', 'true');
                     resetAutoCloseTimer();
                 }
             });
@@ -827,6 +856,7 @@
                     const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
                     if (activeBox) {
                         activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
+                        activeBox.setAttribute('aria-pressed', 'true');
                     }
                 }
             } else if (type === 'font-size') {
@@ -834,12 +864,14 @@
                 const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
                 if (activeBox) {
                     activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
+                    activeBox.setAttribute('aria-pressed', 'true');
                 }
             } else if (type === 'font-family') {
                 currentIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
                 const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
                 if (activeBox) {
                     activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
+                    activeBox.setAttribute('aria-pressed', 'true');
                 }
             } else if (type === 'text-effect') {
                 currentIndex = JE.currentSettings.selectedTextEffectPresetIndex;
@@ -848,6 +880,7 @@
                 const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
                 if (activeBox) {
                     activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
+                    activeBox.setAttribute('aria-pressed', 'true');
                 }
             }
         };

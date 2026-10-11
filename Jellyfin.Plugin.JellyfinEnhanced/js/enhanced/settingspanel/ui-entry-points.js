@@ -50,7 +50,7 @@
                 jellyfinEnhancedLink.id = 'jellyfinEnhancedSettingsLink';
                 jellyfinEnhancedLink.innerHTML = `
                     <span class="material-icons navMenuOptionIcon" aria-hidden="true">tune</span>
-                    <span class="sectionName navMenuOptionText">Enhanced Panel</span>
+                    <span class="sectionName navMenuOptionText">Jellyfin Enhanced</span>
                 `;
 
                 jellyfinEnhancedLink.addEventListener('click', (e) => {
@@ -183,7 +183,7 @@
                 <div class="listItem">
                     <span class="material-icons listItemIcon listItemIcon-transparent tune" aria-hidden="true"></span>
                     <div class="listItemBody">
-                        <div class="listItemBodyText">Jellyfin Enhanced - User Settings</div>
+                        <div class="listItemBodyText">Jellyfin Enhanced</div>
                     </div>
                 </div>
             `;

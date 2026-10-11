@@ -66,10 +66,87 @@
         });
     }
 
+    // Closes the open panel through its own close path (listeners, focus restore); null when closed.
+    let closeOpenPanel = null;
+
+    /**
+     * localStorage key of the section the panel last showed, per server and user: it is
+     * device-local panel state, so it is no longer saved in settings.json.
+     * @returns {string|null} The key, or null without a signed-in user.
+     */
+    function lastTabStorageKey() {
+        const userId = ApiClient.getCurrentUserId?.();
+        if (!userId) return null;
+        const serverId = (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId) || '';
+        return `JE_panel_last_tab_${serverId}_${userId}`;
+    }
+
+    /**
+     * The section to open first: the device's own choice, else the value older versions
+     * stored in settings.json (copied to this device once, so it is read only that time).
+     * @returns {string|undefined} A pane name, or undefined for none.
+     */
+    function readLastOpenedTab() {
+        const key = lastTabStorageKey();
+        const legacy = JE.currentSettings?.lastOpenedTab;
+        if (!key) return legacy;
+        try {
+            const stored = localStorage.getItem(key);
+            if (stored) return stored;
+            if (legacy) localStorage.setItem(key, legacy);
+        } catch (e) { /* storage blocked: fall back to the legacy value */ }
+        return legacy;
+    }
+
+    /**
+     * Remembers the open section on this device.
+     * @param {string} pane The pane name.
+     */
+    function writeLastOpenedTab(pane) {
+        const key = lastTabStorageKey();
+        if (!key) return;
+        try { localStorage.setItem(key, pane); } catch (e) { /* storage blocked */ }
+    }
+
+    // Elements Tab can land on inside the panel.
+    const TABBABLE_SELECTOR = 'a[href], button, input, select, textarea, [tabindex]';
+
+    /**
+     * Whether Tab can reach the element right now: enabled, not tabindex=-1, not inert and
+     * not hidden by display/visibility on it or an ancestor up to the panel root.
+     * @param {Element} element A candidate inside the panel.
+     * @param {HTMLElement} root The panel root.
+     * @returns {boolean}
+     */
+    function isTabbable(element, root) {
+        if (element.disabled || element.getAttribute('tabindex') === '-1') return false;
+        if (element.type === 'hidden' || element.closest('[inert]')) return false;
+        for (let node = element; node && node !== root.parentNode; node = node.parentElement) {
+            const style = window.getComputedStyle(node);
+            if (style.display === 'none' || style.visibility === 'hidden') return false;
+        }
+        return true;
+    }
+
+    /**
+     * First and last element Tab can reach inside the panel.
+     * @param {HTMLElement} root The panel root.
+     * @returns {{first: HTMLElement|null, last: HTMLElement|null}}
+     */
+    function tabbableEdges(root) {
+        const candidates = Array.from(root.querySelectorAll(TABBABLE_SELECTOR));
+        return {
+            first: candidates.find(el => isTabbable(el, root)) || null,
+            last: candidates.reverse().find(el => isTabbable(el, root)) || null
+        };
+    }
+
     /**
      * Toggles the main settings and help panel for the plugin.
      */
     JE.showEnhancedPanel = async () => {
+        // Where focus goes back to when the panel closes (the link, button or page that opened it).
+        const opener = document.activeElement;
         // Refresh user settings when panel opens to ensure correct user's settings are displayed
         const currentUserId = ApiClient.getCurrentUserId();
         // A user switch while the refresh is in flight makes its answer the
@@ -122,7 +199,7 @@
         const panelId = 'jellyfin-enhanced-panel';
         const existing = document.getElementById(panelId);
         if (existing) {
-            existing.remove();
+            if (closeOpenPanel) closeOpenPanel(); else existing.remove();
             return;
         }
         // Get theme-appropriate styles
@@ -145,6 +222,13 @@
 
         const help = document.createElement('div');
         help.id = panelId;
+        // A modal dialog for assistive tech; `focuscontainer` keeps jellyfin-web's D-pad
+        // navigation (layout=tv) inside it, and tabindex=-1 lets it hold focus as a fallback.
+        help.setAttribute('role', 'dialog');
+        help.setAttribute('aria-modal', 'true');
+        help.setAttribute('aria-label', 'Jellyfin Enhanced');
+        help.className = 'focuscontainer';
+        help.tabIndex = -1;
         Object.assign(help.style, {
             position: 'fixed',
             top: '50%',
@@ -200,14 +284,7 @@
             if (autoCloseTimer) clearTimeout(autoCloseTimer);
             autoCloseTimer = setTimeout(() => {
                 if (!isMouseInside && document.getElementById(panelId)) {
-                    help.remove();
-                    runPanelCleanups();
-                    document.removeEventListener('keydown', closeHelp);
-                    document.removeEventListener('mousemove', handleMouseMove);
-                    document.removeEventListener('mouseup', handleMouseUp);
-                    if (!JE.pluginConfig.DisableAllShortcuts) {
-                        document.addEventListener('keydown', JE.keyListener, true);
-                    }
+                    closePanel();
                 }
             }, JE.CONFIG.HELP_PANEL_AUTOCLOSE_DELAY);
         };
@@ -255,6 +332,10 @@
         help.addEventListener('mouseleave', () => { isMouseInside = false; resetAutoCloseTimer(); });
         help.addEventListener('click', resetAutoCloseTimer);
         help.addEventListener('wheel', (e) => { e.stopPropagation(); resetAutoCloseTimer(); });
+        // Keyboard, D-pad and touch use count as activity too, not only the mouse.
+        help.addEventListener('keydown', resetAutoCloseTimer);
+        help.addEventListener('focusin', resetAutoCloseTimer);
+        help.addEventListener('touchstart', resetAutoCloseTimer, { passive: true });
 
         // Shared context handed to the split panel modules
         // (ui-panel-template.js and the ui-panel-*.js wiring files).
@@ -273,7 +354,9 @@
             releaseNotesBg,
             checkUpdatesBorder,
             releaseNotesTextColor,
-            logoUrl
+            logoUrl,
+            // Registers a callback run once when the panel closes (any close path).
+            onPanelClose: (fn) => panelMediaCleanups.push(fn)
         };
 
         help.innerHTML = internal.buildPanelHtml(ctx);
@@ -327,10 +410,7 @@
                 items.forEach(b => b.classList.toggle('active', b.dataset.tab === pane.dataset.pane));
                 body.classList.add('je-pane-open');
                 syncLayerFocus(persist);
-                if (persist) {
-                    JE.currentSettings.lastOpenedTab = pane.dataset.pane;
-                    JE.saveUserSettings('settings.json', JE.currentSettings);
-                }
+                if (persist) writeLastOpenedTab(pane.dataset.pane);
                 resetAutoCloseTimer();
             };
 
@@ -381,7 +461,7 @@
 
             // Initial view: desktop restores the last-open section; a phone-sized
             // viewport starts on the section list (nothing pre-opened).
-            const lastTab = JE.currentSettings.lastOpenedTab;
+            const lastTab = readLastOpenedTab();
             const initial = panes.find(p => p.dataset.pane === lastTab) || panes[0];
             if (phoneMedia.matches) {
                 panes.forEach(p => p.classList.remove('active'));
@@ -389,6 +469,9 @@
             } else {
                 activate(initial, false);
             }
+            // Initial focus: the open section's nav item (the first one on a phone).
+            const initialFocus = items.find(b => b.classList.contains('active')) || items[0];
+            if (initialFocus) initialFocus.focus({ preventScroll: true });
 
             // The panel is destroyed by removal, so the media listener has to be
             // dropped alongside it or it outlives every closed panel.
@@ -408,13 +491,48 @@
         };
         const closePanel = () => {
             if (autoCloseTimer) clearTimeout(autoCloseTimer);
+            const focusWasInside = help.contains(document.activeElement);
             help.remove();
+            if (closeOpenPanel === closePanel) closeOpenPanel = null;
             runPanelCleanups();
             document.removeEventListener('keydown', closeHelp);
+            document.removeEventListener('keydown', trapFocus);
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
             if (!JE.pluginConfig.DisableAllShortcuts) {
                 document.addEventListener('keydown', JE.keyListener, true);
+            }
+            // Focus returns to whatever opened the panel, unless the user had already moved it
+            // elsewhere on the page.
+            if (focusWasInside && opener instanceof HTMLElement && opener !== document.body && opener.isConnected) {
+                opener.focus({ preventScroll: true });
+            }
+        };
+        /**
+         * Focus trap: Tab and Shift+Tab wrap around inside the panel; Tab from the page (focus
+         * on <body>) enters it. Focus that the user put in another dialog on top is left alone.
+         * @param {KeyboardEvent} ev The document keydown.
+         */
+        const trapFocus = (ev) => {
+            if (ev.key !== 'Tab' || ev.defaultPrevented) return;
+            const active = document.activeElement;
+            const inside = help.contains(active);
+            if (!inside && active && active !== document.body) return;
+            const { first, last } = tabbableEdges(help);
+            if (!first) {
+                ev.preventDefault();
+                help.focus();
+                return;
+            }
+            if (!inside || active === help) {
+                ev.preventDefault();
+                (ev.shiftKey ? last : first).focus();
+            } else if (ev.shiftKey && active === first) {
+                ev.preventDefault();
+                last.focus();
+            } else if (!ev.shiftKey && active === last) {
+                ev.preventDefault();
+                first.focus();
             }
         };
         const closeHelp = (ev) => {
@@ -432,7 +550,9 @@
             return JE.t('toast_feature_status', { feature, status });
         };
         document.addEventListener('keydown', closeHelp);
+        document.addEventListener('keydown', trapFocus);
         document.getElementById('closeSettingsPanel').addEventListener('click', closeHelp);
+        closeOpenPanel = closePanel;
 
         if (!JE.pluginConfig.DisableAllShortcuts) {
             document.removeEventListener('keydown', JE.keyListener, true);

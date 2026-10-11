@@ -64,7 +64,7 @@ test('a panel opened while settings cannot load is read-only with Retry, saves n
   assert.equal(h.pane('hidden-content').querySelector('.je-settings-unavailable'), null, 'panes that do not write settings.json stay usable');
   assert.equal(h.pane('hidden-content').querySelector('.rows').hasAttribute('inert'), false);
 
-  // Switching sections persists lastOpenedTab through settings.json, which must not be written.
+  // Switching sections writes nothing (the last section is kept in localStorage).
   h.panel().querySelector('.je-panel-nav-items .tab-button[data-tab="language"]').click();
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(h.posts, []);
