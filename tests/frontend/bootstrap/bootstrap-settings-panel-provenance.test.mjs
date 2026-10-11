@@ -172,6 +172,53 @@ test('a lock that arrives on an open panel moves preset and position selections 
   assert.equal(h.root.querySelector('#autoPipToggle').disabled, false);
 });
 
+test('the tag order rows follow a lock and an unlock on an open panel, so a reorder after the unlock keeps the user\'s order', t => {
+  const orderKeys = ['resolutionTagOrder', 'sourceTagOrder', 'dynamicRangeTagOrder', 'specialFormatTagOrder', 'videoCodecTagOrder', 'audioInfoTagOrder'];
+  const orders = values => Object.fromEntries(orderKeys.map((key, index) => [key, values[index]]));
+  const adminOrder = orders([1, 2, 3, 4, 5, 6]);
+  const userOrder = orders([6, 1, 2, 3, 4, 5]); // resolution moved to the bottom
+  // Opened while the order is locked: the rows are drawn in the admin's order.
+  const h = buildPanel(t, { meta: { locked: ['resolutionTagOrder'] }, settings: adminOrder });
+  h.load('enhanced/settingspanel/ui-panel-settings.js');
+  const saves = [];
+  h.JE.saveUserSettings = async (file, settings) => { saves.push({ ...settings }); };
+  h.JE.internals.enhancedUi.wireSettingsListeners({ createToast: () => '', resetAutoCloseTimer() {} });
+  h.decorate();
+  const rows = () => [...h.root.querySelectorAll('#qualityTagsSubToggles .je-quality-cat-row')];
+  const rowOrder = () => rows().map(row => row.dataset.orderKey);
+  const enabledArrows = () => [...h.root.querySelectorAll('.je-cat-btn')].filter(button => !button.disabled).length;
+  const answer = (settings, locked) => {
+    Object.assign(h.JE.currentSettings, settings);
+    h.JE.userConfig.settingsMeta = { locked };
+    h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: [], rejected: [], meta: true } }));
+  };
+  assert.deepEqual(rowOrder(), orderKeys);
+  assert.equal(enabledArrows(), 0);
+
+  // The unlock brings the user's order back: the rows show it and every arrow but the two ends works.
+  answer(userOrder, []);
+  assert.deepEqual(rowOrder(), ['sourceTagOrder', 'dynamicRangeTagOrder', 'specialFormatTagOrder', 'videoCodecTagOrder', 'audioInfoTagOrder', 'resolutionTagOrder']);
+  assert.equal(enabledArrows(), 10);
+  assert.equal(rows()[0].querySelector('.je-cat-up').disabled, true);
+  assert.equal(rows()[5].querySelector('.je-cat-down').disabled, true);
+
+  // A reorder now saves the user's order plus one swap (source and dynamic range).
+  rows()[0].querySelector('.je-cat-down').click();
+  assert.deepEqual(orderKeys.map(key => saves.at(-1)[key]), [6, 2, 1, 3, 4, 5]);
+
+  // A lock that arrives now shows the admin's order again and holds every arrow, styles included.
+  answer(adminOrder, ['sourceTagOrder']);
+  assert.deepEqual(rowOrder(), orderKeys);
+  assert.equal(enabledArrows(), 0);
+  for (const button of h.root.querySelectorAll('.je-cat-btn')) {
+    assert.notEqual(button.style.opacity, '1', button.outerHTML.slice(0, 80));
+  }
+  // A click on a held arrow saves nothing.
+  const saved = saves.length;
+  rows()[1].querySelector('.je-cat-down').click();
+  assert.equal(saves.length, saved);
+});
+
 test('saved values are written as text, never as markup', t => {
   const h = buildPanel(t, { meta: { locked: ['displayLanguage'], saved: { displayLanguage: 'xx' }, chosen: ['displayLanguage'] } });
   const select = h.root.querySelector('#displayLanguageSelect');

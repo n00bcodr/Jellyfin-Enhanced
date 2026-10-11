@@ -77,8 +77,9 @@
     /**
      * Shows a key's current value (JE.currentSettings) on its row, which the panel may have
      * rendered from an older document or while a lock enforced another value: a single switch
-     * or dropdown directly; preset and position pickers redraw their selection on the
-     * `je:setting-sync` event (ui-panel-settings.js listens on the keyed element).
+     * or dropdown directly; preset and position pickers redraw their selection, and the tag
+     * order buttons re-sort their rows, on the `je:setting-sync` event (ui-panel-settings.js
+     * listens on the keyed element).
      * @param {Element} element The keyed element.
      * @param {Element[]} controls The key's own controls.
      * @param {*} value The current value.
@@ -142,12 +143,14 @@
             .filter(element => element.dataset.settingGroup && locked.has(element.dataset.settingKey))
             .map(element => element.dataset.settingGroup));
         const noted = new Set();
+        // Synced once the pass is done, so a listener that redraws controls sees this pass's state.
+        const toSync = [];
 
         elements.forEach((element) => {
             const key = element.dataset.settingKey;
             const isLocked = locked.has(key) || lockedGroups.has(element.dataset.settingGroup);
             const isUnavailable = !isLocked && Object.prototype.hasOwnProperty.call(unavailable, key);
-            if (locked.has(key) || (!isLocked && wasLocked.has(element))) showEffectiveValue(element, ownControls(element), settings[key]);
+            if (locked.has(key) || (!isLocked && wasLocked.has(element))) toSync.push(element);
             if (!isLocked && !isUnavailable) return;
 
             const controls = ownControls(element);
@@ -187,6 +190,8 @@
                 notes.appendChild(row);
             });
         });
+
+        toSync.forEach(element => showEffectiveValue(element, ownControls(element), settings[element.dataset.settingKey]));
     }
 
     /**

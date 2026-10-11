@@ -449,7 +449,7 @@
                                             const upDisabled = idx === 0 ? 'disabled' : '';
                                             const downDisabled = idx === sorted.length - 1 ? 'disabled' : '';
                                             return `
-                                                <div class="je-quality-cat-row" data-cat-key="${c.settingKey}" data-order-key="${c.orderKey}" data-default-order="${c.defaultOrder}" data-setting-key="${c.settingKey}" data-setting-label="${escapeHtml(JE.t(c.labelKey))}">
+                                                <div class="je-quality-cat-row" data-cat-key="${c.settingKey}" data-order-key="${c.orderKey}" data-order-plugin-key="${c.orderPluginKey}" data-default-order="${c.defaultOrder}" data-setting-key="${c.settingKey}" data-setting-label="${escapeHtml(JE.t(c.labelKey))}">
                                                     <label class="je-quality-cat-label-wrap">
                                                         <input type="checkbox" id="${c.id}" ${checked} style="accent-color:${toggleAccentColor};">
                                                         <span class="je-quality-cat-label">${JE.t(c.labelKey)}</span>

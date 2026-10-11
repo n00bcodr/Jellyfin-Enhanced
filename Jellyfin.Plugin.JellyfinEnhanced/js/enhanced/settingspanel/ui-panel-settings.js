@@ -252,6 +252,11 @@
                 }
                 resetAutoCloseTimer();
             });
+            // The provenance pass asks for this when a lock or unlock changes the orders in force
+            // (see ui-panel-provenance.js), so a later reorder starts from the orders shown.
+            qualitySubGroup.querySelectorAll('.je-cat-btn').forEach((btn) => {
+                btn.addEventListener('je:setting-sync', () => syncQualityCatOrder(qualitySubGroup));
+            });
         }
 
         // Preferred audio language for the sound tag (#433). The fixed choices
@@ -305,7 +310,31 @@
         }
 
         /**
-         * Updates ↑/↓ button enabled state to reflect each row's position in the list
+         * Re-sorts the category rows from the current orders the way the template does
+         * (user order, else admin order, else the built-in one; ties keep the built-in order),
+         * then refreshes the ↑/↓ buttons.
+         * @param {HTMLElement} group - The container holding the category rows
+         */
+        function syncQualityCatOrder(group) {
+            const rows = Array.from(group.querySelectorAll('.je-quality-cat-row'));
+            if (!rows.length) return;
+            const defaultOrder = row => Number(row.dataset.defaultOrder);
+            const effOrder = (row) => {
+                const u = JE.currentSettings[row.dataset.orderKey];
+                if (Number.isFinite(u)) return u;
+                const a = JE.pluginConfig?.[row.dataset.orderPluginKey];
+                return Number.isFinite(a) ? a : defaultOrder(row);
+            };
+            const anchor = rows[rows.length - 1].nextSibling;
+            rows.slice()
+                .sort((a, b) => (effOrder(a) - effOrder(b)) || (defaultOrder(a) - defaultOrder(b)))
+                .forEach(row => row.parentNode.insertBefore(row, anchor));
+            refreshQualityCatArrowStates(group);
+        }
+
+        /**
+         * Updates ↑/↓ button enabled state to reflect each row's position in the list;
+         * a button the provenance pass holds (locked order) stays disabled.
          * @param {HTMLElement} group - The container holding the category rows
          */
         function refreshQualityCatArrowStates(group) {
@@ -313,17 +342,17 @@
             rows.forEach((row, idx) => {
                 const upBtn = row.querySelector('.je-cat-up');
                 const downBtn = row.querySelector('.je-cat-down');
-                const isFirst = idx === 0;
-                const isLast = idx === rows.length - 1;
+                const upOff = idx === 0 || !!upBtn?.hasAttribute('data-je-provenance');
+                const downOff = idx === rows.length - 1 || !!downBtn?.hasAttribute('data-je-provenance');
                 if (upBtn) {
-                    upBtn.disabled = isFirst;
-                    upBtn.style.cursor = isFirst ? 'not-allowed' : 'pointer';
-                    upBtn.style.opacity = isFirst ? '0.4' : '1';
+                    upBtn.disabled = upOff;
+                    upBtn.style.cursor = upOff ? 'not-allowed' : 'pointer';
+                    upBtn.style.opacity = upOff ? '0.4' : '1';
                 }
                 if (downBtn) {
-                    downBtn.disabled = isLast;
-                    downBtn.style.cursor = isLast ? 'not-allowed' : 'pointer';
-                    downBtn.style.opacity = isLast ? '0.4' : '1';
+                    downBtn.disabled = downOff;
+                    downBtn.style.cursor = downOff ? 'not-allowed' : 'pointer';
+                    downBtn.style.opacity = downOff ? '0.4' : '1';
                 }
             });
         }
