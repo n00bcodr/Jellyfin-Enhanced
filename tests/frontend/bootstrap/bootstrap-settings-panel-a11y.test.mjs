@@ -122,6 +122,42 @@ test('focus in another dialog (one opened on top of the panel) is left alone', a
   assert.equal(h.document.activeElement, other);
 });
 
+test('a companion popup the panel opened (the release notes) joins the Tab cycle instead of being trapped out', async t => {
+  const h = setup(t);
+  await h.JE.showEnhancedPanel();
+  const companion = h.document.createElement('div');
+  companion.setAttribute('role', 'dialog');
+  companion.setAttribute('data-je-panel-companion', '');
+  companion.tabIndex = -1;
+  companion.innerHTML = '<a id="companionLink" href="https://example.test">link</a><button id="companionClose" type="button">Close</button>';
+  h.document.body.appendChild(companion);
+  const search = h.document.getElementById('jePanelSearch');
+  const close = h.document.getElementById('closeSettingsPanel');
+  const link = h.document.getElementById('companionLink');
+  const companionClose = h.document.getElementById('companionClose');
+
+  companion.focus();
+  assert.equal(h.tab().defaultPrevented, true);
+  assert.equal(h.document.activeElement, link, 'focus moved to the popup when it opened; Tab goes to its first control');
+  assert.equal(h.tab().defaultPrevented, false, 'inside the popup the browser moves focus');
+  companionClose.focus();
+  h.tab();
+  assert.equal(h.document.activeElement, search, 'Tab on the popup\'s last control: the panel\'s first');
+  h.tab(undefined, true);
+  assert.equal(h.document.activeElement, companionClose, 'Shift+Tab on the panel\'s first control: the popup\'s last');
+  close.focus();
+  h.tab();
+  assert.equal(h.document.activeElement, link, 'Tab on the panel\'s last control: the popup\'s first');
+  h.tab(undefined, true);
+  assert.equal(h.document.activeElement, close, 'Shift+Tab on the popup\'s first control: the panel\'s last');
+
+  // Gone again: the panel wraps on its own.
+  companion.remove();
+  close.focus();
+  h.tab();
+  assert.equal(h.document.activeElement, search);
+});
+
 test('closing returns focus to the opener on every close path and restores the shortcut listener', async t => {
   for (const close of ['escape', 'button', 'toggle']) {
     await t.test(close, async st => {
@@ -167,6 +203,32 @@ test('keyboard, focus and touch activity restart the auto-close timer', async t 
   }
   live()[0].fn();
   assert.equal(h.panel(), null, 'the timer still closes an idle panel');
+  await settle();
+});
+
+test('keyboard and focus use in a companion popup keep the panel open; the page behind does not', async t => {
+  const h = setup(t, { autoClose: 15000 });
+  await h.JE.showEnhancedPanel();
+  const live = () => h.timers.filter(timer => !timer.cleared && timer.ms === 15000);
+  const companion = h.document.createElement('div');
+  companion.setAttribute('data-je-panel-companion', '');
+  companion.innerHTML = '<button id="companionButton" type="button"></button>';
+  h.document.body.appendChild(companion);
+  const button = h.document.getElementById('companionButton');
+  for (const fire of [() => button.focus(), () => h.key('ArrowDown', button)]) {
+    const before = live()[0];
+    fire();
+    assert.equal(before.cleared, true);
+    assert.equal(live().length, 1);
+  }
+  const before = live()[0];
+  h.document.getElementById('pageField').focus();
+  h.key('ArrowDown', h.document.getElementById('pageField'));
+  assert.equal(live()[0], before, 'activity on the page is not panel activity');
+  h.document.getElementById('closeSettingsPanel').click();
+  const timersAfterClose = h.timers.length;
+  button.focus();
+  assert.equal(h.timers.length, timersAfterClose, 'the document listeners are gone with the panel');
   await settle();
 });
 
@@ -224,6 +286,26 @@ test('preset tiles, tag position cells and shortcut keys are buttons that keyboa
   assert.ok(keys.length >= 2);
   for (const key of keys) assert.equal(key.tagName, 'BUTTON');
   assert.equal(root.querySelector('.shortcut-key[data-readonly]').tagName, 'SPAN', 'the read-only 0-9 row is not interactive');
+});
+
+test('tag position cells and the shortcut key and on/off buttons are at least 24 px touch targets', t => {
+  const { root } = buildTemplate(t);
+  const px = value => parseFloat(value);
+  for (const selector of root.querySelectorAll('.position-selector')) {
+    const style = selector.style;
+    assert.equal(style.boxSizing, 'content-box');
+    // Two 24 px cells plus the gap fit the grid's content box.
+    assert.ok(px(style.width) >= 2 * 24 + px(style.gap) && px(style.height) >= 2 * 24 + px(style.gap), `grid ${style.width} x ${style.height}`);
+    for (const cell of selector.querySelectorAll('button[data-pos]')) {
+      assert.equal(px(cell.style.minWidth), 24);
+      assert.equal(px(cell.style.minHeight), 24);
+    }
+  }
+  const controls = [...root.querySelectorAll('.shortcut-toggle, button.shortcut-key')];
+  assert.ok(controls.length >= 4);
+  for (const control of controls) {
+    assert.ok(px(control.style.minWidth) >= 24 && px(control.style.minHeight) >= 24, control.outerHTML);
+  }
 });
 
 test('icon-only controls have accessible names', t => {

@@ -54,14 +54,14 @@
 
     /**
      * Builds a 2x2 tag position picker: one button per corner, highlighted by
-     * wireMiscSettingsControls (which also sets aria-pressed).
+     * wireMiscSettingsControls (which also sets aria-pressed). Each cell is a 24 px touch target.
      * @param {string} settingKey The settings key the picker writes, e.g. 'qualityTagsPosition'.
      * @returns {string} The picker's HTML.
      */
     function positionSelectorHtml(settingKey) {
         const cells = TAG_POSITIONS.map(([pos, labelKey, labelText]) =>
-            `<button type="button" data-pos="${pos}" aria-label="${escapeHtml(tWithFallback(labelKey, labelText))}" aria-pressed="false" style="display:block; width:100%; height:100%; min-width:0; margin:0; padding:0; border:none; border-radius:2px; background:transparent; cursor:pointer; transition:background 0.2s;"></button>`).join('');
-        return `<div class="position-selector" data-setting="${escapeHtml(settingKey)}" role="group" aria-label="${escapeHtml(tWithFallback('panel_position_group', 'Tag position'))}" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">${cells}</div>`;
+            `<button type="button" data-pos="${pos}" aria-label="${escapeHtml(tWithFallback(labelKey, labelText))}" aria-pressed="false" style="display:block; width:100%; height:100%; min-width:24px; min-height:24px; margin:0; padding:0; border:none; border-radius:2px; background:transparent; cursor:pointer; transition:background 0.2s;"></button>`).join('');
+        return `<div class="position-selector" data-setting="${escapeHtml(settingKey)}" role="group" aria-label="${escapeHtml(tWithFallback('panel_position_group', 'Tag position'))}" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; box-sizing:content-box; width:50px; height:50px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">${cells}</div>`;
     }
 
     /**
@@ -172,8 +172,8 @@
                                     return `
                                     <div style="display: flex; justify-content: space-between; align-items: center; ${isDisabled ? 'opacity: 0.5;' : ''}">
                                         <div style="display: flex; align-items: center; gap: 6px;">
-                                            <button type="button" class="shortcut-key" data-action="${escapeHtml(action.Name)}" style="${SHORTCUT_KEY_BUTTON_RESET} background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${escapeHtml(isDisabled ? tWithFallback('panel_shortcuts_disabled', 'Disabled') : (JE.state.activeShortcuts[action.Name] || ''))}</button>
-                                            <button type="button" class="shortcut-toggle" data-action="${escapeHtml(action.Name)}" aria-label="${escapeHtml(tWithFallback('panel_shortcuts_toggle', 'Turn {shortcut} on or off', { shortcut: tWithFallback('shortcut_' + action.Name, action.Label) }))}" style="background:transparent; border:none; color:rgba(255,255,255,0.5); cursor:pointer; padding:2px; display:flex; align-items:center;">${JE.icon(JE.IconName.NO_ENTRY)}</button>
+                                            <button type="button" class="shortcut-key" data-action="${escapeHtml(action.Name)}" style="${SHORTCUT_KEY_BUTTON_RESET} background:${kbdBackground}; padding:2px 8px; min-width:24px; min-height:24px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${escapeHtml(isDisabled ? tWithFallback('panel_shortcuts_disabled', 'Disabled') : (JE.state.activeShortcuts[action.Name] || ''))}</button>
+                                            <button type="button" class="shortcut-toggle" data-action="${escapeHtml(action.Name)}" aria-label="${escapeHtml(tWithFallback('panel_shortcuts_toggle', 'Turn {shortcut} on or off', { shortcut: tWithFallback('shortcut_' + action.Name, action.Label) }))}" style="background:transparent; border:none; color:rgba(255,255,255,0.5); cursor:pointer; padding:2px; min-width:24px; min-height:24px; display:flex; align-items:center; justify-content:center;">${JE.icon(JE.IconName.NO_ENTRY)}</button>
                                         </div>
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             ${userShortcuts.hasOwnProperty(action.Name) ? `<span title="Modified by user" class="modified-indicator" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
@@ -197,8 +197,8 @@
                                         <div style="display: flex; align-items: center; gap: 6px;">
                                             ${isReadonly
                                                 ? `<span class="shortcut-key" data-readonly="1" data-action="${escapeHtml(action)}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; transition: all 0.2s;">${escapeHtml(isDisabled ? tWithFallback('panel_shortcuts_disabled', 'Disabled') : (JE.state.activeShortcuts[action] || ''))}</span>`
-                                                : `<button type="button" class="shortcut-key" data-action="${escapeHtml(action)}" style="${SHORTCUT_KEY_BUTTON_RESET} background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${escapeHtml(isDisabled ? tWithFallback('panel_shortcuts_disabled', 'Disabled') : (JE.state.activeShortcuts[action] || ''))}</button>`}
-                                            <button type="button" class="shortcut-toggle" data-action="${escapeHtml(action)}" aria-label="${escapeHtml(tWithFallback('panel_shortcuts_toggle', 'Turn {shortcut} on or off', { shortcut: tWithFallback('shortcut_' + action, fallbackLabel) }))}" style="background:transparent; border:none; color:rgba(255,255,255,0.5); cursor:pointer; padding:2px; display:flex; align-items:center;">${JE.icon(JE.IconName.NO_ENTRY)}</button>
+                                                : `<button type="button" class="shortcut-key" data-action="${escapeHtml(action)}" style="${SHORTCUT_KEY_BUTTON_RESET} background:${kbdBackground}; padding:2px 8px; min-width:24px; min-height:24px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${escapeHtml(isDisabled ? tWithFallback('panel_shortcuts_disabled', 'Disabled') : (JE.state.activeShortcuts[action] || ''))}</button>`}
+                                            <button type="button" class="shortcut-toggle" data-action="${escapeHtml(action)}" aria-label="${escapeHtml(tWithFallback('panel_shortcuts_toggle', 'Turn {shortcut} on or off', { shortcut: tWithFallback('shortcut_' + action, fallbackLabel) }))}" style="background:transparent; border:none; color:rgba(255,255,255,0.5); cursor:pointer; padding:2px; min-width:24px; min-height:24px; display:flex; align-items:center; justify-content:center;">${JE.icon(JE.IconName.NO_ENTRY)}</button>
                                         </div>
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             ${userShortcuts.hasOwnProperty(action) ? `<span class="modified-indicator" title="Modified by user" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}

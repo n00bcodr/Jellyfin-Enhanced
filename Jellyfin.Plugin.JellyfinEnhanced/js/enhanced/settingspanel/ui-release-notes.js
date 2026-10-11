@@ -29,25 +29,57 @@
 
         const notificationId = 'jellyfin-release-notes-notification';
         const existing = document.getElementById(notificationId);
+        // Where focus goes back to when the notification closes (the panel's Release notes button).
+        const opener = existing && existing.contains(document.activeElement) ? null : document.activeElement;
         if (existing) existing.remove();
 
         const notification = document.createElement('div');
         notification.id = notificationId;
+        // A non-modal dialog that joins the open panel's focus trap (ui-panel.js), so keyboard
+        // users can Tab between the panel and the notification.
+        notification.setAttribute('role', 'dialog');
+        notification.setAttribute('aria-label', 'Latest Release Notes');
+        notification.setAttribute('data-je-panel-companion', '');
+        notification.tabIndex = -1;
 
         // --- Release notes autoclose ---
         let autoCloseTimer = null;
         let isMouseInside = false;
+        // Set once closing starts, so the focus moving back out does not re-arm the timer.
+        let closing = false;
         const AUTOCLOSE_DELAY = 20000; // 20 seconds
+
+        /**
+         * Moves focus back to the opener when it is inside the notification, which is about to go.
+         */
+        const restoreFocus = () => {
+            if (notification.contains(document.activeElement) && opener instanceof HTMLElement && opener !== document.body && opener.isConnected) {
+                opener.focus({ preventScroll: true });
+            }
+        };
 
         const closePanel = () => {
             if (document.getElementById(notificationId)) {
+                closing = true;
+                restoreFocus();
                 notification.style.transform = 'translateY(-50%) translateX(100%)';
                 setTimeout(() => notification.remove(), 300);
             }
         };
 
+        /**
+         * Removes the notification at once (its Close and x buttons, Escape).
+         */
+        const dismiss = () => {
+            closing = true;
+            if (autoCloseTimer) clearTimeout(autoCloseTimer);
+            restoreFocus();
+            notification.remove();
+        };
+
         const resetAutoCloseTimer = () => {
             if (autoCloseTimer) clearTimeout(autoCloseTimer);
+            if (closing) return;
             autoCloseTimer = setTimeout(() => {
                 if (!isMouseInside) {
                     closePanel();
@@ -62,6 +94,20 @@
         notification.addEventListener('mouseleave', () => {
             isMouseInside = false;
             resetAutoCloseTimer();
+        });
+        // Keyboard focus on a control inside holds the notification open like the mouse does
+        // (the focus it gets on opening comes before the timer starts, so that alone does not).
+        notification.addEventListener('focusin', () => {
+            if (autoCloseTimer) clearTimeout(autoCloseTimer);
+        });
+        notification.addEventListener('focusout', (e) => {
+            if (!notification.contains(e.relatedTarget)) resetAutoCloseTimer();
+        });
+        notification.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            // Escape closes the notification only, not the panel underneath.
+            e.stopPropagation();
+            dismiss();
         });
 
         // Get styles from themer
@@ -92,7 +138,8 @@
             fontFamily: 'inherit',
             display: 'flex',
             flexDirection: 'column',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            outline: 'none'
         });
 
         /**
@@ -157,7 +204,7 @@
                         <div style="font-weight: 600; font-size: 16px; color: #779aeadc;">Latest Release Notes</div>
                         <div style="font-size: 12px; color: rgba(255,255,255,0.7);">${escapeHtml(release.tag_name)} - ${escapeHtml(new Date(release.published_at).toLocaleDateString())}</div>
                     </div>
-                    <button onclick="this.closest('#jellyfin-release-notes-notification').remove()" style="background: rgba(255,255,255,0.1); border: none; color: #fff; font-size: 20px; cursor: pointer; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: background 0.2s; flex-shrink: 0;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
+                    <button type="button" class="je-release-notes-dismiss" aria-label="Close" style="background: rgba(255,255,255,0.1); border: none; color: #fff; font-size: 20px; cursor: pointer; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: background 0.2s; flex-shrink: 0;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
                 </div>
             </div>
             <div style="flex: 1; overflow-y: auto; padding: 20px; font-size: 13px; color: rgba(255,255,255,0.85); line-height: 1.6;">
@@ -165,11 +212,14 @@
             </div>
             <div style="padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; gap: 10px; flex-shrink: 0; background: rgba(0,0,0,0.2);">
                 <a href="${escapeHtml(release.html_url)}" target="_blank" style="flex: 1; background: #3e74f2bd; border: 1px solid #779aeadc; color: white; text-decoration: none; padding: 10px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; text-align: center; transition: background 0.2s;" onmouseover="this.style.background='#5284f3'" onmouseout="this.style.background='#3e74f2bd'">View Full Release on GitHub</a>
-                <button onclick="this.closest('#jellyfin-release-notes-notification').remove()" style="background: #f25151b5; border: 1px solid #f2515133; color: white; padding: 10px 16px; border-radius: 6px; font-size: 13px; font-family: inherit; font-weight: 500; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f36161'" onmouseout="this.style.background='#f25151b5'">Close</button>
+                <button type="button" class="je-release-notes-dismiss" style="background: #f25151b5; border: 1px solid #f2515133; color: white; padding: 10px 16px; border-radius: 6px; font-size: 13px; font-family: inherit; font-weight: 500; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f36161'" onmouseout="this.style.background='#f25151b5'">Close</button>
             </div>
         `;
 
+        notification.querySelectorAll('.je-release-notes-dismiss').forEach(button => button.addEventListener('click', dismiss));
+
         document.body.appendChild(notification);
+        notification.focus({ preventScroll: true });
         setTimeout(() => { notification.style.transform = 'translateY(-50%) translateX(0)'; }, 10);
 
         resetAutoCloseTimer();

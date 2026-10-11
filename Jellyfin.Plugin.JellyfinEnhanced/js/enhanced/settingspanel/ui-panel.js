@@ -146,6 +146,9 @@
     // Elements Tab can land on inside the panel.
     const TABBABLE_SELECTOR = 'a[href], button, input, select, textarea, [tabindex]';
 
+    // Non-modal popups opened from the panel that share its focus trap (ui-release-notes.js sets it).
+    const PANEL_COMPANION_SELECTOR = '[data-je-panel-companion]';
+
     /**
      * Whether Tab can reach the element right now: enabled, not tabindex=-1, not inert and
      * not hidden by display/visibility on it or an ancestor up to the panel root.
@@ -378,6 +381,17 @@
         help.addEventListener('keydown', resetAutoCloseTimer);
         help.addEventListener('focusin', resetAutoCloseTimer);
         help.addEventListener('touchstart', resetAutoCloseTimer, { passive: true });
+        // Keyboard and focus use in a companion popup (the release notes, which shares the
+        // panel's Tab cycle) is panel activity too.
+        const companionActivity = (e) => {
+            if (e.target instanceof Element && e.target.closest(PANEL_COMPANION_SELECTOR)) resetAutoCloseTimer();
+        };
+        document.addEventListener('keydown', companionActivity);
+        document.addEventListener('focusin', companionActivity);
+        panelMediaCleanups.push(() => {
+            document.removeEventListener('keydown', companionActivity);
+            document.removeEventListener('focusin', companionActivity);
+        });
 
         // Shared context handed to the split panel modules
         // (ui-panel-template.js and the ui-panel-*.js wiring files).
@@ -553,29 +567,39 @@
         /**
          * Focus trap: Tab and Shift+Tab wrap around inside the panel; Tab from anywhere else on
          * the page (the panel is aria-modal) brings focus back into it. Focus in another dialog
-         * (one opened on top of the panel) is left alone.
+         * (one opened on top of the panel) is left alone. Companion popups the panel opened
+         * (`[data-je-panel-companion]`, e.g. the release notes) join the cycle after the panel,
+         * so Tab moves from the panel's last control to the popup's first and back.
          * @param {KeyboardEvent} ev The document keydown.
          */
         const trapFocus = (ev) => {
             if (ev.key !== 'Tab' || ev.defaultPrevented) return;
             const active = document.activeElement;
-            const inside = help.contains(active);
-            if (!inside && active instanceof Element && active.closest('dialog, [role="dialog"], [aria-modal="true"], .dialogContainer')) return;
-            const { first, last } = tabbableEdges(help);
-            if (!first) {
+            const roots = [help, ...document.querySelectorAll(PANEL_COMPANION_SELECTOR)];
+            const activeRoot = roots.find(root => root.contains(active));
+            if (!activeRoot && active instanceof Element && active.closest('dialog, [role="dialog"], [aria-modal="true"], .dialogContainer')) return;
+            const cycle = roots.map(root => ({ root, ...tabbableEdges(root) })).filter(entry => entry.first);
+            if (!cycle.length || cycle[0].root !== help) {
                 ev.preventDefault();
                 help.focus();
                 return;
             }
-            if (!inside || active === help) {
+            const at = cycle.findIndex(entry => entry.root === activeRoot);
+            if (at === -1) {
+                ev.preventDefault();
+                (ev.shiftKey ? cycle[0].last : cycle[0].first).focus();
+                return;
+            }
+            const { root, first, last } = cycle[at];
+            if (active === root) {
                 ev.preventDefault();
                 (ev.shiftKey ? last : first).focus();
             } else if (ev.shiftKey && active === first) {
                 ev.preventDefault();
-                last.focus();
+                cycle[(at - 1 + cycle.length) % cycle.length].last.focus();
             } else if (!ev.shiftKey && active === last) {
                 ev.preventDefault();
-                first.focus();
+                cycle[(at + 1) % cycle.length].first.focus();
             }
         };
         const closeHelp = (ev) => {
