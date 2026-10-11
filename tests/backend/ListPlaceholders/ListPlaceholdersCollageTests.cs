@@ -1325,4 +1325,46 @@ public partial class ListPlaceholdersCollageTests
         Assert.Equal(new[] { blocked[0].Id }, await f.H.Access.GetHiddenPlaceholderIdsAsync(blocked, kid, CancellationToken.None, none));
         Assert.Empty(none);
     }
+
+    // R6-8: with Seerr, a season whose own read failed (Seerr relays TMDB errors as 500) is not answered with the
+    // show's poster: the title is left out and a re-check is planned. A season the show doesn't list (no such season)
+    // still falls back to the show's poster.
+    [Fact]
+    public async Task ASeerrSeasonReadThatFailsIsNotAnsweredWithTheShowsPoster()
+    {
+        using var f = new Fixture();
+        f.Kid();
+        static string Show(int id, string poster) =>
+            "{\"id\":" + id + ",\"name\":\"Show\",\"status\":\"Returning Series\",\"posterPath\":\"" + poster + "\","
+            + "\"seasons\":[{\"seasonNumber\":1,\"episodeCount\":3},{\"seasonNumber\":2,\"episodeCount\":3}],"
+            + "\"contentRatings\":{\"results\":[{\"iso_3166_1\":\"US\",\"rating\":\"PG\"}]}}";
+        f.H.TvDetails[300] = Show(300, "/p0.jpg");
+        f.H.TvDetails[301] = Show(301, "/p3.jpg");
+        f.H.MovieCertifications[1000] = "PG";
+        var movie = f.Seed(f.Playlist, "/p1.jpg")[0];
+        var doc = f.Store.LoadForUpdate(Fixture.Id(f.Playlist), ListKinds.Playlist);
+        Placeholder Season(int tmdb, int number) => new()
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Kind = PlaceholderKinds.Season,
+            MediaType = "tv",
+            TmdbId = tmdb,
+            SeasonNumber = number,
+            Title = "Show S" + number,
+            PosterPath = "/p" + (5 + number) + ".jpg",
+        };
+        var failing = Season(300, 2); // listed by the show, its season read answers 500
+        var missing = Season(301, 5); // not a season of the show
+        doc.Items.Add(failing);
+        doc.Items.Add(missing);
+        doc.Order.Insert(0, ListPlaceholderOrder.PlaceholderToken(failing.Id));
+        doc.Order.Add(ListPlaceholderOrder.PlaceholderToken(missing.Id));
+        f.Store.Save(doc);
+        Assert.Equal(movie.Id, ListPlaceholderOrder.PlaceholderIdOf(doc.Order[1]));
+
+        Assert.Equal(CollageDecision.Set, await f.Evaluate(f.Playlist));
+        var id = Fixture.Id(f.Playlist);
+        Assert.Equal(new[] { "/p1.jpg", "/p3.jpg" }, f.Service.Markers.Load(id)!.PosterKeys);
+        Assert.NotNull(f.Service.VerifyRetryUntil(id));
+    }
 }

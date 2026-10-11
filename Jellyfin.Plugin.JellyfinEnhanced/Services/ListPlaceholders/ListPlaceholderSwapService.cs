@@ -874,10 +874,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var filled = PlaceholderProgress.FilledCoords(placeholder);
             bool NewSeasonFor(EpisodeCoord c, Guid seasonItem) =>
                 !filled.Contains(c) && viaBefore.TryGetValue(c, out var via) && via != null && !string.Equals(via, N(seasonItem), StringComparison.Ordinal);
+            var replacedSeasons = ReplacedSeasonItems(placeholder, resolution);
             var toAdd = resolution.Items
                 .Where(i => i.Kind switch
                 {
-                    BaseItemKind.Season => i.Coords.Any(c => !filledBefore.Contains(c) || NewSeasonFor(c, i.ItemId)),
+                    BaseItemKind.Season => replacedSeasons.ContainsKey(i.ItemId) || i.Coords.Any(c => !filledBefore.Contains(c) || NewSeasonFor(c, i.ItemId)),
                     BaseItemKind.Episode => i.Coords.Any(c => !filled.Contains(c)),
                     _ => true,
                 })
@@ -958,6 +959,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 placeholder = context.Doc.Items.First(p => p.Id == placeholderId);
             }
 
+            if (replacedSeasons.Count > 0)
+            {
+                RecordReplacedSeasons(context, placeholder, replacedSeasons, id => members.ContainsKey(id) || added.Contains(id), added);
+            }
+
             RecordCollectionSwap(context, placeholder, resolution, added, rejected);
             return true;
         }
@@ -992,6 +998,88 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     }
 
                     break;
+            }
+        }
+
+        // Season items that replaced the one a surviving fill counts through: the fill's Season item no longer exists and
+        // the resolver gives another Season item for that coordinate. The episodes kept their items (e.g. they sit in the
+        // series root while the empty season folder was renamed), so no fill was dropped, but the collection's link to
+        // the old Season item dangles: the new one is an arrival. A Season item that still exists (removed from the
+        // collection by hand) is not replaced; fills recorded without `via` keep the old behaviour.
+        private Dictionary<Guid, List<FilledEpisode>> ReplacedSeasonItems(Placeholder placeholder, ScopeResolution resolution)
+        {
+            var replaced = new Dictionary<Guid, List<FilledEpisode>>();
+            if (placeholder.Kind != PlaceholderKinds.Season)
+            {
+                return replaced;
+            }
+
+            var gone = new Dictionary<string, bool>(StringComparer.Ordinal);
+            foreach (var fill in placeholder.Filled.Where(f => f.Via != null))
+            {
+                var coord = new EpisodeCoord(fill.S, fill.E);
+                var season = resolution.Items.FirstOrDefault(i => i.Kind == BaseItemKind.Season && i.Coords.Contains(coord));
+                if (season == null || string.Equals(N(season.ItemId), fill.Via, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (!gone.TryGetValue(fill.Via!, out var isGone))
+                {
+                    gone[fill.Via!] = isGone = IsGone(fill.Via!);
+                }
+
+                if (isGone)
+                {
+                    if (!replaced.TryGetValue(season.ItemId, out var fills))
+                    {
+                        replaced[season.ItemId] = fills = new List<FilledEpisode>();
+                    }
+
+                    fills.Add(fill);
+                }
+            }
+
+            return replaced;
+        }
+
+        // The surviving fills of a replaced Season item now count through the new one once it is in the collection (JE's
+        // own when JE added it); while Jellyfin hasn't taken it they keep the old `via`, so the next pass tries again.
+        private void RecordReplacedSeasons(PassContext context, Placeholder placeholder, Dictionary<Guid, List<FilledEpisode>> replaced, Func<Guid, bool> inCollection, HashSet<Guid> added)
+        {
+            foreach (var (season, fills) in replaced)
+            {
+                if (!inCollection(season))
+                {
+                    continue;
+                }
+
+                var via = N(season);
+                foreach (var fill in placeholder.Filled.Where(f => fills.Any(o => o.S == f.S && o.E == f.E && string.Equals(o.Via, f.Via, StringComparison.Ordinal))))
+                {
+                    fill.Via = via;
+                }
+
+                if (added.Contains(season))
+                {
+                    ListSourceProvenance.OnSwapped(context.Doc, placeholder, new[] { via });
+                }
+
+                context.Dirty = true;
+            }
+        }
+
+        // Whether a library item ("N") no longer exists (a failed read counts as still there).
+        private bool IsGone(string itemIdN)
+        {
+            try
+            {
+                return Guid.TryParseExact(itemIdN, "N", out var id) && _host.GetItem(id) == null;
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug($"[ListPlaceholders] Reading filled item {itemIdN} failed: {ex.Message}");
+                return false;
             }
         }
 
@@ -1044,16 +1132,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             {
                 if (!gone.TryGetValue(itemIdN, out var result))
                 {
-                    try
-                    {
-                        result = Guid.TryParseExact(itemIdN, "N", out var id) && _host.GetItem(id) == null;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Debug($"[ListPlaceholders] Reading filled item {itemIdN} failed: {ex.Message}");
-                        result = false;
-                    }
-
+                    result = IsGone(itemIdN);
                     gone[itemIdN] = result;
                 }
 

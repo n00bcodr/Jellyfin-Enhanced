@@ -646,6 +646,51 @@ public class ListPlaceholdersArrTests
         Assert.Single(f.Arr.Writes("radarr"));
     }
 
+    // R6-7: an add queued behind another add to the same instance runs on what is configured once the lock is free: the
+    // feature turned off, the instance moved to another URL, or the caller no longer an admin stop it before any call.
+    [Theory]
+    [InlineData("disabled", 404, "disabled")]
+    [InlineData("moved", 409, "instance_changed")]
+    [InlineData("demoted", 403, "forbidden")]
+    public async Task AnAddQueuedBehindAnotherRunsOnTheSettingsAfterTheWait(string change, int status, string code)
+    {
+        using var f = new Fixture();
+        var holding = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        f.Arr.Delay = async (_, request, _) =>
+        {
+            if (request.Method == HttpMethod.Post && holding.TrySetResult())
+            {
+                await release.Task;
+            }
+        };
+        var admin = true;
+        var first = f.Add(MovieBody);
+        await holding.Task;
+        var queued = f.Service.AddAsync(JsonSerializer.Deserialize<ArrAddRequest>(MovieBody.Replace("49521", "49522", StringComparison.Ordinal)), Admin, "admin", CancellationToken.None, () => admin);
+        await Task.Delay(50);
+        Assert.False(queued.IsCompleted);
+        var config = f.Plugin.Plugin.Configuration;
+        switch (change)
+        {
+            case "disabled":
+                config.ListPlaceholdersArrEnabled = false;
+                break;
+            case "moved":
+                config.RadarrInstances = config.RadarrInstances.Replace(FakeArr.RadarrUrl, "http://elsewhere.test", StringComparison.Ordinal);
+                break;
+            default:
+                admin = false;
+                break;
+        }
+
+        release.SetResult();
+        Assert.Equal(200, (await first).StatusCode);
+        Error(await queued, status, code);
+        Assert.DoesNotContain(f.Arr.Calls, c => c.Path.Contains("49522", StringComparison.Ordinal));
+        Assert.Single(f.Arr.Writes("radarr"));
+    }
+
     [Theory]
     [InlineData("QualityProfileExistsValidator", 400, "invalid_quality_profile")]
     [InlineData("RootFolderExistsValidator", 400, "invalid_root_folder")]

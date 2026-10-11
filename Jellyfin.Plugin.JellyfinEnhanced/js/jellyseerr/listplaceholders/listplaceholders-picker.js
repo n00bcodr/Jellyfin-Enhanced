@@ -64,6 +64,16 @@
         }
     }
 
+    /** Closers of the open pickers (a user switch closes them: the lists and choices belong to the user who opened it). */
+    const openModals = new Set();
+
+    /**
+     * Closes every open picker without sending anything (sign-out / user switch).
+     */
+    function closeAll() {
+        Array.from(openModals).forEach((close) => close());
+    }
+
     /**
      * Opens the picker.
      * @param {{item: Object, mediaType?: string}} options - Seerr item (id = TMDB id) and its type.
@@ -97,6 +107,9 @@
         // failure (e.g. the entry didn't apply, or the answer was lost) goes to the playlist the first attempt created
         // (B10); a retry with other choices gets its own id, so the server never answers it with the first one's result.
         const createRequestIds = new Map();
+        /** @returns {boolean} Whether the picker still belongs to the signed-in user. */
+        const current = () => lp.isCurrentEpoch(epoch);
+        let closeForUserChange = null;
         const body = `
             <div class="je-lp-add je-lp-picker">
                 <label class="je-lp-field"><span>${esc(JE.t('listPlaceholders_pick_list'))}</span>
@@ -120,16 +133,22 @@
             backdropPath: lp.render.isSafePoster(media.backdropPath) ? media.backdropPath : undefined,
             buttonText: JE.t('listPlaceholders_add_button'),
             onClose: () => {
+                openModals.delete(closeForUserChange);
                 closed = true;
                 granularity?.destroy();
             },
             onSave: async (modalEl, button) => {
                 if (busy) return;
+                if (!current()) {
+                    // Another user signed in while it was open: their session must not send the previous user's choices.
+                    modal.close();
+                    return;
+                }
                 const choice = modalEl.querySelector('.je-lp-list-select').value;
                 if (choice === NEW_FROM_LIST) {
                     // B9: the import modal creates the playlist; it opens once this modal has closed.
                     history.back();
-                    setTimeout(() => lp.importer?.open({ mode: 'new' }), 350);
+                    setTimeout(() => { if (current()) lp.importer?.open({ mode: 'new' }); }, 350);
                     return;
                 }
                 const dto = lp.granularity.toPlaceholder(media, granularity ? granularity.getSelection() : undefined, granularity ? granularity.getDetails() : null);
@@ -155,12 +174,14 @@
                             isPublic,
                             entries
                         });
+                        if (!current()) return;
                         reportPicked(created?.result, created?.listId, created?.name || name);
                     } else {
                         const [kind, listId] = choice.split(':');
                         const value = modalEl.querySelector('.je-lp-position-select').value;
                         const position = kind === 'playlist' && value === 'start' ? { atStart: true } : undefined;
                         const result = await lp.api.addPlaceholders(listId, [dto], position);
+                        if (!current()) return;
                         const list = (kind === 'playlist' ? lists.playlists : lists.collections).find(l => l.id === listId);
                         reportPicked(result, listId, list?.name || '');
                         if (result?.addedAsItems?.length) {
@@ -172,6 +193,7 @@
                     // Same exit path as Cancel; a picker the user already closed must not go back again (leaves the page).
                     if (!closed) history.back();
                 } catch (error) {
+                    if (!current()) return;
                     lp.toastError(error);
                     busy = false;
                     button.disabled = false;
@@ -179,6 +201,8 @@
             }
         });
 
+        closeForUserChange = () => modal.close();
+        openModals.add(closeForUserChange);
         const root = modal.modalElement;
         const select = root.querySelector('.je-lp-list-select');
         /** Shows the new-playlist fields / position for the chosen list. */
@@ -254,6 +278,6 @@
         mount.appendChild(button);
     }
 
-    lp.picker = { canOffer, openPicker, appendCardAction, appendModalAction, listOptionsHtml, reportPicked };
+    lp.picker = { canOffer, openPicker, closeAll, appendCardAction, appendModalAction, listOptionsHtml, reportPicked };
 
 })(window.JellyfinEnhanced);

@@ -65,6 +65,10 @@
 
     // Instruction labels before a chain option ("Optional setup:", "Then:", "Part 2:").
     const CHAIN_LABEL = /^(?:(?:optional|required|recommended|bonus|extra)\s+)?(?:setup|optional|then|next|finally|start|start here|bonus|extra|prologue|epilogue|watch first|watch next|part \d+)$/i;
+    // Small words a title-case show name may hold in lower case ("Legends of Tomorrow", "Star Wars: The Clone Wars").
+    const TITLE_SMALL_WORDS = /^(?:a|an|and|the|of|in|on|at|to|for|from|by|with|or|nor|vs\.?|de|la|le|el|da|di|du|von|van)$/i;
+    // A " / " piece of a chain option that is commentary on the piece before it ("optional", "skippable", "then …").
+    const SLASH_COMMENTARY = /^(?:optional|optionally|skippable|skip|recommended|required|bonus|extra|or not)\b/i;
 
     // Episode notation: S01E08, S8E01–05, S01E01-E03, S1E5-S2E3 and 1x08, 8x01–05, 1x22-2x01.
     const SXE = /\bS(\d{1,3})\s?E(\d{1,4})(?:\s*[-–—]\s*(?:S(\d{1,3})\s?)?E?(\d{1,4}))?(?![\d])/i;
@@ -697,8 +701,9 @@
      * @returns {{part: string, urls: string[], note?: string}} The title text, its link targets/ids and the instruction.
      */
     function cleanChainSegment(raw) {
-        const urls = [];
-        const instruction = splitInstruction(stripMarkdown(raw, urls));
+        const found = [];
+        const stripped = stripMarkdown(raw, found);
+        const instruction = splitInstruction(stripped);
         const plainPart = instruction.text;
         let part;
         const ref = findEpisodeRef(plainPart);
@@ -711,21 +716,72 @@
         const label = /^([^:"]{2,40}):\s+(.+)$/.exec(plainPart);
         const instructionLabel = label && CHAIN_LABEL.test(label[1].trim());
         const afterRef = label ? findEpisodeRef(label[2]) : null;
+        // A title-case prefix ("Star Trek: Discovery 1x08") is the show's own name, not a label: only an instruction
+        // label or a prefix with a lowercase word ("Optional setup", "Watch this first") is dropped.
         const labelled = label && !findEpisodeRef(label[1])
             && (afterRef
-                ? (instructionLabel || (/\s/.test(label[1]) && afterRef.index > 0))
+                ? (instructionLabel || (afterRef.index > 0 && looksLikeInstruction(label[1])))
                 : (/"[^"]+"/.test(label[2]) && instructionLabel));
         part = labelled ? label[2] : plainPart;
+        // `part` is a suffix of `plainPart`, itself a prefix of the stripped text: offsets map back by this shift.
+        const shift = plainPart.length - part.length;
+        const extra = [];
         if (ref || /"[^"]+"/.test(part)) {
             // Keep the title + reference, drop the commentary after it (but not the bare ids in it).
             const inner = findEpisodeRef(part);
             const kept = inner ? part.slice(0, inner.end) : part.replace(/^(.*?"[^"]+")[\s\S]*$/, '$1');
-            urls.push(...(part.slice(kept.length).match(ID_TOKENS) || []));
+            extra.push(...(part.slice(kept.length).match(ID_TOKENS) || []));
             part = kept;
         } else {
             part = part.split(/(?<=[a-z0-9!?)])[.;]\s+/i)[0];
         }
+        // Only link targets that start in the kept text name the title; links in dropped commentary ("(see also
+        // [Legends](…))", "— then read [Crisis](…)", a second sentence) are about other titles.
+        const keptEnd = shift + part.length;
+        const urls = locateLinks(raw, stripped, found).filter(link => link.at < keptEnd).map(link => link.url);
+        urls.push(...extra);
         return { part, urls, note: instruction.note };
+    }
+
+    /**
+     * Whether a prefix before a colon reads as an instruction label rather than part of a show's name: a known label
+     * ("Optional setup", "Then") or one with a lowercase word other than a title's small words ("Watch this first").
+     * @param {string} prefix Text before the colon.
+     * @returns {boolean} An instruction label.
+     */
+    function looksLikeInstruction(prefix) {
+        const text = prefix.trim();
+        return CHAIN_LABEL.test(text) || text.split(/\s+/).some(word => /^[a-z]/.test(word) && !TITLE_SMALL_WORDS.test(word));
+    }
+
+    /**
+     * Where each link target of a markdown text starts in its stripped text: a markdown link at its label, a bare URL
+     * (or autolink) at the URL itself. Labels are found in order, so repeated labels map to their own occurrence.
+     * @param {string} raw Markdown text.
+     * @param {string} stripped `stripMarkdown(raw)`.
+     * @param {string[]} found The link targets stripMarkdown collected from it.
+     * @returns {{url: string, at: number}[]} Each target with its offset in the stripped text.
+     */
+    function locateLinks(raw, stripped, found) {
+        const located = [];
+        const linked = new Set();
+        let cursor = 0;
+        const text = String(raw ?? '').replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
+        for (const match of text.matchAll(/\[([^\]]*)\]\(([^)\s]*)(?:\s+"[^"]*")?\)/g)) {
+            if (!match[2]) continue;
+            const label = stripMarkdown(match[1]);
+            let at = label ? stripped.indexOf(label, cursor) : -1;
+            if (at < 0) at = cursor;
+            cursor = at + label.length;
+            located.push({ url: match[2], at });
+            linked.add(match[2]);
+        }
+        for (const url of found) {
+            if (linked.has(url)) continue;
+            const at = stripped.indexOf(url);
+            located.push({ url, at: at < 0 ? stripped.length : at });
+        }
+        return located;
     }
 
     /**
@@ -777,21 +833,35 @@
      * @returns {string[]|null} Raw alternatives, or null.
      */
     function episodeAlternatives(option) {
-        const merged = [];
-        let pending = '';
-        for (const piece of splitTopLevelSlash(option)) {
+        const pieces = splitTopLevelSlash(option).map((piece) => {
             const urls = [];
             const plainPiece = stripMarkdown(piece, urls);
-            if (findEpisodeRef(plainPiece) || /"[^"]+"/.test(plainPiece) || extractIds(plainPiece, urls).ids) {
+            const ref = findEpisodeRef(plainPiece);
+            return { piece, plainPiece, ref, counts: Boolean(ref || /"[^"]+"/.test(plainPiece) || extractIds(plainPiece, urls).ids) };
+        });
+        const episodic = pieces.some(p => p.ref);
+        const merged = [];
+        let counted = 0;
+        let pending = '';
+        for (const { piece, plainPiece, ref, counts } of pieces) {
+            // A piece without its own reference or id is commentary on the piece before it only when it reads like
+            // that: after a dash ("2x08 — optional / skippable"), an instruction word, or a piece of an episodic option
+            // that names no episode. Otherwise it is a plain alternative of its own ("[A](…) / B / [C](…)").
+            const previous = merged.length ? merged[merged.length - 1] : '';
+            const commentary = !counts && (/\s[—–]\s/.test(stripMarkdown(previous)) || /^[a-z]/.test(plainPiece)
+                || SLASH_COMMENTARY.test(plainPiece) || CHAIN_LABEL.test(plainPiece) || (episodic && !ref));
+            if (commentary && merged.length) {
+                merged[merged.length - 1] += ` / ${piece}`;
+            } else if (commentary) {
+                pending = pending ? `${pending} / ${piece}` : piece;
+            } else {
                 merged.push(pending ? `${pending} / ${piece}` : piece);
                 pending = '';
-            } else if (merged.length) {
-                merged[merged.length - 1] += ` / ${piece}`;
-            } else {
-                pending = pending ? `${pending} / ${piece}` : piece;
+                if (counts) counted++;
             }
         }
-        return merged.length > 1 ? merged : null;
+        if (pending && merged.length) merged[merged.length - 1] += ` / ${pending}`;
+        return counted > 1 ? merged : null;
     }
 
     /**
@@ -802,8 +872,12 @@
      * @returns {object[]|null} Entries, or null when the text isn't a chain (a sentence that merely contains an arrow).
      */
     function parseChain(raw, ctx) {
-        // Bold labels ("**1918:**") go before the arrows are split.
-        const text = String(raw).replace(/\*\*[^*]{1,40}:\*\*\s*/g, '').replace(/^\s*[\w\s]{2,30}\border:\s*/i, '');
+        // Bold labels ("**1918:**") go before the arrows are split. A bold show name right before its episode reference
+        // ("**The Flash:** 1x08") stays as plain "The Flash: 1x08", for cleanChainSegment's label rule to decide.
+        const text = String(raw).replace(/\*\*([^*]{1,40}):\*\*\s*/g, (match, label, offset, whole) => {
+            const ref = findEpisodeRef(stripMarkdown(whole.slice(offset + match.length)));
+            return ref && ref.index === 0 ? `${label}: ` : '';
+        }).replace(/^\s*[\w\s]{2,30}\border:\s*/i, '');
         const segments = text.split(/\s*(?:→|⟶|➔|➜|\s->\s)\s*/).map(s => s.trim()).filter(Boolean);
         if (segments.length < 2) return null;
         const plain = segments.map(s => stripMarkdown(s));

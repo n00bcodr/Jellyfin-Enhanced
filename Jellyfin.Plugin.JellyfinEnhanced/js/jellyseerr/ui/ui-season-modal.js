@@ -35,6 +35,8 @@
      *   treatExistingAsRequested: Seerr's 202 "No seasons available" and 409 answers mean "already requested" (list
      *   placeholders, B5): the seasons are announced as requested and the modal closes without a success toast or an
      *   error. isCurrent: checked after the loads; false (e.g. the user signed out meanwhile) stops before anything shows.
+     *   It is checked again when Request is pressed and after each request answer: a stale modal just closes (no
+     *   toast, no event, no error dialog), since the answer belongs to the user who opened it.
      */
     ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null, is4k = false, options = {}) {
         if (mediaType !== 'tv') return;
@@ -143,6 +145,10 @@
                 }
             },
             onSave: async (modalEl, requestBtn, closeFn) => {
+                if (stale()) {
+                    closeFn();
+                    return;
+                }
                 requestBtn.disabled = true;
                 requestBtn.innerHTML = `${JE.t('jellyseerr_modal_requesting')}<span class="jellyseerr-button-spinner"></span>`;
 
@@ -190,6 +196,10 @@
                         }
                         requestedSeasons = selectedSeasons;
                         const response = await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k, manualTvdbId);
+                        if (stale()) {
+                            closeFn();
+                            return;
+                        }
                         if (!(existingCountsAsRequested && isNoSeasonsAvailable(response))) {
                             JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: escapeHtml(resolvedShowTitle) }), 4000);
                         }
@@ -205,6 +215,10 @@
                             response = await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem, is4k, manualTvdbId);
                         } else {
                             response = await requestMedia(tmdbId, 'tv', settings, is4k, searchResultItem, manualTvdbId);
+                        }
+                        if (stale()) {
+                            closeFn();
+                            return;
                         }
 
                         if (!(existingCountsAsRequested && isNoSeasonsAvailable(response))) {
@@ -229,6 +243,10 @@
                         }
                     }, 1000);
                 } catch (error) {
+                    if (stale()) {
+                        closeFn();
+                        return;
+                    }
                     if (existingCountsAsRequested && error?.status === 409) {
                         // Already requested (B5): announce the submitted seasons, no error and no success toast.
                         document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail: { tmdbId, mediaType: 'tv', is4k, seasons: requestedSeasons } }));

@@ -63,7 +63,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpPost("add")]
         [Authorize]
         public Task<IActionResult> Add([FromBody] ArrAddRequest request, CancellationToken cancellationToken) =>
-            AdminOnly(user => _arr.AddAsync(request, user.Id.ToString("N", CultureInfo.InvariantCulture), user.Username, cancellationToken));
+            AdminOnly(user => _arr.AddAsync(request, user.Id.ToString("N", CultureInfo.InvariantCulture), user.Username, cancellationToken, () => _userManager.GetUserById(user.Id) is { } current && ListAccessService.IsAdmin(current)));
 
         private async Task<IActionResult> AdminOnly(Func<Jellyfin.Database.Implementations.Entities.User, Task<ListOutcome>> action)
         {

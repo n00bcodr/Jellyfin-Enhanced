@@ -366,7 +366,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             var placeholders = doc.Items.ToDictionary(p => p.Id, StringComparer.Ordinal);
             var dropPlaceholders = new HashSet<string>(StringComparer.Ordinal);
             var dropItems = new HashSet<Guid>();
-            var trimmed = new Dictionary<string, int>(StringComparer.Ordinal);
+            // Episodes planned out of each placeholder: distinct episodes, since two departing keys can be the same
+            // episode under different ids (tv|… and tvdb|…).
+            var trimmed = new Dictionary<string, HashSet<(int, int)>>(StringComparer.Ordinal);
             var leftShared = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (var (key, owned) in source.Owned)
             {
@@ -382,15 +384,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                     {
                         shared = true;
                         leftShared[owned.PhId] = leftShared.GetValueOrDefault(owned.PhId) + 1;
-                        var done = trimmed.GetValueOrDefault(owned.PhId);
+                        if (!trimmed.TryGetValue(owned.PhId, out var done))
+                        {
+                            done = new HashSet<(int, int)>();
+                            trimmed[owned.PhId] = done;
+                        }
+
                         // Only an episode no staying key still lists (a series or season key of the show, or the same
                         // episode under another id) leaves the run; else the key is just released.
                         if (placeholder.Kind == PlaceholderKinds.Episodes && SourceKeys.EpisodeOf(key) is { } episode
-                            && placeholder.Episodes.Any(e => e.S == episode.Season && e.E == episode.Episode) && placeholder.Episodes.Count - done > 1
+                            && !done.Contains((episode.Season, episode.Episode))
+                            && placeholder.Episodes.Any(e => e.S == episode.Season && e.E == episode.Episode) && placeholder.Episodes.Count - done.Count > 1
                             && !CoveredByStayingKey(source, current, owned.PhId, episode.Season, episode.Episode))
                         {
                             plan.Trims.Add((owned.PhId, episode.Season, episode.Episode));
-                            trimmed[owned.PhId] = done + 1;
+                            done.Add((episode.Season, episode.Episode));
                         }
                     }
                     else if (dropPlaceholders.Add(owned.PhId))

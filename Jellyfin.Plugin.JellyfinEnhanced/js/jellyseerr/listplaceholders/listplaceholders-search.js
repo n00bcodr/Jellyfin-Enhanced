@@ -15,6 +15,16 @@
     const ARR_RESULTS_PER_SERVICE = 8;
     const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+    /** Closers of the open Add title / Link modals (a user switch closes them: they act for the user who opened them). */
+    const openModals = new Set();
+
+    /**
+     * Closes every open Add title / Link modal without sending anything (sign-out / user switch).
+     */
+    function closeAll() {
+        Array.from(openModals).forEach((close) => close());
+    }
+
     /**
      * Seerr results the feature can store: movies and shows only.
      * @param {Array<Object>} results
@@ -236,6 +246,10 @@
         let busy = false;
         // Closed (Cancel, Escape, backdrop or Back) while an add was running: its history entry is gone already.
         let closed = false;
+        const epoch = lp.epochNow();
+        /** @returns {boolean} Whether the modal still belongs to the signed-in user. */
+        const current = () => lp.isCurrentEpoch(epoch);
+        let closeForUserChange = null;
 
         const modal = JE.jellyseerrModal.create({
             title: JE.t(linkMode ? 'listPlaceholders_link_title' : 'listPlaceholders_add_title'),
@@ -243,6 +257,7 @@
             bodyHtml: `<div class="je-lp-add">${tabs}${searchPane}${customPane}${position}</div>`,
             buttonText: JE.t(linkMode ? 'listPlaceholders_link_button' : 'listPlaceholders_add_button'),
             onClose: () => {
+                openModals.delete(closeForUserChange);
                 closed = true;
                 clearTimeout(searchTimer);
                 searchController?.abort();
@@ -252,11 +267,16 @@
                 if (pendingArr) {
                     const candidate = pendingArr;
                     pendingArr = null;
-                    setTimeout(() => arr.openAddDialog(candidate), 0);
+                    setTimeout(() => { if (current()) arr.openAddDialog(candidate); }, 0);
                 }
             },
             onSave: async (modalEl, button) => {
                 if (busy) return;
+                if (!current()) {
+                    // Another user signed in while it was open: their session must not add to the previous user's list.
+                    modal.close();
+                    return;
+                }
                 const customTab = modalEl.querySelector('[data-pane="custom"]');
                 const isCustom = customTab && !customTab.hidden;
                 let dto;
@@ -283,18 +303,21 @@
                         const ph = options.placeholder;
                         const linked = await lp.actions.withRev(ctrl, view => lp.api.patchPlaceholder(ctrl.listId, ph.id, { rev: view.rev, link: dto }),
                             view => view.placeholders.some(p => p.id === ph.id));
+                        if (!current()) return;
                         const inLibrary = linkedIntoLibrary(linked, ph.id);
                         JE.toast(JE.t(inLibrary ? 'listPlaceholders_linked_in_library' : 'listPlaceholders_linked', { title: esc(title) }), inLibrary ? 4000 : 3000);
                     } else {
                         const value = modalEl.querySelector('.je-lp-position-select')?.value || 'end';
                         const pos = value === 'start' ? { atStart: true } : value === 'end' ? undefined : { afterToken: value };
                         const result = await lp.api.addPlaceholders(ctrl.listId, [dto], pos);
+                        if (!current()) return;
                         reportAdd(result, title);
                         if (result?.addedAsItems?.length) ctrl.afterRealItemsAdded?.();
                     }
                     // Same exit path as Cancel; a modal the user already closed must not go back again (leaves the page).
                     if (!closed) history.back();
                 } catch (error) {
+                    if (!current()) return;
                     lp.toastError(error);
                     busy = false;
                     button.disabled = false;
@@ -302,6 +325,8 @@
             }
         });
 
+        closeForUserChange = () => modal.close();
+        openModals.add(closeForUserChange);
         const root = modal.modalElement;
         const resultsEl = root.querySelector('.je-lp-results');
         const selectedEl = root.querySelector('.je-lp-selected');
@@ -316,7 +341,7 @@
             target.innerHTML = `<div class="je-lp-muted">${esc(JE.t('listPlaceholders_loading'))}</div>`;
             try {
                 const data = await JE.jellyseerrAPI.search(query, 1, { signal: controller.signal, throwOnError: true });
-                if (controller.signal.aborted) return;
+                if (controller.signal.aborted || !current()) return;
                 results = usableResults(data?.results);
                 target.innerHTML = resultsHtml(results);
             } catch (error) {
@@ -335,7 +360,7 @@
             target.innerHTML = `<div class="je-lp-muted">${esc(JE.t('listPlaceholders_loading'))}</div>`;
             try {
                 const candidates = await arr.searchCandidates(query, { signal: controller.signal });
-                if (controller.signal.aborted) return;
+                if (controller.signal.aborted || !current()) return;
                 arrResults = mixArrResults(candidates);
                 target.innerHTML = arrResultsHtml(arrResults);
             } catch (error) {
@@ -548,7 +573,7 @@
         if (bar.__jeLpCtrl) lp.sourceUi?.decorateToolbar(bar, bar.__jeLpCtrl);
     }
 
-    lp.search = { open, readCustom, usableResults, resultsHtml, arrMedia, arrResultsHtml, mixArrResults, reportAdd, linkedIntoLibrary };
+    lp.search = { open, closeAll, readCustom, usableResults, resultsHtml, arrMedia, arrResultsHtml, mixArrResults, reportAdd, linkedIntoLibrary };
     lp.toolbar = { create: createToolbar, update: updateToolbar };
 
 })(window.JellyfinEnhanced);

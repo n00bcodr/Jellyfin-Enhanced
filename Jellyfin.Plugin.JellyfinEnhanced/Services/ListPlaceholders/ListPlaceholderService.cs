@@ -1086,7 +1086,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             return outcome;
         }
 
-        /// <summary>DELETE /{listId}/items/{phId}.</summary>
+        /// <summary>DELETE /{listId}/items/{phId}. The caller's rights are resolved again under the list lock.</summary>
         /// <param name="access">Authorised access (CanEdit).</param>
         /// <param name="placeholderId">Placeholder id.</param>
         /// <param name="rev">Expected revision.</param>
@@ -1098,6 +1098,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var visibility = await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
             return await RunLockedAsync(access.ListIdN, access.ListIdN, requestId, access.UserIdN, cancellationToken, () =>
             {
+                // The parental lookups and the lock wait (a sync may hold it) can take seconds; the share may be gone.
+                var (denied, current) = RecheckAccess(access);
+                if (denied != null)
+                {
+                    return Task.FromResult(denied);
+                }
+
+                access = current!;
                 var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
                 if (doc.Rev != rev)
                 {
@@ -1150,6 +1158,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
             return await RunLockedAsync(access.ListIdN, access.ListIdN, requestId, access.UserIdN, cancellationToken, async () =>
             {
+                // Rights now, not before the parental lookups and the lock wait: a real row is moved as the owner when
+                // the caller can't edit natively, so a caller whose share was removed must not reach that move.
+                var (denied, current) = RecheckAccess(access);
+                if (denied != null)
+                {
+                    return denied;
+                }
+
+                access = current!;
                 var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
                 if (doc.Rev != rev)
                 {

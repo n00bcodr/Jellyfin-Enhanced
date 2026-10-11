@@ -566,6 +566,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var label = Describe(placeholder, mediaType, tmdbId, season);
             var body = ListPlaceholderAutoRequestRules.BuildRequestBody(mediaType, tmdbId, season);
             var post = await _seerr.PostRequestAsync(account.SeerrUserId, body, cancellationToken, account.Config).ConfigureAwait(false);
+            if (post.ConfigChanged && (post.StatusCode == 202 || post.StatusCode == 409))
+            {
+                // The Seerr this run started with created nothing ("already requested" there, or no seasons to request):
+                // that says nothing about the Seerr configured now, so the title isn't handled for this user.
+                Release(user, key);
+                run.StoppedReason = ConfigChangedReason;
+                _logger.Info($"[ListPlaceholders] Auto-request of {label} for {user.Username}: the previous Seerr answered {post.StatusCode.ToString(CultureInfo.InvariantCulture)} after the Seerr configuration changed; not recorded");
+                return Verdict.Stopped;
+            }
+
             if (post.Ok && post.StatusCode == 202)
             {
                 run.AlreadyRequested.Add(key);

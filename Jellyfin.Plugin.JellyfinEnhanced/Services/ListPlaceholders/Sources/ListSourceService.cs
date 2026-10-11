@@ -537,19 +537,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 // The fetch can take seconds: the list may have been deleted meanwhile (writing now would recreate an
                 // orphan document with an active link), or the caller's rights changed (a share removed or made
                 // read-only). Checked again like the sync checks its linker after its fetch.
-                var user = _users.GetUserById(access.User.Id);
-                var current = user == null ? null : _access.Resolve(access.List.Id, user);
-                if (current == null || !current.Permissions.CanView)
+                var (denied, current) = RecheckAccess(access, edit: true);
+                if (denied != null)
                 {
-                    return ListOutcome.Error(404, "not_found", "List not found.");
+                    return denied;
                 }
 
-                if (!current.Permissions.CanEdit)
-                {
-                    return ListOutcome.Error(403, "forbidden", "You can't edit this list.");
-                }
-
-                access = current;
+                access = current!;
                 var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
                 ApplyLink(doc, spec!, access.UserIdN, DateTime.UtcNow);
                 _store.Save(doc);
@@ -561,7 +555,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             return ListOutcome.Ok(view);
         }
 
-        /// <summary>DELETE /{listId}/source: unlinks (entries stay; provenance is dropped).</summary>
+        /// <summary>DELETE /{listId}/source: unlinks (entries stay; provenance is dropped). Rights are checked again under the lock.</summary>
         /// <param name="access">Authorised access (CanEdit).</param>
         /// <param name="requestId">Client request id.</param>
         /// <param name="cancellationToken">Cancellation.</param>
@@ -575,6 +569,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
             using (await _store.LockAsync(access.ListIdN, cancellationToken).ConfigureAwait(false))
             {
+                // A sync or swap pass may have held the lock for a while: the caller's share may be gone or read-only.
+                var (denied, fresh) = RecheckAccess(access, edit: true);
+                if (denied != null)
+                {
+                    return denied;
+                }
+
+                access = fresh!;
                 var current = _store.Load(access.ListIdN);
                 if (current?.Source != null)
                 {
@@ -807,6 +809,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 return new ListOutcome { StatusCode = 202, Value = new SourceSyncResultDto { State = "running", Code = "cancelled", Message = "The sync was interrupted; try again in a moment." } };
             }
 
+            // The wait can take up to SyncNowWait: the caller may no longer see the list (share removed meanwhile).
+            var (denied, current) = RecheckAccess(access, edit: false);
+            if (denied != null)
+            {
+                return denied;
+            }
+
+            access = current!;
+
             // Joined callers share one result: give each its own copy with its own (per-user filtered) view.
             var result = CopyForCaller(shared);
             result.View = await _lists.GetViewAsync(access, cancellationToken).ConfigureAwait(false);
@@ -821,6 +832,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             }
 
             return ListOutcome.Ok(result);
+        }
+
+        // The caller's rights now (a fresh user, so a policy change counts too): 404 when they can no longer see the
+        // list, 403 when an edit is needed and they can no longer edit it.
+        private (ListOutcome? Denied, ListAccess? Current) RecheckAccess(ListAccess access, bool edit)
+        {
+            var user = _users.GetUserById(access.User.Id);
+            var current = user == null ? null : _access.Resolve(access.List.Id, user);
+            if (current == null || !current.Permissions.CanView)
+            {
+                return (ListOutcome.Error(404, "not_found", "List not found."), null);
+            }
+
+            return edit && !current.Permissions.CanEdit ? (ListOutcome.Error(403, "forbidden", "You can't edit this list."), null) : (null, current);
         }
 
         // F29: the same user's "Sync now" of the same list within SyncNowCooldown answers the last result (nothing new is

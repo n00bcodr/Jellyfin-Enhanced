@@ -197,7 +197,7 @@
             JE.toast(JE.t('listPlaceholders_already_requested_4k', { title: lp.render.esc(ph.title) }), 3000);
         };
         if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-            await JE.jellyseerrUI.showMovieRequestModal(tmdbId, ph.title, item, true, { onAlreadyRequested: already });
+            await JE.jellyseerrUI.showMovieRequestModal(tmdbId, ph.title, item, true, { onAlreadyRequested: already, isCurrent: () => lp.isCurrentEpoch(epoch) });
             return;
         }
         try {
@@ -293,7 +293,10 @@
             }
             if (api.shouldShowAdvanced()) {
                 // Seerr's 409 counts as requested here too (B5): the details read above can be cached.
-                await ui.showMovieRequestModal(tmdbId, ph.title, details, false, { onAlreadyRequested: () => { if (lp.isCurrentEpoch(epoch)) announce(ph); } });
+                await ui.showMovieRequestModal(tmdbId, ph.title, details, false, {
+                    onAlreadyRequested: () => { if (lp.isCurrentEpoch(epoch)) announce(ph); },
+                    isCurrent: () => lp.isCurrentEpoch(epoch)
+                });
                 return;
             }
             if (button) button.innerHTML = `<span>${lp.render.esc(JE.t('jellyseerr_btn_requesting'))}</span><span class="je-lp-spinner"></span>`;

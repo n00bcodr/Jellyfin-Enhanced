@@ -594,6 +594,36 @@ public class ListPlaceholdersAutoRequestTests
         Assert.Equal(new[] { "movie|101", "movie|102" }, next.Requested);
     }
 
+    // R6-6: a 409 ("already requested") or 202 ("no seasons to request") from the Seerr configured before is not the new
+    // Seerr's answer: the title isn't reported as already requested nor kept handled for the user, and the run stops.
+    [Theory]
+    [InlineData(409)]
+    [InlineData(202)]
+    public async Task AnAlreadyRequestedAnswerFromThePreviousSeerrMarksNothingHandled(int answer)
+    {
+        using var f = new Fixture(count: 3);
+        var played = f.H.Host.AddItem();
+        f.Seerr.Movies[101] = FakeSeerr.MovieJson(101, Past);
+        f.Seerr.Movies[102] = FakeSeerr.MovieJson(102, Past);
+        f.Playlist(played, Movie(101, Past), Movie(102, Past));
+        f.Seerr.PostStatus = _ =>
+        {
+            f.H.Plugin.Plugin.Configuration.JellyseerrUrls = "http://other-seerr.test";
+            return answer;
+        };
+
+        var run = await f.Service.RunAsync(f.Viewer.Id, f.Played(played), CancellationToken.None);
+
+        Assert.Equal("seerr config changed", run.StoppedReason);
+        Assert.Empty(run.AlreadyRequested);
+        Assert.Single(f.Seerr.Posts);
+
+        // The next run (on the new Seerr) requests it: it was never marked handled for the user.
+        f.Seerr.PostStatus = _ => 201;
+        var next = await f.Service.RunAsync(f.Viewer.Id, f.Played(played), CancellationToken.None);
+        Assert.Equal(new[] { "movie|101", "movie|102" }, next.Requested);
+    }
+
     [Fact]
     public async Task RestrictedUsersNeverRequestTitlesTheirParentalControlsHide()
     {

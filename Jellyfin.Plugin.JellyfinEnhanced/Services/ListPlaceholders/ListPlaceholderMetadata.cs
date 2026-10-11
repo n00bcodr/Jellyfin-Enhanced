@@ -58,6 +58,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// season is complete.
         /// </summary>
         public bool Partial { get; init; }
+
+        /// <summary>
+        /// <see cref="Partial"/> for a season the show's details list: its own read failed (Seerr answers 500 alike for
+        /// a TMDB error and an unknown season, so the show's season list tells them apart). The show's poster is then no
+        /// answer for the season.
+        /// </summary>
+        public bool SeasonReadFailed { get; init; }
     }
 
     /// <summary>
@@ -369,6 +376,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 EpisodeTotal = expected?.Count(e => PlaceholderProgress.IsAired(e, todayUtc)),
                 SeasonEpisodes = seasonEpisodes,
                 Partial = partial,
+                SeasonReadFailed = partial && seasons.Any(s => s.Number == number),
             };
         }
 

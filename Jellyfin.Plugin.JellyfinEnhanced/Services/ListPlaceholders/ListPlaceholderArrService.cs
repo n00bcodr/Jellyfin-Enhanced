@@ -197,8 +197,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <param name="userIdN">Calling admin ("N").</param>
         /// <param name="userName">Calling admin's name (log only).</param>
         /// <param name="cancellationToken">Request aborted (only cancels waiting; a started add runs to completion).</param>
+        /// <param name="stillAllowed">Whether the caller may still add (checked again once the per-instance lock is free); null = no check.</param>
         /// <returns><see cref="ArrAddResultDto"/> or an error.</returns>
-        public async Task<ListOutcome> AddAsync(ArrAddRequest? request, string userIdN, string userName, CancellationToken cancellationToken)
+        public async Task<ListOutcome> AddAsync(ArrAddRequest? request, string userIdN, string userName, CancellationToken cancellationToken, Func<bool>? stillAllowed = null)
         {
             if (!TryValidate(request, out var plan, out var validationError))
             {
@@ -216,6 +217,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                // The wait can be long (an add holds the lock for up to AddBudget): the feature, the instance (URL, key,
+                // enabled) or the caller's admin rights may have changed meanwhile. Checked again against the current
+                // settings, and the add runs on the instance as it is configured now.
+                if (!IsEnabled(Config()))
+                {
+                    return ListOutcome.Error(404, "disabled", "Adding to Radarr or Sonarr is turned off.");
+                }
+
+                if (stillAllowed != null && !stillAllowed())
+                {
+                    return ListOutcome.Error(403, "forbidden", "Only administrators can add to Radarr or Sonarr.");
+                }
+
+                (instance, id, instanceError) = ResolveInstance(Config(), plan.Service, plan.InstanceId, plan.InstanceName, plan.InstanceKey ?? InstanceKey(plan.Service, instance!));
+                if (instanceError != null)
+                {
+                    return instanceError;
+                }
+
                 var fingerprint = Fingerprint(plan, instance!);
                 if (plan.RequestId != null && _store.TryGetReplay(ReplayScope, plan.RequestId, userIdN, out var replay))
                 {

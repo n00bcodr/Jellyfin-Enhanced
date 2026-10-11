@@ -603,8 +603,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         // The server's poster for each placeholder's title, in order: Seerr's (cached metadata), or TMDB's read with JE's
         // key when Seerr is off (as UseServerPostersAsync stores them). Poster null for a custom entry, a title the source
         // doesn't know or can't answer for now, or one without a valid poster. Answered is false when the source gave no
-        // answer for a TMDB title (Seerr unreachable or unknown title; a failed TMDB lookup, not a title TMDB read without
-        // a poster): a later check may differ.
+        // answer for a TMDB title (Seerr unreachable or unknown title, or a season the show lists whose own read failed; a
+        // failed TMDB lookup, not a title TMDB read without a poster): a later check may differ.
         private async Task<(string? Poster, bool Answered)[]> ServerPostersAsync(IReadOnlyList<Placeholder> placeholders, CancellationToken cancellationToken)
         {
             var today = DateTime.UtcNow;
@@ -620,6 +620,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 if (seerr)
                 {
                     var metadata = await _metadata.FetchAsync(placeholder, ListPlaceholderMetadataService.CacheTtl, today, cancellationToken).ConfigureAwait(false);
+                    if (metadata?.SeasonReadFailed == true)
+                    {
+                        // The season's read failed: the show's poster in its place is no answer (as for TMDB, R5-9).
+                        return ((string?)null, false);
+                    }
+
                     return (metadata?.PosterPath is { } poster && PlaceholderRules.IsValidPosterPath(poster) ? poster : null, metadata != null);
                 }
 

@@ -168,6 +168,8 @@
             lp.requests.reset();
             lp.actions.closeMenu();
             lp.importer?.closeAll?.();
+            lp.picker?.closeAll?.();
+            lp.search?.closeAll?.();
             Array.from(lp.controllers).forEach(disposeController);
             subscribeLibrary();
         });

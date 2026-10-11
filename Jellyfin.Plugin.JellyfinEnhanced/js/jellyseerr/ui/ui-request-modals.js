@@ -19,12 +19,15 @@
      * @param {string} title - Display title of the movie.
      * @param {Object|null} searchResultItem - Original search result data.
      * @param {boolean} [is4k=false] - Request in 4K.
-     * @param {{onAlreadyRequested?: function(): void}} [options] - onAlreadyRequested: Seerr's 409 ("already
-     *   requested") counts as requested (list placeholders): called instead of the error toast, then the modal closes.
+     * @param {{onAlreadyRequested?: function(): void, isCurrent?: function(): boolean}} [options] - onAlreadyRequested:
+     *   Seerr's 409 ("already requested") counts as requested (list placeholders): called instead of the error toast,
+     *   then the modal closes. isCurrent: checked when Request is pressed and after the answer; false (the user signed
+     *   out or switched meanwhile) just closes the modal (no card update, toast or error dialog).
      */
     ui.showMovieRequestModal = async function(tmdbId, title, searchResultItem, is4k = false, options = {}) {
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
         const { requestMedia, fetchAdvancedRequestData, fetchUserQuota } = JE.jellyseerrAPI;
+        const stale = () => typeof options?.isCurrent === 'function' && !options.isCurrent();
 
         const bodyHtml = createAdvancedOptionsHTML('movie');
         const { modalElement, show } = create({
@@ -33,6 +36,10 @@
             bodyHtml,
             backdropPath: searchResultItem?.backdropPath,
             onSave: async (modalEl, requestBtn, closeFn) => {
+                if (stale()) {
+                    closeFn();
+                    return;
+                }
                 const serverSelect = modalEl.querySelector('#movie-server');
                 const qualitySelect = modalEl.querySelector('#movie-quality');
                 const folderSelect = modalEl.querySelector('#movie-folder');
@@ -48,6 +55,10 @@
 
                 try {
                     await requestMedia(tmdbId, 'movie', settings, is4k, searchResultItem);
+                    if (stale()) {
+                        closeFn();
+                        return;
+                    }
                     // Manually update the original button on the card
                     const originalButton = document.querySelector(`.jellyseerr-request-button[data-tmdb-id="${tmdbId}"]`);
                     if (originalButton) {
@@ -57,6 +68,10 @@
                     }
                     closeFn();
                 } catch (error) {
+                    if (stale()) {
+                        closeFn();
+                        return;
+                    }
                     if (error?.status === 409 && typeof options?.onAlreadyRequested === 'function') {
                         options.onAlreadyRequested();
                         closeFn();
