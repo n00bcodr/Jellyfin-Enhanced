@@ -7362,7 +7362,7 @@
             }
             const status = document.querySelector('#jeUserSettingsPolicyStatus');
             if (status) {
-                status.textContent = 'The user settings policy did not load, so this save left the user settings locks as they were.';
+                status.textContent = 'The user settings policy had not loaded, so this save left the user settings locks as they were.';
                 status.hidden = false;
                 status.classList.add('je-policy-status-error');
             }
@@ -8025,7 +8025,7 @@
 
                 Dashboard.processPluginConfigurationUpdateResult(result);
                 const savedPolicy = window.JellyfinEnhancedAdminPolicy;
-                if (savedPolicy && savedPolicy.ready === true && typeof savedPolicy.markSaved === 'function') {
+                if (savedPolicy && typeof savedPolicy.markSaved === 'function') { // no-op unless a save took its locks from the table
                     savedPolicy.markSaved(config.LockedUserSettings);
                 }
                 // The form now is the just-saved state, so re-snapshot immediately.
@@ -8141,7 +8141,7 @@
                     const config = await buildConfigFromForm();
                     await ApiClient.updatePluginConfiguration(pluginId, config);
                     const savedPolicy = window.JellyfinEnhancedAdminPolicy;
-                    if (savedPolicy && savedPolicy.ready === true && typeof savedPolicy.markSaved === 'function') {
+                    if (savedPolicy && typeof savedPolicy.markSaved === 'function') { // no-op unless a save took its locks from the table
                         savedPolicy.markSaved(config.LockedUserSettings);
                     }
                     jeMarkSaved();

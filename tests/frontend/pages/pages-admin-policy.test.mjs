@@ -107,7 +107,7 @@ test('ticking a lock explains its effect before saving and marks the form change
 
   h.tick('QualityTagsEnabled', false);
   assert.equal(h.policy.pendingState(), 'AutoPipEnabled=true');
-  h.policy.markSaved(['AutoPipEnabled']);
+  h.policy.markSaved(h.policy.applyLocks([]));
   assert.equal(h.policy.pendingState(), '');
   assert.equal(impact.hidden, true);
 });
@@ -142,7 +142,7 @@ test('admin save with the policy script blocked, failed or still loading leaves 
   assert.equal(applyBlocked(config), false);
   assert.deepEqual(config, { LockedUserSettings: ['AutoPipEnabled', 'NotASetting'], Other: 1 });
   const status = blocked.document.querySelector('#jeUserSettingsPolicyStatus');
-  assert.equal(status.textContent, 'The user settings policy did not load, so this save left the user settings locks as they were.');
+  assert.equal(status.textContent, 'The user settings policy had not loaded, so this save left the user settings locks as they were.');
   assert.ok(status.classList.contains('je-policy-status-error'));
   assert.match(warnings.join('\n'), /LockedUserSettings left unchanged/);
 
@@ -176,13 +176,53 @@ test('a lock edited while the rows reload (pageshow) is kept; older edits are re
   h.tick('ShowFileSizes'); // before the reload: discarded like every other unsaved field
   gate = deferred();
   const reload = h.policy.decorate(h.page);
-  assert.equal(h.policy.ready, true, 'rows stay usable while they reload');
+  assert.equal(h.policy.ready, false, 'rows from the last visit are not trusted while they reload');
   h.tick('AutoPipEnabled'); // during the reload: kept
+  // A save during the reload leaves the locks as fetched (another admin's lock included), and
+  // the edit made during the reload stays pending.
+  h.window.console.warn = () => {};
+  const config = { LockedUserSettings: ['GenreTagsEnabled'] };
+  assert.equal(h.applyLocks(config), false);
+  assert.deepEqual(config.LockedUserSettings, ['GenreTagsEnabled']);
+  assert.match(h.document.querySelector('#jeUserSettingsPolicyStatus').textContent, /had not loaded, so this save left the user settings locks as they were/);
+  h.policy.markSaved(config.LockedUserSettings); // the page calls it after every save; this one took no locks
   gate.resolve();
-  await reload;
+  assert.equal(await reload, true);
+  assert.equal(h.policy.ready, true);
+  assert.equal(h.document.querySelector('#jeUserSettingsPolicyStatus').hidden, true);
   assert.equal(h.row('ShowFileSizes').querySelector('input').checked, false);
   assert.equal(h.row('AutoPipEnabled').querySelector('input').checked, true);
   assert.equal(h.policy.pendingState(), 'AutoPipEnabled=true');
+});
+
+test('a revisit whose registry request fails leaves the locks alone, whatever the old rows show', async t => {
+  let fail = false;
+  const h = setup(t, { ajax: async () => { if (fail) throw new Error('offline'); return structuredClone(registryDefault); } });
+  await h.policy.decorate(h.page);
+  assert.equal(h.policy.ready, true);
+  h.tick('ShowFileSizes'); // abandoned on this visit; the next visit's form reload drops it
+  // Meanwhile another admin locks AutoPipEnabled; this page comes back and the reload fails.
+  fail = true;
+  h.window.console.warn = () => {};
+  assert.equal(await h.policy.decorate(h.page), false);
+  assert.equal(h.policy.ready, false);
+  assert.equal(h.policy.applyLocks(['AutoPipEnabled']), null);
+  const status = h.document.querySelector('#jeUserSettingsPolicyStatus');
+  assert.equal(status.hidden, false);
+  assert.match(status.textContent, /could not be loaded.*Saving keeps the current locks/);
+  const config = { LockedUserSettings: ['AutoPipEnabled'] };
+  assert.equal(h.applyLocks(config), false);
+  assert.deepEqual(config.LockedUserSettings, ['AutoPipEnabled']);
+  // The next visit that loads makes the rows usable again, from the server's locks.
+  fail = false;
+  const locked = registryDefault.map(e => e.Key === 'AutoPipEnabled' ? { ...e, Locked: true } : e);
+  h.window.ApiClient.ajax = async () => structuredClone(locked);
+  assert.equal(await h.policy.decorate(h.page), true);
+  assert.equal(h.policy.ready, true);
+  assert.equal(status.hidden, true);
+  assert.equal(h.row('AutoPipEnabled').querySelector('input').checked, true);
+  assert.equal(h.row('ShowFileSizes').querySelector('input').checked, false);
+  assert.deepEqual(h.policy.applyLocks(['AutoPipEnabled']), ['AutoPipEnabled']);
 });
 
 test('a lock edited while a save is in flight is kept as an unsaved edit after the save', async t => {

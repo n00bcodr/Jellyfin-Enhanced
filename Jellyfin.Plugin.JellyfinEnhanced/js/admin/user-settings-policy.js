@@ -5,8 +5,9 @@
  *
  * Not part of the client bundle (not in component-scripts.json). The page loads it with a
  * versioned URL and calls window.JellyfinEnhancedAdminPolicy.decorate(page) after every
- * pageshow's loadConfig; decoration is idempotent. The save path reads LockedUserSettings
- * from applyLocks() only while `ready` is true, and otherwise leaves the saved locks alone.
+ * pageshow's loadConfig; decoration is idempotent. The save path takes LockedUserSettings
+ * from applyLocks(), which answers only while `ready` is true (rows freshly rendered for this
+ * visit); otherwise the saved locks are left alone.
  *
  * Holds code only: every value comes from the authenticated registry route or the page, and is
  * written with textContent; innerHTML is used only for one static, value-free checkbox template.
@@ -401,8 +402,9 @@
 
     /**
      * Fetches the registry and (re)renders the policy rows and control badges. Safe to call on
-     * every pageshow; only the latest call renders. `ready` stays false until the first render
-     * for this page succeeds, and a failure on a fresh page leaves it false.
+     * every pageshow; only the latest call renders. `ready` is false from the start of every call
+     * until its render succeeds: rows from an earlier visit or save may be stale, so a save made
+     * meanwhile, or after a failed reload, leaves the saved locks alone.
      * @param {Element} [page] The admin page (#JellyfinEnhancedPage).
      * @param {number} [keepAfter] Keep lock edits made after this value of the edit counter
      *   (a save's: edits made while it was in flight); default, edits made during the request.
@@ -411,10 +413,11 @@
     async function decorate(page, keepAfter) {
         page = page || document.querySelector('#JellyfinEnhancedPage');
         if (!page || !page.querySelector('#jeUserSettingsPolicyTable')) return false;
-        if (state.page !== page) api.ready = false;
+        api.ready = false;
         const run = ++state.run;
         const changesAtStart = typeof keepAfter === 'number' ? Math.min(keepAfter, state.changes) : state.changes;
-        if (!api.ready) setStatus(page, 'Loading the user settings policy…');
+        // A reload of rows already shown stays quiet; edits made during it are kept by render().
+        if (state.page !== page) setStatus(page, 'Loading the user settings policy…');
         let registry;
         try {
             registry = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(REGISTRY_PATH), dataType: 'json' });
@@ -422,7 +425,7 @@
         } catch (error) {
             if (run !== state.run) return false;
             console.warn('[JE] user settings policy: registry request failed', error);
-            if (!api.ready) setStatus(page, 'The user settings policy could not be loaded, so locks cannot be changed right now. Saving keeps the current locks.', true);
+            setStatus(page, 'The user settings policy could not be loaded, so locks cannot be changed right now. Saving keeps the current locks.', true);
             return false;
         }
         if (run !== state.run || !page.isConnected) return false;
@@ -476,12 +479,15 @@
      * Called by the page after a successful save: the saved locks become the baseline, then the
      * registry is read again (saved defaults and reach may have changed). Lock edits made after
      * applyLocks() built the save (while it was in flight) were not saved and stay as edits.
+     * Does nothing unless applyLocks() built a save since the last markSaved(): a save made while
+     * not ready left the locks alone, and a reload still in flight keeps the edits made during it.
      * @param {string[]|null|undefined} locked The LockedUserSettings that was saved.
      */
     function markSaved(locked) {
+        if (typeof state.submitted !== 'number') return;
         const saved = new Set((Array.isArray(locked) ? locked : []).map(entry => String(entry).toLowerCase()));
         state.baseline = new Set(Array.from(state.byKey.keys()).filter(key => saved.has(key.toLowerCase())));
-        const keepAfter = typeof state.submitted === 'number' ? state.submitted : state.changes;
+        const keepAfter = state.submitted;
         state.submitted = null;
         refresh();
         if (state.page) decorate(state.page, keepAfter);
