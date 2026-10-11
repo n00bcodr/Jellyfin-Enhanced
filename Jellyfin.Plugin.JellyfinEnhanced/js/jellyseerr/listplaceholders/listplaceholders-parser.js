@@ -921,9 +921,10 @@
             const tail = part.slice(kept.length);
             // Bare ids anywhere in the tail name the title ("Flash S1E8 tmdb:tv:60735"); a link target (bare URL or
             // markdown link) only before the commentary starts ("Flash 1x08 https://…", "Flash 1x08 [TMDB](…)"), not
-            // one inside "(see https://…)" or after a dash (unless it is the URL or id link right after it).
+            // one inside "(see https://…)" or after a dash (unless it is the URL or id link right after it). A release
+            // parenthetical after the reference ("Flash S1E8 (2014-12-02) https://…") is not commentary.
             const partEnd = shift + part.length;
-            const commentary = separatorFrom(stripped.slice(0, partEnd), shift + kept.length, /\(|\s[—–-]\s|[.;!?](?:\s|$)/, located);
+            const commentary = separatorFrom(stripped.slice(0, partEnd), shift + kept.length, AFTER_SELECTOR, located);
             keptEnd = commentary < 0 ? partEnd : commentary;
             for (const token of tail.match(ID_TOKENS) || []) {
                 if (!/^https?:/i.test(token)) extra.push(token);

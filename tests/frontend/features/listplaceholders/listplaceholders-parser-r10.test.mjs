@@ -76,3 +76,32 @@ test('R10: a type/status phrase after the year stays metadata; only what follows
   assert.equal(both.status, 'released');
   assert.equal(both.note, undefined);
 });
+
+test('R11: a release date, year or TBA after an episode reference in a → chain keeps each segment\'s own ids', t => {
+  const { parse } = setup(t);
+  const flash = { tmdb: 60735, tmdbType: 'tv' };
+  const arrow = { tmdb: 1412, tmdbType: 'tv' };
+  const chains = [
+    'The Flash S1E8 (2014-12-02) https://www.themoviedb.org/tv/60735 → Arrow S3E8 (2014-12-03) https://www.themoviedb.org/tv/1412',
+    'The Flash S1E8 (2014) https://www.themoviedb.org/tv/60735 → Arrow S3E8 (2014) https://www.themoviedb.org/tv/1412',
+    'Flash 1x08 (2014) [TMDB](https://www.themoviedb.org/tv/60735) → Arrow 3x08 (2014) [TMDB](https://www.themoviedb.org/tv/1412)',
+    'Flash 1x08 (TBA) [TMDB](https://www.themoviedb.org/tv/60735) → Arrow 3x08 (2014–2015) [TMDB](https://www.themoviedb.org/tv/1412)'
+  ];
+  for (const line of chains) {
+    const entries = parse(line).entries;
+    assert.equal(entries.length, 2, line);
+    assert.deepEqual(entries.map(e => [e.kind, e.season, e.chain]), [['episodes', 1, 0], ['episodes', 3, 1]], line);
+    assert.deepEqual(entries[0].ids, flash, line);
+    assert.deepEqual(entries[1].ids, arrow, line);
+  }
+  // A parenthetical other than a release one (alone or after one) is still commentary: its link names another title.
+  for (const line of [
+    'Flash 1x08 (see [Arrow](https://www.themoviedb.org/tv/1412)) → Arrow 3x08',
+    'Flash 1x08 (2014) (see [Arrow](https://www.themoviedb.org/tv/1412)) → Arrow 3x08'
+  ]) {
+    const entries = parse(line).entries;
+    assert.equal(entries.length, 2, line);
+    assert.equal(entries[0].ids, undefined, line);
+    assert.equal(entries[1].ids, undefined, line);
+  }
+});
