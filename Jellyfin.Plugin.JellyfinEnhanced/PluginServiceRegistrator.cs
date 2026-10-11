@@ -58,6 +58,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Arr.ArrAuditLog>();
             serviceCollection.AddSingleton<Services.Arr.ArrConfirmationTokens>();
             serviceCollection.AddSingleton<Services.Arr.ArrActionRunner>();
+            // In-memory arr snapshots (library index, queue, history, calendar, system) behind the
+            // Downloads/Calendar/link routes, and the loop that keeps the ones in use fresh.
+            serviceCollection.AddSingleton<Services.Arr.ArrStateStore>();
+            serviceCollection.AddHostedService<Services.Arr.ArrStateReconciler>();
+            // JE backup/export/restore (Jellyfin's own backups don't include plugin data).
+            serviceCollection.AddSingleton<Services.Backup.JeBackupService>();
+            serviceCollection.AddTransient<JeBackupTask>();
             serviceCollection.AddSingleton<Logger>();
             serviceCollection.AddSingleton<UserConfigurationManager>();
             // Auto-detects newly added config-page settings by diffing the

@@ -127,6 +127,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             }
         }
 
+        // Set while RestoreConfiguration replaces the configuration: the restored object is applied as
+        // is (its placeholders refer to the restored secrets), not merged like a config-page save.
+        private bool _restoringConfiguration;
+
+        /// <summary>
+        /// Replaces the whole configuration with one restored from a JE backup. This install's analytics
+        /// identity and consent are kept; a saved key is only kept for the server it was saved for
+        /// (a placeholder whose address differs from the current one is blanked and listed for
+        /// re-entry, unless the backup's own encrypted credentials supplied it: <paramref name="restoredSecretNames"/>);
+        /// credentials still in plain text (a backup from a version without the secrets store) move
+        /// into the store; then the usual config-change side effects run. Returns the secrets report
+        /// (credentials the restored configuration refers to but which are not stored are listed as
+        /// missing).
+        /// </summary>
+        internal Services.Secrets.SecretsMigration.Report RestoreConfiguration(PluginConfiguration restored, IReadOnlyCollection<string> restoredSecretNames)
+        {
+            lock (AnalyticsCredentialLock)
+            {
+                var current = Configuration;
+                if (current != null)
+                {
+                    restored.AnalyticsEnabled = current.AnalyticsEnabled;
+                    restored.AnalyticsHasBeenConfigured = current.AnalyticsHasBeenConfigured;
+                    restored.AnalyticsInstallId = current.AnalyticsInstallId;
+                    restored.AnalyticsInstallSecret = current.AnalyticsInstallSecret;
+                    restored.AnalyticsLastReportedAt = current.AnalyticsLastReportedAt;
+                    restored.AnalyticsLastPayloadJson = current.AnalyticsLastPayloadJson;
+                    restored.AnalyticsLastReportedPluginVersion = current.AnalyticsLastReportedPluginVersion;
+                    restored.AnalyticsLastReportedJellyfinTarget = current.AnalyticsLastReportedJellyfinTarget;
+                    restored.AnalyticsLastReportedJellyfinVersion = current.AnalyticsLastReportedJellyfinVersion;
+                    restored.AnalyticsForbiddenSinceLastSuccess = current.AnalyticsForbiddenSinceLastSuccess;
+                }
+                var detached = current != null
+                    ? Services.Secrets.SecretsMigration.DetachMovedCredentials(restored, current, restoredSecretNames)
+                    : new List<string>();
+                var report = Services.Secrets.SecretsMigration.MigrateStored(restored, Secrets);
+                if (detached.Count > 0)
+                {
+                    report.NeedsReentry.AddRange(detached);
+                    report.Notes.Add($"Restore: {detached.Count} saved credential(s) were not kept because the backup points them at another server than this install's saved key was for; enter them again.");
+                }
+                _restoringConfiguration = true;
+                try
+                {
+                    UpdateConfiguration(restored);
+                }
+                finally
+                {
+                    _restoringConfiguration = false;
+                }
+                LogSecretsReport(report);
+                return report;
+            }
+        }
+
         // Dedupes Shortcuts (XmlSerializer appends to constructor-initialized lists, doubling on each restart)
         // and backfills missing defaults. Reverse iteration so persisted XML rows win over constructor defaults.
         private void BackfillMissingDefaultShortcuts()
@@ -312,7 +367,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // backend row exists.
             lock (AnalyticsCredentialLock)
             {
-                if (configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)
+                if (!_restoringConfiguration && configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)
                 {
                     // Credentials: placeholders/blanks keep the stored value, the clear token removes
                     // it, a typed value or import handle replaces it; only placeholders are persisted.

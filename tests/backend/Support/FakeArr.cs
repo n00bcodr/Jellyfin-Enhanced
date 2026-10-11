@@ -1,0 +1,217 @@
+using System.Collections.Concurrent;
+using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets;
+
+namespace JE.Tests;
+
+/// <summary>
+/// A synthetic Sonarr/Radarr API behind <see cref="IntegrationTransport"/> (by host name), with
+/// paged queue/history, history/since, calendar, library, tags and system routes, call counting
+/// per host and path, and switchable failures. Plus the plugin wiring (instance rows, registry,
+/// client factory, store) the arr-state tests share.
+/// </summary>
+internal sealed class FakeArr : IDisposable
+{
+    public sealed class Host
+    {
+        public string App { get; set; } = "Radarr";
+        public List<JsonObject> Movies { get; } = new();
+        public List<JsonObject> Series { get; } = new();
+        public List<JsonObject> Queue { get; } = new();
+        public List<JsonObject> History { get; } = new();
+        public List<JsonObject> Calendar { get; } = new();
+        public Dictionary<int, string> Tags { get; } = new();
+        /// <summary>Non-zero: every call answers with this HTTP status.</summary>
+        public int FailWith { get; set; }
+        /// <summary>Non-null: every call answers with a redirect to this URL.</summary>
+        public string? RedirectTo { get; set; }
+        /// <summary>Non-null: awaited (with the call's cancellation token) before a call to this path is answered.</summary>
+        public Func<string, CancellationToken, Task>? Before { get; set; }
+    }
+
+    public ApiPluginFixture Plugin { get; } = new();
+    public ConcurrentDictionary<string, Host> Hosts { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public ConcurrentQueue<string> Calls { get; } = new();
+    public IntegrationTransport Transport { get; }
+    public ArrInstanceRegistry Registry { get; } = new();
+    public ArrClientFactory Factory { get; }
+    public DateTimeOffset Now { get; set; } = new(2026, 10, 12, 12, 0, 0, TimeSpan.Zero);
+    private readonly List<ArrStateStore> stores = new();
+
+    public FakeArr()
+    {
+        Transport = new IntegrationTransport(async (request, ct) =>
+        {
+            if (Hosts.TryGetValue(request.RequestUri!.Host, out var host) && host.Before is { } before) await before(request.RequestUri.AbsolutePath, ct);
+            return Answer(request);
+        });
+        Factory = new ArrClientFactory(Transport, Registry);
+    }
+
+    public int CallCount(string? host = null, string? pathPart = null)
+        => Calls.Count(c => (host == null || c.StartsWith(host + "/", StringComparison.OrdinalIgnoreCase)) && (pathPart == null || c.Contains(pathPart, StringComparison.Ordinal)));
+
+    /// <summary>Adds instance rows (name, kind, url, key) to the configuration and migrates them (ids, keys to the store).</summary>
+    public void Configure(params (string Name, ArrKind Kind, string Url, string Key)[] rows)
+    {
+        var config = Plugin.Plugin.Configuration;
+        config.SonarrInstances = JsonSerializer.Serialize(rows.Where(r => r.Kind == ArrKind.Sonarr).Select(r => new { r.Name, r.Url, ApiKey = r.Key, Enabled = true }));
+        config.RadarrInstances = JsonSerializer.Serialize(rows.Where(r => r.Kind == ArrKind.Radarr).Select(r => new { r.Name, r.Url, ApiKey = r.Key, Enabled = true }));
+        SecretsMigration.MigrateStored(config, Plugin.Plugin.Secrets);
+    }
+
+    public ArrConnection Instance(string name) => Registry.All().Single(c => c.Name == name);
+
+    /// <summary>A store over this fake with the test clock; <paramref name="cacheDirectory"/> null disables the warm start.</summary>
+    public ArrStateStore Store(string? cacheDirectory = null)
+    {
+        var store = new ArrStateStore(Factory, cacheDirectory, Plugin.Core.Logger, () => Now, () => Plugin.Plugin.Configuration);
+        stores.Add(store);
+        return store;
+    }
+
+    public Host Add(string host, string app)
+    {
+        var h = new Host { App = app };
+        Hosts[host] = h;
+        return h;
+    }
+
+    public static JsonObject Movie(int id, int tmdb, string title, bool hasFile = true, int[]? tags = null, string? path = null, string? digital = null)
+        => new()
+        {
+            ["id"] = id, ["tmdbId"] = tmdb, ["imdbId"] = "tt" + tmdb, ["title"] = title, ["year"] = 2010, ["hasFile"] = hasFile, ["monitored"] = true,
+            ["sizeOnDisk"] = 1000L * id, ["path"] = path ?? $"/data/movies/{title} ({tmdb})", ["qualityProfileId"] = 1,
+            ["tags"] = new JsonArray((tags ?? Array.Empty<int>()).Select(t => (JsonNode)t).ToArray()),
+            ["digitalRelease"] = digital,
+            ["images"] = new JsonArray(new JsonObject { ["coverType"] = "poster", ["remoteUrl"] = $"https://img/{tmdb}.jpg" }),
+        };
+
+    public static JsonObject SeriesRow(int id, int tvdb, string title, int? tmdb = null, string? imdb = null, int[]? tags = null, string? slug = null)
+        => new()
+        {
+            ["id"] = id, ["tvdbId"] = tvdb, ["tmdbId"] = tmdb, ["imdbId"] = imdb, ["title"] = title, ["titleSlug"] = slug ?? title.ToLowerInvariant().Replace(' ', '-'),
+            ["monitored"] = true, ["path"] = $"/data/tv/{title}", ["qualityProfileId"] = 1,
+            ["tags"] = new JsonArray((tags ?? Array.Empty<int>()).Select(t => (JsonNode)t).ToArray()),
+            ["statistics"] = new JsonObject { ["episodeFileCount"] = 3, ["episodeCount"] = 6, ["percentOfEpisodes"] = 50.0, ["sizeOnDisk"] = 3000L },
+            ["images"] = new JsonArray(new JsonObject { ["coverType"] = "poster", ["remoteUrl"] = $"https://img/tv{tvdb}.jpg" }),
+        };
+
+    public static JsonObject SonarrQueueRow(int id, string downloadId, int season, int episode, string series = "Show", int tvdb = 100, int? tmdb = 200)
+        => new()
+        {
+            ["id"] = id, ["downloadId"] = downloadId, ["title"] = $"{series}.S{season:00}E{episode:00}.1080p-GRP", ["status"] = "downloading",
+            ["trackedDownloadState"] = "downloading", ["trackedDownloadStatus"] = "ok", ["size"] = 1000.0, ["sizeleft"] = 250.0, ["timeleft"] = "00:01:00",
+            ["seriesId"] = 1, ["episodeId"] = id,
+            ["series"] = new JsonObject { ["id"] = 1, ["title"] = series, ["tvdbId"] = tvdb, ["tmdbId"] = tmdb, ["images"] = new JsonArray() },
+            ["episode"] = new JsonObject { ["id"] = id, ["seasonNumber"] = season, ["episodeNumber"] = episode, ["title"] = $"Episode {episode}" },
+        };
+
+    public static JsonObject RadarrQueueRow(int id, int tmdb, string title, string state = "downloading", string status = "ok")
+        => new()
+        {
+            ["id"] = id, ["downloadId"] = "dl" + id, ["title"] = title + ".2010.1080p-GRP", ["status"] = "downloading",
+            ["trackedDownloadState"] = state, ["trackedDownloadStatus"] = status, ["size"] = 2000.0, ["sizeleft"] = 1000.0, ["timeleft"] = "00:02:00",
+            ["movieId"] = id, ["movie"] = new JsonObject { ["id"] = id, ["title"] = title, ["year"] = 2010, ["tmdbId"] = tmdb, ["images"] = new JsonArray() },
+            ["statusMessages"] = new JsonArray(new JsonObject { ["title"] = "x", ["messages"] = new JsonArray("Sample") }),
+        };
+
+    public static JsonObject HistoryRow(int id, string eventType, DateTime date, string? downloadId = null, int tmdb = 1, string title = "Movie", int? season = null, int? episode = null)
+    {
+        var row = new JsonObject
+        {
+            ["id"] = id, ["eventType"] = eventType, ["date"] = date.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture), ["downloadId"] = downloadId,
+        };
+        if (season.HasValue)
+        {
+            row["series"] = new JsonObject { ["id"] = 1, ["title"] = title, ["tvdbId"] = 100, ["tmdbId"] = tmdb, ["images"] = new JsonArray() };
+            row["episode"] = new JsonObject { ["id"] = id, ["seasonNumber"] = season, ["episodeNumber"] = episode, ["title"] = "Ep " + episode };
+        }
+        else
+        {
+            row["movie"] = new JsonObject { ["id"] = id, ["title"] = title, ["year"] = 2010, ["tmdbId"] = tmdb, ["images"] = new JsonArray() };
+        }
+        return row;
+    }
+
+    public static JsonObject Episode(int id, string airUtc, string series = "Show", int tvdb = 100, int season = 1, int episode = 1)
+        => new()
+        {
+            ["id"] = id, ["seriesId"] = 1, ["tvdbId"] = 9000 + id, ["seasonNumber"] = season, ["episodeNumber"] = episode, ["title"] = "Ep " + episode,
+            ["airDateUtc"] = airUtc, ["hasFile"] = false, ["monitored"] = true,
+            ["series"] = new JsonObject { ["title"] = series, ["tvdbId"] = tvdb, ["imdbId"] = "tt" + tvdb, ["tmdbId"] = tvdb + 1, ["path"] = "/data/tv/" + series, ["images"] = new JsonArray() },
+        };
+
+    private HttpResponseMessage Answer(HttpRequestMessage request)
+    {
+        var uri = request.RequestUri!;
+        var path = uri.AbsolutePath;
+        Calls.Enqueue(uri.Host + path + uri.Query);
+        if (!Hosts.TryGetValue(uri.Host, out var host)) return IntegrationTransport.Response("{}", 404);
+        if (host.RedirectTo != null)
+        {
+            var redirect = IntegrationTransport.Response("", 302);
+            redirect.Headers.Location = new Uri(host.RedirectTo);
+            return redirect;
+        }
+        if (host.FailWith != 0) return IntegrationTransport.Response("{\"message\":\"boom\"}", host.FailWith);
+
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        string Json(object o) => JsonSerializer.Serialize(o);
+        lock (host)
+        {
+            switch (path)
+            {
+                case "/api/v3/system/status":
+                    return IntegrationTransport.Response(Json(new { appName = host.App, version = host.App == "Sonarr" ? "4.0.20.3014" : "6.0.4.10291" }));
+                case "/api/v3/tag":
+                    return IntegrationTransport.Response(Json(host.Tags.Select(t => new { id = t.Key, label = t.Value })));
+                case "/api/v3/movie":
+                    return IntegrationTransport.Response(new JsonArray(host.Movies.Select(m => m.DeepClone()).ToArray()).ToJsonString());
+                case "/api/v3/series":
+                    return IntegrationTransport.Response(new JsonArray(host.Series.Select(m => m.DeepClone()).ToArray()).ToJsonString());
+                case "/api/v3/queue":
+                    return Page(host.Queue, query);
+                case "/api/v3/history":
+                    return Page(host.History.OrderByDescending(h => (string)h["date"]!).ToList(), query);
+                case "/api/v3/history/since":
+                {
+                    var since = DateTime.Parse(query["date"]!, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
+                    var rows = host.History.Where(h => DateTime.Parse((string)h["date"]!, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal) >= since);
+                    return IntegrationTransport.Response(new JsonArray(rows.Select(r => r.DeepClone()).ToArray()).ToJsonString());
+                }
+                case "/api/v3/calendar":
+                    return IntegrationTransport.Response(new JsonArray(host.Calendar.Select(r => r.DeepClone()).ToArray()).ToJsonString());
+                case "/api/v3/health":
+                case "/api/v3/diskspace":
+                case "/api/v3/rootfolder":
+                case "/api/v3/qualityprofile":
+                    return IntegrationTransport.Response("[]");
+                default:
+                    return IntegrationTransport.Response("{}", 404);
+            }
+        }
+    }
+
+    private static HttpResponseMessage Page(List<JsonObject> all, System.Collections.Specialized.NameValueCollection query)
+    {
+        var page = int.Parse(query["page"] ?? "1", CultureInfo.InvariantCulture);
+        var size = int.Parse(query["pageSize"] ?? "10", CultureInfo.InvariantCulture);
+        var records = all.Skip((page - 1) * size).Take(size).Select(r => r.DeepClone()).ToArray();
+        return IntegrationTransport.Response(new JsonObject
+        {
+            ["page"] = page, ["pageSize"] = size, ["totalRecords"] = all.Count, ["records"] = new JsonArray(records),
+        }.ToJsonString());
+    }
+
+    public void Dispose()
+    {
+        foreach (var s in stores) s.Dispose();
+        Transport.Dispose();
+        Plugin.Dispose();
+    }
+}

@@ -3200,6 +3200,63 @@
                     </fieldset>
 
                     <fieldset>
+                        <legend class="sectionTitle">Backup &amp; Restore</legend>
+                        <div class="configSection">
+                            <div class="fieldDescription">Jellyfin's own backups don't include plugin data. These save Jellyfin Enhanced's settings, every user's Jellyfin Enhanced settings (shortcuts, hidden content, bookmarks, reviews, …), custom branding and its other stores in one file. Caches are left out; they rebuild by themselves.</div>
+
+                            <h3 class="je-backup-heading">Download a backup</h3>
+                            <div class="selectContainer">
+                                <label class="selectLabel" for="backupExportSecrets">API keys and passwords</label>
+                                <select is="emby-select" id="backupExportSecrets" class="emby-select-withcolor emby-select">
+                                    <option value="exclude">Leave them out (enter them again after restoring on a new server)</option>
+                                    <option value="encrypt">Include them, encrypted with a passphrase</option>
+                                </select>
+                            </div>
+                            <div class="inputContainer" id="backupExportPassphraseRow">
+                                <label class="inputLabel" for="backupExportPassphrase">Passphrase</label>
+                                <input id="backupExportPassphrase" is="emby-input" type="password" autocomplete="new-password"/>
+                                <div class="fieldDescription">At least 12 characters. Without it the keys in the file can't be read, so keep it somewhere safe.</div>
+                            </div>
+                            <button id="backupExportBtn" is="emby-button" type="button" class="raised button-submit emby-button"><span>Download backup</span></button>
+                            <div id="backupExportStatus" class="fieldDescription" role="status"></div>
+
+                            <h3 class="je-backup-heading">Restore a backup</h3>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="backupRestoreFile">Backup file</label>
+                                <input id="backupRestoreFile" type="file" accept=".zip,application/zip"/>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="backupRestorePassphrase">Passphrase (only if the backup includes API keys)</label>
+                                <input id="backupRestorePassphrase" is="emby-input" type="password" autocomplete="off"/>
+                            </div>
+                            <div class="je-backup-actions">
+                                <button id="backupInspectBtn" is="emby-button" type="button" class="raised emby-button"><span>Check file</span></button>
+                                <button id="backupRestoreBtn" is="emby-button" type="button" class="raised button-submit emby-button"><span>Restore</span></button>
+                            </div>
+                            <div id="backupRestoreStatus" class="fieldDescription" role="status"></div>
+                            <div class="fieldDescription">Restoring replaces Jellyfin Enhanced's settings and the files in the backup; other files are kept. A copy of the current data is saved to the backup folder first. Restart Jellyfin afterwards so every part reads the restored data.</div>
+
+                            <h3 class="je-backup-heading">Scheduled backups</h3>
+                            <div class="fieldDescription">The task <strong>Back up Jellyfin Enhanced data</strong> writes a backup to this folder. Give it a trigger under Dashboard → Scheduled Tasks; it doesn't run on its own.</div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="backupFolder">Backup folder</label>
+                                <input id="backupFolder" is="emby-input" type="text" autocomplete="off"/>
+                                <div class="fieldDescription">A folder on the Jellyfin server. Empty: the <code>backups</code> folder inside the plugin's data folder (pick a folder on another disk to survive a disk failure).</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="backupCopiesToKeep">Backups to keep</label>
+                                <input id="backupCopiesToKeep" is="emby-input" type="number" min="1" max="100" step="1"/>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="backupIncludeSecrets" is="emby-checkbox" type="checkbox"/><span>Include API keys and passwords, encrypted</span></label></div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="backupPassphrase">Passphrase for scheduled backups</label>
+                                <input id="backupPassphrase" is="emby-input" type="password" autocomplete="new-password" class="je-api-input"/>
+                                <div class="fieldDescription">At least 12 characters. Stored like the API keys (never shown again); needed to restore the keys from these backups.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
                         <legend class="sectionTitle">Developer Settings</legend>
                         <div class="configSection">
                             <div class="checkboxContainer"><label><input id="devMode" is="emby-checkbox" type="checkbox"/><span>Dev Mode</span></label></div>
@@ -5150,6 +5207,7 @@
             jeSecretBindServers(document.querySelector('#JellyseerrApiKey'), (fresh.JellyseerrUrls || '').split(/[\r\n,]+/));
             jeSecretInit(document.querySelector('#mdblistApiKey'), fresh.MdblistApiKey || '');
             jeSecretInit(document.querySelector('#shokoApiKey'), fresh.ShokoApiKey || '');
+            jeSecretInit(document.querySelector('#backupPassphrase'), fresh.BackupPassphrase || '');
             jeSecretBindServers(document.querySelector('#shokoApiKey'), [fresh.ShokoUrl || '']);
             loadArrInstances(fresh);
             updateAllDependencies();
@@ -7094,6 +7152,10 @@
                 document.querySelector('#shokoUrl').value = config.ShokoUrl;
                 jeSecretInit(document.querySelector('#shokoApiKey'), config.ShokoApiKey);
                 jeSecretBindServers(document.querySelector('#shokoApiKey'), [config.ShokoUrl || '']);
+                document.querySelector('#backupFolder').value = config.BackupFolder || '';
+                document.querySelector('#backupCopiesToKeep').value = config.BackupCopiesToKeep || 7;
+                document.querySelector('#backupIncludeSecrets').checked = config.BackupIncludeSecrets === true;
+                jeSecretInit(document.querySelector('#backupPassphrase'), config.BackupPassphrase || '');
                 document.querySelector('#shokoShowEpisodes').checked = config.ShokoShowEpisodes !== false;
                 document.querySelector('#shokoShowSpecials').checked = config.ShokoShowSpecials === true;
                 document.querySelector('#shokoShowCredits').checked = config.ShokoShowCredits === true;
@@ -7708,6 +7770,10 @@
             config.ShokoUrlMappings = document.querySelector('#shokoUrlMappings').value || '';
             config.ShokoUrl = document.querySelector('#shokoUrl').value;
             config.ShokoApiKey = jeSecretRead(document.querySelector('#shokoApiKey'));
+            config.BackupFolder = (document.querySelector('#backupFolder').value || '').trim();
+            config.BackupCopiesToKeep = Math.min(100, Math.max(1, parseInt(document.querySelector('#backupCopiesToKeep').value, 10) || 7));
+            config.BackupIncludeSecrets = document.querySelector('#backupIncludeSecrets').checked;
+            config.BackupPassphrase = jeSecretRead(document.querySelector('#backupPassphrase'));
             config.ShokoShowEpisodes = document.querySelector('#shokoShowEpisodes').checked;
             config.ShokoShowSpecials = document.querySelector('#shokoShowSpecials').checked;
             config.ShokoShowCredits = document.querySelector('#shokoShowCredits').checked;
@@ -9126,6 +9192,7 @@
             { parent: 'downloadsShowHistory', label: 'Show Download History Section', children: ['downloadsHistoryAdminOnly'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
             { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn'] },
+            { parent: 'backupIncludeSecrets', label: 'Include API keys and passwords, encrypted', children: ['backupPassphrase'] },
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },
             { parent: 'arrTagsShowAsLinks', label: 'Show synced tags as links', children: ['arrTagsLinksFilter', 'arrTagsLinksHideFilter'] },
@@ -10854,6 +10921,161 @@
                 }
             }
         });
+        /**
+         * Reads the "Download a backup" choices: whether credentials go in (encrypted) and the passphrase.
+         * @param {Document} doc - The page document
+         * @returns {{secrets: string, passphrase: string, error: (string|null)}}
+         */
+        function jeBackupExportOptions(doc) {
+            var secrets = (doc.querySelector('#backupExportSecrets') || {}).value === 'encrypt' ? 'encrypt' : 'exclude';
+            var passphrase = secrets === 'encrypt' ? ((doc.querySelector('#backupExportPassphrase') || {}).value || '') : '';
+            var error = secrets === 'encrypt' && passphrase.length < 12 ? 'Enter a passphrase of at least 12 characters to include API keys and passwords.' : null;
+            return { secrets: secrets, passphrase: passphrase, error: error };
+        }
+
+        /**
+         * Headers for JE's admin routes called with fetch (needed for file download and upload).
+         * @returns {Object<string, string>}
+         */
+        function jeBackupAuthHeaders() {
+            var token = ApiClient.accessToken ? ApiClient.accessToken() : '';
+            return { 'Authorization': 'MediaBrowser Token="' + token + '"' };
+        }
+
+        /**
+         * One line describing a checked backup file.
+         * @param {Object} summary - Response of admin/backup/inspect
+         * @returns {string}
+         */
+        function jeBackupSummaryText(summary) {
+            var m = (summary && summary.manifest) || {};
+            var when = m.createdAt ? new Date(m.createdAt).toLocaleString() : 'an unknown date';
+            var parts = ['Backup from ' + when + (m.pluginVersion ? ' (Jellyfin Enhanced ' + m.pluginVersion + ')' : '') + ':'];
+            parts.push(summary.hasConfiguration ? 'plugin settings,' : 'no plugin settings,');
+            parts.push((summary.userFolders || 0) + ' user(s) with their settings,');
+            parts.push((summary.dataFiles || 0) + ' file(s) in total;');
+            if (summary.hasSecrets) {
+                parts.push(summary.passphraseOk === true ? 'API keys included (passphrase OK).'
+                    : summary.passphraseOk === false ? 'API keys included, but the passphrase is wrong.'
+                    : 'API keys included (enter the passphrase to restore them).');
+            } else {
+                parts.push('API keys not included.');
+            }
+            return parts.join(' ');
+        }
+
+        /**
+         * Downloads a backup through the admin export route.
+         * @param {Document} doc - The page document
+         * @returns {Promise<string>} The status message shown to the admin
+         */
+        async function jeBackupExport(doc) {
+            var opts = jeBackupExportOptions(doc);
+            if (opts.error) return opts.error;
+            var headers = jeBackupAuthHeaders();
+            headers['Content-Type'] = 'application/json';
+            var res = await fetch(ApiClient.getUrl('/JellyfinEnhanced/admin/backup/export'), {
+                method: 'POST', headers: headers, body: JSON.stringify({ secrets: opts.secrets, passphrase: opts.passphrase })
+            });
+            if (!res.ok) {
+                var err = await res.json().catch(function() { return {}; });
+                return err.message || ('Backup failed (HTTP ' + res.status + ').');
+            }
+            var blob = await res.blob();
+            var name = 'jellyfin-enhanced-backup.zip';
+            var disposition = res.headers.get('Content-Disposition') || '';
+            var match = /filename="?([^";]+)"?/i.exec(disposition);
+            if (match) name = match[1];
+            var url = URL.createObjectURL(blob);
+            var a = doc.createElement('a');
+            a.href = url;
+            a.download = name;
+            doc.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
+            return 'Saved ' + name + (opts.secrets === 'encrypt' ? ' (API keys included, encrypted).' : ' (API keys left out).');
+        }
+
+        /**
+         * Uploads the chosen backup to the inspect or restore route.
+         * @param {Document} doc - The page document
+         * @param {'inspect'|'restore'} action - Which route
+         * @returns {Promise<{ok: boolean, body: Object}>}
+         */
+        async function jeBackupUpload(doc, action) {
+            var input = doc.querySelector('#backupRestoreFile');
+            var file = input && input.files && input.files[0];
+            if (!file) return { ok: false, body: { message: 'Choose a backup file first.' } };
+            var form = new FormData();
+            form.append('file', file, file.name);
+            form.append('passphrase', (doc.querySelector('#backupRestorePassphrase') || {}).value || '');
+            if (action === 'restore') form.append('confirm', 'restore');
+            var res = await fetch(ApiClient.getUrl('/JellyfinEnhanced/admin/backup/' + action), { method: 'POST', headers: jeBackupAuthHeaders(), body: form });
+            var body = await res.json().catch(function() { return {}; });
+            return { ok: res.ok, body: body };
+        }
+
+        /**
+         * The message shown after a restore.
+         * @param {Object} result - Response of admin/backup/restore
+         * @returns {string}
+         */
+        function jeBackupRestoreText(result) {
+            var text = 'Restored ' + (result.filesRestored || 0) + ' file(s)'
+                + (result.configurationRestored ? ', the plugin settings' : '')
+                + (result.secretsRestored ? ' and ' + result.secretsRestored + ' API key(s)' : '') + '.';
+            if (result.missingCredentials && result.missingCredentials.length) {
+                text += ' Enter these again: ' + result.missingCredentials.join(', ') + '.';
+            }
+            if (result.safetyBackup) text += ' The previous data was saved as ' + result.safetyBackup + '.';
+            return text + ' Restart Jellyfin, then reload this page.';
+        }
+
+        /** Wires the Backup & Restore section's buttons. */
+        function jeBackupInit() {
+            var exportBtn = document.querySelector('#backupExportBtn');
+            var exportStatus = document.querySelector('#backupExportStatus');
+            var restoreStatus = document.querySelector('#backupRestoreStatus');
+            var secretsSelect = document.querySelector('#backupExportSecrets');
+            var passRow = document.querySelector('#backupExportPassphraseRow');
+            if (!exportBtn || !secretsSelect) return;
+            var syncPassRow = function() { passRow.style.display = secretsSelect.value === 'encrypt' ? '' : 'none'; };
+            secretsSelect.addEventListener('change', syncPassRow);
+            syncPassRow();
+            exportBtn.addEventListener('click', async function() {
+                exportBtn.disabled = true;
+                exportStatus.textContent = 'Preparing the backup…';
+                try {
+                    exportStatus.textContent = await jeBackupExport(document);
+                } catch (e) {
+                    exportStatus.textContent = 'Backup failed: ' + (e && e.message ? e.message : e);
+                } finally {
+                    exportBtn.disabled = false;
+                }
+            });
+            document.querySelector('#backupInspectBtn').addEventListener('click', async function() {
+                restoreStatus.textContent = 'Checking…';
+                try {
+                    var r = await jeBackupUpload(document, 'inspect');
+                    restoreStatus.textContent = r.ok ? jeBackupSummaryText(r.body) : (r.body.message || 'This file can\'t be used.');
+                } catch (e) {
+                    restoreStatus.textContent = 'Check failed: ' + (e && e.message ? e.message : e);
+                }
+            });
+            document.querySelector('#backupRestoreBtn').addEventListener('click', async function() {
+                if (!confirm('Restore this backup?\n\nJellyfin Enhanced\'s settings and the files in the backup replace the current ones. A copy of the current data is saved first.')) return;
+                restoreStatus.textContent = 'Restoring…';
+                try {
+                    var r = await jeBackupUpload(document, 'restore');
+                    restoreStatus.textContent = r.ok ? jeBackupRestoreText(r.body) : (r.body.message || 'Restore failed.');
+                } catch (e) {
+                    restoreStatus.textContent = 'Restore failed: ' + (e && e.message ? e.message : e);
+                }
+            });
+        }
+        jeBackupInit();
+
         var rebuildTagCacheBtn = document.querySelector('#rebuildTagCacheBtn');
         if (rebuildTagCacheBtn) {
             rebuildTagCacheBtn.addEventListener('click', async () => {

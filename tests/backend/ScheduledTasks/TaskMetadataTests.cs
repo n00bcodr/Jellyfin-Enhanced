@@ -109,18 +109,22 @@ public class TaskMetadataTests
         config.ArrTagsPrefix = "Arr: ";
         config.ArrTagsSyncFilter = "alice";
         config.RadarrInstances = "[{\"Name\":\"Test\",\"Url\":\"http://radarr.test\",\"ApiKey\":\"test\",\"Enabled\":true}]";
+        Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets.SecretsMigration.MigrateStored(config, f.Plugin.Secrets);
         var movie = new Movie { Id = Guid.NewGuid(), Tags = ["Keep", "Arr: stale"], ProviderIds = new() { ["Tmdb"] = "123" } };
         var library = new Mock<ILibraryManager>();
         library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new BaseItem[] { movie });
         var writes = 0;
         library.Setup(l => l.UpdateItemAsync(movie, It.IsAny<BaseItem>(), ItemUpdateType.MetadataEdit, It.IsAny<CancellationToken>())).Callback(() => writes++).Returns(Task.CompletedTask);
         using var transport = new IntegrationTransport((request, _) => Task.FromResult(IntegrationTransport.Response(
+            request.RequestUri!.AbsolutePath.EndsWith("/system/status") ? "{\"appName\":\"Radarr\",\"version\":\"6.0.4\"}" :
             request.RequestUri!.AbsolutePath.EndsWith("/tag") ? "[{\"id\":1,\"label\":\"alice\"},{\"id\":2,\"label\":\"bob\"}]" : "[{\"tmdbId\":123,\"tags\":[1,2]}]")));
+        using var store = new Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrStateStore(
+            new Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrClientFactory(transport, new Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrInstanceRegistry()), null, null, null, null);
         var previous = BaseItem.LibraryManager;
         BaseItem.LibraryManager = library.Object;
         try
         {
-            var task = new ArrTagsSyncTask(library.Object, transport, f.Core.Logger);
+            var task = new ArrTagsSyncTask(library.Object, store, f.Core.Logger);
             await task.ExecuteAsync(new Progress<double>(), default);
             Assert.Equal(new[] { "Keep", "Arr: alice" }, movie.Tags);
             Assert.Equal(1, writes);

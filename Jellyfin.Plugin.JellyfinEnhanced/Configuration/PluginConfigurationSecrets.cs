@@ -28,6 +28,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             nameof(SonarrApiKey),
             nameof(RadarrApiKey),
             nameof(AnalyticsInstallSecret),
+            nameof(BackupPassphrase),
         };
 
         /// <summary>The real Seerr API key.</summary>
@@ -41,6 +42,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>The real Shoko API key.</summary>
         public string GetShokoApiKey() => GetSecret(nameof(ShokoApiKey));
+
+        /// <summary>The real passphrase for credentials in scheduled backups.</summary>
+        public string GetBackupPassphrase() => GetSecret(nameof(BackupPassphrase));
 
         /// <summary>The real analytics install secret.</summary>
         public string GetAnalyticsInstallSecret() => GetSecret(nameof(AnalyticsInstallSecret));

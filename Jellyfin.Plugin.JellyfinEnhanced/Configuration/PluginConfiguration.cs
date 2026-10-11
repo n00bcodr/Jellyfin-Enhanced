@@ -789,6 +789,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public bool ArrIntegrationEnabled { get; set; }
 
+        /// <summary>
+        /// Folder the scheduled "Back up Jellyfin Enhanced data" task writes to. Empty: the
+        /// <c>backups</c> folder inside JE's data folder.
+        /// </summary>
+        public string BackupFolder { get; set; } = string.Empty;
+
+        /// <summary>Scheduled backups kept in <see cref="BackupFolder"/> (older ones are removed). 1-100.</summary>
+        public int BackupCopiesToKeep { get; set; } = 7;
+
+        /// <summary>Scheduled backups include the stored credentials, encrypted with <see cref="BackupPassphrase"/>. Off by default.</summary>
+        public bool BackupIncludeSecrets { get; set; }
+
+        /// <summary>Passphrase for credentials in scheduled backups (a stored credential: placeholder only).</summary>
+        public string BackupPassphrase { get; set; } = string.Empty;
+
         // Shoko Settings — single-instance (URL + API key), like Jellyseerr, not the
         // Sonarr/Radarr instance-list pattern: Shoko is one server per household.
         public string ShokoUrl { get; set; }

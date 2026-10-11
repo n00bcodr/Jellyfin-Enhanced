@@ -508,6 +508,7 @@
     "downloads_status_failed": "Failed",
     "downloads_status_unknown": "Unknown",
     "requests_history": "History",
+    "requests_history_instance_error": "{source} history \"{name}\" could not be read: {reason}",
     "requests_no_history_found": "No history found",
     "downloads_history_imported": "Imported",
     "downloads_history_failed": "Import Failed",

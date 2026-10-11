@@ -26,7 +26,9 @@ Jellyfin.Plugin.JellyfinEnhanced/
 ├── Controllers/                      # JellyfinEnhancedController.cs — every
 │                                     # /JellyfinEnhanced/* endpoint the client calls;
 │                                     # ArrAdminController.cs — arr registry/diagnostics
-│                                     # and the credential rollback (admin only)
+│                                     # and the credential rollback (admin only);
+│                                     # ArrStateController.cs — arr snapshot diagnostics;
+│                                     # JeBackupController.cs — backup/export/restore
 ├── PluginPages/                      # HTML wrappers for the sidebar/plugin pages
 ├── Assets/
 │   └── PosterTags/                   # Embedded fonts, icon paths, flags, age-rating
@@ -339,6 +341,9 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`ArrClient.cs`** / **`ArrClientFactory.cs`** / **`ArrHttp.cs`**: One client per instance on a named HttpClient that never follows redirects and checks the address it connects to; per-call timeouts and size caps, typed `ArrError`s, GET backoff, paging, `appName` and version detection (`ArrSystemStatus.cs`).
     * **`ArrActionRunner.cs`** / **`ArrAuditLog.cs`** / **`ArrConfirmationTokens.cs`**: Direct arr writes with an idempotency key, read-back, an append-only `arr-audit.jsonl` and confirmation tokens for destructive actions.
     * **`ArrDiagnostics.cs`**: The connection check used by the admin test routes.
+    * **`ArrStateStore.cs`** / **`ArrSnapshotSlot.cs`** / **`ArrStateLoaders.cs`** / **`ArrStateModels.cs`**: In-memory snapshots per instance (library index with provider ids and tags, the whole queue, a history ring kept current with `history/since`, a calendar window, system facts), refreshed in the background, single-flight, with failure backoff and a warm-start file for the library. The existing queue, history, calendar, link and tag-sync code reads from it, so serving a page makes no arr call. **`ArrStateReconciler.cs`** is the hosted loop that runs due refreshes; **`ArrCallAttribution.cs`** counts upstream calls per request; **`ArrLegacyViews.cs`** builds the existing routes' response shapes from the snapshots.
+
+* **`/Services/Backup/JeBackupService.cs`**: Export (zip with manifest and checksums; credentials left out or AES-GCM encrypted with a passphrase), scheduled copies with rotation (`ScheduledTasks/JeBackupTask.cs`, "Back up Jellyfin Enhanced data", no default triggers) and verified restore with a safety copy (`JellyfinEnhanced.RestoreConfiguration` applies the configuration).
 
 * **`/Services/ClientScriptBundle.cs`**: Builds and caches the component bundle (`/JellyfinEnhanced/bundle.js`) and its index source map from the embedded `js/component-scripts.json` manifest; also the source of the ordered list returned by `/bootstrap`.
 

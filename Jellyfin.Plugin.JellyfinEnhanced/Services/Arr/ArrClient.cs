@@ -228,6 +228,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             timeoutCts.CancelAfter(timeout);
             var token = timeoutCts.Token;
             Interlocked.Increment(ref _callCount);
+            ArrCallCounter.Current.Value?.Increment();
 
             using var request = new HttpRequestMessage(method, url);
             request.Headers.TryAddWithoutValidation("X-Api-Key", _apiKey);

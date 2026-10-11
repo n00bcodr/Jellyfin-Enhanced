@@ -56,7 +56,8 @@ public class TaskRegressionTests
             new AudioLanguageTagsSyncTask(null!, null!, null!, f.Logger),
             new MdblistRatingsFetchTask(null!, null!, f.Logger),
             new MdblistRatingsSyncTask(null!, null!, f.Logger),
-            new SpoilerApplyExistingTitlesTask(null!)];
+            new SpoilerApplyExistingTitlesTask(null!),
+            new JeBackupTask(null!, f.Logger)];
         foreach (var task in tasks) Assert.Empty(task.GetDefaultTriggers());
         Assert.Equal(TaskTriggerInfoType.StartupTrigger, Assert.Single(new ClearTranslationCacheTask(f.Logger).GetDefaultTriggers()).Type);
     }
@@ -185,9 +186,11 @@ public class TaskRegressionTests
         f.Plugin.Configuration.ArrTagsSyncEnabled = true;
         var library = new Mock<ILibraryManager>(MockBehavior.Strict);
         var http = new Mock<IHttpClientFactory>(MockBehavior.Strict);
+        using var store = new Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrStateStore(
+            new Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrClientFactory(http.Object, new Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrInstanceRegistry()), null, null, null, null);
         var progress = new ProgressLog();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            new ArrTagsSyncTask(library.Object, http.Object, f.Core.Logger).ExecuteAsync(progress, new CancellationToken(true)));
+            new ArrTagsSyncTask(library.Object, store, f.Core.Logger).ExecuteAsync(progress, new CancellationToken(true)));
         library.VerifyNoOtherCalls();
         http.VerifyNoOtherCalls();
         Assert.DoesNotContain(100, progress.Values);

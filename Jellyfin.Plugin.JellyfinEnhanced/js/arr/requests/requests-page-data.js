@@ -91,6 +91,7 @@
   // Once-per-session dedup. Self-heals: when an error stops appearing in a subsequent fetch
   // the memo entry is dropped so future occurrences re-toast.
   const _toastedDownloadsErrors = new Set();
+  const _toastedHistoryErrors = new Set();
   // Alias the shared HTML-escape helper (JE.toast uses innerHTML).
   // The inline fallback is a real escaper so XSS is blocked even if helpers.js
   // hasn't loaded yet (e.g. a load-order race on first init).
@@ -111,6 +112,8 @@
       seenThisTick.add(key);
       if (_toastedDownloadsErrors.has(key)) return;
       _toastedDownloadsErrors.add(key);
+      // The history response may arrive first (both load in parallel): one toast per outage.
+      if (_toastedHistoryErrors.has(key)) return;
       if (typeof window.JellyfinEnhanced?.toast === "function") {
         window.JellyfinEnhanced.toast(
           "⚠ " + esc(err.source || "Arr") + " queue \"" +
@@ -121,6 +124,40 @@
     });
     Array.from(_toastedDownloadsErrors).forEach(function(k) {
       if (!seenThisTick.has(k)) _toastedDownloadsErrors.delete(k);
+    });
+  }
+
+  // Same once-per-session dedup as the queue errors. An instance already toasted for the
+  // queue with the same reason is not toasted again for its history, and the other way round
+  // (whichever response arrives first toasts).
+  /**
+   * Toasts per-instance history read errors (escaped; JE.toast uses innerHTML).
+   * @param {Array<{source?: string, instanceName?: string, reason?: string}>|undefined} errors
+   */
+  function surfaceHistoryErrors(errors) {
+    if (!Array.isArray(errors) || errors.length === 0) {
+      _toastedHistoryErrors.clear();
+      return;
+    }
+    const seenThisTick = new Set();
+    errors.forEach(function(err) {
+      const key = (err.source || "") + "|" + (err.instanceName || "") + "|" + (err.reason || "");
+      seenThisTick.add(key);
+      if (_toastedHistoryErrors.has(key)) return;
+      _toastedHistoryErrors.add(key);
+      if (_toastedDownloadsErrors.has(key)) return;
+      if (typeof window.JellyfinEnhanced?.toast === "function") {
+        const text = (JE.t && JE.t('requests_history_instance_error', {
+          source: esc(err.source || "Arr"),
+          name: esc(err.instanceName || "unknown"),
+          reason: esc(err.reason),
+        })) || "";
+        window.JellyfinEnhanced.toast("⚠ " + text);
+      }
+      console.warn(`${logPrefix} ${err.source || "Arr"} history "${err.instanceName}" error: ${err.reason}`);
+    });
+    Array.from(_toastedHistoryErrors).forEach(function(k) {
+      if (!seenThisTick.has(k)) _toastedHistoryErrors.delete(k);
     });
   }
 
@@ -371,6 +408,8 @@
       state.history = data.items || [];
       state.historyVisible = data.visible !== false;
       state.historyTotalPages = data.totalPages || 1;
+      // An instance whose history can't be read is reported, not shown as "no history".
+      surfaceHistoryErrors(data.errors);
       return data;
     } catch (error) {
       console.error(`${logPrefix} Failed to fetch history:`, error);

@@ -100,7 +100,7 @@ Every API key Jellyfin Enhanced stores (Sonarr and Radarr instances, Seerr, TMDB
 - **On the settings page** a saved key shows as that placeholder with **Replace** and **Clear** buttons. Saving without touching it keeps the key. **Test** buttons check the saved key on the server.
 - **A saved key stays with its server.** It is only tested against, and only kept for, the address (scheme, host and port) it was saved for. When you change an instance's URL, the Seerr URLs or the Shoko URL to another server, the key field asks for the key again; saving without it removes the old key from that connection.
 - **Import from Seerr** reads the Sonarr/Radarr keys on the server; the browser never receives them. An imported key is only saved for the address Seerr reported and only within 30 minutes; otherwise the page tells you after saving which instances need their key entered.
-- **Backups:** keep `secrets.json` together with the settings file. Without it, the keys have to be entered again (the plugin logs which ones are missing).
+- **Backups:** Jellyfin's own backups don't include plugin data. Use [Backup & restore](#backup-restore): it can include the keys, encrypted with a passphrase. If you copy files by hand instead, keep `secrets.json` together with the settings file; without it, the keys have to be entered again (the plugin logs which ones are missing).
 - **If `secrets.json` can't be read** (for example it was edited by hand and is no longer valid JSON), the plugin leaves it exactly as it is, logs an error and treats the stored keys as unavailable; it never removes or overwrites them meanwhile, and reads the file again every 30 seconds. Fix the file (or restore it from a backup) and the keys work again. Keys you type while it is unreadable, or while the folder can't be written, are kept in the settings file as before and move into `secrets.json` on a later start.
 - **An unreadable Sonarr/Radarr instance list** (invalid JSON in the settings file) is moved into `secrets.json` as `SonarrInstances.corrupt` / `RadarrInstances.corrupt`, since it may contain keys; the settings page shows it as corrupt and offers a reset.
 
@@ -116,6 +116,62 @@ curl -X POST "http://<jellyfin>/JellyfinEnhanced/admin/secrets/rollback" \
 ```
 
 `secrets.json` keeps its copy. If this version starts again instead, it simply moves the keys back out. Without the request, you can also copy the values from `secrets.json` into the settings file by hand while Jellyfin is stopped (`arr:<instance id>` entries belong to the `ApiKey` of the instance with that `Id`).
+
+---
+
+## How Sonarr/Radarr data is read
+
+The Requests page (queue and history), the Calendar, the item-page links and the request cards don't
+call Sonarr or Radarr while you browse. Jellyfin Enhanced keeps a copy of what they need in memory and
+refreshes it in the background while a page uses it:
+
+| Data | Refreshed | Used by |
+|---|---|---|
+| Download queue (every row, read page by page) | At the Requests page's **Poll Interval** while the page is open or something is downloading, otherwise every 5 minutes | Requests page |
+| Recent history (the newest 1000 records, then only what's new; read in full again every hour) | Same as the queue | Requests page history |
+| Calendar (from the start of last month to about three months ahead) | Every 15 minutes | Calendar page; other months are read when you open them and kept for 15 minutes |
+| Library (every movie or series with its ids and tags) | Every 15 minutes | Item-page links, request-card links, "not in Sonarr/Radarr" on requests, tag sync |
+
+Nothing is read until a page asks for it, and data nobody has looked at for a while stops being
+refreshed. After a restart the library list starts from a cached copy (in the `arr-state` folder of
+the plugin's data folder) and is refreshed in the background. A title you just added in Sonarr or
+Radarr can take up to 15 minutes to get its link, and a change to the calendar (a title added or
+removed) up to 15 minutes to show.
+
+Every read checks that the address really is Sonarr or Radarr (a Sonarr address in a Radarr box shows
+"wrong app at this URL" instead of odd results) and never follows a redirect, the same as the **Test**
+button. An instance that can't be read shows a short reason on the page; administrators also see the
+details. The **arr/admin/state** API shows what's held and how old it is (see [API](../advanced/api.md)).
+
+---
+
+## Backup & restore
+
+Jellyfin's own backups don't include plugin data. The plugin's **Admin** tab has a **Backup & Restore**
+section:
+
+- **Download a backup** saves one zip with the plugin settings, every user's Jellyfin Enhanced settings
+  (shortcuts, hidden content, bookmarks, reviews, …), custom branding and the plugin's other stores.
+  Caches are left out. API keys and passwords are either left out (enter them again after restoring
+  on a new server) or included, encrypted with a passphrase of at least 12 characters.
+- **Restore** checks the file first (its checksums, and the passphrase if it has keys), saves a copy
+  of the current data (and of `secrets.json`) to `backups` in the plugin's data folder, whatever backup
+  folder you chose, then puts the backup's files and settings in place. Files the backup doesn't have
+  are kept, and so is this server's arr action audit log. Restart Jellyfin afterwards so every part
+  reads the restored data. The usage-statistics settings of the server you restore on are kept.
+- A key saved on this server is only kept for the address it was saved for: when a backup without keys
+  points Seerr, Shoko or an arr instance at another address than this server uses now, that key is
+  left out and the restore lists it to enter again.
+- **Scheduled backups**: the task **Back up Jellyfin Enhanced data** (Dashboard → Scheduled Tasks, no
+  trigger until you add one) writes a backup to the chosen folder (default: `backups` in the plugin's
+  data folder; pick another disk to survive a disk failure) and keeps the newest copies. To include
+  the keys, tick the option and save a passphrase; the task fails rather than quietly leaving them out
+  when no passphrase is saved.
+
+To restore by hand instead: stop Jellyfin, unzip `config/Jellyfin.Plugin.JellyfinEnhanced.xml` to
+`<config>/plugins/configurations/` and the `data/` folder's contents to
+`<config>/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/`, then start Jellyfin. Keys in an
+encrypted backup can only be restored through the page.
 
 ---
 
@@ -185,7 +241,8 @@ Found in the ***arr Settings** tab under "Calendar Page".
 | **Highlight Favorites** | Highlights favorite shows/movies based on Jellyfin favorites |
 | **Highlight Watched Series** | Highlights series you are currently watching |
 
-After enabling with Plugin Pages, restart Jellyfin for the sidebar link to appear.
+After enabling with Plugin Pages, restart Jellyfin for the sidebar link to appear. While the page is
+off, its data route answers `403` too.
 
 Direct URL: `/web/index.html#!/jellyfinenhanced/calendar`
 
@@ -202,6 +259,9 @@ Found in the ***arr Settings** tab under "Requests Page (Downloads)".
 | **Use Custom Tabs** | Adds a custom tab (requires [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs)) |
 | **Enable Auto-Refresh** | Automatically refreshes download status |
 | **Poll Interval** | How often to refresh, in seconds (30–300, default: 30) |
+
+While the page is off (or **Show Downloads in Requests Page** is off) its queue and history routes return nothing as well.
+If an instance's history can't be read, the page says so instead of showing it as empty.
 
 !!! note
     The Requests page for downloads is separate from the Seerr Requests page. Both can be enabled independently. The Seerr Requests page (showing media requests and issues) is configured in the **Seerr Settings** tab.

@@ -89,3 +89,35 @@ test('downloads approval uses a single non-retried mutation then refreshes permi
   const h=setup(t,{api:async()=>({requests:[],canApproveRequests:false})});h.document.body.innerHTML='<button data-request-id="17"><span class="material-icons">check</span></button>';
   await h.P.handleRequestAction(h.document.querySelector('button'),'approve');assert.equal(h.calls[0][0],'/arr/requests/17/approve');assert.deepEqual(plain(h.calls[0][1]),{method:'POST',skipRetry:true});assert.equal(h.calls.length,2);assert.equal(h.P.state.canApproveRequests,false);
 });
+test('history read errors are toasted once per instance, escaped, and not again for an instance the queue already reported',async t=>{
+  let historyErrors=[{source:'Sonarr',instanceName:'TV',reason:'network error'},{source:'Radarr',instanceName:'<b>4K</b>',reason:'HTTP 500'}];
+  const h=setup(t,{api:path=>path==='/arr/queue'
+    ?Promise.resolve({items:[],errors:[{source:'Sonarr',instanceName:'TV',reason:'network error'}]})
+    :path.startsWith('/arr/history')?new Promise(resolve=>setTimeout(()=>resolve({items:[{id:'kept'}],visible:true,totalPages:1,errors:historyErrors}),0))
+    :Promise.resolve({})});
+  // The real translator substitutes {placeholders}; the page escapes the values it passes in.
+  h.JE.t=(key,params)=>key==='requests_history_instance_error'?Object.entries(params).reduce((s,[k,v])=>s.replace(`{${k}}`,v),'{source} history "{name}" could not be read: {reason}'):key;
+  await h.P.loadAllData();
+  assert.equal(h.P.state.history[0].id,'kept');
+  assert.equal(h.notices.length,2);
+  assert.match(h.notices[0],/queue "TV" failed: network error/);
+  assert.equal(h.notices[1],'⚠ Radarr history "&lt;b&gt;4K&lt;/b&gt;" could not be read: HTTP 500');
+  await h.P.fetchHistory();
+  assert.equal(h.notices.length,2);
+  historyErrors=[];await h.P.fetchHistory();
+  historyErrors=[{source:'Radarr',instanceName:'4K',reason:'timeout'}];await h.P.fetchHistory();
+  assert.equal(h.notices.length,3);
+  assert.equal(h.notices[2],'⚠ Radarr history "4K" could not be read: timeout');
+});
+test('an outage reported by history before the queue answers is toasted once, whichever response arrives first',async t=>{
+  const outage=[{source:'Sonarr',instanceName:'TV',reason:'network error'}];
+  const h=setup(t,{api:path=>path==='/arr/queue'
+    ?new Promise(resolve=>setTimeout(()=>resolve({items:[],errors:outage}),5))
+    :path.startsWith('/arr/history')?Promise.resolve({items:[],visible:true,totalPages:1,errors:outage})
+    :Promise.resolve({})});
+  h.JE.t=(key,params)=>key==='requests_history_instance_error'?`${params.source} history "${params.name}" could not be read: ${params.reason}`:key;
+  await h.P.loadAllData();
+  assert.deepEqual(h.notices,['⚠ Sonarr history "TV" could not be read: network error']);
+  await h.P.loadAllData();
+  assert.equal(h.notices.length,1);
+});

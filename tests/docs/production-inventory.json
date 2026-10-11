@@ -67,7 +67,15 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrStateController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs",
+      "category": "Controllers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JeBackupController.cs",
       "category": "Controllers"
     },
     {
@@ -271,6 +279,10 @@
       "category": "ScheduledTasks"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/JeBackupTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/JellyfinToSeerrWatchlistSyncTask.cs",
       "category": "ScheduledTasks"
     },
@@ -327,6 +339,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrCallAttribution.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrClient.cs",
       "category": "Services"
     },
@@ -359,7 +375,31 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrLegacyViews.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrRegistryMigration.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrSnapshotSlot.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrStateLoaders.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrStateModels.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrStateReconciler.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrStateStore.cs",
       "category": "Services"
     },
     {
@@ -380,6 +420,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoSeasonRequestService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs",
       "category": "Services"
     },
     {
@@ -547,10 +591,6 @@
       "category": "Services"
     },
     {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/RadarrService.cs",
-      "category": "Services"
-    },
-    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ReviewAuthorCache.cs",
       "category": "Services"
     },
@@ -576,10 +616,6 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SeerrScanTriggerService.cs",
-      "category": "Services"
-    },
-    {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SonarrService.cs",
       "category": "Services"
     },
     {
@@ -1538,6 +1574,24 @@
       ]
     },
     {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/state",
+      "method": "GetState",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrStateController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/arr/admin/state/refresh",
+      "method": "RequestRefresh",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrStateController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
       "verb": "POST",
       "path": "/JellyfinEnhanced/catchup/event",
       "method": "PostEvent",
@@ -1562,6 +1616,37 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs",
       "following_attributes": [
         "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/admin/backup/export",
+      "method": "Export",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JeBackupController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/admin/backup/inspect",
+      "method": "Inspect",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JeBackupController.cs",
+      "following_attributes": [
+        "Authorize",
+        "RequestSizeLimit(MaxUploadBytes)",
+        "RequestFormLimits(MultipartBodyLengthLimit = MaxUploadBytes)"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/admin/backup/restore",
+      "method": "Restore",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JeBackupController.cs",
+      "following_attributes": [
+        "Authorize",
+        "RequestSizeLimit(MaxUploadBytes)",
+        "RequestFormLimits(MultipartBodyLengthLimit = MaxUploadBytes)"
       ]
     },
     {
@@ -4558,6 +4643,38 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "BackupFolder",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "BackupCopiesToKeep",
+      "type": "int",
+      "initializer": "7",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "BackupIncludeSecrets",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "BackupPassphrase",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ShokoUrl",
       "type": "string",
       "initializer": null,
@@ -7411,6 +7528,54 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/AnalyticsReportingService.cs"
     },
     {
+      "literal": "*.library.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrStateStore.cs"
+    },
+    {
+      "literal": ".library.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrStateStore.cs"
+    },
+    {
+      "literal": "*.secrets.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs"
+    },
+    {
+      "literal": ".secrets.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs"
+    },
+    {
+      "literal": "Jellyfin.Plugin.JellyfinEnhanced.xml",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs"
+    },
+    {
+      "literal": "awards.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs"
+    },
+    {
+      "literal": "config-schema-snapshot.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs"
+    },
+    {
+      "literal": "config/Jellyfin.Plugin.JellyfinEnhanced.xml",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs"
+    },
+    {
+      "literal": "manifest.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs"
+    },
+    {
+      "literal": "mdblist-ratings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs"
+    },
+    {
+      "literal": "tag-cache.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs"
+    },
+    {
+      "literal": "tmdb-cache.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs"
+    },
+    {
       "literal": ".meta.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/CdnAssetService.cs"
     },
@@ -7606,6 +7771,11 @@
       "key": "JellyfinEnhancedClearTranslationCache"
     },
     {
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/JeBackupTask.cs",
+      "class": "JeBackupTask",
+      "key": "JellyfinEnhancedBackup"
+    },
+    {
       "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/JellyfinToSeerrWatchlistSyncTask.cs",
       "class": "JellyfinToSeerrWatchlistSyncTask",
       "key": "JellyfinEnhancedJellyfinToSeerrWatchlistSync"
@@ -7749,11 +7919,11 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 369,
-    "routes": 178,
-    "configuration_properties": 522,
-    "storage_references": 67,
-    "scheduled_tasks": 13,
+    "files": 378,
+    "routes": 183,
+    "configuration_properties": 526,
+    "storage_references": 79,
+    "scheduled_tasks": 14,
     "locales": 33
   }
 }

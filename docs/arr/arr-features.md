@@ -185,6 +185,8 @@ internal-tag,do-not-show
 - Only matching tags synced from *arr
 - Leave empty to sync all tags
 
+**How titles are matched:** movies by their TMDB id; series by TVDB, TMDB or IMDb id (whichever the Jellyfin series has). If a Sonarr or Radarr instance can't be read during a run, **Clear Old Tags** skips the titles of that kind for that run, so a temporary outage never strips their tags.
+
 ### Custom Styling
 
 Customize tag link appearance with CSS.

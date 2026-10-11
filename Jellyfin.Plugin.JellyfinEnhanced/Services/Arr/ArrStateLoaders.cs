@@ -1,0 +1,413 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
+{
+    /// <summary>
+    /// Reads each snapshot from an arr and projects it to the slim shapes the store keeps. Every
+    /// load first checks <c>system/status</c> (cached by the client for 10 minutes) so a URL that
+    /// answers with the wrong app is reported as <see cref="ArrErrorKind.WrongApp"/> instead of
+    /// being parsed as if it were the right one.
+    /// </summary>
+    internal static class ArrStateLoaders
+    {
+        /// <summary>History records read on a full (non-incremental) load.</summary>
+        internal const int HistoryFullRead = 1000;
+
+        /// <summary>History records kept per instance.</summary>
+        internal const int HistoryRingSize = 2000;
+
+        /// <summary>Queue rows read per instance at most.</summary>
+        internal const int QueueMaxRecords = 20_000;
+
+        /// <summary>Calendar window kept in memory: from at least this many days before today (and the whole previous month)...</summary>
+        internal const int CalendarDaysBack = 35;
+
+        /// <summary>...to this many days after today.</summary>
+        internal const int CalendarDaysAhead = 100;
+
+        private const int MaxStatusMessages = 5;
+        private const int MaxMessageLength = 200;
+        // A full re-read drops records the arr deleted (with a deleted title) and brings back older
+        // imports that a burst of other events pushed out of the ring.
+        private static readonly TimeSpan HistoryFullResync = TimeSpan.FromHours(1);
+
+        /// <summary>Null when the URL answers as the expected app; the error otherwise.</summary>
+        internal static async Task<ArrError?> CheckAppAsync(ArrClient client, CancellationToken ct)
+        {
+            var status = await client.GetSystemStatusAsync(false, ct).ConfigureAwait(false);
+            return status.Ok ? null : status.Error;
+        }
+
+        /// <summary>Every movie or series plus the tag labels.</summary>
+        internal static async Task<ArrResult<ArrLibrarySnapshot>> LoadLibraryAsync(ArrClient client, CancellationToken ct)
+        {
+            if (await CheckAppAsync(client, ct).ConfigureAwait(false) is { } wrong) return ArrResult<ArrLibrarySnapshot>.Failure(wrong);
+
+            var tagsResult = await client.GetAsync<List<ArrWireTag>>("tag", null, ArrCallClass.Read, ct).ConfigureAwait(false);
+            if (!tagsResult.Ok) return ArrResult<ArrLibrarySnapshot>.Failure(tagsResult.Error!);
+            var tags = new Dictionary<int, string>();
+            foreach (var t in tagsResult.Value!)
+            {
+                if (!string.IsNullOrEmpty(t.Label)) tags[t.Id] = t.Label!;
+            }
+
+            if (client.Connection.Kind == ArrKind.Radarr)
+            {
+                var movies = await client.GetAsync<List<ArrWireMovie>>("movie", null, ArrCallClass.List, ct).ConfigureAwait(false);
+                if (!movies.Ok) return ArrResult<ArrLibrarySnapshot>.Failure(movies.Error!);
+                return ArrResult<ArrLibrarySnapshot>.Success(new ArrLibrarySnapshot(movies.Value!.Select(ToMovie).ToList(), Array.Empty<ArrSeriesEntry>(), tags));
+            }
+
+            var series = await client.GetAsync<List<ArrWireSeries>>("series", null, ArrCallClass.List, ct).ConfigureAwait(false);
+            if (!series.Ok) return ArrResult<ArrLibrarySnapshot>.Failure(series.Error!);
+            return ArrResult<ArrLibrarySnapshot>.Success(new ArrLibrarySnapshot(Array.Empty<ArrMovieEntry>(), series.Value!.Select(ToSeries).ToList(), tags));
+        }
+
+        /// <summary>The whole queue, every page (the old routes stopped at 1000 rows).</summary>
+        internal static async Task<ArrResult<ArrQueueSnapshot>> LoadQueueAsync(ArrClient client, CancellationToken ct)
+        {
+            if (await CheckAppAsync(client, ct).ConfigureAwait(false) is { } wrong) return ArrResult<ArrQueueSnapshot>.Failure(wrong);
+
+            var query = client.Connection.Kind == ArrKind.Sonarr
+                ? Query(("includeEpisode", "true"), ("includeSeries", "true"), ("sortKey", "timeleft"), ("sortDirection", "ascending"))
+                : Query(("includeMovie", "true"));
+            var pages = await client.GetAllPagesAsync<ArrWireQueueRecord>("queue", query, pageSize: 500, maxRecords: QueueMaxRecords, cancellationToken: ct).ConfigureAwait(false);
+            if (!pages.Ok) return ArrResult<ArrQueueSnapshot>.Failure(pages.Error!);
+
+            // Rows can move between pages while they are read: keep the first sighting of each id.
+            var seen = new HashSet<int>();
+            var rows = new List<ArrQueueEntry>(pages.Value!.Records.Count);
+            foreach (var r in pages.Value.Records)
+            {
+                if (seen.Add(r.Id)) rows.Add(ToQueueEntry(r));
+            }
+            return ArrResult<ArrQueueSnapshot>.Success(new ArrQueueSnapshot { Records = rows, TotalRecords = pages.Value.TotalRecords, Truncated = pages.Value.Truncated });
+        }
+
+        /// <summary>
+        /// History: a full read of the newest <see cref="HistoryFullRead"/> records the first time
+        /// (and once an hour), otherwise only what happened since the watermark (<c>history/since</c>),
+        /// merged into the ring by record id.
+        /// </summary>
+        internal static async Task<ArrResult<ArrHistorySnapshot>> LoadHistoryAsync(ArrClient client, ArrHistorySnapshot? previous, DateTimeOffset now, CancellationToken ct)
+        {
+            if (await CheckAppAsync(client, ct).ConfigureAwait(false) is { } wrong) return ArrResult<ArrHistorySnapshot>.Failure(wrong);
+
+            var include = client.Connection.Kind == ArrKind.Sonarr
+                ? new[] { ("includeSeries", "true"), ("includeEpisode", "true") }
+                : new[] { ("includeMovie", "true") };
+
+            var incremental = previous != null
+                && previous.Watermark is DateTime mark
+                && now - previous.FullReadAt < HistoryFullResync
+                && now.UtcDateTime - mark < TimeSpan.FromDays(7);
+            if (!incremental)
+            {
+                var query = Query(include.Concat(new[] { ("sortKey", "date"), ("sortDirection", "descending") }).ToArray());
+                var pages = await client.GetAllPagesAsync<ArrWireHistoryRecord>("history", query, pageSize: 250, maxRecords: HistoryFullRead, cancellationToken: ct).ConfigureAwait(false);
+                if (!pages.Ok) return ArrResult<ArrHistorySnapshot>.Failure(pages.Error!);
+                return ArrResult<ArrHistorySnapshot>.Success(BuildHistory(pages.Value!.Records.Select(ToHistoryEntry), null, now));
+            }
+
+            var since = previous!.Watermark!.Value.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
+            var sinceQuery = Query(include.Prepend(("date", since)).ToArray());
+            var fresh = await client.GetAsync<List<ArrWireHistoryRecord>>("history/since", sinceQuery, ArrCallClass.List, ct).ConfigureAwait(false);
+            if (!fresh.Ok) return ArrResult<ArrHistorySnapshot>.Failure(fresh.Error!);
+            return ArrResult<ArrHistorySnapshot>.Success(BuildHistory(fresh.Value!.Select(ToHistoryEntry), previous, previous.FullReadAt));
+        }
+
+        /// <summary>Merges new records into the ring (dedup by id, newest first, capped).</summary>
+        internal static ArrHistorySnapshot BuildHistory(IEnumerable<ArrHistoryEntry> incoming, ArrHistorySnapshot? previous, DateTimeOffset fullReadAt)
+        {
+            var byId = new Dictionary<int, ArrHistoryEntry>();
+            foreach (var r in incoming) byId[r.Id] = r;
+            if (previous != null)
+            {
+                foreach (var r in previous.Records) byId.TryAdd(r.Id, r);
+            }
+            var records = byId.Values
+                .OrderByDescending(r => r.Date ?? DateTime.MinValue)
+                .ThenByDescending(r => r.Id)
+                .Take(HistoryRingSize)
+                .ToList();
+            var watermark = records.Where(r => r.Date.HasValue).Select(r => r.Date!.Value).DefaultIfEmpty().Max();
+            return new ArrHistorySnapshot
+            {
+                Records = records,
+                Watermark = records.Any(r => r.Date.HasValue) ? watermark : previous?.Watermark,
+                FullReadAt = fullReadAt,
+            };
+        }
+
+        /// <summary>The calendar between two dates (unmonitored entries included, as the old route did).</summary>
+        internal static async Task<ArrResult<ArrCalendarSnapshot>> LoadCalendarAsync(ArrClient client, DateTime start, DateTime end, CancellationToken ct)
+        {
+            if (await CheckAppAsync(client, ct).ConfigureAwait(false) is { } wrong) return ArrResult<ArrCalendarSnapshot>.Failure(wrong);
+
+            var startIso = start.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
+            var endIso = end.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
+            if (client.Connection.Kind == ArrKind.Sonarr)
+            {
+                var episodes = await client.GetAsync<List<ArrWireEpisode>>("calendar",
+                    Query(("includeSeries", "true"), ("unmonitored", "true"), ("start", startIso), ("end", endIso)), ArrCallClass.List, ct).ConfigureAwait(false);
+                if (!episodes.Ok) return ArrResult<ArrCalendarSnapshot>.Failure(episodes.Error!);
+                var entries = episodes.Value!.Select(ToEpisodeEntry).Where(e => e != null).Select(e => e!).ToList();
+                return ArrResult<ArrCalendarSnapshot>.Success(new ArrCalendarSnapshot { WindowStart = start, WindowEnd = end, Entries = entries });
+            }
+
+            var movies = await client.GetAsync<List<ArrWireMovie>>("calendar",
+                Query(("unmonitored", "true"), ("start", startIso), ("end", endIso)), ArrCallClass.List, ct).ConfigureAwait(false);
+            if (!movies.Ok) return ArrResult<ArrCalendarSnapshot>.Failure(movies.Error!);
+            var movieEntries = movies.Value!.Select(ToMovieCalendarEntry).Where(e => e != null).Select(e => e!).ToList();
+            return ArrResult<ArrCalendarSnapshot>.Success(new ArrCalendarSnapshot { WindowStart = start, WindowEnd = end, Entries = movieEntries });
+        }
+
+        /// <summary>
+        /// The calendar window kept in memory for a given moment: from today − 35 d or the day before
+        /// the first of last month, whichever is earlier (so the Calendar page's "previous month" is
+        /// served from memory in every time zone), to today + 100 d.
+        /// </summary>
+        internal static (DateTime Start, DateTime End) CalendarWindow(DateTimeOffset now)
+        {
+            var today = now.UtcDateTime.Date;
+            var previousMonth = new DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(-1).AddDays(-1);
+            var start = today.AddDays(-CalendarDaysBack);
+            if (previousMonth < start) start = previousMonth;
+            return (DateTime.SpecifyKind(start, DateTimeKind.Utc),
+                    DateTime.SpecifyKind(today.AddDays(CalendarDaysAhead + 1).AddTicks(-1), DateTimeKind.Utc));
+        }
+
+        /// <summary>Status, health, disk space, root folders and quality profiles.</summary>
+        internal static async Task<ArrResult<ArrSystemSnapshot>> LoadSystemAsync(ArrClient client, CancellationToken ct)
+        {
+            var status = await client.GetSystemStatusAsync(true, ct).ConfigureAwait(false);
+            if (!status.Ok) return ArrResult<ArrSystemSnapshot>.Failure(status.Error!);
+
+            var health = await client.GetAsync<List<ArrWireHealth>>("health", null, ArrCallClass.Status, ct).ConfigureAwait(false);
+            if (!health.Ok) return ArrResult<ArrSystemSnapshot>.Failure(health.Error!);
+            var disk = await client.GetAsync<List<ArrWireDisk>>("diskspace", null, ArrCallClass.Status, ct).ConfigureAwait(false);
+            if (!disk.Ok) return ArrResult<ArrSystemSnapshot>.Failure(disk.Error!);
+            var roots = await client.GetAsync<List<ArrWireDisk>>("rootfolder", null, ArrCallClass.Read, ct).ConfigureAwait(false);
+            if (!roots.Ok) return ArrResult<ArrSystemSnapshot>.Failure(roots.Error!);
+            var profiles = await client.GetAsync<List<ArrWireProfile>>("qualityprofile", null, ArrCallClass.Read, ct).ConfigureAwait(false);
+            if (!profiles.Ok) return ArrResult<ArrSystemSnapshot>.Failure(profiles.Error!);
+
+            return ArrResult<ArrSystemSnapshot>.Success(new ArrSystemSnapshot
+            {
+                AppName = status.Value.Status.AppName,
+                Version = status.Value.Status.Version,
+                Health = health.Value!.Select(h => new ArrHealthEntry { Source = h.Source, Type = h.Type, Message = Clip(h.Message) }).ToList(),
+                DiskSpace = disk.Value!.Select(d => new ArrDiskEntry { Path = d.Path, FreeSpace = d.FreeSpace, TotalSpace = d.TotalSpace }).ToList(),
+                RootFolders = roots.Value!.Select(d => new ArrDiskEntry { Path = d.Path, FreeSpace = d.FreeSpace, Accessible = d.Accessible }).ToList(),
+                QualityProfiles = profiles.Value!.Select(p => new ArrProfileEntry { Id = p.Id, Name = p.Name ?? string.Empty }).ToList(),
+            });
+        }
+
+        // ---------------- projections ----------------
+
+        internal static ArrMovieEntry ToMovie(ArrWireMovie m) => new()
+        {
+            Id = m.Id,
+            TmdbId = m.TmdbId,
+            ImdbId = string.IsNullOrWhiteSpace(m.ImdbId) ? null : m.ImdbId,
+            Title = m.Title ?? m.OriginalTitle ?? string.Empty,
+            Year = m.Year,
+            Monitored = m.Monitored ?? false,
+            HasFile = m.HasFile ?? false,
+            SizeOnDisk = m.SizeOnDisk ?? 0,
+            Path = m.Path,
+            QualityProfileId = m.QualityProfileId ?? 0,
+            Tags = m.Tags?.ToArray() ?? Array.Empty<int>(),
+        };
+
+        internal static ArrSeriesEntry ToSeries(ArrWireSeries s) => new()
+        {
+            Id = s.Id,
+            TvdbId = s.TvdbId,
+            TmdbId = s.TmdbId,
+            ImdbId = string.IsNullOrWhiteSpace(s.ImdbId) ? null : s.ImdbId,
+            Title = s.Title ?? string.Empty,
+            TitleSlug = s.TitleSlug,
+            Monitored = s.Monitored ?? false,
+            Path = s.Path,
+            QualityProfileId = s.QualityProfileId ?? 0,
+            Tags = s.Tags?.ToArray() ?? Array.Empty<int>(),
+            EpisodeFileCount = s.Statistics?.EpisodeFileCount ?? 0,
+            EpisodeCount = s.Statistics?.EpisodeCount ?? 0,
+            PercentOfEpisodes = s.Statistics?.PercentOfEpisodes ?? 0,
+            SizeOnDisk = s.Statistics?.SizeOnDisk ?? 0,
+        };
+
+        internal static ArrQueueEntry ToQueueEntry(ArrWireQueueRecord r)
+        {
+            var messages = new List<string>();
+            foreach (var sm in r.StatusMessages ?? new List<ArrWireStatusMessage>())
+            {
+                foreach (var m in sm.Messages ?? new List<string>())
+                {
+                    if (messages.Count >= MaxStatusMessages) break;
+                    if (!string.IsNullOrWhiteSpace(m)) messages.Add(Clip(m)!);
+                }
+            }
+            return new ArrQueueEntry
+            {
+                Id = r.Id,
+                DownloadId = r.DownloadId,
+                Status = Intern(r.Status),
+                TrackedDownloadState = Intern(r.TrackedDownloadState),
+                TrackedDownloadStatus = Intern(r.TrackedDownloadStatus),
+                StatusMessages = messages,
+                ErrorMessage = Clip(r.ErrorMessage),
+                Size = r.Size,
+                SizeLeft = r.Sizeleft,
+                TimeLeft = r.Timeleft,
+                EstimatedCompletionTime = r.EstimatedCompletionTime,
+                Protocol = Intern(r.Protocol),
+                ReleaseTitle = r.Title,
+                MovieId = r.MovieId ?? r.Movie?.Id,
+                SeriesId = r.SeriesId ?? r.Series?.Id,
+                EpisodeId = r.EpisodeId ?? r.Episode?.Id,
+                Title = r.Series?.Title ?? r.Movie?.Title,
+                Year = r.Movie?.Year,
+                TmdbId = r.Series?.TmdbId ?? r.Movie?.TmdbId,
+                TvdbId = r.Series?.TvdbId,
+                PosterUrl = ArrWireImage.Poster(r.Series?.Images ?? r.Movie?.Images),
+                SeasonNumber = r.Episode?.SeasonNumber,
+                EpisodeNumber = r.Episode?.EpisodeNumber,
+                EpisodeTitle = r.Episode?.Title,
+            };
+        }
+
+        internal static ArrHistoryEntry ToHistoryEntry(ArrWireHistoryRecord r) => new()
+        {
+            Id = r.Id,
+            EventType = Intern(r.EventType),
+            Date = r.Date is DateTime d ? (d.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(d, DateTimeKind.Utc) : d.ToUniversalTime()) : null,
+            DownloadId = r.DownloadId,
+            Title = r.Series?.Title ?? r.Movie?.Title,
+            Year = r.Movie?.Year,
+            TmdbId = r.Series?.TmdbId ?? r.Movie?.TmdbId,
+            TvdbId = r.Series?.TvdbId,
+            MovieId = r.MovieId ?? r.Movie?.Id,
+            SeriesId = r.SeriesId ?? r.Series?.Id,
+            EpisodeId = r.EpisodeId ?? r.Episode?.Id,
+            PosterUrl = ArrWireImage.Poster(r.Series?.Images ?? r.Movie?.Images),
+            SeasonNumber = r.Episode?.SeasonNumber,
+            EpisodeNumber = r.Episode?.EpisodeNumber,
+            EpisodeTitle = r.Episode?.Title,
+        };
+
+        internal static ArrCalendarEntry? ToEpisodeEntry(ArrWireEpisode e)
+        {
+            var air = ArrDates.Parse(e.AirDateUtc ?? e.AirDate);
+            if (!air.HasValue) return null;
+            string? poster = null, backdrop = null;
+            foreach (var img in e.Series?.Images ?? new List<ArrWireImage>())
+            {
+                var url = img.RemoteUrl ?? img.Url;
+                if (string.IsNullOrWhiteSpace(url)) continue;
+                if (backdrop == null && (img.CoverType == "fanart" || img.CoverType == "banner")) backdrop = url;
+                else if (poster == null && img.CoverType == "poster") poster = url;
+            }
+            return new ArrCalendarEntry
+            {
+                Id = e.Id,
+                Title = e.Series?.Title ?? "Unknown Series",
+                AirDateUtc = air,
+                HasFile = e.HasFile ?? false,
+                Monitored = e.Monitored ?? false,
+                SeriesId = e.SeriesId,
+                SeasonNumber = e.SeasonNumber ?? 0,
+                EpisodeNumber = e.EpisodeNumber ?? 0,
+                EpisodeTitle = e.Title ?? "Unknown Episode",
+                Overview = e.Overview,
+                TvdbId = e.Series?.TvdbId,
+                ImdbId = e.Series?.ImdbId,
+                TmdbId = e.Series?.TmdbId,
+                EpisodeTvdbId = e.TvdbId,
+                EpisodeImdbId = e.ImdbId,
+                PosterUrl = poster,
+                BackdropUrl = backdrop,
+                Path = e.Series?.Path,
+            };
+        }
+
+        internal static ArrCalendarEntry? ToMovieCalendarEntry(ArrWireMovie m)
+        {
+            var releases = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+            void Add(string type, string? value)
+            {
+                var parsed = ArrDates.Parse(value);
+                if (!parsed.HasValue) return;
+                if (!releases.TryGetValue(type, out var existing) || parsed.Value < existing) releases[type] = parsed.Value;
+            }
+
+            Add("CinemaRelease", m.InCinemas);
+            Add("PhysicalRelease", m.PhysicalRelease);
+            Add("DigitalRelease", m.DigitalRelease);
+            if (m.Releases.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var release in m.Releases.EnumerateArray())
+                {
+                    if (release.ValueKind != JsonValueKind.Object) continue;
+                    var date = Text(release, "releaseDate") ?? Text(release, "date");
+                    var type = Text(release, "type")?.ToLowerInvariant();
+                    var physical = release.TryGetProperty("isPhysical", out var p) && p.ValueKind == JsonValueKind.True;
+                    if (physical) Add("PhysicalRelease", date);
+                    else if (type == "digital") Add("DigitalRelease", date);
+                    else if (type is "theatrical" or "cinema" or "theater") Add("CinemaRelease", date);
+                }
+            }
+            if (releases.Count == 0) return null;
+
+            string? poster = null, backdrop = null;
+            foreach (var img in m.Images ?? new List<ArrWireImage>())
+            {
+                var url = img.RemoteUrl ?? img.Url;
+                if (string.IsNullOrWhiteSpace(url)) continue;
+                if (poster == null && img.CoverType == "poster") { poster = url; continue; }
+                if (backdrop == null && (img.CoverType == "fanart" || img.CoverType == "backdrop")) backdrop = url;
+            }
+            return new ArrCalendarEntry
+            {
+                Id = m.Id,
+                Title = m.Title ?? m.OriginalTitle ?? "Unknown",
+                Year = m.Year?.ToString(CultureInfo.InvariantCulture),
+                Releases = releases,
+                HasFile = m.HasFile ?? false,
+                Monitored = m.Monitored ?? false,
+                TmdbId = m.TmdbId,
+                ImdbId = m.ImdbId,
+                PosterUrl = poster,
+                BackdropUrl = backdrop,
+                Path = m.Path,
+            };
+        }
+
+        private static string? Text(JsonElement e, string name)
+        {
+            if (!e.TryGetProperty(name, out var v)) return null;
+            return v.ValueKind switch
+            {
+                JsonValueKind.String => v.GetString(),
+                JsonValueKind.Number => v.GetRawText(),
+                _ => null,
+            };
+        }
+
+        private static string? Clip(string? s) => string.IsNullOrEmpty(s) || s.Length <= MaxMessageLength ? s : s.Substring(0, MaxMessageLength) + "…";
+
+        // Status/state/protocol/event names come from a small fixed vocabulary and repeat on every row:
+        // one copy each keeps big queues small. (Free text such as messages is never interned.)
+        private static string? Intern(string? s) => s == null ? null : string.Intern(s);
+
+        private static IEnumerable<KeyValuePair<string, string?>> Query(params (string Key, string Value)[] pairs)
+            => pairs.Select(p => new KeyValuePair<string, string?>(p.Key, p.Value)).ToList();
+    }
+}

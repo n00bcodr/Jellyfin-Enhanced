@@ -311,6 +311,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
         }
 
         /// <summary>
+        /// The save rule's server check for a restored configuration (a JE backup), run before
+        /// <see cref="MigrateStored"/>. A placeholder in a backup refers to whatever this install stores
+        /// under that name, and that key belongs to the address the <em>current</em> configuration
+        /// points at. So a placeholder whose address differs from the current one (another host, port
+        /// or scheme, or an instance id this install doesn't have) is blanked and listed for re-entry,
+        /// unless its value came from the backup's own encrypted credentials
+        /// (<paramref name="restoredNames"/>), which belong to the restored addresses. Mutates
+        /// <paramref name="restored"/>; returns the credentials it blanked (names only).
+        /// </summary>
+        public static List<string> DetachMovedCredentials(PluginConfiguration restored, PluginConfiguration current, IReadOnlyCollection<string> restoredNames)
+        {
+            var trusted = new HashSet<string>(restoredNames, StringComparer.Ordinal);
+            var dropped = new List<string>();
+            foreach (var field in PluginConfiguration.StoredSecretFields)
+            {
+                if (!IsDangling(restored.ReadField(field)) || trusted.Contains(field) || !FlatServerChanged(field, restored, current)) continue;
+                restored.WriteField(field, string.Empty);
+                dropped.Add(Describe(field));
+            }
+
+            foreach (var kind in new[] { Kind.Sonarr, Kind.Radarr })
+            {
+                var rows = ArrRegistryMigration.Parse(InstancesJson(restored, kind));
+                if (rows == null) continue;
+                var currentById = (ArrRegistryMigration.Parse(InstancesJson(current, kind)) ?? new List<ArrInstance>())
+                    .Where(r => ArrRegistryMigration.IsValidId(r.Id))
+                    .GroupBy(r => r.Id, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+                var changed = false;
+                foreach (var row in rows)
+                {
+                    if (!ArrRegistryMigration.IsValidId(row.Id) || !IsDangling(row.ApiKey)) continue;
+                    var name = SecretsStore.ArrKeyName(row.Id);
+                    if (trusted.Contains(name)) continue;
+                    if (currentById.TryGetValue(row.Id, out var before) && SameServerOrUrl(before.Url, row.Url)) continue;
+                    row.ApiKey = string.Empty;
+                    dropped.Add(Describe(name));
+                    changed = true;
+                }
+                if (changed) SetInstancesJson(restored, kind, ArrRegistryMigration.Serialize(rows));
+            }
+            return dropped;
+        }
+
+        /// <summary>
         /// Writes every stored credential back into <paramref name="config"/> as plain text (the
         /// pre-migration layout, including the legacy Sonarr/Radarr key mirrors of the first instance)
         /// so an older JE version can read it. The store is left intact. Returns how many values were

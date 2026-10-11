@@ -708,16 +708,39 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 | POST | `arr/admin/instances/{id}/test` | Admin, Requests & downloads (new): test a saved instance (app, version, feature gates, health) |
 | POST | `arr/admin/test` | Admin, Requests & downloads (new): test unsaved values |
 | GET | `arr/admin/audit` | Admin, Requests & downloads (new): recent audited arr actions |
+| GET | `arr/admin/state` | Admin: the in-memory Sonarr/Radarr snapshots behind the routes below (age, size, last refresh error per instance) and per-route counters of upstream calls made by requests themselves |
+| POST | `arr/admin/state/refresh?instanceId=&kind=` | Admin: ask for a refresh of one snapshot (`library`, `queue`, `history`, `calendar`, `system`; debounced two seconds) |
 | POST | `admin/secrets/rollback` | Admin: write stored credentials back into the plugin configuration before a downgrade (body `{"confirm":"write-credentials-to-plugin-config"}`; `409` if `secrets.json` can't be read) |
 | GET | `arr/identify-url` | Resolve which configured instance owns a given item |
-| GET | `arr/series-slug`, `arr/series-slugs` | Sonarr URL slug lookup, single/batch |
-| GET | `arr/movie-instances` | Which Radarr instance(s) a movie belongs to |
-| GET | `arr/queue` | Sonarr/Radarr download queue |
-| GET | `arr/history` | Sonarr/Radarr import history |
-| GET | `arr/requests` | Requests page data (Seerr + arr queue merged) |
-| POST | `arr/requests/{requestId}/approve`, `.../decline` | Admin: approve/decline a Seerr request |
-| GET | `arr/calendar` | Calendar page data |
-| POST | `arr/calendar/user-data` | Per-user calendar preferences (favorites/watched highlighting) |
+| GET | `arr/series-slug`, `arr/series-slugs` | Admin, Arr Links on: Sonarr URL slug lookup, single/batch |
+| GET | `arr/movie-instances` | Admin, Arr Links on: which Radarr instance(s) a movie belongs to |
+| GET | `arr/links?tmdbIds=&tvdbIds=` | Admin, Arr Links on: batch of the two above (at most 100 ids) |
+| GET | `arr/queue` | Requests page on: Sonarr/Radarr download queue (every row) |
+| GET | `arr/history` | Requests page on: Sonarr/Radarr import history; `errors` lists instances whose history can't be read |
+| GET | `arr/requests` | Requests or Calendar page on, Seerr on: Requests page data (Seerr + arr queue merged) |
+| POST | `arr/requests/{requestId}/approve`, `.../decline` | Requests page on: approve/decline a Seerr request (admin or Seerr request managers) |
+| GET | `arr/calendar` | Calendar page on: Calendar page data |
+| POST | `arr/calendar/user-data` | Calendar page on: per-user calendar preferences (favorites/watched highlighting) |
+
+The Sonarr/Radarr data of the routes above comes from in-memory snapshots, refreshed in the background
+while a page uses them (queue and history at the Requests page's poll interval, calendar and library
+every 15 minutes), so a request makes no call to Sonarr or Radarr. A calendar range before last month
+or more than about three months ahead is read in the background by whole months (two at a time per
+instance at most; the request waits up to 15 seconds) and kept for 15 minutes; when the instance can't
+be read, the error is reported and that month is tried again 30 seconds later. The link routes report an
+instance's latest read error even while they still answer from the list read before. Each per-instance entry in
+`errors` has `instanceName`, `source` and a short `reason`; admins also get `detail`. A route whose page
+is switched off answers `403` with `code: "feature_disabled"`.
+
+### Backup & restore
+
+Admin only. Jellyfin's own backups don't include plugin data.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `admin/backup/export` | Download a backup zip. Body `{"secrets":"exclude"}` (default) or `{"secrets":"encrypt","passphrase":"…"}` (12+ characters) |
+| POST | `admin/backup/inspect` | Multipart `file` (+ optional `passphrase`): describe a backup without changing anything |
+| POST | `admin/backup/restore` | Multipart `file`, `passphrase` (when it holds credentials) and `confirm=restore`: restore it; a safety copy of the current data is saved first |
 
 ### Active Streams & Proxy
 

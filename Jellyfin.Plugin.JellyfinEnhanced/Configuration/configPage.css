@@ -2394,3 +2394,8 @@ div#bazarrMappingsValidationResult {
 .je-arr-check-row.je-arr-check-ok { border-left-color: #52b54b; }
 .je-arr-check-row.je-arr-check-bad { border-left-color: #dc3545; }
 .je-arr-check-title { font-weight: 600; }
+
+/* Backup & Restore (Admin tab) */
+.je-backup-heading { margin: 1.5em 0 0.5em; font-size: 1.05em; }
+.je-backup-actions { display: flex; gap: 0.5em; flex-wrap: wrap; margin-bottom: 0.5em; }
+#backupExportStatus, #backupRestoreStatus { margin-top: 0.5em; min-height: 1.2em; }
