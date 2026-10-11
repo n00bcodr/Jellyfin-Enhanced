@@ -26,6 +26,8 @@
             // Get saved language from localStorage as well
             const localStorageLang = localStorage.getItem(languageKey);
             const savedLanguage = JE.currentSettings.displayLanguage || localStorageLang || '';
+            // The value shown for the language in use; a refused change goes back to it.
+            let appliedLanguage = displayLanguageSelect.value;
 
             console.log('🪼 Jellyfin Enhanced: Current language setting:', {
                 fromSettings: JE.currentSettings.displayLanguage,
@@ -116,6 +118,7 @@
                 if (normalizedLanguage) {
                     displayLanguageSelect.value = normalizedLanguage;
                 }
+                appliedLanguage = displayLanguageSelect.value;
                 console.log('🪼 Jellyfin Enhanced: Set language dropdown to:', savedLanguage || 'Auto', 'Normalized to:', normalizedLanguage, 'Select element value is now:', displayLanguageSelect.value);
             })();
 
@@ -138,8 +141,22 @@
                 const translationExists = true;
 
                 // Save to settings.json (use base language code)
+                const previousLang = JE.currentSettings.displayLanguage;
                 JE.currentSettings.displayLanguage = newLang;
-                await JE.saveUserSettings('settings.json', JE.currentSettings);
+                try {
+                    await JE.saveUserSettings('settings.json', JE.currentSettings, { throwOnError: true });
+                } catch (err) {
+                    // The stored settings did not load, so the save was refused: change nothing
+                    // rather than switch the language here and report it as saved.
+                    const status = JE.userConfig?.settingsStatus;
+                    if (status === 'unavailable' || status === 'loading') {
+                        JE.currentSettings.displayLanguage = previousLang;
+                        displayLanguageSelect.value = appliedLanguage;
+                        JE.toast(JE.t('panel_settings_unavailable'));
+                        return;
+                    }
+                    console.error('🪼 Jellyfin Enhanced: Failed to save settings.json:', err);
+                }
 
                 // Save to localStorage (use the same code)
                 if (fullCultureCode) {

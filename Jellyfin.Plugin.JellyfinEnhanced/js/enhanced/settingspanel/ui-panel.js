@@ -11,7 +11,12 @@
     const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
 
     // Panes whose controls write settings.json; read-only while it failed to load.
-    const SETTINGS_DOCUMENT_PANES = ['playback', 'auto-skip', 'subtitles', 'random-button', 'ui'];
+    // A selector limits it to the rows holding those controls: the language pane's
+    // translation-cache button only touches localStorage and stays usable.
+    const SETTINGS_DOCUMENT_PANES = {
+        'playback': null, 'auto-skip': null, 'subtitles': null, 'random-button': null, 'ui': null,
+        'language': '#displayLanguageSelect'
+    };
 
     /**
      * Shows the settings panes read-only with a Retry button when the stored
@@ -23,12 +28,15 @@
      * @param {(ev: Event) => void} retry - Click handler of the Retry buttons.
      */
     function showSettingsUnavailable(help, retry) {
-        SETTINGS_DOCUMENT_PANES.forEach((paneName) => {
+        Object.entries(SETTINGS_DOCUMENT_PANES).forEach(([paneName, controlSelector]) => {
             const pane = help.querySelector(`.je-pane[data-pane="${paneName}"]`);
             if (!pane) return;
             const title = pane.querySelector('.je-pane-title');
-            Array.from(pane.children).forEach((child) => {
-                if (child === title) return;
+            const rows = controlSelector
+                ? Array.from(pane.querySelectorAll(controlSelector), (control) => control.parentElement)
+                : Array.from(pane.children).filter((child) => child !== title);
+            if (!rows.length) return;
+            rows.forEach((child) => {
                 child.setAttribute('inert', '');
                 child.setAttribute('aria-disabled', 'true');
                 child.style.opacity = '0.5';
