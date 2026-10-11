@@ -118,7 +118,7 @@
     "RatingTagsEnabled": true,
     "AgeRatingTagsEnabled": true,
     "PeopleTagsEnabled": true,
-    "TagsHideOnHover": false,
+    "TagsHideOnHover": true,
     "QualityTagsPosition": "bottom-right",
     "QualityTagsPreferredAudioLanguage": "",
     "GenreTagsPosition": "bottom-left",

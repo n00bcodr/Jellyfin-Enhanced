@@ -143,6 +143,7 @@
             selectedStylePresetIndex: ['DefaultSubtitleStyle', 'SelectedStylePresetIndex'],
             selectedFontSizePresetIndex: ['DefaultSubtitleSize', 'SelectedFontSizePresetIndex'],
             selectedFontFamilyPresetIndex: ['DefaultSubtitleFont', 'SelectedFontFamilyPresetIndex'],
+            selectedTextEffectPresetIndex: ['DefaultSubtitleTextEffect', 'SelectedTextEffectPresetIndex'],
             displayLanguage: ['DefaultLanguage', 'DisplayLanguage'],
             watchProgressMode: ['WatchProgressDefaultMode', 'WatchProgressMode'],
             watchProgressTimeFormat: ['WatchProgressTimeFormat'],

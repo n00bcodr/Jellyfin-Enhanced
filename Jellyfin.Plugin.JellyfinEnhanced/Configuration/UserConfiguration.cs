@@ -78,6 +78,82 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string DisplayLanguage { get; set; } = string.Empty;
         public string CalendarDisplayMode { get; set; } = "list";
         public string CalendarDefaultViewMode { get; set; } = "agenda";
+
+        /// <summary>
+        /// The settings a user gets from the administrator's current defaults: the
+        /// first-access seed of settings.json and "reset all users" both write this.
+        /// Keys the admin page has no default for keep their initializers.
+        /// </summary>
+        /// <param name="config">The plugin configuration holding the admin defaults.</param>
+        /// <returns>A new settings document built from the admin defaults.</returns>
+        public static UserSettings FromAdminDefaults(PluginConfiguration config)
+        {
+            return new UserSettings
+            {
+                AutoPauseEnabled = config.AutoPauseEnabled,
+                AutoResumeEnabled = config.AutoResumeEnabled,
+                AutoPipEnabled = config.AutoPipEnabled,
+                LongPress2xEnabled = config.LongPress2xEnabled,
+                PauseScreenEnabled = config.PauseScreenEnabled,
+                PauseScreenDelaySeconds = config.PauseScreenDelaySeconds,
+                AutoSkipIntro = config.AutoSkipIntro,
+                AutoSkipOutro = config.AutoSkipOutro,
+                DisableCustomSubtitleStyles = config.DisableCustomSubtitleStyles,
+                SelectedStylePresetIndex = config.DefaultSubtitleStyle,
+                SelectedFontSizePresetIndex = config.DefaultSubtitleSize,
+                SelectedFontFamilyPresetIndex = config.DefaultSubtitleFont,
+                SelectedTextEffectPresetIndex = config.DefaultSubtitleTextEffect,
+                RandomButtonEnabled = config.RandomButtonEnabled,
+                RandomUnwatchedOnly = config.RandomUnwatchedOnly,
+                RandomIncludeMovies = config.RandomIncludeMovies,
+                RandomIncludeShows = config.RandomIncludeShows,
+                RandomScopeCurrentContainer = config.RandomScopeCurrentContainer,
+                ShowWatchProgress = config.ShowWatchProgress,
+                WatchProgressMode = string.IsNullOrWhiteSpace(config.WatchProgressDefaultMode) ? "percentage" : config.WatchProgressDefaultMode,
+                WatchProgressTimeFormat = string.IsNullOrWhiteSpace(config.WatchProgressTimeFormat) ? "hours" : config.WatchProgressTimeFormat,
+                ShowFileSizes = config.ShowFileSizes,
+                ShowAudioLanguages = config.ShowAudioLanguages,
+                UseNativePosterTags = null, // Not chosen: on while the administrator allows native poster tags.
+                QualityTagsEnabled = config.QualityTagsEnabled,
+                ShowResolutionTag = config.ShowResolutionTag,
+                ShowSourceTag = config.ShowSourceTag,
+                ShowDynamicRangeTag = config.ShowDynamicRangeTag,
+                ShowSpecialFormatTag = config.ShowSpecialFormatTag,
+                ShowVideoCodecTag = config.ShowVideoCodecTag,
+                ShowAudioInfoTag = config.ShowAudioInfoTag,
+                ResolutionTagOrder = config.ResolutionTagOrder,
+                SourceTagOrder = config.SourceTagOrder,
+                DynamicRangeTagOrder = config.DynamicRangeTagOrder,
+                SpecialFormatTagOrder = config.SpecialFormatTagOrder,
+                VideoCodecTagOrder = config.VideoCodecTagOrder,
+                AudioInfoTagOrder = config.AudioInfoTagOrder,
+                GenreTagsEnabled = config.GenreTagsEnabled,
+                LanguageTagsEnabled = config.LanguageTagsEnabled,
+                RatingTagsEnabled = config.RatingTagsEnabled,
+                AgeRatingTagsEnabled = config.AgeRatingTagsEnabled,
+                PeopleTagsEnabled = config.PeopleTagsEnabled,
+                TagsHideOnHover = config.TagsHideOnHover,
+                QualityTagsPosition = config.QualityTagsPosition,
+                // QualityTagsPreferredAudioLanguage stays "" (use the server default).
+                GenreTagsPosition = config.GenreTagsPosition,
+                LanguageTagsPosition = config.LanguageTagsPosition,
+                RatingTagsPosition = config.RatingTagsPosition,
+                RatingTagsOnMovies = config.RatingTagsOnMovies,
+                RatingTagsOnSeries = config.RatingTagsOnSeries,
+                RatingTagsOnSeasons = config.RatingTagsOnSeasons,
+                RatingTagsOnEpisodes = config.RatingTagsOnEpisodes,
+                RatingTagsOnContinueWatching = config.RatingTagsOnContinueWatching,
+                RatingTagsOnNextUp = config.RatingTagsOnNextUp,
+                AgeRatingTagsPosition = config.AgeRatingTagsPosition,
+                ShowRatingInPlayer = config.ShowRatingInPlayer,
+                RemoveContinueWatchingEnabled = config.RemoveContinueWatchingEnabled,
+                ReviewsExpandedByDefault = config.ReviewsExpandedByDefault,
+                DisplayLanguage = config.DefaultLanguage,
+                CalendarDisplayMode = "list",
+                CalendarDefaultViewMode = "agenda",
+                LastOpenedTab = "shortcuts"
+            };
+        }
     }
 
     // Per-user Spoiler Guard state. Stored in spoilerblur.json alongside

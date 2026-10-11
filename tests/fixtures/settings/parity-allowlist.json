@@ -1,8 +1,4 @@
 {
-  "SeedVsReset": {
-    "WatchProgressMode": "Reset-all writes the initializer, not the admin's WatchProgressDefaultMode (design 2.3; A1 fixes it).",
-    "WatchProgressTimeFormat": "Reset-all writes the initializer, not the admin's WatchProgressTimeFormat (design 2.3; A1 fixes it)."
-  },
   "JsDefaultsVsInitializers": {
     "AutoPauseEnabled": "One of six booleans: C# initializer false, admin default and JS true (design 2.3).",
     "PauseScreenEnabled": "One of six booleans: C# initializer false, admin default and JS true (design 2.3).",
@@ -26,8 +22,6 @@
     "SubtitleVerticalPosition": "C# initializer 85 (not seeded), JS 95 (design 2.3; decision 3).",
     "UseNativePosterTags": "The seed stores null (not chosen); the client resolves it to on.",
     "DisableAllShortcuts": "Phantom client-only key; not a UserSettings property (decision 6).",
-    "SelectedTextEffectPresetIndex": "Text-effect alias missing from config.js: the fallback ignores DefaultSubtitleTextEffect (design 2.3; A9 fixes it).",
-    "TagsHideOnHover": "The seed ignores the admin TagsHideOnHover; the client fallback reads it (design 2.3; A9 fixes the seed).",
     "QualityTagsPreferredAudioLanguage": "The seed stores '' (use the server default); the fallback copies the admin language itself.",
     "WatchProgressMode": "A blank admin value seeds the initializer; the client fallback keeps the blank (BlankAdminUsesInitializer).",
     "WatchProgressTimeFormat": "A blank admin value seeds the initializer; the client fallback keeps the blank (BlankAdminUsesInitializer)."

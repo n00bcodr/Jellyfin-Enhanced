@@ -111,3 +111,11 @@ test('a newly seeded user resolves to the seed apart from the allowlisted drift'
   }
   assertOnlyAllowlistedDrift('ClientSeededVsSeed', differences);
 });
+
+test('the admin subtitle text effect is the fallback for selectedTextEffectPresetIndex', t => {
+  // Design A9: config.js reads DefaultSubtitleTextEffect like its style, size and font siblings.
+  assert.equal(loadSettings(t, { DefaultSubtitleTextEffect: 3 }).settings.selectedTextEffectPresetIndex, 3);
+  // A stored choice, including 0, still wins over the admin default.
+  assert.equal(loadSettings(t, { DefaultSubtitleTextEffect: 3 }, { selectedTextEffectPresetIndex: 0 }).settings.selectedTextEffectPresetIndex, 0);
+  assert.equal(loadSettings(t, {}).settings.selectedTextEffectPresetIndex, 0);
+});

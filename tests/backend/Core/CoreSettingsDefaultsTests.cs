@@ -74,9 +74,10 @@ public class CoreSettingsDefaultsTests
     {
         public ApiPluginFixture Plugin { get; } = new();
         public JellyfinEnhancedController Controller { get; }
-        public Endpoints(string configName)
+        public Endpoints(string configName) : this(config => JsonConvert.PopulateObject(ReadFixture("admin-configs.json")[configName]!.ToString(), config)) { }
+        public Endpoints(Action<PluginConfiguration> configure)
         {
-            JsonConvert.PopulateObject(ReadFixture("admin-configs.json")[configName]!.ToString(), Plugin.Plugin.Configuration);
+            configure(Plugin.Plugin.Configuration);
             var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), Plugin.Core.Paths.Object, Plugin.Core.Logger);
             Controller = ApiAssetTests.Controller(Plugin.Core, Plugin.Core.Manager, Mock.Of<IUserManager>(), maintenance);
             SignIn(UserA);
@@ -133,10 +134,10 @@ public class CoreSettingsDefaultsTests
         MatchGolden("legacy-partial-files.json", new JObject { ["Initializers"] = initializers, ["Cases"] = cases });
     }
 
-    /// <summary>The seed the first GET writes for a user without settings.json, per admin config.</summary>
+    /// <summary>The seed the first GET writes for a user without settings.json, per admin config (see EndpointsFor).</summary>
     private static JObject NewUserSeed(string configName)
     {
-        using var endpoints = new Endpoints(configName);
+        using var endpoints = EndpointsFor(configName);
         var (served, isAdmin) = endpoints.GetSettings(UserA);
         Assert.False(isAdmin);
         var written = File.ReadAllText(endpoints.SettingsPath(UserA));
@@ -161,7 +162,7 @@ public class CoreSettingsDefaultsTests
     /// <summary>What reset-all writes to every user's documents, per admin config.</summary>
     private static JObject ResetAll(string configName)
     {
-        using var endpoints = new Endpoints(configName);
+        using var endpoints = EndpointsFor(configName);
         var manager = endpoints.Plugin.Core.Manager;
         string a = UserA.ToString("N"), b = UserB.ToString("N");
         // One user with every field customised, one with a legacy partial file and Spoiler Guard state.
@@ -204,24 +205,37 @@ public class CoreSettingsDefaultsTests
         MatchGolden("reset-all.json", resets);
     }
 
-    [Fact]
-    public void SeedAndResetDifferOnlyInAllowlistedKeys()
+    public static IEnumerable<object[]> SeedEqualsResetConfigs()
+        => ConfigNames().Select(name => new object[] { name }).Concat(Enumerable.Range(0, 8).Select(seed => new object[] { $"random-{seed}" }));
+
+    /// <summary>The fixture admin config, or "random-N" for CoreUserSettingsBuilderTests.Randomize with seed N.</summary>
+    private static Endpoints EndpointsFor(string configName) => configName.StartsWith("random-", StringComparison.Ordinal)
+        ? new Endpoints(config => CoreUserSettingsBuilderTests.Randomize(config, int.Parse(configName["random-".Length..], System.Globalization.CultureInfo.InvariantCulture)))
+        : new Endpoints(configName);
+
+    [Theory]
+    [MemberData(nameof(SeedEqualsResetConfigs))]
+    public void SeedAndResetWriteTheSameSettings(string configName)
     {
-        var allowed = ((JObject)ReadFixture("parity-allowlist.json")["SeedVsReset"]!).Properties().Select(p => p.Name).ToHashSet();
-        var seen = new HashSet<string>();
-        foreach (var name in ConfigNames())
-        {
-            var seed = NewUserSeed(name);
-            var reset = (JObject)ResetAll(name)["Settings"]!;
-            Assert.Equal(seed.Properties().Select(p => p.Name), reset.Properties().Select(p => p.Name));
-            foreach (var property in seed.Properties().Where(p => !JToken.DeepEquals(p.Value, reset[p.Name])))
-            {
-                Assert.True(allowed.Contains(property.Name), $"{name}: seed {property.Value} and reset {reset[property.Name]} differ for {property.Name}, which is not on the SeedVsReset allowlist");
-                seen.Add(property.Name);
-            }
-        }
-        // A fixed drift must leave the allowlist with its fix.
-        Assert.Empty(allowed.Except(seen));
+        // Both go through UserSettings.FromAdminDefaults (design A1), so a new user's first
+        // GET and "reset all users" agree on every key, whatever the admin chose.
+        var seed = NewUserSeed(configName);
+        var reset = (JObject)ResetAll(configName)["Settings"]!;
+        var differences = new List<string>();
+        Diff(seed, reset, "", differences);
+        Assert.True(differences.Count == 0, $"{configName}: seed and reset differ:\n" + string.Join("\n", differences));
+    }
+
+    [Fact]
+    public void AdminTagsHideOnHoverSeedsNewUsersAndLeavesExistingFilesAlone()
+    {
+        // Design A9: the admin checkbox is the default for accounts created after it is set;
+        // users who already have settings.json keep their stored choice.
+        using var endpoints = new Endpoints(config => config.TagsHideOnHover = true);
+        endpoints.Plugin.Core.Manager.SaveUserConfiguration(UserB.ToString("N"), "settings.json", new UserSettings { TagsHideOnHover = false });
+        Assert.True(endpoints.GetSettings(UserA).Settings.Value<bool>(nameof(UserSettings.TagsHideOnHover)));
+        endpoints.SignIn(UserB);
+        Assert.False(endpoints.GetSettings(UserB).Settings.Value<bool>(nameof(UserSettings.TagsHideOnHover)));
     }
 
     [Fact]
