@@ -123,9 +123,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
 
                 if (changed > 0)
                 {
-                    // The response filter caches each user's hidden content for 30s; drop it so the
-                    // resumed item is back in Continue Watching on the next request, as after any other write.
-                    HiddenContentResponseFilter.InvalidateUser(userId.ToString("N"));
+                    // The save above already dropped the response filter's 30 s hidden-content cache
+                    // (UserConfigurationSaved), so the resumed item is back in Continue Watching on the next request.
                     _logger.Info($"CW: dropped/demoted {changed} hidden-content entr{(changed == 1 ? "y" : "ies")} for user {userId} on resume of item {item.Id}");
                     // Attribute to RCW specifically (not HC) so this counter answers
                     // "did Remove Continue Watching actually remove something for a real

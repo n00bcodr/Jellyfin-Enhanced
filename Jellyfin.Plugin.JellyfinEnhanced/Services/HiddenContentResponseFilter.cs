@@ -14,7 +14,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
-    public sealed class HiddenContentResponseFilter : IAsyncActionFilter
+    public sealed class HiddenContentResponseFilter : IAsyncActionFilter, IDisposable
     {
         private const string FileName = "hidden-content.json";
         private const string CacheKey = "__JE_HC_FILTER_CACHE";
@@ -26,14 +26,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// Removes the cached hidden-content context for the given user so the next
-        /// request re-reads from disk. Call this immediately after any write to
-        /// hidden-content.json for that user.
+        /// request re-reads from disk. Every write through
+        /// <see cref="UserConfigurationManager.SaveUserConfiguration"/> already does this
+        /// via <see cref="UserConfigurationManager.UserConfigurationSaved"/>; call it
+        /// directly only when the file changed some other way.
         /// </summary>
         public static void InvalidateUser(string userId)
         {
             if (!string.IsNullOrEmpty(userId))
                 _hcCache.TryRemove(userId, out _);
         }
+
+        // Test seams over the cross-request cache, mirroring SpoilerUserResolver's.
+        internal static void SeedCacheForTest(string userIdN)
+        {
+            if (!string.IsNullOrEmpty(userIdN))
+                _hcCache[userIdN] = (HideContext.Build(null), DateTime.UtcNow);
+        }
+
+        internal static bool IsCachedForTest(string userIdN)
+            => !string.IsNullOrEmpty(userIdN) && _hcCache.ContainsKey(userIdN);
 
         // Shared immutable surface sets. Kept as statics so neither route matching nor per-request
         // surface resolution allocates.
@@ -125,6 +137,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             _configManager = configManager;
             _logger = logger;
+            _configManager.UserConfigurationSaved += OnUserConfigurationSaved;
+        }
+
+        public void Dispose()
+        {
+            _configManager.UserConfigurationSaved -= OnUserConfigurationSaved;
+        }
+
+        // The one invalidation path: every hidden-content.json write (controller, Continue
+        // Watching resume and orphan prune, reset-all) goes through SaveUserConfiguration.
+        private static void OnUserConfigurationSaved(string userIdN, string fileName)
+        {
+            if (string.Equals(fileName, FileName, StringComparison.OrdinalIgnoreCase)) InvalidateUser(userIdN);
         }
 
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)

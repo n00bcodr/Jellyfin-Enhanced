@@ -36,7 +36,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>
         /// Raised after a per-user file was written by <see cref="SaveUserConfiguration"/>, with the
         /// normalized (N-format, lowercase) user id and the file name. Handlers must be cheap and must not
-        /// throw; they run on the saving thread.
+        /// throw; they run on the saving thread. This is the one invalidation path for the per-user read
+        /// caches (hidden content, Spoiler Guard state, poster tag settings): every subscriber runs even
+        /// if an earlier one throws.
         /// </summary>
         public event Action<string, string>? UserConfigurationSaved;
 
@@ -319,11 +321,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
                 File.WriteAllText(tempPath, jsonToSave);
                 File.Move(tempPath, configPath, overwrite: true);
-                if (string.Equals(fileName, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, StringComparison.OrdinalIgnoreCase))
-                {
-                    Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.InvalidateUser(userId);
-                }
-
                 RaiseUserConfigurationSaved(userId, fileName);
             }
             catch (Exception ex)
@@ -336,18 +333,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         }
 
         // Swallows subscriber exceptions so a misbehaving handler can never turn
-        // a successful save into a reported (and rethrown) save failure.
+        // a successful save into a reported (and rethrown) save failure. Each
+        // subscriber gets its own try: a multicast call stops at the first
+        // throw, which would leave every later subscriber's cache stale.
         private void RaiseUserConfigurationSaved(string userId, string fileName)
         {
             var handler = UserConfigurationSaved;
             if (handler == null) return;
-            try
+            var normalizedUserId = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
+            foreach (var subscriber in handler.GetInvocationList())
             {
-                handler((userId ?? string.Empty).Replace("-", "").ToLowerInvariant(), fileName);
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning($"User configuration save hook failed for '{fileName}': {ex.Message}");
+                try
+                {
+                    ((Action<string, string>)subscriber)(normalizedUserId, fileName);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"User configuration save hook failed for '{fileName}': {ex.Message}");
+                }
             }
         }
 
