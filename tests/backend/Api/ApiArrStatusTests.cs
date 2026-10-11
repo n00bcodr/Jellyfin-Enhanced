@@ -397,6 +397,27 @@ public class ApiArrStatusTests
     }
 
     [Fact]
+    public async Task AMemberWhoCannotOpenThe4kLibraryStillSeesTheStandardDownload()
+    {
+        using var rig = new Rig();
+        // Mock 01: Radarr 4K has Dune and it is in "Movies 4K", which only the admin can open;
+        // Radarr (standard) is downloading it.
+        rig.Radarr4k.Movies.Add(FakeArr.Movie(2, 693134, "Dune Part Two", path: "/data/movies4k/Dune Part Two (2024)"));
+        var dune = TitleKey.Parse("movie:tmdb:693134")!;
+        rig.View.AddCopy(dune, new JfCopy { ItemId = Guid.NewGuid(), Path = "/media/movies4k/Dune Part Two (2024)/Dune.mkv", LibraryId = "movies4k", LibraryName = "Movies 4K" }, rig.Admin.UserId);
+        rig.View.Rev++;
+
+        var member = await Batch(rig, rig.Member, null, "movie:tmdb:693134");
+        var status = Items(member)[0];
+        Assert.Equal(("downloading", "downloading", 50), (status.GetProperty("stage").GetString(), status.GetProperty("reason").GetProperty("code").GetString(), status.GetProperty("progress").GetProperty("percent").GetInt32()));
+        // The 4K copy stays invisible: no trace of it, or of a copy they can't open.
+        Assert.DoesNotMatch("not_visible_to_user|4[kK]|Movies 4K|movies4k|" + Forbidden, member.Body);
+        // The admin's headline is the copy they can open.
+        var admin = Items(await Batch(rig, rig.Admin, null, "movie:tmdb:693134"))[0];
+        Assert.Equal("ready", admin.GetProperty("stage").GetString());
+    }
+
+    [Fact]
     public async Task AnEpisodeHiddenFromAViewerIsLeftOutOfTheirSeason()
     {
         using var rig = new Rig();
