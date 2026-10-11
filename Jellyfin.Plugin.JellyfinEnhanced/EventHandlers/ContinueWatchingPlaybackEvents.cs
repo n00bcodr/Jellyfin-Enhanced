@@ -205,6 +205,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
         {
             try
             {
+                // A prune that changes the file saves it, and the save drops the response filter's
+                // 30 s hidden-content cache (UserConfigurationSaved): an item re-added with the same
+                // id is not hidden by the pruned entry.
                 _configManager.RmwUserConfiguration<UserHiddenContent>(
                     userId.ToString("N"), "hidden-content.json", hidden =>
                 {
