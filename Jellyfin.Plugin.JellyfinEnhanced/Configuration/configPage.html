@@ -4074,6 +4074,10 @@
             // id -> value at the last saved state, for the unsaved-changes draft below.
             let _jeSavedValues = null;
             let _jeSavedShortcuts = null;
+            let _jeSavedMdblist = null;
+            let _jeSavedCatOrder = null;
+            // What the draft cannot keep, at the last saved state (see jeUndraftableState).
+            let _jeSavedUndraftable = null;
 
             /** Every form control the dirty check compares, as { key, value, el }. */
             function jeTrackedControls() {
@@ -4087,10 +4091,22 @@
                 return controls;
             }
 
+            /** MDBList sources as they would be saved (order and on/off); their toggles have no ids. */
+            function jeMdblistSourcesValue() {
+                return typeof computeMdblistRatingsSources === 'function' ? computeMdblistRatingsSources() : '';
+            }
+
+            /** Quality-category rows top to bottom, as their *TagOrder keys. */
+            function jeQualityCatOrder() {
+                return Array.from(form.querySelectorAll('#qualityCategoriesAdmin .je-quality-cat-admin-row')).map(r => r.dataset.orderKey);
+            }
+
             function jeSnapshotFormState() {
                 const parts = jeTrackedControls().map(c => c.key + '=' + c.value);
                 // shortcutOverrides is JS state, not bound to persistent <input> elements.
                 parts.push('shortcuts=' + JSON.stringify(shortcutOverrides));
+                // Swapping two MDBList rows with the same on/off state leaves the control walk unchanged.
+                parts.push('mdblistSources=' + jeMdblistSourcesValue());
                 return parts.join('');
             }
 
@@ -4110,11 +4126,26 @@
                 return values;
             }
 
+            /**
+             * The controls a draft cannot keep (Sonarr/Radarr instance cards, credentials, anything
+             * without a unique id) with their values; MDBList toggles are kept through their sources.
+             */
+            function jeUndraftableState() {
+                const draftable = jeDraftableValues();
+                return jeTrackedControls()
+                    .filter(c => !(c.el.id && c.el.id in draftable) && !c.el.classList.contains('je-mdblist-source-toggle'))
+                    .map(c => (c.el.name || c.el.className) + '=' + c.value)
+                    .join('\n');
+            }
+
             /** Call once the form reflects a known-saved state. */
             function jeMarkSaved() {
                 _jeSavedSnapshot = jeSnapshotFormState();
                 _jeSavedValues = jeDraftableValues();
                 _jeSavedShortcuts = JSON.stringify(shortcutOverrides);
+                _jeSavedMdblist = jeMdblistSourcesValue();
+                _jeSavedCatOrder = JSON.stringify(jeQualityCatOrder());
+                _jeSavedUndraftable = jeUndraftableState();
                 jeUpdateDirtyIndicator();
             }
 
@@ -4148,18 +4179,64 @@
             const JE_DRAFT_KEY = 'jellyfinEnhancedConfigDraft';
             let _jeDraftOffer = null;
 
-            /** Stores the changed controls (by id) and shortcut edits as this tab's draft. */
-            function jeStashDraft() {
-                if (!_jeSavedValues || !page.isConnected || !jeIsDirty()) return;
+            /**
+             * Server and signed-in admin a draft belongs to: sessionStorage is per origin and tab, so
+             * another admin or server in the same tab must not be offered it.
+             */
+            function jeDraftOwner() {
+                try {
+                    return String(ApiClient.serverId() || '') + '/' + String(ApiClient.getCurrentUserId() || '');
+                } catch (e) {
+                    return '';
+                }
+            }
+
+            /**
+             * The edits a draft can keep: changed id'd controls, shortcuts, MDBList sources and the
+             * quality-category order. A restore offer still waiting for an answer is carried over
+             * under them. Null when there is nothing to keep.
+             */
+            function jeBuildDraft() {
                 const current = jeDraftableValues();
                 const fields = {};
                 Object.keys(current).forEach(id => {
                     if (id in _jeSavedValues && current[id] !== _jeSavedValues[id]) fields[id] = current[id];
                 });
-                const shortcuts = JSON.stringify(shortcutOverrides) !== _jeSavedShortcuts ? shortcutOverrides : null;
-                if (!Object.keys(fields).length && !shortcuts) return;
+                const mdblist = jeMdblistSourcesValue();
+                const catOrder = jeQualityCatOrder();
+                const draft = {
+                    fields: fields,
+                    shortcuts: JSON.stringify(shortcutOverrides) !== _jeSavedShortcuts ? shortcutOverrides : null,
+                    mdblistSources: mdblist !== _jeSavedMdblist ? mdblist : null,
+                    qualityCatOrder: JSON.stringify(catOrder) !== _jeSavedCatOrder ? catOrder : null
+                };
+                const offer = _jeDraftOffer;
+                if (offer) {
+                    offer.ids.forEach(id => {
+                        if (!(id in fields) && id in current && current[id] === _jeSavedValues[id]) fields[id] = offer.fields[id];
+                    });
+                    ['shortcuts', 'mdblistSources', 'qualityCatOrder'].forEach(k => {
+                        if (draft[k] === null && offer[k] != null) draft[k] = offer[k];
+                    });
+                }
+                const empty = !Object.keys(fields).length && !draft.shortcuts && draft.mdblistSources === null && !draft.qualityCatOrder;
+                return empty ? null : draft;
+            }
+
+            /** True when some unsaved edits are of a kind the draft cannot keep (see jeUndraftableState). */
+            function jeDraftLosesChanges() {
+                return _jeSavedUndraftable !== null && jeUndraftableState() !== _jeSavedUndraftable;
+            }
+
+            /** Stores the edits a draft can keep as this tab's draft. */
+            function jeStashDraft() {
+                if (!_jeSavedValues || !page.isConnected || !jeIsDirty()) return;
+                const draft = jeBuildDraft();
+                if (!draft) return;
+                draft.savedAt = Date.now();
+                draft.owner = jeDraftOwner();
                 try {
-                    sessionStorage.setItem(JE_DRAFT_KEY, JSON.stringify({ savedAt: Date.now(), fields: fields, shortcuts: shortcuts }));
+                    sessionStorage.setItem(JE_DRAFT_KEY, JSON.stringify(draft));
                 } catch (e) {
                     console.warn('[JE] could not keep unsaved changes as a draft:', e);
                 }
@@ -4173,30 +4250,45 @@
                 if (banner) banner.style.display = 'none';
             }
 
-            /** After loadConfig: offers a draft left by the previous visit, if it still changes anything. */
+            /**
+             * After loadConfig: offers a draft left by the previous visit, if it still changes anything.
+             * The stored draft stays until Restore, Discard, a save or reset-all, so a reload or a
+             * re-created view offers it again.
+             */
             function jeOfferDraftRestore() {
                 let draft = null;
                 try { draft = JSON.parse(sessionStorage.getItem(JE_DRAFT_KEY) || 'null'); } catch (e) { draft = null; }
-                try { sessionStorage.removeItem(JE_DRAFT_KEY); } catch (e) { /* storage unavailable */ }
                 const banner = document.getElementById('je-draft-restore-banner');
                 const msg = document.getElementById('je-draft-restore-msg');
-                if (!banner || !msg || !draft || typeof draft.fields !== 'object' || !draft.fields) {
-                    if (banner && !_jeDraftOffer) banner.style.display = 'none';
+                _jeDraftOffer = null;
+                if (banner) banner.style.display = 'none';
+                if (!banner || !msg || !draft || typeof draft.fields !== 'object' || !draft.fields) return;
+                if (draft.owner !== jeDraftOwner()) {
+                    // Another server's or admin's edits from this tab: never offer them here.
+                    jeDiscardDraft();
                     return;
                 }
                 const current = jeDraftableValues();
                 const ids = Object.keys(draft.fields).filter(id => id in current && current[id] !== draft.fields[id]);
                 const shortcuts = Array.isArray(draft.shortcuts) && JSON.stringify(draft.shortcuts) !== JSON.stringify(shortcutOverrides) ? draft.shortcuts : null;
-                const count = ids.length + (shortcuts ? 1 : 0);
-                if (!count) return;
-                _jeDraftOffer = { ids: ids, fields: draft.fields, shortcuts: shortcuts };
+                const mdblistSources = typeof draft.mdblistSources === 'string' && draft.mdblistSources !== jeMdblistSourcesValue() ? draft.mdblistSources : null;
+                const qualityCatOrder = Array.isArray(draft.qualityCatOrder) && JSON.stringify(draft.qualityCatOrder) !== JSON.stringify(jeQualityCatOrder()) ? draft.qualityCatOrder : null;
+                const count = ids.length + (shortcuts ? 1 : 0) + (mdblistSources !== null ? 1 : 0) + (qualityCatOrder ? 1 : 0);
+                if (!count) {
+                    jeDiscardDraft();
+                    return;
+                }
+                _jeDraftOffer = { ids: ids, fields: draft.fields, shortcuts: shortcuts, mdblistSources: mdblistSources, qualityCatOrder: qualityCatOrder };
                 const when = new Date(draft.savedAt || Date.now());
                 // Name the tabs the changes are on, so the admin knows where to review them.
-                const tabIds = ids.map(id => {
-                    const tab = form.querySelector('#' + CSS.escape(id));
-                    const content = tab && tab.closest('.jellyfin-tab-content');
+                const tabOf = el => {
+                    const content = el && el.closest('.jellyfin-tab-content');
                     return content ? content.id : null;
-                }).concat(shortcuts ? ['keyboard'] : []);
+                };
+                const tabIds = ids.map(id => tabOf(form.querySelector('#' + CSS.escape(id))))
+                    .concat(shortcuts ? ['keyboard'] : [])
+                    .concat(mdblistSources !== null ? [tabOf(document.getElementById('mdblistRatingsSourcesAdmin'))] : [])
+                    .concat(qualityCatOrder ? [tabOf(document.getElementById('qualityCategoriesAdmin'))] : []);
                 const tabNames = tabIds.filter((t, i) => t && tabIds.indexOf(t) === i).map(t => {
                     const btn = document.querySelector('.jellyfin-tab-button[data-tab="' + t + '"]');
                     if (!btn) return t;
@@ -4228,6 +4320,14 @@
                     shortcutOverrides = offer.shortcuts;
                     renderOverrides();
                 }
+                if (offer.mdblistSources !== null && typeof renderMdblistSourcesAdmin === 'function') {
+                    renderMdblistSourcesAdmin({ MdblistRatingsSources: offer.mdblistSources });
+                }
+                if (offer.qualityCatOrder && typeof renderQualityCatOrderAdmin === 'function') {
+                    const order = {};
+                    offer.qualityCatOrder.forEach((key, i) => { order[key] = i + 1; });
+                    renderQualityCatOrderAdmin(order);
+                }
                 jeUpdateDirtyIndicator();
             }
 
@@ -4256,7 +4356,14 @@
                 if (!page.isConnected || !page.getClientRects().length) return;
                 const link = e.target && e.target.closest ? e.target.closest('a[href^="#/"], a[href^="#!/"], .headerBackButton, .headerHomeButton') : null;
                 if (!link || link.target === '_blank' || !jeIsDirty()) return;
-                if (window.confirm('You have unsaved Jellyfin Enhanced changes. Leave this page anyway?\n\nThey are kept for this browser tab and offered again when you come back.')) {
+                const keepable = !!jeBuildDraft();
+                const lost = jeDraftLosesChanges();
+                const fate = !lost
+                    ? 'They are kept for this browser tab and offered again when you come back.'
+                    : keepable
+                    ? 'Some of them (Sonarr/Radarr instances, API keys or other credentials) cannot be kept and will be lost. The rest are kept for this browser tab and offered again when you come back.'
+                    : 'They cannot be kept (Sonarr/Radarr instances, API keys or other credentials) and will be lost.';
+                if (window.confirm('You have unsaved Jellyfin Enhanced changes. Leave this page anyway?\n\n' + fate)) {
                     jeStashDraft();
                     return;
                 }
@@ -7834,6 +7941,8 @@
             }
             const failedUsers = users ? (result.failedUserCount || lines.length) : lines.length;
             const status = result.status || (lines.length ? 'partial' : 'complete');
+            // The server could not list the user folders at all (not the same as "no users").
+            const listFailed = result.error === 'user-folders-unreadable';
 
             const box = document.getElementById('resetAllUserSettingsResult');
             if (box) {
@@ -7845,7 +7954,9 @@
                 icon.textContent = status === 'complete' ? 'check_circle' : 'warning_amber';
                 const body = document.createElement('div');
                 const head = document.createElement('strong');
-                head.textContent = status === 'complete'
+                head.textContent = listFailed
+                    ? 'Last run: the user settings folders could not be read, so no personal settings were reset. See the server log.'
+                    : status === 'complete'
                     ? (total ? 'Last run: personal settings reset for all ' + total + ' users.' : 'Last run: no user has Jellyfin Enhanced settings yet.')
                     : 'Last run: personal settings reset for ' + (result.userCount || 0) + ' of ' + total + ' users; ' + failedUsers + (failedUsers === 1 ? ' user was' : ' users were') + ' not fully reset.';
                 body.appendChild(head);
@@ -7866,6 +7977,9 @@
 
             if (status === 'complete') {
                 return { title: 'Success', message: (total ? 'Configuration saved and applied to all ' + total + ' users.' : 'Configuration saved. No user has Jellyfin Enhanced settings yet, so there was nothing to reset.') + '\n\nSettings will take effect after users refresh their browsers.' };
+            }
+            if (listFailed) {
+                return { title: 'Reset failed', message: 'Configuration saved, but the user settings folders could not be read, so no personal settings were reset. Check the server log.' };
             }
             return {
                 title: status === 'failed' ? 'Reset failed' : 'Partly applied',

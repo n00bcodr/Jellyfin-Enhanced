@@ -616,15 +616,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public string[] GetAllUserIds()
         {
+            TryGetAllUserIds(out var userIds);
+            return userIds;
+        }
+
+        /// <summary>
+        /// Like <see cref="GetAllUserIds"/>, but tells a listing failure (logged, empty
+        /// <paramref name="userIds"/>) apart from a root with no user directories.
+        /// </summary>
+        /// <returns>False when the configuration root exists but could not be listed.</returns>
+        public bool TryGetAllUserIds(out string[] userIds)
+        {
             try
             {
                 if (!Directory.Exists(_configBaseDir))
                 {
-                    return Array.Empty<string>();
+                    userIds = Array.Empty<string>();
+                    return true;
                 }
 
                 var userDirs = Directory.GetDirectories(_configBaseDir);
-                var userIds = new System.Collections.Generic.List<string>(userDirs.Length);
+                var found = new System.Collections.Generic.List<string>(userDirs.Length);
 
                 foreach (var dir in userDirs)
                 {
@@ -635,15 +647,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     // dirs) is filtered out so callers like the Reset-to-defaults
                     // admin endpoint don't iterate it and re-create stale layout.
                     if (!CanonicalGuidRe.IsMatch(name)) continue;
-                    userIds.Add(name);
+                    found.Add(name);
                 }
 
-                return userIds.ToArray();
+                userIds = found.ToArray();
+                return true;
             }
             catch (Exception ex)
             {
                 _logger.Error($"Failed to get all user IDs: {ex.Message}");
-                return Array.Empty<string>();
+                userIds = Array.Empty<string>();
+                return false;
             }
         }
 

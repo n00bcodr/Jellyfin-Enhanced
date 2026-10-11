@@ -7912,8 +7912,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var skippedHc = new System.Collections.Generic.List<string>();
             var skippedSpoiler = new System.Collections.Generic.List<string>();
             var results = new System.Collections.Generic.List<ResetUserResult>();
-            // Get all user IDs from the UserConfigurationManager's known users
-            var userIds = _userConfigurationManager.GetAllUserIds();
+            // Get all user IDs from the UserConfigurationManager's known users. A root that cannot
+            // be listed is a failure, not "no users": nothing was reset.
+            if (!_userConfigurationManager.TryGetAllUserIds(out var userIds))
+            {
+                return Ok(new
+                {
+                    success = false,
+                    userCount = 0,
+                    totalUsers = 0,
+                    skippedSettingsUserIds = Array.Empty<string>(),
+                    skippedHcUserIds = Array.Empty<string>(),
+                    status = "failed",
+                    error = "user-folders-unreadable",
+                    failedUserCount = 0,
+                    skippedSpoilerUserIds = Array.Empty<string>(),
+                    users = Array.Empty<ResetUserResult>(),
+                });
+            }
+
             // Names for the result only. The directory walk above stays the source of who gets
             // reset (#159); live users come through the GetAllUsers shim (#626), and a failure
             // there only costs the names.

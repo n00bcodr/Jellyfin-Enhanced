@@ -174,6 +174,64 @@ public class CoreResetAllResultsTests
     }
 
     [Fact]
+    public void AConfigRootThatCannotBeListedIsAFailureNotAnEmptySuccess()
+    {
+        using var server = new Server();
+        var alice = Person("alice");
+        server.Live(alice);
+        server.File(alice.Id, "settings.json", "{\"DisplayLanguage\":\"fr\"}");
+        var root = server.Plugin.Core.ConfigRoot;
+        // Traversable but not listable. Root (or Windows) is not stopped by this: nothing to check.
+        if (OperatingSystem.IsWindows()) return;
+        File.SetUnixFileMode(root, UnixFileMode.UserExecute);
+        JObject body;
+        try
+        {
+            if (CanList(root)) return;
+            Assert.False(server.Manager.TryGetAllUserIds(out var ids));
+            Assert.Empty(ids);
+            Assert.Empty(server.Manager.GetAllUserIds());
+            body = server.Reset();
+        }
+        finally
+        {
+            File.SetUnixFileMode(root, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        Assert.False(body.Value<bool>("success"));
+        Assert.Equal("failed", body.Value<string>("status"));
+        Assert.Equal("user-folders-unreadable", body.Value<string>("error"));
+        Assert.Equal(0, body.Value<int>("userCount"));
+        Assert.Equal(0, body.Value<int>("totalUsers"));
+        Assert.Empty(body["users"]!);
+        Assert.Equal("{\"DisplayLanguage\":\"fr\"}", System.IO.File.ReadAllText(Path.Combine(server.Dir(alice.Id), "settings.json")));
+
+        // With the permission back, the same root lists its user again.
+        Assert.True(server.Manager.TryGetAllUserIds(out var listed));
+        Assert.Single(listed);
+    }
+
+    [Fact]
+    public void NoUserFoldersIsACompleteRunWithNothingToReset()
+    {
+        using var server = new Server();
+        server.Live(Person("alice"));
+
+        var body = server.Reset();
+
+        Assert.True(body.Value<bool>("success"));
+        Assert.Equal("complete", body.Value<string>("status"));
+        Assert.Equal(0, body.Value<int>("totalUsers"));
+        Assert.Null(body["error"]);
+    }
+
+    private static bool CanList(string dir)
+    {
+        try { Directory.GetDirectories(dir); return true; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+
+    [Fact]
     public void AFailingUserListOnlyCostsTheNames()
     {
         using var server = new Server();
