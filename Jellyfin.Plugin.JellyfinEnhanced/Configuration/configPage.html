@@ -4076,17 +4076,20 @@
             let _jeSavedShortcuts = null;
             let _jeSavedMdblist = null;
             let _jeSavedCatOrder = null;
+            let _jeSavedTagStyles = null;
             // What the draft cannot keep, at the last saved state (see jeUndraftableState).
             let _jeSavedUndraftable = null;
 
             /** Every form control the dirty check compares, as { key, value, el }. */
             function jeTrackedControls() {
                 const controls = [];
-                form.querySelectorAll('input, select, textarea').forEach((el, i) => {
+                form.querySelectorAll('input, select, textarea').forEach((el) => {
                     if (el.type === 'file') return; // can't be read back, and not part of the saved config shape
                     if (el.closest('.je-arr-seerr-import-picker')) return; // transient browsing state, not a form change until actually imported
                     if (el.closest('.je-spoiler-apply-existing')) return; // per-run option of an action, not a saved setting
-                    controls.push({ key: el.id || el.name || ('#' + i), value: el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value, el: el });
+                    if (el.closest('#tagStylePanel, #tagStylePresets')) return; // Tag Styles editor inputs; its saved state is jeTagStylesValue
+                    // Indexed among the tracked controls only, so a skipped control appearing does not shift the keys.
+                    controls.push({ key: el.id || el.name || ('#' + controls.length), value: el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value, el: el });
                 });
                 return controls;
             }
@@ -4101,12 +4104,19 @@
                 return Array.from(form.querySelectorAll('#qualityCategoriesAdmin .je-quality-cat-admin-row')).map(r => r.dataset.orderKey);
             }
 
+            /** Tag Styles as they would be saved (overrides, preset, scope); JS state, not form inputs. */
+            function jeTagStylesValue() {
+                const settings = tagStyles.settings();
+                return JSON.stringify([tagStyles.serialize(), settings.preset, settings.scope]);
+            }
+
             function jeSnapshotFormState() {
                 const parts = jeTrackedControls().map(c => c.key + '=' + c.value);
                 // shortcutOverrides is JS state, not bound to persistent <input> elements.
                 parts.push('shortcuts=' + JSON.stringify(shortcutOverrides));
                 // Swapping two MDBList rows with the same on/off state leaves the control walk unchanged.
                 parts.push('mdblistSources=' + jeMdblistSourcesValue());
+                parts.push('tagStyles=' + jeTagStylesValue());
                 return parts.join('');
             }
 
@@ -4145,6 +4155,7 @@
                 _jeSavedShortcuts = JSON.stringify(shortcutOverrides);
                 _jeSavedMdblist = jeMdblistSourcesValue();
                 _jeSavedCatOrder = JSON.stringify(jeQualityCatOrder());
+                _jeSavedTagStyles = jeTagStylesValue();
                 _jeSavedUndraftable = jeUndraftableState();
                 jeUpdateDirtyIndicator();
             }
@@ -4192,8 +4203,8 @@
             }
 
             /**
-             * The edits a draft can keep: changed id'd controls, shortcuts, MDBList sources and the
-             * quality-category order. A restore offer still waiting for an answer is carried over
+             * The edits a draft can keep: changed id'd controls, shortcuts, MDBList sources, the
+             * quality-category order and the Tag Styles. A restore offer still waiting for an answer is carried over
              * under them. Null when there is nothing to keep.
              */
             function jeBuildDraft() {
@@ -4204,22 +4215,24 @@
                 });
                 const mdblist = jeMdblistSourcesValue();
                 const catOrder = jeQualityCatOrder();
+                const tagStylesValue = jeTagStylesValue();
                 const draft = {
                     fields: fields,
                     shortcuts: JSON.stringify(shortcutOverrides) !== _jeSavedShortcuts ? shortcutOverrides : null,
                     mdblistSources: mdblist !== _jeSavedMdblist ? mdblist : null,
-                    qualityCatOrder: JSON.stringify(catOrder) !== _jeSavedCatOrder ? catOrder : null
+                    qualityCatOrder: JSON.stringify(catOrder) !== _jeSavedCatOrder ? catOrder : null,
+                    tagStyles: tagStylesValue !== _jeSavedTagStyles ? tagStylesValue : null
                 };
                 const offer = _jeDraftOffer;
                 if (offer) {
                     offer.ids.forEach(id => {
                         if (!(id in fields) && id in current && current[id] === _jeSavedValues[id]) fields[id] = offer.fields[id];
                     });
-                    ['shortcuts', 'mdblistSources', 'qualityCatOrder'].forEach(k => {
+                    ['shortcuts', 'mdblistSources', 'qualityCatOrder', 'tagStyles'].forEach(k => {
                         if (draft[k] === null && offer[k] != null) draft[k] = offer[k];
                     });
                 }
-                const empty = !Object.keys(fields).length && !draft.shortcuts && draft.mdblistSources === null && !draft.qualityCatOrder;
+                const empty = !Object.keys(fields).length && !draft.shortcuts && draft.mdblistSources === null && !draft.qualityCatOrder && draft.tagStyles === null;
                 return empty ? null : draft;
             }
 
@@ -4273,12 +4286,13 @@
                 const shortcuts = Array.isArray(draft.shortcuts) && JSON.stringify(draft.shortcuts) !== JSON.stringify(shortcutOverrides) ? draft.shortcuts : null;
                 const mdblistSources = typeof draft.mdblistSources === 'string' && draft.mdblistSources !== jeMdblistSourcesValue() ? draft.mdblistSources : null;
                 const qualityCatOrder = Array.isArray(draft.qualityCatOrder) && JSON.stringify(draft.qualityCatOrder) !== JSON.stringify(jeQualityCatOrder()) ? draft.qualityCatOrder : null;
-                const count = ids.length + (shortcuts ? 1 : 0) + (mdblistSources !== null ? 1 : 0) + (qualityCatOrder ? 1 : 0);
+                const tagStylesDraft = typeof draft.tagStyles === 'string' && draft.tagStyles !== jeTagStylesValue() ? draft.tagStyles : null;
+                const count = ids.length + (shortcuts ? 1 : 0) + (mdblistSources !== null ? 1 : 0) + (qualityCatOrder ? 1 : 0) + (tagStylesDraft !== null ? 1 : 0);
                 if (!count) {
                     jeDiscardDraft();
                     return;
                 }
-                _jeDraftOffer = { ids: ids, fields: draft.fields, shortcuts: shortcuts, mdblistSources: mdblistSources, qualityCatOrder: qualityCatOrder };
+                _jeDraftOffer = { ids: ids, fields: draft.fields, shortcuts: shortcuts, mdblistSources: mdblistSources, qualityCatOrder: qualityCatOrder, tagStyles: tagStylesDraft };
                 const when = new Date(draft.savedAt || Date.now());
                 // Name the tabs the changes are on, so the admin knows where to review them.
                 const tabOf = el => {
@@ -4288,7 +4302,8 @@
                 const tabIds = ids.map(id => tabOf(form.querySelector('#' + CSS.escape(id))))
                     .concat(shortcuts ? ['keyboard'] : [])
                     .concat(mdblistSources !== null ? [tabOf(document.getElementById('mdblistRatingsSourcesAdmin'))] : [])
-                    .concat(qualityCatOrder ? [tabOf(document.getElementById('qualityCategoriesAdmin'))] : []);
+                    .concat(qualityCatOrder ? [tabOf(document.getElementById('qualityCategoriesAdmin'))] : [])
+                    .concat(tagStylesDraft !== null ? [tabOf(document.getElementById('tagStylesBody'))] : []);
                 const tabNames = tabIds.filter((t, i) => t && tabIds.indexOf(t) === i).map(t => {
                     const btn = document.querySelector('.jellyfin-tab-button[data-tab="' + t + '"]');
                     if (!btn) return t;
@@ -4327,6 +4342,12 @@
                     const order = {};
                     offer.qualityCatOrder.forEach((key, i) => { order[key] = i + 1; });
                     renderQualityCatOrderAdmin(order);
+                }
+                if (offer.tagStyles !== null) {
+                    try {
+                        const t = JSON.parse(offer.tagStyles);
+                        if (Array.isArray(t)) tagStyles.load(t[0], t[1], t[2]);
+                    } catch (e) { /* unreadable draft value: keep the saved Tag Styles */ }
                 }
                 jeUpdateDirtyIndicator();
             }
