@@ -101,6 +101,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         }
 
         /// <summary>
+        /// A new user's first settings.json: <see cref="BuildDefaults"/>, and, when the admin turned on
+        /// <see cref="PluginConfiguration.NewUsersFollowDefaults"/>, a provenance block that makes every
+        /// key that can follow a default Following (the values above are then its cache). Without the
+        /// option the document has no block, so every key is Existing as before.
+        /// </summary>
+        /// <param name="config">The plugin configuration holding the admin defaults.</param>
+        /// <param name="utcNow">The time recorded in the provenance block.</param>
+        /// <returns>A new settings document for a user who has none.</returns>
+        public static UserSettings BuildSeed(PluginConfiguration config, DateTime utcNow)
+        {
+            var settings = BuildDefaults(config);
+            if (config.NewUsersFollowDefaults)
+            {
+                settings.Meta = new UserSettingsMeta
+                {
+                    Following = Descriptors.Where(CanFollow).Select(descriptor => descriptor.Key).ToList(),
+                    Updated = utcNow,
+                };
+            }
+
+            return settings;
+        }
+
+        /// <summary>Whether a key can follow an admin default (it has one and is inheritable).</summary>
+        /// <param name="descriptor">The registry entry.</param>
+        /// <returns>True when the key can be Following.</returns>
+        public static bool CanFollow(UserSettingDescriptor descriptor)
+        {
+            ArgumentNullException.ThrowIfNull(descriptor);
+            return descriptor.AdminProperty != null && descriptor.Setting.Inheritable;
+        }
+
+        /// <summary>
         /// Whether a key's default is published to signed-in users in the public config's
         /// UserSettingDefaults block: it must copy an admin default (not a sentinel), and that admin
         /// value must be a bool, an int or a string limited to the key's Choices. Free-form strings

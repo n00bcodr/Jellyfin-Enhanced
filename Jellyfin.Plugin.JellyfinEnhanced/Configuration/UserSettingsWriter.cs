@@ -51,7 +51,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>
         /// Applies a key-level patch. A Set key is validated and becomes Chosen (marked ChangedByAdmin
-        /// when an admin writes it for another user); a Follow key takes the current admin default and
+        /// when an admin writes it for another user), except that an Incidental key set to the current
+        /// admin default becomes Following; a Follow key takes the current admin default and
         /// becomes Following. Unknown, invalid and locked keys are rejected one by one; the others apply.
         /// A key in both Set and Follow ends up Following.
         /// </summary>
@@ -80,7 +81,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     continue;
                 }
 
-                // Incidental keys (a Set equal to the current default goes back to Following) are a later step.
                 if (!UserSettingsRegistry.TryValidate(descriptor, value, out var coerced))
                 {
                     result.Rejected.Add(new SettingsRejection(descriptor.Key, ReasonInvalid));
@@ -93,8 +93,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     continue;
                 }
 
-                Store(document, descriptor, coerced, result);
-                metaChanged |= MakeChosen(meta, descriptor.Key, byOwner);
+                if (IsIncidentalReturnToDefault(descriptor, coerced, resolved))
+                {
+                    // Written while browsing (the watch-progress chip, the reviews section): going back
+                    // to the default restores live inheritance instead of pinning today's default.
+                    Store(document, descriptor, descriptor.Property.GetValue(resolved.Defaults), result);
+                    metaChanged |= MakeFollowing(meta, descriptor.Key);
+                }
+                else
+                {
+                    Store(document, descriptor, coerced, result);
+                    metaChanged |= MakeChosen(meta, descriptor.Key, byOwner);
+                }
+
                 result.Applied.Add(descriptor.Key);
             }
 
@@ -106,7 +117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     continue;
                 }
 
-                if (descriptor.AdminProperty == null || resolved.Defaults == null)
+                if (!UserSettingsRegistry.CanFollow(descriptor) || resolved.Defaults == null)
                 {
                     result.Rejected.Add(new SettingsRejection(descriptor.Key, ReasonInvalid));
                     continue;
@@ -225,6 +236,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         private static bool IsStaleUnlockedValue(UserSettingDescriptor descriptor, object? posted, UserSettings stored)
             => RecentlyUnlockedSettings.WasEnforced(descriptor.Key, posted)
                 && !Equals(posted, descriptor.Property.GetValue(stored));
+
+        /// <summary>
+        /// Whether a Set of an Incidental key (written as a side effect of browsing) carries the current
+        /// admin default, so the key goes back to Following instead of becoming Chosen (design 3.3).
+        /// </summary>
+        private static bool IsIncidentalReturnToDefault(UserSettingDescriptor descriptor, object? value, ResolvedUserSettings resolved)
+            => descriptor.Setting.Incidental
+                && resolved.Defaults != null
+                && UserSettingsRegistry.CanFollow(descriptor)
+                && UserSettingsResolver.EqualsDefault(descriptor, value, resolved.Defaults);
 
         /// <summary>Re-caches every Following key's stored value as its current resolved value.</summary>
         private static bool RefreshFollowing(UserSettings document, ResolvedUserSettings resolved, UserSettingsWriteResult result)

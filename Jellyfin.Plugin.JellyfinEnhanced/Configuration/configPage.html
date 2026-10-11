@@ -3034,6 +3034,10 @@
                             <div class="je-setting-description">
                                 <div class="fieldDescription">Settings marked "User default" on the other tabs are only a starting point: each user can change them in the Jellyfin Enhanced panel. Lock one to make every user use your default. A user's own choice is kept and comes back if you unlock it. Locks are saved with the Save button, like your other settings.</div>
                             </div>
+                            <div class="checkboxContainer"><label><input id="newUsersFollowDefaults" is="emby-checkbox" type="checkbox"/><span>New users follow my defaults</span></label></div>
+                            <div class="je-setting-description" data-desc-for="newUsersFollowDefaults">
+                                <div class="fieldDescription">Off (as before): a new user starts with a copy of your current defaults and keeps it when you change a default later. On: a new user's settings follow your defaults and change when you change them, until the user picks something else. Existing users are not affected.</div>
+                            </div>
                             <div id="jeUserSettingsPolicyStatus" class="je-policy-status" role="status" aria-live="polite">Loading the user settings policy…</div>
                             <div id="jeUserSettingsPolicyImpact" class="je-policy-impact" aria-live="polite" hidden></div>
                             <details id="jeUserSettingsPolicyDetails" class="je-details-section">
@@ -4149,7 +4153,7 @@
                     if (el.closest('.je-arr-seerr-import-picker')) return; // transient browsing state, not a form change until actually imported
                     if (el.closest('.je-spoiler-apply-existing')) return; // per-run option of an action, not a saved setting
                     if (el.closest('#tagStylePanel, #tagStylePresets')) return; // Tag Styles editor inputs; its saved state is jeTagStylesValue
-                    if (el.closest('#jeUserSettingsPolicy')) return; // lock boxes, rendered late by the policy script; their edits are jeUserSettingsPolicyPending
+                    if (el.closest('#jeUserSettingsPolicyTable')) return; // lock boxes, rendered late by the policy script; their edits are jeUserSettingsPolicyPending
                     // Indexed among the tracked controls only, so a skipped control appearing does not shift the keys.
                     controls.push({ key: el.id || el.name || ('#' + controls.length), value: el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value, el: el });
                 });
@@ -6811,6 +6815,7 @@
                 document.querySelector('#autoPauseEnabled').checked = config.AutoPauseEnabled;
                 document.querySelector('#autoResumeEnabled').checked = config.AutoResumeEnabled;
                 document.querySelector('#autoPipEnabled').checked = config.AutoPipEnabled;
+                document.querySelector('#newUsersFollowDefaults').checked = config.NewUsersFollowDefaults === true;
                 document.querySelector('#autoSkipIntro').checked = config.AutoSkipIntro;
                 document.querySelector('#autoSkipOutro').checked = config.AutoSkipOutro;
                 document.querySelector('#longPress2xEnabled').checked = config.LongPress2xEnabled;
@@ -7436,6 +7441,7 @@
             config.AutoPauseEnabled = document.querySelector('#autoPauseEnabled').checked;
             config.AutoResumeEnabled = document.querySelector('#autoResumeEnabled').checked;
             config.AutoPipEnabled = document.querySelector('#autoPipEnabled').checked;
+            config.NewUsersFollowDefaults = document.querySelector('#newUsersFollowDefaults').checked;
             config.AutoSkipIntro = document.querySelector('#autoSkipIntro').checked;
             config.AutoSkipOutro = document.querySelector('#autoSkipOutro').checked;
             config.LongPress2xEnabled = document.querySelector('#longPress2xEnabled').checked;

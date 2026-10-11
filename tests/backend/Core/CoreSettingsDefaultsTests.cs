@@ -141,7 +141,11 @@ public class CoreSettingsDefaultsTests
         var (served, isAdmin) = endpoints.GetSettings(UserA);
         Assert.False(isAdmin);
         var written = File.ReadAllText(endpoints.SettingsPath(UserA));
-        Assert.True(JToken.DeepEquals(served, JObject.Parse(written)), configName);
+        // The values on disk are the served ones; with NewUsersFollowDefaults on (some random
+        // configs) the file also carries the "_je" block that makes them follow the defaults.
+        var writtenValues = JObject.Parse(written);
+        writtenValues.Remove("_je");
+        Assert.True(JToken.DeepEquals(served, writtenValues), configName);
         // The seed is written once: a later GET serves the same document and leaves the file alone.
         endpoints.SignIn(UserA, admin: true);
         var (again, adminAgain) = endpoints.GetSettings(UserA);

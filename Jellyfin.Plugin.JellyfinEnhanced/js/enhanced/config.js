@@ -172,15 +172,27 @@
      * @returns {Promise<{rejected: Array<{key: string, reason: string}>}>} Resolves with the
      *   rejections of this caller's keys; rejects when the request failed.
      */
-    function queuePatch(state, delta) {
-        if (!state.batch) state.batch = { set: {}, seqs: {}, waiters: [] };
+    function queuePatch(state, delta, follow = []) {
+        if (!state.batch) state.batch = { set: {}, seqs: {}, follow: [], waiters: [] };
+        const batch = state.batch;
         for (const [key, value] of Object.entries(delta)) {
             const seq = ++state.seq;
             state.pending[key] = { value, seq };
-            state.batch.set[key] = value;
-            state.batch.seqs[key] = seq;
+            batch.set[key] = value;
+            batch.seqs[key] = seq;
+            // The later request wins: a value set after "use the server default" in the same window.
+            batch.follow = batch.follow.filter(name => name !== key);
         }
-        const done = new Promise((resolve, reject) => state.batch.waiters.push({ keys: Object.keys(delta), resolve, reject }));
+        for (const key of follow) {
+            // ...and "use the server default" after a value set in the same window replaces it.
+            if (Object.prototype.hasOwnProperty.call(batch.set, key)) {
+                if (state.pending[key]?.seq === batch.seqs[key]) delete state.pending[key];
+                delete batch.set[key];
+                delete batch.seqs[key];
+            }
+            if (!batch.follow.includes(key)) batch.follow.push(key);
+        }
+        const done = new Promise((resolve, reject) => batch.waiters.push({ keys: Object.keys(delta).concat(follow), resolve, reject }));
         if (!state.timer) state.timer = setTimeout(() => sendBatch(state), PATCH_WINDOW_MS);
         return done;
     }
@@ -238,7 +250,9 @@
             response = await ApiClient.ajax({
                 type: 'POST',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${state.userId}/settings.json/patch`),
-                data: JSON.stringify({ Set: recase(batch.set, true) }),
+                data: JSON.stringify(batch.follow.length
+                    ? { Set: recase(batch.set, true), Follow: batch.follow.map(key => key.charAt(0).toUpperCase() + key.slice(1)) }
+                    : { Set: recase(batch.set, true) }),
                 contentType: 'application/json',
                 dataType: 'json'
             });
@@ -278,18 +292,26 @@
         }
         await postLegacy('settings.json', JE.currentSettings, state.userId);
         settlePending(state, batch);
-        batch.waiters.forEach(w => w.resolve({ rejected: [] }));
+        // The old route has no "use the server default": those keys are reported as not applied.
+        const notFollowed = (batch.follow || []).map(key => ({ key, reason: 'unsupported' }));
+        batch.waiters.forEach(w => w.resolve({ rejected: notFollowed.filter(r => w.keys.includes(r.key)) }));
     }
 
     /**
-     * The parts of a settings Meta that disable rows (locked keys, closed gates), as a stable string.
+     * The parts of a settings Meta the panel rows show (locked keys, closed gates, and each key's
+     * state against the server default: following, chosen, set by an administrator, differing,
+     * and the defaults themselves), as a stable string.
      * @param {object|null|undefined} meta Camel-cased settings Meta.
      * @returns {string}
      */
     function metaGates(meta) {
-        const locked = Array.isArray(meta?.locked) ? meta.locked.slice().sort() : [];
-        const unavailable = meta?.unavailable && typeof meta.unavailable === 'object' ? meta.unavailable : {};
-        return JSON.stringify([locked, Object.keys(unavailable).sort().map(key => [key, unavailable[key]])]);
+        const list = name => (Array.isArray(meta?.[name]) ? meta[name].slice().sort() : []);
+        const map = (name) => {
+            const value = meta?.[name] && typeof meta[name] === 'object' ? meta[name] : {};
+            return Object.keys(value).sort().map(key => [key, value[key]]);
+        };
+        return JSON.stringify([list('locked'), map('unavailable'), list('following'), list('chosen'),
+            list('changedByAdmin'), list('differs'), map('defaults')]);
     }
 
     /**
@@ -300,8 +322,8 @@
      * `meta: true`), even when no value changed, so open views can disable or re-enable rows.
      * When a fresh document was taken while the request was in flight (its generation differs),
      * the two cannot be ordered, so that document stays the baseline: only the keys this request
-     * wrote take the answer's values, rejected keys go back to that document's values, and the
-     * other keys and the Meta are left as they are.
+     * wrote or made follow the default take the answer's values, rejected keys go back to that
+     * document's values, and the other keys and the Meta are left as they are.
      * @param {object} state Sync state.
      * @param {{set: object, seqs: object, waiters: Array}} batch The batch that was sent.
      * @param {object} response The /patch answer.
@@ -325,10 +347,16 @@
             syncState();
             if (state.generation !== generation) {
                 const fresh = JE.userConfig.settings === state.baselineSource ? JE.userConfig.settings : null;
-                for (const key of Object.keys(batch.set)) {
+                const followed = new Set(batch.follow || []);
+                for (const key of Object.keys(batch.set).concat(Array.from(followed))) {
                     if (rejectedKeys.has(key) || !has(settings, key)) continue;
                     state.baseline[key] = settings[key];
                     if (fresh) fresh[key] = settings[key];
+                    // A key made to follow the default now shows the default the server answered.
+                    if (followed.has(key) && !has(state.pending, key) && JE.currentSettings && !sameValue(JE.currentSettings[key], settings[key])) {
+                        JE.currentSettings[key] = mergeSettings(state.baseline, JE.pluginConfig || {})[key];
+                        changed.push(key);
+                    }
                 }
                 const shown = mergeSettings(state.baseline, JE.pluginConfig || {});
                 for (const key of rejectedKeys) {
@@ -365,6 +393,28 @@
         }
         batch.waiters.forEach(w => w.resolve({ rejected: rejected.filter(r => w.keys.includes(r.key)) }));
     }
+
+    /**
+     * Makes settings follow the server default again ("Use server default"): a Follow operation in
+     * the user's next /patch request, never today's default written as a choice. Locked keys and
+     * keys without a server default are refused by the server and reported back.
+     * @param {string[]} keys Settings in camelCase or PascalCase.
+     * @returns {Promise<{rejected: Array<{key: string, reason: string}>}>} Resolves once the
+     *   request is done, with the keys it did not apply; rejects when it failed, when the settings
+     *   are not loaded, or when the server cannot take key-level saves.
+     */
+    JE.settings.follow = async (keys) => {
+        const names = (Array.isArray(keys) ? keys : [])
+            .filter(key => typeof key === 'string' && key)
+            .map(key => key.charAt(0).toLowerCase() + key.slice(1));
+        if (!names.length) return { rejected: [] };
+        const status = JE.userConfig?.settingsStatus;
+        if (status === 'loading' || status === 'unavailable') throw new Error('Settings are not loaded; not saving');
+        if (!patchSupported()) throw new Error('This server cannot make settings follow its defaults');
+        const state = syncState();
+        if (!state) throw new Error('User ID not available');
+        return queuePatch(state, {}, Array.from(new Set(names)));
+    };
 
     // A batch still waiting for its window would be lost with the page: send it now.
     const flushAllBatches = () => Object.values(_sync).forEach(sendBatch);

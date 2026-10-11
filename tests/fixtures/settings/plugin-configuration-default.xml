@@ -31,6 +31,7 @@
   <ClearLocalStorageTimestamp>0</ClearLocalStorageTimestamp>
   <ClearTranslationCacheTimestamp>0</ClearTranslationCacheTimestamp>
   <LockedUserSettings />
+  <NewUsersFollowDefaults>false</NewUsersFollowDefaults>
   <AutoPauseEnabled>true</AutoPauseEnabled>
   <AutoResumeEnabled>false</AutoResumeEnabled>
   <AutoPipEnabled>false</AutoPipEnabled>

@@ -82,7 +82,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// Following, Chosen, ChangedByAdmin and Locked keys; Saved (the stored value of each locked
         /// key); Defaults (what each key with an admin default resolves to while it follows it); Reach
         /// (the effective reach of every key that is not web-only); Unavailable (keys whose admin gate
-        /// is off, with the gate's name).
+        /// is off, with the gate's name); Differs (the keys that can follow a default, are neither
+        /// locked nor Following, and whose value is not the default, see <see cref="EqualsDefault"/>:
+        /// following the default would visibly change them).
         /// </summary>
         /// <param name="resolved">The resolved document.</param>
         /// <param name="stored">The stored document it was resolved from.</param>
@@ -98,9 +100,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             var defaults = new JsonObject();
             var reach = new JsonObject();
             var unavailable = new JsonObject();
+            var differs = new List<string>();
             foreach (var descriptor in UserSettingsRegistry.All)
             {
                 var type = descriptor.Property.PropertyType;
+                if (resolved.Defaults != null && UserSettingsRegistry.CanFollow(descriptor)
+                    && !resolved.IsLocked(descriptor.Key) && !resolved.IsFollowing(descriptor.Key)
+                    && !EqualsDefault(descriptor, descriptor.Property.GetValue(resolved.Values), resolved.Defaults))
+                {
+                    differs.Add(descriptor.Key);
+                }
+
                 if (resolved.IsLocked(descriptor.Key))
                 {
                     saved[descriptor.Key] = JsonSerializer.SerializeToNode(descriptor.Property.GetValue(stored), type);
@@ -141,7 +151,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 ["Defaults"] = defaults,
                 ["Reach"] = reach,
                 ["Unavailable"] = unavailable,
+                ["Differs"] = Names(differs),
             };
+        }
+
+        /// <summary>
+        /// Whether a stored value is what the key shows while it follows the admin default: equal to
+        /// the default, or a legacy sentinel that already means "use the admin value" (a null
+        /// *TagOrder, an empty position or audio language).
+        /// </summary>
+        /// <param name="descriptor">The registry entry.</param>
+        /// <param name="value">The stored (or posted) value.</param>
+        /// <param name="defaults">What every key resolves to while it follows the default (<see cref="UserSettingsRegistry.BuildDefaults"/>).</param>
+        /// <returns>True when following the default would change nothing the user sees.</returns>
+        public static bool EqualsDefault(UserSettingDescriptor descriptor, object? value, UserSettings defaults)
+        {
+            ArgumentNullException.ThrowIfNull(descriptor);
+            ArgumentNullException.ThrowIfNull(defaults);
+            return Equals(value, descriptor.Property.GetValue(defaults))
+                || (descriptor.Setting.NullInheritsAdmin && value == null)
+                || (descriptor.Setting.EmptyInheritsAdmin && value is string text && text.Length == 0);
         }
 
         /// <summary>
@@ -168,7 +197,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             foreach (var descriptor in UserSettingsRegistry.All)
             {
                 var key = descriptor.Key;
-                if (following.Contains(key) && descriptor.AdminProperty != null)
+                if (following.Contains(key) && UserSettingsRegistry.CanFollow(descriptor))
                 {
                     result.Following.Add(key);
                 }

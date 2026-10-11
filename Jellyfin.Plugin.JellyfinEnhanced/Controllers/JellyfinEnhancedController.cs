@@ -4999,7 +4999,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return new UserSettings();
             }
 
-            userConfig = UserSettingsRegistry.BuildDefaults(config);
+            // A new user follows the admin defaults when the admin chose that (NewUsersFollowDefaults);
+            // a re-seed after a quarantine gets a copy of the defaults, as before.
+            userConfig = status == UserDocumentReadStatus.Missing
+                ? UserSettingsRegistry.BuildSeed(config, DateTime.UtcNow)
+                : UserSettingsRegistry.BuildDefaults(config);
             try
             {
                 _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfig);

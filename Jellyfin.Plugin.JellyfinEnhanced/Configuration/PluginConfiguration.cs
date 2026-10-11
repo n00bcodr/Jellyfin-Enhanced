@@ -526,6 +526,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public string[] LockedUserSettings { get; set; } = System.Array.Empty<string>();
 
+        /// <summary>
+        /// Whether a new user's first settings.json follows the admin defaults (every key that has one
+        /// is Following, so it changes when the default changes) instead of keeping a copy of today's
+        /// defaults. Off by default: new users are seeded as before.
+        /// </summary>
+        public bool NewUsersFollowDefaults { get; set; }
+
         // Default User Settings
         public bool AutoPauseEnabled { get; set; }
         public bool AutoResumeEnabled { get; set; }

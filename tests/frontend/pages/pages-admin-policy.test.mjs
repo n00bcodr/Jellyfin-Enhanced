@@ -361,3 +361,25 @@ test('the page says so when the policy script cannot be loaded, and a later visi
   h.window.eval(`var jeCssVersion = '1.2.3'; ${loaderSource}`);
   assert.equal(h.document.querySelectorAll('script[data-je-admin-policy]').length, 1);
 });
+
+test('"New users follow my defaults" sits in the policy header, is loaded and saved, and counts as an unsaved edit', async t => {
+  // Design item C3: an ordinary admin checkbox (unlike the lock boxes the policy script renders).
+  const h = setup(t);
+  await h.policy.decorate(h.page);
+  const box = h.document.getElementById('newUsersFollowDefaults');
+  const fieldset = h.document.getElementById('jeUserSettingsPolicy');
+  assert.ok(box && fieldset.contains(box), 'the checkbox is in the policy fieldset');
+  assert.ok(box.compareDocumentPosition(h.document.getElementById('jeUserSettingsPolicyDetails')) & h.window.Node.DOCUMENT_POSITION_FOLLOWING,
+    'above the lock table');
+  assert.equal(box.checked, false);
+  assert.match(pageSource, /document\.querySelector\('#newUsersFollowDefaults'\)\.checked = config\.NewUsersFollowDefaults === true;/);
+  assert.match(pageSource, /config\.NewUsersFollowDefaults = document\.querySelector\('#newUsersFollowDefaults'\)\.checked;/);
+
+  // The page's dirty walk takes the checkbox, and still leaves the lock boxes to the policy script.
+  const trackedSource = /function jeTrackedControls\(\) \{[\s\S]*?\n            \}/.exec(pageSource)?.[0];
+  assert.ok(trackedSource, 'jeTrackedControls is in configPage.html');
+  const tracked = h.window.eval(`(function (form) { return ${trackedSource}; })`)(h.document.querySelector('#JellyfinEnhancedForm'));
+  const keys = tracked().map(control => control.key);
+  assert.ok(keys.includes('newUsersFollowDefaults'));
+  assert.equal(tracked().filter(control => control.el.closest('#jeUserSettingsPolicyTable')).length, 0);
+});

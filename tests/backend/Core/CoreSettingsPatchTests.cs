@@ -471,7 +471,7 @@ public class CoreSettingsPatchTests
 
         var (settings, meta) = endpoints.GetWithMeta();
         Assert.True(JToken.DeepEquals(plain, settings));
-        Assert.Equal(new[] { "Schema", "Revision", "ConfigEpoch", "Following", "Chosen", "ChangedByAdmin", "Locked", "Saved", "Defaults", "Reach", "Unavailable" },
+        Assert.Equal(new[] { "Schema", "Revision", "ConfigEpoch", "Following", "Chosen", "ChangedByAdmin", "Locked", "Saved", "Defaults", "Reach", "Unavailable", "Differs" },
             meta.Properties().Select(p => p.Name));
         Assert.Equal(2, meta.Value<int>("Schema"));
         Assert.Equal(endpoints.Plugin.Plugin.ConfigEpoch, meta.Value<string>("ConfigEpoch"));
