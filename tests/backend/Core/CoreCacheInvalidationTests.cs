@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
+using Jellyfin.Plugin.JellyfinEnhanced.EventHandlers;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 using MediaBrowser.Controller.Entities;
@@ -10,6 +11,7 @@ using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace JE.Tests;
@@ -240,7 +242,8 @@ public class CoreCacheInvalidationTests
 
     public static TheoryData<string> SpoilerEndpoints => new()
     {
-        "post", "prefs", "enable-series", "disable-series", "reset-all",
+        "post", "prefs", "enable-series", "disable-series", "enable-movie", "disable-movie",
+        "enable-collection", "disable-collection", "enable-pending", "disable-pending", "reset-all",
     };
 
     /// <summary>Every endpoint that writes spoilerblur.json drops the Spoiler Guard state cache.</summary>
@@ -249,36 +252,125 @@ public class CoreCacheInvalidationTests
     public void EverySpoilerEndpointInvalidatesTheResolverCache(string endpoint)
     {
         using var r = new Readers();
+        r.Plugin.Plugin.Configuration.SpoilerBlurEnabled = true;
         var admin = Guid.NewGuid();
         var user = Guid.NewGuid();
         var jfUser = r.AddUser(user);
         r.AddUser(admin);
         var series = new Series { Id = Guid.NewGuid(), Name = "Series" };
-        r.Library.Setup(l => l.GetItemById<BaseItem>(series.Id, jfUser)).Returns(series);
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Movie" };
+        var collection = new BoxSet { Id = Guid.NewGuid(), Name = "Collection" };
+        foreach (var item in new BaseItem[] { series, movie, collection })
+            r.Library.Setup(l => l.GetItemById<BaseItem>(item.Id, jfUser)).Returns(item);
+        var tmdb = Interlocked.Increment(ref _tmdbId).ToString(System.Globalization.CultureInfo.InvariantCulture);
         var n = user.ToString("N");
-        if (endpoint is "disable-series" or "reset-all")
+        if (endpoint.StartsWith("disable-", StringComparison.Ordinal) || endpoint == "reset-all")
         {
             var state = new UserSpoilerBlur();
             state.Series[series.Id.ToString("N")] = new SpoilerBlurSeriesEntry { SeriesId = series.Id.ToString("N"), SeriesName = "Series" };
+            state.Movies[movie.Id.ToString("N")] = new SpoilerBlurMovieEntry { MovieId = movie.Id.ToString("N"), MovieName = "Movie" };
+            state.Collections[collection.Id.ToString("N")] = new SpoilerBlurCollectionEntry { CollectionId = collection.Id.ToString("N"), CollectionName = "Collection" };
+            state.PendingTmdb["tv:" + tmdb] = new SpoilerBlurPendingEntry { MediaType = "tv", TmdbId = tmdb };
             state.Prefs = new SpoilerBlurUserPrefs { HideTags = true };
             r.Manager.SaveUserConfiguration(n, SpoilerBlur, state);
         }
         var snapshot = r.Warm(user);
 
-        IActionResult result = endpoint switch
+        try
         {
-            "post" => r.Controller(user).SaveUserSpoilerBlur(n, new UserSpoilerBlur()),
-            "prefs" => r.Controller(user).SetSpoilerBlurUserPrefs(new SpoilerBlurUserPrefs { HideTags = true }),
-            "enable-series" => r.Controller(user).EnableSpoilerBlurForSeries(series.Id.ToString()),
-            "disable-series" => r.Controller(user).DisableSpoilerBlurForSeries(series.Id.ToString()),
-            "reset-all" => r.Controller(admin, admin: true).ResetAllUsersSettings(),
-            _ => throw new ArgumentOutOfRangeException(nameof(endpoint)),
-        };
+            IActionResult result = endpoint switch
+            {
+                "post" => r.Controller(user).SaveUserSpoilerBlur(n, new UserSpoilerBlur()),
+                "prefs" => r.Controller(user).SetSpoilerBlurUserPrefs(new SpoilerBlurUserPrefs { HideTags = true }),
+                "enable-series" => r.Controller(user).EnableSpoilerBlurForSeries(series.Id.ToString()),
+                "disable-series" => r.Controller(user).DisableSpoilerBlurForSeries(series.Id.ToString()),
+                "enable-movie" => r.Controller(user).EnableSpoilerBlurForMovie(movie.Id.ToString()),
+                "disable-movie" => r.Controller(user).DisableSpoilerBlurForMovie(movie.Id.ToString()),
+                "enable-collection" => r.Controller(user).EnableSpoilerBlurForCollection(collection.Id.ToString()),
+                "disable-collection" => r.Controller(user).DisableSpoilerBlurForCollection(collection.Id.ToString()),
+                "enable-pending" => r.Controller(user).EnableSpoilerBlurPending("tv", tmdb, "Pending"),
+                "disable-pending" => r.Controller(user).DisableSpoilerBlurPending("tv", tmdb),
+                "reset-all" => r.Controller(admin, admin: true).ResetAllUsersSettings(),
+                _ => throw new ArgumentOutOfRangeException(nameof(endpoint)),
+            };
 
-        Assert.IsAssignableFrom<OkObjectResult>(result);
-        Assert.False(SpoilerUserResolver.IsUserStateCachedForTest(n));
-        if (endpoint != "reset-all")
+            Assert.IsAssignableFrom<OkObjectResult>(result);
+            Assert.False(SpoilerUserResolver.IsUserStateCachedForTest(n));
+            if (endpoint != "reset-all")
+                AssertOnlyInvalidated(r, user, snapshot, SpoilerBlur);
+        }
+        finally
+        {
+            SpoilerSeerrPendingPromoter.UnregisterPending("tv:" + tmdb, user);
+        }
+    }
+
+    private static int _tmdbId = 2900000;
+
+    public static TheoryData<string> SpoilerBackgroundWriters => new() { "first-play", "armer", "seerr-promoter" };
+
+    /// <summary>
+    /// The background writers of spoilerblur.json (first-play auto-enable, the library-add /
+    /// apply-existing armer, the Seerr pending promoter) drop the Spoiler Guard state cache too.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(SpoilerBackgroundWriters))]
+    public async Task EverySpoilerBackgroundWriterInvalidatesTheResolverCache(string writer)
+    {
+        using var r = new Readers();
+        r.Plugin.Plugin.Configuration.SpoilerBlurEnabled = true;
+        r.Plugin.Plugin.Configuration.SpoilerAutoEnableOnFirstPlay = true;
+        var user = Guid.NewGuid();
+        var jfUser = r.AddUser(user);
+        var n = user.ToString("N");
+        var tmdb = Interlocked.Increment(ref _tmdbId).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var series = new Series
+        {
+            Id = Guid.NewGuid(), Name = "Series",
+            ProviderIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Tmdb"] = tmdb },
+        };
+        r.Library.Setup(l => l.GetItemById(series.Id)).Returns(series);
+        r.Library.Setup(l => l.GetItemById<BaseItem>(series.Id, jfUser)).Returns(series);
+        r.Library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new List<BaseItem>());
+        SpoilerSeerrPendingPromoter? promoter = null;
+        if (writer == "seerr-promoter")
+        {
+            var pending = new UserSpoilerBlur();
+            pending.PendingTmdb["tv:" + tmdb] = new SpoilerBlurPendingEntry { MediaType = "tv", TmdbId = tmdb };
+            r.Manager.SaveUserConfiguration(n, SpoilerBlur, pending);
+            promoter = new SpoilerSeerrPendingPromoter(r.Library.Object, r.Users.Object, r.Manager, r.Plugin.Core.Paths.Object, r.Plugin.Core.Logger) { SweepSettleDelay = TimeSpan.Zero };
+            await promoter.StartAsync(CancellationToken.None);
+        }
+        var snapshot = r.Warm(user);
+
+        try
+        {
+            switch (writer)
+            {
+                case "first-play":
+                    var episode = new Episode { Id = Guid.NewGuid(), SeriesId = series.Id, ParentIndexNumber = 1, IndexNumber = 1 };
+                    await new SpoilerAutoEnableOnFirstPlayConsumer(r.Manager, r.Library.Object, r.Users.Object, r.Plugin.Core.Logger).OnEvent(new PlaybackStartEventArgs
+                    { Item = episode, Session = new SessionInfo(Mock.Of<ISessionManager>(), NullLogger.Instance) { UserId = user } });
+                    break;
+                case "armer":
+                    var candidate = new SpoilerAutoEnableArmer.Candidate { Id = series.Id, IdN = series.Id.ToString("N"), IsSeries = true, Name = "Series" };
+                    Assert.Equal(1, SpoilerAutoEnableArmer.ArmForUser(r.Manager, n, [candidate], _ => SpoilerAutoEnableArmer.SkipReason.None, false, "new").Armed);
+                    break;
+                case "seerr-promoter":
+                    r.Library.Raise(l => l.ItemAdded += null, r.Library.Object, new ItemChangeEventArgs { Item = series });
+                    await promoter!.WaitForSweepsAsync().WaitAsync(TimeSpan.FromSeconds(15));
+                    break;
+            }
+
+            Assert.Contains(series.Id.ToString("N"), r.Manager.GetUserConfiguration<UserSpoilerBlur>(n, SpoilerBlur).Series.Keys);
             AssertOnlyInvalidated(r, user, snapshot, SpoilerBlur);
+        }
+        finally
+        {
+            if (promoter != null)
+                await promoter.StopAsync(CancellationToken.None);
+            SpoilerSeerrPendingPromoter.UnregisterPending("tv:" + tmdb, user);
+        }
     }
 
     /// <summary>"Apply defaults to users" rewrites all three documents and drops all three caches.</summary>
