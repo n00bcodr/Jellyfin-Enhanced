@@ -50,6 +50,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return _userFileLocks.GetOrAdd(key, _ => new object());
         }
 
+        // Pure path resolution: never creates the directory, so reads for an unknown user leave no
+        // "phantom" user dir behind (reset-all walks directories). SaveUserConfiguration creates it.
         private string GetUserConfigDir(string userId)
         {
             var normalizedUserId = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
@@ -64,7 +66,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     $"Refusing user-config path outside base directory: '{userId}'");
             }
 
-            Directory.CreateDirectory(userDir);
             return userDir;
         }
 
@@ -225,6 +226,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 configPath = ResolveUserFile(userId, fileName);
                 // Per-call random suffix avoids collisions between concurrent non-RMW writers on a shared .tmp.
                 tempPath = configPath + ".tmp." + Guid.NewGuid().ToString("N");
+                // The only place a user dir is created (path resolution is pure); covers first saves,
+                // seeds and background writers that never read first.
+                Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
 
                 JToken token;
                 if (config is System.Text.Json.JsonElement jsonElement)

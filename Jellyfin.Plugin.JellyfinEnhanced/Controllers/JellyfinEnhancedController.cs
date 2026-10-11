@@ -4916,16 +4916,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// </summary>
         private object LoadUserSettingsDocument(string authorizedUserId)
         {
-            // Populate defaults from plugin configuration if missing
+            // Populate defaults from plugin configuration if missing. Checked again under the
+            // per-file lock so a save that lands between the first check and the seed (another
+            // tab's POST, a reset-all) is never overwritten with defaults.
             if (!_userConfigurationManager.UserConfigurationExists(authorizedUserId, "settings.json"))
             {
-                var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
-                if (defaultConfig != null)
+                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "settings.json"))
                 {
-                    var defaultUserSettings = UserSettings.FromAdminDefaults(defaultConfig);
+                    var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
+                    if (defaultConfig != null
+                        && !_userConfigurationManager.UserConfigurationExists(authorizedUserId, "settings.json"))
+                    {
+                        var defaultUserSettings = UserSettings.FromAdminDefaults(defaultConfig);
 
-                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", defaultUserSettings);
-                    _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
+                        _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", defaultUserSettings);
+                        _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
+                    }
                 }
             }
 
@@ -4979,6 +4985,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpPost("user-settings/{userId}/settings.json")]
         [Authorize]
         [Produces("application/json")]
+        [RequestSizeLimit(64 * 1024)]
         public IActionResult SaveUserSettingsSettings(string userId, [FromBody] UserSettings userConfiguration)
         {
             var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
@@ -4989,36 +4996,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                // Diff against the existing config so the log shows what actually changed
-                var existing = _userConfigurationManager.GetUserConfiguration<UserSettings>(authorizedUserId, "settings.json");
-                var changes = new System.Collections.Generic.List<string>();
-                var isIdentical = false;
-                if (existing != null)
+                // Read, compare and save under the per-file lock, like every other settings.json
+                // writer (first-access seed, reset-all), so none of them interleaves with this one.
+                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "settings.json"))
                 {
-                    var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
-                    var newJson      = System.Text.Json.JsonSerializer.Serialize(userConfiguration);
-                    isIdentical = existingJson == newJson;
-                    if (!isIdentical)
+                    // Diff against the existing config so the log shows what actually changed
+                    var existing = _userConfigurationManager.GetUserConfiguration<UserSettings>(authorizedUserId, "settings.json");
+                    var changes = new System.Collections.Generic.List<string>();
+                    var isIdentical = false;
+                    if (existing != null)
                     {
-                        var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson).RootElement;
-                        var newDoc      = System.Text.Json.JsonDocument.Parse(newJson).RootElement;
-                        foreach (var prop in newDoc.EnumerateObject())
+                        var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
+                        var newJson      = System.Text.Json.JsonSerializer.Serialize(userConfiguration);
+                        isIdentical = existingJson == newJson;
+                        if (!isIdentical)
                         {
-                            if (!existingDoc.TryGetProperty(prop.Name, out var oldVal) ||
-                                oldVal.ToString() != prop.Value.ToString())
+                            var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson).RootElement;
+                            var newDoc      = System.Text.Json.JsonDocument.Parse(newJson).RootElement;
+                            foreach (var prop in newDoc.EnumerateObject())
                             {
-                                changes.Add($"{prop.Name}: {(existingDoc.TryGetProperty(prop.Name, out var ov) ? ov.ToString() : "—")} → {prop.Value}");
+                                if (!existingDoc.TryGetProperty(prop.Name, out var oldVal) ||
+                                    oldVal.ToString() != prop.Value.ToString())
+                                {
+                                    changes.Add($"{prop.Name}: {(existingDoc.TryGetProperty(prop.Name, out var ov) ? ov.ToString() : "—")} → {prop.Value}");
+                                }
                             }
                         }
                     }
-                }
 
-                if (!isIdentical)
-                {
-                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfiguration);
+                    if (!isIdentical)
+                    {
+                        _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfiguration);
 
-                    if (changes.Count > 0)
-                        _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
+                        if (changes.Count > 0)
+                            _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
+                    }
                 }
 
                 return Ok(new { success = true, file = "settings.json" });
@@ -7858,7 +7870,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 try
                 {
-                    _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
+                    // Same per-file lock as the settings POST and the first-access seed.
+                    lock (_userConfigurationManager.GetUserFileLock(userId, "settings.json"))
+                    {
+                        _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
+                    }
                     userCount++;
                 }
                 catch (Exception ex)
