@@ -3516,6 +3516,38 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "MdblistCommunityRatingSource",
+      "type": "string",
+      "initializer": "\"tmdb\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "MdblistCriticRatingSource",
+      "type": "string",
+      "initializer": "\"tomatoes\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "MdblistCommunityRatingFallbackSource",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "MdblistCriticRatingFallbackSource",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "MdblistFetchReserve",
       "type": "int",
       "initializer": "400",
@@ -7573,7 +7605,7 @@
     "build_targets": 2,
     "files": 350,
     "routes": 172,
-    "configuration_properties": 517,
+    "configuration_properties": 521,
     "storage_references": 65,
     "scheduled_tasks": 13,
     "locales": 33
