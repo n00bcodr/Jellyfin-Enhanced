@@ -262,8 +262,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <param name="placeholders">Placeholders.</param>
         /// <param name="user">Viewer.</param>
         /// <param name="cancellationToken">Cancellation.</param>
+        /// <param name="unverified">
+        /// When given, receives the hidden ids whose check could not be verified (lookup failed or over budget), as
+        /// opposed to titles the user's controls block: a later check may show them.
+        /// </param>
         /// <returns>Hidden ids.</returns>
-        public async Task<HashSet<string>> GetHiddenPlaceholderIdsAsync(IReadOnlyList<Placeholder> placeholders, User user, CancellationToken cancellationToken)
+        public async Task<HashSet<string>> GetHiddenPlaceholderIdsAsync(IReadOnlyList<Placeholder> placeholders, User user, CancellationToken cancellationToken, ISet<string>? unverified = null)
         {
             var hidden = new HashSet<string>(StringComparer.Ordinal);
             if (placeholders.Count == 0 || !IsRestricted(user))
@@ -300,13 +304,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
             async Task CheckAsync(Placeholder placeholder)
             {
-                var blocked = true;
+                bool? blocked = null;
                 try
                 {
                     await gate.WaitAsync(budget.Token).ConfigureAwait(false);
                     try
                     {
-                        blocked = await _parentalFilter.IsBlockedAsync(placeholder.MediaType, placeholder.TmdbId!.Value, userIdN, budget.Token).ConfigureAwait(false);
+                        blocked = await _parentalFilter.CheckBlockedAsync(placeholder.MediaType, placeholder.TmdbId!.Value, userIdN, budget.Token).ConfigureAwait(false);
                     }
                     finally
                     {
@@ -315,14 +319,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
                 catch (OperationCanceledException)
                 {
-                    blocked = true; // over budget: fail closed
+                    blocked = null; // over budget: fail closed
                 }
 
-                if (blocked)
+                if (blocked != false)
                 {
                     lock (hidden)
                     {
                         hidden.Add(placeholder.Id);
+                        if (blocked == null)
+                        {
+                            unverified?.Add(placeholder.Id);
+                        }
                     }
                 }
             }

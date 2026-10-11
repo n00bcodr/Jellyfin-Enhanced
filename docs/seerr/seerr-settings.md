@@ -176,7 +176,7 @@ Display Seerr issues on the Requests page.
 
 Lets users put titles they don't have yet on collections and playlists, as **Not in your library** entries. See [List Placeholders](list-placeholders.md) for how the feature works.
 
-Found in the **Seerr Settings** tab under **List Placeholders**. Everything is off by default, and the other options need the first one. The section can be set up without Seerr, except **Keep linked lists in sync**, **Trakt Client ID** and **Allow IMDb list URLs (unofficial)**, which need Seerr like list import does.
+Found in the **Seerr Settings** tab under **List Placeholders**. Everything is off by default, and the other options need the first one. The section can be set up without Seerr, except **Trakt Client ID** and **Allow IMDb list URLs (unofficial)**, which need Seerr like list import does. **Keep linked lists in sync** can be turned on without Seerr: Chronolists links sync without it, while links to other sources need Seerr to look up new titles (without it, a sync that finds new titles stops and says why).
 
 ![The List Placeholders settings](../images/list-placeholders-settings.png)
 

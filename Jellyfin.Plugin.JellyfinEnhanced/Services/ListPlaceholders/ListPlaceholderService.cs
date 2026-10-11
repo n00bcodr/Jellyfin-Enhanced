@@ -261,12 +261,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <param name="expectedRev">Optional expected revision.</param>
         /// <param name="requestId">Client request id.</param>
         /// <param name="cancellationToken">Cancellation.</param>
+        /// <param name="recheckAccess">Re-resolve the caller's rights under the list lock (see <see cref="ApplyAsync"/>); set by the HTTP route.</param>
         /// <returns>The outcome (<see cref="ApplyResultDto"/>).</returns>
-        public Task<ListOutcome> AddPlaceholdersAsync(ListAccess access, IReadOnlyList<Placeholder> placeholders, PositionDto? position, int? expectedRev, string? requestId, CancellationToken cancellationToken)
+        public Task<ListOutcome> AddPlaceholdersAsync(ListAccess access, IReadOnlyList<Placeholder> placeholders, PositionDto? position, int? expectedRev, string? requestId, CancellationToken cancellationToken, bool recheckAccess = false)
         {
             // ApplyAsync resolves every placeholder against the library (C1): what is there goes in as real items.
             var entries = placeholders.Select((placeholder, i) => new ApplyEntry(i, null, placeholder)).ToList();
-            return ApplyAsync(access, entries, position, expectedRev, requestId, cancellationToken);
+            return ApplyAsync(access, entries, position, expectedRev, requestId, cancellationToken, recheckAccess: recheckAccess);
         }
 
         /// <summary>
@@ -374,7 +375,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 var filledBy = isPlaylist || resolution.Found ? resolution.Episodes : Array.Empty<ResolvedItem>();
                 foreach (var episode in filledBy)
                 {
-                    placeholder.Filled.AddRange(episode.Coords.Select(c => new FilledEpisode { ItemId = episode.ItemId.ToString("N", CultureInfo.InvariantCulture), S = c.S, E = c.E }));
+                    placeholder.Filled.AddRange(episode.Coords.Select(c => new FilledEpisode
+                    {
+                        ItemId = episode.ItemId.ToString("N", CultureInfo.InvariantCulture),
+                        S = c.S,
+                        E = c.E,
+                        Via = !isPlaylist && placeholder.Kind == PlaceholderKinds.Season
+                            ? resolution.Items.FirstOrDefault(item => item.Kind == BaseItemKind.Season && item.Coords.Contains(c))?.ItemId.ToString("N", CultureInfo.InvariantCulture)
+                            : null,
+                    }));
                 }
 
                 var complete = PlaceholderProgress.IsComplete(placeholder, today)
@@ -570,6 +579,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 return Conflict(access, preconditionFailure, "The list's linked source changed; try again.", visibility);
             }
 
+            // Leftover swap intents (a swap-in interrupted after Jellyfin added the item) are settled first, in this write:
+            // what JE added then belongs to its placeholder (and its source keys) before anything here, such as a sync
+            // working out what left the source, can drop that placeholder (F9).
+            var settled = false;
+            if (doc.Intents.Count > 0 && _swap != null)
+            {
+                var recovered = await _swap.SwapLockedAsync(access.List, access.Owner, doc, Array.Empty<string>(), null, null, MetadataMode.None, CancellationToken.None).ConfigureAwait(false);
+                doc = recovered.Doc;
+                settled = recovered.Dirty;
+            }
+
             var isPlaylist = access.List.Kind == ListKinds.Playlist;
             var raw = _host.GetRawEntries(access.List.Id);
             var present = new HashSet<Guid>(raw.Where(r => r.Resolved && r.ItemId.HasValue).Select(r => r.ItemId!.Value));
@@ -758,7 +778,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     changed = true;
                 }
 
-                var saved = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed);
+                var saved = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed || settled);
                 return ListOutcome.Error(500, "list_update_failed", "Jellyfin could not update the list.", BuildView(access, saved, isPlaylist ? order : null, visibility));
             }
 
@@ -847,7 +867,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
             }
 
-            var final = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed);
+            var final = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed || settled);
             result.View = BuildView(access, final, isPlaylist ? order : null, visibility);
             return ListOutcome.Ok(result);
         }
@@ -944,7 +964,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
         // ── Placeholder edits ────────────────────────────────────────────────
 
-        /// <summary>PATCH /{listId}/items/{phId}: note, and linking a custom entry to a TMDB title.</summary>
+        /// <summary>
+        /// PATCH /{listId}/items/{phId}: note, and linking a custom entry to a TMDB title. The caller's rights are
+        /// resolved again under the list lock (the parental check, poster and Seerr reads before it can take seconds) and
+        /// the write, including a swap-in as the playlist owner, uses them.
+        /// </summary>
         /// <param name="access">Authorised access (CanEdit).</param>
         /// <param name="placeholderId">Placeholder id.</param>
         /// <param name="rev">Expected revision.</param>
@@ -972,6 +996,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var visibility = await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
             var outcome = await RunLockedAsync(access.ListIdN, access.ListIdN, requestId, access.UserIdN, cancellationToken, async () =>
             {
+                var (denied, current) = RecheckAccess(access);
+                if (denied != null)
+                {
+                    return denied;
+                }
+
+                access = current!;
                 var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
                 if (doc.Rev != rev)
                 {

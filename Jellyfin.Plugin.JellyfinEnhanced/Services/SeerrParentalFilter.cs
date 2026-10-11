@@ -254,7 +254,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <param name="jellyfinUserId">The calling Jellyfin user.</param>
         /// <param name="requestAborted">Stops the lookup when the caller has gone away.</param>
         /// <returns>True when the title must be refused to this user.</returns>
-        public async Task<bool> IsBlockedAsync(string? mediaType, int tmdbId, string? jellyfinUserId, CancellationToken requestAborted = default)
+        public async Task<bool> IsBlockedAsync(string? mediaType, int tmdbId, string? jellyfinUserId, CancellationToken requestAborted = default) =>
+            await CheckBlockedAsync(mediaType, tmdbId, jellyfinUserId, requestAborted).ConfigureAwait(false) ?? true;
+
+        /// <summary>
+        /// <see cref="IsBlockedAsync"/> that tells a title that could not be verified (the lookup failed, timed out,
+        /// or is in its short negative cache; tag data missing under tag rules) apart from a real block: null then.
+        /// Callers must still treat null as blocked (fail closed); it only says a later check may differ.
+        /// </summary>
+        /// <param name="mediaType">"movie" or "tv" (anything else is not rating-gated).</param>
+        /// <param name="tmdbId">The TMDB id of the title.</param>
+        /// <param name="jellyfinUserId">The calling Jellyfin user.</param>
+        /// <param name="requestAborted">Stops the lookup when the caller has gone away.</param>
+        /// <returns>True when blocked, false when allowed, null when it could not be verified.</returns>
+        public async Task<bool?> CheckBlockedAsync(string? mediaType, int tmdbId, string? jellyfinUserId, CancellationToken requestAborted = default)
         {
             var type = NormalizeMediaType(mediaType);
             if (type == null || tmdbId <= 0 || !TryGetRestrictedPolicy(jellyfinUserId, out var policy))
@@ -264,12 +277,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             try
             {
-                return await IsTitleBlockedAsync(type, tmdbId, policy, requestAborted).ConfigureAwait(false);
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
+                cts.CancelAfter(OverallBudget);
+                var resolved = await GetSignatureAsync(type, tmdbId, Region(), policy.HasTagRules, cts.Token).ConfigureAwait(false);
+                return Decide(resolved, type, policy);
             }
             catch (Exception ex)
             {
                 _logger.Warning($"Parental filter lookup failed for {type}/{tmdbId}: {ex.Message}");
-                return true;
+                return null;
             }
         }
 
@@ -415,12 +431,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // ── Decisions ────────────────────────────────────────────────────────
 
-        private bool IsAllowed(Signature? resolved, string mediaType, Policy policy)
+        private bool IsAllowed(Signature? resolved, string mediaType, Policy policy) => Decide(resolved, mediaType, policy) == false;
+
+        // Blocked (true), allowed (false), or could not be verified (null; callers fail closed).
+        private static bool? Decide(Signature? resolved, string mediaType, Policy policy)
         {
             // Could not verify -> fail closed.
             if (resolved == null)
             {
-                return false;
+                return null;
             }
 
             var ratingAllowed = ParentalRatingDecision.IsAllowed(
@@ -431,22 +450,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 policy.MaxSubScore);
             if (!ratingAllowed)
             {
-                return false;
+                return true;
             }
 
             if (!policy.HasTagRules)
             {
-                return true;
+                return false;
             }
 
             // Tag branch. A missing tag set under active tag rules means the title
             // could not be verified -> fail closed, like the rating path.
             if (resolved.Keywords == null || resolved.Genres == null)
             {
-                return false;
+                return null;
             }
 
-            return ParentalTagDecision.IsAllowed(resolved.Keywords, resolved.Genres, policy.BlockedTags, policy.AllowedTags);
+            return !ParentalTagDecision.IsAllowed(resolved.Keywords, resolved.Genres, policy.BlockedTags, policy.AllowedTags);
         }
 
         private bool IsDetailBodyBlocked(string json, string mediaType, Policy policy)

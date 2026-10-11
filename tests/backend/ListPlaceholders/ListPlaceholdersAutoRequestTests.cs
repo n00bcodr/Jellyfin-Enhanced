@@ -524,6 +524,76 @@ public class ListPlaceholdersAutoRequestTests
         Assert.Equal(new[] { "movie|101", "movie|102" }, next.Requested);
     }
 
+    // R5-6: the admin adds the user to JE's Seerr import blocklist while a run is going: nothing more is requested as them.
+    [Fact]
+    public async Task ARunStopsWhenTheUserIsExcludedFromSeerrMidRun()
+    {
+        using var f = new Fixture(count: 3);
+        var played = f.H.Host.AddItem();
+        f.Seerr.Movies[101] = FakeSeerr.MovieJson(101, Past);
+        f.Seerr.Movies[102] = FakeSeerr.MovieJson(102, Past);
+        f.Playlist(played, Movie(101, Past), Movie(102, Past));
+        f.H.Reply = request =>
+        {
+            if (request.RequestUri!.AbsolutePath == "/api/v1/movie/101")
+            {
+                f.H.Plugin.Plugin.Configuration.JellyseerrImportBlockedUsers = f.Viewer.Id.ToString("D");
+            }
+
+            return f.Seerr.Handle(request);
+        };
+
+        var run = await f.Service.RunAsync(f.Viewer.Id, f.Played(played), CancellationToken.None);
+        Assert.Equal("account blocked", run.StoppedReason);
+        Assert.Empty(f.Seerr.Posts);
+        Assert.Empty(run.Requested);
+
+        // The next run stops before any Seerr call for a title.
+        f.H.Reply = f.Seerr.Handle;
+        Assert.Equal("account blocked", (await f.Service.RunAsync(f.Viewer.Id, f.Played(played), CancellationToken.None)).StoppedReason);
+    }
+
+    // R5-7: an answer that arrives after the admin switched Seerr is the old Seerr's: its status is not recorded for the
+    // new one, nor marked handled for the user, and a request it accepted doesn't refresh the new one's index.
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("POST")]
+    public async Task AnAnswerFromTheSeerrConfiguredBeforeIsNotRecordedForTheNewOne(string changedDuring)
+    {
+        using var f = new Fixture(count: 3);
+        var played = f.H.Host.AddItem();
+        f.Seerr.Movies[101] = FakeSeerr.MovieJson(101, Past, status: changedDuring == "GET" ? 5 : null);
+        f.Seerr.Movies[102] = FakeSeerr.MovieJson(102, Past);
+        f.Playlist(played, Movie(101, Past), Movie(102, Past));
+        f.H.Reply = request =>
+        {
+            if (request.Method.Method == changedDuring && request.RequestUri!.AbsolutePath is "/api/v1/movie/101" or "/api/v1/request")
+            {
+                f.H.Plugin.Plugin.Configuration.JellyseerrUrls = "http://other-seerr.test";
+            }
+
+            return f.Seerr.Handle(request);
+        };
+
+        var run = await f.Service.RunAsync(f.Viewer.Id, f.Played(played), CancellationToken.None);
+        Assert.Equal("seerr config changed", run.StoppedReason);
+        Assert.NotEqual(5, f.H.Index.Lookup("movie", 101).StatusFor(null));
+        Assert.Equal(changedDuring == "POST" ? 1 : 0, f.Seerr.Posts.Count);
+        Assert.DoesNotContain(f.Seerr.Gets, g => g == "/api/v1/movie/102");
+        if (changedDuring == "POST")
+        {
+            Assert.Equal(new[] { "movie|101" }, run.Requested);
+            Assert.NotEqual(2, f.H.Index.Lookup("movie", 101).StatusFor(null));
+            return;
+        }
+
+        // On the new Seerr movie 101 isn't requested: the next run requests it (it was never marked handled).
+        f.Seerr.Movies[101] = FakeSeerr.MovieJson(101, Past);
+        f.H.Reply = f.Seerr.Handle;
+        var next = await f.Service.RunAsync(f.Viewer.Id, f.Played(played), CancellationToken.None);
+        Assert.Equal(new[] { "movie|101", "movie|102" }, next.Requested);
+    }
+
     [Fact]
     public async Task RestrictedUsersNeverRequestTitlesTheirParentalControlsHide()
     {

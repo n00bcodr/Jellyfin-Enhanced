@@ -280,8 +280,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <summary>
         /// Splices a reordered projection back into the canonical order; hidden tokens follow their anchor (the nearest
         /// visible token before them). When that would carry a hidden REAL row along with a placeholder the caller moved
-        /// (so the real rows would no longer be in Jellyfin's order), hidden real rows anchor to the nearest visible real
-        /// row before them (or the start) instead.
+        /// (so the real rows would no longer be in Jellyfin's order), the hidden real rows of that segment only (the run
+        /// between two visible real rows) anchor to the segment's leading visible real row (or the start) instead; other
+        /// segments keep their anchors.
         /// </summary>
         /// <param name="canonical">Canonical order.</param>
         /// <param name="visible">Tokens of the projection.</param>
@@ -290,14 +291,66 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <returns>The desired canonical order.</returns>
         public static List<string> Splice(IReadOnlyList<string> canonical, ISet<string> visible, IReadOnlyList<string> requested, string? excludeAnchor)
         {
-            var spliced = Splice(canonical, visible, requested, excludeAnchor, realAnchorsOnly: false);
+            var spliced = Splice(canonical, visible, requested, excludeAnchor, null);
             bool Kept(string t) => IsReal(t) && !string.Equals(t, excludeAnchor, StringComparison.Ordinal);
-            return spliced.Where(Kept).SequenceEqual(canonical.Where(Kept), StringComparer.Ordinal)
-                ? spliced
-                : Splice(canonical, visible, requested, excludeAnchor, realAnchorsOnly: true);
+            if (spliced.Where(Kept).SequenceEqual(canonical.Where(Kept), StringComparer.Ordinal))
+            {
+                return spliced;
+            }
+
+            // Segments: the hidden real rows after each visible real row (string.Empty = before the first one).
+            var leads = new List<string> { string.Empty };
+            var segments = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (var token in canonical)
+            {
+                if (visible.Contains(token))
+                {
+                    if (Kept(token))
+                    {
+                        leads.Add(token);
+                    }
+                }
+                else if (IsReal(token))
+                {
+                    GetList(segments, leads[^1]).Add(token);
+                }
+            }
+
+            var position = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (var i = 0; i < spliced.Count; i++)
+            {
+                position.TryAdd(spliced[i], i);
+            }
+
+            // A segment is broken when one of its hidden real rows left the window between its lead and the next visible
+            // real row, or the rows are no longer in canonical order.
+            var broken = new HashSet<string>(StringComparer.Ordinal);
+            for (var i = 0; i < leads.Count; i++)
+            {
+                if (!segments.TryGetValue(leads[i], out var rows))
+                {
+                    continue;
+                }
+
+                var previous = leads[i].Length == 0 ? -1 : position[leads[i]];
+                var end = i + 1 < leads.Count ? position[leads[i + 1]] : spliced.Count;
+                foreach (var row in rows)
+                {
+                    var at = position[row];
+                    if (at <= previous || at >= end)
+                    {
+                        broken.Add(leads[i]);
+                        break;
+                    }
+
+                    previous = at;
+                }
+            }
+
+            return Splice(canonical, visible, requested, excludeAnchor, broken);
         }
 
-        private static List<string> Splice(IReadOnlyList<string> canonical, ISet<string> visible, IReadOnlyList<string> requested, string? excludeAnchor, bool realAnchorsOnly)
+        private static List<string> Splice(IReadOnlyList<string> canonical, ISet<string> visible, IReadOnlyList<string> requested, string? excludeAnchor, ISet<string>? realAnchored)
         {
             var anchored = new Dictionary<string, List<string>>(StringComparer.Ordinal);
             var last = string.Empty;
@@ -317,7 +370,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
                 else
                 {
-                    GetList(anchored, realAnchorsOnly && IsReal(token) ? lastReal : last).Add(token);
+                    GetList(anchored, realAnchored != null && IsReal(token) && realAnchored.Contains(lastReal) ? lastReal : last).Add(token);
                 }
             }
 

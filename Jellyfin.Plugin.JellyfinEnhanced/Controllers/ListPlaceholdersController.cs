@@ -107,7 +107,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     placeholders.Add(placeholder);
                 }
 
-                return ToResult(await _service.AddPlaceholdersAsync(access!, placeholders, request.Position, request.Rev, request.RequestId, cancellationToken).ConfigureAwait(false));
+                return ToResult(await _service.AddPlaceholdersAsync(access!, placeholders, request.Position, request.Rev, request.RequestId, cancellationToken, recheckAccess: true).ConfigureAwait(false));
             });
 
         /// <summary>Applies ordered entries (real items and placeholders) at a position.</summary>

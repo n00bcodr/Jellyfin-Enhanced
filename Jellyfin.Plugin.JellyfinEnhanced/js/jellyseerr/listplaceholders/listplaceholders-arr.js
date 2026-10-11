@@ -198,8 +198,19 @@
     }
 
     /**
+     * The error a request started under an earlier identity ends with: its answer belongs to the previous user.
+     * @returns {Error}
+     */
+    function staleIdentityError() {
+        const error = new Error('The signed-in user changed');
+        error.name = 'AbortError';
+        return error;
+    }
+
+    /**
      * Quality profiles / root folders of the enabled instances (cached for a minute per type). Pass `type` so that
-     * a slow or unreachable Sonarr never holds up a Radarr dialog (and the other way round).
+     * a slow or unreachable Sonarr never holds up a Radarr dialog (and the other way round). An answer that arrives
+     * after the signed-in user changed is neither cached nor returned (rejects with an AbortError).
      * @param {{type?: 'movie'|'tv', force?: boolean, signal?: AbortSignal}} [options]
      * @returns {Promise<{radarr: Array<object>, sonarr: Array<object>, minimumAvailability: string[], seriesTypes: string[]}>}
      */
@@ -212,8 +223,10 @@
         }
         if (!options.force && optionsInFlight[slot]) return optionsInFlight[slot];
         const path = type ? `${API}/options?type=${type}` : `${API}/options`;
+        const epoch = epochNow();
         const request = JE.core.api.plugin(path, { skipCache: true, skipRetry: true, signal: options.signal })
             .then((data) => {
+                if (!isCurrentEpoch(epoch)) throw staleIdentityError();
                 if (cacheableOptions(data)) optionsCache[slot] = { at: Date.now(), data };
                 else delete optionsCache[slot];
                 return data;
@@ -623,6 +636,8 @@
         if (!isAvailable() || !service || !JE.jellyseerrModal?.create) return Promise.resolve(null);
         ensureStyles();
 
+        // The user the dialog was opened for: answers that arrive after a sign-out / user switch are dropped.
+        const openedEpoch = epochNow();
         return new Promise((resolve) => {
             let settled = false;
             // Closed by Cancel / Escape / backdrop / browser back (its history entry is already gone then).
@@ -808,7 +823,7 @@
                 if (!term) return;
                 try {
                     const data = await lookup(term, service === 'radarr' ? 'movie' : 'tv', { instance: instance.id });
-                    if (token !== lookupToken || settled) return;
+                    if (token !== lookupToken || settled || !isCurrentEpoch(openedEpoch)) return;
                     const hit = (data?.results || [])[0];
                     if (!hit) {
                         stateEl.textContent = JE.t('listPlaceholders_arr_state_not_found', { instance: instance.name });
@@ -831,7 +846,7 @@
             show();
 
             getOptions({ type: service === 'radarr' ? 'movie' : 'tv' }).then((data) => {
-                if (settled) return;
+                if (settled || !isCurrentEpoch(openedEpoch)) return;
                 currentOptions = data || {};
                 const instances = currentOptions[service] || [];
                 if (instances.length === 0) {
@@ -847,7 +862,7 @@
                 instanceSelect.disabled = instances.length < 2;
                 applyInstance();
             }).catch((error) => {
-                if (settled) return;
+                if (settled || !isCurrentEpoch(openedEpoch)) return;
                 messageEl.innerHTML = errorMessage(error, service);
             });
         });

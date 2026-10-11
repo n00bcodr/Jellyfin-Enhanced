@@ -216,6 +216,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         /// <summary>Episode number.</summary>
         [JsonPropertyName("e")]
         public int E { get; set; }
+
+        /// <summary>
+        /// Collection seasons: the Season item ("N") the episode is in the collection through (null for playlists and
+        /// fills recorded before it was kept). A replaced episode whose new Season item differs is an arrival for it.
+        /// </summary>
+        [JsonPropertyName("via")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Via { get; set; }
     }
 
     /// <summary>

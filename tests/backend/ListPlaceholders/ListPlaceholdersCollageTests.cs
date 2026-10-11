@@ -1292,4 +1292,37 @@ public partial class ListPlaceholdersCollageTests
         Assert.Equal(new[] { "/p0.jpg" }, f.Service.Markers.Load(id)!.PosterKeys);
         Assert.Null(f.Service.VerifyRetryUntil(id));
     }
+
+    // R5-10: a restricted viewer's parental lookups fail while Seerr is down (nothing cached): the titles are hidden
+    // (fail closed) and the collage removed, but a re-check is planned as for a poster that didn't answer; a title the
+    // viewer's controls really block plans none.
+    [Fact]
+    public async Task ACollageRemovedBecauseParentalLookupsFailedIsCheckedAgain()
+    {
+        using var f = new Fixture();
+        f.H.MovieCertifications[1000] = "PG";
+        var seeded = f.Seed(f.Playlist, "/p0.jpg");
+        var id = Fixture.Id(f.Playlist);
+        Assert.Equal(CollageDecision.Set, await f.Evaluate(f.Playlist));
+
+        var kid = f.Kid();
+        var seerr = f.H.Reply;
+        f.H.Reply = request => request.RequestUri!.AbsolutePath.StartsWith("/api/v1/movie/", StringComparison.Ordinal)
+            ? new HttpResponseMessage(HttpStatusCode.BadGateway)
+            : seerr(request);
+        var failed = new HashSet<string>();
+        Assert.Equal(new[] { seeded[0].Id }, await f.H.Access.GetHiddenPlaceholderIdsAsync(seeded, kid, CancellationToken.None, failed));
+        Assert.Equal(new[] { seeded[0].Id }, failed);
+        Assert.Equal(CollageDecision.Remove, await f.Evaluate(f.Playlist));
+        Assert.NotNull(f.Service.VerifyRetryUntil(id));
+        Assert.NotNull(f.Service.PendingDue(id));
+
+        // A title the kid's controls block is no lookup failure.
+        f.H.Reply = seerr;
+        f.H.MovieCertifications[1001] = "R";
+        var blocked = f.Seed(f.Playlist, "/p1.jpg");
+        var none = new HashSet<string>();
+        Assert.Equal(new[] { blocked[0].Id }, await f.H.Access.GetHiddenPlaceholderIdsAsync(blocked, kid, CancellationToken.None, none));
+        Assert.Empty(none);
+    }
 }

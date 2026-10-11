@@ -80,12 +80,14 @@ test('List Placeholders settings stay editable without Seerr; only the Seerr-onl
   update();
   assert.equal($('listPlaceholdersArrEnabled').disabled, false);
   assert.equal($('listPlaceholdersPosterCollage').disabled, false);
-  for (const id of ['listPlaceholdersSyncEnabled', 'listPlaceholdersImdbEnabled', 'traktClientId']) {
+  for (const id of ['listPlaceholdersImdbEnabled', 'traktClientId']) {
     assert.equal($(id).disabled, true, `${id} needs Seerr (list import)`);
   }
+  // R5-15: the scheduled sync works without Seerr for Chronolists links (other sources report seerr_unavailable).
+  assert.equal($('listPlaceholdersSyncEnabled').disabled, false, 'sync is not gated on Seerr');
+  assert.doesNotMatch($('listPlaceholdersSyncEnabled').closest('label').textContent, /Set up Seerr/);
   const traktLabel = document.querySelector('label[for="traktClientId"]');
   assert.match(traktLabel.textContent, /Seerr/, 'the Trakt field says why it is disabled');
-  assert.match($('listPlaceholdersSyncEnabled').closest('label').textContent, /Seerr/);
 
   configureSeerr();
   update();

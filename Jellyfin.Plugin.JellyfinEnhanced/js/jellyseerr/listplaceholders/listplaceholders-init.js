@@ -167,6 +167,7 @@
             lp.api.resetCaches();
             lp.requests.reset();
             lp.actions.closeMenu();
+            lp.importer?.closeAll?.();
             Array.from(lp.controllers).forEach(disposeController);
             subscribeLibrary();
         });

@@ -190,7 +190,9 @@
             return;
         }
         const item = details || lp.render.toSeerrItem(ph);
+        // Answers that arrive after a sign-out / user switch belong to the user who clicked: nothing is shown or marked.
         const already = () => {
+            if (!lp.isCurrentEpoch(epoch)) return;
             announce4k(tmdbId);
             JE.toast(JE.t('listPlaceholders_already_requested_4k', { title: lp.render.esc(ph.title) }), 3000);
         };
@@ -199,9 +201,10 @@
             return;
         }
         try {
-            if (!(await requestMovie(tmdbId, item, true, epoch))) return;
+            if (!(await requestMovie(tmdbId, item, true, epoch)) || !lp.isCurrentEpoch(epoch)) return;
             JE.toast(JE.t('listPlaceholders_requested_4k', { title: lp.render.esc(ph.title) }), 3000);
         } catch (error) {
+            if (!lp.isCurrentEpoch(epoch)) return;
             if (error?.status === 409) {
                 already(); // Seerr already has a 4K request for it.
                 return;
@@ -290,12 +293,14 @@
             }
             if (api.shouldShowAdvanced()) {
                 // Seerr's 409 counts as requested here too (B5): the details read above can be cached.
-                await ui.showMovieRequestModal(tmdbId, ph.title, details, false, { onAlreadyRequested: () => announce(ph) });
+                await ui.showMovieRequestModal(tmdbId, ph.title, details, false, { onAlreadyRequested: () => { if (lp.isCurrentEpoch(epoch)) announce(ph); } });
                 return;
             }
             if (button) button.innerHTML = `<span>${lp.render.esc(JE.t('jellyseerr_btn_requesting'))}</span><span class="je-lp-spinner"></span>`;
             requested = await requestMovie(tmdbId, details, false, epoch);
         } catch (error) {
+            // A late answer to the previous user's request: no announcement, toast or quota dialog for this one.
+            if (!lp.isCurrentEpoch(epoch)) return;
             if (error?.status === 409) {
                 announce(ph);
                 return;

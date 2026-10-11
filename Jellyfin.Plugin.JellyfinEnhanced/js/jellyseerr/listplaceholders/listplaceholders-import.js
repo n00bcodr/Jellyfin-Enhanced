@@ -908,6 +908,16 @@
 
     // ── The modal ───────────────────────────────────────────────────────
 
+    /** Closers of the open import modals (a user switch closes them: a review belongs to the user who made it). */
+    const openModals = new Set();
+
+    /**
+     * Closes every open import modal without sending anything (sign-out / user switch).
+     */
+    function closeAll() {
+        Array.from(openModals).forEach((close) => close());
+    }
+
     /**
      * Opens the import modal.
      * @param {Object} options
@@ -1000,12 +1010,14 @@
                 </div>
             </div>`;
 
+        let closeForUserChange = null;
         const modal = JE.jellyseerrModal.create({
             title: JE.t('listPlaceholders_import_title'),
             subtitle: isNew ? JE.t('listPlaceholders_import_new_title') : (ctrl.listName || ''),
             bodyHtml: body,
             buttonText: JE.t('listPlaceholders_import_lookup'),
             onClose: () => {
+                openModals.delete(closeForUserChange);
                 state.closed = true;
                 clearTimeout(state.parseTimer);
                 state.controller?.abort();
@@ -1014,6 +1026,8 @@
             onSave: (modalEl, button) => { onPrimary(button); }
         });
 
+        closeForUserChange = () => modal.close();
+        openModals.add(closeForUserChange);
         const root = modal.modalElement;
         root.classList.add('je-lp-import-modal');
         const $ = selector => root.querySelector(selector);
@@ -1911,7 +1925,8 @@
          * @param {HTMLButtonElement} button
          */
         function onPrimary(button) {
-            if (button.disabled) return;
+            // A review made by another user (signed out meanwhile) is never sent with this session.
+            if (button.disabled || !alive()) return;
             if (state.step === 'input') startFromInput();
             else if (state.step === 'review' || state.step === 'retry') applyImport();
         }
@@ -2009,6 +2024,7 @@
 
     lp.importer = {
         open,
+        closeAll,
         toImportEntry,
         candidateList,
         libraryItemFor,

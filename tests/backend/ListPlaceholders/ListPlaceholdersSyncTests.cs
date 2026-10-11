@@ -127,6 +127,37 @@ public class ListPlaceholdersSyncTests
         Assert.Equal(new[] { "Movie 2", "Movie 3", "Movie 1", "Movie 4" }, w.Titles());
     }
 
+    // R5-4: a swap-in interrupted after Jellyfin added the item leaves its intent on disk. A sync that runs before the
+    // next swap pass settles it first, so the item is owned by the placeholder's source key and leaves with it.
+    [Fact]
+    public async Task AnInterruptedSwapIsSettledBeforeTheSyncDropsItsPlaceholder()
+    {
+        using var w = new World();
+        w.Source(World.M(5));
+        await w.Link(removeDropped: true);
+        await w.Sync();
+        var placeholder = w.Doc.Items.Single();
+        var arrived = w.H.Host.AddItem(tmdb: 5);
+        using (await w.H.Store.LockAsync(w.Id))
+        {
+            var doc = w.H.Store.LoadForUpdate(w.Id, ListKinds.Playlist);
+            doc.Intents.Add(new SwapIntent { PhId = placeholder.Id, ItemIds = { arrived.ToString("N") }, OccurrenceCountsBefore = { [arrived.ToString("N")] = 0 }, CreatedAt = "x1" });
+            w.H.Store.Save(doc);
+        }
+
+        w.List.Raw.Add(new RawEntry(arrived, true)); // Jellyfin inserted it; the pass threw before saving
+
+        w.Source(World.M(1));
+        var result = await w.Sync();
+
+        Assert.Equal("ok", result.State);
+        Assert.Empty(w.Doc.Intents);
+        Assert.DoesNotContain(arrived, w.H.Host.Resolved(w.List.Info.Id));
+        Assert.Contains(arrived, w.H.Remover.Removed);
+        Assert.False(w.Doc.Source!.Owned.ContainsKey("movie|5||"));
+        Assert.Equal(new[] { "Movie 1" }, w.Titles());
+    }
+
     [Fact]
     public async Task WithoutRemoveDroppedNothingIsRemoved()
     {

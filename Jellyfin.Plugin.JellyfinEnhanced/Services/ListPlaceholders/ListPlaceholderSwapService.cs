@@ -109,6 +109,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         private readonly ConcurrentDictionary<string, DateTime> _lastViewPass = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, PendingMatch> _pendingMatches = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, DateTime> _lastForced = new(StringComparer.Ordinal);
+        // Per placeholder (MatchKey): when the newest metadata applied to it was fetched. Passes read metadata outside the
+        // list lock, so a pass holding an older read (e.g. the maintenance pass's cached one) must not overwrite what a
+        // concurrent Force pass applied.
+        private readonly ConcurrentDictionary<string, DateTime> _appliedMetadataAt = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, byte> _ownerlessLogged = new(StringComparer.Ordinal);
         private readonly SemaphoreSlim _signal = new(0, int.MaxValue);
         private readonly object _workerGate = new();
@@ -241,6 +245,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             foreach (var key in _lastForced.Keys.Where(k => k.StartsWith(listIdN + "|", StringComparison.Ordinal)).ToList())
             {
                 _lastForced.TryRemove(key, out _);
+            }
+
+            foreach (var key in _appliedMetadataAt.Keys.Where(k => k.StartsWith(listIdN + "|", StringComparison.Ordinal)).ToList())
+            {
+                _appliedMetadataAt.TryRemove(key, out _);
             }
         }
 
@@ -476,6 +485,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             foreach (var pair in metadata ?? new Dictionary<string, PlaceholderMetadata>())
             {
                 var placeholder = context.Doc.Items.FirstOrDefault(p => p.Id == pair.Key);
+                if (placeholder != null && !TakeMetadata(context.ListIdN, pair.Key, pair.Value))
+                {
+                    continue; // a concurrent pass already applied a newer read: this one is stale (and not fresh)
+                }
+
                 if (placeholder != null && ListPlaceholderMetadataService.Apply(placeholder, pair.Value))
                 {
                     context.Dirty = true;
@@ -846,15 +860,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
             // A Season / Episode item goes in only for coordinates that aren't filled yet (an arrival): one the user
             // removed from the collection by hand after it was filled stays out, as in playlists. A replaced episode
-            // file is an arrival for its new Episode item, but not for the Season item that already stood for it.
+            // file is an arrival for its new Episode item, but not for the Season item that already stood for it; it is
+            // one for a different Season item (the season folder moved, so Jellyfin made a new Season item as well).
             var filledBefore = PlaceholderProgress.FilledCoords(placeholder);
+            var viaBefore = new Dictionary<EpisodeCoord, string?>();
+            foreach (var fill in placeholder.Filled)
+            {
+                viaBefore.TryAdd(new EpisodeCoord(fill.S, fill.E), fill.Via);
+            }
+
             DropReplacedFills(context, placeholder, resolution);
             var members = OccurrenceCounts(_host.GetRawEntries(context.List.Id));
             var filled = PlaceholderProgress.FilledCoords(placeholder);
+            bool NewSeasonFor(EpisodeCoord c, Guid seasonItem) =>
+                !filled.Contains(c) && viaBefore.TryGetValue(c, out var via) && via != null && !string.Equals(via, N(seasonItem), StringComparison.Ordinal);
             var toAdd = resolution.Items
                 .Where(i => i.Kind switch
                 {
-                    BaseItemKind.Season => i.Coords.Any(c => !filledBefore.Contains(c)),
+                    BaseItemKind.Season => i.Coords.Any(c => !filledBefore.Contains(c) || NewSeasonFor(c, i.ItemId)),
                     BaseItemKind.Episode => i.Coords.Any(c => !filled.Contains(c)),
                     _ => true,
                 })
@@ -941,7 +964,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
         // F1: only what JE added (`added`) becomes sync-owned; members that were already there are presence. F10: what
         // JE tried to add but Jellyfin didn't take (`rejected`) counts for nothing; a title with nothing else keeps its
-        // placeholder for the next pass.
+        // placeholder for the next pass. A season's fills record the Season item they are in the collection through.
         private void RecordCollectionSwap(PassContext context, Placeholder placeholder, ScopeResolution resolution, HashSet<Guid> added, HashSet<Guid> rejected)
         {
             switch (placeholder.Kind)
@@ -964,7 +987,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                             : episode.ItemId;
                         if (listItem.HasValue && !rejected.Contains(listItem.Value))
                         {
-                            Fill(context, placeholder, episode, added.Contains(listItem.Value) ? listItem : null);
+                            Fill(context, placeholder, episode, added.Contains(listItem.Value) ? listItem : null, placeholder.Kind == PlaceholderKinds.Season ? listItem : null);
                         }
                     }
 
@@ -976,14 +999,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
         // Records an episode as filled. `ownedItem` is the list item JE added for it in this swap (the episode itself, or
         // a collection's Season item) and goes into the source's ownership record; null when the entry was already in the
-        // list (F1: presence, not ownership).
-        private void Fill(PassContext context, Placeholder placeholder, ResolvedItem episode, Guid? ownedItem)
+        // list (F1: presence, not ownership). `via` is a collection season's Season item the episode is in the collection
+        // through.
+        private void Fill(PassContext context, Placeholder placeholder, ResolvedItem episode, Guid? ownedItem, Guid? via = null)
         {
             var filled = PlaceholderProgress.FilledCoords(placeholder);
             var added = false;
             foreach (var coord in episode.Coords.Where(c => !filled.Contains(c)))
             {
-                placeholder.Filled.Add(new FilledEpisode { ItemId = N(episode.ItemId), S = coord.S, E = coord.E });
+                placeholder.Filled.Add(new FilledEpisode { ItemId = N(episode.ItemId), S = coord.S, E = coord.E, Via = via.HasValue ? N(via.Value) : null });
                 added = true;
             }
 
@@ -1503,6 +1527,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         // Unique intent id (creation time + random suffix).
         private string IntentStamp() =>
             UtcNow().ToString("o", CultureInfo.InvariantCulture) + "/" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+
+        // False when a newer full read was already applied to the placeholder (a concurrent pass's), so this one is stale;
+        // otherwise records a full read's fetch time. Partial reads (poster-only, or a season read that failed) are never
+        // recorded: they keep the expected episodes and must not block a full read fetched before them. The caller holds
+        // the list lock.
+        private bool TakeMetadata(string listIdN, string placeholderId, PlaceholderMetadata metadata)
+        {
+            var key = MatchKey(listIdN, placeholderId);
+            if (_appliedMetadataAt.TryGetValue(key, out var newest) && metadata.FetchedAtUtc < newest)
+            {
+                return false;
+            }
+
+            if (!metadata.Partial)
+            {
+                if (_appliedMetadataAt.Count >= MaxQueuedItems)
+                {
+                    _appliedMetadataAt.Clear();
+                }
+
+                _appliedMetadataAt[key] = metadata.FetchedAtUtc;
+            }
+
+            return true;
+        }
 
         // At most one uncached metadata read per placeholder and hour: a show numbered differently in the library than
         // on TMDB keeps "unexpected" fills forever and must not cost a Seerr call on every pass.

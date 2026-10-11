@@ -695,7 +695,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <summary>
         /// <see cref="FetchTmdbPosterAsync"/> that also says whether TMDB answered: Answered is true when TMDB read the
         /// title successfully (its poster may still be null: the title has none), false without a key, for a custom
-        /// entry and when the lookup failed (HTTP error, timeout, unknown title).
+        /// entry and when the lookup failed (HTTP error, timeout, unknown title). A season's poster falls back to the
+        /// show's only when TMDB answered for the season (no poster, or no such season); a season read that failed
+        /// otherwise is a failed lookup.
         /// </summary>
         /// <param name="placeholder">Placeholder.</param>
         /// <param name="cancellationToken">Cancellation.</param>
@@ -711,7 +713,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var id = placeholder.TmdbId.Value.ToString(CultureInfo.InvariantCulture);
             if (placeholder.Kind == PlaceholderKinds.Movie)
             {
-                return await TmdbPosterAsync("movie/" + id, apiKey, cancellationToken).ConfigureAwait(false);
+                var movie = await TmdbPosterAsync("movie/" + id, apiKey, cancellationToken).ConfigureAwait(false);
+                return (movie.Poster, movie.Answered);
             }
 
             if (placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && placeholder.SeasonNumber is int number)
@@ -719,19 +722,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 var season = await TmdbPosterAsync("tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), apiKey, cancellationToken).ConfigureAwait(false);
                 if (season.Poster != null)
                 {
-                    return season;
+                    return (season.Poster, true);
+                }
+
+                if (!season.Answered && !season.NotFound)
+                {
+                    return (null, false); // transient (5xx, 429, timeout): the show's poster would stand in for good
                 }
             }
 
-            return await TmdbPosterAsync("tv/" + id, apiKey, cancellationToken).ConfigureAwait(false);
+            var show = await TmdbPosterAsync("tv/" + id, apiKey, cancellationToken).ConfigureAwait(false);
+            return (show.Poster, show.Answered);
         }
 
-        private async Task<(string? Poster, bool Answered)> TmdbPosterAsync(string apiPath, string apiKey, CancellationToken cancellationToken)
+        // NotFound: TMDB answered 404 (no such title or season), as opposed to a failure that may pass.
+        private async Task<(string? Poster, bool Answered, bool NotFound)> TmdbPosterAsync(string apiPath, string apiKey, CancellationToken cancellationToken)
         {
             var key = "tmdb|" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)), 0, 8) + "|" + apiPath;
             if (_tmdbPosters.TryGetValue(key, out var cached) && DateTime.UtcNow - cached.FetchedAtUtc < CacheTtl)
             {
-                return (cached.Poster, true);
+                return (cached.Poster, true, false);
             }
 
             await _concurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -744,7 +754,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 using var response = await client.GetAsync(url, cts.Token).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
-                    return (null, false);
+                    return (null, false, response.StatusCode == System.Net.HttpStatusCode.NotFound);
                 }
 
                 var body = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
@@ -757,7 +767,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
 
                 _tmdbPosters[key] = (poster, DateTime.UtcNow);
-                return (poster, true);
+                return (poster, true, false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -766,7 +776,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException)
             {
                 _logger.Debug($"[ListPlaceholders] TMDB poster {apiPath} failed: {ex.Message}");
-                return (null, false);
+                return (null, false, false);
             }
             finally
             {

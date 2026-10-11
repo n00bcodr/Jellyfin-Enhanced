@@ -58,7 +58,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// </summary>
         public bool MaybeSent { get; init; }
 
-        /// <summary>Not sent: the Seerr configuration is no longer the one the caller's account was resolved against.</summary>
+        /// <summary>
+        /// The Seerr configuration is no longer the one the caller's account was resolved against: the call was not sent,
+        /// or (when <see cref="Reached"/>) it changed while the call was in flight, so the answer is the old Seerr's.
+        /// </summary>
         public bool ConfigChanged { get; init; }
     }
 
@@ -96,6 +99,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <summary>True when Seerr is enabled and has URLs and an API key.</summary>
         /// <returns>Whether Seerr is usable.</returns>
         public static bool IsConfigured() => TryGetConfig(out _, out _);
+
+        /// <summary>Whether JE's import blocklist excludes this user from Seerr now (the admin may add them mid-run).</summary>
+        /// <param name="jellyfinUserId">Jellyfin user id.</param>
+        /// <returns>True when the user is blocked.</returns>
+        public static bool IsBlocked(Guid jellyfinUserId)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            return config != null && JellyseerrUserImportHelper.GetBlockedUserIds(config.JellyseerrImportBlockedUsers)
+                .Contains(jellyfinUserId.ToString("N", System.Globalization.CultureInfo.InvariantCulture));
+        }
 
         /// <summary>Resolves a Jellyfin user's Seerr account.</summary>
         /// <param name="jellyfinUserId">Jellyfin user id.</param>
@@ -209,6 +222,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         public void ClearCache() => _accounts.Clear();
 
         private async Task<SeerrCallResult> SendAsync(HttpMethod method, string apiPath, string? seerrUserId, string? body, bool idempotent, string? config, CancellationToken cancellationToken)
+        {
+            var result = await SendOnceAsync(method, apiPath, seerrUserId, body, idempotent, config, cancellationToken).ConfigureAwait(false);
+            if (config != null && result.Reached && !result.ConfigChanged
+                && !(TryGetConfig(out var urls, out var apiKey) && string.Equals(Fingerprint(urls, apiKey), config, StringComparison.Ordinal)))
+            {
+                // The answer came from the Seerr the caller started with, which is no longer the configured one.
+                _logger.Debug($"[ListPlaceholders] Seerr {method} {apiPath}: the Seerr configuration changed while it was in flight");
+                return result with { ConfigChanged = true };
+            }
+
+            return result;
+        }
+
+        private async Task<SeerrCallResult> SendOnceAsync(HttpMethod method, string apiPath, string? seerrUserId, string? body, bool idempotent, string? config, CancellationToken cancellationToken)
         {
             if (!TryGetConfig(out var urls, out var apiKey))
             {

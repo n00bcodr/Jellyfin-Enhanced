@@ -74,6 +74,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         private const int PruneEvery = 256;
         private const int MaxProjectionPasses = 8;
         private const string ConfigChangedReason = "seerr config changed";
+        private const string BlockedReason = "account blocked";
 
         private readonly ListPlaceholderStore _store;
         private readonly ListAccessService _access;
@@ -489,7 +490,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var details = await _seerr.GetAsync(DetailsPath(mediaType, tmdbId), cancellationToken, account.Config).ConfigureAwait(false);
             if (details.ConfigChanged)
             {
+                // Not sent, or answered by the Seerr this run started with: nothing of it is recorded for the new one.
                 run.StoppedReason = ConfigChangedReason;
+                return Verdict.Stopped;
+            }
+
+            if (SeerrRequestGateway.IsBlocked(user.Id))
+            {
+                // The admin excluded the user from Seerr while the run was going: nothing more is requested as them.
+                run.StoppedReason = BlockedReason;
+                _logger.Info($"[ListPlaceholders] Auto-request for {user.Username} stopped: the user was excluded from Seerr during the run");
                 return Verdict.Stopped;
             }
 
@@ -566,6 +576,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             if (post.Ok)
             {
                 run.Requested.Add(key);
+                if (post.ConfigChanged)
+                {
+                    // Created on the Seerr this run started with (the reservation stays); its answer says nothing about
+                    // the Seerr configured now.
+                    run.StoppedReason = ConfigChangedReason;
+                    _logger.Info($"[ListPlaceholders] Auto-requested {label} for {user.Username} on the previous Seerr; the Seerr configuration changed during the run");
+                    return Verdict.Stopped;
+                }
+
                 _index.RecordRequestResponse(post.Body);
                 _logger.Info($"[ListPlaceholders] Auto-requested {label} for {user.Username} (Seerr user {account.SeerrUserId}) from list '{list.Name}'");
                 return Verdict.Done;

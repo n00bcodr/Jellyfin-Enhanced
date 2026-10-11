@@ -704,13 +704,16 @@
         const ref = findEpisodeRef(plainPart);
         // A plain label before an episode reference ("Optional setup: Supergirl 2x08"); the reference (or quoted
         // episode title) must follow the colon, so "Supergirl 2x08: Medusa" keeps its show and episode.
-        // Before a numeric reference any short multi-word prefix is a label; before only a quoted episode title it must
-        // be a known instruction word, since "The Flash: \"Invasion!\"" is a show and its episode.
+        // Before a numeric reference a short multi-word prefix is a label only when a title stands between the colon
+        // and the reference ("Optional setup: Supergirl 2x08"); with the reference right after the colon the prefix is
+        // the show ("The Flash: 1x08"). Before only a quoted episode title it must be a known instruction word, since
+        // "The Flash: \"Invasion!\"" is a show and its episode.
         const label = /^([^:"]{2,40}):\s+(.+)$/.exec(plainPart);
         const instructionLabel = label && CHAIN_LABEL.test(label[1].trim());
+        const afterRef = label ? findEpisodeRef(label[2]) : null;
         const labelled = label && !findEpisodeRef(label[1])
-            && (findEpisodeRef(label[2])
-                ? (/\s/.test(label[1]) || instructionLabel)
+            && (afterRef
+                ? (instructionLabel || (/\s/.test(label[1]) && afterRef.index > 0))
                 : (/"[^"]+"/.test(label[2]) && instructionLabel));
         part = labelled ? label[2] : plainPart;
         if (ref || /"[^"]+"/.test(part)) {
@@ -822,8 +825,14 @@
                 }
                 const cleaned = cleanChainSegment(option);
                 const pieces = ctx.allowSlash !== false ? slashAlternatives(cleaned.part) : [cleaned.part];
-                // Link targets carry ids (TMDB/IMDb/TVDB URLs): they belong to this option unless " / " splits it further.
-                return pieces.map(part => ({ part, note: cleaned.note, urls: pieces.length === 1 ? cleaned.urls : [] }));
+                // Link targets carry ids (TMDB/IMDb/TVDB URLs). When " / " splits the option further, each piece takes
+                // the ids of its own raw piece (split at the same " / "), so one linked alternative keeps its id.
+                const rawPieces = pieces.length > 1 ? slashAlternatives(option) : [];
+                return pieces.map((part, i) => ({
+                    part,
+                    note: cleaned.note,
+                    urls: pieces.length === 1 ? cleaned.urls : rawPieces.length === pieces.length ? cleanChainSegment(rawPieces[i]).urls : []
+                }));
             });
             if (!options.length) return;
             const segmentCtx = { ...ctx, source: 'chain' };

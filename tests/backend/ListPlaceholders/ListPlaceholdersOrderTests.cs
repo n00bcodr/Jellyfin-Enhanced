@@ -131,6 +131,25 @@ public class ListPlaceholdersOrderTests
     }
 
     [Fact]
+    public void OnlyTheSegmentWhoseHiddenRealRowWouldTravelIsReanchored()
+    {
+        // R5-2: canonical [A P1 C P2... ] = [A P1 H1 B P2 H2], H1 (C) and H2 (D) hidden. The caller moves only P2 to the
+        // top. H2 must not ride along with P2 (it re-anchors to B); H1 stays after P1, where nobody moved anything.
+        var canonical = new[] { A0, P1, C0, B0, P2, D0 };
+        var merge = O.MergeProjection(canonical, new[] { A0, P1, B0, P2 }, new[] { P2, A0, P1, B0 }, null);
+        Assert.True(merge.Ok);
+        Assert.Equal(new[] { P2, A0, P1, C0, B0, D0 }, merge.Desired);
+        Assert.Equal(merge.Desired, O.Reconcile(merge.Desired, new[] { A0, C0, B0, D0 }, new[] { Id1, Id2 }));
+
+        // Two hidden real rows in one segment, one after a placeholder that moves: the whole segment re-anchors, in order;
+        // the other segment (before A) keeps its rows at the start.
+        var two = new[] { C0, A0, P1, D0, P2, A1, B0 };
+        var both = O.MergeProjection(two, new[] { A0, P1, P2, B0 }, new[] { A0, P2, B0, P1 }, null);
+        Assert.True(both.Ok);
+        Assert.Equal(new[] { C0, A0, D0, A1, P2, B0, P1 }, both.Desired);
+    }
+
+    [Fact]
     public void MergeAcceptsOneMovedRealRowAndDoesNotDragHiddenRowsAlong()
     {
         // Canonical [A H B]; H hidden from the caller; caller moves A after B.

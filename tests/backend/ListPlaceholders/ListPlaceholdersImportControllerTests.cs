@@ -5,6 +5,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
+using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources;
@@ -349,6 +350,51 @@ public class ListPlaceholdersImportControllerTests
         Assert.Single(f.H.Fetcher.Calls);
         var doc = f.H.Store.Load(listId);
         Assert.True(doc == null || (doc.Source == null && doc.Items.Count == 0));
+    }
+
+    // R5-1: POST /items and PATCH (link) also write with rights checked again under the list lock: the parental check
+    // and the TMDB poster / Seerr reads before it can take seconds, and the owner may remove the editor's share (or
+    // make it read-only) meanwhile.
+    [Theory]
+    [InlineData(false, false, HttpStatusCode.NotFound)]
+    [InlineData(false, true, HttpStatusCode.Forbidden)]
+    [InlineData(true, false, HttpStatusCode.NotFound)]
+    [InlineData(true, true, HttpStatusCode.Forbidden)]
+    public async Task AddsAndLinksReadAfterTheEditorLostTheirRightsWriteNothing(bool patch, bool keepViewShare, HttpStatusCode expected)
+    {
+        using var f = new Fixture();
+        f.H.Plugin.Plugin.Configuration.TMDB_API_KEY = "tmdb-key";
+        f.H.Tmdb["/3/movie/49521"] = "{\"id\":49521,\"poster_path\":\"/mos.jpg\"}";
+        var editor = f.H.NewUser("editor");
+        var playlist = f.H.Host.AddPlaylist(f.Owner, false, new ListShare(editor.Id, true));
+        var listId = playlist.Info.Id.ToString("N");
+        var custom = ListPlaceholdersHarness.Ph("{\"kind\":\"custom\",\"title\":\"Man of Steel?\"}");
+        var rev = ListPlaceholdersHarness.Ok<ApplyResultDto>(await f.H.Service.AddPlaceholdersAsync(f.H.AccessFor(playlist, f.Owner), new[] { custom }, null, null, null, CancellationToken.None)).View!.Rev;
+        var reply = f.H.Reply;
+        var tmdbReads = 0;
+        f.H.ReplyAsync = (request, _) =>
+        {
+            if (request.RequestUri!.Host == "api.themoviedb.org")
+            {
+                Interlocked.Increment(ref tmdbReads);
+                playlist.Info = playlist.Info with
+                {
+                    Shares = keepViewShare ? new[] { new ListShare(editor.Id, false) } : Array.Empty<ListShare>(),
+                };
+            }
+
+            return Task.FromResult(reply(request));
+        };
+
+        using var client = f.Client(editor);
+        const string Title = "{\"kind\":\"movie\",\"tmdbId\":49521,\"title\":\"Man of Steel\",\"posterPath\":\"/mos.jpg\"}";
+        using var response = patch
+            ? await client.PatchAsync($"/JellyfinEnhanced/list-placeholders/{listId}/items/{custom.Id}", Json("{\"rev\":" + rev + ",\"link\":" + Title + "}"))
+            : await client.PostAsync($"/JellyfinEnhanced/list-placeholders/{listId}/items", Json("{\"placeholders\":[" + Title + "]}"));
+        Assert.Equal(expected, response.StatusCode);
+        Assert.True(tmdbReads > 0);
+        var stored = Assert.Single(f.H.Store.Load(listId)!.Items);
+        Assert.Equal((custom.Id, PlaceholderKinds.Custom), (stored.Id, stored.Kind));
     }
 
     [Fact]

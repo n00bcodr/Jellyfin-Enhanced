@@ -541,8 +541,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// titles without a TMDB id or whose poster can't be read are left out. At most <see cref="MaxParentalChecks"/>
         /// placeholders are checked.
         /// </summary>
-        /// <returns>The posters, whether a restricted viewer's filter was applied, and whether a title that passed was
-        /// left out because its poster source didn't answer (it may be allowed once it does).</returns>
+        /// <returns>The posters, whether a restricted viewer's filter was applied, and whether a title was left out
+        /// because its parental check or its poster source didn't answer (it may be allowed once it does).</returns>
         private async Task<(List<string> Posters, bool Restricted, bool Unverified)> AllowedPosterCandidatesAsync(ListDoc doc, ListInfo list, ICollection<string>? exclude, CancellationToken cancellationToken)
         {
             var ordered = PosterPlaceholders(doc, list.Kind, exclude);
@@ -577,7 +577,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                         break;
                     }
 
-                    var hidden = await _access.GetHiddenPlaceholderIdsAsync(batch, viewer, cancellationToken).ConfigureAwait(false);
+                    // A title whose parental check failed (Seerr/TMDB down, over budget) stays out, but like a poster
+                    // that didn't answer it is checked again later.
+                    var failed = new HashSet<string>(StringComparer.Ordinal);
+                    var hidden = await _access.GetHiddenPlaceholderIdsAsync(batch, viewer, cancellationToken, failed).ConfigureAwait(false);
+                    unverified |= failed.Count > 0;
                     batch.RemoveAll(p => hidden.Contains(p.Id));
                 }
 
