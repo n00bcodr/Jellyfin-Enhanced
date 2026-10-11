@@ -282,3 +282,94 @@ test('an edit written into the loaded document itself (the native poster tags ro
   h.timers.runAll(); await saved;
   assert.deepEqual(h.requests.map(r => r.body), [{ Set: { UseNativePosterTags: false } }]);
 });
+
+test('A-B-A over three requests: the first answer does not settle the last edit, and a refresh keeps it on top', async t => {
+  const gates = [deferred(), deferred(), deferred()];
+  const h = setup(t, { document: served({ AutoPipEnabled: true }), respond: async (entry, server) => {
+    const index = h.requests.length - 1;
+    if (gates[index]) await gates[index].promise;
+    Object.assign(server, entry.body.Set);
+    return { success: true, Rejected: [], Settings: { ...server }, Meta: { Chosen: ['AutoPipEnabled'] } };
+  } });
+  const saves = [];
+  for (const value of [false, true, false]) {
+    h.JE.currentSettings.autoPipEnabled = value;
+    saves.push(h.JE.saveUserSettings('settings.json', h.JE.currentSettings));
+    h.timers.runAll(); await settle();
+  }
+  gates[0].resolve(); await saves[0]; await settle();
+  gates[1].resolve(); await saves[1]; await settle();
+  assert.deepEqual(h.requests.map(r => r.body.Set), [{ AutoPipEnabled: false }, { AutoPipEnabled: true }, { AutoPipEnabled: false }]);
+  assert.equal(h.server.AutoPipEnabled, true, 'the third request is still in flight');
+
+  // The panel reopens and refreshes from the server, which has the second request's value.
+  h.JE.userConfig.settings = camel(h.server);
+  h.JE.currentSettings = h.JE.loadSettings();
+  assert.equal(h.JE.currentSettings.autoPipEnabled, false, 'the last edit stays on top of the refresh');
+
+  gates[2].resolve(); await saves[2];
+  assert.equal(h.server.AutoPipEnabled, false);
+  assert.equal(h.JE.currentSettings.autoPipEnabled, false);
+
+  // An unrelated save does not send the key back.
+  h.JE.currentSettings.autoPauseEnabled = false;
+  const next = h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  h.timers.runAll(); await next;
+  assert.deepEqual(h.requests[3].body, { Set: { AutoPauseEnabled: false } });
+  assert.equal(h.server.AutoPipEnabled, false, "the user's last choice stands");
+});
+
+test('a patch answer older than a refresh taken while it was in flight does not replace it', async t => {
+  const gate = deferred();
+  let answer;
+  const h = setup(t, { respond: async (entry, server) => {
+    const { SubtitleVerticalPosition, ...accepted } = entry.body.Set;
+    Object.assign(server, accepted);
+    // The answer is built now; another device changes a key before it arrives.
+    answer = { success: true, Rejected: [{ Key: 'SubtitleVerticalPosition', Reason: 'invalid' }], Settings: { ...server }, Meta: { Chosen: ['AutoPipEnabled'] } };
+    await gate.promise;
+    return answer;
+  } });
+  h.allowConsoleError(/./);
+  h.JE.userConfig.settingsMeta = { chosen: ['qualityTagsEnabled'] };
+  h.JE.currentSettings.autoPipEnabled = true;
+  h.JE.currentSettings.subtitleVerticalPosition = 500;
+  const saved = h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  h.timers.runAll(); await settle();
+
+  h.server = { ...h.server, QualityTagsEnabled: true, SubtitleVerticalPosition: 70 };
+  const refreshed = camel(h.server);
+  h.JE.userConfig.settings = refreshed;
+  h.JE.currentSettings = h.JE.loadSettings();
+  gate.resolve(); await saved;
+
+  assert.equal(h.JE.currentSettings.qualityTagsEnabled, true, "the older answer's value is not applied");
+  assert.equal(h.JE.currentSettings.autoPipEnabled, true);
+  assert.equal(h.JE.currentSettings.subtitleVerticalPosition, 70, "a rejected key goes back to the newer document's value");
+  assert.equal(h.JE.userConfig.settings, refreshed, 'the refresh stays the loaded document');
+  assert.equal(refreshed.autoPipEnabled, true, 'with the value this request wrote');
+  assert.deepEqual(plain(h.JE.settingsMeta), { chosen: ['qualityTagsEnabled'] }, 'the Meta is left as it was');
+  assert.deepEqual(h.events, [{ keys: ['subtitleVerticalPosition'], rejected: [{ key: 'subtitleVerticalPosition', reason: 'invalid' }] }]);
+
+  h.JE.currentSettings.autoPauseEnabled = false;
+  const next = h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  h.timers.runAll(); await next;
+  assert.deepEqual(h.requests[1].body.Set, { AutoPauseEnabled: false }, 'nothing stale is sent back');
+  assert.equal(h.server.QualityTagsEnabled, true);
+});
+
+test('a 404 from /patch after the user switched posts nothing to the old route', async t => {
+  const h = setup(t, { respond: entry => {
+    if (entry.url.endsWith('/patch')) {
+      // The session switches to another user while the request is in flight.
+      h.switchUser('user-b');
+      h.JE.currentSettings = { ...h.JE.currentSettings, autoPipEnabled: false, qualityTagsEnabled: true };
+      const error = new Error('Not Found'); error.status = 404; throw error;
+    }
+    return undefined;
+  } });
+  h.JE.currentSettings.autoPipEnabled = true;
+  const saved = h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  h.timers.runAll(); await saved;
+  assert.deepEqual(h.requests.map(r => r.url), ['/JellyfinEnhanced/user-settings/user-a/settings.json/patch']);
+});

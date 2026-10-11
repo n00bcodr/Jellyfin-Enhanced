@@ -73,7 +73,10 @@
     const NEVER_PATCHED = new Set(['isAdmin', 'lastOpenedTab']);
     // Set once the server answered 404/405 to /patch (rolled back under an open tab).
     let _patchUnsupported = false;
-    // Per user id: { baseline, baselineSource, pending, batch, timer, chain }.
+    // Per user id: { baseline, baselineSource, generation, pending, seq, batch, timer, chain }.
+    // pending: camelCase key → { value, seq } for edits not yet confirmed; seq numbers every
+    // queued edit, so a finished request settles only the edits it carried (A-B-A safe).
+    // generation counts the fresh server documents taken as the baseline from elsewhere.
     const _sync = {};
 
     /**
@@ -112,18 +115,19 @@
      * The sync state of the signed-in user (created on first use). Its baseline is a copy of
      * JE.userConfig.settings, taken again whenever that object is replaced by a fresh server
      * document (bootstrap, user switch, the panel's refresh), so local edits to the object itself
-     * never count as confirmed.
+     * never count as confirmed. Each such document bumps the state's generation.
      * @returns {object|null} The state, or null without a signed-in user.
      */
     function syncState() {
         const userId = typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId ? ApiClient.getCurrentUserId() : null;
         if (!userId) return null;
         const state = _sync[userId] = _sync[userId]
-            || { userId, baseline: {}, baselineSource: null, pending: {}, batch: null, timer: null, chain: Promise.resolve() };
+            || { userId, baseline: {}, baselineSource: null, generation: 0, pending: {}, seq: 0, batch: null, timer: null, chain: Promise.resolve() };
         const source = JE.userConfig?.settings;
         if (source && source !== state.baselineSource) {
             state.baselineSource = source;
             state.baseline = { ...source };
+            state.generation++;
         }
         return state;
     }
@@ -141,7 +145,7 @@
         const delta = {};
         for (const key of Object.keys(state.baseline)) {
             if (NEVER_PATCHED.has(key) || !Object.prototype.hasOwnProperty.call(settings, key)) continue;
-            const expected = Object.prototype.hasOwnProperty.call(state.pending, key) ? state.pending[key] : shown[key];
+            const expected = Object.prototype.hasOwnProperty.call(state.pending, key) ? state.pending[key].value : shown[key];
             if (!sameValue(settings[key], expected)) delta[key] = settings[key];
         }
         return delta;
@@ -155,9 +159,13 @@
      *   rejections of this caller's keys; rejects when the request failed.
      */
     function queuePatch(state, delta) {
-        Object.assign(state.pending, delta);
-        if (!state.batch) state.batch = { set: {}, waiters: [] };
-        Object.assign(state.batch.set, delta);
+        if (!state.batch) state.batch = { set: {}, seqs: {}, waiters: [] };
+        for (const [key, value] of Object.entries(delta)) {
+            const seq = ++state.seq;
+            state.pending[key] = { value, seq };
+            state.batch.set[key] = value;
+            state.batch.seqs[key] = seq;
+        }
         const done = new Promise((resolve, reject) => state.batch.waiters.push({ keys: Object.keys(delta), resolve, reject }));
         if (!state.timer) state.timer = setTimeout(() => sendBatch(state), PATCH_WINDOW_MS);
         return done;
@@ -176,13 +184,14 @@
     }
 
     /**
-     * Drops pending entries that still hold the values a finished request carried.
+     * Drops the pending edits a finished request carried. An edit of the same key queued after
+     * it stays pending, even when it holds the same value (A-B-A across three requests).
      * @param {object} state Sync state.
-     * @param {object} sent camelCase key → value that was sent.
+     * @param {{seqs: object}} batch The finished batch (camelCase key → edit seq it carried).
      */
-    function settlePending(state, sent) {
-        for (const [key, value] of Object.entries(sent)) {
-            if (Object.prototype.hasOwnProperty.call(state.pending, key) && sameValue(state.pending[key], value)) delete state.pending[key];
+    function settlePending(state, batch) {
+        for (const [key, seq] of Object.entries(batch.seqs)) {
+            if (state.pending[key]?.seq === seq) delete state.pending[key];
         }
     }
 
@@ -190,12 +199,12 @@
      * Posts one batch to /patch (or, on a server without it, the whole document to the old route)
      * and settles its callers.
      * @param {object} state Sync state.
-     * @param {{set: object, waiters: Array}} batch The merged deltas and their callers.
+     * @param {{set: object, seqs: object, waiters: Array}} batch The merged deltas and their callers.
      * @returns {Promise<void>}
      */
     async function postBatch(state, batch) {
         const fail = (error) => {
-            settlePending(state, batch.set);
+            settlePending(state, batch);
             batch.waiters.forEach(w => w.reject(error));
         };
         // The user changed since these edits were made: they belong to the previous user.
@@ -208,6 +217,8 @@
             await postWholeDocument(state, batch).catch(fail);
             return;
         }
+        // A fresh document taken after this point may be newer or older than the answer.
+        const generation = state.generation;
         let response;
         try {
             response = await ApiClient.ajax({
@@ -228,24 +239,31 @@
             return;
         }
         try {
-            applyPatchResponse(state, batch, response);
+            applyPatchResponse(state, batch, response, generation);
         } catch (e) {
             // The save itself went through; only taking the answer in failed.
             console.error('🪼 Jellyfin Enhanced: Could not apply the settings save answer:', e);
-            settlePending(state, batch.set);
+            settlePending(state, batch);
             batch.waiters.forEach(w => w.resolve({ rejected: [] }));
         }
     }
 
     /**
      * The fallback for a server without /patch: saves the whole current document the old way.
+     * Posts nothing once another user is signed in (a /patch answered 404/405 after a switch):
+     * JE.currentSettings is then that user's document.
      * @param {object} state Sync state.
-     * @param {{set: object, waiters: Array}} batch The batch being sent.
+     * @param {{set: object, seqs: object, waiters: Array}} batch The batch being sent.
      * @returns {Promise<void>}
      */
     async function postWholeDocument(state, batch) {
+        if (ApiClient.getCurrentUserId() !== state.userId) {
+            state.pending = {};
+            batch.waiters.forEach(w => w.resolve({ rejected: [] }));
+            return;
+        }
         await postLegacy('settings.json', JE.currentSettings, state.userId);
-        settlePending(state, batch.set);
+        settlePending(state, batch);
         batch.waiters.forEach(w => w.resolve({ rejected: [] }));
     }
 
@@ -253,36 +271,61 @@
      * Takes a /patch answer as the new baseline: keys another device or the admin changed land in
      * JE.currentSettings (beneath edits still pending), rejected keys go back to the server's value,
      * and both are announced with a `je:settings-changed` event ({ keys, rejected }).
+     * When a fresh document was taken while the request was in flight (its generation differs),
+     * the two cannot be ordered, so that document stays the baseline: only the keys this request
+     * wrote take the answer's values, rejected keys go back to that document's values, and the
+     * other keys and the Meta are left as they are.
      * @param {object} state Sync state.
-     * @param {{set: object, waiters: Array}} batch The batch that was sent.
+     * @param {{set: object, seqs: object, waiters: Array}} batch The batch that was sent.
      * @param {object} response The /patch answer.
+     * @param {number} generation The state's generation when the request was sent.
      */
-    function applyPatchResponse(state, batch, response) {
+    function applyPatchResponse(state, batch, response, generation) {
         const camel = key => key.charAt(0).toLowerCase() + key.slice(1);
+        const has = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
         const rejected = Array.isArray(response?.Rejected)
             ? response.Rejected.filter(r => r && typeof r.Key === 'string').map(r => ({ key: camel(r.Key), reason: r.Reason }))
             : [];
         const rejectedKeys = new Set(rejected.map(r => r.key));
         // Sent values are settled whether applied or rejected; a newer edit of the same key stays pending.
-        settlePending(state, batch.set);
+        settlePending(state, batch);
 
         const settings = response?.Settings && typeof response.Settings === 'object' && !Array.isArray(response.Settings) ? recase(response.Settings, false) : null;
         const changed = [];
         if (settings && ApiClient.getCurrentUserId() === state.userId && JE.userConfig) {
-            const previous = state.baseline;
-            const shown = mergeSettings(settings, JE.pluginConfig || {});
-            for (const key of Object.keys(settings)) {
-                if (NEVER_PATCHED.has(key) || Object.prototype.hasOwnProperty.call(state.pending, key)) continue;
-                const serverChanged = !Object.prototype.hasOwnProperty.call(batch.set, key) && !sameValue(previous[key], settings[key]);
-                if ((serverChanged || rejectedKeys.has(key)) && JE.currentSettings && !sameValue(JE.currentSettings[key], shown[key])) {
-                    JE.currentSettings[key] = shown[key];
-                    changed.push(key);
+            // Also counts a document installed without a loadSettings call yet.
+            syncState();
+            if (state.generation !== generation) {
+                const fresh = JE.userConfig.settings === state.baselineSource ? JE.userConfig.settings : null;
+                for (const key of Object.keys(batch.set)) {
+                    if (rejectedKeys.has(key) || !has(settings, key)) continue;
+                    state.baseline[key] = settings[key];
+                    if (fresh) fresh[key] = settings[key];
                 }
+                const shown = mergeSettings(state.baseline, JE.pluginConfig || {});
+                for (const key of rejectedKeys) {
+                    if (NEVER_PATCHED.has(key) || has(state.pending, key) || !has(state.baseline, key)) continue;
+                    if (JE.currentSettings && !sameValue(JE.currentSettings[key], shown[key])) {
+                        JE.currentSettings[key] = shown[key];
+                        changed.push(key);
+                    }
+                }
+            } else {
+                const previous = state.baseline;
+                const shown = mergeSettings(settings, JE.pluginConfig || {});
+                for (const key of Object.keys(settings)) {
+                    if (NEVER_PATCHED.has(key) || has(state.pending, key)) continue;
+                    const serverChanged = !has(batch.set, key) && !sameValue(previous[key], settings[key]);
+                    if ((serverChanged || rejectedKeys.has(key)) && JE.currentSettings && !sameValue(JE.currentSettings[key], shown[key])) {
+                        JE.currentSettings[key] = shown[key];
+                        changed.push(key);
+                    }
+                }
+                JE.userConfig.settings = settings;
+                state.baselineSource = settings;
+                state.baseline = { ...settings };
+                if (response.Meta && typeof JE.camelCaseSettingsMeta === 'function') JE.userConfig.settingsMeta = JE.camelCaseSettingsMeta(response.Meta);
             }
-            JE.userConfig.settings = settings;
-            state.baselineSource = settings;
-            state.baseline = { ...settings };
-            if (response.Meta && typeof JE.camelCaseSettingsMeta === 'function') JE.userConfig.settingsMeta = JE.camelCaseSettingsMeta(response.Meta);
         }
         if (changed.length || rejected.length) {
             if (rejected.length) console.warn('🪼 Jellyfin Enhanced: The server did not accept some settings:', rejected);
@@ -561,7 +604,9 @@
         const merged = mergeSettings(JE.userConfig?.settings || {}, JE.pluginConfig || {});
         // Also takes the baseline from a freshly loaded document, before any control edits it.
         const state = syncState();
-        if (state) Object.assign(merged, state.pending);
+        if (state) {
+            for (const [key, edit] of Object.entries(state.pending)) merged[key] = edit.value;
+        }
         return merged;
     };
 
