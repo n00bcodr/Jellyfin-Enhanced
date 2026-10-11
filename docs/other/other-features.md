@@ -216,7 +216,7 @@ Choose from multiple Jellyfin theme color variants.
 
 **Usage:**
 
-1. Open Enhanced panel
+1. Open the Jellyfin Enhanced panel
 2. Go to Settings tab
 3. Find Theme Selector section
 4. Select theme from dropdown
@@ -270,7 +270,7 @@ Admins can send a message to all active sessions from the panel header (megaphon
 
 ## Timeout Settings
 
-Configure durations for Enhanced panel UI elements.
+Configure durations for Jellyfin Enhanced panel UI elements.
 
 ### Help Panel Auto-Close
 
@@ -407,7 +407,7 @@ Hide specific items from your Jellyfin library without deleting them.
 - Hidden items don't appear in library
 - Easily unhide items later
 - Per-user hidden content
-- Manage via Enhanced panel or dedicated page
+- Manage via the Jellyfin Enhanced panel or dedicated page
 
 ### Setup
 
@@ -432,9 +432,9 @@ Hide specific items from your Jellyfin library without deleting them.
 
 **Manage Hidden Items:**
 
-**Via Enhanced Panel:**
+**Via the Jellyfin Enhanced panel:**
 
-1. Open Enhanced panel (press `?`)
+1. Open the Jellyfin Enhanced panel (press `?`)
 2. Go to Hidden Content section
 3. View all hidden items
 4. Click to unhide

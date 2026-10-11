@@ -142,9 +142,9 @@ function setupLanguage(t, { settingsStatus, failPost = false }) {
       throw new Error(`unexpected GET ${path}`);
     } }
   });
-  // The success path reloads the page after 1.5 s; record it instead.
+  // The success path reloads the page after 1.5 s, a failed save after 4 s; record it instead.
   const reloads = [];
-  h.window.setTimeout = (fn, ms) => { if (ms === 1500) reloads.push(ms); else setTimeout(fn, ms); };
+  h.window.setTimeout = (fn, ms) => { if (ms === 1500 || ms === 4000) reloads.push(ms); else setTimeout(fn, ms); };
   t.after(() => h.close());
   h.load('enhanced/config.js');
   h.JE.currentSettings = h.JE.loadSettings();
@@ -183,11 +183,13 @@ test('a display-language change with settings loaded saves, switches and reloads
   assert.deepEqual(h.reloads, [1500]);
 });
 
-test('a display-language change whose POST fails still switches locally, as before', async t => {
+test('a display-language change whose POST fails switches this device but says it was not saved', async t => {
   const h = setupLanguage(t, { settingsStatus: 'ok', failPost: true });
   h.expectConsoleError('Failed to save settings.json');
   await h.change('fr');
   assert.equal(h.posts.length, 1);
-  assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr');
-  assert.deepEqual(h.toasts, ['toast_language_changed']);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr', 'the device language still changes, as before');
+  // JE.t has no 'toast_settings_save_failed' here, so the English text is shown, not the key.
+  assert.deepEqual(h.toasts, ["Couldn't save your settings. Check your connection, then try again."], 'no "Language changed" success toast');
+  assert.deepEqual(h.reloads, [4000], 'the reload waits long enough to read the message');
 });

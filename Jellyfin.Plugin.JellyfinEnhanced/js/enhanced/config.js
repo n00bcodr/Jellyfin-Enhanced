@@ -37,17 +37,21 @@
     // When the last "couldn't save" toast was shown; a burst of failed saves shows one.
     let _lastSaveFailedToastAt = 0;
     const SAVE_FAILED_TOAST_INTERVAL_MS = 3000;
+    // English text for a locale file that does not have the key yet (JE.t returns the key on a miss).
+    const SAVE_FAILED_FALLBACK = "Couldn't save your settings. Check your connection, then try again.";
 
     /**
-     * Shows the translated "couldn't save" toast, at most once per SAVE_FAILED_TOAST_INTERVAL_MS.
+     * Shows the translated "couldn't save" message, at most once per SAVE_FAILED_TOAST_INTERVAL_MS:
+     * inside the settings panel while it is open (a toast would sit under it), else as a toast.
      */
     function toastSaveFailed() {
         const now = Date.now();
         if (now - _lastSaveFailedToastAt < SAVE_FAILED_TOAST_INTERVAL_MS) return;
         _lastSaveFailedToastAt = now;
-        if (typeof JE.toast === 'function' && typeof JE.t === 'function') {
-            JE.toast(JE.t('toast_settings_save_failed'));
-        }
+        const translated = typeof JE.t === 'function' ? JE.t('toast_settings_save_failed') : '';
+        const message = translated && translated !== 'toast_settings_save_failed' ? translated : SAVE_FAILED_FALLBACK;
+        if (JE.internals?.enhancedUi?.showPanelSaveError?.(message)) return;
+        if (typeof JE.toast === 'function') JE.toast(message);
     }
 
     /**

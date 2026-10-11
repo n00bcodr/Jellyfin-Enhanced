@@ -22,7 +22,7 @@ function setup(t, { autoClose } = {}) {
   let nextId = 0;
   const keyListeners = { added: 0, removed: 0 };
   const h = createHarness({
-    html: '<button id="opener" type="button">open</button><input id="pageField">',
+    html: '<button id="opener" type="button">open</button><input id="pageField"><div role="dialog" id="otherDialog"><button id="otherDialogButton" type="button"></button></div>',
     globals: {
       matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
       ...(autoClose ? {
@@ -96,17 +96,30 @@ test('Tab and Shift+Tab wrap inside the panel and skip hidden, inert and disable
   assert.equal(h.document.activeElement, h.document.getElementById('hiddenWhenInactive'), 'last reachable control: the visible pane\'s button');
 });
 
-test('Tab from the page enters the panel; focus in another element on top is left alone', async t => {
+test('Tab from anywhere on the page behind the modal panel brings focus back into it', async t => {
   const h = setup(t);
   await h.JE.showEnhancedPanel();
   h.document.activeElement.blur();
   assert.equal(h.document.activeElement, h.document.body);
   assert.equal(h.tab(h.document.body).defaultPrevented, true);
   assert.equal(h.document.activeElement, h.document.getElementById('jePanelSearch'));
+  // A click on the page behind (or a jellyfin-web autofocus) put focus on a page control.
   const pageField = h.document.getElementById('pageField');
   pageField.focus();
+  assert.equal(h.tab().defaultPrevented, true);
+  assert.equal(h.document.activeElement, h.document.getElementById('jePanelSearch'), 'Tab: the first panel control');
+  pageField.focus();
+  assert.equal(h.tab(undefined, true).defaultPrevented, true);
+  assert.equal(h.document.activeElement, h.document.getElementById('closeSettingsPanel'), 'Shift+Tab: the last panel control');
+});
+
+test('focus in another dialog (one opened on top of the panel) is left alone', async t => {
+  const h = setup(t);
+  await h.JE.showEnhancedPanel();
+  const other = h.document.getElementById('otherDialogButton');
+  other.focus();
   assert.equal(h.tab().defaultPrevented, false);
-  assert.equal(h.document.activeElement, pageField);
+  assert.equal(h.document.activeElement, other);
 });
 
 test('closing returns focus to the opener on every close path and restores the shortcut listener', async t => {
@@ -159,7 +172,12 @@ test('keyboard, focus and touch activity restart the auto-close timer', async t 
 
 // --- Template: real buttons and accessible names (ui-panel-template.js with stubbed presets). ---
 
-function buildTemplate(t) {
+// JE.t that knows every key (returns a marked translation) or none (returns the key, like a locale
+// file that does not have the new keys yet).
+const translateAll = (key, params) => params ? `${key}(${Object.values(params).join(',')})` : `[${key}]`;
+const translateNone = key => key;
+
+function buildTemplate(t, translate = translateAll) {
   const presets = [{ name: 'Small', size: 0.8, family: 'Arial', previewText: 'Aa', textColor: '#FFFFFFFF', bgColor: 'transparent' },
     { name: 'Normal', size: 1, family: 'Arial', previewText: 'Aa', textColor: '#FFFFFFFF', bgColor: 'transparent' },
     { name: 'Large', size: 1.2, family: 'Arial', previewText: 'Aa', textColor: '#FFFFFFFF', bgColor: 'transparent' }];
@@ -168,7 +186,7 @@ function buildTemplate(t) {
       { Name: 'CycleAudioTracks', Key: 'A', Label: 'Cycle audio' }] },
     userConfig: { shortcuts: { Shortcuts: [] } }, state: { activeShortcuts: { OpenSearch: '/', CycleAudioTracks: 'A', JumpToPercentage: '0-9' } },
     currentSettings: { qualityTagsEnabled: true, ratingTagsEnabled: true }, pluginVersion: '1.0',
-    t: (key, params) => params ? `${key}(${Object.values(params).join(',')})` : key,
+    t: translate,
     escapeHtml: value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'),
     icon: () => '', IconName: new Proxy({}, { get: (target, name) => String(name) }), icons: { wrapEmoji: value => value },
     subtitlePresets: presets, fontSizePresets: presets, fontFamilyPresets: presets, subtitleTextEffectPresets: presets,
@@ -196,11 +214,11 @@ test('preset tiles, tag position cells and shortcut keys are buttons that keyboa
   assert.equal(selectors.length, 5);
   for (const selector of selectors) {
     assert.equal(selector.getAttribute('role'), 'group');
-    assert.equal(selector.getAttribute('aria-label'), 'panel_position_group');
+    assert.equal(selector.getAttribute('aria-label'), '[panel_position_group]');
     assert.equal(selector.closest('label'), null, 'the cells are not part of the feature checkbox\'s label');
     assert.deepEqual([...selector.querySelectorAll('button[data-pos]')].map(cell => [cell.dataset.pos, cell.getAttribute('aria-label')]), [
-      ['top-left', 'panel_position_top_left'], ['top-right', 'panel_position_top_right'],
-      ['bottom-left', 'panel_position_bottom_left'], ['bottom-right', 'panel_position_bottom_right']]);
+      ['top-left', '[panel_position_top_left]'], ['top-right', '[panel_position_top_right]'],
+      ['bottom-left', '[panel_position_bottom_left]'], ['bottom-right', '[panel_position_bottom_right]']]);
   }
   const keys = [...root.querySelectorAll('.shortcut-key:not([data-readonly])')];
   assert.ok(keys.length >= 2);
@@ -210,14 +228,30 @@ test('preset tiles, tag position cells and shortcut keys are buttons that keyboa
 
 test('icon-only controls have accessible names', t => {
   const { root } = buildTemplate(t);
-  assert.equal(root.querySelector('#closeSettingsPanel').getAttribute('aria-label'), 'panel_close');
-  assert.equal(root.querySelector('#jePanelBack').getAttribute('aria-label'), 'panel_back');
-  assert.equal(root.querySelector('#subtitlePositionReset').getAttribute('aria-label'), 'panel_settings_subtitles_position_reset');
-  assert.equal(root.querySelector('#jePanelSearch').getAttribute('aria-label'), 'Search settings…', 'the placeholder text');
+  assert.equal(root.querySelector('#closeSettingsPanel').getAttribute('aria-label'), '[panel_close]');
+  assert.equal(root.querySelector('#jePanelBack').getAttribute('aria-label'), '[panel_back]');
+  assert.equal(root.querySelector('#subtitlePositionReset').getAttribute('aria-label'), '[panel_settings_subtitles_position_reset]');
+  assert.equal(root.querySelector('#jePanelSearch').getAttribute('aria-label'), '[panel_search_placeholder]', 'the placeholder text');
   const toggles = [...root.querySelectorAll('.shortcut-toggle')];
   assert.ok(toggles.length >= 2);
-  assert.equal(root.querySelector('.shortcut-toggle[data-action="OpenSearch"]').getAttribute('aria-label'), 'panel_shortcuts_toggle(Open search)');
+  assert.equal(root.querySelector('.shortcut-toggle[data-action="OpenSearch"]').getAttribute('aria-label'), 'panel_shortcuts_toggle([shortcut_OpenSearch])');
   for (const toggle of toggles) assert.ok(toggle.getAttribute('aria-label'));
+});
+
+test('a locale file without the new keys gets English names, not raw keys', t => {
+  const { root } = buildTemplate(t, translateNone);
+  assert.equal(root.querySelector('#closeSettingsPanel').getAttribute('aria-label'), 'Close');
+  assert.equal(root.querySelector('#jePanelBack').getAttribute('aria-label'), 'Back to sections');
+  assert.equal(root.querySelector('#subtitlePositionReset').getAttribute('aria-label'), 'Reset position');
+  assert.equal(root.querySelector('#subtitlePositionReset').getAttribute('title'), 'Reset position');
+  assert.equal(root.querySelector('.shortcut-toggle[data-action="OpenSearch"]').getAttribute('aria-label'), 'Turn Open search on or off');
+  assert.equal(root.querySelector('.shortcut-toggle[data-action="CycleAudioTracks"]').getAttribute('aria-label'), 'Turn Cycle audio on or off');
+  const selector = root.querySelector('.position-selector');
+  assert.equal(selector.getAttribute('aria-label'), 'Tag position');
+  assert.deepEqual([...selector.querySelectorAll('button[data-pos]')].map(cell => cell.getAttribute('aria-label')),
+    ['Top left', 'Top right', 'Bottom left', 'Bottom right']);
+  assert.doesNotMatch(root.innerHTML, /(aria-label|title)="(panel_close|panel_back|panel_shortcuts_toggle|panel_position_|panel_settings_subtitles_position_reset)/,
+    'no new accessible name is a raw key');
 });
 
 test('the phone sheet drops the 350px minimum width and touch-only devices hide the keyboard hint', t => {

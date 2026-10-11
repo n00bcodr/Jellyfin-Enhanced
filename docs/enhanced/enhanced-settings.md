@@ -1,10 +1,10 @@
 # Enhanced Settings — User configuration
 
-## Enhanced Panel
+## Jellyfin Enhanced panel
 
-![Enhanced panel — Settings tab overview](../images/enhanced-panel-settings.png)
+![Jellyfin Enhanced panel — Settings tab overview](../images/enhanced-panel-settings.png)
 
-Access user-configured settings via the Enhanced panel:
+Access user-configured settings via the Jellyfin Enhanced panel:
 
 | Shortcuts | Settings |
 |-----------|----------|
@@ -49,7 +49,7 @@ Access user-configured settings via the Enhanced panel:
 
 Most features can be enabled/disabled individually:
 
-1. Open Enhanced panel
+1. Open the Jellyfin Enhanced panel
 2. Go to the **Settings** tab
 3. Toggle features on/off
 4. Changes apply immediately *(no restart needed)*
@@ -58,7 +58,7 @@ Most features can be enabled/disabled individually:
 ## Tags: Quality, Genre, Language, Rating, Age Rating, People
 
 ### Configuration
-1. Open Enhanced panel → `Enhanced Settings`
+1. Open the Jellyfin Enhanced panel → `Enhanced Settings`
 2. Enable and configure tags you want *(Eg: `Quality Tags`)*
 3. Adjust position (top-left, top-right, etc.)
 4. For Quality Tags, optionally pick a **Preferred Audio Language** so the sound tag
@@ -118,11 +118,11 @@ These apps load the Jellyfin web client, so Jellyfin Enhanced's overlays already
 
 If another app shows the tags twice, for example a custom shell around the web client, add its name to **Additional Excluded Clients**.
 
-**Per-user choice.** Each user can opt out in **Enhanced panel → UI Settings** with **Show Tags in Native Clients (Experimental)**, which is on until they turn it off. While the master switch is off the control is hidden and the saved choice is kept.
+**Per-user choice.** Each user can opt out in **Jellyfin Enhanced panel → UI Settings** with **Show Tags in Native Clients (Experimental)**, which is on until they turn it off. While the master switch is off the control is hidden and the saved choice is kept.
 
-<!-- Screenshot placeholder: Enhanced panel → UI Settings, "Show Tags in Native Clients" toggle (native-poster-tags-user.png) -->
+<!-- Screenshot placeholder: Jellyfin Enhanced panel → UI Settings, "Show Tags in Native Clients" toggle (native-poster-tags-user.png) -->
 
-Which tags appear, their corners, their order and the other tag options come from the same settings as the web overlays: the user's own Enhanced panel settings, or the admin defaults for anything the user hasn't changed. Only the on/off choice is separate. Native apps may need the library reopened or the app restarted to pick up a change.
+Which tags appear, their corners, their order and the other tag options come from the same settings as the web overlays: the user's own Jellyfin Enhanced panel settings, or the admin defaults for anything the user hasn't changed. Only the on/off choice is separate. Native apps may need the library reopened or the app restarted to pick up a change.
 
 ## Activity Feed
 

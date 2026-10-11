@@ -69,6 +69,41 @@
     // Closes the open panel through its own close path (listeners, focus restore); null when closed.
     let closeOpenPanel = null;
 
+    // How long the in-panel "couldn't save" strip stays up.
+    const SAVE_ERROR_VISIBLE_MS = 6000;
+    let saveErrorTimer = null;
+
+    /**
+     * Shows a failed-save message inside the open panel, between the header and the sections, so
+     * it is visible in every layout: a toast would sit under the panel, which fills a phone screen.
+     * Called by JE.saveUserSettings (config.js) for saves made with notifyOnError.
+     * @param {string} message Plain text.
+     * @returns {boolean} Whether a panel was open to show it in.
+     */
+    internal.showPanelSaveError = (message) => {
+        const help = document.getElementById('jellyfin-enhanced-panel');
+        if (!help) return false;
+        let strip = help.querySelector('.je-save-error');
+        if (!strip) {
+            strip = document.createElement('div');
+            strip.className = 'je-save-error';
+            strip.setAttribute('role', 'alert');
+            Object.assign(strip.style, {
+                flexShrink: '0', padding: '10px 20px', fontSize: '13px', color: '#fff',
+                borderLeft: '3px solid #d9534f', background: 'rgba(217, 83, 79, 0.18)'
+            });
+            const header = help.querySelector('.panel-header');
+            if (header) header.after(strip); else help.prepend(strip);
+        }
+        strip.textContent = message;
+        if (saveErrorTimer) clearTimeout(saveErrorTimer);
+        saveErrorTimer = setTimeout(() => {
+            saveErrorTimer = null;
+            strip.remove();
+        }, SAVE_ERROR_VISIBLE_MS);
+        return true;
+    };
+
     /**
      * localStorage key of the section the panel last showed, per server and user: it is
      * device-local panel state, so it is no longer saved in settings.json.
@@ -145,6 +180,13 @@
      * Toggles the main settings and help panel for the plugin.
      */
     JE.showEnhancedPanel = async () => {
+        const panelId = 'jellyfin-enhanced-panel';
+        // Toggle: close an open panel first, before the refresh below replaces JE.currentSettings,
+        // so a colour save still pending in the panel is flushed with the values the user chose.
+        if (closeOpenPanel && document.getElementById(panelId)) {
+            closeOpenPanel();
+            return;
+        }
         // Where focus goes back to when the panel closes (the link, button or page that opened it).
         const opener = document.activeElement;
         // Refresh user settings when panel opens to ensure correct user's settings are displayed
@@ -196,7 +238,7 @@
             JE.initializeShortcuts();
         }
 
-        const panelId = 'jellyfin-enhanced-panel';
+        // Another call opened a panel while this one waited for the refresh.
         const existing = document.getElementById(panelId);
         if (existing) {
             if (closeOpenPanel) closeOpenPanel(); else existing.remove();
@@ -509,15 +551,16 @@
             }
         };
         /**
-         * Focus trap: Tab and Shift+Tab wrap around inside the panel; Tab from the page (focus
-         * on <body>) enters it. Focus that the user put in another dialog on top is left alone.
+         * Focus trap: Tab and Shift+Tab wrap around inside the panel; Tab from anywhere else on
+         * the page (the panel is aria-modal) brings focus back into it. Focus in another dialog
+         * (one opened on top of the panel) is left alone.
          * @param {KeyboardEvent} ev The document keydown.
          */
         const trapFocus = (ev) => {
             if (ev.key !== 'Tab' || ev.defaultPrevented) return;
             const active = document.activeElement;
             const inside = help.contains(active);
-            if (!inside && active && active !== document.body) return;
+            if (!inside && active instanceof Element && active.closest('dialog, [role="dialog"], [aria-modal="true"], .dialogContainer')) return;
             const { first, last } = tabbableEdges(help);
             if (!first) {
                 ev.preventDefault();

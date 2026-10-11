@@ -162,7 +162,7 @@
                                     <i class="material-icons je-quick-action-icon" aria-hidden="true">group</i>
                                     <div class="je-quick-action-text">
                                         <span class="je-quick-action-title">Overwrite everyone's personal settings</span>
-                                        <span class="je-quick-action-detail">Copies the values on this page (Display, Playback, ...) into every user's Enhanced Panel, replacing anything they've customized for themselves</span>
+                                        <span class="je-quick-action-detail">Copies the values on this page (Display, Playback, ...) into every user's Jellyfin Enhanced panel, replacing anything they've customized for themselves</span>
                                     </div>
                                 </button>
                                 <button type="button" id="clearTagCachesQuickBtn" class="je-quick-action" data-action="clear-tag-caches">
@@ -181,7 +181,7 @@
                     <div class="je-info-banner je-fieldset-wide je-tab-intro">
                         <i class="material-icons je-info-icon">person</i>
                         <div>
-                            Many of these are personal preferences, not just server-wide defaults. <br/>Each user can change these to their preference from the <strong>Enhanced Panel</strong> which can be accessed via sidebar link, their user menu, or pressing <kbd class="je-kbd">?</kbd> while browsing. <br/> What you set here is just the starting point; to force every user's personal copy to match it again, save your changes, then use <a href="#" class="sectionTitle je-jump-link" data-jump-tab="overview" data-jump-target="#resetAllUserSettingsBtn">Overwrite everyone's personal settings</a> in Quick Actions.
+                            Many of these are personal preferences, not just server-wide defaults. <br/>Each user can change these to their preference from the <strong>Jellyfin Enhanced panel</strong> which can be accessed via sidebar link, their user menu, or pressing <kbd class="je-kbd">?</kbd> while browsing. <br/> What you set here is just the starting point; to force every user's personal copy to match it again, save your changes, then use <a href="#" class="sectionTitle je-jump-link" data-jump-tab="overview" data-jump-target="#resetAllUserSettingsBtn">Overwrite everyone's personal settings</a> in Quick Actions.
                         </div>
                     </div>
 
@@ -445,7 +445,7 @@
                                 <div class="fieldDescription je-field-desc-sm-font-lg">
                                     <ul style="margin:4px 0 0 20px; padding:0;">
                                         <li>Experimental. Draws each user's Media Tags into poster images for native apps such as Android TV, which can't show Jellyfin Enhanced's web overlays</li>
-                                        <li>Uses each user's own tag choices, corners and order. Users can turn it off with Show Tags in Native Clients in the Enhanced panel under UI Settings</li>
+                                        <li>Uses each user's own tag choices, corners and order. Users can turn it off with Show Tags in Native Clients in the Jellyfin Enhanced panel under UI Settings</li>
                                         <li>Web-based apps (Jellyfin Web, Media Player, Desktop, WebOS, Android) already show the overlays, so they keep the original posters</li>
                                         <li>Each poster is drawn the first time it is viewed, which uses some server CPU, and is then cached</li>
                                         <li>Apps may need to reopen the library or restart to show changes</li>
@@ -744,7 +744,7 @@
 
                             <div class="checkboxContainer"><label><input id="randomScopeCurrentContainer" is="emby-checkbox" type="checkbox"/><span>Scope to the current playlist or collection</span></label></div>
                             <div class="je-setting-description" data-desc-for="randomScopeCurrentContainer">
-                                <div class="fieldDescription">On a playlist or collection page, the Random button picks from that container's items instead of the whole library. Users can also pin a playlist or collection as their permanent source in the Enhanced panel.</div>
+                                <div class="fieldDescription">On a playlist or collection page, the Random button picks from that container's items instead of the whole library. Users can also pin a playlist or collection as their permanent source in the Jellyfin Enhanced panel.</div>
                             </div>
                         </div>
                     </fieldset>
@@ -973,7 +973,7 @@
                     <div class="je-info-banner je-fieldset-wide je-tab-intro">
                         <i class="material-icons je-info-icon">person</i>
                         <div>
-                            Many of these are personal preferences, not just server-wide defaults. <br/>Each user can change these to their preference from the <strong>Enhanced Panel</strong> which can be accessed via sidebar link, their user menu, or pressing <kbd class="je-kbd">?</kbd> while browsing. <br/> What you set here is just the starting point; to force every user's personal copy to match it again, save your changes, then use <a href="#" class="sectionTitle je-jump-link" data-jump-tab="overview" data-jump-target="#resetAllUserSettingsBtn">Overwrite everyone's personal settings</a> in Quick Actions.
+                            Many of these are personal preferences, not just server-wide defaults. <br/>Each user can change these to their preference from the <strong>Jellyfin Enhanced panel</strong> which can be accessed via sidebar link, their user menu, or pressing <kbd class="je-kbd">?</kbd> while browsing. <br/> What you set here is just the starting point; to force every user's personal copy to match it again, save your changes, then use <a href="#" class="sectionTitle je-jump-link" data-jump-tab="overview" data-jump-target="#resetAllUserSettingsBtn">Overwrite everyone's personal settings</a> in Quick Actions.
                         </div>
                     </div>
 
@@ -3202,13 +3202,13 @@
                         <div class="configSection">
                             <div class="checkboxContainer"><label><input id="disableAllShortcuts" is="emby-checkbox" type="checkbox"/><span>Disable Keyboard Shortcuts</span></label></div>
                             <div class="je-setting-description" data-desc-for="disableAllShortcuts">
-                                <div class="fieldDescription">Disables all keyboard shortcuts, and hides the 'Shortcuts' tab in enhanced panel</div>
+                                <div class="fieldDescription">Disables all keyboard shortcuts, and hides the 'Shortcuts' tab in the Jellyfin Enhanced panel</div>
                                 <div class="je-info-banner">
                                 <div class="je-info-banner-row">
                                 <i class="material-icons je-info-icon">info</i>
                                 <div>
                                 <strong>This will save the current configuration and apply all the above settings to every user on this server.</strong><br/>
-                                <strong>Note:</strong> Users can individually customize their own settings by opening the Enhanced Panel:<br/>
+                                <strong>Note:</strong> Users can individually customize their own settings by opening the Jellyfin Enhanced panel:<br/>
                                 • Press <code>?</code> key (default shortcut)<br/>
                                 • Long Press on user profile picture in the top-right corner<br/>
                                 • Through "Jellyfin Enhanced" link from the side bar<br/>
@@ -3234,7 +3234,7 @@
                                 .je-sc-btn .material-icons { font-size: 18px; }
                                 .je-sc-mod { color: var(--primary-accent-color, #00a4dc); font-size: 20px; line-height: 1; margin-right: 6px; }
                             </style>
-                            <div class="fieldDescription je-field-desc-mt">Click a key, then press the new key combination (for example <kbd>Shift+A</kbd>). <b>Delete</b> disables the shortcut for every user, <b>Backspace</b> restores its default. Users can still change their own keys from their Enhanced Panel.</div>
+                            <div class="fieldDescription je-field-desc-mt">Click a key, then press the new key combination (for example <kbd>Shift+A</kbd>). <b>Delete</b> disables the shortcut for every user, <b>Backspace</b> restores its default. Users can still change their own keys from their Jellyfin Enhanced panel.</div>
                             <div id="shortcut-error-comment" style="display: none; color: #ff6b6b; margin-top:5px;"></div>
                             <div id="shortcut-grid"></div>
                         </div>
@@ -7630,7 +7630,7 @@
 
         // Saves current config and applies it to all users
         async function resetAllUserSettings() {
-            if (confirm("Are you sure?\n\nThis saves the current configuration, then copies these Display/Playback/etc. values into every user's Enhanced Panel settings, replacing anything they've customized for themselves. This cannot be undone per-user; each user would have to re-apply their own preferences afterward.")) {
+            if (confirm("Are you sure?\n\nThis saves the current configuration, then copies these Display/Playback/etc. values into every user's Jellyfin Enhanced panel settings, replacing anything they've customized for themselves. This cannot be undone per-user; each user would have to re-apply their own preferences afterward.")) {
                 Dashboard.showLoadingMsg();
                 try {
                     // First, save the current configuration

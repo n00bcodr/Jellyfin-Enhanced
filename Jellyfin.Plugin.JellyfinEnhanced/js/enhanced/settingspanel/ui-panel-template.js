@@ -14,11 +14,19 @@
     const escapeHtml = JE.escapeHtml;
 
     // JE.t returns the raw key on miss; substitute the inline fallback. Mirrors elsewhere/reviews.js.
+    // A locale file without the key (new keys reach the other locales later) gets the English text.
     const _tFallbackWarned = new Set();
-    function tWithFallback(key, fallback) {
+    /**
+     * JE.t with an inline English fallback for a key the loaded locale does not have.
+     * @param {string} key Translation key.
+     * @param {string} fallback English text, with the same {param} placeholders as the key.
+     * @param {object} [params] Placeholder values, applied to the translation or the fallback.
+     * @returns {string}
+     */
+    function tWithFallback(key, fallback, params) {
         let result;
         try {
-            result = JE.t(key);
+            result = JE.t(key, params);
         } catch (err) {
             console.warn(`🪼 Jellyfin Enhanced: JE.t('${key}') threw, using fallback:`, err);
             result = null;
@@ -28,7 +36,8 @@
                 _tFallbackWarned.add(key);
                 console.warn(`🪼 Jellyfin Enhanced: missing translation key '${key}', using inline fallback`);
             }
-            return fallback || key;
+            if (!fallback) return key;
+            return Object.entries(params || {}).reduce((text, [name, value]) => text.split(`{${name}}`).join(String(value)), fallback);
         }
         return result;
     }
@@ -37,10 +46,10 @@
     // of the plain elements they replaced.
     const SHORTCUT_KEY_BUTTON_RESET = 'border:none; margin:0; color:inherit; font:inherit; line-height:inherit;';
 
-    // Tag position cells, in grid order, with the translation key of their accessible name.
+    // Tag position cells, in grid order, with the translation key and English text of their accessible name.
     const TAG_POSITIONS = [
-        ['top-left', 'panel_position_top_left'], ['top-right', 'panel_position_top_right'],
-        ['bottom-left', 'panel_position_bottom_left'], ['bottom-right', 'panel_position_bottom_right']
+        ['top-left', 'panel_position_top_left', 'Top left'], ['top-right', 'panel_position_top_right', 'Top right'],
+        ['bottom-left', 'panel_position_bottom_left', 'Bottom left'], ['bottom-right', 'panel_position_bottom_right', 'Bottom right']
     ];
 
     /**
@@ -50,9 +59,9 @@
      * @returns {string} The picker's HTML.
      */
     function positionSelectorHtml(settingKey) {
-        const cells = TAG_POSITIONS.map(([pos, labelKey]) =>
-            `<button type="button" data-pos="${pos}" aria-label="${escapeHtml(JE.t(labelKey))}" aria-pressed="false" style="display:block; width:100%; height:100%; min-width:0; margin:0; padding:0; border:none; border-radius:2px; background:transparent; cursor:pointer; transition:background 0.2s;"></button>`).join('');
-        return `<div class="position-selector" data-setting="${escapeHtml(settingKey)}" role="group" aria-label="${escapeHtml(JE.t('panel_position_group'))}" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">${cells}</div>`;
+        const cells = TAG_POSITIONS.map(([pos, labelKey, labelText]) =>
+            `<button type="button" data-pos="${pos}" aria-label="${escapeHtml(tWithFallback(labelKey, labelText))}" aria-pressed="false" style="display:block; width:100%; height:100%; min-width:0; margin:0; padding:0; border:none; border-radius:2px; background:transparent; cursor:pointer; transition:background 0.2s;"></button>`).join('');
+        return `<div class="position-selector" data-setting="${escapeHtml(settingKey)}" role="group" aria-label="${escapeHtml(tWithFallback('panel_position_group', 'Tag position'))}" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">${cells}</div>`;
     }
 
     /**
@@ -142,7 +151,7 @@
             <div class="panel-header" style="position: relative; padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); background: ${headerFooterBg}; display: flex; align-items: baseline; gap: 10px; cursor: grab;">
                 <div style="font-size: 20px; font-weight: 700; background: ${primaryAccentColor}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${JE.icon(JE.IconName.JELLYFISH)} Jellyfin Enhanced</div>
                 <div style="font-size: 12px; color: rgba(255,255,255,0.7);">${escapeHtml(JE.t('panel_version', { version: JE.pluginVersion }))}</div>
-                <button type="button" id="closeSettingsPanel" aria-label="${escapeHtml(JE.t('panel_close'))}" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
+                <button type="button" id="closeSettingsPanel" aria-label="${escapeHtml(tWithFallback('panel_close', 'Close'))}" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
             </div>
             <div class="je-panel-body">
                 <nav class="je-panel-nav" aria-label="${escapeHtml(JE.t('panel_settings_tab'))}">
@@ -150,7 +159,7 @@
                     <div class="je-panel-nav-items"></div>
                 </nav>
                 <div class="je-panel-main">
-                <button id="jePanelBack" class="je-pane-back" type="button" aria-label="${escapeHtml(JE.t('panel_back'))}"><span class="material-icons" style="font-size:16px;" aria-hidden="true">arrow_back</span></button>
+                <button id="jePanelBack" class="je-pane-back" type="button" aria-label="${escapeHtml(tWithFallback('panel_back', 'Back to sections'))}"><span class="material-icons" style="font-size:16px;" aria-hidden="true">arrow_back</span></button>
                  ${!JE.pluginConfig.DisableAllShortcuts ? `
                  <div id="shortcuts-content" class="tab-content je-pane" data-pane="shortcuts" data-pane-label="${escapeHtml(JE.t('panel_shortcuts_tab'))}" style="padding-top: 4px; padding-bottom: 20px;">
                  <h3 class="je-pane-title">${JE.icon(JE.IconName.KEYBOARD)} ${JE.t('panel_shortcuts_tab')}</h3>
@@ -164,7 +173,7 @@
                                     <div style="display: flex; justify-content: space-between; align-items: center; ${isDisabled ? 'opacity: 0.5;' : ''}">
                                         <div style="display: flex; align-items: center; gap: 6px;">
                                             <button type="button" class="shortcut-key" data-action="${escapeHtml(action.Name)}" style="${SHORTCUT_KEY_BUTTON_RESET} background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${escapeHtml(isDisabled ? tWithFallback('panel_shortcuts_disabled', 'Disabled') : (JE.state.activeShortcuts[action.Name] || ''))}</button>
-                                            <button type="button" class="shortcut-toggle" data-action="${escapeHtml(action.Name)}" aria-label="${escapeHtml(JE.t('panel_shortcuts_toggle', { shortcut: tWithFallback('shortcut_' + action.Name, action.Label) }))}" style="background:transparent; border:none; color:rgba(255,255,255,0.5); cursor:pointer; padding:2px; display:flex; align-items:center;">${JE.icon(JE.IconName.NO_ENTRY)}</button>
+                                            <button type="button" class="shortcut-toggle" data-action="${escapeHtml(action.Name)}" aria-label="${escapeHtml(tWithFallback('panel_shortcuts_toggle', 'Turn {shortcut} on or off', { shortcut: tWithFallback('shortcut_' + action.Name, action.Label) }))}" style="background:transparent; border:none; color:rgba(255,255,255,0.5); cursor:pointer; padding:2px; display:flex; align-items:center;">${JE.icon(JE.IconName.NO_ENTRY)}</button>
                                         </div>
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             ${userShortcuts.hasOwnProperty(action.Name) ? `<span title="Modified by user" class="modified-indicator" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
@@ -189,7 +198,7 @@
                                             ${isReadonly
                                                 ? `<span class="shortcut-key" data-readonly="1" data-action="${escapeHtml(action)}" style="background:${kbdBackground}; padding:2px 8px; border-radius:3px; transition: all 0.2s;">${escapeHtml(isDisabled ? tWithFallback('panel_shortcuts_disabled', 'Disabled') : (JE.state.activeShortcuts[action] || ''))}</span>`
                                                 : `<button type="button" class="shortcut-key" data-action="${escapeHtml(action)}" style="${SHORTCUT_KEY_BUTTON_RESET} background:${kbdBackground}; padding:2px 8px; border-radius:3px; cursor:pointer; transition: all 0.2s;">${escapeHtml(isDisabled ? tWithFallback('panel_shortcuts_disabled', 'Disabled') : (JE.state.activeShortcuts[action] || ''))}</button>`}
-                                            <button type="button" class="shortcut-toggle" data-action="${escapeHtml(action)}" aria-label="${escapeHtml(JE.t('panel_shortcuts_toggle', { shortcut: tWithFallback('shortcut_' + action, fallbackLabel) }))}" style="background:transparent; border:none; color:rgba(255,255,255,0.5); cursor:pointer; padding:2px; display:flex; align-items:center;">${JE.icon(JE.IconName.NO_ENTRY)}</button>
+                                            <button type="button" class="shortcut-toggle" data-action="${escapeHtml(action)}" aria-label="${escapeHtml(tWithFallback('panel_shortcuts_toggle', 'Turn {shortcut} on or off', { shortcut: tWithFallback('shortcut_' + action, fallbackLabel) }))}" style="background:transparent; border:none; color:rgba(255,255,255,0.5); cursor:pointer; padding:2px; display:flex; align-items:center;">${JE.icon(JE.IconName.NO_ENTRY)}</button>
                                         </div>
                                         <div style="display: flex; align-items: center; gap: 8px;">
                                             ${userShortcuts.hasOwnProperty(action) ? `<span class="modified-indicator" title="Modified by user" style="color:${primaryAccentColor}; font-size: 20px; line-height: 1;">•</span>` : ''}
@@ -305,7 +314,7 @@
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                                     <span style="font-weight: 600;">${JE.t('panel_settings_subtitles_position')}</span>
-                                    <button type="button" id="subtitlePositionReset" aria-label="${escapeHtml(JE.t('panel_settings_subtitles_position_reset'))}" title="${escapeHtml(JE.t('panel_settings_subtitles_position_reset'))}" style="font-family:inherit; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:rgba(255,255,255,0.7); padding:3px 8px; border-radius:4px; font-size:11px; cursor:pointer; display:flex; align-items:center;"><span class="material-icons" style="font-size:16px;" aria-hidden="true">restart_alt</span></button>
+                                    <button type="button" id="subtitlePositionReset" aria-label="${escapeHtml(tWithFallback('panel_settings_subtitles_position_reset', 'Reset position'))}" title="${escapeHtml(tWithFallback('panel_settings_subtitles_position_reset', 'Reset position'))}" style="font-family:inherit; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:rgba(255,255,255,0.7); padding:3px 8px; border-radius:4px; font-size:11px; cursor:pointer; display:flex; align-items:center;"><span class="material-icons" style="font-size:16px;" aria-hidden="true">restart_alt</span></button>
                                 </div>
                                 <div id="subtitlePositionGrid" style="position:relative; width:min(60vw,280px); height:min(34vw,158px); background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.15); border-radius:6px; cursor:crosshair; user-select:none; overflow:hidden; margin: 0 auto;">
                                     <!-- Crosshair guides -->

@@ -521,25 +521,39 @@
         };
 
         // The pickers and alpha sliders preview live on every 'input' but save once: on release
-        // ('change') or after COLOUR_SAVE_DELAY_MS without movement, and on panel close.
+        // ('change') or after COLOUR_SAVE_DELAY_MS without movement, and on panel close or when
+        // the page is hidden or unloaded. A save scheduled before a user switch is dropped: by
+        // then JE.currentSettings belongs to the incoming user.
         const COLOUR_SAVE_DELAY_MS = 300;
         let colourSaveTimer = null;
-        /** Saves the colours now if a save is pending. */
+        let colourSaveEpoch = 0;
+        /** Saves the colours now if a save is pending for the user who made the change. */
         const flushColourSave = () => {
             if (!colourSaveTimer) return;
             clearTimeout(colourSaveTimer);
             colourSaveTimer = null;
+            if (JE.session && !JE.session.isCurrent(colourSaveEpoch)) return;
             JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
         };
         /** (Re)starts the delay before the pending colour save. */
         const scheduleColourSave = () => {
             if (colourSaveTimer) clearTimeout(colourSaveTimer);
-            colourSaveTimer = setTimeout(() => {
-                colourSaveTimer = null;
-                JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
-            }, COLOUR_SAVE_DELAY_MS);
+            colourSaveEpoch = JE.session ? JE.session.getEpoch() : 0;
+            colourSaveTimer = setTimeout(flushColourSave, COLOUR_SAVE_DELAY_MS);
         };
-        if (typeof ctx.onPanelClose === 'function') ctx.onPanelClose(flushColourSave);
+        /** Flushes when the tab is hidden (navigation, reload, app switch). */
+        const flushColourSaveWhenHidden = () => {
+            if (document.visibilityState === 'hidden') flushColourSave();
+        };
+        if (typeof ctx.onPanelClose === 'function') {
+            window.addEventListener('pagehide', flushColourSave);
+            document.addEventListener('visibilitychange', flushColourSaveWhenHidden);
+            ctx.onPanelClose(() => {
+                window.removeEventListener('pagehide', flushColourSave);
+                document.removeEventListener('visibilitychange', flushColourSaveWhenHidden);
+                flushColourSave();
+            });
+        }
 
         [customTextColorPicker, customTextAlpha, customBgColorPicker, customBgAlpha].forEach((control) => {
             if (!control) return;

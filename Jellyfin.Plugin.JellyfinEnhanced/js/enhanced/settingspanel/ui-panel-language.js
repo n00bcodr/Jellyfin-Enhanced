@@ -143,8 +143,11 @@
                 // Save to settings.json (use base language code)
                 const previousLang = JE.currentSettings.displayLanguage;
                 JE.currentSettings.displayLanguage = newLang;
+                // A failed request still switches this device (the language is also kept in
+                // localStorage below), but says it was not saved instead of "Language changed".
+                let saveFailed = false;
                 try {
-                    await JE.saveUserSettings('settings.json', JE.currentSettings, { throwOnError: true });
+                    await JE.saveUserSettings('settings.json', JE.currentSettings, { throwOnError: true, notifyOnError: true });
                 } catch (err) {
                     // The stored settings did not load, so the save was refused: change nothing
                     // rather than switch the language here and report it as saved.
@@ -156,6 +159,7 @@
                         return;
                     }
                     console.error('🪼 Jellyfin Enhanced: Failed to save settings.json:', err);
+                    saveFailed = true;
                 }
 
                 // Save to localStorage (use the same code)
@@ -166,6 +170,11 @@
                     localStorage.setItem(languageKey, '');
                 }
 
+                if (saveFailed) {
+                    // The "couldn't save" message is already up; leave time to read it.
+                    setTimeout(() => window.location.reload(), 4000);
+                    return;
+                }
                 if (newLang && !translationExists) {
                     JE.toast(`${JE.icon(JE.IconName.WARNING)} Translation file not available for selected language. Falling back to English.`);
                 } else {

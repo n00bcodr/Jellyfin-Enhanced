@@ -64,7 +64,7 @@ Controls how long certain UI elements stay visible before auto-closing.
 
 | Setting | Default | Range | Description |
 |---|---|---|---|
-| **Help Panel Autoclose Delay** | 8000 ms | 0–30000 ms | How long the Enhanced panel stays open before closing automatically. Set to 0 to disable auto-close. |
+| **Help Panel Autoclose Delay** | 8000 ms | 0–30000 ms | How long the Jellyfin Enhanced panel stays open before closing automatically. Set to 0 to disable auto-close. |
 | **Toast Duration** | 3000 ms | 1000–10000 ms | How long toast notifications are displayed. |
 
 ---

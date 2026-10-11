@@ -1,5 +1,6 @@
 import { chromium, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
+import { checkPanelKeyboard } from './panel-keyboard.mjs';
 let input = '';
 for await (const chunk of process.stdin) input += chunk;
 const { url, password, artifacts, users } = JSON.parse(input);
@@ -53,6 +54,15 @@ try {
     } finally {
       await context.close();
     }
+  }
+  // Keyboard-only (375 px) and layout=tv D-pad checks of the panel, once, as the regular user.
+  try {
+    const checks = await checkPanelKeyboard(browser, { url, username: users[0], password });
+    results.push({ username: users[0], status: 'passed', checks });
+    console.log(`PASS real browser ${users[0]}: ${checks.join(', ')}`);
+  } catch (error) {
+    results.push({ username: users[0], status: 'failed', checks: ['panel keyboard and D-pad'], error: error.message });
+    throw new Error(`${users[0]} panel keyboard and D-pad: ${error.message}`);
   }
 } finally {
   await fs.writeFile(`${artifacts}/browser-report.json`, JSON.stringify(results, null, 2));
