@@ -331,3 +331,48 @@ test('no settings.json save goes out while the incoming user\'s settings are sti
   await h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings, { throwOnError: true });
   assert.deepEqual(posts.slice(1), ['/JellyfinEnhanced/user-settings/user-b/settings.json']);
 });
+
+// The panel-open refresh of settings.json can still be in flight when the identity changes: its
+// answer (or its 503) is the previous user's and must not lift the incoming user's 'loading'.
+for (const [label, answer] of [
+  ['answers', () => ({ AutoPauseEnabled: false, AutoPipEnabled: true })],
+  ['fails unavailable', () => { throw new Response(JSON.stringify({ success: false, status: 'unavailable' }), { status: 503 }); }],
+]) test(`a panel refresh for the previous user that ${label} after a switch is dropped`, async t => {
+  const posts = [];
+  const panelGet = deferred(), bBootstrap = deferred();
+  let panelRequested = false, bRequested = false, current = 'user-a';
+  const h = setup(t, { ajax: async (path, request) => {
+    if (request.type === 'POST') { posts.push(path); return {}; }
+    if (path === '/JellyfinEnhanced/user-settings/user-a/settings.json') { panelRequested = true; return panelGet.promise.then(answer); }
+    if (path.endsWith('/bootstrap')) {
+      if (current !== 'user-b') return payload({ UserSettings: { Settings: { AutoPauseEnabled: true }, SettingsStatus: 'ok' } });
+      bRequested = true;
+      return bBootstrap.promise;
+    }
+    throw new Error(`Unexpected endpoint ${path}`);
+  } });
+  await until(() => h.plugin.initialized);
+  h.window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  Object.assign(h.plugin, { t: key => key, keyListener() {}, themer: { getThemeVariables: () => ({}) } });
+  h.plugin.internals = { enhancedUi: { buildPanelHtml: () => '<div class="je-panel-main"></div>', wireShortcutEditor() {},
+    wireSettingsListeners() {}, wireHiddenContentListeners() {}, wireMiscSettingsControls() {}, wireLanguageControls() {} } };
+  h.load('enhanced/settingspanel/ui-panel.js');
+
+  const opening = h.plugin.showEnhancedPanel();
+  await until(() => panelRequested);
+  current = 'user-b'; h.switchUser('user-b');
+  await until(() => bRequested);
+  panelGet.resolve();
+  await opening;
+  assert.equal(h.plugin.userConfig.settingsStatus, 'loading');
+  assert.deepEqual(plain(h.plugin.currentSettings), {}, 'user-a\'s settings are not installed for user-b');
+  assert.equal(h.document.getElementById('jellyfin-enhanced-panel'), null, 'no panel is built from the stale answer');
+  await h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings);
+  assert.deepEqual(posts, []);
+
+  const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
+  bBootstrap.resolve(payload({ UserId: 'user-b', UserSettings: { Settings: { AutoPauseEnabled: true }, SettingsStatus: 'ok' } }));
+  await loaded;
+  assert.equal(h.plugin.userConfig.settingsStatus, 'ok');
+  assert.equal(h.plugin.currentSettings.autoPipEnabled, false);
+});

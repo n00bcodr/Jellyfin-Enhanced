@@ -64,6 +64,10 @@
     JE.showEnhancedPanel = async () => {
         // Refresh user settings when panel opens to ensure correct user's settings are displayed
         const currentUserId = ApiClient.getCurrentUserId();
+        // A user switch while the refresh is in flight makes its answer the
+        // previous user's: drop it (and the panel open) rather than install it
+        // over the incoming user's 'loading' state.
+        const epoch = JE.session ? JE.session.getEpoch() : 0;
         if (currentUserId) {
             try {
                 // Fetch fresh settings for the current user
@@ -72,6 +76,7 @@
                     url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${currentUserId}/settings.json?_=${Date.now()}`),
                     dataType: 'json'
                 });
+                if (JE.session && !JE.session.isCurrent(epoch)) return;
 
                 // Update the userConfig with fresh data
                 if (settingsResponse) {
@@ -85,12 +90,14 @@
                     }
                 }
             } catch (e) {
+                if (JE.session && !JE.session.isCurrent(epoch)) return;
                 console.warn("🪼 Jellyfin Enhanced: Could not refresh settings for panel display:", e);
                 // The server says the stored file cannot be read (it may have become unreadable
                 // since boot): show it read-only rather than let saves go on. A plain network
                 // failure keeps the status it had.
                 if (e?.status === 503 && typeof e.json === 'function') {
                     const body = await e.json().catch(() => null);
+                    if (JE.session && !JE.session.isCurrent(epoch)) return;
                     if (body?.status === 'unavailable') {
                         JE.userConfig = JE.userConfig || {};
                         JE.userConfig.settingsStatus = 'unavailable';
