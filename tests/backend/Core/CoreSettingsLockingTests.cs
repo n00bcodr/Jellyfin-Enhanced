@@ -30,7 +30,6 @@ namespace JE.Tests;
 public class CoreSettingsLockingTests
 {
     private static readonly Guid UserA = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-    private static readonly TimeSpan Blocked = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan Done = TimeSpan.FromSeconds(10);
 
     private sealed class Endpoints : IDisposable
@@ -123,14 +122,65 @@ public class CoreSettingsLockingTests
         }
     }
 
-    /// <summary>True when <paramref name="task"/> is still running after <see cref="Blocked"/>.</summary>
-    private static async Task<bool> StillWaiting(Task task) => await Task.WhenAny(task, Task.Delay(Blocked)) != task;
+    /// <summary>
+    /// Runs one writer on a dedicated thread so the test can see where it is: <see cref="WaitUntilBlocked"/>
+    /// returns only once the thread has sat in <see cref="ThreadState.WaitSleepJoin"/> (blocked in
+    /// Monitor.Enter on the held lock) for a while, so a competing writer started after it really
+    /// races a writer that is already past its unlocked checks, not one that has not started yet.
+    /// </summary>
+    private sealed class BlockedWriter
+    {
+        private static readonly TimeSpan Settled = TimeSpan.FromMilliseconds(100);
+        private readonly Thread thread;
+        private IActionResult? result;
+        private Exception? failure;
+
+        public BlockedWriter(Func<IActionResult> run)
+        {
+            thread = new Thread(() =>
+            {
+                try { result = run(); }
+                catch (Exception ex) { failure = ex; }
+            }) { IsBackground = true };
+            thread.Start();
+        }
+
+        /// <summary>Fails unless the writer is blocked (and stays blocked) within <see cref="Done"/>.</summary>
+        public void WaitUntilBlocked(string what)
+        {
+            var deadline = DateTime.UtcNow + Done;
+            DateTime? since = null;
+            while (DateTime.UtcNow < deadline)
+            {
+                var state = thread.ThreadState;
+                Assert.False((state & ThreadState.Stopped) != 0, $"{what} finished while another writer held the settings.json lock");
+                if ((state & ThreadState.WaitSleepJoin) != 0)
+                {
+                    since ??= DateTime.UtcNow;
+                    if (DateTime.UtcNow - since >= Settled) return;
+                }
+                else
+                {
+                    since = null;
+                }
+                Thread.Sleep(5);
+            }
+            Assert.Fail($"{what} never blocked on the settings.json lock");
+        }
+
+        public IActionResult Result()
+        {
+            Assert.True(thread.Join(Done), "writer did not finish after the lock was released");
+            if (failure != null) throw new InvalidOperationException("Writer failed", failure);
+            return result!;
+        }
+    }
 
     [Theory]
     [InlineData("post")]
     [InlineData("seed")]
     [InlineData("reset")]
-    public async Task SettingsWritersWaitForThePerFileLock(string writer)
+    public void SettingsWritersWaitForThePerFileLock(string writer)
     {
         using var endpoints = new Endpoints();
         var path = endpoints.SettingsPath(UserA);
@@ -148,28 +198,54 @@ public class CoreSettingsLockingTests
 
         // Any spelling of the user id maps to the same lock.
         using var held = new HeldLock(endpoints.Manager.GetUserFileLock(UserA.ToString("D").ToUpperInvariant(), "settings.json"));
-        var task = Task.Run(run);
-        Assert.True(await StillWaiting(task), $"{writer} finished while another writer held the settings.json lock");
+        var blocked = new BlockedWriter(run);
+        blocked.WaitUntilBlocked(writer);
         Assert.Equal(before, File.Exists(path) ? File.ReadAllText(path) : null);
         held.Release();
 
-        AssertOk(await task.WaitAsync(Done));
+        AssertOk(blocked.Result());
         Assert.NotEqual(before, File.ReadAllText(path));
     }
 
     [Fact]
-    public async Task SeedChecksAgainUnderTheLockAndNeverOverwritesASaveThatWonTheRace()
+    public void PostReadsAndComparesUnderTheLock()
+    {
+        // The stored document is X and the POST sends X again. While the POST waits for the lock,
+        // reset-all writes the defaults. A POST that compared before taking the lock would have seen
+        // "identical", skipped the save and left the defaults; under the lock it compares against the
+        // defaults and saves X.
+        using var endpoints = new Endpoints();
+        var path = endpoints.SettingsPath(UserA);
+        endpoints.Manager.SaveUserConfiguration(UserA.ToString("N"), "settings.json", Posted(5));
+        var defaults = Typed(UserSettings.FromAdminDefaults(endpoints.Plugin.Plugin.Configuration));
+        Assert.False(JToken.DeepEquals(defaults, Typed(Posted(5))));
+
+        using var held = new HeldLock(endpoints.Manager.GetUserFileLock(UserA.ToString("N"), "settings.json"));
+        var post = new BlockedWriter(() => endpoints.Controller(UserA).SaveUserSettingsSettings(UserA.ToString(), Posted(5)));
+        post.WaitUntilBlocked("post");
+        held.Release(() =>
+        {
+            AssertOk(endpoints.Controller(UserA, admin: true).ResetAllUsersSettings());
+            Assert.True(JToken.DeepEquals(defaults, OnDisk(path)));
+        });
+
+        AssertOk(post.Result());
+        Assert.True(JToken.DeepEquals(Typed(Posted(5)), OnDisk(path)), "the POST compared outside the lock and kept the reset defaults");
+    }
+
+    [Fact]
+    public void SeedChecksAgainUnderTheLockAndNeverOverwritesASaveThatWonTheRace()
     {
         using var endpoints = new Endpoints();
         using var held = new HeldLock(endpoints.Manager.GetUserFileLock(UserA.ToString("N"), "settings.json"));
         // The GET finds no file and waits for the lock to seed; a POST lands first.
-        var get = Task.Run(() => endpoints.Controller(UserA).GetUserSettingsSettings(UserA.ToString()));
-        Assert.True(await StillWaiting(get));
+        var get = new BlockedWriter(() => endpoints.Controller(UserA).GetUserSettingsSettings(UserA.ToString()));
+        get.WaitUntilBlocked("seed");
         IActionResult? post = null;
         held.Release(() => post = endpoints.Controller(UserA).SaveUserSettingsSettings(UserA.ToString(), Posted(7)));
         AssertOk(post!);
 
-        var served = Typed(Assert.IsType<OkObjectResult>(await get.WaitAsync(Done)).Value!);
+        var served = Typed(Assert.IsType<OkObjectResult>(get.Result()).Value!);
         served.Remove("IsAdmin");
         Assert.True(JToken.DeepEquals(Typed(Posted(7)), served));
         Assert.True(JToken.DeepEquals(Typed(Posted(7)), OnDisk(endpoints.SettingsPath(UserA))));
@@ -195,6 +271,12 @@ public class CoreSettingsLockingTests
         }
     }
 
+    /// <summary>
+    /// Stress smoke test: free-running POST and reset-all always leave one whole document and no
+    /// temp files. This follows from SaveUserConfiguration's temp file + atomic move as much as from
+    /// the lock; the lock ordering itself is pinned by <see cref="PostReadsAndComparesUnderTheLock"/>
+    /// and <see cref="SettingsWritersWaitForThePerFileLock"/>.
+    /// </summary>
     [Fact]
     public async Task ConcurrentPostAndResetLeaveOneWholeDocument()
     {
@@ -223,9 +305,10 @@ public class CoreSettingsLockingTests
     [Fact]
     public void LegacyPostDeclaresThe64KbBodyCap()
     {
-        var limit = typeof(JellyfinEnhancedController).GetMethod(nameof(JellyfinEnhancedController.SaveUserSettingsSettings))!
-            .GetCustomAttributes(typeof(RequestSizeLimitAttribute), false).Cast<Microsoft.AspNetCore.Http.Metadata.IRequestSizeLimitMetadata>().Single();
+        var action = typeof(JellyfinEnhancedController).GetMethod(nameof(JellyfinEnhancedController.SaveUserSettingsSettings))!;
+        var limit = action.GetCustomAttributes(typeof(RequestSizeLimitAttribute), false).Cast<Microsoft.AspNetCore.Http.Metadata.IRequestSizeLimitMetadata>().Single();
         Assert.Equal(64L * 1024, limit.MaxRequestBodySize);
+        Assert.Single(action.GetCustomAttributes(typeof(RejectOversizedBodyAttribute), false));
     }
 
     private sealed class SettingsActivator(Endpoints endpoints) : IControllerActivator
@@ -257,6 +340,20 @@ public class CoreSettingsLockingTests
         builder.Services.AddControllers().AddApplicationPart(typeof(JellyfinEnhancedController).Assembly);
         builder.Services.AddSingleton<IControllerActivator>(new SettingsActivator(endpoints));
         var app = builder.Build();
+        // Stand-in for Jellyfin's ExceptionMiddleware, which answers any exception that escapes
+        // MVC with a 500 (and an error log line). Bare Kestrel would answer an escaped
+        // BadHttpRequestException with 413 itself and hide a missing filter.
+        app.Use(async (context, next) =>
+        {
+            try
+            {
+                await next(context);
+            }
+            catch (Exception) when (!context.Response.HasStarted)
+            {
+                context.Response.StatusCode = 500;
+            }
+        });
         app.UseRouting();
         app.UseAuthentication();
         app.UseAuthorization();
@@ -284,13 +381,16 @@ public class CoreSettingsLockingTests
         var stored = File.ReadAllText(endpoints.SettingsPath(UserA));
 
         // Just over 64 KB, as one valid JSON document: rejected while the body is read, before
-        // the action runs. Plain Kestrel answers 413; inside Jellyfin, its ExceptionMiddleware
-        // turns the same BadHttpRequestException into a 500 (seen in the lab).
+        // the action runs. Kestrel throws BadHttpRequestException from model binding;
+        // [RejectOversizedBody] turns it into a 413 JSON answer before it reaches the
+        // exception middleware (which would make it a 500).
         var padded = JObject.Parse(whole);
         padded["DisplayLanguage"] = new string('x', 64 * 1024);
         using (var tooLarge = await client.PostAsync(url, new StringContent(padded.ToString(), Encoding.UTF8, "application/json")))
         {
-            Assert.True((int)tooLarge.StatusCode is 400 or 413, $"oversized POST returned {(int)tooLarge.StatusCode}");
+            Assert.Equal(HttpStatusCode.RequestEntityTooLarge, tooLarge.StatusCode);
+            var body = JObject.Parse(await tooLarge.Content.ReadAsStringAsync());
+            Assert.False(body.Value<bool>("success"));
         }
         Assert.Equal(stored, File.ReadAllText(endpoints.SettingsPath(UserA)));
     }

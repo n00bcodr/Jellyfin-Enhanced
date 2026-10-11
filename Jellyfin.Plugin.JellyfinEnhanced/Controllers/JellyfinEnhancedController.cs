@@ -4986,6 +4986,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         [Produces("application/json")]
         [RequestSizeLimit(64 * 1024)]
+        [RejectOversizedBody]
         public IActionResult SaveUserSettingsSettings(string userId, [FromBody] UserSettings userConfiguration)
         {
             var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
