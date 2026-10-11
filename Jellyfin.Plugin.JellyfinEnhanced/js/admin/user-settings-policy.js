@@ -25,7 +25,8 @@
         baseline: new Set(), // keys locked on the server when the rows were rendered or saved
         run: 0,              // decoration sequence; only the latest one renders
         changes: 0,          // admin edits to lock checkboxes, counted
-        changedAt: new Map() // key -> value of `changes` at its last edit
+        changedAt: new Map(), // key -> value of `changes` at its last edit
+        submitted: null      // value of `changes` when applyLocks() last built a save
     };
 
     const api = {
@@ -403,14 +404,16 @@
      * every pageshow; only the latest call renders. `ready` stays false until the first render
      * for this page succeeds, and a failure on a fresh page leaves it false.
      * @param {Element} [page] The admin page (#JellyfinEnhancedPage).
+     * @param {number} [keepAfter] Keep lock edits made after this value of the edit counter
+     *   (a save's: edits made while it was in flight); default, edits made during the request.
      * @returns {Promise<boolean>} Whether the rows were rendered.
      */
-    async function decorate(page) {
+    async function decorate(page, keepAfter) {
         page = page || document.querySelector('#JellyfinEnhancedPage');
         if (!page || !page.querySelector('#jeUserSettingsPolicyTable')) return false;
         if (state.page !== page) api.ready = false;
         const run = ++state.run;
-        const changesAtStart = state.changes;
+        const changesAtStart = typeof keepAfter === 'number' ? Math.min(keepAfter, state.changes) : state.changes;
         if (!api.ready) setStatus(page, 'Loading the user settings policy…');
         let registry;
         try {
@@ -445,6 +448,7 @@
      */
     function applyLocks(fetched) {
         if (!api.ready) return null;
+        state.submitted = state.changes;
         const rendered = new Map();
         state.byKey.forEach((item, key) => {
             if (item.checkbox && item.checkbox.isConnected) rendered.set(key.toLowerCase(), item);
@@ -470,14 +474,17 @@
 
     /**
      * Called by the page after a successful save: the saved locks become the baseline, then the
-     * registry is read again (saved defaults and reach may have changed).
+     * registry is read again (saved defaults and reach may have changed). Lock edits made after
+     * applyLocks() built the save (while it was in flight) were not saved and stay as edits.
      * @param {string[]|null|undefined} locked The LockedUserSettings that was saved.
      */
     function markSaved(locked) {
         const saved = new Set((Array.isArray(locked) ? locked : []).map(entry => String(entry).toLowerCase()));
         state.baseline = new Set(Array.from(state.byKey.keys()).filter(key => saved.has(key.toLowerCase())));
+        const keepAfter = typeof state.submitted === 'number' ? state.submitted : state.changes;
+        state.submitted = null;
         refresh();
-        if (state.page) decorate(state.page);
+        if (state.page) decorate(state.page, keepAfter);
     }
 
     // Loaded after the page's loadConfig already ran: decorate now.

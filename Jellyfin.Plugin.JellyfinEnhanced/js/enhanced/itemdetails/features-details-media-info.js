@@ -181,9 +181,15 @@
         placeholder.style.alignItems = 'center';
         placeholder.style.margin = '0 1em 0 0 !important';
         // An administrator lock on the display mode: the chip shows the enforced mode read-only.
-        const modeLocked = !!window.JellyfinEnhanced?.settings?.isLocked?.('watchProgressMode');
-        placeholder.style.cursor = modeLocked ? 'default' : 'pointer';
-        if (modeLocked && typeof JE.t === 'function') placeholder.title = JE.t('panel_provenance_locked');
+        // Read again on every click and hover, since a lock can arrive or go while the chip is shown.
+        const syncModeLock = () => {
+            const locked = !!window.JellyfinEnhanced?.settings?.isLocked?.('watchProgressMode');
+            placeholder.style.cursor = locked ? 'default' : 'pointer';
+            placeholder.title = JE.t(locked ? 'panel_provenance_locked' : 'watch_progress_tooltip');
+            return locked;
+        };
+        syncModeLock();
+        placeholder.addEventListener('mouseenter', syncModeLock);
         const getWatchProgressDisplay = (watchProgress, mode) => {
             const safeTotal = Math.max(0, watchProgress.totalRuntimeTicks || 0);
             const safePlayed = Math.max(0, Math.min(safeTotal, watchProgress.totalPlaybackTicks || 0));
@@ -217,13 +223,23 @@
 
         // onClick handler to toggle between percentage and time-based display
         placeholder.addEventListener('click', () => {
-            if (modeLocked) return;
+            const locked = syncModeLock();
             const watchProgress = watchProgressCache.get(itemId);
             if (!watchProgress) return;
 
             const div = document.querySelector(`.mediaInfoItem-watchProgress[data-item-id="${itemId}"]`)
                 .querySelector('.mediaInfoItem-watchProgress-value');
             if (!div) return;
+
+            if (locked) {
+                // Show the enforced mode (it may have arrived after the chip was drawn); never save.
+                const enforced = window.JellyfinEnhanced?.currentSettings?.watchProgressMode;
+                if (['percentage', 'time', 'remaining'].includes(enforced) && div.dataset.type !== enforced) {
+                    div.dataset.type = enforced;
+                    div.innerHTML = getWatchProgressDisplay(watchProgress, enforced);
+                }
+                return;
+            }
 
             const currentMode = div.dataset.type || 'percentage';
             const newMode = nextWatchProgressMode(currentMode);

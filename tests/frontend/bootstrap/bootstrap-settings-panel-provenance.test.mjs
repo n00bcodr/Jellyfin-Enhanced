@@ -142,6 +142,36 @@ test('decorating again follows the latest Meta: an unlock re-enables only what i
   assert.equal(h.root.querySelector('#autoPipToggle').disabled, false);
 });
 
+test('a lock that arrives on an open panel moves preset and position selections to the enforced value; the unlock brings the user\'s back', async t => {
+  const h = buildPanel(t, { settings: { qualityTagsPosition: 'top-left', selectedFontSizePresetIndex: 0, autoPipEnabled: true } });
+  h.load('enhanced/settingspanel/ui-panel-settings.js');
+  h.JE.saveUserSettings = async () => {};
+  h.window.ApiClient.ajax = async () => ({ Items: [] }); // the random source list
+  h.JE.internals.enhancedUi.wireMiscSettingsControls({ help: h.root, primaryAccentColor: 'rgb(1, 2, 3)', resetAutoCloseTimer() {} });
+  h.decorate();
+  const cell = pos => h.root.querySelector(`.position-selector[data-setting="qualityTagsPosition"] [data-pos="${pos}"]`);
+  const preset = index => h.root.querySelector(`#font-size-presets-container [data-preset-index="${index}"]`);
+  const pressed = () => [cell('top-left'), cell('bottom-right'), preset(0), preset(2)].map(el => el.getAttribute('aria-pressed'));
+  assert.deepEqual(pressed(), ['true', 'false', 'true', 'false']);
+
+  // A patch answer brings the admin's values and the locks while the panel is open.
+  Object.assign(h.JE.currentSettings, { qualityTagsPosition: 'bottom-right', selectedFontSizePresetIndex: 2, autoPipEnabled: false });
+  h.JE.userConfig.settingsMeta = { locked: ['qualityTagsPosition', 'selectedFontSizePresetIndex', 'autoPipEnabled'] };
+  h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: [], rejected: [], meta: true } }));
+  assert.deepEqual(pressed(), ['false', 'true', 'false', 'true']);
+  assert.equal(cell('bottom-right').style.background, 'rgb(1, 2, 3)');
+  assert.match(preset(2).style.border, /rgb\(1, 2, 3\)/);
+  assert.equal(h.root.querySelector('#autoPipToggle').checked, false);
+
+  // Unlocked: the user's values come back with the answer, and the rows show them again.
+  Object.assign(h.JE.currentSettings, { qualityTagsPosition: 'top-left', selectedFontSizePresetIndex: 0, autoPipEnabled: true });
+  h.JE.userConfig.settingsMeta = { locked: [] };
+  h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: [], rejected: [], meta: true } }));
+  assert.deepEqual(pressed(), ['true', 'false', 'true', 'false']);
+  assert.equal(h.root.querySelector('#autoPipToggle').checked, true);
+  assert.equal(h.root.querySelector('#autoPipToggle').disabled, false);
+});
+
 test('saved values are written as text, never as markup', t => {
   const h = buildPanel(t, { meta: { locked: ['displayLanguage'], saved: { displayLanguage: 'xx' }, chosen: ['displayLanguage'] } });
   const select = h.root.querySelector('#displayLanguageSelect');
@@ -202,9 +232,12 @@ test('opening the panel refreshes the settings with their Meta, then decorates t
   assert.equal(h.decorated(), 1);
 });
 
-test('a server that ignores ?meta=true (plain document) keeps the Meta the page has', async t => {
+test('a server that ignores ?meta=true (plain document) has no locks or gates: the Meta from a newer server is dropped', async t => {
   const h = openPanel(t, { AutoPipEnabled: true, IsAdmin: false });
+  assert.equal(h.JE.settings.isLocked('old'), true);
   await h.JE.showEnhancedPanel();
   assert.deepEqual(h.JE.userConfig.settings, { autoPipEnabled: true, isAdmin: false });
-  assert.deepEqual(h.JE.settingsMeta, { locked: ['old'] });
+  assert.equal(h.JE.settingsMeta, null);
+  assert.equal(h.JE.settings.isLocked('old'), false);
+  assert.equal(h.decorated(), 1);
 });

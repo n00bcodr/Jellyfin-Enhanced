@@ -17,6 +17,9 @@ const fixture = name => JSON.parse(readFileSync(resolve(repositoryRoot, 'tests/f
 const registryDefault = fixture('admin-registry-default.json');
 const lockableKeys = fixture('lockable-keys.json');
 
+/** The page's loader for the policy script (inside its first inline script), as it ships. */
+const loaderSource = /\(function \(\) \{\s*function showPolicyLoadFailure\(\)[\s\S]*?\n        \}\)\(\);/.exec(pageSource)?.[0];
+
 /** The page's own save-side lock decision, taken from configPage.html as it ships. */
 const applyLocksSource = /function jeApplyUserSettingsLocks\(config\) \{[\s\S]*?\n        \}/.exec(pageSource)?.[0];
 
@@ -182,6 +185,29 @@ test('a lock edited while the rows reload (pageshow) is kept; older edits are re
   assert.equal(h.policy.pendingState(), 'AutoPipEnabled=true');
 });
 
+test('a lock edited while a save is in flight is kept as an unsaved edit after the save', async t => {
+  let answer = registryDefault;
+  const h = setup(t, { ajax: async () => structuredClone(answer) });
+  await h.policy.decorate(h.page);
+  h.tick('AutoPipEnabled');
+  const saved = h.policy.applyLocks([]); // the save is built from the boxes here
+  assert.deepEqual(saved, ['AutoPipEnabled']);
+  h.tick('ShowFileSizes'); // ticked while the save is in flight: not part of it
+  answer = registryDefault.map(e => e.Key === 'AutoPipEnabled' ? { ...e, Locked: true } : e);
+  h.policy.markSaved(saved);
+  assert.equal(h.policy.pendingState(), 'ShowFileSizes=true');
+  // markSaved reads the registry again and re-renders the rows.
+  for (let i = 0; i < 3; i++) await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(h.row('AutoPipEnabled').querySelector('input').checked, true);
+  assert.equal(h.row('ShowFileSizes').querySelector('input').checked, true, 'the in-flight edit is not reverted');
+  assert.equal(h.policy.pendingState(), 'ShowFileSizes=true');
+  assert.match(h.document.querySelector('#jeUserSettingsPolicyImpact').textContent, /^Locking .*Locks take effect when you save\.$/);
+  // A pageshow reload still resets edits made before it started.
+  await h.policy.decorate(h.page);
+  assert.equal(h.row('ShowFileSizes').querySelector('input').checked, false);
+  assert.equal(h.policy.pendingState(), '');
+});
+
 test('registry values and page labels are written as text, never as markup', async t => {
   const hostile = '<img src=x onerror="window.__pwned=1">';
   const registry = registryDefault.map(e => e.Key === 'DisplayLanguage' ? { ...e, AdminValue: hostile } : e);
@@ -196,4 +222,43 @@ test('registry values and page labels are written as text, never as markup', asy
   assert.equal(h.row('AutoPipEnabled').querySelector('th').textContent, '<b onclick="x()">Auto PiP</b>');
   assert.match(fieldset.querySelector('#jeUserSettingsPolicyImpact').textContent, /Locking <b onclick="x\(\)">Auto PiP<\/b> to Off/);
   assert.equal(h.window.__pwned, undefined);
+});
+
+test('the page says so when the policy script cannot be loaded, and a later visit tries again', async t => {
+  assert.ok(loaderSource, 'the policy loader is in configPage.html');
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+  const status = h => h.document.querySelector('#jeUserSettingsPolicyStatus');
+  const failure = /could not be loaded, so locks cannot be changed right now\. Saving keeps the current locks\./;
+
+  // No client tag and /version fails or answers 'unknown': nothing to load, and the fieldset says so.
+  for (const answer of [async () => { throw new Error('offline'); }, async () => ({ ok: true, text: async () => 'unknown' })]) {
+    const h = createHarness({ html: pageMarkup, fetch: answer });
+    t.after(() => h.close());
+    h.allowConsoleError(/Could not parse CSS stylesheet/);
+    assert.match(status(h).textContent, /^Loading/);
+    h.window.eval(`var jeCssVersion = null; ${loaderSource}`);
+    await settle(); await settle();
+    assert.match(status(h).textContent, failure);
+    assert.ok(status(h).classList.contains('je-policy-status-error'));
+    assert.equal(h.document.querySelector('script[data-je-admin-policy]'), null);
+  }
+
+  // The script fails to load: the status says so and the failed element is removed, so the next
+  // visit (the page's inline script runs again with a new view) adds a fresh one.
+  const h = createHarness({ html: pageMarkup,
+    apiClient: { getUrl: (path, params) => `http://jellyfin.test${path}${params ? '?' + new URLSearchParams(params) : ''}` } });
+  t.after(() => h.close());
+  h.allowConsoleError(/Could not parse CSS stylesheet/);
+  h.window.eval(`var jeCssVersion = '1.2.3'; ${loaderSource}`);
+  const first = h.document.querySelector('script[data-je-admin-policy="1.2.3"]');
+  assert.match(first.getAttribute('src'), /\/JellyfinEnhanced\/js\/admin\/user-settings-policy\.js\?v=1\.2\.3$/);
+  first.onerror();
+  assert.equal(first.isConnected, false);
+  assert.match(status(h).textContent, failure);
+  h.window.eval(`var jeCssVersion = '1.2.3'; ${loaderSource}`);
+  const second = h.document.querySelector('script[data-je-admin-policy="1.2.3"]');
+  assert.ok(second && second !== first, 'retried');
+  // While one is loading (or loaded), another visit does not add a second copy.
+  h.window.eval(`var jeCssVersion = '1.2.3'; ${loaderSource}`);
+  assert.equal(h.document.querySelectorAll('script[data-je-admin-policy]').length, 1);
 });

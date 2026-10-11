@@ -282,9 +282,22 @@
     }
 
     /**
+     * The parts of a settings Meta that disable rows (locked keys, closed gates), as a stable string.
+     * @param {object|null|undefined} meta Camel-cased settings Meta.
+     * @returns {string}
+     */
+    function metaGates(meta) {
+        const locked = Array.isArray(meta?.locked) ? meta.locked.slice().sort() : [];
+        const unavailable = meta?.unavailable && typeof meta.unavailable === 'object' ? meta.unavailable : {};
+        return JSON.stringify([locked, Object.keys(unavailable).sort().map(key => [key, unavailable[key]])]);
+    }
+
+    /**
      * Takes a /patch answer as the new baseline: keys another device or the admin changed land in
      * JE.currentSettings (beneath edits still pending), rejected keys go back to the server's value,
-     * and both are announced with a `je:settings-changed` event ({ keys, rejected }).
+     * and both are announced with a `je:settings-changed` event ({ keys, rejected }). A new Meta
+     * whose locks or closed gates differ from the previous one is announced the same way (with
+     * `meta: true`), even when no value changed, so open views can disable or re-enable rows.
      * When a fresh document was taken while the request was in flight (its generation differs),
      * the two cannot be ordered, so that document stays the baseline: only the keys this request
      * wrote take the answer's values, rejected keys go back to that document's values, and the
@@ -306,6 +319,7 @@
 
         const settings = response?.Settings && typeof response.Settings === 'object' && !Array.isArray(response.Settings) ? recase(response.Settings, false) : null;
         const changed = [];
+        let metaChanged = false;
         if (settings && ApiClient.getCurrentUserId() === state.userId && JE.userConfig) {
             // Also counts a document installed without a loadSettings call yet.
             syncState();
@@ -338,12 +352,16 @@
                 JE.userConfig.settings = settings;
                 state.baselineSource = settings;
                 state.baseline = { ...settings };
-                if (response.Meta && typeof JE.camelCaseSettingsMeta === 'function') JE.userConfig.settingsMeta = JE.camelCaseSettingsMeta(response.Meta);
+                if (response.Meta && typeof JE.camelCaseSettingsMeta === 'function') {
+                    const before = metaGates(JE.userConfig.settingsMeta);
+                    JE.userConfig.settingsMeta = JE.camelCaseSettingsMeta(response.Meta);
+                    metaChanged = metaGates(JE.userConfig.settingsMeta) !== before;
+                }
             }
         }
-        if (changed.length || rejected.length) {
+        if (changed.length || rejected.length || metaChanged) {
             if (rejected.length) console.warn('🪼 Jellyfin Enhanced: The server did not accept some settings:', rejected);
-            document.dispatchEvent(new CustomEvent('je:settings-changed', { detail: { keys: changed, rejected } }));
+            document.dispatchEvent(new CustomEvent('je:settings-changed', { detail: metaChanged ? { keys: changed, rejected, meta: true } : { keys: changed, rejected } }));
         }
         batch.waiters.forEach(w => w.resolve({ rejected: rejected.filter(r => w.keys.includes(r.key)) }));
     }

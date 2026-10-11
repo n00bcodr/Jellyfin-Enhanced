@@ -220,6 +220,10 @@
                     JE.userConfig.settingsStatus = 'ok';
                     if (withMeta && typeof JE.camelCaseSettingsMeta === 'function') {
                         JE.userConfig.settingsMeta = JE.camelCaseSettingsMeta(settingsResponse.Meta);
+                    } else if (!withMeta) {
+                        // A server without Meta (rolled back under this tab) has no locks or gates:
+                        // drop the ones a newer server reported, as a bootstrap from it would.
+                        delete JE.userConfig.settingsMeta;
                     }
 
                     // Reload current settings

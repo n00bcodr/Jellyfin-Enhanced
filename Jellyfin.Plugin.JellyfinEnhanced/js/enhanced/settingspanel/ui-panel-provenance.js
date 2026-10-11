@@ -75,17 +75,22 @@
     }
 
     /**
-     * Shows the server's (enforced) value on a single switch or dropdown, which the panel may have
-     * rendered from an older document.
+     * Shows a key's current value (JE.currentSettings) on its row, which the panel may have
+     * rendered from an older document or while a lock enforced another value: a single switch
+     * or dropdown directly; preset and position pickers redraw their selection on the
+     * `je:setting-sync` event (ui-panel-settings.js listens on the keyed element).
+     * @param {Element} element The keyed element.
      * @param {Element[]} controls The key's own controls.
-     * @param {*} value The effective value.
+     * @param {*} value The current value.
      */
-    function showEffectiveValue(controls, value) {
-        if (controls.length !== 1) return;
-        const [control] = controls;
-        if (control.matches('input[type="checkbox"]') && typeof value === 'boolean') control.checked = value;
-        else if (control.matches('select') && value !== undefined && value !== null
-            && Array.from(control.options).some(entry => entry.value === String(value))) control.value = String(value);
+    function showEffectiveValue(element, controls, value) {
+        if (controls.length === 1) {
+            const [control] = controls;
+            if (control.matches('input[type="checkbox"]') && typeof value === 'boolean') control.checked = value;
+            else if (control.matches('select') && value !== undefined && value !== null
+                && Array.from(control.options).some(entry => entry.value === String(value))) control.value = String(value);
+        }
+        element.dispatchEvent(new CustomEvent('je:setting-sync'));
     }
 
     /**
@@ -112,6 +117,8 @@
      * @param {HTMLElement} help The panel root.
      */
     function decorate(help) {
+        // Rows the previous pass locked show the enforced value: an unlock shows the user's again.
+        const wasLocked = new Set(Array.from(help.querySelectorAll('[data-je-provenance="locked"]')));
         help.querySelectorAll(`.${NOTE_CLASS}`).forEach(note => note.remove());
         help.querySelectorAll(`[${DISABLED_MARK}]`).forEach(control => {
             control.disabled = false;
@@ -140,10 +147,10 @@
             const key = element.dataset.settingKey;
             const isLocked = locked.has(key) || lockedGroups.has(element.dataset.settingGroup);
             const isUnavailable = !isLocked && Object.prototype.hasOwnProperty.call(unavailable, key);
+            if (locked.has(key) || (!isLocked && wasLocked.has(element))) showEffectiveValue(element, ownControls(element), settings[key]);
             if (!isLocked && !isUnavailable) return;
 
             const controls = ownControls(element);
-            if (locked.has(key)) showEffectiveValue(controls, settings[key]);
             controls.forEach((control) => {
                 if (control.disabled) return;
                 control.disabled = true;

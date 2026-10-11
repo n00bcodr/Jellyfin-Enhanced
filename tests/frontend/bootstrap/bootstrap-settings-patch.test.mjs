@@ -173,6 +173,36 @@ test('a value changed elsewhere arrives with the patch answer and is announced',
   assert.deepEqual(h.requests[1].body, { Set: { AutoPauseEnabled: false } });
 });
 
+test('a lock or closed gate that arrives (or goes) with a patch answer is announced even when no value changed', async t => {
+  let meta = { Locked: [], Unavailable: {} };
+  const h = setup(t, { respond: (entry, server) => {
+    Object.assign(server, entry.body.Set);
+    return { success: true, Rejected: [], Settings: { ...server }, Meta: structuredClone(meta) };
+  } });
+  const save = async (key, value) => {
+    h.JE.currentSettings[key] = value;
+    const saved = h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+    h.timers.runAll(); await saved;
+  };
+  await save('autoPipEnabled', true);
+  assert.deepEqual(h.events, [], 'the first Meta has no lock or gate');
+  // The admin locks WatchProgressMode to the value the user already has: no value changes.
+  meta = { Locked: ['WatchProgressMode'], Unavailable: {} };
+  await save('autoPauseEnabled', false);
+  assert.deepEqual(h.events, [{ keys: [], rejected: [], meta: true }]);
+  assert.equal(h.JE.settings.isLocked('watchProgressMode'), true);
+  // The same Meta again: nothing to announce.
+  await save('autoPipEnabled', false);
+  assert.equal(h.events.length, 1);
+  // The unlock, and a gate closing, are announced too.
+  meta = { Locked: [], Unavailable: {} };
+  await save('autoPipEnabled', true);
+  meta = { Locked: [], Unavailable: { QualityTagsEnabled: 'QualityTagsEnabled' } };
+  await save('autoPipEnabled', false);
+  assert.deepEqual(h.events.slice(1), [{ keys: [], rejected: [], meta: true }, { keys: [], rejected: [], meta: true }]);
+  assert.equal(h.JE.settings.isLocked('watchProgressMode'), false);
+});
+
 test('a rejected key goes back to the server value, is announced, and fails a throwOnError caller', async t => {
   const h = setup(t, { respond: (entry, server) => {
     const { SubtitleVerticalPosition, ...accepted } = entry.body.Set;

@@ -254,6 +254,34 @@ public class CoreSettingsLocksTests : IDisposable
         Assert.Empty(RecentlyUnlockedSettings.Keys);
     }
 
+    [Fact]
+    public void EveryValueALockEnforcedDuringItsLockPeriodIsStaleAfterTheUnlock()
+    {
+        using var endpoints = new Endpoints();
+        endpoints.Save(c => { c.WatchProgressDefaultMode = "percentage"; c.LockedUserSettings = ["WatchProgressMode"]; });
+        endpoints.Write(new UserSettings { WatchProgressMode = "remaining" });
+        var firstTab = endpoints.Get(); // loaded while the lock enforced "percentage"
+        Assert.Equal("percentage", firstTab.Value<string>("WatchProgressMode"));
+
+        // The admin default changes while the key stays locked, then the key is unlocked.
+        endpoints.Save(c => c.WatchProgressDefaultMode = "time");
+        var secondTab = endpoints.Get();
+        Assert.Equal("time", secondTab.Value<string>("WatchProgressMode"));
+        endpoints.Save(c => c.LockedUserSettings = []);
+        Assert.Equal("remaining", endpoints.Get().Value<string>("WatchProgressMode"));
+
+        Assert.Equal(new Dictionary<string, string> { ["WatchProgressMode"] = "stale" }, Rejections(endpoints.Post(firstTab.ToString())));
+        Assert.Equal(new Dictionary<string, string> { ["WatchProgressMode"] = "stale" }, Rejections(endpoints.Post(secondTab.ToString())));
+        Assert.Equal("remaining", endpoints.OnDisk().Value<string>("WatchProgressMode"));
+
+        // Locking again starts a new lock period: only what that one enforces is stale after the next unlock.
+        endpoints.Save(c => c.LockedUserSettings = ["WatchProgressMode"]);
+        endpoints.Save(c => c.LockedUserSettings = []);
+        Assert.Equal(new Dictionary<string, string> { ["WatchProgressMode"] = "stale" }, Rejections(endpoints.Post(secondTab.ToString())));
+        Assert.Empty(Rejections(endpoints.Post(firstTab.ToString())));
+        Assert.Equal("percentage", endpoints.OnDisk().Value<string>("WatchProgressMode"));
+    }
+
     // ---- admin registry route
 
     [Fact]

@@ -715,6 +715,8 @@
                 });
             };
             updateHighlight();
+            // The provenance pass asks for this when a lock changes the value shown (see ui-panel-provenance.js).
+            selector.addEventListener('je:setting-sync', updateHighlight);
 
             // Click handler
             selector.addEventListener('click', (e) => {
@@ -862,41 +864,35 @@
                 }
             });
 
-            let currentIndex;
-            if (type === 'style') {
-                currentIndex = JE.currentSettings.selectedStylePresetIndex ?? 0;
-                // Only highlight if not using custom colors
-                if (!JE.currentSettings.usingCustomColors) {
-                    const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
-                    if (activeBox) {
-                        activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
-                        activeBox.setAttribute('aria-pressed', 'true');
-                    }
+            // Highlights the preset JE.currentSettings holds; also run by the provenance pass when a
+            // lock changes the value shown (see ui-panel-provenance.js).
+            const highlightCurrent = () => {
+                container.querySelectorAll('.preset-box').forEach(box => {
+                    box.style.setProperty('border', '2px solid transparent', 'important');
+                    box.setAttribute('aria-pressed', 'false');
+                });
+                let currentIndex;
+                if (type === 'style') {
+                    currentIndex = JE.currentSettings.selectedStylePresetIndex ?? 0;
+                    // Only highlight if not using custom colors
+                    if (JE.currentSettings.usingCustomColors) return;
+                } else if (type === 'font-size') {
+                    currentIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
+                } else if (type === 'font-family') {
+                    currentIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
+                } else if (type === 'text-effect') {
+                    currentIndex = JE.currentSettings.selectedTextEffectPresetIndex;
+                    // An unknown index renders as Auto (see JE.getSubtitleTextShadow), so highlight that.
+                    if (!Number.isInteger(currentIndex) || !JE.subtitleTextEffectPresets[currentIndex]) currentIndex = 0;
                 }
-            } else if (type === 'font-size') {
-                currentIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
                 const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
                 if (activeBox) {
                     activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
                     activeBox.setAttribute('aria-pressed', 'true');
                 }
-            } else if (type === 'font-family') {
-                currentIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
-                const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
-                if (activeBox) {
-                    activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
-                    activeBox.setAttribute('aria-pressed', 'true');
-                }
-            } else if (type === 'text-effect') {
-                currentIndex = JE.currentSettings.selectedTextEffectPresetIndex;
-                // An unknown index renders as Auto (see JE.getSubtitleTextShadow), so highlight that.
-                if (!Number.isInteger(currentIndex) || !JE.subtitleTextEffectPresets[currentIndex]) currentIndex = 0;
-                const activeBox = container.querySelector(`[data-preset-index="${currentIndex}"]`);
-                if (activeBox) {
-                    activeBox.style.setProperty('border', `2px solid ${primaryAccentColor}`, 'important');
-                    activeBox.setAttribute('aria-pressed', 'true');
-                }
-            }
+            };
+            highlightCurrent();
+            container.closest('[data-setting-key]')?.addEventListener('je:setting-sync', highlightCurrent);
         };
 
         setupPresetHandlers('subtitle-style-presets-container', JE.subtitlePresets, 'style');

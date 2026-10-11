@@ -21,9 +21,16 @@
         // is always versioned (client tag, else the anonymous /version route); without a version it
         // is not loaded at all and saves leave the locks untouched.
         (function () {
+            function showPolicyLoadFailure() {
+                document.querySelectorAll('#jeUserSettingsPolicyStatus').forEach(function (status) {
+                    status.textContent = 'The user settings policy could not be loaded, so locks cannot be changed right now. Saving keeps the current locks.';
+                    status.hidden = false;
+                    status.classList.add('je-policy-status-error');
+                });
+            }
             function loadPolicyScript(version) {
                 if (!version || version === 'unknown') {
-                    window.JellyfinEnhancedAdminPolicyFailed = true;
+                    showPolicyLoadFailure();
                     return;
                 }
                 var src = ApiClient.getUrl('/JellyfinEnhanced/js/admin/user-settings-policy.js', { v: version });
@@ -33,16 +40,12 @@
                 script.async = true;
                 script.setAttribute('data-je-admin-policy', version);
                 script.onerror = function () {
-                    window.JellyfinEnhancedAdminPolicyFailed = true;
-                    var status = document.querySelector('#jeUserSettingsPolicyStatus');
-                    if (status) {
-                        status.textContent = 'The user settings policy could not be loaded, so locks cannot be changed right now. Saving keeps the current locks.';
-                        status.classList.add('je-policy-status-error');
-                    }
+                    // Removed so a later visit to the page tries again.
+                    script.remove();
+                    showPolicyLoadFailure();
                 };
                 document.head.appendChild(script);
             }
-            window.JellyfinEnhancedAdminPolicyFailed = false;
             if (jeCssVersion) {
                 loadPolicyScript(jeCssVersion);
             } else {
@@ -4179,14 +4182,19 @@
                 return JSON.stringify([tagStyles.serialize(), settings.preset, settings.scope]);
             }
 
-            function jeSnapshotFormState() {
+            /**
+             * @param {string} [locks] Lock edits to record instead of the policy table's current
+             *   ones; jeMarkSaved passes '' (a saved state has none), so a lock edit made while
+             *   the save was in flight still counts as unsaved.
+             */
+            function jeSnapshotFormState(locks) {
                 const parts = jeTrackedControls().map(c => c.key + '=' + c.value);
                 // shortcutOverrides is JS state, not bound to persistent <input> elements.
                 parts.push('shortcuts=' + JSON.stringify(shortcutOverrides));
                 // Swapping two MDBList rows with the same on/off state leaves the control walk unchanged.
                 parts.push('mdblistSources=' + jeMdblistSourcesValue());
                 parts.push('tagStyles=' + jeTagStylesValue());
-                parts.push('locks=' + jeUserSettingsPolicyPending());
+                parts.push('locks=' + (typeof locks === 'string' ? locks : jeUserSettingsPolicyPending()));
                 return parts.join('');
             }
 
@@ -4210,24 +4218,24 @@
              * The controls a draft cannot keep (Sonarr/Radarr instance cards, credentials, anything
              * without a unique id) with their values; MDBList toggles are kept through their sources.
              */
-            function jeUndraftableState() {
+            function jeUndraftableState(locks) {
                 const draftable = jeDraftableValues();
                 return jeTrackedControls()
                     .filter(c => !(c.el.id && c.el.id in draftable) && !c.el.classList.contains('je-mdblist-source-toggle'))
                     .map(c => (c.el.name || c.el.className) + '=' + c.value)
-                    .concat(['locks=' + jeUserSettingsPolicyPending()])
+                    .concat(['locks=' + (typeof locks === 'string' ? locks : jeUserSettingsPolicyPending())])
                     .join('\n');
             }
 
             /** Call once the form reflects a known-saved state. */
             function jeMarkSaved() {
-                _jeSavedSnapshot = jeSnapshotFormState();
+                _jeSavedSnapshot = jeSnapshotFormState('');
                 _jeSavedValues = jeDraftableValues();
                 _jeSavedShortcuts = JSON.stringify(shortcutOverrides);
                 _jeSavedMdblist = jeMdblistSourcesValue();
                 _jeSavedCatOrder = JSON.stringify(jeQualityCatOrder());
                 _jeSavedTagStyles = jeTagStylesValue();
-                _jeSavedUndraftable = jeUndraftableState();
+                _jeSavedUndraftable = jeUndraftableState('');
                 jeUpdateDirtyIndicator();
             }
 
@@ -8132,6 +8140,10 @@
                     // First, save the current configuration
                     const config = await buildConfigFromForm();
                     await ApiClient.updatePluginConfiguration(pluginId, config);
+                    const savedPolicy = window.JellyfinEnhancedAdminPolicy;
+                    if (savedPolicy && savedPolicy.ready === true && typeof savedPolicy.markSaved === 'function') {
+                        savedPolicy.markSaved(config.LockedUserSettings);
+                    }
                     jeMarkSaved();
                     jeDiscardDraft();
 
