@@ -11077,6 +11077,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     startDate, endDate, shokoIncludedTypes, ParseDate, ct)
                 : null;
 
+            // CalendarForceOnlyRequested is enforced here for every caller, so a direct API call
+            // cannot get past it. Membership comes from Seerr, fetched alongside the arr calendars.
+            var requestedKeysTask = config.CalendarForceOnlyRequested
+                ? GetCallerRequestedMediaKeysAsync(config, ct)
+                : null;
+
             var sonarrCalResults = await Task.WhenAll(sonarrTasks);
             var radarrCalResults = await Task.WhenAll(radarrTasks);
             var shokoCalResult = shokoTask != null ? await shokoTask : (Items: new List<ArrItem>(), Error: null);
@@ -11286,7 +11292,108 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }).ToList();
             }
 
+            if (requestedKeysTask != null)
+            {
+                var requestedKeys = await requestedKeysTask;
+                events = events.Where(e => CalendarRequestKey(e) is string key && requestedKeys.Contains(key)).ToList();
+            }
+
             return Ok(new { events, errors });
+        }
+
+        /// <summary>
+        /// The key the calendar page matches a request to an event with: "tv:{tmdbId}" for
+        /// series, "movie:{tmdbId}" otherwise. Null without a TMDB id (such events are never
+        /// "requested", e.g. Shoko episodes).
+        /// </summary>
+        internal static string? CalendarRequestKey(ArrItem evt)
+        {
+            if (evt.TmdbId is not int tmdbId || tmdbId == 0)
+                return null;
+            return (evt.Type == "Series" ? "tv:" : "movie:") + tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// The calling user's own Seerr requests as calendar request keys (the set the calendar
+        /// page builds from arr/requests?userOnly=true). Empty when Seerr is off, the user is not
+        /// linked or Seerr cannot be read, so a forced calendar then shows nothing, as the page does.
+        /// </summary>
+        private async Task<HashSet<string>> GetCallerRequestedMediaKeysAsync(PluginConfiguration config, CancellationToken ct)
+        {
+            var keys = new HashSet<string>(StringComparer.Ordinal);
+            try
+            {
+                if (!config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
+                    return keys;
+
+                var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
+                if (string.IsNullOrEmpty(jellyfinUserId))
+                    return keys;
+
+                var seerrUser = await GetJellyseerrUser(jellyfinUserId);
+                if (seerrUser == null)
+                    return keys;
+
+                var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(u => u.Trim().TrimEnd('/'))
+                    .Where(u => !string.IsNullOrWhiteSpace(u))
+                    .ToList();
+                var client = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+                client.Timeout = TimeSpan.FromSeconds(15);
+
+                // Same paging as the page (it keeps asking until every page is read), bounded.
+                const int pageSize = 500;
+                const int maxPages = 20;
+                foreach (var url in urls)
+                {
+                    var urlKeys = new HashSet<string>(StringComparer.Ordinal);
+                    var complete = false;
+                    for (var page = 0; page < maxPages; page++)
+                    {
+                        var uri = $"{url}/api/v1/request?take={pageSize}&skip={page * pageSize}&requestedBy={seerrUser.Id}";
+                        using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, uri, config.JellyseerrApiKey);
+                        using var response = await client.SendAsync(request, ct);
+                        var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, uri, ct);
+                        if (error != null || json == null)
+                        {
+                            _logger.Warning($"Calendar requested-only: Seerr requests fetch failed at {url}: {error?.Code} {error?.HttpStatus}");
+                            break;
+                        }
+
+                        var data = JObject.Parse(json);
+                        var results = data["results"] as JArray;
+                        foreach (var req in results ?? new JArray())
+                        {
+                            var type = req["type"]?.Value<string>()?.ToLowerInvariant();
+                            var tmdbId = req["media"]?["tmdbId"]?.Value<int?>();
+                            if (!string.IsNullOrEmpty(type) && tmdbId is int id && id != 0)
+                                urlKeys.Add(type + ":" + id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                        }
+
+                        var total = data["pageInfo"]?["results"]?.Value<int?>() ?? 0;
+                        if (results == null || results.Count == 0 || (page + 1) * pageSize >= total)
+                        {
+                            complete = true;
+                            break;
+                        }
+                    }
+
+                    if (complete)
+                        return urlKeys;
+                    if (urlKeys.Count > 0)
+                    {
+                        // Paging stopped early (cap or a failed later page): keep what was read.
+                        _logger.Warning($"Calendar requested-only: read {urlKeys.Count} requested items from {url} before stopping.");
+                        return urlKeys;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Calendar requested-only: could not read Seerr requests: {ex.Message}");
+            }
+
+            return keys;
         }
 
         private Task<(List<ArrItem> Items, string? Error)> FetchSonarrCalendar(
