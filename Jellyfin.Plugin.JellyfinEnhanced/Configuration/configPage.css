@@ -632,15 +632,15 @@
 /* ---------------------------------------------------------------------------
    Tab Navigation (sits inside .je-sticky-header which handles pinning)
    --------------------------------------------------------------------------- */
+/* Wraps onto a second row on desktop so every tab stays visible (at 1400 px the strip used to
+   hide Keyboard, Admin and Docs); phones keep the single swipeable strip (see the mobile block). */
 .je-tab-bar {
     display: flex;
+    flex-wrap: wrap;
     gap: 10px;
     padding: 12px 0;
     margin: 0;
     border-bottom: 1px solid var(--je-border);
-    overflow-x: auto;
-    scrollbar-width: none;
-    cursor: grab;
     user-select: none;
 }
 .je-tab-bar::-webkit-scrollbar { display: none; }
@@ -1207,6 +1207,12 @@
     padding: 10px 16px;
     z-index: 2000;
 }
+/* Only while the form has unsaved changes, and never on the read-only Overview and Docs tabs
+   (.je-dock-offtab, set by the page script unless a search shows every tab's settings). */
+.je-save-dock:not(.je-dirty),
+.je-save-dock.je-dock-offtab {
+    display: none;
+}
 .je-save-dock .je-save-dock-btn {
     margin: 0 !important;
     border-radius: 50px !important;
@@ -1552,6 +1558,11 @@
     margin: 0;
     border: 1px solid var(--je-border);
 }
+
+/* Per-user outcome of "Overwrite everyone's personal settings", under Quick Actions. */
+.je-reset-result { margin-top: 12px; }
+.je-reset-result-list { margin: 6px 0 0; padding-left: 18px; }
+.je-reset-result-list li { margin: 2px 0; }
 
 .je-apply-hint {
     text-align: center;
@@ -2103,7 +2114,13 @@ body.je-has-kefintweaks  .je-installed-badge[data-plugin="kefintweaks"]  { displ
         border-right: none;
         border-bottom: 1px solid var(--je-border);
     }
-    .je-tab-bar { padding: 10px 0; }
+    .je-tab-bar {
+        padding: 10px 0;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        scrollbar-width: none;
+        cursor: grab;
+    }
     /* Prefix with #JellyfinEnhancedPage to match the base rule's specificity
        (1,1,0). Class-only selectors (0,1,0) here lose the cascade to the
        prefixed base, leaving desktop padding/grid values stuck on phones. */

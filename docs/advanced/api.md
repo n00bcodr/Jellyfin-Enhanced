@@ -741,5 +741,5 @@ The anonymous `public-config` payload carries `MaintenanceModeEnabled`, `Mainten
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `reset-all-users-settings` | Admin: overwrite every user's settings with the current defaults |
+| POST | `reset-all-users-settings` | Admin: overwrite every user's settings (plus their hidden-content settings and Spoiler Guard preferences) with the current defaults. Returns `status` (`complete`, `partial` or `failed`), `userCount`, `totalUsers`, `failedUserCount`, the skipped id lists (`skippedSettingsUserIds`, `skippedHcUserIds`, `skippedSpoilerUserIds`) and `users`: one entry per user folder with `userId`, `name` (null for a folder with no Jellyfin user), the outcome of each document (`settings`, `hiddenContent`, `spoilerGuard`: `reset`, `failed`, or `none` when there is no Spoiler Guard file) and `failures` (`document`, `reason`: `corrupt`, `unavailable` or `error`) |
 | GET | `{viewName}` | Catch-all: serves a Plugin Pages HTML view by name |

@@ -65,6 +65,25 @@ public class ApiAssetTests
         }
     }
 
+    /// <summary>
+    /// jellyfin-web runs the fetched plugin page through translateHtml, which treats every "${"
+    /// as a translation key, inline scripts included: a template literal there breaks the message
+    /// and logs a console error (design item A8b). Use string concatenation in configPage.html.
+    /// </summary>
+    [Fact]
+    public void ConfigPageHasNoTranslateHtmlPlaceholders()
+    {
+        using var stream = typeof(JellyfinEnhancedController).Assembly.GetManifestResourceStream("Jellyfin.Plugin.JellyfinEnhanced.Configuration.configPage.html");
+        Assert.NotNull(stream);
+        using var reader = new StreamReader(stream);
+        var lines = reader.ReadToEnd().Split('\n');
+        var offending = lines.Select((line, i) => (line, number: i + 1))
+            .Where(l => l.line.Contains("${", StringComparison.Ordinal))
+            .Select(l => l.number + ": " + l.line.Trim())
+            .ToArray();
+        Assert.True(offending.Length == 0, "configPage.html contains \"${\" (translateHtml rewrites it):\n" + string.Join('\n', offending));
+    }
+
     [Theory]
     [InlineData("de-DE", "de")]
     [InlineData("fr-CA", "fr")]

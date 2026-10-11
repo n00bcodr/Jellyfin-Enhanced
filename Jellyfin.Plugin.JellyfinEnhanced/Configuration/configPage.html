@@ -99,6 +99,18 @@
                 </div>
             </div>
 
+            <div id="je-draft-restore-banner" class="je-note-banner" style="display: none;" role="status" aria-live="polite">
+                <i class="material-icons je-note-icon">restore</i>
+                <div>
+                    <strong>Unsaved changes from your last visit</strong>
+                    <span id="je-draft-restore-msg"></span>
+                    <div style="margin-top:8px;">
+                        <button id="je-draft-restore-btn" type="button" class="emby-button raised raised-mini">Restore</button>
+                        <button id="je-draft-discard-btn" type="button" class="emby-button raised raised-mini">Discard</button>
+                    </div>
+                </div>
+            </div>
+
             <div id="je-host-mismatch-warning" class="je-note-banner" style="display: none;" role="alert">
                 <i class="material-icons je-note-icon">warning_amber</i>
                 <div>
@@ -173,6 +185,7 @@
                                     </div>
                                 </button>
                             </div>
+                            <div id="resetAllUserSettingsResult" class="je-reset-result" role="status" aria-live="polite" style="display: none;"></div>
                         </div>
                     </fieldset>
                 </div>
@@ -3203,19 +3216,6 @@
                             <div class="checkboxContainer"><label><input id="disableAllShortcuts" is="emby-checkbox" type="checkbox"/><span>Disable Keyboard Shortcuts</span></label></div>
                             <div class="je-setting-description" data-desc-for="disableAllShortcuts">
                                 <div class="fieldDescription">Disables all keyboard shortcuts, and hides the 'Shortcuts' tab in the Jellyfin Enhanced panel</div>
-                                <div class="je-info-banner">
-                                <div class="je-info-banner-row">
-                                <i class="material-icons je-info-icon">info</i>
-                                <div>
-                                <strong>This will save the current configuration and apply all the above settings to every user on this server.</strong><br/>
-                                <strong>Note:</strong> Users can individually customize their own settings by opening the Jellyfin Enhanced panel:<br/>
-                                • Press <code>?</code> key (default shortcut)<br/>
-                                • Long Press on user profile picture in the top-right corner<br/>
-                                • Through "Jellyfin Enhanced" link from the side bar<br/>
-                                • Access via playback controls menu during video playback (only on mobile devices)
-                            </div>
-                                </div>
-                                </div>
                             </div>
                             <hr style="border:0; border-top: 1px solid rgba(255,255,255,0.05); margin: 5px 0;">
 
@@ -3452,6 +3452,18 @@
                 }
             }
 
+            /**
+             * Hides the Save dock on the read-only Overview and Docs tabs, except while a search
+             * shows settings from every tab. Visibility otherwise follows .je-dirty (CSS).
+             */
+            function jeSyncSaveDockPlacement() {
+                const dock = form.querySelector('.je-save-dock');
+                if (!dock) return;
+                const active = form.querySelector('.jellyfin-tab-content.active');
+                const readOnly = !!active && (active.id === 'overview' || active.id === 'docs');
+                dock.classList.toggle('je-dock-offtab', readOnly && !form.classList.contains('je-search-mode'));
+            }
+
             function activateTab(tabId) {
                 if (_jePrevTabId && _jePrevTabId !== tabId) {
                     _jeTabScroll[_jePrevTabId] = _jeGetScrollTop();
@@ -3483,6 +3495,7 @@
                 const saved = _jeTabScroll[tabId];
                 requestAnimationFrame(() => _jeSetScrollTop(saved || 0));
                 _jePrevTabId = tabId;
+                jeSyncSaveDockPlacement();
                 // Lazy-load the Docs iframe the first time the user opens
                 // the Docs tab. Using `about:blank` as the initial src
                 // prevents the GitHub Pages fetch for admins who never
@@ -3898,6 +3911,7 @@
                 if (isSearchMode) return;
                 isSearchMode = true;
                 form.classList.add('je-search-mode');
+                jeSyncSaveDockPlacement();
                 form.querySelectorAll('details').forEach(d => {
                     savedDetailsStates.set(d, d.open);
                 });
@@ -4057,30 +4071,62 @@
             // Unsaved-changes indicator: diffs a snapshot of every form control against the last saved snapshot.
             const saveDock = document.querySelector('.je-save-dock');
             let _jeSavedSnapshot = null;
+            // id -> value at the last saved state, for the unsaved-changes draft below.
+            let _jeSavedValues = null;
+            let _jeSavedShortcuts = null;
 
-            function jeSnapshotFormState() {
-                const parts = [];
+            /** Every form control the dirty check compares, as { key, value, el }. */
+            function jeTrackedControls() {
+                const controls = [];
                 form.querySelectorAll('input, select, textarea').forEach((el, i) => {
                     if (el.type === 'file') return; // can't be read back, and not part of the saved config shape
                     if (el.closest('.je-arr-seerr-import-picker')) return; // transient browsing state, not a form change until actually imported
                     if (el.closest('.je-spoiler-apply-existing')) return; // per-run option of an action, not a saved setting
-                    const key = el.id || el.name || ('#' + i);
-                    parts.push(key + '=' + (el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value));
+                    controls.push({ key: el.id || el.name || ('#' + i), value: el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value, el: el });
                 });
+                return controls;
+            }
+
+            function jeSnapshotFormState() {
+                const parts = jeTrackedControls().map(c => c.key + '=' + c.value);
                 // shortcutOverrides is JS state, not bound to persistent <input> elements.
                 parts.push('shortcuts=' + JSON.stringify(shortcutOverrides));
                 return parts.join('');
             }
 
+            /**
+             * Values of the tracked controls that have a unique id (the only ones a draft can restore).
+             * Credentials (API keys, tokens, passwords) are left out so they never reach sessionStorage.
+             */
+            function jeDraftableValues() {
+                const values = Object.create(null);
+                const seen = Object.create(null);
+                jeTrackedControls().forEach(c => {
+                    if (!c.el.id || c.el.type === 'password' || /api.?key|token|password|secret/i.test(c.el.id)) return;
+                    seen[c.el.id] = (seen[c.el.id] || 0) + 1;
+                    values[c.el.id] = c.value;
+                });
+                Object.keys(seen).forEach(id => { if (seen[id] > 1) delete values[id]; });
+                return values;
+            }
+
             /** Call once the form reflects a known-saved state. */
             function jeMarkSaved() {
                 _jeSavedSnapshot = jeSnapshotFormState();
+                _jeSavedValues = jeDraftableValues();
+                _jeSavedShortcuts = JSON.stringify(shortcutOverrides);
                 jeUpdateDirtyIndicator();
             }
 
             function jeUpdateDirtyIndicator() {
                 const dirty = _jeSavedSnapshot !== null && jeSnapshotFormState() !== _jeSavedSnapshot;
                 if (saveDock) saveDock.classList.toggle('je-dirty', dirty);
+                jeSyncSaveDockPlacement();
+            }
+
+            function jeIsDirty() {
+                jeUpdateDirtyIndicator();
+                return !!(saveDock && saveDock.classList.contains('je-dirty'));
             }
 
             form.addEventListener('input', jeUpdateDirtyIndicator);
@@ -4093,6 +4139,134 @@
                 e.preventDefault();
                 e.returnValue = '';
             });
+
+            // ── Unsaved changes across in-app navigation (best effort) ──────────────
+            // jellyfin-web cannot cancel a view change (viewbeforehide's result is ignored, and on
+            // React routes it fires after the route changed), and browser Back cannot be blocked.
+            // So: confirm on in-app link clicks while dirty, and keep the edits as a draft in
+            // sessionStorage that the next visit offers to restore.
+            const JE_DRAFT_KEY = 'jellyfinEnhancedConfigDraft';
+            let _jeDraftOffer = null;
+
+            /** Stores the changed controls (by id) and shortcut edits as this tab's draft. */
+            function jeStashDraft() {
+                if (!_jeSavedValues || !page.isConnected || !jeIsDirty()) return;
+                const current = jeDraftableValues();
+                const fields = {};
+                Object.keys(current).forEach(id => {
+                    if (id in _jeSavedValues && current[id] !== _jeSavedValues[id]) fields[id] = current[id];
+                });
+                const shortcuts = JSON.stringify(shortcutOverrides) !== _jeSavedShortcuts ? shortcutOverrides : null;
+                if (!Object.keys(fields).length && !shortcuts) return;
+                try {
+                    sessionStorage.setItem(JE_DRAFT_KEY, JSON.stringify({ savedAt: Date.now(), fields: fields, shortcuts: shortcuts }));
+                } catch (e) {
+                    console.warn('[JE] could not keep unsaved changes as a draft:', e);
+                }
+            }
+
+            /** Drops the stored draft and hides the restore offer (after a save, or when declined). */
+            function jeDiscardDraft() {
+                _jeDraftOffer = null;
+                try { sessionStorage.removeItem(JE_DRAFT_KEY); } catch (e) { /* storage unavailable */ }
+                const banner = document.getElementById('je-draft-restore-banner');
+                if (banner) banner.style.display = 'none';
+            }
+
+            /** After loadConfig: offers a draft left by the previous visit, if it still changes anything. */
+            function jeOfferDraftRestore() {
+                let draft = null;
+                try { draft = JSON.parse(sessionStorage.getItem(JE_DRAFT_KEY) || 'null'); } catch (e) { draft = null; }
+                try { sessionStorage.removeItem(JE_DRAFT_KEY); } catch (e) { /* storage unavailable */ }
+                const banner = document.getElementById('je-draft-restore-banner');
+                const msg = document.getElementById('je-draft-restore-msg');
+                if (!banner || !msg || !draft || typeof draft.fields !== 'object' || !draft.fields) {
+                    if (banner && !_jeDraftOffer) banner.style.display = 'none';
+                    return;
+                }
+                const current = jeDraftableValues();
+                const ids = Object.keys(draft.fields).filter(id => id in current && current[id] !== draft.fields[id]);
+                const shortcuts = Array.isArray(draft.shortcuts) && JSON.stringify(draft.shortcuts) !== JSON.stringify(shortcutOverrides) ? draft.shortcuts : null;
+                const count = ids.length + (shortcuts ? 1 : 0);
+                if (!count) return;
+                _jeDraftOffer = { ids: ids, fields: draft.fields, shortcuts: shortcuts };
+                const when = new Date(draft.savedAt || Date.now());
+                // Name the tabs the changes are on, so the admin knows where to review them.
+                const tabIds = ids.map(id => {
+                    const tab = form.querySelector('#' + CSS.escape(id));
+                    const content = tab && tab.closest('.jellyfin-tab-content');
+                    return content ? content.id : null;
+                }).concat(shortcuts ? ['keyboard'] : []);
+                const tabNames = tabIds.filter((t, i) => t && tabIds.indexOf(t) === i).map(t => {
+                    const btn = document.querySelector('.jellyfin-tab-button[data-tab="' + t + '"]');
+                    if (!btn) return t;
+                    const clone = btn.cloneNode(true);
+                    clone.querySelectorAll('i.material-icons, img').forEach(el => el.remove());
+                    return clone.textContent.trim() || t;
+                });
+                msg.textContent = ' You left this page at ' + when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' with ' + count
+                    + (count === 1 ? ' unsaved change' : ' unsaved changes') + (tabNames.length ? ' (' + tabNames.join(', ') + ')' : '')
+                    + '. Restore to review and save ' + (count === 1 ? 'it' : 'them') + ', or discard.';
+                banner.style.display = '';
+            }
+
+            /** Applies the offered draft to the form; the admin still has to save. */
+            function jeRestoreDraft() {
+                const offer = _jeDraftOffer;
+                jeDiscardDraft();
+                if (!offer) return;
+                offer.ids.forEach(id => {
+                    const el = form.querySelector('#' + CSS.escape(id));
+                    if (!el) return;
+                    const value = offer.fields[id];
+                    if (el.type === 'checkbox' || el.type === 'radio') el.checked = value === true;
+                    else el.value = value;
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+                if (offer.shortcuts) {
+                    shortcutOverrides = offer.shortcuts;
+                    renderOverrides();
+                }
+                jeUpdateDirtyIndicator();
+            }
+
+            (function wireDraftRestoreBanner() {
+                const restoreBtn = document.getElementById('je-draft-restore-btn');
+                const discardBtn = document.getElementById('je-draft-discard-btn');
+                if (restoreBtn) restoreBtn.addEventListener('click', jeRestoreDraft);
+                if (discardBtn) discardBtn.addEventListener('click', jeDiscardDraft);
+            })();
+
+            page.addEventListener('viewbeforehide', jeStashDraft);
+            // React routes (the 12.x dashboard) may not raise viewbeforehide before the page goes,
+            // so also stash when the hash leaves this page, and on reload or tab close.
+            window.addEventListener('hashchange', () => {
+                if (!/configurationpage\?(.*&)?name=Jellyfin(%20|\+| )Enhanced/i.test(location.hash)) jeStashDraft();
+            });
+            window.addEventListener('pagehide', jeStashDraft);
+
+            /**
+             * Capture-phase guard for in-app links (drawer, header, dashboard links) while the form
+             * is dirty: asks first, and cancels the click before jellyfin-web's router sees it.
+             * One listener per document; a re-created page replaces the previous one.
+             */
+            function jeGuardInAppLinks(e) {
+                if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                if (!page.isConnected || !page.getClientRects().length) return;
+                const link = e.target && e.target.closest ? e.target.closest('a[href^="#/"], a[href^="#!/"], .headerBackButton, .headerHomeButton') : null;
+                if (!link || link.target === '_blank' || !jeIsDirty()) return;
+                if (window.confirm('You have unsaved Jellyfin Enhanced changes. Leave this page anyway?\n\nThey are kept for this browser tab and offered again when you come back.')) {
+                    jeStashDraft();
+                    return;
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+            }
+            if (window.__jeConfigLinkGuard) document.removeEventListener('click', window.__jeConfigLinkGuard, true);
+            window.__jeConfigLinkGuard = jeGuardInAppLinks;
+            document.addEventListener('click', jeGuardInAppLinks, true);
 
         const defaultShortcuts = [
             { Name: "OpenSearch", Key: "/", Label: "Open Search", Category: "Global" },
@@ -4253,7 +4427,7 @@
                         break;
                     }
                 } catch (e) {
-                    console.error(`Seerr validation failed for ${url}:`, e);
+                    console.error('Seerr validation failed for ' + url + ':', e);
                     // Jellyfin's ApiClient.ajax rejects with the Response object
                     // (modern fetch), which doesn't expose responseText/responseJSON.
                     // Read the body asynchronously so connectionErrorMessage can
@@ -6943,8 +7117,9 @@
                 updateRequestsRequirementsBanner();
 
                 Dashboard.hideLoadingMsg();
-                // Delay so late-finishing sub-populations (maintenance users, branding previews) settle first.
-                setTimeout(jeMarkSaved, 500);
+                // Delay so late-finishing sub-populations (maintenance users, branding previews) settle first,
+                // then offer any unsaved-changes draft left by the previous visit.
+                setTimeout(function () { jeMarkSaved(); jeOfferDraftRestore(); }, 500);
             });
         }
 
@@ -7603,6 +7778,7 @@
                 Dashboard.processPluginConfigurationUpdateResult(result);
                 // The form now is the just-saved state, so re-snapshot immediately.
                 jeMarkSaved();
+                jeDiscardDraft();
                 if (syncResult && syncResult.ok === false) {
                     try {
                         Dashboard.alert({
@@ -7628,6 +7804,75 @@
             return false;
         }
 
+        const JE_RESET_DOCUMENTS = { settings: 'settings', hiddenContent: 'hidden-content settings', spoilerGuard: 'Spoiler Guard preferences' };
+        const JE_RESET_REASONS = { corrupt: 'the file is corrupt and was moved aside', unavailable: 'the file could not be read or written', error: 'unexpected error, see the server log' };
+
+        /**
+         * Shows the per-user outcome of reset-all under Quick Actions (names via textContent) and
+         * returns a short title and message for the alert. Falls back to the old skip lists when
+         * the server sends no per-user results.
+         */
+        function jeRenderResetResult(result) {
+            result = result || {};
+            const total = result.totalUsers || 0;
+            const users = Array.isArray(result.users) ? result.users : null;
+            const lines = [];
+            if (users) {
+                users.filter(function (u) { return u && Array.isArray(u.failures) && u.failures.length; })
+                    // Named users alphabetically, then folders with no Jellyfin user.
+                    .sort(function (a, b) { return (a.name ? 0 : 1) - (b.name ? 0 : 1) || String(a.name || a.userId).localeCompare(String(b.name || b.userId)); })
+                    .forEach(function (u) {
+                        const who = u.name ? u.name : 'Folder with no Jellyfin user (' + u.userId + ')';
+                        const what = u.failures.map(function (f) {
+                            return (JE_RESET_DOCUMENTS[f.document] || f.document) + ' not reset (' + (JE_RESET_REASONS[f.reason] || f.reason) + ')';
+                        });
+                        lines.push(who + ': ' + what.join('; '));
+                    });
+            } else {
+                (result.skippedSettingsUserIds || []).forEach(function (id) { lines.push(id + ': settings not reset'); });
+                (result.skippedHcUserIds || []).forEach(function (id) { lines.push(id + ': hidden-content settings not reset'); });
+            }
+            const failedUsers = users ? (result.failedUserCount || lines.length) : lines.length;
+            const status = result.status || (lines.length ? 'partial' : 'complete');
+
+            const box = document.getElementById('resetAllUserSettingsResult');
+            if (box) {
+                box.textContent = '';
+                box.className = 'je-reset-result ' + (status === 'complete' ? 'je-info-banner' : status === 'failed' ? 'je-danger-banner' : 'je-note-banner');
+                const icon = document.createElement('i');
+                icon.className = 'material-icons ' + (status === 'complete' ? 'je-info-icon' : 'je-note-icon');
+                icon.setAttribute('aria-hidden', 'true');
+                icon.textContent = status === 'complete' ? 'check_circle' : 'warning_amber';
+                const body = document.createElement('div');
+                const head = document.createElement('strong');
+                head.textContent = status === 'complete'
+                    ? (total ? 'Last run: personal settings reset for all ' + total + ' users.' : 'Last run: no user has Jellyfin Enhanced settings yet.')
+                    : 'Last run: personal settings reset for ' + (result.userCount || 0) + ' of ' + total + ' users; ' + failedUsers + (failedUsers === 1 ? ' user was' : ' users were') + ' not fully reset.';
+                body.appendChild(head);
+                if (lines.length) {
+                    const list = document.createElement('ul');
+                    list.className = 'je-reset-result-list';
+                    lines.forEach(function (line) {
+                        const item = document.createElement('li');
+                        item.textContent = line;
+                        list.appendChild(item);
+                    });
+                    body.appendChild(list);
+                }
+                box.appendChild(icon);
+                box.appendChild(body);
+                box.style.display = '';
+            }
+
+            if (status === 'complete') {
+                return { title: 'Success', message: (total ? 'Configuration saved and applied to all ' + total + ' users.' : 'Configuration saved. No user has Jellyfin Enhanced settings yet, so there was nothing to reset.') + '\n\nSettings will take effect after users refresh their browsers.' };
+            }
+            return {
+                title: status === 'failed' ? 'Reset failed' : 'Partly applied',
+                message: 'Configuration saved. Personal settings were reset for ' + (result.userCount || 0) + ' of ' + total + ' users, but ' + failedUsers + (failedUsers === 1 ? ' user was' : ' users were') + ' not fully reset. The users and reasons are listed under Quick Actions.'
+            };
+        }
+
         // Saves current config and applies it to all users
         async function resetAllUserSettings() {
             if (confirm("Are you sure?\n\nThis saves the current configuration, then copies these Display/Playback/etc. values into every user's Jellyfin Enhanced panel settings, replacing anything they've customized for themselves. This cannot be undone per-user; each user would have to re-apply their own preferences afterward.")) {
@@ -7637,24 +7882,26 @@
                     const config = await buildConfigFromForm();
                     await ApiClient.updatePluginConfiguration(pluginId, config);
                     jeMarkSaved();
+                    jeDiscardDraft();
 
                     // Sync managed Custom Tabs entries — same flow as a normal save,
                     // so "Apply to all users" doesn't silently skip the side-effect.
                     const syncResult = await runCustomTabsSync(config);
 
                     // Then reset all user settings to match the saved config
-                    await ApiClient.ajax({
+                    const result = await ApiClient.ajax({
                         type: 'POST',
                         url: ApiClient.getUrl('/JellyfinEnhanced/reset-all-users-settings'),
                         dataType: 'json'
                     });
 
                     Dashboard.hideLoadingMsg();
-                    let msg = 'Configuration saved and applied to all users successfully!\n\nSettings will take effect after users refresh their browsers.';
+                    const summary = jeRenderResetResult(result);
+                    let msg = summary.message;
                     if (syncResult && syncResult.ok === false) {
                         msg += '\n\n(Custom Tabs sync did not complete: ' + (syncResult.detail || 'see console') + ')';
                     }
-                    Dashboard.alert({ title: 'Success', message: msg });
+                    Dashboard.alert({ title: summary.title, message: msg });
                 } catch (e) {
                     Dashboard.hideLoadingMsg();
                     console.error('Failed to save and apply settings:', e);
@@ -7902,7 +8149,7 @@
 
             const maxFileSize = 10 * 1024 * 1024; // 10MB
             if (file.size > maxFileSize) {
-                statusDiv.textContent = `✗ File too large (max ${maxFileSize / (1024 * 1024)}MB)`;
+                statusDiv.textContent = '✗ File too large (max ' + (maxFileSize / (1024 * 1024)) + 'MB)';
                 statusDiv.style.color = '#ff6b6b';
                 return;
             }
@@ -7923,7 +8170,7 @@
                     const img = new Image();
                     img.onload = function() {
                         if (dimensionsDiv) {
-                            dimensionsDiv.textContent = `${img.width} × ${img.height}px`;
+                            dimensionsDiv.textContent = img.width + ' × ' + img.height + 'px';
                             dimensionsDiv.style.display = 'block';
                         }
                         URL.revokeObjectURL(objectUrl);
@@ -7960,12 +8207,12 @@
                     setTimeout(() => { statusDiv.textContent = ''; }, 3000);
                 } else {
                     const error = await response.text();
-                    statusDiv.textContent = `✗ ${error || 'Upload failed'}`;
+                    statusDiv.textContent = '✗ ' + (error || 'Upload failed');
                     statusDiv.style.color = '#ff6b6b';
                 }
             } catch (error) {
                 console.error('Upload exception:', error);
-                statusDiv.textContent = `✗ ${error.message || 'Upload error'}`;
+                statusDiv.textContent = '✗ ' + (error.message || 'Upload error');
                 statusDiv.style.color = '#ff6b6b';
             }
         }
@@ -8044,11 +8291,11 @@
                     setTimeout(() => { statusDiv.textContent = ''; }, 2000);
                 } else {
                     const error = await response.text();
-                    statusDiv.textContent = `✗ ${error || 'Delete failed'}`;
+                    statusDiv.textContent = '✗ ' + (error || 'Delete failed');
                     statusDiv.style.color = '#ff6b6b';
                 }
             } catch (err) {
-                statusDiv.textContent = `✗ ${err.message || 'Delete error'}`;
+                statusDiv.textContent = '✗ ' + (err.message || 'Delete error');
                 statusDiv.style.color = '#ff6b6b';
             }
         }
@@ -8108,7 +8355,7 @@
                     if (!displayName && code.includes('-')) {
                         const baseName = cultureMap[code.split('-')[0].toLowerCase()]?.DisplayName;
                         displayName = baseName && localeSet.has(code.split('-')[0].toLowerCase())
-                            ? `${baseName} (${code.split('-')[1]})`
+                            ? baseName + ' (' + code.split('-')[1] + ')'
                             : baseName;
                     }
                     return { code, displayName: displayName || code };
@@ -11337,14 +11584,14 @@
                     if (parts.length >= 2 && parts[0] && parts[1]) {
                         validLinks.push({ name: parts[0], icon: parts[1] });
                     } else {
-                        invalidLines.push(`Line ${index + 1}: "${trimmedLine}"`);
+                        invalidLines.push('Line ' + (index + 1) + ': "' + trimmedLine + '"');
                     }
                 });
 
                 if (invalidLines.length > 0) {
                     Dashboard.alert({
                         title: 'Invalid Format',
-                        message: `The following lines have invalid format:\n\n${invalidLines.join('\n')}\n\nPlease use the format: Configuration Page Name | icon_name`
+                        message: 'The following lines have invalid format:\n\n' + invalidLines.join('\n') + '\n\nPlease use the format: Configuration Page Name | icon_name'
                     });
                     return;
                 }

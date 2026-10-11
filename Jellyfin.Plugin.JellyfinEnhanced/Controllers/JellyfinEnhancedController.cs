@@ -7910,10 +7910,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var userCount = 0;
             var skippedSettings = new System.Collections.Generic.List<string>();
             var skippedHc = new System.Collections.Generic.List<string>();
+            var skippedSpoiler = new System.Collections.Generic.List<string>();
+            var results = new System.Collections.Generic.List<ResetUserResult>();
             // Get all user IDs from the UserConfigurationManager's known users
             var userIds = _userConfigurationManager.GetAllUserIds();
+            // Names for the result only. The directory walk above stays the source of who gets
+            // reset (#159); live users come through the GetAllUsers shim (#626), and a failure
+            // there only costs the names.
+            var liveNames = LiveUserNamesById();
             foreach (var userId in userIds)
             {
+                var result = new ResetUserResult
+                {
+                    UserId = userId,
+                    Name = liveNames.TryGetValue(userId, out var name) ? name : null,
+                };
+                results.Add(result);
+
                 try
                 {
                     // Same per-file lock as the settings POST and the first-access seed.
@@ -7922,11 +7935,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
                     }
                     userCount++;
+                    result.Settings = ResetOutcomeReset;
                 }
                 catch (Exception ex)
                 {
                     _logger.Warning($"Skipping settings.json reset for {ResolveUserDisplay(userId)}: {ex.Message}");
                     skippedSettings.Add(userId);
+                    result.Fail("settings", ex);
                 }
 
                 // Push HC Settings only — user's Items dict is data, not a default. Per-user errors are skipped, not fatal.
@@ -7938,14 +7953,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             hc.Settings = BuildHcDefaultSettings(defaultConfig);
                             return 1;
                         });
+                    result.HiddenContent = ResetOutcomeReset;
                 }
-                catch (Exception ex) when (ex is InvalidDataException
-                                        || ex is Newtonsoft.Json.JsonException
-                                        || ex is IOException
-                                        || ex is UnauthorizedAccessException)
+                catch (Exception ex)
                 {
                     _logger.Warning($"Skipping HC settings reset for {ResolveUserDisplay(userId)}: {ex.Message}");
                     skippedHc.Add(userId);
+                    result.Fail("hiddenContent", ex);
                 }
 
                 // Spoiler Guard: reset only the settings-like override Prefs to
@@ -7963,18 +7977,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 sb.Prefs = new SpoilerBlurUserPrefs();
                                 return 1;
                             });
+                        result.SpoilerGuard = ResetOutcomeReset;
                     }
                 }
-                catch (Exception ex) when (ex is InvalidDataException
-                                        || ex is Newtonsoft.Json.JsonException
-                                        || ex is IOException
-                                        || ex is UnauthorizedAccessException)
+                catch (Exception ex)
                 {
                     _logger.Warning($"Skipping Spoiler Guard prefs reset for {ResolveUserDisplay(userId)}: {ex.Message}");
+                    skippedSpoiler.Add(userId);
+                    result.Fail("spoilerGuard", ex);
                 }
             }
 
-            _logger.Info($"Reset settings for {userCount}/{userIds.Count()} users to plugin defaults. Skipped settings: {skippedSettings.Count}, skipped HC: {skippedHc.Count}.");
+            var failedUsers = results.Count(r => r.Failures.Count > 0);
+            var anyReset = results.Any(r => r.Settings == ResetOutcomeReset
+                                         || r.HiddenContent == ResetOutcomeReset
+                                         || r.SpoilerGuard == ResetOutcomeReset);
+            // "complete": every document reset; "partial": some users or documents failed;
+            // "failed": nothing was reset although there were users. `success` keeps its old
+            // meaning (the request ran) so existing callers are unaffected.
+            var status = failedUsers == 0 ? "complete" : anyReset ? "partial" : "failed";
+            _logger.Info($"Reset settings for {userCount}/{userIds.Count()} users to plugin defaults. Skipped settings: {skippedSettings.Count}, skipped HC: {skippedHc.Count}, skipped Spoiler Guard: {skippedSpoiler.Count}.");
             return Ok(new
             {
                 success = true,
@@ -7982,7 +8004,85 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 totalUsers = userIds.Count(),
                 skippedSettingsUserIds = skippedSettings,
                 skippedHcUserIds = skippedHc,
+                status,
+                failedUserCount = failedUsers,
+                skippedSpoilerUserIds = skippedSpoiler,
+                users = results,
             });
+        }
+
+        private const string ResetOutcomeReset = "reset";
+
+        /// <summary>
+        /// One user's outcome in the reset-all response. Each document is "reset" or "failed";
+        /// <see cref="SpoilerGuard"/> is "none" when the user has no Spoiler Guard file (it is
+        /// never created by a reset). <see cref="Name"/> is null for a directory with no live user.
+        /// </summary>
+        private sealed class ResetUserResult
+        {
+            [JsonPropertyName("userId")]
+            public string UserId { get; set; } = string.Empty;
+
+            [JsonPropertyName("name")]
+            public string? Name { get; set; }
+
+            [JsonPropertyName("settings")]
+            public string Settings { get; set; } = "failed";
+
+            [JsonPropertyName("hiddenContent")]
+            public string HiddenContent { get; set; } = "failed";
+
+            [JsonPropertyName("spoilerGuard")]
+            public string SpoilerGuard { get; set; } = "none";
+
+            [JsonPropertyName("failures")]
+            public System.Collections.Generic.List<ResetFailure> Failures { get; } = new();
+
+            /// <summary>Records a failed document with a coarse reason; the exception text stays in the log.</summary>
+            public void Fail(string document, Exception ex)
+            {
+                switch (document)
+                {
+                    case "settings": Settings = "failed"; break;
+                    case "hiddenContent": HiddenContent = "failed"; break;
+                    default: SpoilerGuard = "failed"; break;
+                }
+                var reason = ex is InvalidDataException || ex is Newtonsoft.Json.JsonException ? "corrupt"
+                    : ex is IOException || ex is UnauthorizedAccessException ? "unavailable"
+                    : "error";
+                Failures.Add(new ResetFailure { Document = document, Reason = reason });
+            }
+        }
+
+        /// <summary>A document that reset-all could not write for one user.</summary>
+        private sealed class ResetFailure
+        {
+            [JsonPropertyName("document")]
+            public string Document { get; set; } = string.Empty;
+
+            [JsonPropertyName("reason")]
+            public string Reason { get; set; } = string.Empty;
+        }
+
+        /// <summary>
+        /// Live Jellyfin user names keyed by the canonical (dashless) id, through the
+        /// <see cref="UserManagerExtensions.GetAllUsers"/> shim. Empty when listing fails.
+        /// </summary>
+        private Dictionary<string, string> LiveUserNamesById()
+        {
+            var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (var user in _userManager.GetAllUsers() ?? Enumerable.Empty<Jellyfin.Database.Implementations.Entities.User>())
+                {
+                    if (user != null) names[user.Id.ToString("N")] = user.Username;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not list Jellyfin users for the reset results: {ex.Message}");
+            }
+            return names;
         }
 
         /// <summary>
