@@ -225,6 +225,65 @@ test('a revisit whose registry request fails leaves the locks alone, whatever th
   assert.deepEqual(h.policy.applyLocks(['AutoPipEnabled']), ['AutoPipEnabled']);
 });
 
+test('a failed save built from the table is never confirmed by a later save that left the locks alone', async t => {
+  const settle = async () => { for (let i = 0; i < 3; i++) await new Promise(resolve => setTimeout(resolve, 0)); };
+  let fail = false;
+  let gate = null;
+  const h = setup(t, { ajax: async (request) => {
+    h.requests.push(request.url);
+    if (gate) await gate.promise;
+    if (fail) throw new Error('offline');
+    return structuredClone(registryDefault);
+  } });
+  h.window.console.warn = () => {};
+  await h.policy.decorate(h.page);
+  h.tick('AutoPipEnabled');
+  const failedSave = { LockedUserSettings: [] };
+  assert.equal(h.applyLocks(failedSave), true); // updatePluginConfiguration then rejects: no markSaved
+  h.tick('ShowFileSizes'); // abandoned with the visit, like every other unsaved field
+
+  // The revisit's reload fails; a save meanwhile leaves the locks alone and its markSaved is a no-op.
+  fail = true;
+  assert.equal(await h.policy.decorate(h.page), false);
+  fail = false;
+  const notReadySave = { LockedUserSettings: ['GenreTagsEnabled'] };
+  assert.equal(h.applyLocks(notReadySave), false);
+  const requestsBefore = h.requests.length;
+  h.policy.markSaved(notReadySave.LockedUserSettings);
+  await settle();
+  assert.equal(h.requests.length, requestsBefore, 'no reload started from the failed save');
+  assert.equal(h.policy.ready, false);
+  // The next pageshow resets both abandoned ticks.
+  assert.equal(await h.policy.decorate(h.page), true);
+  assert.equal(h.policy.pendingState(), '');
+
+  // Same with a pageshow reload still in flight: it is not replaced, and the abandoned tick is dropped.
+  h.tick('AutoPipEnabled');
+  assert.ok(Array.isArray(h.policy.applyLocks([]))); // a save that fails
+  h.tick('ShowFileSizes');
+  gate = deferred();
+  const reload = h.policy.decorate(h.page);
+  const duringReload = { LockedUserSettings: [] };
+  assert.equal(h.applyLocks(duringReload), false);
+  const requestsDuring = h.requests.length;
+  h.policy.markSaved(duringReload.LockedUserSettings);
+  gate.resolve();
+  assert.equal(await reload, true);
+  await settle();
+  assert.equal(h.requests.length, requestsDuring);
+  assert.equal(h.policy.ready, true);
+  assert.equal(h.row('ShowFileSizes').querySelector('input').checked, false);
+  assert.equal(h.policy.pendingState(), '');
+
+  // A copy of a built list does not count either; only the list applyLocks returned for the save does.
+  h.tick('AutoPipEnabled');
+  const built = h.policy.applyLocks([]);
+  h.policy.markSaved(built.slice());
+  assert.equal(h.policy.pendingState(), 'AutoPipEnabled=true');
+  h.policy.markSaved(built);
+  assert.equal(h.policy.pendingState(), '');
+});
+
 test('a lock edited while a save is in flight is kept as an unsaved edit after the save', async t => {
   let answer = registryDefault;
   const h = setup(t, { ajax: async () => structuredClone(answer) });

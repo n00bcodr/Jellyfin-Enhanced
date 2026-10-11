@@ -27,7 +27,7 @@
         run: 0,              // decoration sequence; only the latest one renders
         changes: 0,          // admin edits to lock checkboxes, counted
         changedAt: new Map(), // key -> value of `changes` at its last edit
-        submitted: null      // value of `changes` when applyLocks() last built a save
+        submitted: null      // { changes, locks }: the edit counter and the list when applyLocks() last built a save
     };
 
     const api = {
@@ -451,7 +451,6 @@
      */
     function applyLocks(fetched) {
         if (!api.ready) return null;
-        state.submitted = state.changes;
         const rendered = new Map();
         state.byKey.forEach((item, key) => {
             if (item.checkbox && item.checkbox.isConnected) rendered.set(key.toLowerCase(), item);
@@ -459,6 +458,7 @@
         const result = (Array.isArray(fetched) ? fetched : [])
             .filter(entry => typeof entry === 'string' && !rendered.has(entry.toLowerCase()));
         rendered.forEach((item) => { if (item.checkbox.checked) result.push(item.entry.Key); });
+        state.submitted = { changes: state.changes, locks: result };
         return result;
     }
 
@@ -479,15 +479,16 @@
      * Called by the page after a successful save: the saved locks become the baseline, then the
      * registry is read again (saved defaults and reach may have changed). Lock edits made after
      * applyLocks() built the save (while it was in flight) were not saved and stay as edits.
-     * Does nothing unless applyLocks() built a save since the last markSaved(): a save made while
-     * not ready left the locks alone, and a reload still in flight keeps the edits made during it.
+     * Does nothing unless `locked` is the very list the latest applyLocks() returned: a save made
+     * while not ready left the locks alone, a reload still in flight keeps the edits made during
+     * it, and a save built from the table that then failed is never confirmed by a later one.
      * @param {string[]|null|undefined} locked The LockedUserSettings that was saved.
      */
     function markSaved(locked) {
-        if (typeof state.submitted !== 'number') return;
-        const saved = new Set((Array.isArray(locked) ? locked : []).map(entry => String(entry).toLowerCase()));
+        if (!state.submitted || !Array.isArray(locked) || locked !== state.submitted.locks) return;
+        const saved = new Set(locked.map(entry => String(entry).toLowerCase()));
         state.baseline = new Set(Array.from(state.byKey.keys()).filter(key => saved.has(key.toLowerCase())));
-        const keepAfter = state.submitted;
+        const keepAfter = state.submitted.changes;
         state.submitted = null;
         refresh();
         if (state.page) decorate(state.page, keepAfter);
