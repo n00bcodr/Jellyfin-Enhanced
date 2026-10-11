@@ -115,6 +115,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             PeopleTagsEnabled = false;
             NativePosterTagsEnabled = false;
             NativePosterTagsWebClientNames = string.Empty;
+            TagStyleOverrides = string.Empty;
+            TagStyleTarget = "both";
+            TagStylePreset = "default";
+            TagStyleApplyScope = "all";
             TagsCacheTtlDays = 30;
             DisableTagsOnSearchPage = false;
             TagsHideOnHover = false;
@@ -637,6 +641,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// derivation instead, see AnalyticsReportingService.GetStringSettings.
         /// </summary>
         public string NativePosterTagsWebClientNames { get; set; }
+        public bool TagStylesEnabled { get; set; }
+        public string TagStyleOverrides { get; set; }
+        [AnalyticsInclude]
+        public string TagStyleTarget { get; set; }
+        [AnalyticsInclude]
+        public string TagStylePreset { get; set; }
+        [AnalyticsInclude]
+        public string TagStyleApplyScope { get; set; }
         public int TagsCacheTtlDays { get; set; }
         public bool DisableTagsOnSearchPage { get; set; }
         public bool TagsHideOnHover { get; set; }

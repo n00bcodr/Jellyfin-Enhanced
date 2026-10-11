@@ -62,6 +62,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// </summary>
         public string Digest { get; private init; } = string.Empty;
 
+        /// <summary>The admin's colour overrides for native posters (empty unless the target includes native clients).</summary>
+        public TagStyleSet Styles { get; private init; } = TagStyleSet.Empty;
+
         /// <summary>Effective <c>qualityTagsEnabled</c>.</summary>
         public bool QualityTagsEnabled { get; private init; }
 
@@ -327,6 +330,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ShowUserReviews = config.ShowUserReviews,
                 ShowUserRatingOnPosters = config.ShowUserRatingOnPosters,
                 ShowUserRatingDash = config.ShowUserRatingDash,
+                Styles = config.TagStylesEnabled && config.TagStyleTarget is "native" or "both" ? TagStyleSet.Parse(config.TagStyleOverrides) : TagStyleSet.Empty,
             };
 
             return settings with { Digest = settings.ComputeDigest() };
@@ -511,6 +515,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (AgeRatingTagsEnabled)
             {
                 values["ageRating.position"] = AgeRatingTagsPosition;
+            }
+
+            if (!Styles.IsEmpty)
+            {
+                values["style.overrides"] = Styles.Hash;
             }
 
             var canonical = new StringBuilder(512);

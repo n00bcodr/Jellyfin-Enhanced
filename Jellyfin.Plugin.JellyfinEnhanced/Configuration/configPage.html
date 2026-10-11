@@ -469,6 +469,37 @@
                                     </ul>
                                 </div>
                             </div>
+
+                            <div class="checkboxContainer"><label><input id="tagStylesEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Tag Styles</span></label></div>
+                            <div class="je-setting-description" data-desc-for="tagStylesEnabled">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">Change the colours of quality, age rating, rating and genre tags. While off, the tags keep their built-in colours and any custom CSS you use for them keeps working. Edits you made are kept.</div>
+                            </div>
+                            <div id="tagStylesBody">
+                            <div class="selectContainer">
+                                <label class="selectLabel" for="tagStyleTarget">Apply Tag Styles To</label>
+                                <select is="emby-select" id="tagStyleTarget" name="tagStyleTarget" class="emby-select-withcolor emby-select">
+                                    <option value="both">Both (Jellyfin Web and poster images)</option>
+                                    <option value="web">Jellyfin Web only</option>
+                                    <option value="native">Poster images only (apps without web overlays)</option>
+                                </select>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="tagStyleTarget">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">
+                                    <ul style="margin:4px 0 0 20px; padding:0;">
+                                        <li>Jellyfin Web: recolours the overlay tags in the web interface. Only the tags you edit are affected, and they win over any custom CSS colours. Custom CSS that hides or moves tags still works</li>
+                                        <li>Poster images: the colours are drawn into the posters shown by apps that cannot run the web overlays, such as Android TV. Custom CSS can never reach these. Needs Enable Native Poster Tags above, and posters redraw the next time they are viewed</li>
+                                        <li>Each tag keeps its default colours until you change it. Tag size, shape and position are not affected</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div id="tagStyleEditor" class="je-ts-editor">
+                                <div id="tagStylePresets" class="je-ts-presets"></div>
+                                <div id="tagStyleTabs" class="je-ts-tabs" role="tablist"></div>
+                                <div id="tagStyleGrid" class="je-ts-grid"><div class="fieldDescription">Loading tags...</div></div>
+                                <div id="tagStylePanel" class="je-ts-panel" style="display: none;"></div>
+                                <button id="tagStyleResetAll" class="raised emby-button" is="emby-button" type="button"><span>Reset All Tag Styles</span></button>
+                            </div>
+                            </div>
                         </div>
                     </fieldset>
 
@@ -5990,6 +6021,330 @@
             });
         })();
 
+        // Tag Styles editor: colour overrides for the quality / age rating / rating / genre tags.
+        // State is { quality: {label: {background,color}}, age: {groupId: {...}}, rating: {community|critic: {...}}, genre: {...} }
+        // holding only what differs from the shipped defaults; serialize() returns '' when nothing is overridden.
+        const tagStyles = (() => {
+            const SECTIONS = [
+                { key: 'quality', title: 'Quality', fields: [['background', 'Background'], ['border', 'Border'], ['color', 'Text']] },
+                { key: 'age', title: 'Age ratings', fields: [['background', 'Background'], ['border', 'Border'], ['color', 'Text']] },
+                { key: 'rating', title: 'Rating chips', fields: [['background', 'Background'], ['color', 'Text and star']] },
+                { key: 'genre', title: 'Genre', fields: [['background', 'Background'], ['border', 'Border'], ['color', 'Icon']] }
+            ];
+            const CHIPS = [
+                { key: 'community', label: 'Community rating', defaults: { background: 'rgba(0, 0, 0, 0.85)', color: '#ffc107' }, text: '7.8', icon: 'star' },
+                { key: 'critic', label: 'Critic rating', defaults: { background: 'rgba(0, 0, 0, 0.8)', color: '#ffffff' }, text: '85%', icon: null }
+            ];
+            const GENRE = [{ key: 'all', label: 'Genre circle', defaults: { background: 'rgba(10, 10, 10, 0.8)', border: 'rgba(255, 255, 255, 0.2)', color: '#E0E0E0' } }];
+
+            let state = { quality: {}, age: {}, rating: {}, genre: {} };
+            let items = { quality: [], age: [], rating: CHIPS, genre: GENRE };
+            let current = 'quality';
+            let selected = null;
+            let lastPreset = 'default';
+            let lastScope = 'all';
+            let presetSelect = null;
+            let scopeSelect = null;
+            const canvas = document.createElement('canvas').getContext('2d');
+
+            // Any CSS colour to {r,g,b,a} through the canvas parser.
+            function parse(css) {
+                canvas.fillStyle = '#000000';
+                canvas.fillStyle = css;
+                const v = canvas.fillStyle;
+                if (v.charAt(0) === '#') {
+                    return { r: parseInt(v.slice(1, 3), 16), g: parseInt(v.slice(3, 5), 16), b: parseInt(v.slice(5, 7), 16), a: 1 };
+                }
+                const p = v.slice(v.indexOf('(') + 1, v.indexOf(')')).split(',').map(parseFloat);
+                return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+            }
+            const toHex = (c) => '#' + [c.r, c.g, c.b].map((n) => Math.round(n).toString(16).padStart(2, '0')).join('');
+            const toCss = (c) => 'rgba(' + Math.round(c.r) + ', ' + Math.round(c.g) + ', ' + Math.round(c.b) + ', ' + (Math.round(c.a * 1000) / 1000) + ')';
+            const same = (a, b) => toCss(parse(a)) === toCss(parse(b));
+
+            const section = () => SECTIONS.find((s) => s.key === current);
+            const entry = (sec, key) => (sec === 'genre' ? state.genre : state[sec][key]) || null;
+            const value = (sec, item, field) => {
+                const o = entry(sec, item.key);
+                return (o && o[field]) || item.defaults[field];
+            };
+            const isChanged = (sec, item) => !!entry(sec, item.key);
+
+            function setField(sec, item, field, css) {
+                lastPreset = 'custom';
+                const o = Object.assign({}, entry(sec, item.key) || {});
+                if (same(css, item.defaults[field])) delete o[field]; else o[field] = css;
+                const empty = Object.keys(o).length === 0;
+                if (sec === 'genre') state.genre = empty ? {} : o;
+                else if (empty) delete state[sec][item.key]; else state[sec][item.key] = o;
+            }
+
+            function el(tag, cls, text) {
+                const n = document.createElement(tag);
+                if (cls) n.className = cls;
+                if (text !== undefined) n.textContent = text;
+                return n;
+            }
+
+            function chip(sec, item) {
+                const v = (f) => value(sec, item, f);
+                let n;
+                if (sec === 'quality') {
+                    n = el('span', 'je-ts-q', item.label);
+                    n.style.background = v('background');
+                    n.style.color = v('color');
+                    n.style.borderColor = v('border');
+                } else if (sec === 'age') {
+                    n = el('span', 'je-ts-age', item.sample);
+                    n.style.background = v('background');
+                    n.style.borderColor = v('border');
+                    n.style.color = v('color');
+                } else if (sec === 'rating') {
+                    n = el('span', 'je-ts-rate');
+                    n.style.background = v('background');
+                    n.style.color = v('color');
+                    if (item.icon) { const i = el('i', 'material-icons', item.icon); n.appendChild(i); } else { n.appendChild(el('i', 'je-ts-tomato')); }
+                    n.appendChild(document.createTextNode(item.text));
+                } else {
+                    n = el('span', 'je-ts-genre');
+                    n.style.background = v('background');
+                    n.style.borderColor = v('border');
+                    n.style.color = v('color');
+                    n.appendChild(el('i', 'material-icons', 'theaters'));
+                }
+                return n;
+            }
+
+            function renderTabs() {
+                const tabs = document.querySelector('#tagStyleTabs');
+                tabs.textContent = '';
+                SECTIONS.forEach((s) => {
+                    const b = el('button', 'je-ts-tab' + (s.key === current ? ' active' : ''), s.title);
+                    b.type = 'button';
+                    b.addEventListener('click', () => { current = s.key; selected = null; render(); });
+                    tabs.appendChild(b);
+                });
+            }
+
+            function renderGrid() {
+                const grid = document.querySelector('#tagStyleGrid');
+                grid.textContent = '';
+                items[current].forEach((item) => {
+                    const cell = el('button', 'je-ts-cell' + (isChanged(current, item) ? ' changed' : '') + (selected === item.key ? ' selected' : ''));
+                    cell.type = 'button';
+                    cell.title = item.hint || item.label;
+                    cell.appendChild(chip(current, item));
+                    cell.addEventListener('click', () => { selected = item.key; render(); });
+                    grid.appendChild(cell);
+                });
+            }
+
+            function renderPanel() {
+                const panel = document.querySelector('#tagStylePanel');
+                panel.textContent = '';
+                const item = items[current].find((i) => i.key === selected);
+                if (!item) { panel.style.display = 'none'; return; }
+                panel.style.display = '';
+                panel.appendChild(el('div', 'je-ts-panel-title', item.hint || item.label));
+                section().fields.forEach(([field, label]) => {
+                    const c = parse(value(current, item, field));
+                    const row = el('div', 'je-ts-field');
+                    row.appendChild(el('label', null, label));
+                    const color = document.createElement('input');
+                    color.type = 'color';
+                    color.value = toHex(c);
+                    const alpha = document.createElement('input');
+                    alpha.type = 'range';
+                    alpha.min = '0';
+                    alpha.max = '100';
+                    alpha.value = String(Math.round(c.a * 100));
+                    const pct = el('span', 'je-ts-alpha', alpha.value + '%');
+                    const apply = () => {
+                        const base = parse(color.value);
+                        base.a = parseInt(alpha.value, 10) / 100;
+                        pct.textContent = alpha.value + '%';
+                        setField(current, item, field, toCss(base));
+                        renderGrid();
+                    };
+                    color.addEventListener('input', apply);
+                    alpha.addEventListener('input', apply);
+                    row.appendChild(color);
+                    row.appendChild(alpha);
+                    row.appendChild(pct);
+                    panel.appendChild(row);
+                });
+                const reset = el('button', 'raised emby-button', 'Reset This Tag');
+                reset.type = 'button';
+                reset.addEventListener('click', () => {
+                    if (current === 'genre') state.genre = {}; else delete state[current][item.key];
+                    lastPreset = 'custom';
+                    render();
+                });
+                panel.appendChild(reset);
+            }
+
+            // Presets derive every tag's colours from its own defaults, so hues stay recognisable.
+            const rgba = (c, a) => toCss({ r: c.r, g: c.g, b: c.b, a: a });
+            const isDark = (c) => (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) < 40;
+            const PRESETS = [
+                { id: 'glass', title: 'Glass', make: (field, d) => {
+                    const bg = parse(d.background);
+                    if (field === 'background') return rgba(bg, isDark(bg) ? 0.3 : 0.4);
+                    if (field === 'border') return 'rgba(255, 255, 255, 0.4)';
+                    return null;
+                } },
+                { id: 'outline', title: 'Outline', make: (field, d) => {
+                    const bg = parse(d.background);
+                    if (isDark(bg)) return field === 'background' ? rgba(bg, 0.35) : (field === 'border' ? 'rgba(255, 255, 255, 0.5)' : null);
+                    if (field === 'background') return rgba(bg, 0.12);
+                    if (field === 'border') return rgba(bg, 0.9);
+                    return rgba(bg, 1);
+                } },
+                { id: 'mono', title: 'Dark', make: (field) => ({ background: 'rgba(20, 20, 20, 0.85)', border: 'rgba(255, 255, 255, 0.2)', color: 'rgba(255, 255, 255, 1)' }[field]) },
+                { id: 'light', title: 'Light', make: (field) => ({ background: 'rgba(255, 255, 255, 0.88)', border: 'rgba(0, 0, 0, 0.15)', color: 'rgba(17, 17, 17, 1)' }[field]) },
+                { id: 'default', title: 'Default colours', make: () => null }
+            ];
+
+            function applyPreset(preset, scope) {
+                SECTIONS.filter((s) => scope === 'all' || s.key === current).forEach((s) => {
+                    items[s.key].forEach((item) => {
+                        s.fields.forEach(([field]) => {
+                            const css = preset.id === 'default' ? item.defaults[field] : preset.make(field, item.defaults);
+                            setField(s.key, item, field, css || item.defaults[field]);
+                        });
+                    });
+                });
+                lastPreset = preset.id;
+                render();
+            }
+
+            function applyColours(picked, scope) {
+                lastPreset = 'custom';
+                SECTIONS.filter((s) => scope === 'all' || s.key === current).forEach((s) => {
+                    items[s.key].forEach((item) => {
+                        s.fields.forEach(([field]) => { if (picked[field]) setField(s.key, item, field, picked[field]); });
+                    });
+                });
+                render();
+            }
+
+            function renderPresets() {
+                const bar = document.querySelector('#tagStylePresets');
+                if (bar.childElementCount) return;
+                const row = (label) => { const r = el('div', 'je-ts-presets-row'); r.appendChild(el('span', 'je-ts-presets-label', label)); bar.appendChild(r); return r; };
+
+                const scope = el('select', 'je-ts-select');
+                [['all', 'All tags'], ['tab', 'This tab only']].forEach(([v, text]) => { const o = el('option', null, text); o.value = v; scope.appendChild(o); });
+                row('Apply to').appendChild(scope);
+                scopeSelect = scope;
+
+                const presetRow = row('Preset');
+                const preset = el('select', 'je-ts-select');
+                PRESETS.forEach((p) => { const o = el('option', null, p.title); o.value = p.id; preset.appendChild(o); });
+                const applyPresetBtn = el('button', 'raised emby-button', 'Apply Preset');
+                applyPresetBtn.type = 'button';
+                applyPresetBtn.addEventListener('click', () => applyPreset(PRESETS.find((p) => p.id === preset.value), scope.value));
+                presetSelect = preset;
+                presetRow.appendChild(preset);
+                presetRow.appendChild(applyPresetBtn);
+
+                const colourRow = row('Colours');
+                const picks = {};
+                [['background', 'Background', '#000000', 60], ['border', 'Border', '#ffffff', 50], ['color', 'Text', '#ffffff', 100]].forEach(([field, label, hex, alpha]) => {
+                    const box = el('div', 'je-ts-pick');
+                    const head = el('label', 'je-ts-pick-head');
+                    const use = document.createElement('input');
+                    use.type = 'checkbox';
+                    head.appendChild(use);
+                    head.appendChild(el('span', null, label));
+                    const controls = el('div', 'je-ts-pick-controls');
+                    const color = document.createElement('input');
+                    color.type = 'color';
+                    color.value = hex;
+                    const range = document.createElement('input');
+                    range.type = 'range';
+                    range.min = '0';
+                    range.max = '100';
+                    range.value = String(alpha);
+                    color.disabled = range.disabled = true;
+                    use.addEventListener('change', () => { color.disabled = range.disabled = !use.checked; });
+                    const read = () => { const c = parse(color.value); c.a = parseInt(range.value, 10) / 100; return toCss(c); };
+                    controls.appendChild(color);
+                    controls.appendChild(range);
+                    box.appendChild(head);
+                    box.appendChild(controls);
+                    picks[field] = { use, read };
+                    colourRow.appendChild(box);
+                });
+                const applyColoursBtn = el('button', 'raised emby-button', 'Apply Colours');
+                applyColoursBtn.type = 'button';
+                applyColoursBtn.addEventListener('click', () => {
+                    const picked = {};
+                    Object.keys(picks).forEach((f) => { if (picks[f].use.checked) picked[f] = picks[f].read(); });
+                    if (Object.keys(picked).length) applyColours(picked, scope.value);
+                });
+                colourRow.appendChild(applyColoursBtn);
+            }
+
+            function render() {
+                renderPresets();
+                if (scopeSelect) scopeSelect.value = lastScope;
+                if (presetSelect && [...presetSelect.options].some((o) => o.value === lastPreset)) presetSelect.value = lastPreset;
+                renderTabs();
+                renderGrid();
+                renderPanel();
+            }
+
+            function load(json, preset, scope) {
+                lastPreset = preset || 'default';
+                lastScope = scope === 'tab' ? 'tab' : 'all';
+                state = { quality: {}, age: {}, rating: {}, genre: {} };
+                try {
+                    const p = json ? JSON.parse(json) : {};
+                    ['quality', 'age', 'rating'].forEach((k) => { if (p[k] && typeof p[k] === 'object') state[k] = p[k]; });
+                    if (p.genre && typeof p.genre === 'object') state.genre = p.genre;
+                } catch (e) { /* unreadable value: start clean */ }
+                if (!items.quality.length) {
+                    ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/tag-styles/catalog'), dataType: 'json' }).then((cat) => {
+                        items.quality = cat.quality.map((q) => ({ key: q.label, label: q.label, defaults: { background: q.background, border: 'rgba(255, 255, 255, 0.15)', color: q.color } }));
+                        items.age = cat.age.map((g) => ({
+                            key: g.id,
+                            label: g.ratings.slice(0, 3).join(', '),
+                            sample: g.ratings[0] || 'NR',
+                            hint: 'Applies to: ' + g.ratings.join(', '),
+                            defaults: { background: g.background, border: g.border, color: g.color }
+                        }));
+                        render();
+                    }).catch(() => {
+                        document.querySelector('#tagStyleGrid').textContent = 'Could not load the tag list.';
+                    });
+                }
+                render();
+            }
+
+            const settings = () => ({ preset: lastPreset, scope: scopeSelect ? scopeSelect.value : lastScope });
+
+            function serialize() {
+                const out = {};
+                ['quality', 'age', 'rating'].forEach((k) => { if (Object.keys(state[k]).length) out[k] = state[k]; });
+                if (Object.keys(state.genre).length) out.genre = state.genre;
+                return Object.keys(out).length ? JSON.stringify(out) : '';
+            }
+
+            document.querySelector('#tagStylesEnabled').addEventListener('change', (e) => {
+                document.querySelector('#tagStylesBody').style.display = e.target.checked ? '' : 'none';
+            });
+
+            document.querySelector('#tagStyleResetAll').addEventListener('click', () => {
+                state = { quality: {}, age: {}, rating: {}, genre: {} };
+                selected = null;
+                lastPreset = 'default';
+                render();
+            });
+
+            return { load, serialize, settings };
+        })();
+
         function loadConfig() {
             Dashboard.showLoadingMsg();
             checkInstalledPlugins();
@@ -6085,6 +6440,10 @@
                 document.querySelector('#qualityTagsEnabled').checked = config.QualityTagsEnabled;
                 document.querySelector('#nativePosterTagsEnabled').checked = config.NativePosterTagsEnabled === true;
                 document.querySelector('#nativePosterTagsWebClientNames').value = config.NativePosterTagsWebClientNames || '';
+                document.querySelector('#tagStylesEnabled').checked = config.TagStylesEnabled === true;
+                document.querySelector('#tagStylesBody').style.display = config.TagStylesEnabled === true ? '' : 'none';
+                document.querySelector('#tagStyleTarget').value = config.TagStyleTarget || 'both';
+                tagStyles.load(config.TagStyleOverrides, config.TagStylePreset, config.TagStyleApplyScope);
                 document.querySelector('#showResolutionTag').checked = config.ShowResolutionTag !== false;
                 document.querySelector('#showSourceTag').checked = config.ShowSourceTag !== false;
                 document.querySelector('#showDynamicRangeTag').checked = config.ShowDynamicRangeTag !== false;
@@ -6670,6 +7029,11 @@
             config.QualityTagsEnabled = document.querySelector('#qualityTagsEnabled').checked;
             config.NativePosterTagsEnabled = document.querySelector('#nativePosterTagsEnabled').checked;
             config.NativePosterTagsWebClientNames = document.querySelector('#nativePosterTagsWebClientNames').value.trim();
+            config.TagStylesEnabled = document.querySelector('#tagStylesEnabled').checked;
+            config.TagStyleTarget = document.querySelector('#tagStyleTarget').value;
+            config.TagStyleOverrides = tagStyles.serialize();
+            config.TagStylePreset = tagStyles.settings().preset;
+            config.TagStyleApplyScope = tagStyles.settings().scope;
             config.ShowResolutionTag = document.querySelector('#showResolutionTag').checked;
             config.ShowSourceTag = document.querySelector('#showSourceTag').checked;
             config.ShowDynamicRangeTag = document.querySelector('#showDynamicRangeTag').checked;

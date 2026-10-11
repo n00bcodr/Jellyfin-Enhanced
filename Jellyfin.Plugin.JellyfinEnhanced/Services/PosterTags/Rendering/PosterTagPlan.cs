@@ -150,7 +150,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             var groups = new List<PlannedGroup>();
             foreach (var g in layout.Groups)
             {
-                var planned = PlanGroup(g, css, cardHeight);
+                var planned = PlanGroup(g, css, cardHeight, layout.Styles ?? TagStyleSet.Empty);
                 if (planned is not null)
                 {
                     groups.Add(planned);
@@ -161,7 +161,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             return new PosterTagPlan(imageWidth, imageHeight, css, groups);
         }
 
-        private PlannedGroup? PlanGroup(PosterTagGroupLayout group, PosterTagCss css, float cardHeight)
+        private PlannedGroup? PlanGroup(PosterTagGroupLayout group, PosterTagCss css, float cardHeight, TagStyleSet styles)
         {
             var items = new List<PlannedItem>();
             // Right-corner chips are right-aligned, so an overflowing one shows the end of its text.
@@ -170,10 +170,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             {
                 var item = tag switch
                 {
-                    QualityTag q when group.Group == PosterTagGroup.Quality => MeasureQuality(q, css, keepEnd),
-                    GenreTag g when group.Group == PosterTagGroup.Genre => MeasureGenre(g, css),
-                    RatingTag r when group.Group == PosterTagGroup.Rating => MeasureRating(r, css, keepEnd),
-                    AgeRatingTag a when group.Group == PosterTagGroup.AgeRating => MeasureAge(a, css, keepEnd),
+                    QualityTag q when group.Group == PosterTagGroup.Quality => MeasureQuality(q, css, keepEnd, styles),
+                    GenreTag g when group.Group == PosterTagGroup.Genre => MeasureGenre(g, css, styles),
+                    RatingTag r when group.Group == PosterTagGroup.Rating => MeasureRating(r, css, keepEnd, styles),
+                    AgeRatingTag a when group.Group == PosterTagGroup.AgeRating => MeasureAge(a, css, keepEnd, styles),
                     LanguageTag l when group.Group == PosterTagGroup.Language => MeasureFlag(l, css),
                     _ => null,
                 };
@@ -272,23 +272,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             return text[..(char.IsHighSurrogate(text[end - 1]) ? end - 1 : end)];
         }
 
-        private PlannedItem MeasureQuality(QualityTag tag, PosterTagCss css, bool keepEnd)
+        private PlannedItem MeasureQuality(QualityTag tag, PosterTagCss css, bool keepEnd, TagStyleSet styles)
         {
             var label = ClampText(tag.Label, keepEnd);
             var layout = _text.Layout(label, css.QualityFontSize, smallCaps: true, letterSpacing: 0f);
             float width = PosterTagCss.LuCeil(layout.Width) + (2 * PosterTagCss.Lu(css.QualityPaddingH)) + 2f;
             float height = PosterTagCss.Lu(1.2f * css.QualityFontSize) + (2 * PosterTagCss.Lu(css.QualityPaddingV)) + 2f;
-            return new PlannedItem(PosterTagTileKind.Quality, tag, label, string.Empty, width, height) { TextLayout = layout };
+            return new PlannedItem(PosterTagTileKind.Quality, tag, label, QualityOverride(styles, label)?.Encode() ?? string.Empty, width, height) { TextLayout = layout };
         }
 
-        private PlannedItem MeasureGenre(GenreTag tag, PosterTagCss css)
+        private PlannedItem MeasureGenre(GenreTag tag, PosterTagCss css, TagStyleSet styles)
         {
             var icon = _assets.GetIcon(tag.Icon ?? string.Empty) is null ? "theaters" : tag.Icon!;
             float size = PosterTagCss.Lu(css.GenreSize) + 2f;
-            return new PlannedItem(PosterTagTileKind.Genre, tag, icon, string.Empty, size, size);
+            return new PlannedItem(PosterTagTileKind.Genre, tag, icon, styles.Genre?.Encode() ?? string.Empty, size, size);
         }
 
-        private PlannedItem MeasureRating(RatingTag tag, PosterTagCss css, bool keepEnd)
+        private PlannedItem MeasureRating(RatingTag tag, PosterTagCss css, bool keepEnd, TagStyleSet styles)
         {
             var text = ClampText(tag.Text, keepEnd);
             var layout = _text.Layout(text, css.ChipFontSize, smallCaps: false, letterSpacing: 0f);
@@ -315,6 +315,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             var style = tag.Source == PosterRatingSource.Critic
                 ? (tag.Fresh ? "critic-fresh" : "critic-rotten")
                 : tag.Source.ToString();
+            var chipKey = tag.Source switch { PosterRatingSource.Community => "community", PosterRatingSource.Critic => "critic", _ => null };
+            if (chipKey is not null && styles.Rating.TryGetValue(chipKey, out var chip))
+            {
+                style += "\n" + chip.Encode();
+            }
+
             return new PlannedItem(PosterTagTileKind.Rating, tag, text, style, width, height)
             {
                 TextLayout = layout,
@@ -323,7 +329,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             };
         }
 
-        private PlannedItem MeasureAge(AgeRatingTag tag, PosterTagCss css, bool keepEnd)
+        private PlannedItem MeasureAge(AgeRatingTag tag, PosterTagCss css, bool keepEnd, TagStyleSet styles)
         {
             // text-transform: uppercase; the colour key stays case-sensitive (CSS attribute selector).
             var text = ClampText(tag.Text, keepEnd).ToUpperInvariant();
@@ -333,8 +339,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             float height = PosterTagCss.Lu(fontSize) + (2 * PosterTagCss.Lu(css.ChipPaddingV)) + 2f;
             // Only a known colour key reaches the tile key: every unknown one paints the default style, so they share
             // one key instead of each retaining an arbitrary metadata string in the tile cache.
-            var style = tag.ColorKey is { } key && _assets.AgeRatingStyles.ContainsKey(key) ? key : string.Empty;
+            var style = string.Empty;
+            if (tag.ColorKey is { } key && _assets.AgeRatingStyles.TryGetValue(key, out var known))
+            {
+                style = styles.Age.TryGetValue(known.Group, out var over) ? key + "\n" + over.Encode() : key;
+            }
+
             return new PlannedItem(PosterTagTileKind.AgeRating, tag, text, style, width, height) { TextLayout = layout };
+        }
+
+        /// <summary>The override for a quality label, falling back to its codec base ("ATMOS 7.1" follows "ATMOS") like the colours do.</summary>
+        private TagColors? QualityOverride(TagStyleSet styles, string label)
+        {
+            if (styles.Quality.Count == 0) return null;
+            if (styles.Quality.TryGetValue(label, out var exact)) return exact;
+            foreach (var b in _assets.QualityCompositeBases)
+            {
+                if (label.StartsWith(b + " ", StringComparison.Ordinal) && styles.Quality.TryGetValue(b, out var composite)) return composite;
+            }
+
+            return null;
         }
 
         private PlannedItem? MeasureFlag(LanguageTag tag, PosterTagCss css)

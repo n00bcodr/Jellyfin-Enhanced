@@ -208,6 +208,7 @@
     "tags/qualitytags.js",
     "tags/ratingtags.js",
     "tags/ageratingtags.js",
+    "tags/tag-styles.js",
     "tags/userreviewtags.js",
 
     "// arr",
