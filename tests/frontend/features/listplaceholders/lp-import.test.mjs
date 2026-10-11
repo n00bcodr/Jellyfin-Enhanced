@@ -543,6 +543,8 @@ test('source chip: last sync, pause reason, Sync now / options / Unlink', async 
   assert.ok(bar.querySelector('.je-lp-import-btn'), 'editors get Import list');
   const chip = bar.querySelector('.je-lp-source-chip');
   assert.ok(chip);
+  // the chip leads the end group, so it shrinks before the buttons wrap and wraps with them
+  assert.deepEqual([...bar.querySelector('.je-lp-toolbar-end').children].map(el => el.className), ['je-lp-source-chip', 'je-lp-toolbar-btn', 'je-lp-toolbar-btn je-lp-import-btn']);
   assert.match(chip.textContent, /Top <watched>/);
   assert.equal(chip.querySelector('script, watched'), null);
   assert.match(chip.textContent, /listPlaceholders_sourceLastSync/);
@@ -577,6 +579,10 @@ test('source chip: last sync, pause reason, Sync now / options / Unlink', async 
   h.lp.toolbar.update(bar, 0);
   assert.match(bar.querySelector('.je-lp-source-chip').textContent, /listPlaceholders_sourcePausedLinkerCannotEdit/);
   assert.ok(bar.querySelector('.je-lp-source-chip').classList.contains('je-lp-source-paused'));
+  // an untitled source is named after its site
+  ctrl.view = view({ source: { kind: 'chronolists', url: 'https://chronolists.com/dctv', syncEnabled: false, removeDropped: false } });
+  h.lp.toolbar.update(bar, 0);
+  assert.ok(bar.querySelector('.je-lp-source-name').textContent.includes('"name":"Chronolists"'));
   ctrl.view = view({ source: null });
   h.lp.toolbar.update(bar, 0);
   assert.equal(bar.querySelector('.je-lp-source-chip'), null);
@@ -841,7 +847,8 @@ test('exact sources (chronolists): prepared rows skip /resolve; runs send all th
   const ctrl = { listId: LIST, listKind: 'playlist', listName: 'Arrowverse', view: view() };
   const root = h.lp.importer.open({ ctrl }).modalElement;
   root.querySelector('.je-lp-tab[data-tab="url"]').click();
-  await until(() => root.querySelector('.je-lp-import-providers').textContent.includes('chronolists.com'));
+  await until(() => root.querySelector('.je-lp-import-providers').textContent.includes('Chronolists'));
+  assert.ok(!root.querySelector('.je-lp-import-providers').textContent.includes('chronolists.com'), 'site name, not the domain');
   const url = root.querySelector('.je-lp-import-url');
   url.value = 'https://chronolists.com/help';
   root.querySelector('.jellyseerr-modal-button-primary').click();

@@ -1540,7 +1540,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
         {
             ListSourceUrl.LetterboxdUnsupported => ListOutcome.Error(400, code, "Letterboxd doesn't offer an API Jellyfin Enhanced can use. Add the list to MDBList (My Lists → External Lists) and import the MDBList URL, or export the list as CSV on Letterboxd and paste it."),
             ListSourceUrl.InvalidUrl => ListOutcome.Error(400, code, "That isn't a valid list URL."),
-            _ => ListOutcome.Error(400, ListSourceUrl.UnsupportedUrl, "Supported list URLs: MDBList, TMDB (lists, collections, charts), Trakt (lists, watchlists, charts), chronolists.com watch orders and IMDb (when enabled)."),
+            _ => ListOutcome.Error(400, ListSourceUrl.UnsupportedUrl, "Supported list URLs: MDBList, TMDB (lists, collections, charts), Trakt (lists, watchlists, charts), Chronolists watch orders and IMDb (when enabled)."),
         };
 
         private static ListOutcome FetchFailure(SourceFetchResult result)

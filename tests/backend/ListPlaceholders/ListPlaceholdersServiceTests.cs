@@ -550,6 +550,111 @@ public class ListPlaceholdersServiceTests
     }
 
     [Fact]
+    public void EditableListsListAPlaylistWithoutOwnerForAdmins()
+    {
+        // Jellyfin can hold a playlist with an empty owner id; looking that user up throws ("Guid can't be empty").
+        using var h = new ListPlaceholdersHarness();
+        var owner = h.NewUser("owner");
+        var admin = h.NewUser("admin", admin: true);
+        h.Users.Setup(u => u.GetUserById(Guid.Empty)).Throws(new ArgumentException("Guid can't be empty", "id"));
+        var ownerless = h.Host.AddPlaylist(owner, openAccess: true);
+        ownerless.Info = ownerless.Info with { OwnerId = Guid.Empty };
+        var owned = h.Host.AddPlaylist(owner);
+
+        var lists = h.Service.GetEditableLists(admin);
+        var listed = lists.Playlists.Single(p => p.Id == ownerless.Info.Id.ToString("N"));
+        Assert.Null(listed.OwnerName);
+        Assert.False(listed.IsOwn);
+        Assert.Equal("owner", lists.Playlists.Single(p => p.Id == owned.Info.Id.ToString("N")).OwnerName);
+    }
+
+    [Fact]
+    public void EditableListsAreInJellyfinsSortNameOrderWithOwnPlaylistsFirst()
+    {
+        using var h = new ListPlaceholdersHarness();
+        var owner = h.NewUser("owner");
+        var admin = h.NewUser("admin", admin: true);
+        // SortName as Jellyfin stores it: lower case, leading "The" removed, numbers padded; a forced sort name wins.
+        FakeListHost.FakeList Playlist(bool admins, string name, string? sortName)
+        {
+            var list = h.Host.AddPlaylist(admins ? admin : owner);
+            list.Info = list.Info with { Name = name, SortName = sortName };
+            return list;
+        }
+
+        FakeListHost.FakeList Collection(string name, string? sortName)
+        {
+            var list = h.Host.AddCollection(name);
+            list.Info = list.Info with { SortName = sortName };
+            return list;
+        }
+
+        var tinkerBell = Playlist(true, "Tinker Bell", "tinker bell");
+        var batman = Playlist(true, "The Batman saga", "batman saga");
+        var forced = Playlist(true, "Zorro", "aaa first");
+        var unsorted = Playlist(true, "Cars", null);
+        var others = Playlist(false, "An Arrowverse order", "arrowverse order");
+        var theCars = Collection("The Cars Collection", "cars collection");
+        var alien = Collection("Alien Collection", "alien collection");
+        var batmanSet = Collection("Batman Collection", "batman collection");
+
+        var lists = h.Service.GetEditableLists(admin);
+        Assert.Equal(
+            new[] { forced, batman, unsorted, tinkerBell, others }.Select(l => l.Info.Id.ToString("N")),
+            lists.Playlists.Select(p => p.Id));
+        Assert.Equal(new[] { "Zorro", "The Batman saga", "Cars", "Tinker Bell", "An Arrowverse order" }, lists.Playlists.Select(p => p.Name));
+        Assert.Equal(
+            new[] { alien, batmanSet, theCars }.Select(l => l.Info.Id.ToString("N")),
+            lists.Collections.Select(c => c.Id));
+    }
+
+    [Fact]
+    public void EditableListsSortLikeJellyfinsBinarySqliteOrder()
+    {
+        // Jellyfin orders by SortName, then Name, in SQLite with no collation (BINARY): punctuation between 'Z' and 'a'
+        // ('[', '_') comes before letters, upper case before lower case, and an empty sort name first.
+        using var h = new ListPlaceholdersHarness();
+        var admin = h.NewUser("admin", admin: true);
+        FakeListHost.FakeList Playlist(string name, string? sortName)
+        {
+            var list = h.Host.AddPlaylist(admin);
+            list.Info = list.Info with { Name = name, SortName = sortName };
+            return list;
+        }
+
+        FakeListHost.FakeList Collection(string name, string? sortName)
+        {
+            var list = h.Host.AddCollection(name);
+            list.Info = list.Info with { SortName = sortName };
+            return list;
+        }
+
+        var dceu = Playlist("DCEU", "dceu");
+        var dcChrono = Playlist("DC_Chronological", "dc_chronological");
+        var arrowverse = Playlist("Arrowverse", "arrowverse");
+        var watchlist = Playlist("_Watchlist", "_watchlist");
+        var kids = Playlist("[Kids] Movies", "[kids] movies");
+        var lowerBatman = Playlist("batman", "batman");
+        var theBatman = Playlist("The Batman", "batman");
+        var dashes = Playlist("The --", string.Empty);
+        var unknown = Playlist("Zebra", null);
+        var apple = Collection("apple", "same");
+        var zorro = Collection("Zorro", "same");
+        var underscored = Collection("_Extras", "_extras");
+
+        var lists = h.Service.GetEditableLists(admin);
+        Assert.Equal(
+            new[] { "The --", "[Kids] Movies", "_Watchlist", "Arrowverse", "The Batman", "batman", "DC_Chronological", "DCEU", "Zebra" },
+            lists.Playlists.Select(p => p.Name));
+        Assert.Equal(
+            new[] { dashes, kids, watchlist, arrowverse, theBatman, lowerBatman, dcChrono, dceu, unknown }.Select(l => l.Info.Id.ToString("N")),
+            lists.Playlists.Select(p => p.Id));
+        Assert.Equal(
+            new[] { underscored, zorro, apple }.Select(l => l.Info.Id.ToString("N")),
+            lists.Collections.Select(c => c.Id));
+    }
+
+    [Fact]
     public async Task AJellyfinFailureKeepsTheDocumentConsistentWithWhatHappened()
     {
         using var h = new ListPlaceholdersHarness();

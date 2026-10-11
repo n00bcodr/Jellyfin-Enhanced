@@ -1251,23 +1251,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             var response = await SendAsync(HttpMethod.Get, "https://chronolists.com/" + Esc(source.Part("slug")), null, null, cancellationToken, "text/html").ConfigureAwait(false);
             if (response.Status == 404)
             {
-                return SourceFetchResult.Fail(source, "not_found", "chronolists.com has no watch order at this address.");
+                return SourceFetchResult.Fail(source, "not_found", "Chronolists has no watch order at this address.");
             }
 
             if (response.Status != 200 || response.Body == null)
             {
-                throw Upstream(response, "chronolists.com");
+                throw Upstream(response, "Chronolists");
             }
 
             if (!ChronolistsPage.TryRead(response.Body, out var list, out var error))
             {
                 if (error == ChronolistsPage.NotAWatchOrder)
                 {
-                    return SourceFetchResult.Fail(source, "not_found", "This chronolists.com page isn't a watch order.");
+                    return SourceFetchResult.Fail(source, "not_found", "This Chronolists page isn't a watch order.");
                 }
 
-                _logger.Warning($"[ListPlaceholders] {source.CanonicalUrl} no longer has the watch-order data JE reads, or too many of its entries can't be read; chronolists.com may have changed its pages.");
-                return SourceFetchResult.Fail(source, ChronolistsPage.FormatChanged, "chronolists.com changed how its pages are built, so JE can't read this watch order any more. Nothing was changed; an update of Jellyfin Enhanced is needed.");
+                _logger.Warning($"[ListPlaceholders] {source.CanonicalUrl} no longer has the watch-order data JE reads, or too many of its entries can't be read; Chronolists may have changed its pages.");
+                return SourceFetchResult.Fail(source, ChronolistsPage.FormatChanged, "Chronolists changed how its pages are built, so JE can't read this watch order any more. Nothing was changed; an update of Jellyfin Enhanced is needed.");
             }
 
             if (list!.Unusable > 0)

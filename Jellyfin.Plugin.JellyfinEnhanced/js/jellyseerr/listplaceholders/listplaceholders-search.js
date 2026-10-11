@@ -504,7 +504,8 @@
     }
 
     /**
-     * Editor toolbar of a list page ("Add title"; listplaceholders-source.js adds "Import list" and the source chip).
+     * Editor toolbar of a list page: the count label, then an end group with "Add title" (listplaceholders-source.js
+     * adds the source chip and "Import list" to that group, so they wrap together and the chip shrinks first).
      * @param {Object} ctrl - Page controller.
      * @returns {HTMLElement}
      */
@@ -530,7 +531,10 @@
             e.stopPropagation();
             open(ctrl);
         });
-        bar.append(label, button);
+        const end = document.createElement('div');
+        end.className = 'je-lp-toolbar-end';
+        end.append(button);
+        bar.append(label, end);
         bar.__jeLpCtrl = ctrl;
         lp.sourceUi?.decorateToolbar(bar, ctrl);
         return bar;

@@ -860,7 +860,7 @@
     "listPlaceholders_sourcePaused": "Sync paused: {reason}",
     "listPlaceholders_sourceLetterboxd": "Letterboxd has no API Jellyfin Enhanced can use. Add the list to MDBList (My Lists → External Lists) and import the MDBList URL, or export it as CSV on Letterboxd and paste it.",
     "listPlaceholders_sourceImdbUnofficial": "IMDb lists are read through IMDb's unofficial API and may stop working.",
-    "listPlaceholders_sourceUnsupported": "Supported: MDBList lists, TMDB lists, collections and charts, Trakt lists, watchlists and charts, chronolists.com watch orders, and IMDb (if enabled).",
+    "listPlaceholders_sourceUnsupported": "Supported: MDBList lists, TMDB lists, collections and charts, Trakt lists, watchlists and charts, Chronolists watch orders, and IMDb (if enabled).",
     "listPlaceholders_sourceSyncStats": "{added} added, {removed} removed, {kept} kept, {unresolved} not found",
     "listPlaceholders_sourceSyncTruncated": "Only the first {max} entries are synced.",
     "listPlaceholders_sourceSyncPartial": "The list site answered only partly, so nothing was removed.",

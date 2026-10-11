@@ -58,10 +58,14 @@
         }
         @media (prefers-reduced-motion: reduce) { .je-lp-spinner { animation: none; } }
 
-        .je-lp-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 1em; margin: 0.25em 0 0.5em; }
+        .je-lp-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.4em 1em; margin: 0.25em 0 0.5em; }
         .je-lp-toolbar-label { margin-right: auto; opacity: 0.7; font-size: 0.9em; }
+        .je-lp-toolbar-label:empty { display: none; }
         .je-lp-toolbar-auto { opacity: 0.7; font-size: 0.85em; white-space: nowrap; }
-        .je-lp-toolbar:has(.je-lp-toolbar-auto) { flex-wrap: wrap; row-gap: 0.4em; }
+        /* Source chip + buttons: one unit that wraps as a whole; the chip gives up width (ellipsis) before it wraps. */
+        .je-lp-toolbar-end { display: flex; align-items: center; justify-content: flex-end; gap: 1em; min-width: 0; max-width: 100%; }
+        .je-lp-toolbar-end:has(.je-lp-source-chip) { flex: 1 1 26em; max-width: max-content; }
+        .je-lp-toolbar-end > .je-lp-toolbar-btn { flex: none; }
         .je-lp-toolbar-btn { display: inline-flex; align-items: center; gap: 0.35em; padding: 0.4em 1em; border-radius: 999px; border: 1px solid rgba(128, 128, 128, 0.45); background: transparent; color: inherit; font: inherit; font-size: 0.9em; cursor: pointer; }
         .je-lp-toolbar-btn:hover, .je-lp-toolbar-btn:focus-visible { background: rgba(128, 128, 128, 0.18); }
         .je-lp-toolbar-btn .material-icons { font-size: 1.2em; }
@@ -70,7 +74,7 @@
         .je-lp-collection-section .je-lp-card { content-visibility: auto; contain-intrinsic-block-size: auto 20em; }
         .je-lp-section-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5em 1em; }
         .je-lp-section-head h2[hidden] { display: none; }
-        .je-lp-section-head .je-lp-toolbar { margin: 0 0 0 auto; padding-right: 3.3%; }
+        .je-lp-section-head .je-lp-toolbar { margin: 0 0 0 auto; padding-right: 3.3%; min-width: 0; }
         .je-lp-kind-chip { position: absolute; left: clamp(6px, 4cqw, 10px); top: calc(clamp(6px, 4cqw, 10px) + clamp(1.5rem, 11cqw, 1.8rem) + 4px); z-index: 100; max-width: calc(100% - 20px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.2em 0.6em; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(0, 0, 0, 0.72); color: #fff; font-size: clamp(0.65rem, 5.5cqw, 0.85rem); font-weight: 600; pointer-events: none; }
         .je-lp-progress-chip { position: absolute; left: clamp(6px, 4cqw, 10px); bottom: clamp(6px, 4cqw, 10px); z-index: 100; max-width: calc(100% - 20px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.2em 0.6em; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(0, 0, 0, 0.72); color: #fff; font-size: clamp(0.65rem, 5.5cqw, 0.85rem); font-weight: 600; pointer-events: none; }
         .je-lp-progress-chip.je-lp-adding { background: rgba(34, 197, 94, 0.9); border-color: transparent; }
@@ -135,7 +139,7 @@
         .je-lp-new-playlist { display: flex; flex-direction: column; gap: 10px; }
         .jellyseerr-season-preselect-note { margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; background: rgba(99, 102, 241, 0.15); color: #c7d2fe; font-size: 0.9em; }
 
-        .je-lp-source-chip { display: inline-flex; align-items: center; gap: 0.45em; max-width: min(28em, 100%); padding: 0.3em 0.8em; border-radius: 999px; border: 1px solid rgba(99, 102, 241, 0.55); background: rgba(99, 102, 241, 0.12); color: inherit; font: inherit; font-size: 0.85em; text-align: start; cursor: pointer; }
+        .je-lp-source-chip { display: inline-flex; align-items: center; gap: 0.45em; flex: 0 1 auto; min-width: 0; max-width: 28em; padding: 0.3em 0.8em; border-radius: 999px; border: 1px solid rgba(99, 102, 241, 0.55); background: rgba(99, 102, 241, 0.12); color: inherit; font: inherit; font-size: 0.85em; text-align: start; cursor: pointer; }
         .je-lp-source-chip:hover, .je-lp-source-chip:focus-visible { background: rgba(99, 102, 241, 0.24); }
         .je-lp-source-chip .material-icons { font-size: 1.3em; flex-shrink: 0; }
         .je-lp-source-chip.je-lp-source-paused { border-color: rgba(234, 120, 30, 0.7); background: rgba(234, 120, 30, 0.14); }
@@ -144,7 +148,6 @@
         .je-lp-source-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
         .je-lp-source-name, .je-lp-source-status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .je-lp-source-status { opacity: 0.7; font-size: 0.9em; }
-        .je-lp-toolbar { flex-wrap: wrap; }
         @media all and (max-width: 50em) { .je-lp-toolbar-btn > span:not(.material-icons) { display: none; } .je-lp-toolbar-btn { padding: 0.4em 0.6em; } }
         .je-lp-import-global { display: inline-flex; align-items: center; gap: 0.4em; margin-left: 8px; padding: 4px 10px; min-height: 30px; box-sizing: border-box; border-radius: 4px; border: 1px solid currentColor; background: transparent; color: var(--jf-palette-primary-main, #00a4dc); font: inherit; font-size: 0.8125rem; font-weight: 500; letter-spacing: 0.02857em; cursor: pointer; white-space: nowrap; }
         .je-lp-import-global:hover, .je-lp-import-global:focus-visible { background: rgba(0, 164, 220, 0.1); }

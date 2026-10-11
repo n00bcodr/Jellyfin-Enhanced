@@ -28,7 +28,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
     /// <param name="OwnerId">Playlist owner (empty for collections).</param>
     /// <param name="OpenAccess">Playlist is public.</param>
     /// <param name="Shares">Playlist shares.</param>
-    public sealed record ListInfo(Guid Id, string Kind, string Name, Guid OwnerId, bool OpenAccess, IReadOnlyList<ListShare> Shares);
+    /// <param name="SortName">Jellyfin's sort name (forced sort name, or the name without leading articles); null when unknown.</param>
+    public sealed record ListInfo(Guid Id, string Kind, string Name, Guid OwnerId, bool OpenAccess, IReadOnlyList<ListShare> Shares, string? SortName = null);
 
     /// <summary>The facts JE needs about a library item.</summary>
     /// <param name="Id">Item id.</param>
@@ -513,8 +514,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 playlist.Name ?? string.Empty,
                 playlist.OwnerUserId,
                 playlist.OpenAccess,
-                (playlist.Shares ?? Array.Empty<PlaylistUserPermissions>()).Select(s => new ListShare(s.UserId, s.CanEdit)).ToList()),
-            BoxSet boxSet => new ListInfo(boxSet.Id, ListKinds.Collection, boxSet.Name ?? string.Empty, Guid.Empty, false, Array.Empty<ListShare>()),
+                (playlist.Shares ?? Array.Empty<PlaylistUserPermissions>()).Select(s => new ListShare(s.UserId, s.CanEdit)).ToList(),
+                playlist.SortName),
+            BoxSet boxSet => new ListInfo(boxSet.Id, ListKinds.Collection, boxSet.Name ?? string.Empty, Guid.Empty, false, Array.Empty<ListShare>(), boxSet.SortName),
             _ => null,
         };
     }

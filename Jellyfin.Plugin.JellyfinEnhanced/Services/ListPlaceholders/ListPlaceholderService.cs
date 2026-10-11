@@ -1283,7 +1283,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         public EditableListsDto GetEditableLists(User user)
         {
             var result = new EditableListsDto { CanManageCollections = ListAccessService.CanManageCollections(user) };
-            foreach (var list in _host.GetAllPlaylists())
+            foreach (var list in InJellyfinOrder(_host.GetAllPlaylists()))
             {
                 var access = _access.Evaluate(list, user);
                 if (!access.Permissions.CanEdit)
@@ -1297,13 +1297,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     Name = list.Name,
                     IsOwn = list.OwnerId == user.Id,
                     NativeCanEdit = access.Permissions.NativeCanEdit,
-                    OwnerName = access.Permissions.NativeCanEdit ? null : _userManager.GetUserById(list.OwnerId)?.Username,
+                    OwnerName = access.Permissions.NativeCanEdit ? null : access.Owner?.Username,
                 });
             }
 
             if (result.CanManageCollections)
             {
-                foreach (var list in _host.GetVisibleCollections(user))
+                foreach (var list in InJellyfinOrder(_host.GetVisibleCollections(user)))
                 {
                     result.Collections.Add(new EditableListDto
                     {
@@ -1314,10 +1314,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
             }
 
-            result.Playlists = result.Playlists.OrderBy(p => p.IsOwn ? 0 : 1).ThenBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
-            result.Collections = result.Collections.OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+            // Own playlists first; OrderBy is stable, so each group keeps Jellyfin's order.
+            result.Playlists = result.Playlists.OrderBy(p => p.IsOwn ? 0 : 1).ToList();
             return result;
         }
+
+        /// <summary>
+        /// Lists in the order Jellyfin's library views show them: by sort name (its forced sort name, or the name with
+        /// leading articles like "The" removed), then by name. Jellyfin sorts in SQLite with no collation (BINARY), so
+        /// both keys compare ordinally and case-sensitively: "_x" and "[x]" come before letters, "Zorro" before "apple",
+        /// and an empty sort name first. Only an unknown (null) sort name falls back to the lower-cased name.
+        /// </summary>
+        /// <param name="lists">Lists.</param>
+        /// <returns>The lists, sorted.</returns>
+        private static IEnumerable<ListInfo> InJellyfinOrder(IEnumerable<ListInfo> lists) =>
+            lists.OrderBy(l => l.SortName ?? l.Name.ToLowerInvariant(), StringComparer.Ordinal)
+                .ThenBy(l => l.Name, StringComparer.Ordinal);
 
         /// <summary>POST /playlists and POST /collections: creates a list owned by/visible to the caller, then applies entries.</summary>
         /// <param name="user">Caller (already authorised for collections).</param>

@@ -1103,7 +1103,7 @@
          * @returns {string}
          */
         function providerName(provider) {
-            return { mdblist: 'MDBList', tmdb: 'TMDB', trakt: 'Trakt', imdb: 'IMDb', letterboxd: 'Letterboxd', chronolists: 'chronolists.com' }[provider] || String(provider || '');
+            return { mdblist: 'MDBList', tmdb: 'TMDB', trakt: 'Trakt', imdb: 'IMDb', letterboxd: 'Letterboxd', chronolists: 'Chronolists' }[provider] || String(provider || '');
         }
 
         /**
@@ -1137,7 +1137,7 @@
             }
             if (!alive()) return;
             const p = state.providers;
-            const names = [p.mdblist !== false && 'MDBList', (p.tmdbLists || p.tmdbCharts) && 'TMDB', p.trakt && 'Trakt', p.chronolists && 'chronolists.com', p.imdb && 'IMDb'].filter(Boolean);
+            const names = [p.mdblist !== false && 'MDBList', (p.tmdbLists || p.tmdbCharts) && 'TMDB', p.trakt && 'Trakt', p.chronolists && 'Chronolists', p.imdb && 'IMDb'].filter(Boolean);
             const lines = [JE.t('listPlaceholders_import_url_sources', { sources: names.join(', ') }), JE.t('listPlaceholders_sourceLetterboxd')];
             if (p.imdb) lines.push(JE.t('listPlaceholders_sourceImdbUnofficial'));
             $('.je-lp-import-providers').innerHTML = lines.map(l => `<div>${esc(l)}</div>`).join('');

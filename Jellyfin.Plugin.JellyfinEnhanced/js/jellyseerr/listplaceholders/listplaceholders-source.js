@@ -21,7 +21,7 @@
         linker_cannot_see: 'listPlaceholders_sourcePausedLinkerCannotSee',
         url_unsupported: 'listPlaceholders_sourcePausedUrlUnsupported'
     };
-    const SITE_NAMES = { mdblist: 'MDBList', tmdb: 'TMDB', trakt: 'Trakt', imdb: 'IMDb', chronolists: 'chronolists.com' };
+    const SITE_NAMES = { mdblist: 'MDBList', tmdb: 'TMDB', trakt: 'Trakt', imdb: 'IMDb', chronolists: 'Chronolists' };
     /** Sync-only failure codes (fetch codes are shared with the importer's messages). */
     const SYNC_FAILURE_KEYS = {
         seerr_unavailable: 'listPlaceholders_import_err_seerr',
@@ -196,8 +196,8 @@
                 e.stopPropagation();
                 showMenu(ctrl, chip);
             });
-            const label = bar.querySelector('.je-lp-toolbar-label');
-            if (label) label.after(chip); else bar.prepend(chip);
+            // In the end group, before the buttons: it shrinks before they wrap, and wraps with them.
+            (bar.querySelector('.je-lp-toolbar-end') || bar).prepend(chip);
         }
         chip.dataset.signature = signature;
         chip.classList.toggle('je-lp-source-paused', !!paused);
