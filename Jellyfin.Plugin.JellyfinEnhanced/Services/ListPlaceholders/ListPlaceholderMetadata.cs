@@ -171,9 +171,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 placeholder.Year = date.Year;
             }
 
-            if (!metadata.Partial || placeholder.PosterPath == null)
+            // An unverified poster (a client's, kept while nothing could check it) always gives way to the server's.
+            if (!metadata.Partial || placeholder.PosterPath == null || placeholder.PosterUnverified == true)
             {
                 placeholder.PosterPath = metadata.PosterPath;
+                placeholder.PosterUnverified = null;
             }
 
             if (placeholder.Overview == null && !string.IsNullOrEmpty(metadata.Overview))
@@ -504,7 +506,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
         private static string Signature(Placeholder p) => JsonSerializer.Serialize(new object?[]
         {
-            p.ReleaseDate, p.Year, p.PosterPath, p.Overview, p.ImdbId, p.TvdbId, p.Expected, p.InProduction, p.EpisodeTotal, p.Episodes,
+            p.ReleaseDate, p.Year, p.PosterPath, p.PosterUnverified, p.Overview, p.ImdbId, p.TvdbId, p.Expected, p.InProduction, p.EpisodeTotal, p.Episodes,
         });
 
         private async Task<CacheEntry?> GetAsync(string apiPath, TimeSpan maxAge, CancellationToken cancellationToken)

@@ -115,8 +115,9 @@ public class ListPlaceholdersSeerrIndexReviewR1a1Tests
             }
 
             var skip = int.Parse(query["skip"]!);
+            var take = int.Parse(query["take"]!); // pages after the first overlap the previous one by a row
             return Json(Page(query["filter"] == "pending"
-                ? Enumerable.Range(skip + 1, RequestPageSize).Select(id => Request(id, 1, "{\"seasonNumber\":1,\"status\":1}"))
+                ? Enumerable.Range(skip + 1, take).Select(id => Request(id, 1, "{\"seasonNumber\":1,\"status\":1}"))
                 : Array.Empty<string>()));
         };
         await f.Index.EnsureFreshAsync();

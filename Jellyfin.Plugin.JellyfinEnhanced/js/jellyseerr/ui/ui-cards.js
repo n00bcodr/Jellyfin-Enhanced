@@ -446,6 +446,8 @@
                 cardScalable.appendChild(overview);
                 button = overview.querySelector('.jellyseerr-request-button');
                 internal.configureRequestButton(button, item, isJellyseerrActive, jellyseerrUserFound);
+                // The card's owner may adjust the fresh button (list placeholders lock an already-requested season).
+                if (typeof item.onConfigureButton === 'function') item.onConfigureButton(button);
 
                 // Click handler on overview to open modal
                 overview.addEventListener('click', (e) => {

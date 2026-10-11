@@ -381,8 +381,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                         shared = true;
                         leftShared[owned.PhId] = leftShared.GetValueOrDefault(owned.PhId) + 1;
                         var done = trimmed.GetValueOrDefault(owned.PhId);
+                        // Only an episode no staying key still lists (a series or season key of the show, or the same
+                        // episode under another id) leaves the run; else the key is just released.
                         if (placeholder.Kind == PlaceholderKinds.Episodes && SourceKeys.EpisodeOf(key) is { } episode
-                            && placeholder.Episodes.Any(e => e.S == episode.Season && e.E == episode.Episode) && placeholder.Episodes.Count - done > 1)
+                            && placeholder.Episodes.Any(e => e.S == episode.Season && e.E == episode.Episode) && placeholder.Episodes.Count - done > 1
+                            && !CoveredByStayingKey(source, current, owned.PhId, episode.Season, episode.Episode))
                         {
                             plan.Trims.Add((owned.PhId, episode.Season, episode.Episode));
                             trimmed[owned.PhId] = done + 1;
@@ -442,6 +445,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             }
 
             return plan;
+        }
+
+        // Whether a key still in the source that owns the placeholder covers this episode: a series key (no season), a key
+        // of its season (no episode) or a key of the same episode (whatever its id: tv, tvdb or imdb).
+        private static bool CoveredByStayingKey(ListSource source, HashSet<string> current, string phId, int season, int episode)
+        {
+            foreach (var (key, owned) in source.Owned)
+            {
+                if (owned.PhId != phId || !current.Contains(key))
+                {
+                    continue;
+                }
+
+                var parts = key.Split('|');
+                if (parts.Length != 4 || parts[2].Length == 0)
+                {
+                    return true; // a series key (or one of another shape): the whole show is still listed
+                }
+
+                if (!int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var keySeason) || keySeason != season)
+                {
+                    continue;
+                }
+
+                if (parts[3].Length == 0
+                    || (int.TryParse(parts[3], NumberStyles.None, CultureInfo.InvariantCulture, out var keyEpisode) && keyEpisode == episode))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         // A season placeholder that only episode keys of its season still own: the episodes those keys stand for. Null when
@@ -616,6 +651,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             Year = p.Year,
             ReleaseDate = p.ReleaseDate,
             PosterPath = p.PosterPath,
+            PosterUnverified = p.PosterUnverified,
             Overview = p.Overview,
             SeasonNumber = p.SeasonNumber,
             Note = p.Note,

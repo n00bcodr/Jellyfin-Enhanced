@@ -534,13 +534,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
             using (await _store.LockAsync(access.ListIdN, cancellationToken).ConfigureAwait(false))
             {
-                // The list may have been deleted while the source was fetched (its document went with it): writing now
-                // would recreate an orphan document with an active link (as RunLockedAsync checks for other mutations).
-                if (_host.GetList(access.List.Id) == null)
+                // The fetch can take seconds: the list may have been deleted meanwhile (writing now would recreate an
+                // orphan document with an active link), or the caller's rights changed (a share removed or made
+                // read-only). Checked again like the sync checks its linker after its fetch.
+                var user = _users.GetUserById(access.User.Id);
+                var current = user == null ? null : _access.Resolve(access.List.Id, user);
+                if (current == null || !current.Permissions.CanView)
                 {
                     return ListOutcome.Error(404, "not_found", "List not found.");
                 }
 
+                if (!current.Permissions.CanEdit)
+                {
+                    return ListOutcome.Error(403, "forbidden", "You can't edit this list.");
+                }
+
+                access = current;
                 var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
                 ApplyLink(doc, spec!, access.UserIdN, DateTime.UtcNow);
                 _store.Save(doc);

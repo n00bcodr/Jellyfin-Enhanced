@@ -311,13 +311,19 @@
      * Runs a source change of a list after the ones still running (PUT /source re-fetches the list upstream, so it
      * can take seconds): each change then starts from the view the previous one published, and Unlink can't be
      * overtaken by an earlier option change that would link the list again. The chip is busy while any is pending.
+     * A change still queued when the user switched (or the page went away) is dropped: it would read the old user's
+     * view and send its mutation with the new user's token.
      * @param {Object} ctrl - Page controller (sourceQueue/sourcePending are kept on it).
      * @param {HTMLElement|null|undefined} chip - The chip (shows a busy state).
      * @param {function(): Promise<void>} task - The change; reads ctrl.view when it starts.
      * @returns {Promise<void>}
      */
     function queueSourceChange(ctrl, chip, task) {
-        const run = (ctrl.sourceQueue || Promise.resolve()).then(task);
+        const epoch = lp.epochNow();
+        const run = (ctrl.sourceQueue || Promise.resolve()).then(() => {
+            if (!lp.isCurrentEpoch(epoch) || ctrl.isAlive?.() === false) return undefined;
+            return task();
+        });
         const settled = run.catch(() => {});
         ctrl.sourceQueue = settled;
         ctrl.sourcePending = (ctrl.sourcePending || 0) + 1;

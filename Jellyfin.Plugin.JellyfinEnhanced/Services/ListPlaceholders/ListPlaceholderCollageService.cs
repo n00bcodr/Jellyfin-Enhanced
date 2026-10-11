@@ -96,9 +96,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
     /// <item>At most <see cref="MaxConcurrency"/> lists are processed at once; a list is never processed twice at once.</item>
     /// <item>The collage is one image every viewer of the list sees, so when users with parental controls can see the
     /// list it only uses placeholders that pass every such user's filter (fail closed, like the list's rows), and draws
-    /// for each the poster Seerr has for that title rather than the stored one (which a client sent and could belong to
-    /// another title); a title whose poster can't be read from Seerr is left out. A parental-control change re-checks
-    /// every list.</item>
+    /// for each the poster Seerr has for that title (TMDB's, read with JE's key, when Seerr is off) rather than the
+    /// stored one; a title whose poster can't be read is left out. When that was because Seerr or TMDB didn't answer,
+    /// the list is checked again with the same growing delay as failed downloads (fail closed meanwhile: a collage
+    /// that is left with nothing is removed). A parental-control change re-checks every list.</item>
     /// <item>Posters that can't be downloaded for a while (timeouts, 5xx, 429) are retried with a growing delay
     /// (<see cref="RetryBase"/> doubling up to <see cref="RetryMax"/>) and left out until then, so a flaky poster never
     /// makes JE rewrite the same image over and over (each write fires Jellyfin's ItemUpdated, which re-triggers JE).
@@ -153,6 +154,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
         // Posters that failed temporarily, per list (in memory: the startup pass re-checks every list anyway).
         private readonly ConcurrentDictionary<string, PosterRetry> _retries = new(StringComparer.Ordinal);
+
+        // Lists with restricted viewers whose posters couldn't be verified (Seerr or TMDB didn't answer): checked again
+        // with the same growing delay, since the provider coming back fires no event (attempts, next check).
+        private readonly ConcurrentDictionary<string, (int Attempts, DateTime Until)> _verifyRetries = new(StringComparer.Ordinal);
 
         // Evaluations the worker started that haven't finished (StopAsync waits for them).
         private readonly HashSet<Task> _inFlight = new();
@@ -232,6 +237,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <param name="listIdN">List id ("N").</param>
         /// <returns>The retry time (UTC) or null.</returns>
         internal DateTime? RetryUntil(string listIdN) => _retries.TryGetValue(listIdN, out var retry) ? retry.Until : null;
+
+        /// <summary>When a list whose posters couldn't be verified is checked again, or null (tests).</summary>
+        /// <param name="listIdN">List id ("N").</param>
+        /// <returns>The check time (UTC) or null.</returns>
+        internal DateTime? VerifyRetryUntil(string listIdN) => _verifyRetries.TryGetValue(listIdN, out var retry) ? retry.Until : null;
 
         /// <summary>When a list is due to be processed next, or null when it isn't queued (tests).</summary>
         /// <param name="listIdN">List id ("N").</param>
@@ -527,19 +537,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// The poster candidates every restricted viewer of the list may see (<see cref="PosterCandidates"/> when nobody
         /// with parental controls can see it). Each viewer's filter is applied as on the list's rows: blocked titles,
         /// custom and unverifiable entries (unless that viewer added them) and lookups over budget are left out. Each
-        /// title that passes contributes the poster Seerr has for it, not the stored one (a client sent that, and it
-        /// could be another title's); titles without a TMDB id or whose poster can't be read are left out. At most
-        /// <see cref="MaxParentalChecks"/> placeholders are checked.
+        /// title that passes contributes the server's poster for it (<see cref="ServerPostersAsync"/>), not the stored one;
+        /// titles without a TMDB id or whose poster can't be read are left out. At most <see cref="MaxParentalChecks"/>
+        /// placeholders are checked.
         /// </summary>
-        /// <returns>The posters, and whether a restricted viewer's filter was applied.</returns>
-        private async Task<(List<string> Posters, bool Restricted)> AllowedPosterCandidatesAsync(ListDoc doc, ListInfo list, ICollection<string>? exclude, CancellationToken cancellationToken)
+        /// <returns>The posters, whether a restricted viewer's filter was applied, and whether a title that passed was
+        /// left out because its poster source didn't answer (it may be allowed once it does).</returns>
+        private async Task<(List<string> Posters, bool Restricted, bool Unverified)> AllowedPosterCandidatesAsync(ListDoc doc, ListInfo list, ICollection<string>? exclude, CancellationToken cancellationToken)
         {
             var ordered = PosterPlaceholders(doc, list.Kind, exclude);
             var viewers = ordered.Count == 0 ? Array.Empty<User>() : _access.GetRestrictedViewers(list);
             if (viewers.Count == 0)
             {
-                return (DistinctPosters(ordered, MaxCandidates), false);
+                return (DistinctPosters(ordered, MaxCandidates), false, false);
             }
+
+            var unverified = false;
 
             var result = new List<string>(MaxCandidates);
             var index = 0;
@@ -569,8 +582,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
 
                 var posters = await ServerPostersAsync(batch, cancellationToken).ConfigureAwait(false);
-                foreach (var poster in posters)
+                foreach (var (poster, answered) in posters)
                 {
+                    unverified |= !answered;
                     if (result.Count < MaxCandidates && poster != null && !result.Contains(poster, StringComparer.Ordinal)
                         && (exclude == null || !exclude.Contains(poster)))
                     {
@@ -579,23 +593,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
             }
 
-            return (result, true);
+            return (result, true, unverified);
         }
 
-        // The poster Seerr has for each placeholder's title (cached metadata), in order; null for a custom entry, a title
-        // Seerr doesn't know or can't answer for now, or one without a valid poster.
-        private async Task<string?[]> ServerPostersAsync(IReadOnlyList<Placeholder> placeholders, CancellationToken cancellationToken)
+        // The server's poster for each placeholder's title, in order: Seerr's (cached metadata), or TMDB's read with JE's
+        // key when Seerr is off (as UseServerPostersAsync stores them). Poster null for a custom entry, a title the source
+        // doesn't know or can't answer for now, or one without a valid poster. Answered is false when the source gave no
+        // answer for a TMDB title (Seerr unreachable or unknown title; any TMDB poster miss): a later check may differ.
+        private async Task<(string? Poster, bool Answered)[]> ServerPostersAsync(IReadOnlyList<Placeholder> placeholders, CancellationToken cancellationToken)
         {
             var today = DateTime.UtcNow;
+            var seerr = ListPlaceholderMetadataService.IsAvailable;
+            var tmdb = !seerr && ListPlaceholderMetadataService.TmdbAvailable;
             return await Task.WhenAll(placeholders.Select(async placeholder =>
             {
-                if (placeholder.Kind == PlaceholderKinds.Custom || placeholder.TmdbId is not > 0)
+                if (placeholder.Kind == PlaceholderKinds.Custom || placeholder.TmdbId is not > 0 || (!seerr && !tmdb))
                 {
-                    return null;
+                    return ((string?)null, true);
                 }
 
-                var metadata = await _metadata.FetchAsync(placeholder, ListPlaceholderMetadataService.CacheTtl, today, cancellationToken).ConfigureAwait(false);
-                return metadata?.PosterPath is { } poster && PlaceholderRules.IsValidPosterPath(poster) ? poster : null;
+                if (seerr)
+                {
+                    var metadata = await _metadata.FetchAsync(placeholder, ListPlaceholderMetadataService.CacheTtl, today, cancellationToken).ConfigureAwait(false);
+                    return (metadata?.PosterPath is { } poster && PlaceholderRules.IsValidPosterPath(poster) ? poster : null, metadata != null);
+                }
+
+                var fromTmdb = await _metadata.FetchTmdbPosterAsync(placeholder, cancellationToken).ConfigureAwait(false);
+                return (PlaceholderRules.IsValidPosterPath(fromTmdb) ? fromTmdb : null, fromTmdb != null);
             })).ConfigureAwait(false);
         }
 
@@ -610,6 +634,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             if (!enabled && marker == null && !hasNative)
             {
                 _retries.TryRemove(listIdN, out _);
+                _verifyRetries.TryRemove(listIdN, out _);
                 return CollageDecision.None;
             }
 
@@ -626,6 +651,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             if (doc == null && marker == null && !hasNative)
             {
                 _retries.TryRemove(listIdN, out _);
+                _verifyRetries.TryRemove(listIdN, out _);
                 return CollageDecision.None;
             }
 
@@ -636,6 +662,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             {
                 _nativeCollages.Delete(listIdN);
                 _retries.TryRemove(listIdN, out _);
+                _verifyRetries.TryRemove(listIdN, out _);
                 if (marker != null)
                 {
                     _markers.Delete(listIdN);
@@ -673,9 +700,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var now = DateTime.UtcNow;
             _retries.TryGetValue(listIdN, out var retry);
             var waiting = retry != null && now < retry.Until ? retry.Keys : (IReadOnlyCollection<string>)Array.Empty<string>();
-            var (allowed, restricted) = enabled && !hasReal && doc != null
+            var (allowed, restricted, unverified) = enabled && !hasReal && doc != null
                 ? await AllowedPosterCandidatesAsync(doc, list, isOurs ? marker!.FailedKeys : null, cancellationToken).ConfigureAwait(false)
-                : (new List<string>(), false);
+                : (new List<string>(), false, false);
+            UpdateVerifyRetry(listIdN, restricted && unverified, now);
             var candidates = waiting.Count == 0 ? allowed : allowed.Where(k => !waiting.Contains(k)).ToList();
             var wanted = candidates.Take(ListPlaceholderCollageRenderer.MaxPosters).ToList();
             var keysUnchanged = isOurs && marker!.PosterKeys.SequenceEqual(wanted, StringComparer.Ordinal);
@@ -790,6 +818,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             keys.UnionWith(failedNow);
             _retries[listIdN] = new PosterRetry(attempts, now + delay, keys);
             _logger.Debug($"[ListPlaceholders] {failedNow.Count} poster(s) of list {listIdN} could not be downloaded; retrying in {delay}.");
+            ScheduleRetry(listIdN, delay);
+        }
+
+        // A list whose allowed posters may be incomplete because a poster source didn't answer is checked again (growing
+        // delay); once every title could be checked, the record goes.
+        private void UpdateVerifyRetry(string listIdN, bool unverified, DateTime now)
+        {
+            if (!unverified)
+            {
+                _verifyRetries.TryRemove(listIdN, out _);
+                return;
+            }
+
+            _verifyRetries.TryGetValue(listIdN, out var previous);
+            if (previous.Attempts > 0 && now < previous.Until)
+            {
+                ScheduleRetry(listIdN, previous.Until - now); // checked early by another trigger: keep the planned check
+                return;
+            }
+
+            var attempts = previous.Attempts + 1;
+            var delay = RetryDelay(attempts);
+            _verifyRetries[listIdN] = (attempts, now + delay);
+            _logger.Debug($"[ListPlaceholders] Posters of list {listIdN} could not all be verified for its restricted viewers; checking again in {delay}.");
             ScheduleRetry(listIdN, delay);
         }
 

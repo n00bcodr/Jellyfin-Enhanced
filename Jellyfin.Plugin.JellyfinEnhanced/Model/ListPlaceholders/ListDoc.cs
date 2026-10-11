@@ -129,6 +129,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("posterPath")]
         public string? PosterPath { get; set; }
 
+        /// <summary>
+        /// True when a TMDB placeholder's <see cref="PosterPath"/> is the one a client sent and no poster source could check
+        /// it (neither Seerr nor a TMDB key was configured): viewers with parental controls never get it, and the next
+        /// metadata pass that can read the title's own poster replaces it. Null once the poster came from the server.
+        /// </summary>
+        [JsonPropertyName("posterUnverified")]
+        public bool? PosterUnverified { get; set; }
+
         /// <summary>Short overview (≤ 1000 chars).</summary>
         [JsonPropertyName("overview")]
         public string? Overview { get; set; }

@@ -442,6 +442,18 @@
     }
 
     /**
+     * Whether two placeholders cover the same scope (kind, season, episode numbers).
+     * @param {Object|null} a - NewPlaceholderDto.
+     * @param {Object|null} b - NewPlaceholderDto.
+     * @returns {boolean}
+     */
+    function sameScope(a, b) {
+        if (!a || !b || a.kind !== b.kind || (a.seasonNumber ?? null) !== (b.seasonNumber ?? null)) return false;
+        const numbers = ph => (ph.episodes || []).map(e => Number(e.e)).sort((x, y) => x - y).join(',');
+        return numbers(a) === numbers(b);
+    }
+
+    /**
      * The apply entries a row contributes (0, 1, or 2 with "Add both"), in order.
      * @param {Object} row - Review row.
      * @param {'playlist'|'collection'} listKind
@@ -457,8 +469,10 @@
             const cands = row.both ? alternativePicks(row) : [row.cands[row.cand]].filter(Boolean);
             const overridden = !!(row.override && !row.both);
             out = cands.map((cand) => {
-                // The rest of a chosen alternative's scope (not for a scope the user set by hand).
-                const more = overridden ? [] : alternativeMore(cand, row.entry, placeholderFromCandidate(cand, row.entry, row.result?.kind))
+                // The rest of a chosen alternative's scope (not for a scope the user set by hand; Change match always
+                // sets one for a show, so one equal to the alternative's first part is no change of scope).
+                const first = placeholderFromCandidate(cand, row.entry, row.result?.kind);
+                const more = overridden && !sameScope(row.override, first) ? [] : alternativeMore(cand, row.entry, first)
                     .map(placeholder => ({ type: 'placeholder', placeholder }));
                 if (row.action === 'item' && !overridden) {
                     const itemId = libraryItemFor(cand, listKind);

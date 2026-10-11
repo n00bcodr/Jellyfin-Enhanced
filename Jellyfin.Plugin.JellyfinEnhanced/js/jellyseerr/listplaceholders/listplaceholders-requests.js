@@ -147,13 +147,31 @@
     }
 
     /**
+     * Announces a movie's 4K request to every placeholder UI: its "Request in 4K" option reads as requested from now on.
+     * @param {number} tmdbId
+     */
+    function announce4k(tmdbId) {
+        document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail: { tmdbId: String(tmdbId), mediaType: 'movie', is4k: true } }));
+    }
+
+    /**
      * 4K movie request from a placeholder card's "Request in 4K" (the advanced-options modal when allowed).
+     * Fresh Seerr details are read first: a title already requested (or available) in 4K is announced as requested
+     * without opening a modal, since Seerr would answer 409, which the advanced modal only reports as a failure.
      * @param {Object} ph - Placeholder (tmdb-backed movie).
+     * @param {number} epoch - Session epoch the click started in.
      * @returns {Promise<void>}
      */
-    async function requestMovie4k(ph) {
+    async function requestMovie4k(ph, epoch) {
         const tmdbId = Number(ph.tmdbId);
-        const item = lp.render.toSeerrItem(ph);
+        const details = await JE.jellyseerrAPI.fetchMovieDetails?.(tmdbId);
+        if (!lp.isCurrentEpoch(epoch)) return;
+        if (isAlreadyRequested(details?.mediaInfo?.status4k)) {
+            announce4k(tmdbId);
+            JE.toast(JE.t('listPlaceholders_already_requested_4k', { title: lp.render.esc(ph.title) }), 3000);
+            return;
+        }
+        const item = details || lp.render.toSeerrItem(ph);
         if (JE.jellyseerrAPI.shouldShowAdvanced()) {
             await JE.jellyseerrUI.showMovieRequestModal(tmdbId, ph.title, item, true);
             return;
@@ -163,13 +181,34 @@
             JE.toast(JE.t('listPlaceholders_requested_4k', { title: lp.render.esc(ph.title) }), 3000);
         } catch (error) {
             if (error?.status === 409) {
-                // Seerr already has a 4K request for it: the option reads as requested from now on.
-                document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail: { tmdbId: String(tmdbId), mediaType: 'movie', is4k: true } }));
+                // Seerr already has a 4K request for it.
+                announce4k(tmdbId);
                 JE.toast(JE.t('listPlaceholders_already_requested_4k', { title: lp.render.esc(ph.title) }), 3000);
                 return;
             }
             await showRequestError(error);
         }
+    }
+
+    /**
+     * Text for a failed Seerr request. A 403 shows the translated text of JE's own permission codes, else the
+     * reason the proxy sent (Seerr's quota message, "Seerr declined the request", "disabled for your account"),
+     * else the generic no-permission text; never a raw locale key.
+     * @param {Object} error - Rejected request (status, responseJSON).
+     * @returns {string} Plain text (not escaped).
+     */
+    function requestErrorMessage(error) {
+        const body = error?.responseJSON || {};
+        if (error?.status === 404) return JE.t('jellyseerr_btn_user_not_found');
+        if (error?.status === 403) {
+            if (body.code) {
+                const key = `jellyseerr_err_${body.code}`;
+                const text = JE.t(key);
+                if (text && text !== key) return text;
+            }
+            return body.message || JE.t('jellyseerr_err_no_request_permission');
+        }
+        return body.message || JE.t('jellyseerr_btn_error');
     }
 
     /**
@@ -184,16 +223,7 @@
             await ui.showQuotaErrorDialog(error, 'movie');
             return;
         }
-        let message = JE.t('jellyseerr_btn_error');
-        if (error?.status === 404) {
-            message = JE.t('jellyseerr_btn_user_not_found');
-        } else if (error?.status === 403) {
-            const code = error.responseJSON?.code;
-            message = JE.t(code ? `jellyseerr_err_${code}` : 'jellyseerr_err_no_request_permission');
-        } else if (error?.responseJSON?.message) {
-            message = error.responseJSON.message;
-        }
-        JE.toast(lp.render.esc(message), 4000);
+        JE.toast(lp.render.esc(requestErrorMessage(error)), 4000);
     }
 
     /**
@@ -228,7 +258,7 @@
                 return;
             }
             if (is4k) {
-                await requestMovie4k(ph);
+                await requestMovie4k(ph, epoch);
                 return;
             }
             const details = (await api.fetchMovieDetails(tmdbId)) || lp.render.toSeerrItem(ph);

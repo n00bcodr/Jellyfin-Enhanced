@@ -386,16 +386,16 @@
     /**
      * Season/episodes cards: JE's Seerr card applies whole-show TV rules to the synthetic item (a requested
      * show keeps an enabled "Request"/"Pending" button), so a season that is already requested or available
-     * gets the same disabled button as its playlist row (statusInfo) instead.
-     * @param {HTMLElement} card
+     * gets the same disabled button as its playlist row (statusInfo) instead. JE's card builds its request
+     * button lazily (hover/tap overview), so this runs on each fresh button via item.onConfigureButton.
+     * @param {HTMLButtonElement|null} button - The card's request button.
      * @param {Object} item - The card's synthetic Seerr item (status as shown).
      * @param {Object} ph
      */
-    function lockSeasonRequestButton(card, item, ph) {
+    function lockSeasonRequestButton(button, item, ph) {
         const seerr = JE.seerrStatus;
         const status = item.mediaInfo?.status;
         if ((ph.kind !== 'season' && ph.kind !== 'episodes') || !seerr || seerr.isRequestable(status)) return;
-        const button = card.querySelector('.jellyseerr-request-button');
         if (!button || button.disabled) return;
         const config = seerr.getButtonConfig(seerr.resolveDisplayStatus(status, false));
         const icon = JE.internals?.jellyseerrUi?.icons?.[config.iconKey] || '';
@@ -418,8 +418,9 @@
         let card;
         if (item) {
             if (typeof ctx.onRequest4k === 'function') item.onRequest4k = () => ctx.onRequest4k(ph);
+            item.onConfigureButton = button => lockSeasonRequestButton(button, item, ph);
             card = JE.jellyseerrUI.createJellyseerrCard(item, !!ctx.user?.active, !!ctx.user?.userFound);
-            lockSeasonRequestButton(card, item, ph);
+            lockSeasonRequestButton(card.querySelector('.jellyseerr-request-button'), item, ph);
             card.querySelector('.jellyseerr-rating')?.remove();
             const year = card.querySelector('.jellyseerr-meta bdi');
             if (year) year.textContent = dateLabel(ph);

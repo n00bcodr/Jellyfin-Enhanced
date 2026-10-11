@@ -762,8 +762,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         // The seasons of every active (pending + approved) TV request. Best effort: a failure, or more requests than
         // RequestMaxPages pages, returns what was read with Complete = false (seasons without availability status are
         // then unknown) rather than failing the whole snapshot. Offset paging over a filtered list (id DESC) skips a row
-        // when a request leaves the filter between two pages (approved, completed, deleted); Seerr's count for the filter
-        // (pageInfo.results) then shrinks, or ends above the rows read. Such a filter is read once more; a second
+        // when a request leaves the filter between two pages (approved, completed, deleted) and nothing takes its place
+        // above the cursor. Each page after the first therefore starts one row early: that row must be the last one of
+        // the previous page, or the rows moved under the cursor. Seerr's count for the filter (pageInfo.results)
+        // shrinking, or ending above the rows read, also means rows moved. Such a filter is read once more; a second
         // inconsistent pass is incomplete too.
         private async Task<(Dictionary<string, Dictionary<int, SeasonStatus>> Requests, bool Complete)> FetchActiveRequestsAsync(string baseUrl, string apiKey)
         {
@@ -792,11 +794,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                         var complete = false;
                         var consistent = true;
                         int? total = null;
+                        int? lastId = null;
                         long rawRead = 0;
                         for (var page = 0; page < RequestMaxPages; page++)
                         {
-                            var rows = await FetchRequestPageAsync(baseUrl, apiKey, $"/api/v1/request?take={RequestPageSize}&skip={page * RequestPageSize}&filter={filter}&mediaType=tv").ConfigureAwait(false)
+                            var overlap = page > 0;
+                            var take = overlap ? RequestPageSize + 1 : RequestPageSize;
+                            var skip = overlap ? (page * RequestPageSize) - 1 : 0;
+                            var rows = await FetchRequestPageAsync(baseUrl, apiKey, $"/api/v1/request?take={take}&skip={skip}&filter={filter}&mediaType=tv", overlap).ConfigureAwait(false)
                                 ?? throw new HttpRequestException("Seerr request page could not be read.");
+                            if (overlap && lastId.HasValue && rows.BoundaryId != lastId)
+                            {
+                                consistent = false;
+                                break;
+                            }
+
+                            lastId = rows.LastId;
                             if (rows.Total.HasValue)
                             {
                                 if (total.HasValue && rows.Total.Value < total.Value)
@@ -952,7 +965,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             existing.Fingerprint == read.Fingerprint
             && (existing.WrittenAtUtc > read.WrittenAtUtc || existing.Entry.UpdatedAtUtc > read.Entry.UpdatedAtUtc);
 
-        private async Task<RequestPage?> FetchRequestPageAsync(string baseUrl, string apiKey, string apiPath)
+        // overlap: the first row repeats the previous page's last one (its id is BoundaryId; it is not counted or parsed).
+        private async Task<RequestPage?> FetchRequestPageAsync(string baseUrl, string apiKey, string apiPath, bool overlap = false)
         {
             using var cts = new CancellationTokenSource(RequestTimeout);
             var url = baseUrl + apiPath;
@@ -974,8 +988,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 return null;
             }
 
-            var rows = new List<RequestRow>(results.GetArrayLength());
-            foreach (var row in results.EnumerateArray())
+            static int? IdOf(JsonElement row) =>
+                row.ValueKind == JsonValueKind.Object && row.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number && id.TryGetInt32(out var value) ? value : null;
+
+            var length = results.GetArrayLength();
+            int? boundaryId = null;
+            if (overlap && length > 0)
+            {
+                boundaryId = IdOf(results[0]);
+            }
+
+            int? lastId = length > (overlap ? 1 : 0) ? IdOf(results[length - 1]) : boundaryId;
+            var rows = new List<RequestRow>(length);
+            foreach (var row in results.EnumerateArray().Skip(overlap ? 1 : 0))
             {
                 if (TryParseRequest(row, out var key, out var seasons))
                 {
@@ -993,7 +1018,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             int? total = document.RootElement.TryGetProperty("pageInfo", out var pageInfo) && pageInfo.ValueKind == JsonValueKind.Object
                 && pageInfo.TryGetProperty("results", out var totalElement) && totalElement.ValueKind == JsonValueKind.Number
                 && totalElement.TryGetInt32(out var count) ? count : null;
-            return new RequestPage(results.GetArrayLength(), rows, total);
+            return new RequestPage(overlap ? Math.Max(0, length - 1) : length, rows, total, boundaryId, lastId);
         }
 
         private async Task<Page?> FetchPageAsync(string baseUrl, string apiKey, string apiPath)
@@ -1043,7 +1068,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         private sealed record RequestRow(string Key, Dictionary<int, SeasonStatus> Seasons, DateTime? UpdatedAtUtc);
 
         // Total: Seerr's count of requests matching the filter (pageInfo.results) when it sent one.
-        private sealed record RequestPage(int RawCount, List<RequestRow> Rows, int? Total);
+        private sealed record RequestPage(int RawCount, List<RequestRow> Rows, int? Total, int? BoundaryId = null, int? LastId = null);
 
         private sealed record Snapshot(Dictionary<string, MediaStatusEntry> Map, Dictionary<string, Dictionary<int, SeasonStatus>> Requests, bool Complete, bool RequestsComplete, DateTime StartedAtUtc, DateTime BuiltAtUtc, string Fingerprint);
 

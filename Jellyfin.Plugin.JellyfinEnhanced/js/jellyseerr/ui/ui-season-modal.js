@@ -191,7 +191,7 @@
                         requestedSeasons = selectedSeasons;
                         const response = await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k, manualTvdbId);
                         if (!(existingCountsAsRequested && isNoSeasonsAvailable(response))) {
-                            JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: resolvedShowTitle }), 4000);
+                            JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: escapeHtml(resolvedShowTitle) }), 4000);
                         }
                     } else {
                         // Partial requests disabled: request all non-special seasons to avoid locking specials
@@ -208,7 +208,7 @@
                         }
 
                         if (!(existingCountsAsRequested && isNoSeasonsAvailable(response))) {
-                            JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: resolvedShowTitle }), 4000);
+                            JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: escapeHtml(resolvedShowTitle) }), 4000);
                         }
                     }
                     // Notify any listening modals that TV was requested

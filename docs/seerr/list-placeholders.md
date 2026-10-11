@@ -68,7 +68,7 @@ A playlist or collection that only holds placeholders shows Jellyfin's generic i
 
 - The collage is only used while the list has no real items. Once one arrives, the collage is removed and Jellyfin makes its own image again (for collections Jellyfin 12 makes none, so the generic icon comes back).
 - It never replaces an image you set. To keep a list without a collage, give it your own image; deleting the collage alone doesn't help, it comes back.
-- When users with parental controls can see the list, only posters every one of them may see are used, each the one Seerr has for that title, so the collage can have fewer posters, or none.
+- When users with parental controls can see the list, only posters every one of them may see are used, each the one Seerr has for that title (or TMDB's, when Seerr is off and a TMDB API key is set), so the collage can have fewer posters, or none. If Seerr or TMDB doesn't answer, the collage is removed and checked again a few minutes later.
 - It appears about 15 seconds after the list changes. Turning the setting off removes every collage the plugin made.
 
 ## Requesting

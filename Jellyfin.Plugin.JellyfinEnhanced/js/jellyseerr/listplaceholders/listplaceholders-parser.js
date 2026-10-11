@@ -687,9 +687,11 @@
 
     /**
      * Cleans one option of a `→` chain segment: drops a plain label ("Optional setup:") and the commentary after the
-     * episode reference or first sentence; a trailing instruction parenthetical becomes a note.
+     * episode reference or first sentence; a trailing instruction parenthetical becomes a note. A prefix that carries
+     * its own episode reference ("Supergirl 2x08: Medusa") is the entry, not a label. Bare ids in the commentary
+     * after the reference ("Flash S1E8 tmdb:tv:60735") still name the title (returned with the link targets).
      * @param {string} raw Raw markdown text of the option.
-     * @returns {{part: string, urls: string[], note?: string}} The title text, its link targets and the instruction.
+     * @returns {{part: string, urls: string[], note?: string}} The title text, its link targets/ids and the instruction.
      */
     function cleanChainSegment(raw) {
         const urls = [];
@@ -697,22 +699,70 @@
         const plainPart = instruction.text;
         let part;
         const ref = findEpisodeRef(plainPart);
-        // A plain label before an episode reference ("Optional setup: Supergirl 2x08").
+        // A plain label before an episode reference ("Optional setup: Supergirl 2x08"); the reference (or quoted
+        // episode title) must follow the colon, so "Supergirl 2x08: Medusa" keeps its show and episode.
         const label = /^([^:"]{2,40}):\s+(.+)$/.exec(plainPart);
-        if (label && (ref || /"[^"]+"/.test(label[2])) && (/\s/.test(label[1]) || /^(setup|optional|then|finally|start|bonus|extra|part \d+)$/i.test(label[1]))) {
-            part = label[2];
-        } else {
-            part = plainPart;
-        }
+        const labelled = label && !findEpisodeRef(label[1])
+            && (findEpisodeRef(label[2]) || /"[^"]+"/.test(label[2]))
+            && (/\s/.test(label[1]) || /^(setup|optional|then|finally|start|bonus|extra|part \d+)$/i.test(label[1]));
+        part = labelled ? label[2] : plainPart;
         if (ref || /"[^"]+"/.test(part)) {
-            // Keep the title + reference, drop the commentary after it.
+            // Keep the title + reference, drop the commentary after it (but not the bare ids in it).
             const inner = findEpisodeRef(part);
-            if (inner) part = part.slice(0, inner.end);
-            else part = part.replace(/^(.*?"[^"]+")[\s\S]*$/, '$1');
+            const kept = inner ? part.slice(0, inner.end) : part.replace(/^(.*?"[^"]+")[\s\S]*$/, '$1');
+            urls.push(...(part.slice(kept.length).match(ID_TOKENS) || []));
+            part = kept;
         } else {
             part = part.split(/(?<=[a-z0-9!?)])[.;]\s+/i)[0];
         }
         return { part, urls, note: instruction.note };
+    }
+
+    /**
+     * Splits text at " / " separators outside parentheses and brackets ("Flash 1x08 (part 1 / 2) / Arrow 3x09").
+     * @param {string} text Raw text.
+     * @returns {string[]} Trimmed, non-empty pieces.
+     */
+    function splitTopLevelSlash(text) {
+        const pieces = [];
+        let depth = 0;
+        let start = 0;
+        for (let i = 0; i < text.length; i++) {
+            const c = text[i];
+            if (c === '(' || c === '[') depth++;
+            else if ((c === ')' || c === ']') && depth > 0) depth--;
+            else if (c === '/' && depth === 0 && /\s/.test(text[i - 1] || '') && /\s/.test(text[i + 1] || '')) {
+                pieces.push(text.slice(start, i));
+                start = i + 1;
+            }
+        }
+        pieces.push(text.slice(start));
+        return pieces.map(piece => piece.trim()).filter(Boolean);
+    }
+
+    /**
+     * " / " alternatives of a chain option that each name their own episode ("[Flash](…) 1x08 / [Arrow](…) 3x09").
+     * A piece without its own reference or quoted episode title is commentary ("Supergirl 2x08 — optional /
+     * skippable") and stays with the piece before it. Null unless at least two pieces carry a reference: the caller
+     * then cleans the option first and splits what is left (plain "A / B" titles).
+     * @param {string} option Raw option text.
+     * @returns {string[]|null} Raw alternatives, or null.
+     */
+    function episodeAlternatives(option) {
+        const merged = [];
+        let pending = '';
+        for (const piece of splitTopLevelSlash(option)) {
+            const plainPiece = stripMarkdown(piece, []);
+            if (findEpisodeRef(plainPiece) || /"[^"]+"/.test(plainPiece)) {
+                merged.push(pending ? `${pending} / ${piece}` : piece);
+                pending = '';
+            } else if (merged.length) {
+                merged[merged.length - 1] += ` / ${piece}`;
+            } else {
+                pending = pending ? `${pending} / ${piece}` : piece;
+            }
+        }
+        return merged.length > 1 ? merged : null;
     }
 
     /**
@@ -734,10 +784,11 @@
         segments.forEach((segment, position) => {
             // "A **or** B" and "A / B" split on the raw segment, before cleaning cuts each option at its first episode
             // reference (which would drop " / B 3x09") or removes the bold marker (E2: always alternatives). Each
-            // option then keeps its own link targets (ids). A " / " inside parentheses ("(part 1 / 2)") is no split.
+            // option then keeps its own link targets (ids). A " / " inside parentheses ("(part 1 / 2)") is no split,
+            // and neither is one followed by commentary rather than another episode ("2x08 — optional / skippable").
             const options = splitAlternatives(segment, false).flatMap((option) => {
-                const raw = ctx.allowSlash !== false ? option.split(/\s+\/\s+/).map(o => o.trim()).filter(Boolean) : [option];
-                if (raw.length > 1 && raw.every(balancedParens)) {
+                const raw = ctx.allowSlash !== false ? episodeAlternatives(option) : null;
+                if (raw) {
                     return raw.map((piece) => {
                         const cleaned = cleanChainSegment(piece);
                         return { part: cleaned.part, note: cleaned.note, urls: cleaned.urls };

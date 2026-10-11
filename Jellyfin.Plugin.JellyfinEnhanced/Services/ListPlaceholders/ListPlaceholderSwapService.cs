@@ -1117,9 +1117,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     var resolution = _resolver.Resolve(placeholder, ListKinds.Collection, Array.Empty<User>());
                     if (resolution.Found)
                     {
+                        // The scope is resolved again now: an item that arrived after the intent was saved neither landed
+                        // nor is a member, so it counts for nothing here (like JE's own rejected adds) and the swap below
+                        // adds it; counting it would retire the placeholder with that episode never in the collection.
                         var rejected = intent.ItemIds
                             .Select(idN => Guid.TryParseExact(idN, "N", out var id) ? id : Guid.Empty)
                             .Where(id => id != Guid.Empty && !landed.Contains(id))
+                            .Concat(resolution.Items.Select(i => i.ItemId).Where(id => !landed.Contains(id) && !counts.ContainsKey(id)))
                             .ToHashSet();
                         RecordCollectionSwap(context, placeholder, resolution, landed.ToHashSet(), rejected);
                     }
@@ -1311,8 +1315,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         private async Task<Dictionary<string, PlaceholderMetadata>> FetchMetadataAsync(IEnumerable<Placeholder> placeholders, MetadataMode mode, DateTime today, CancellationToken cancellationToken)
         {
             var result = new Dictionary<string, PlaceholderMetadata>(StringComparer.Ordinal);
-            if (mode == MetadataMode.None || !ListPlaceholderMetadataService.IsAvailable)
+            if (mode == MetadataMode.None)
             {
+                return result;
+            }
+
+            if (!ListPlaceholderMetadataService.IsAvailable)
+            {
+                // Without Seerr only posters can be read (from TMDB with JE's key): the ones UseServerPostersAsync
+                // couldn't read in its interactive budget, or left empty while no poster source was configured.
+                if ((mode & (MetadataMode.New | MetadataMode.Maintenance)) != 0 && ListPlaceholderMetadataService.TmdbAvailable)
+                {
+                    await FetchTmdbPostersAsync(placeholders, result, cancellationToken).ConfigureAwait(false);
+                }
+
                 return result;
             }
 
@@ -1337,7 +1353,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
 
                 if ((mode & MetadataMode.Maintenance) != 0
-                    && (p.MediaType == "tv" || p.ReleaseDate == null || p.PosterPath == null || !PlaceholderRules.IsReleased(p, today)))
+                    && (p.MediaType == "tv" || p.ReleaseDate == null || p.PosterPath == null || p.PosterUnverified == true || !PlaceholderRules.IsReleased(p, today)))
                 {
                     Want(MaintenanceMetadataMaxAge);
                 }
@@ -1377,6 +1393,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             return result;
         }
 
+        // TMDB posters for TMDB placeholders that have none (or only an unverified one a client sent), as poster-only
+        // (Partial) metadata: Apply then sets only the poster and keeps every other stored fact. TMDB answers are cached (a title without a poster too), so a daily
+        // maintenance pass asks TMDB again at most once per cache period per title.
+        private async Task FetchTmdbPostersAsync(IEnumerable<Placeholder> placeholders, Dictionary<string, PlaceholderMetadata> result, CancellationToken cancellationToken)
+        {
+            var wanted = placeholders.Where(p => p.Kind != PlaceholderKinds.Custom && p.TmdbId is > 0 && (p.PosterPath == null || p.PosterUnverified == true)).ToList();
+            var fetched = new ConcurrentDictionary<string, PlaceholderMetadata>(StringComparer.Ordinal);
+            var options = new ParallelOptions { MaxDegreeOfParallelism = PassMetadataConcurrency, CancellationToken = cancellationToken };
+            await Parallel.ForEachAsync(wanted, options, async (p, token) =>
+            {
+                try
+                {
+                    var poster = await _metadata.FetchTmdbPosterAsync(p, token).ConfigureAwait(false);
+                    if (PlaceholderRules.IsValidPosterPath(poster))
+                    {
+                        fetched[p.Id] = new PlaceholderMetadata { FetchedAtUtc = DateTime.UtcNow, PosterPath = poster, Partial = true };
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
+                {
+                    _logger.Debug($"[ListPlaceholders] TMDB poster for \"{p.Title}\" failed: {ex.Message}");
+                }
+            }).ConfigureAwait(false);
+            foreach (var pair in fetched)
+            {
+                result[pair.Key] = pair.Value;
+            }
+        }
+
         // Whether a playlist's owner still exists (swap-ins run as the owner).
         private bool HasOwner(string listIdN)
         {
@@ -1392,6 +1437,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
             catch (InvalidDataException)
             {
+                return null;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // A file held by another program: this event skips the list; the next pass reads it again.
+                _logger.Warning($"[ListPlaceholders] Could not read {listIdN}.json ({ex.Message}).");
                 return null;
             }
         }

@@ -256,7 +256,7 @@ test('collection movie placeholder: after a 4K request the popup offers no secon
 });
 
 for (const [label, error, expected] of [
-  ['a 403 without 4K permission', { status: 403, responseJSON: { code: 'no_4k_permission' } }, /^jellyseerr_err_no_4k_permission/],
+  ['a 403 without 4K permission', { status: 403, responseJSON: { code: 'Forbidden', message: 'Seerr declined the request.' } }, /^Seerr declined the request\.$/],
   ['a 404 (user not linked)', { status: 404, responseJSON: { message: 'User not found' } }, /^jellyseerr_btn_user_not_found/],
   ['a 409 (already requested)', { status: 409, responseJSON: { message: 'exists' } }, /^listPlaceholders_already_requested_4k/],
   ['Seerr\'s own message', { status: 500, responseJSON: { message: 'Radarr <down>' } }, /^Radarr &lt;down&gt;$/]

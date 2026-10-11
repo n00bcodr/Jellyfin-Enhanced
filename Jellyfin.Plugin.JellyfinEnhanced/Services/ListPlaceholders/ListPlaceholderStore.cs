@@ -72,6 +72,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         private Dictionary<string, HashSet<PlaceholderRef>>? _index;
         private Dictionary<string, List<string>>? _indexKeysByList;
 
+        // Lists whose document could not be read while the index was built (a file held by a backup or antivirus tool,
+        // wrong permissions): indexed by a later lookup, at most once per IndexRetryDelay, or when the list is saved.
+        private readonly HashSet<string> _indexPending = new(StringComparer.Ordinal);
+        private DateTime _indexRetryAtUtc;
+
         /// <summary>Creates the store; the directory is created lazily on first write.</summary>
         /// <param name="appPaths">Jellyfin application paths.</param>
         /// <param name="logger">JE logger.</param>
@@ -268,6 +273,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
             lock (_indexLock)
             {
+                _indexPending.Remove(listIdN);
                 RemoveFromIndexUnlocked(listIdN);
             }
 
@@ -299,7 +305,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             lock (_indexLock)
             {
                 // Every document with at least one placeholder has an entry (possibly with no keys: custom-only).
-                return _indexKeysByList!.Count > 0;
+                // A document that could not be read yet may have some.
+                return _indexKeysByList!.Count > 0 || _indexPending.Count > 0;
             }
         }
 
@@ -496,15 +503,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
         }
 
-        private ListDoc? SafeLoad(string listIdN)
+        /// <summary>Test seam: how long an index build waits before it reads an unreadable document again.</summary>
+        internal TimeSpan IndexRetryDelay { get; set; } = TimeSpan.FromMinutes(1);
+
+        // Loads a document for the index: null when it is absent or corrupt (it has no placeholders that can be
+        // used), false when it could not be read right now (an IO or permission error; read again later).
+        private bool TryLoadForIndex(string listIdN, out ListDoc? doc)
         {
             try
             {
-                return Load(listIdN);
+                doc = Load(listIdN);
+                return true;
             }
             catch (InvalidDataException)
             {
-                return null;
+                doc = null;
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.Warning($"[ListPlaceholders] Could not read {listIdN}.json for the placeholder index ({ex.Message}); it is read again later.");
+                doc = null;
+                return false;
             }
         }
 
@@ -523,20 +543,64 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             {
                 if (_index != null)
                 {
+                    RetryPendingUnlocked();
                     return;
                 }
 
+                // An unreadable document is skipped (and read again later), and an unexpected failure leaves no index
+                // behind: a half-built one would hide every list after it until a restart.
                 _index = new Dictionary<string, HashSet<PlaceholderRef>>(StringComparer.Ordinal);
                 _indexKeysByList = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-                foreach (var id in EnumerateListIds())
+                _indexPending.Clear();
+                try
                 {
-                    var doc = SafeLoad(id);
-                    if (doc != null)
+                    foreach (var id in EnumerateListIds())
                     {
-                        AddToIndexUnlocked(doc);
+                        if (!TryLoadForIndex(id, out var doc))
+                        {
+                            _indexPending.Add(id);
+                        }
+                        else if (doc != null)
+                        {
+                            AddToIndexUnlocked(doc);
+                        }
                     }
                 }
+                catch
+                {
+                    _index = null;
+                    _indexKeysByList = null;
+                    _indexPending.Clear();
+                    throw;
+                }
+
+                _indexRetryAtUtc = DateTime.UtcNow + IndexRetryDelay;
             }
+        }
+
+        private void RetryPendingUnlocked()
+        {
+            if (_indexPending.Count == 0 || DateTime.UtcNow < _indexRetryAtUtc)
+            {
+                return;
+            }
+
+            foreach (var id in _indexPending.ToList())
+            {
+                if (!TryLoadForIndex(id, out var doc))
+                {
+                    continue;
+                }
+
+                _indexPending.Remove(id);
+                RemoveFromIndexUnlocked(id);
+                if (doc != null)
+                {
+                    AddToIndexUnlocked(doc);
+                }
+            }
+
+            _indexRetryAtUtc = DateTime.UtcNow + IndexRetryDelay;
         }
 
         private void IndexList(ListDoc doc)
@@ -548,6 +612,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     return; // built lazily from disk on first use, which includes this write
                 }
 
+                _indexPending.Remove(doc.ListId);
                 RemoveFromIndexUnlocked(doc.ListId);
                 AddToIndexUnlocked(doc);
             }

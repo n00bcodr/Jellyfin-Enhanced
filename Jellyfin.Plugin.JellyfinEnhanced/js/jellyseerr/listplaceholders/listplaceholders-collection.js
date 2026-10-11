@@ -379,12 +379,17 @@
             ctrl.pollTimer = ctrl.refetchTimer = null;
             ctrl.refetchAt = 0;
             ctrl.renderToken++;
+            // The source menu's queue and last answer belong to the user who made the changes.
+            ctrl.sourceView = null;
+            ctrl.sourceQueue = null;
             if (ctrl.section && !ctrl.isAlive()) JE.jellyseerrUI?.releasePosters?.(ctrl.section);
         };
 
         /** Takes a disposed controller back into use (its page is shown again, e.g. after a user switch). */
         ctrl.reactivate = () => {
             ctrl.view = null;
+            ctrl.sourceView = null;
+            ctrl.sourceQueue = null;
             ctrl.user = null;
             ctrl.pollIndex = 0;
             ctrl.addingSeen = new Set();

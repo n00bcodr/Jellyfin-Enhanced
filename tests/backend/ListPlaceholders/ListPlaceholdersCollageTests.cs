@@ -1237,4 +1237,59 @@ public partial class ListPlaceholdersCollageTests
             dir.Delete(true);
         }
     }
+
+    // ---- review round 3: TMDB posters without Seerr, re-checks after a provider outage ----------------------------
+
+    // R3-11: with Seerr off and a TMDB key set, restricted viewers' collages use TMDB's poster of each title (as the
+    // stored posters are then TMDB's), not none at all.
+    [Fact]
+    public async Task WithoutSeerrRestrictedViewersGetTmdbPosters()
+    {
+        using var f = new Fixture();
+        f.Plugin.Plugin.Configuration.JellyseerrEnabled = false;
+        f.Plugin.Plugin.Configuration.TMDB_API_KEY = "tmdb-key";
+        f.Kid();
+        var seeded = f.Seed(f.Playlist, "/p5.jpg", "/p6.jpg");
+        f.H.Tmdb["/3/movie/1000"] = "{\"id\":1000,\"poster_path\":\"/p0.jpg\"}";
+        f.H.Tmdb["/3/movie/1000/release_dates"] = "{\"id\":1000,\"results\":[{\"iso_3166_1\":\"US\",\"release_dates\":[{\"certification\":\"PG\",\"type\":3}]}]}";
+        f.H.Tmdb["/3/movie/1001"] = "{\"id\":1001,\"poster_path\":\"/p1.jpg\"}";
+        f.H.Tmdb["/3/movie/1001/release_dates"] = "{\"id\":1001,\"results\":[{\"iso_3166_1\":\"US\",\"release_dates\":[{\"certification\":\"R\",\"type\":3}]}]}";
+        Assert.Equal(2, seeded.Count);
+
+        Assert.Equal(CollageDecision.Set, await f.Evaluate(f.Playlist));
+        Assert.Equal(new[] { "/p0.jpg" }, f.Service.Markers.Load(Fixture.Id(f.Playlist))!.PosterKeys);
+        Assert.DoesNotContain(f.H.SeerrCalls, c => c.StartsWith("/api/v1/", StringComparison.Ordinal));
+    }
+
+    // R3-10: a restricted list whose posters can't be verified because Seerr is down loses its collage (fail closed),
+    // and is checked again later: Seerr coming back fires no event.
+    [Fact]
+    public async Task ACollageRemovedWhileSeerrWasDownIsBuiltAgainOnceItAnswers()
+    {
+        using var f = new Fixture();
+        f.Service.RetryBase = TimeSpan.FromMilliseconds(100);
+        f.H.MovieCertifications[1000] = "PG";
+        var seeded = f.Seed(f.Playlist, "/p0.jpg");
+        var id = Fixture.Id(f.Playlist);
+        Assert.Equal(CollageDecision.Set, await f.Evaluate(f.Playlist));
+
+        // A viewer with parental controls whose rating lookups are cached, then Seerr stops answering title details.
+        var kid = f.Kid();
+        Assert.Empty(await f.H.Access.GetHiddenPlaceholderIdsAsync(seeded, kid, CancellationToken.None));
+        var seerr = f.H.Reply;
+        f.H.Reply = request => request.RequestUri!.AbsolutePath.StartsWith("/api/v1/movie/", StringComparison.Ordinal)
+            ? new HttpResponseMessage(HttpStatusCode.BadGateway)
+            : seerr(request);
+        Assert.Equal(CollageDecision.Remove, await f.Evaluate(f.Playlist));
+        Assert.False(f.Images.Images.ContainsKey(f.Playlist.Info.Id));
+        Assert.NotNull(f.Service.VerifyRetryUntil(id));
+        Assert.NotNull(f.Service.PendingDue(id));
+
+        // Seerr is back: the planned check builds the collage again and forgets the retry.
+        f.H.Reply = seerr;
+        await Task.Delay(150);
+        Assert.Equal(CollageDecision.Set, await f.Evaluate(f.Playlist));
+        Assert.Equal(new[] { "/p0.jpg" }, f.Service.Markers.Load(id)!.PosterKeys);
+        Assert.Null(f.Service.VerifyRetryUntil(id));
+    }
 }

@@ -429,18 +429,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         // allowed title with a blocked title's poster, which restricted viewers would then see on the row and in the list's
         // collage. Read within a short budget; a poster not read in time is left empty (fail closed) and the background
         // metadata pass fills it in. Without Seerr but with a TMDB key the parental filter still rates titles (from TMDB),
-        // so the poster is read from TMDB the same way (no background pass then: one not read in time stays empty). With
-        // neither, nothing can check it and the client's stays: the filter can't rate those titles either, so restricted
-        // viewers never see them.
+        // so the poster is read from TMDB the same way (the background passes then fill missing ones from TMDB). With
+        // neither, nothing can check it: the client's is kept but marked unverified (PosterUnverified), so viewers with
+        // parental controls never get it, even once a provider is configured and the filter can rate (and so allow) the
+        // title; the first metadata pass that can read the title's own poster replaces it.
         private async Task UseServerPostersAsync(IReadOnlyList<Placeholder> placeholders, CancellationToken cancellationToken)
         {
             var titles = placeholders.Where(HasTmdb).ToList();
             var seerr = ListPlaceholderMetadataService.IsAvailable;
-            if (titles.Count == 0 || (!seerr && !ListPlaceholderMetadataService.TmdbAvailable))
+            if (titles.Count == 0)
             {
                 return;
             }
 
+            if (!seerr && !ListPlaceholderMetadataService.TmdbAvailable)
+            {
+                titles.ForEach(placeholder => placeholder.PosterUnverified = placeholder.PosterPath != null ? true : null);
+                return;
+            }
+
+            titles.ForEach(placeholder => placeholder.PosterUnverified = null);
             if (_metadata == null)
             {
                 titles.ForEach(placeholder => placeholder.PosterPath = null);
@@ -980,6 +988,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     placeholder.Year = link.Year;
                     placeholder.ReleaseDate = link.ReleaseDate;
                     placeholder.PosterPath = link.PosterPath;
+                    placeholder.PosterUnverified = link.PosterUnverified;
                     placeholder.Overview = link.Overview ?? placeholder.Overview;
                     placeholder.SeasonNumber = link.SeasonNumber;
                     placeholder.Episodes = link.Episodes;
@@ -1346,6 +1355,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             };
 
             var today = DateTime.UtcNow;
+            var restricted = _access.IsRestricted(access.User);
             var callerVisible = new Dictionary<Guid, bool>(); // rows (playlists) / access (collections), per item
             var byId = items.ToDictionary(p => p.Id, StringComparer.Ordinal);
             IEnumerable<Placeholder> ordered;
@@ -1382,7 +1392,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     Year = placeholder.Year,
                     ReleaseDate = placeholder.ReleaseDate,
                     Released = PlaceholderRules.IsReleased(placeholder, today),
-                    PosterPath = placeholder.PosterPath,
+                    // A poster nothing could check is never shown to a viewer with parental controls.
+                    PosterPath = placeholder.PosterUnverified == true && restricted ? null : placeholder.PosterPath,
                     Overview = placeholder.Overview,
                     SeasonNumber = placeholder.SeasonNumber,
                     Episodes = placeholder.Episodes,

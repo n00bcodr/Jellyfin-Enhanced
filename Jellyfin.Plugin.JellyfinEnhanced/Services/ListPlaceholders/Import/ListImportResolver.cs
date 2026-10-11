@@ -241,6 +241,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                         candidate.For = resolvedAlternative;
                     }
 
+                    // The open-range caps Confidence() reports for a single entry: an alternative's range that couldn't
+                    // be read, or a season longer than one import expands (else choosing it cuts the range silently).
+                    if (resolvedAlternative.OpenEnded && list.Count > 0 && list[0].Episodes == null)
+                    {
+                        perAlternativeReasons[i].Add("openEnded");
+                    }
+
+                    if (list.Any(c => c.OpenEndedTruncated))
+                    {
+                        perAlternativeReasons[i].Add("openEndedTruncated");
+                    }
+
                     return list;
                 })).ConfigureAwait(false);
                 foreach (var alternativeReasons in perAlternativeReasons)

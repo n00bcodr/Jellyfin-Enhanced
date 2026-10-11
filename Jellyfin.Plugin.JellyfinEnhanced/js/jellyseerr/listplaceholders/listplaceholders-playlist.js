@@ -636,12 +636,17 @@
             ctrl.pollTimer = ctrl.refetchTimer = ctrl.emptyTimer = null;
             ctrl.refetchAt = 0;
             ctrl.pendingView = null;
+            // The source menu's queue and last answer belong to the user who made the changes.
+            ctrl.sourceView = null;
+            ctrl.sourceQueue = null;
         };
 
         /** Takes a disposed controller back into use (its page is shown again, e.g. after a user switch). */
         ctrl.reactivate = () => {
             ctrl.view = null;
             ctrl.pendingView = null;
+            ctrl.sourceView = null;
+            ctrl.sourceQueue = null;
             ctrl.user = null;
             ctrl.nativeRefreshedKey = undefined;
             ctrl.pollIndex = 0;

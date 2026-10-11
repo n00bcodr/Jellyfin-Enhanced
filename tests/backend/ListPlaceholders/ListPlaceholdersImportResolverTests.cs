@@ -552,5 +552,39 @@ public class ListPlaceholdersImportResolverTests
         Assert.Contains("openEndedTruncated", cut.Reasons);
         Assert.Equal("low", cut.Confidence);
     }
-}
 
+    // Review round 3: an "A or B" entry reports the open-range caps of its alternatives too (a cut range was silent).
+    [Fact]
+    public async Task AnAlternativesEntryReportsATruncatedOpenRange()
+    {
+        using var h = new ListPlaceholdersHarness();
+        var user = h.NewUser("u");
+        var show = Tv(37854, "One Piece", "1999-10-20");
+        var other = Tv(46260, "Naruto", "2002-10-03");
+        h.Lookup.AddSearch("One Piece", show);
+        h.Lookup.AddSearch("Naruto", other);
+        h.Lookup.AddShow(show, new SeasonFacts(1, 1100, "1999-10-20", "Season 1"));
+        h.Lookup.AddShow(other, new SeasonFacts(1, 220, "2002-10-03", "Season 1"));
+        h.Lookup.Seasons[(37854, 1)] = Enumerable.Range(1, 1100).Select(e => new EpisodeFacts(1, e, "Episode " + e, "2000-01-01")).ToList();
+        h.Lookup.Seasons[(46260, 1)] = Enumerable.Range(1, 220).Select(e => new EpisodeFacts(1, e, "Episode " + e, "2003-01-01")).ToList();
+        var entry = E("One Piece", null, "tv", null, null, (1, 1));
+        entry.Alternatives = new List<ImportAlternativeDto>
+        {
+            new() { Title = "One Piece", TypeHint = "tv", Season = 1, Episodes = new List<ImportEpisodeDto> { new() { S = 1, E = 1 } }, OpenEnded = true },
+            new() { Title = "Naruto", TypeHint = "tv", Season = 1, Episodes = new List<ImportEpisodeDto> { new() { S = 1, E = 1 } } },
+        };
+
+        var result = (await Resolve(h, user, new[] { entry })).Results[0];
+
+        Assert.True(result.Alternatives);
+        var onePiece = result.Candidates!.First(c => c.Alternative == 0);
+        Assert.Equal(1000, onePiece.Episodes!.Count);
+        Assert.Contains("openEndedTruncated", result.Reasons);
+        Assert.Equal("low", result.Confidence);
+
+        // Without a cut range the reason is absent.
+        entry.Alternatives[0].Episodes![0].E = 200;
+        var shorter = (await Resolve(h, user, new[] { entry })).Results[0];
+        Assert.DoesNotContain("openEndedTruncated", shorter.Reasons);
+    }
+}
