@@ -164,7 +164,49 @@ async function phoneKeyboardOnly(browser, options) {
 }
 
 /**
- * layout=tv: jellyfin-web moves focus on the arrow keys; it must stay inside the panel.
+ * layout=tv, with the panel open: Enter on Release notes moves focus into the notification, the
+ * arrow keys keep it there (not on the page behind), Escape closes only the notification and
+ * focus is back on the button.
+ * @param {import('@playwright/test').Page} page
+ */
+async function tvReleaseNotes(page) {
+  // The browser context blocks other origins; answer the GitHub release lookup locally.
+  await page.route('https://api.github.com/**', route => route.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ tag_name: 'v99.0.0', published_at: '2026-10-01T00:00:00Z', html_url: 'https://github.com/n00bcodr/Jellyfin-Enhanced/releases',
+      body: '## Notes\n- [a link](https://example.com/one)\n- item\n- [another link](https://example.com/two)' }) }));
+  const NOTES = '#jellyfin-release-notes-notification';
+  await page.locator(`${PANEL} .tab-button[data-tab="about"]`).focus();
+  await page.keyboard.press('Enter');
+  await page.locator('#releaseNotesBtn').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator(NOTES)).toBeVisible();
+  const inNotes = () => page.evaluate(selector => {
+    const active = document.activeElement;
+    const notes = document.querySelector(selector);
+    return { inside: !!notes?.contains(active), control: !!active && active !== notes && !!notes?.contains(active),
+      describe: active ? `${active.tagName}.${active.className} ${active.textContent.trim().slice(0, 20)}`.slice(0, 80) : 'none' };
+  }, NOTES);
+  expect((await inNotes()).inside, 'Enter on Release notes moves focus into them').toBe(true);
+  const visited = new Set();
+  for (const key of ['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowUp']) {
+    for (let i = 1; i <= 6; i++) {
+      await page.keyboard.press(key);
+      const state = await inNotes();
+      expect(state.inside, `${key} #${i} in the release notes moved focus to ${state.describe}`).toBe(true);
+      expect(state.control, `${key} #${i} left focus on the notification itself, not on a control`).toBe(true);
+      visited.add(state.describe);
+    }
+  }
+  expect(visited.size, `the D-pad reaches more than one control in the notes: ${[...visited].join(' | ')}`).toBeGreaterThan(1);
+  await page.keyboard.press('Escape');
+  await expect(page.locator(NOTES)).toHaveCount(0);
+  await expect(page.locator(PANEL)).toBeVisible();
+  expect(await page.evaluate(() => document.activeElement?.id), 'focus is back on Release notes').toBe('releaseNotesBtn');
+}
+
+/**
+ * layout=tv: jellyfin-web moves focus on the arrow keys; it must stay inside the panel, and inside
+ * the release notes once they are open.
  * @param {import('@playwright/test').Browser} browser
  * @param {{url: string, username: string, password: string}} options
  */
@@ -187,6 +229,7 @@ async function tvArrowKeys(browser, options) {
     for (const key of ['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft']) await pressStayingInside(page, key, 12);
     await pressStayingInside(page, 'ArrowDown', 20);
     await pressStayingInside(page, 'ArrowUp', 30);
+    await tvReleaseNotes(page);
     expect(errors, 'Uncaught browser errors').toEqual([]);
   } finally {
     await page.evaluate(() => localStorage.removeItem('layout')).catch(() => {});
@@ -203,5 +246,5 @@ async function tvArrowKeys(browser, options) {
 export async function checkPanelKeyboard(browser, options) {
   await phoneKeyboardOnly(browser, options);
   await tvArrowKeys(browser, options);
-  return ['375 px keyboard-only panel', 'save failure visible on the phone sheet', 'layout=tv arrow keys stay in the panel'];
+  return ['375 px keyboard-only panel', 'save failure visible on the phone sheet', 'layout=tv arrow keys stay in the panel and in its release notes'];
 }

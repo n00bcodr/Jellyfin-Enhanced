@@ -36,7 +36,9 @@
         const notification = document.createElement('div');
         notification.id = notificationId;
         // A non-modal dialog that joins the open panel's focus trap (ui-panel.js), so keyboard
-        // users can Tab between the panel and the notification.
+        // users can Tab between the panel and the notification. `focuscontainer` keeps jellyfin-web's
+        // D-pad navigation (layout=tv) inside it once it has focus, as the panel does for itself.
+        notification.className = 'focuscontainer';
         notification.setAttribute('role', 'dialog');
         notification.setAttribute('aria-label', 'Latest Release Notes');
         notification.setAttribute('data-je-panel-companion', '');
@@ -77,11 +79,27 @@
             notification.remove();
         };
 
-        const resetAutoCloseTimer = () => {
+        /**
+         * Whether focus is on a control inside (the x, a link, Close). The focus the notification
+         * itself gets on opening does not count, so it still closes on its own when left alone.
+         * @returns {boolean} True while a control inside has focus.
+         */
+        const isFocusInside = () => {
+            const active = document.activeElement;
+            return active !== notification && notification.contains(active);
+        };
+
+        /**
+         * (Re)starts the 20 s auto-close.
+         * @param {boolean} [focusLeaving] - Called from focusout, where focus is still on the control
+         * that is losing it; the hold check is then left to the timer.
+         */
+        const resetAutoCloseTimer = (focusLeaving) => {
             if (autoCloseTimer) clearTimeout(autoCloseTimer);
-            if (closing) return;
+            // A focused control inside holds it open like the mouse does (focusout re-arms).
+            if (closing || (!focusLeaving && isFocusInside())) return;
             autoCloseTimer = setTimeout(() => {
-                if (!isMouseInside) {
+                if (!isMouseInside && !isFocusInside()) {
                     closePanel();
                 }
             }, AUTOCLOSE_DELAY);
@@ -95,15 +113,26 @@
             isMouseInside = false;
             resetAutoCloseTimer();
         });
-        // Keyboard focus on a control inside holds the notification open like the mouse does
-        // (the focus it gets on opening comes before the timer starts, so that alone does not).
-        notification.addEventListener('focusin', () => {
-            if (autoCloseTimer) clearTimeout(autoCloseTimer);
+        // Keyboard focus on a control inside holds the notification open like the mouse does;
+        // focus on the notification itself (as on opening) does not.
+        notification.addEventListener('focusin', (e) => {
+            if (e.target !== notification && autoCloseTimer) clearTimeout(autoCloseTimer);
         });
         notification.addEventListener('focusout', (e) => {
-            if (!notification.contains(e.relatedTarget)) resetAutoCloseTimer();
+            if (e.relatedTarget === notification || !notification.contains(e.relatedTarget)) resetAutoCloseTimer(true);
         });
         notification.addEventListener('keydown', (e) => {
+            // layout=tv: jellyfin-web's D-pad navigation finds nothing from the notification itself
+            // (every control lies inside its box), so the first arrow press moves to its first control.
+            if (e.target === notification && /^Arrow(Up|Down|Left|Right)$/.test(e.key)
+                && document.documentElement.classList.contains('layout-tv')) {
+                const first = notification.querySelector('button, a[href]');
+                if (first) {
+                    e.preventDefault();
+                    first.focus();
+                }
+                return;
+            }
             if (e.key !== 'Escape') return;
             // Escape closes the notification only, not the panel underneath.
             e.stopPropagation();
