@@ -48,6 +48,79 @@ internal sealed class FakeArr : IDisposable
 
     private readonly Dictionary<int, int> _pollsLeft = new();
 
+    /// <summary>
+    /// How many reads of a newly added series (GET /episode once its episodes are visible, GET /series/{id}) pass
+    /// before Sonarr's post-add step runs (0 = done by the first such read). That step (SeriesScannedHandler, monitor
+    /// unset) switches off every episode of an unmonitored season and then clears <c>addOptions</c>.
+    /// </summary>
+    public int PostAddReadsBeforeSettled { get; set; }
+
+    private readonly Dictionary<int, int> _postAddLeft = new();
+
+    /// <summary>Runs every pending post-add step now (Sonarr finishing its add after JE returned).</summary>
+    public void RunPostAdds()
+    {
+        lock (this)
+        {
+            foreach (var id in _postAddLeft.Keys.ToList())
+            {
+                PostAdd(id);
+            }
+        }
+    }
+
+    /// <summary>Marks a seeded series as added moments ago: its post-add step is still pending.</summary>
+    public void MarkJustAdded(int seriesId)
+    {
+        lock (this)
+        {
+            SeriesById(seriesId)["addOptions"] = new JsonObject { ["searchForMissingEpisodes"] = false };
+            _postAddLeft[seriesId] = PostAddReadsBeforeSettled;
+        }
+    }
+
+    // Sonarr's post-add step with addOptions.monitor unset (LegacySetEpisodeMonitoredStatus): the episodes of every
+    // unmonitored season are switched off, then addOptions is cleared.
+    private void PostAdd(int seriesId)
+    {
+        _postAddLeft.Remove(seriesId);
+        var series = SonarrSeries.FirstOrDefault(s => (int)s["id"]! == seriesId);
+        if (series == null)
+        {
+            return;
+        }
+
+        var monitor = (string?)(series["addOptions"] as JsonObject)?["monitor"];
+        if (monitor is null or "unknown")
+        {
+            foreach (var season in ((JsonArray)series["seasons"]!).OfType<JsonObject>().Where(s => !(bool)s["monitored"]!))
+            {
+                foreach (var episode in Episodes.Where(e => (int)e["seriesId"]! == seriesId && (int)e["seasonNumber"]! == (int)season["seasonNumber"]!))
+                {
+                    episode["monitored"] = false;
+                }
+            }
+        }
+
+        series.Remove("addOptions");
+    }
+
+    // A read of a series whose post-add step is pending: runs it once enough reads passed.
+    private void PostAddRead(int seriesId)
+    {
+        if (_postAddLeft.TryGetValue(seriesId, out var left))
+        {
+            if (left <= 0)
+            {
+                PostAdd(seriesId);
+            }
+            else
+            {
+                _postAddLeft[seriesId] = left - 1;
+            }
+        }
+    }
+
     /// <summary>Ends every pending async refresh: the added series' episodes are visible from now on.</summary>
     public void FinishRefreshes()
     {
@@ -300,6 +373,7 @@ internal sealed class FakeArr : IDisposable
             series["titleSlug"] = catalog["titleSlug"]!.DeepClone();
             SonarrSeries.Add(series);
             _pollsLeft[id] = EpisodePollsBeforeVisible;
+            _postAddLeft[id] = PostAddReadsBeforeSettled;
             return Json(series, 201);
         }
 
@@ -363,6 +437,7 @@ internal sealed class FakeArr : IDisposable
 
             if (method == "GET")
             {
+                PostAddRead(seriesId);
                 var copy = (JsonObject)existing.DeepClone();
                 copy["statistics"] = new JsonObject { ["episodeCount"] = 1 };
                 foreach (var season in ((JsonArray)copy["seasons"]!).OfType<JsonObject>())
@@ -407,6 +482,8 @@ internal sealed class FakeArr : IDisposable
                 _pollsLeft[id] = left - 1;
                 return Json(new JsonArray());
             }
+
+            PostAddRead(id);
 
             var episodes = Episodes.Where(e => (int)e["seriesId"]! == id
                 && (!query.TryGetValue("seasonNumber", out var season) || (int)e["seasonNumber"]! == int.Parse(season, CultureInfo.InvariantCulture)));

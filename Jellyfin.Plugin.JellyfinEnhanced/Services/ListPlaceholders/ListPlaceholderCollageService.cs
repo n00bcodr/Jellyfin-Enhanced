@@ -13,6 +13,7 @@ using Jellyfin.Data.Events;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
+using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Playlists;
@@ -99,7 +100,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
     /// for each the poster Seerr has for that title (TMDB's, read with JE's key, when Seerr is off) rather than the
     /// stored one; a title whose poster can't be read is left out. When that was because Seerr or TMDB didn't answer,
     /// the list is checked again with the same growing delay as failed downloads (fail closed meanwhile: a collage
-    /// that is left with nothing is removed). A parental-control change re-checks every list.</item>
+    /// that is left with nothing is removed). A parental-control change (or a new server metadata country, which
+    /// the parental filter rates titles with) re-checks every list.</item>
     /// <item>Posters that can't be downloaded for a while (timeouts, 5xx, 429) are retried with a growing delay
     /// (<see cref="RetryBase"/> doubling up to <see cref="RetryMax"/>) and left out until then, so a flaky poster never
     /// makes JE rewrite the same image over and over (each write fires Jellyfin's ItemUpdated, which re-triggers JE).
@@ -138,6 +140,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         private readonly ListAccessService _access;
         private readonly IUserManager _userManager;
         private readonly ListPlaceholderMetadataService _metadata;
+        private readonly IServerConfigurationManager _serverConfig;
         private readonly ListCollageMarkerStore _markers;
 
         // Jellyfin's own collages JE saw on lists while they had real items (path + content): the only unmarked
@@ -167,6 +170,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         private Task? _startupPass;
         private bool _subscribed;
         private bool _lastEnabled;
+        private string _lastRegion = string.Empty;
         private int _evaluations;
 
         /// <summary>Creates the service.</summary>
@@ -178,6 +182,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <param name="access">List access (restricted viewers and their parental filter).</param>
         /// <param name="userManager">User manager (parental-control changes).</param>
         /// <param name="metadata">Seerr title metadata (the server's own poster of each title).</param>
+        /// <param name="serverConfig">Server configuration (the metadata country the parental filter rates titles with).</param>
         /// <param name="logger">JE logger.</param>
         public ListPlaceholderCollageService(
             ListPlaceholderStore store,
@@ -188,6 +193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             ListAccessService access,
             IUserManager userManager,
             ListPlaceholderMetadataService metadata,
+            IServerConfigurationManager serverConfig,
             Logger logger)
         {
             _store = store;
@@ -198,6 +204,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             _access = access;
             _userManager = userManager;
             _metadata = metadata;
+            _serverConfig = serverConfig;
             _logger = logger;
             _markers = new ListCollageMarkerStore(store, logger);
             _nativeCollages = new ListCollageMarkerStore(store, logger, Path.Combine("collages", "native"));
@@ -269,9 +276,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             _stopping = new CancellationTokenSource();
             var token = _stopping.Token;
             _lastEnabled = IsEnabled();
+            _lastRegion = Region();
             _store.Changed += OnDocumentChanged;
             _libraryManager.ItemUpdated += OnLibraryItemUpdated;
             _userManager.OnUserUpdated += OnUserUpdated;
+            _serverConfig.ConfigurationUpdated += OnServerConfigurationUpdated;
             if (JellyfinEnhanced.Instance is { } plugin)
             {
                 plugin.ConfigurationChanged += OnConfigurationChanged;
@@ -1340,6 +1349,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
         }
 
+        private void OnServerConfigurationUpdated(object? sender, EventArgs e)
+        {
+            // The parental filter rates titles with the server's metadata country: a new country can hide or show
+            // posters for restricted viewers on any list (their rows change at once; the collages follow).
+            var region = Region();
+            lock (_gate)
+            {
+                if (string.Equals(region, _lastRegion, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                _lastRegion = region;
+            }
+
+            if (IsEnabled())
+            {
+                QueueAll(Debounce);
+            }
+        }
+
+        // The country SeerrParentalFilter rates titles with (same default and normalisation).
+        private string Region()
+        {
+            var code = _serverConfig.Configuration?.MetadataCountryCode;
+            return string.IsNullOrWhiteSpace(code) ? "US" : code.Trim().ToUpperInvariant();
+        }
+
         private void Unsubscribe()
         {
             if (!_subscribed)
@@ -1351,6 +1388,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             _store.Changed -= OnDocumentChanged;
             _libraryManager.ItemUpdated -= OnLibraryItemUpdated;
             _userManager.OnUserUpdated -= OnUserUpdated;
+            _serverConfig.ConfigurationUpdated -= OnServerConfigurationUpdated;
             if (JellyfinEnhanced.Instance is { } plugin)
             {
                 plugin.ConfigurationChanged -= OnConfigurationChanged;

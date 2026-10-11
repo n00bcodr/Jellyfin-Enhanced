@@ -1114,6 +1114,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
                     return EvaluateLinker(list.Id, linkedById, out _)?.Permissions.CanEdit == true ? null : LinkerCannotEdit;
                 },
+                // A new entry inside an episodes run (between two of its unfilled episodes) splits the run first, so it
+                // can go between the halves.
+                Regroup = (d, order, indexes) => ListSourceProvenance.SplitRunsAround(
+                    d,
+                    order,
+                    keys,
+                    indexes.SelectMany(i => entryKeys.TryGetValue(i, out var k) ? k : Array.Empty<string>()).Select(k => keyPosition.GetValueOrDefault(k, -1))),
                 Place = (d, order) => ListSourcePlacement.Anchors(d, order, keys, entryPositions, _resolver.SourceKeysOf),
                 // F1 again under the lock: `covered` was decided on the document read before the fetch; an equivalent
                 // placeholder an editor added meanwhile now stands for an entry's keys, so the entry isn't added twice.

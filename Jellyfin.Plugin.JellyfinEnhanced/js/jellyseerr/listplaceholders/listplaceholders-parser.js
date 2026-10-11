@@ -52,6 +52,8 @@
     const IMDB_ID = /\b(tt\d{7,10})\b/;
     const TVDB_PREFIX = /\btvdb[:/]\s*(\d{1,9})\b/i;
     // Inline id tokens and URLs (read by extractIds, then removed from titles and metadata).
+    // Marks a markdown link's place while stripMarkdown runs (a private-use character, never in real text).
+    const LINK_MARK = '\uE000';
     const ID_TOKENS = /\btmdb[:/]\s*(?:(?:movie|tv)[:/])?\d+\b|\btvdb[:/]\s*\d+\b|\btt\d{7,10}\b|https?:\/\/\S+/gi;
     const TVDB_URL = /thetvdb\.com\/(?:\?[^\s]*?\bid=(\d{1,9})|dereferrer\/series\/(\d{1,9})|series\/(\d{1,9})(?:[/?#\s)]|$))/i;
     const LIST_URLS = [
@@ -107,14 +109,20 @@
      * Removes markdown/HTML formatting and collects link targets (ids are read from them later).
      * @param {string} value Markdown text.
      * @param {string[]} [urls] Receives every link target and bare URL found.
+     * @param {{url: string, at: number}[]} [links] Receives each markdown link's target with the offset of its label in
+     *     the returned text (its real place, not a search for the label, so the same words earlier don't count).
      * @returns {string} Plain text.
      */
-    function stripMarkdown(value, urls) {
+    function stripMarkdown(value, urls, links) {
         let text = String(value ?? '');
         text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
+        const targets = [];
         text = text.replace(/\[([^\]]*)\]\(([^)\s]*)(?:\s+"[^"]*")?\)/g, (_, label, url) => {
             if (urls && url) urls.push(url);
-            return label;
+            if (!links) return label;
+            // A private-use marker keeps the link's place through the rest of the stripping; removed below.
+            targets.push(url);
+            return LINK_MARK + label;
         });
         // Autolinks (<https://…>) are links, not HTML tags.
         text = text.replace(/<(https?:\/\/[^>\s]+)>/gi, '$1');
@@ -127,7 +135,20 @@
         text = text.replace(/\*\*|__/g, '').replace(/`+/g, '');
         // Single-character emphasis only at word boundaries (keeps "snake_case" and "5*").
         text = text.replace(/(^|[\s(])[*_]([^*_\s][^*_]*?)[*_](?=[\s).,;:!?]|$)/g, '$1$2');
-        return text.replace(/\s+/g, ' ').trim();
+        text = text.replace(/\s+/g, ' ').trim();
+        if (!links) return text;
+        let plainText = '';
+        let from = 0;
+        let k = 0;
+        for (let at = text.indexOf(LINK_MARK); at >= 0; at = text.indexOf(LINK_MARK, from)) {
+            plainText += text.slice(from, at);
+            if (targets[k]) links.push({ url: targets[k], at: plainText.length });
+            k++;
+            from = at + 1;
+        }
+        plainText += text.slice(from);
+        // A marker standing alone between spaces (empty label) leaves a double space; stripping never produces one.
+        return plainText.replace(/\s+/g, ' ').trim();
     }
 
     /**
@@ -702,7 +723,8 @@
      */
     function cleanChainSegment(raw) {
         const found = [];
-        const stripped = stripMarkdown(raw, found);
+        const links = [];
+        const stripped = stripMarkdown(String(raw ?? '').replace(new RegExp(LINK_MARK, 'g'), ' '), found, links);
         const instruction = splitInstruction(stripped);
         const plainPart = instruction.text;
         let part;
@@ -730,7 +752,17 @@
             // Keep the title + reference, drop the commentary after it (but not the bare ids in it).
             const inner = findEpisodeRef(part);
             const kept = inner ? part.slice(0, inner.end) : part.replace(/^(.*?"[^"]+")[\s\S]*$/, '$1');
-            extra.push(...(part.slice(kept.length).match(ID_TOKENS) || []));
+            const tail = part.slice(kept.length);
+            // Bare ids anywhere in the tail name the title ("Flash S1E8 tmdb:tv:60735"); a bare URL only before the
+            // commentary starts ("Flash 1x08 https://…"), not one inside "(see https://…)" or after a dash.
+            const commentary = tail.search(/\(|\s[—–-]\s|[.;!?](?:\s|$)/);
+            const head = commentary < 0 ? tail : tail.slice(0, commentary);
+            for (const token of tail.match(ID_TOKENS) || []) {
+                if (!/^https?:/i.test(token)) extra.push(token);
+            }
+            for (const token of head.match(ID_TOKENS) || []) {
+                if (/^https?:/i.test(token)) extra.push(token);
+            }
             part = kept;
         } else {
             part = part.split(/(?<=[a-z0-9!?)])[.;]\s+/i)[0];
@@ -738,8 +770,10 @@
         // Only link targets that start in the kept text name the title; links in dropped commentary ("(see also
         // [Legends](…))", "— then read [Crisis](…)", a second sentence) are about other titles.
         const keptEnd = shift + part.length;
-        const urls = locateLinks(raw, stripped, found).filter(link => link.at < keptEnd).map(link => link.url);
-        urls.push(...extra);
+        const urls = locateLinks(stripped, found, links).filter(link => link.at < keptEnd).map(link => link.url);
+        for (const token of extra) {
+            if (!urls.includes(token)) urls.push(token);
+        }
         return { part, urls, note: instruction.note };
     }
 
@@ -755,27 +789,16 @@
     }
 
     /**
-     * Where each link target of a markdown text starts in its stripped text: a markdown link at its label, a bare URL
-     * (or autolink) at the URL itself. Labels are found in order, so repeated labels map to their own occurrence.
-     * @param {string} raw Markdown text.
-     * @param {string} stripped `stripMarkdown(raw)`.
-     * @param {string[]} found The link targets stripMarkdown collected from it.
+     * Where each link target of a markdown text starts in its stripped text: a markdown link at its label (as
+     * stripMarkdown placed it), a bare URL (or autolink) at the URL itself.
+     * @param {string} stripped The stripped text.
+     * @param {string[]} found Every link target stripMarkdown collected from it.
+     * @param {{url: string, at: number}[]} links The markdown links with their label offsets, from stripMarkdown.
      * @returns {{url: string, at: number}[]} Each target with its offset in the stripped text.
      */
-    function locateLinks(raw, stripped, found) {
-        const located = [];
-        const linked = new Set();
-        let cursor = 0;
-        const text = String(raw ?? '').replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
-        for (const match of text.matchAll(/\[([^\]]*)\]\(([^)\s]*)(?:\s+"[^"]*")?\)/g)) {
-            if (!match[2]) continue;
-            const label = stripMarkdown(match[1]);
-            let at = label ? stripped.indexOf(label, cursor) : -1;
-            if (at < 0) at = cursor;
-            cursor = at + label.length;
-            located.push({ url: match[2], at });
-            linked.add(match[2]);
-        }
+    function locateLinks(stripped, found, links) {
+        const located = links.slice();
+        const linked = new Set(links.map(link => link.url));
         for (const url of found) {
             if (linked.has(url)) continue;
             const at = stripped.indexOf(url);

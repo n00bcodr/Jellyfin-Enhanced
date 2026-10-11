@@ -446,7 +446,7 @@ public class ListPlaceholdersSyncTests
     }
 
     [Fact]
-    public async Task AUrlImportThatFailsPartWayOwnsWhatLandedSoTheRetryAndLaterSyncsTreatItAsImported()
+    public async Task AUrlImportWhoseInsertFailsKeepsNothingSoTheRetryImportsInOrderAndLinks()
     {
         using var w = new World();
         var spec = new SourceLinkSpec("mdblist", Url, "mdblist", null, SyncEnabled: true, RemoveDropped: true);
@@ -467,29 +467,27 @@ public class ListPlaceholdersSyncTests
         var first = Attempt();
         Error(await w.H.Service.ApplyAsync(w.Access, first.Entries, null, null, "import-f", None, first.Hooks), 500, "list_update_failed");
 
-        // The saved placeholders are owned by the (now linked) source; the real item never landed and stays new.
-        var source = w.Doc.Source!;
-        Assert.Equal(2, w.Doc.Items.Count);
-        Assert.Equal(new[] { "movie|1||", "movie|2||" }, source.Owned.Keys.Order(StringComparer.Ordinal));
-        Assert.DoesNotContain("movie|862||", source.LastSnapshotKeys);
-        Assert.False(source.UserRemovedKeys.ContainsKey("movie|862||"));
-        Assert.True(source.UserRemovedKeys.ContainsKey("movie|3||"));
-        Assert.Equal(("failed", "apply_failed", 2), (source.LastSync!.State, source.LastSync.Code, source.LastSync.Added));
+        // Nothing reached Jellyfin (the real item's insert failed), so nothing of the apply is kept and the list isn't
+        // linked yet (review round 7: placeholders kept alone would put the retried real item after them).
+        Assert.Empty(w.H.Store.Load(w.Access.ListIdN)?.Items ?? new List<Placeholder>());
+        Assert.Null(w.H.Store.Load(w.Access.ListIdN)?.Source);
 
-        // The same-requestId retry re-applies: the placeholders are duplicates now but stay owned.
+        // The same-requestId retry applies the whole import in its order and links the list.
         w.H.Host.BeforeAdd = null;
         var retry = Attempt();
         var applied = Ok<ApplyResultDto>(await w.H.Service.ApplyAsync(w.Access, retry.Entries, null, null, "import-f", None, retry.Hooks));
-        Assert.Equal(new[] { "duplicate", "duplicate" }, applied.Skipped.Select(s => s.Reason));
-        source = w.Doc.Source!;
+        Assert.Empty(applied.Skipped);
+        var source = w.Doc.Source!;
         Assert.Equal(new[] { "movie|1||", "movie|2||", "movie|862||" }, source.Owned.Keys.Order(StringComparer.Ordinal));
+        Assert.True(source.UserRemovedKeys.ContainsKey("movie|3||"));
         Assert.Equal("imported", source.LastSync!.State);
+        Assert.Equal(new[] { "Movie 1", "REAL", "Movie 2" }, w.Titles());
 
         // "Movie 1" leaves the source: removeDropped removes it (imported, not hand-added); nothing is re-added.
         w.Source(World.M(862), World.M(2), World.M(3));
         var result = await w.Sync();
         Assert.Equal((0, 1), (result.Added, result.Removed));
-        Assert.Equal(new[] { "Movie 2", "REAL" }, w.Titles());
+        Assert.Equal(new[] { "REAL", "Movie 2" }, w.Titles());
     }
 
     [Fact]

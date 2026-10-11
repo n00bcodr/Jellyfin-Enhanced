@@ -168,6 +168,9 @@ public partial class ListPlaceholdersCollageTests
         /// <see cref="ListPlaceholdersHarness.MovieCertifications"/>); <see cref="Seed"/> fills it.
         /// </summary>
         public Dictionary<int, string> ServerPosters { get; } = new();
+
+        /// <summary>A GB certification per movie id, served next to the US one.</summary>
+        public Dictionary<int, string> GbCertifications { get; } = new();
         public ListPlaceholderStore Store => H.Store;
         public ListPlaceholderCollageService Service { get; }
         public FakeListHost.FakeList Playlist { get; }
@@ -188,7 +191,10 @@ public partial class ListPlaceholdersCollageTests
                     && H.MovieCertifications.TryGetValue(id, out var cert)
                     && ServerPosters.TryGetValue(id, out var poster))
                 {
-                    return IntegrationTransport.Response("{\"id\":" + id + ",\"posterPath\":\"" + poster + "\",\"releases\":{\"results\":[{\"iso_3166_1\":\"US\",\"release_dates\":[{\"certification\":\"" + cert + "\",\"type\":3}]}]}}");
+                    var gb = GbCertifications.TryGetValue(id, out var gbCert)
+                        ? ",{\"iso_3166_1\":\"GB\",\"release_dates\":[{\"certification\":\"" + gbCert + "\",\"type\":3}]}"
+                        : string.Empty;
+                    return IntegrationTransport.Response("{\"id\":" + id + ",\"posterPath\":\"" + poster + "\",\"releases\":{\"results\":[{\"iso_3166_1\":\"US\",\"release_dates\":[{\"certification\":\"" + cert + "\",\"type\":3}]}" + gb + "]}}");
                 }
 
                 return seerr(request);
@@ -252,7 +258,7 @@ public partial class ListPlaceholdersCollageTests
         }
 
         public ListPlaceholderCollageService NewService(IListImageHost images) =>
-            new(Store, Host, images, Tmdb, Library.Object, H.Access, H.Users.Object, H.Metadata, Plugin.Core.Logger)
+            new(Store, Host, images, Tmdb, Library.Object, H.Access, H.Users.Object, H.Metadata, H.ServerConfig.Object, Plugin.Core.Logger)
             {
                 Debounce = TimeSpan.FromMilliseconds(50),
                 MaxDelay = TimeSpan.FromMilliseconds(500),
@@ -953,6 +959,39 @@ public partial class ListPlaceholdersCollageTests
         {
             var kid = f.Kid();
             f.H.Users.Raise(u => u.OnUserUpdated += null, f.H.Users.Object, new GenericEventArgs<User>(kid));
+            await Task.Delay(20);
+            await f.Service.WhenIdleAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(new[] { "/p1.jpg" }, f.Service.Markers.Load(Fixture.Id(f.Playlist))!.PosterKeys);
+        }
+        finally
+        {
+            await f.Service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task ANewServerMetadataCountryReChecksTheCollages()
+    {
+        // Review round 7: the parental filter rates titles with the server's metadata country; a new country hides
+        // posters from restricted viewers' rows at once, so the collage must follow.
+        using var f = new Fixture();
+        f.H.MovieCertifications[1000] = "PG";
+        f.GbCertifications[1000] = "R";
+        f.H.MovieCertifications[1001] = "PG";
+        f.Seed(f.Playlist, "/p0.jpg", "/p1.jpg");
+        f.Kid();
+        Assert.Equal(CollageDecision.Set, await f.Evaluate(f.Playlist));
+        Assert.Equal(new[] { "/p0.jpg", "/p1.jpg" }, f.Service.Markers.Load(Fixture.Id(f.Playlist))!.PosterKeys);
+        await f.Service.StartAsync(CancellationToken.None);
+        try
+        {
+            // Saving the server configuration without a new country re-checks nothing.
+            f.H.ServerConfig.Raise(c => c.ConfigurationUpdated += null, f.H.ServerConfig.Object, EventArgs.Empty);
+            Assert.Null(f.Service.PendingDue(Fixture.Id(f.Playlist)));
+
+            f.H.ServerConfig.SetupGet(c => c.Configuration).Returns(new MediaBrowser.Model.Configuration.ServerConfiguration { MetadataCountryCode = " gb " });
+            f.H.ServerConfig.Raise(c => c.ConfigurationUpdated += null, f.H.ServerConfig.Object, EventArgs.Empty);
+            Assert.NotNull(f.Service.PendingDue(Fixture.Id(f.Playlist)));
             await Task.Delay(20);
             await f.Service.WhenIdleAsync(TimeSpan.FromSeconds(10));
             Assert.Equal(new[] { "/p1.jpg" }, f.Service.Markers.Load(Fixture.Id(f.Playlist))!.PosterKeys);

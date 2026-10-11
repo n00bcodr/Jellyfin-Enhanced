@@ -555,6 +555,8 @@
      * @returns {Promise<any>}
      */
     api.requestMedia = async function(tmdbId, mediaType, advancedSettings = {}, is4k = false, mediaData = null, tvdbId = null) {
+        // A 4K flag passed in the settings is a 4K request too: the event must say so as well as the body.
+        is4k = is4k === true || advancedSettings?.is4k === true;
         // Apply override rules if no advanced settings are provided and media data is available
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, mediaType, is4k);
@@ -604,6 +606,8 @@
      * @returns {Promise<any>}
      */
     api.requestTvSeasons = async function(tmdbId, seasonNumbers, advancedSettings = {}, mediaData = null, is4k = false, tvdbId = null) {
+        // A 4K flag passed in the settings is a 4K request too: the event must say so as well as the body.
+        is4k = is4k === true || advancedSettings?.is4k === true;
         // Apply override rules if no advanced settings are provided and media data is available
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, 'tv', is4k);

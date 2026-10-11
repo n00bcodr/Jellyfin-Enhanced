@@ -43,6 +43,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         public Func<ListDoc, IReadOnlyList<string>, IReadOnlyDictionary<int, EntryAnchor>>? Place { get; init; }
 
         /// <summary>
+        /// Playlists, under the list lock, right before <see cref="Place"/>: may split placeholders already in the list so
+        /// new entries can go between their parts (the linked-list sync: a new source entry inside an episodes run). Gets
+        /// the canonical order (it inserts the new placeholders' tokens into it) and the request indexes of the entries
+        /// being added; returns true when it changed the document.
+        /// </summary>
+        public Func<ListDoc, List<string>, IReadOnlyCollection<int>, bool>? Regroup { get; init; }
+
+        /// <summary>
         /// Under the list lock, before anything is added: indexes of entries to skip as <c>duplicate</c> because the fresh
         /// document already has an equivalent entry (the linked-list sync: a placeholder an editor added while the sync
         /// was fetching and resolving).

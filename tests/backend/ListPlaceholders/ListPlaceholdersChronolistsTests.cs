@@ -932,10 +932,10 @@ public class ListPlaceholdersChronolistsTests
         Assert.Equal(new[] { "1412:S3E1,3", "5", "1412:S3E4" }, w.Order());
         Assert.False(w.Doc.Source!.Owned.ContainsKey("tv|1412|3|2"));
 
-        // It comes back later: a new single-episode entry right after 3x01's run.
+        // It comes back later: a new single-episode entry between 3x01 and 3x03, which splits their run (review round 7).
         w.H.Fetcher.Items = items;
         Assert.Equal(1, (await w.Sync()).Added);
-        Assert.Equal(new[] { "1412:S3E1,3", "1412:S3E2", "5", "1412:S3E4" }, w.Order());
+        Assert.Equal(new[] { "1412:S3E1", "1412:S3E2", "1412:S3E3", "5", "1412:S3E4" }, w.Order());
     }
 
     // ── Review round ────────────────────────────────────────────────────
@@ -1079,6 +1079,41 @@ public class ListPlaceholdersChronolistsTests
 
         Assert.Equal(new[] { "REAL", "REAL", "REAL", "7", "88:S1", "6" }, w.Order());
         Assert.Equal(new[] { e1, movie, e2 }, w.H.Host.Resolved(w.List.Info.Id)); // Jellyfin's own order agrees
+    }
+
+    // Review round 7: a new entry between two unfilled episodes of one run placeholder splits the run, so it goes
+    // between them rather than after the whole run (which would play it after every episode of the run).
+    [Fact]
+    public async Task ANewEntryBetweenUnfilledEpisodesOfARunSplitsTheRun()
+    {
+        using var w = new World(realLibrary: true);
+        w.H.Fetcher.Items = new List<SourceItem> { Eighty(1), Eighty(2), Eighty(3), Film(6) };
+        Assert.Equal(200, (await w.H.Sources.LinkAsync(w.Access, new LinkSourceRequest { Url = DctvUrl, SyncEnabled = true }, None)).StatusCode);
+        await w.Sync();
+        Assert.Equal(new[] { "88:S1", "6" }, w.Order());
+        var runId = w.Doc.Items.Single(p => p.Kind == PlaceholderKinds.Season).Id;
+
+        // Upstream: movie 7 between 1x01 and 1x02.
+        w.H.Fetcher.Items = new List<SourceItem> { Eighty(1), Film(7), Eighty(2), Eighty(3), Film(6) };
+        Assert.Equal(1, (await w.Sync()).Added);
+
+        Assert.Equal(new[] { "88:S1E1", "7", "88:S1E2,3", "6" }, w.Order());
+        var owned = w.Doc.Source!.Owned;
+        Assert.Equal(runId, owned["tv|88|1|1"].PhId);
+        var secondId = owned["tv|88|1|2"].PhId;
+        Assert.NotEqual(runId, secondId);
+        Assert.Equal(secondId, owned["tv|88|1|3"].PhId);
+        Assert.Equal("tv|88|1|2", w.Doc.Items.Single(p => p.Id == secondId).SourceKey);
+        Assert.Equal(0, (await w.Sync()).Added);
+
+        // An episodes run: movie 8 between 3x02 and 3x03 splits it the same way.
+        w.H.Fetcher.Items = new List<SourceItem> { Eighty(1), Film(7), Eighty(2), Eighty(3), Film(6), Arrow(3, 2), Arrow(3, 3), Arrow(3, 4) };
+        Assert.Equal(1, (await w.Sync()).Added);
+        var before = w.Order();
+        Assert.Equal("1412:S3E2,3,4", before[^1]);
+        w.H.Fetcher.Items = new List<SourceItem> { Eighty(1), Film(7), Eighty(2), Eighty(3), Film(6), Arrow(3, 2), Arrow(3, 3), Film(8), Arrow(3, 4) };
+        Assert.Equal(1, (await w.Sync()).Added);
+        Assert.Equal(new[] { "88:S1E1", "7", "88:S1E2,3", "6", "1412:S3E2,3", "8", "1412:S3E4" }, w.Order());
     }
 
     // Review round: with removeDropped, an episode that left a whole-season run must not come back through the season

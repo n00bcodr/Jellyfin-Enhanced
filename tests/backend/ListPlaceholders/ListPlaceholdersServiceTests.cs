@@ -565,13 +565,17 @@ public class ListPlaceholdersServiceTests
         var outcome = await h.Service.ApplyAsync(access, new[] { new ApplyEntry(0, null, placeholder), new ApplyEntry(1, item, null) }, null, null, "fail-1", None);
 
         var error = Error(outcome, 500, "list_update_failed");
-        Assert.Equal(new[] { E(a), P(placeholder.Id) }, error.View!.Order);
-        Assert.Equal(new[] { E(a), P(placeholder.Id) }, h.Store.Load(access.ListIdN)!.Order);
-        // Failures are not replayed: a retry runs again (and now skips the existing placeholder).
+        // The real item never reached Jellyfin, so the placeholder of the same apply isn't kept either (review round 7:
+        // kept alone, the retry would skip it and put the real item after it).
+        Assert.Equal(new[] { E(a) }, error.View!.Order);
+        Assert.Empty(h.Store.Load(access.ListIdN)?.Items ?? new List<Placeholder>());
+        // Failures are not replayed: a retry runs again and applies the whole run in its order.
         h.Host.BeforeAdd = null;
         var retry = Ok<ApplyResultDto>(await h.Service.ApplyAsync(access, new[] { new ApplyEntry(0, null, placeholder), new ApplyEntry(1, item, null) }, null, null, "fail-1", None));
-        Assert.Equal((0, "duplicate"), (retry.Skipped.Single().Index, retry.Skipped.Single().Reason));
+        Assert.Empty(retry.Skipped);
+        Assert.Equal(new[] { placeholder.Id }, retry.Added);
         Assert.Equal(new[] { a, item }, h.Host.Resolved(playlist.Info.Id));
+        Assert.Equal(new[] { E(a), P(placeholder.Id), E(item) }, retry.View!.Order);
     }
 
     [Fact]
@@ -719,15 +723,18 @@ public class ListPlaceholdersServiceTests
         var failed = Error(await h.Service.CreateListAsync(user, ListKinds.Playlist, "DCEU", false, entries, "create-f", None), 500, "list_update_failed");
         Assert.Equal(ListKinds.Playlist, failed.ListKind);
         var listId = Guid.Parse(failed.ListId!);
-        Assert.Equal(new[] { P(placeholder.Id) }, failed.View!.Order);
+        // Nothing landed: the placeholder of the failed apply isn't kept (review round 7).
+        Assert.Empty(failed.View!.Order!);
         Assert.Empty(h.Host.Resolved(listId));
 
-        // Not replayed as a success: the retry re-applies to the SAME list.
+        // Not replayed as a success: the retry re-applies to the SAME list, in the request's order.
         h.Host.BeforeAdd = null;
         var retry = Ok<CreateListResultDto>(await h.Service.CreateListAsync(user, ListKinds.Playlist, "DCEU", false, entries, "create-f", None));
         Assert.Equal(failed.ListId, retry.ListId);
         Assert.Equal(new[] { item.ToString("N") }, retry.Result.AddedAsItems);
-        Assert.Equal((1, "duplicate"), (retry.Result.Skipped.Single().Index, retry.Result.Skipped.Single().Reason));
+        Assert.Equal(new[] { placeholder.Id }, retry.Result.Added);
+        Assert.Empty(retry.Result.Skipped);
+        Assert.Equal(new[] { E(item), P(placeholder.Id) }, retry.Result.View!.Order);
         Assert.Single(h.Host.Calls, c => c.StartsWith("create-playlist", StringComparison.Ordinal));
         Assert.Equal(new[] { item }, h.Host.Resolved(listId));
 

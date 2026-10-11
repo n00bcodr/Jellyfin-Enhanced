@@ -27,7 +27,7 @@ function buildSingle4kButton(data) {
         button.disabled = true;
         button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
         try {
-            await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
+            await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, true, data);
             mountRequestedChip(data, 'movie', true);
         } catch (error) {
             // Quota errors get a themed dialog; restore button to idle.
@@ -158,7 +158,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
                 option.disabled = true;
                 option.textContent = JE.t('jellyseerr_btn_requesting');
                 try {
-                    const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
+                    const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, true, data);
                     mountRequestedChip(data, 'movie', true, response);
                     close4k();
                 } catch (error) {

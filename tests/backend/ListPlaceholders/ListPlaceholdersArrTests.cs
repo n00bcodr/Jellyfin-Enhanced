@@ -481,6 +481,49 @@ public class ListPlaceholdersArrTests
     }
 
     [Fact]
+    public async Task NewSeriesEpisodesAreMonitoredOnlyAfterSonarrsPostAddStep()
+    {
+        // Review round 7: Sonarr's post-add step (after its refresh) switches off the episodes of unmonitored seasons;
+        // a PUT /episode/monitor sent as soon as the episodes exist is undone by it.
+        using var f = new Fixture();
+        f.Arr.PostAddReadsBeforeSettled = 2;
+        var result = Ok(await f.Add("{\"mediaType\":\"tv\",\"instance\":0,\"tmdbId\":110492,\"scope\":\"episodes\",\"seasonNumber\":1,\"episodes\":[{\"s\":1,\"e\":8},{\"s\":1,\"e\":2}],\"qualityProfileId\":4,\"rootFolderPath\":\"/tv\"}"));
+
+        Assert.Equal("added", result.Result);
+        Assert.Equal(2, result.MonitoredEpisodes);
+        f.Arr.RunPostAdds();
+        Assert.Equal(new[] { (1, 2), (1, 8) }, f.Arr.MonitoredEpisodes(result.ArrId!.Value));
+        Assert.Null(f.Arr.SeriesById(result.ArrId.Value)["addOptions"]);
+    }
+
+    [Fact]
+    public async Task ANewSeriesWhosePostAddStepNeverFinishesIsAPartialAdd()
+    {
+        using var f = new Fixture();
+        f.Arr.PostAddReadsBeforeSettled = 1_000_000;
+        f.Service.EpisodePollBudget = TimeSpan.FromMilliseconds(30);
+        Error(await f.Add("{\"mediaType\":\"tv\",\"instance\":0,\"tmdbId\":110492,\"scope\":\"episodes\",\"seasonNumber\":1,\"episodes\":[{\"s\":1,\"e\":2}],\"qualityProfileId\":4,\"rootFolderPath\":\"/tv\"}"), 502, "partial_add");
+        Assert.Equal(new[] { "POST /api/v3/series" }, f.Arr.Writes("sonarr").Select(w => w.Method + " " + w.Path));
+    }
+
+    [Fact]
+    public async Task AnExistingSeriesAddedMomentsAgoIsFlaggedAfterSonarrsPostAddStep()
+    {
+        // Added by someone else just before (the SeriesExistsValidator path lands here too): wait for the post-add step.
+        using var f = new Fixture();
+        var series = f.Arr.SeedSeries(391153, monitored: true, s => false, (s, e) => false);
+        var seriesId = (int)series["id"]!;
+        f.Arr.PostAddReadsBeforeSettled = 3;
+        f.Arr.MarkJustAdded(seriesId);
+        var result = Ok(await f.Add("{\"mediaType\":\"tv\",\"instance\":0,\"tvdbId\":391153,\"scope\":\"episodes\",\"seasonNumber\":1,\"episodes\":[{\"s\":1,\"e\":2}],\"qualityProfileId\":4,\"rootFolderPath\":\"/tv\"}"));
+
+        Assert.Equal("monitoring_added", result.Result);
+        Assert.Equal(1, result.MonitoredEpisodes);
+        f.Arr.RunPostAdds();
+        Assert.Equal(new[] { (1, 2) }, f.Arr.MonitoredEpisodes(seriesId));
+    }
+
+    [Fact]
     public async Task ANewSeriesWhoseEpisodesNeverAppearInTimeIsAPartialAddNotACachedSuccess()
     {
         using var f = new Fixture();

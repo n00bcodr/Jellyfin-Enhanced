@@ -667,6 +667,159 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             return narrowing.Left;
         }
 
+        /// <summary>
+        /// Ordered sync, playlists (under the list lock, before the new entries are placed): a new source entry whose
+        /// nearest preceding and following source entries in the list are two not-yet-filled episodes of the SAME run
+        /// placeholder (an <c>episodes</c> placeholder, or a whole-season one that only episode keys own) falls inside that
+        /// run. The run is split at that boundary into two <c>episodes</c> placeholders (fills, keys and the source key
+        /// follow each episode; the second half's token goes right after the first's in <paramref name="order"/>), so the
+        /// entry can be anchored after the first half instead of after the whole run. Nothing is split when the list has
+        /// no room for another placeholder: the entry then goes after the whole run, as before.
+        /// </summary>
+        /// <param name="doc">Fresh document.</param>
+        /// <param name="order">The playlist's canonical order (the new tokens are inserted into it).</param>
+        /// <param name="sourceKeys">Every key of the fetched source, in source order.</param>
+        /// <param name="newPositions">Positions in <paramref name="sourceKeys"/> of the keys being added now.</param>
+        /// <returns>Whether a placeholder was split.</returns>
+        public static bool SplitRunsAround(ListDoc doc, List<string> order, IReadOnlyList<string> sourceKeys, IEnumerable<int> newPositions)
+        {
+            var source = doc.Source;
+            if (source == null)
+            {
+                return false;
+            }
+
+            var fresh = newPositions.Where(p => p >= 0 && p < sourceKeys.Count).ToHashSet();
+            var split = false;
+            foreach (var position in fresh.OrderBy(p => p))
+            {
+                string? before = null;
+                for (var i = position - 1; i >= 0 && before == null; i--)
+                {
+                    if (!fresh.Contains(i) && source.Owned.ContainsKey(sourceKeys[i]))
+                    {
+                        before = sourceKeys[i];
+                    }
+                }
+
+                string? after = null;
+                for (var i = position + 1; i < sourceKeys.Count && after == null; i++)
+                {
+                    if (!fresh.Contains(i) && source.Owned.ContainsKey(sourceKeys[i]))
+                    {
+                        after = sourceKeys[i];
+                    }
+                }
+
+                if (before == null || after == null)
+                {
+                    continue;
+                }
+
+                var previous = source.Owned[before];
+                var next = source.Owned[after];
+                // A filled preceding episode is in the list as its own real item: the entry already goes right after it.
+                if (previous.PhId == null || previous.PhId != next.PhId || previous.ItemIds.Count > 0
+                    || SourceKeys.EpisodeOf(before) is not { } from || SourceKeys.EpisodeOf(after) is not { } to)
+                {
+                    continue;
+                }
+
+                var placeholder = doc.Items.FirstOrDefault(p => p.Id == previous.PhId);
+                var token = placeholder == null ? null : ListPlaceholderOrder.PlaceholderToken(placeholder.Id);
+                var at = token == null ? -1 : order.IndexOf(token);
+                if (placeholder == null || at < 0 || doc.Items.Count >= ListPlaceholderStore.MaxPlaceholders)
+                {
+                    continue;
+                }
+
+                var episodes = RunEpisodes(source, placeholder);
+                var cut = episodes?.FindIndex(e => e.S == from.Season && e.E == from.Episode) ?? -1;
+                var resume = episodes?.FindIndex(e => e.S == to.Season && e.E == to.Episode) ?? -1;
+                if (episodes == null || cut < 0 || resume <= cut)
+                {
+                    continue;
+                }
+
+                var filled = placeholder.Filled.ToList();
+                var releaseDate = placeholder.ReleaseDate;
+                var second = Copy(placeholder);
+                Reshape(placeholder, episodes.Take(cut + 1).ToList());
+                Reshape(second, episodes.Skip(cut + 1).ToList());
+                doc.Items.Insert(doc.Items.IndexOf(placeholder) + 1, second);
+                order.Insert(at + 1, ListPlaceholderOrder.PlaceholderToken(second.Id));
+                split = true;
+
+                void Reshape(Placeholder target, List<PlaceholderEpisode> chunk)
+                {
+                    var coords = chunk.Select(e => (e.S, e.E)).ToHashSet();
+                    target.Kind = PlaceholderKinds.Episodes;
+                    target.Episodes = chunk;
+                    target.EpisodeTotal = null;
+                    target.Expected = new List<PlaceholderEpisode>();
+                    target.InProduction = null;
+                    target.Filled = filled.Where(f => coords.Contains((f.S, f.E))).ToList();
+                    target.ReleaseDate = chunk[0].AirDate ?? releaseDate;
+                    string? firstKey = null;
+                    foreach (var (key, owned) in source.Owned.Where(o => o.Value.PhId == placeholder.Id || o.Value.PhId == target.Id).ToList())
+                    {
+                        if (SourceKeys.EpisodeOf(key) is { } coord && coords.Contains((coord.Season, coord.Episode)))
+                        {
+                            owned.PhId = target.Id;
+                            if (coord.Season == chunk[0].S && coord.Episode == chunk[0].E)
+                            {
+                                firstKey ??= key;
+                            }
+                        }
+                    }
+
+                    target.SourceKey = firstKey ?? target.SourceKey;
+                }
+            }
+
+            return split;
+        }
+
+        // The episodes of a run placeholder in order: an episodes placeholder's own list; a whole-season placeholder that
+        // only episode keys of its season own, those episodes (else null: the season itself is one source entry).
+        private static List<PlaceholderEpisode>? RunEpisodes(ListSource source, Placeholder placeholder)
+        {
+            if (placeholder.Kind == PlaceholderKinds.Episodes)
+            {
+                return placeholder.Episodes.Count >= 2 ? placeholder.Episodes.ToList() : null;
+            }
+
+            if (placeholder.Kind != PlaceholderKinds.Season || placeholder.SeasonNumber is not { } season)
+            {
+                return null;
+            }
+
+            var coords = new SortedSet<(int Season, int Episode)>();
+            foreach (var (key, owned) in source.Owned)
+            {
+                if (owned.PhId != placeholder.Id)
+                {
+                    continue;
+                }
+
+                if (SourceKeys.EpisodeOf(key) is not { } coord || coord.Season != season)
+                {
+                    return null;
+                }
+
+                coords.Add(coord);
+            }
+
+            var expected = placeholder.Expected.Where(e => e.S == season).GroupBy(e => e.E).ToDictionary(g => g.Key, g => g.First());
+            return coords.Count < 2 ? null : coords.Select(c => new PlaceholderEpisode
+            {
+                S = c.Season,
+                E = c.Episode,
+                Title = expected.GetValueOrDefault(c.Episode)?.Title,
+                AirDate = expected.GetValueOrDefault(c.Episode)?.AirDate,
+            }).ToList();
+        }
+
         private static Placeholder Copy(Placeholder p) => new()
         {
             Id = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),

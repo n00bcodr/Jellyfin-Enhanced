@@ -68,7 +68,7 @@ A playlist or collection that only holds placeholders shows Jellyfin's generic i
 
 - The collage is only used while the list has no real items. Once one arrives, the collage is removed and Jellyfin makes its own image again (for collections Jellyfin 12 makes none, so the generic icon comes back).
 - It never replaces an image you set. To keep a list without a collage, give it your own image; deleting the collage alone doesn't help, it comes back.
-- When users with parental controls can see the list, only posters every one of them may see are used, each the one Seerr has for that title (or TMDB's, when Seerr is off and a TMDB API key is set), so the collage can have fewer posters, or none. Titles whose poster source doesn't answer, or whose rating can't be checked right now, are left out, so the collage may be rebuilt with fewer posters, or removed if none are left. The list is then checked again after 5 minutes, and after longer and longer waits (up to 6 hours) while the source still doesn't answer.
+- When users with parental controls can see the list, only posters every one of them may see are used, each the one Seerr has for that title (or TMDB's, when Seerr is off and a TMDB API key is set), so the collage can have fewer posters, or none. Titles whose poster source doesn't answer, or whose rating can't be checked right now, are left out, so the collage may be rebuilt with fewer posters, or removed if none are left. The list is then checked again after 5 minutes, and after longer and longer waits (up to 6 hours) while the source still doesn't answer. Collages are checked again when a user's parental controls change, and when the server's metadata country changes, since titles are rated for that country.
 - It appears about 15 seconds after the list changes. Turning the setting off removes every collage the plugin made.
 
 ## Requesting
@@ -220,7 +220,7 @@ Only these sites' own addresses are accepted. Up to 1000 entries are read from a
 
 - **No lookups:** the page already names every title exactly, so all rows arrive as sure matches at once, without Seerr searches. With Seerr set up, the plugin only asks it how many episodes each season has.
 - **Grouped episodes:** episodes that follow each other in the watch order become one entry, so the Arrowverse's 800-odd episodes become about 700 entries. The review header says so. An entry is a whole season only when it has every episode of that season by TMDB's count; a watch order that lists just a season's first episode adds just that episode. Without Seerr the count is unknown, so these entries are always lists of episodes.
-- **Kept in order:** with **Keep in sync with this list**, episodes and films added to the watch order later are inserted at their place in it, not at the end. Entries that move on the site keep their place in your list.
+- **Kept in order:** with **Keep in sync with this list**, episodes and films added to the watch order later are inserted at their place in it, not at the end. One that lands between two episodes of a grouped entry splits that entry in two. Entries that move on the site keep their place in your list.
 - **Episodes you have** go in as real items, the rest as placeholders, as with any import.
 - If Chronolists changes how its pages are built, the import or sync stops with a message and nothing in your list changes until the plugin is updated. If only a few entries can't be read, the rest is imported or synced and nothing is removed.
 

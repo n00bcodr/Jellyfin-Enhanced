@@ -453,9 +453,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var searched = false;
             if (found.Count > 0)
             {
+                // Sonarr's post-add step re-applies the season flags to every episode after its refresh; a PUT before
+                // it is undone, so the episodes are flagged only once it has run.
+                var (_, settleFailure) = await WaitForPostAddAsync(target, seriesId.Value, ct).ConfigureAwait(false);
+                if (settleFailure != null)
+                {
+                    _logger.Warning($"[ListPlaceholders] {title} was added to {target.Name}, but Sonarr didn't finish adding it: {settleFailure.FailureCode ?? "HTTP " + Num(settleFailure.Status)}.");
+                    return PartialAdd(target, title);
+                }
+
                 var monitor = await MonitorEpisodesAsync(target, found.Select(e => e.Id), ct).ConfigureAwait(false);
                 if (!monitor.Ok)
                 {
+                    return PartialAdd(target, title);
+                }
+
+                // Report only what Sonarr really has monitored now.
+                var check = await SendAsync(target.Instance, HttpMethod.Get, EpisodesPath(seriesId.Value, plan.SeasonNumber.Value), null, ct).ConfigureAwait(false);
+                var monitoredIds = check.Ok ? ParseEpisodes(check.Json).Where(e => e.Monitored).Select(e => e.Id).ToHashSet() : null;
+                if (monitoredIds == null || found.Any(e => !monitoredIds.Contains(e.Id)))
+                {
+                    _logger.Warning($"[ListPlaceholders] {title} was added to {target.Name}, but its episodes aren't monitored there after the update.");
                     return PartialAdd(target, title);
                 }
 
@@ -489,6 +507,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             if (!seriesResponse.Ok)
             {
                 return Failure(seriesResponse, target.Instance, Sonarr);
+            }
+
+            if (seriesResponse.Json is JsonObject pending && pending["addOptions"] is JsonObject)
+            {
+                // Added moments ago by someone else: Sonarr's post-add step would undo flags set before it runs. Wait
+                // for it, then read the series and its episodes as they are afterwards.
+                var (settled, settleFailure) = await WaitForPostAddAsync(target, seriesId, ct).ConfigureAwait(false);
+                if (settleFailure != null)
+                {
+                    return Failure(settleFailure, target.Instance, Sonarr);
+                }
+
+                seriesResponse = settled!;
+                episodesResponse = await SendAsync(target.Instance, HttpMethod.Get, EpisodesPath(seriesId, seasonNumber), null, ct).ConfigureAwait(false);
+                if (!episodesResponse.Ok)
+                {
+                    return Failure(episodesResponse, target.Instance, Sonarr);
+                }
+
+                seasonEpisodes = ParseEpisodes(episodesResponse.Json).Where(e => e.Season == seasonNumber).ToList();
             }
 
             if (seriesResponse.Json is not JsonObject series || series["seasons"] is not JsonArray seasons)
@@ -639,6 +677,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
 
                 previousCount = episodes.Count;
+                await Task.Delay(EpisodePollInterval, ct).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Waits until Sonarr finished its post-add step for a series (<c>addOptions</c> cleared). That step
+        /// (SeriesScannedHandler, after the refresh and disk scan) re-applies the season flags to every episode — with
+        /// <c>addOptions.monitor</c> unset, episodes of unmonitored seasons are switched off — so episode flags set
+        /// before it are undone.
+        /// </summary>
+        /// <returns>The series as read once settled, or the failure (an upstream error, or <c>arr_timeout</c>).</returns>
+        private async Task<(ArrResponse? Series, ArrResponse? Failure)> WaitForPostAddAsync(Target target, int seriesId, CancellationToken ct)
+        {
+            var deadline = DateTime.UtcNow + EpisodePollBudget;
+            while (true)
+            {
+                var response = await SendAsync(target.Instance, HttpMethod.Get, "/api/v3/series/" + Num(seriesId), null, ct).ConfigureAwait(false);
+                if (!response.Ok)
+                {
+                    return (null, response);
+                }
+
+                if (response.Json is not JsonObject series)
+                {
+                    return (null, ArrResponse.Fail("arr_invalid_response"));
+                }
+
+                if (series["addOptions"] is not JsonObject)
+                {
+                    return (response, null);
+                }
+
+                if (DateTime.UtcNow >= deadline)
+                {
+                    return (null, ArrResponse.Fail("arr_timeout"));
+                }
+
                 await Task.Delay(EpisodePollInterval, ct).ConfigureAwait(false);
             }
         }

@@ -660,6 +660,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
             var quietSkips = new Dictionary<int, (string Reason, int? SameAs)>();
             var firstWithItem = new Dictionary<Guid, int>();
+            var regrouped = false;
+            var standaloneItems = new List<Guid>(); // new real entries of their own (not a TV scope's present episodes)
 
             try
             {
@@ -705,6 +707,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                         {
                             run.Add(new NewEntry(entry.ItemId.Value, null));
                             runIndexes.Add(entry.Index);
+                            if (entry.ExpandedFrom == null)
+                            {
+                                standaloneItems.Add(entry.ItemId.Value);
+                            }
                         }
                         else
                         {
@@ -743,6 +749,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
                 if (isPlaylist && run.Count > 0)
                 {
+                    regrouped = hooks?.Regroup?.Invoke(doc, order, runIndexes.Distinct().ToList()) == true;
                     var anchors = hooks?.Place?.Invoke(doc, order);
                     // One segment per run of consecutive entries with the same spot; inserted from the last spot to the
                     // first so earlier positions (and the tokens of earlier anchors) don't move.
@@ -766,7 +773,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             catch (Exception ex)
             {
                 _logger.Error($"[ListPlaceholders] Updating list {access.ListIdN} in Jellyfin failed: {ex.Message}");
-                PruneUnlandedFills(access, accepted);
+                var landedNow = PruneUnlandedFills(access, accepted);
+                if (isPlaylist && hooks?.Place == null && standaloneItems.Count > 0
+                    && !run.Any(e => e.ItemId.HasValue && landedNow.Contains(e.ItemId.Value.ToString("N", CultureInfo.InvariantCulture))))
+                {
+                    // None of the new real items reached Jellyfin (one insert, so all or nothing): keep none of the
+                    // placeholders this attempt added either. Saved alone, a retry (same request) would skip them as
+                    // duplicates and put the real entries after them, scrambling the order; now it applies the whole run
+                    // in order at its position. A run whose only real items are a TV scope's present episodes keeps its
+                    // placeholders: swap-in inserts those episodes next to their placeholder later. (The sync places by
+                    // source neighbours on every run: unchanged.)
+                    foreach (var id in result.Added)
+                    {
+                        doc.Items.RemoveAll(p => p.Id == id);
+                        order.Remove(ListPlaceholderOrder.PlaceholderToken(id));
+                    }
+
+                    result.Added.Clear();
+                }
+
                 changed = DropLandedCompleteScopes(doc, accepted, result, order);
                 if (isPlaylist)
                 {
@@ -778,7 +803,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     changed = true;
                 }
 
-                var saved = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed || settled);
+                var saved = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed || settled || regrouped);
                 return ListOutcome.Error(500, "list_update_failed", "Jellyfin could not update the list.", BuildView(access, saved, isPlaylist ? order : null, visibility));
             }
 
@@ -867,7 +892,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
             }
 
-            var final = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed || settled);
+            var final = SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, changed || settled || regrouped);
             result.View = BuildView(access, final, isPlaylist ? order : null, visibility);
             return ListOutcome.Ok(result);
         }

@@ -29,6 +29,8 @@ internal sealed class ListPlaceholdersHarness : IDisposable
     /// <summary>When set, answers Seerr calls instead of <see cref="Reply"/> (hanging/slow Seerr).</summary>
     public Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>? ReplyAsync { get; set; }
     public IntegrationTransport Transport { get; }
+    /// <summary>Server configuration (metadata country "US"; the parental filter rates titles with it).</summary>
+    public Mock<IServerConfigurationManager> ServerConfig { get; } = new();
     public ListPlaceholderStore Store { get; }
     public ListAccessService Access { get; }
     public SeerrMediaIndex Index { get; }
@@ -89,9 +91,8 @@ internal sealed class ListPlaceholdersHarness : IDisposable
                 "R" => new ParentalRatingScore(17, null),
                 _ => null,
             });
-        var serverConfig = new Mock<IServerConfigurationManager>();
-        serverConfig.SetupGet(c => c.Configuration).Returns(new ServerConfiguration { MetadataCountryCode = "US" });
-        var filter = new SeerrParentalFilter(Transport, Users.Object, Localization.Object, serverConfig.Object, Plugin.Core.Logger);
+        ServerConfig.SetupGet(c => c.Configuration).Returns(new ServerConfiguration { MetadataCountryCode = "US" });
+        var filter = new SeerrParentalFilter(Transport, Users.Object, Localization.Object, ServerConfig.Object, Plugin.Core.Logger);
         Store = new ListPlaceholderStore(Plugin.Core.Paths.Object, Plugin.Core.Logger);
         Access = new ListAccessService(Host, Users.Object, filter, Plugin.Core.Logger);
         Index = new SeerrMediaIndex(Transport, Plugin.Core.Logger);
