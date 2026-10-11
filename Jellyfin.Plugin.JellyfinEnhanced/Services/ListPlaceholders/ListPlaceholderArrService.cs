@@ -409,6 +409,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
 
             var added = await SendAsync(target.Instance, HttpMethod.Post, "/api/v3/series", body, ct).ConfigureAwait(false);
+            if (added.Status == 400 && HasErrorProperty(added.Json, "LanguageProfileId")
+                && await FirstLanguageProfileAsync(target.Instance, ct).ConfigureAwait(false) is { } languageProfileId)
+            {
+                // Sonarr v3 refuses a series without an existing language profile ("Language profile does not exist":
+                // the field is a plain int there, so a missing one is 0; nothing was added). Retried once with its first
+                // profile. v4 ignores the field and only has a deprecated stub endpoint, so it isn't asked up front.
+                body["languageProfileId"] = languageProfileId;
+                added = await SendAsync(target.Instance, HttpMethod.Post, "/api/v3/series", body, ct).ConfigureAwait(false);
+            }
+
             if (added.Status == 400 && HasErrorCode(added.Json, "SeriesExistsValidator"))
             {
                 // Added meanwhile (another admin, Seerr, an import list): monitor the scope on the existing series.
@@ -1088,6 +1098,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             return dto;
         }
 
+        // The id of Sonarr's first language profile (GET /api/v3/languageprofile, Sonarr v3), or null when it has none or
+        // the call fails.
+        private async Task<int?> FirstLanguageProfileAsync(ArrInstance instance, CancellationToken ct)
+        {
+            var response = await SendAsync(instance, HttpMethod.Get, "/api/v3/languageprofile", null, ct).ConfigureAwait(false);
+            return response.Ok && response.Json is JsonArray profiles
+                ? profiles.OfType<JsonObject>().Select(p => PositiveInt(p["id"])).FirstOrDefault(id => id != null)
+                : null;
+        }
+
         private async Task<ArrResponse> SendAsync(ArrInstance instance, HttpMethod method, string path, JsonNode? body, CancellationToken ct)
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -1265,6 +1285,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
             return (502, "arr_error", $"{name} returned an error (HTTP {Num(response.Status)}).");
         }
+
+        private static bool HasErrorProperty(JsonNode? json, string property) =>
+            json is JsonArray errors && errors.OfType<JsonObject>().Any(e => string.Equals(Str(e["propertyName"]), property, StringComparison.OrdinalIgnoreCase));
 
         private static bool HasErrorCode(JsonNode? json, string code) =>
             json is JsonArray errors && errors.OfType<JsonObject>().Any(e => string.Equals(Str(e["errorCode"]), code, StringComparison.Ordinal));

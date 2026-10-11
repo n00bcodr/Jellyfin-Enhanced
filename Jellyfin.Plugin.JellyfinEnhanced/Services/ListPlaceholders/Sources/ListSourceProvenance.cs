@@ -673,8 +673,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
         /// placeholder (an <c>episodes</c> placeholder, or a whole-season one that only episode keys own) falls inside that
         /// run. The run is split at that boundary into two <c>episodes</c> placeholders (fills, keys and the source key
         /// follow each episode; the second half's token goes right after the first's in <paramref name="order"/>), so the
-        /// entry can be anchored after the first half instead of after the whole run. Nothing is split when the list has
-        /// no room for another placeholder: the entry then goes after the whole run, as before.
+        /// entry can be anchored after the first half instead of after the whole run. A filled episode of the second half
+        /// that sits before the run's token (swap-in puts fills there) moves the first half's token to just before it.
+        /// Nothing is split when the list has no room for another placeholder, or when a filled episode of the first half
+        /// would come after the first half's token: the entry then goes after the whole run, as before.
         /// </summary>
         /// <param name="doc">Fresh document.</param>
         /// <param name="order">The playlist's canonical order (the new tokens are inserted into it).</param>
@@ -741,12 +743,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                     continue;
                 }
 
+                // Swap-in puts a run's arrived episodes before its token, so a filled episode of the second half can sit
+                // ahead of the token the first half keeps; later arrivals of the second half go before that fill. The
+                // first half's token then moves to just before the earliest such fill (canonical order only: no real
+                // item moves), so the new entry lands between the halves' real episodes too. When a filled episode of
+                // the first half would end up after that spot, the halves can't be ordered without moving real items:
+                // no split (the entry goes after the whole run, as before).
+                var firstCoords = episodes.Take(cut + 1).Select(e => (e.S, e.E)).ToHashSet();
+                var firstFills = placeholder.Filled.Where(f => firstCoords.Contains((f.S, f.E))).Select(f => f.ItemId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var secondCoords = episodes.Skip(cut + 1).Select(e => (e.S, e.E)).ToHashSet();
+                var secondFills = placeholder.Filled.Where(f => secondCoords.Contains((f.S, f.E))).Select(f => f.ItemId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var firstAt = at;
+                var lastFirstFill = -1;
+                for (var i = 0; i < order.Count; i++)
+                {
+                    if (!ListPlaceholderOrder.TryParseReal(order[i], out var itemId, out _))
+                    {
+                        continue;
+                    }
+
+                    var n = itemId.ToString("N", CultureInfo.InvariantCulture);
+                    if (i < at && secondFills.Contains(n))
+                    {
+                        firstAt = Math.Min(firstAt, i);
+                    }
+
+                    if (firstFills.Contains(n))
+                    {
+                        lastFirstFill = i;
+                    }
+                }
+
+                if (lastFirstFill > firstAt)
+                {
+                    continue;
+                }
+
                 var filled = placeholder.Filled.ToList();
                 var releaseDate = placeholder.ReleaseDate;
                 var second = Copy(placeholder);
                 Reshape(placeholder, episodes.Take(cut + 1).ToList());
                 Reshape(second, episodes.Skip(cut + 1).ToList());
                 doc.Items.Insert(doc.Items.IndexOf(placeholder) + 1, second);
+                if (firstAt < at)
+                {
+                    order.RemoveAt(at);
+                    order.Insert(firstAt, token!);
+                }
+
+                // The second half keeps the run's old spot (after its filled episodes).
                 order.Insert(at + 1, ListPlaceholderOrder.PlaceholderToken(second.Id));
                 split = true;
 

@@ -40,6 +40,15 @@ internal sealed class FakeArr : IDisposable
     public List<JsonObject> Episodes { get; } = new();
     public List<JsonObject> Commands { get; } = new();
 
+    /// <summary>
+    /// Sonarr's language profiles (GET /api/v3/languageprofile). The default is Sonarr v4's single "Deprecated" stub (the
+    /// field is ignored there); set <see cref="SonarrV3"/> to make a series POST require one of these ids, as v3 does.
+    /// </summary>
+    public JsonArray LanguageProfiles { get; set; } = new(new JsonObject { ["id"] = 1, ["name"] = "Deprecated" });
+
+    /// <summary>Sonarr v3: a series POST whose languageProfileId isn't an existing profile is a 400.</summary>
+    public bool SonarrV3 { get; set; }
+
     /// <summary>Episodes per (tvdbId, season) created when a series is added.</summary>
     public Dictionary<(int Tvdb, int Season), int> EpisodeCounts { get; } = new();
 
@@ -326,6 +335,11 @@ internal sealed class FakeArr : IDisposable
             return Json(new JsonArray(new JsonObject { ["id"] = 1, ["path"] = "/tv", ["freeSpace"] = 5_000_000_000_000L, ["accessible"] = true }));
         }
 
+        if (method == "GET" && path == "/api/v3/languageprofile")
+        {
+            return Json(LanguageProfiles.DeepClone());
+        }
+
         if (method == "GET" && path == "/api/v3/series/lookup")
         {
             var term = Query(request)["term"];
@@ -350,6 +364,13 @@ internal sealed class FakeArr : IDisposable
             if (series["title"] == null)
             {
                 return Validation("Title", "NotEmptyValidator", "'Title' must not be empty.");
+            }
+
+            // Sonarr v3: LanguageProfileId is a plain int (missing = 0) checked by LanguageProfileExistsValidator.
+            var languageProfileId = (int?)series["languageProfileId"] ?? 0;
+            if (SonarrV3 && !LanguageProfiles.Any(p => (int)p!["id"]! == languageProfileId))
+            {
+                return Validation("LanguageProfileId", "LanguageProfileExistsValidator", "Language profile does not exist");
             }
 
             var catalog = SonarrCatalog.Single(s => (int)s["tvdbId"]! == tvdbId);

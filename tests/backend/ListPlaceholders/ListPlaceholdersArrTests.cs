@@ -430,11 +430,37 @@ public class ListPlaceholdersArrTests
         Assert.Equal(new[] { (0, false), (1, false), (2, true) }, ((JsonArray)body["seasons"]!).Select(s => ((int)s!["seasonNumber"]!, (bool)s["monitored"]!)));
         Assert.Null(body["addOptions"]!["monitor"]); // "all"/"none" would override the season flags
         Assert.True((bool)body["addOptions"]!["searchForMissingEpisodes"]!);
-        Assert.Null(body["languageProfileId"]);
+        Assert.Null(body["languageProfileId"]); // v4 ignores it (Sonarr v3 is asked for one only after it refuses the add)
+        Assert.DoesNotContain(f.Arr.Calls, c => c.Path == "/api/v3/languageprofile"); // deprecated on v4 (logs a warning)
         Assert.Contains(f.Arr.Calls, c => c.Path == "/api/v3/series/lookup?term=tmdb%3A110492");
 
         var seriesId = result.ArrId!.Value;
         Assert.Equal(Enumerable.Range(1, 8).Select(e => (2, e)), f.Arr.MonitoredEpisodes(seriesId));
+    }
+
+    // Review round 8: Sonarr v3 refuses a series without an existing language profile; the first one is sent.
+    [Fact]
+    public async Task SonarrV3NewSeriesGetsTheFirstLanguageProfile()
+    {
+        using var f = new Fixture();
+        f.Arr.SonarrV3 = true;
+        f.Arr.LanguageProfiles = new JsonArray(new JsonObject { ["id"] = 7, ["name"] = "English" }, new JsonObject { ["id"] = 9, ["name"] = "Any" });
+        var result = Ok(await f.Add("{\"mediaType\":\"tv\",\"instance\":0,\"tmdbId\":110492,\"scope\":\"season\",\"seasonNumber\":2,\"qualityProfileId\":4,\"rootFolderPath\":\"/tv\",\"search\":false}"));
+
+        Assert.Equal("added", result.Result);
+        var posts = f.Arr.Writes("sonarr");
+        Assert.Equal(2, posts.Count); // refused without one, then added with the first profile
+        Assert.Null(posts[0].Json["languageProfileId"]);
+        Assert.Equal(7, (int)posts[1].Json["languageProfileId"]!);
+        Assert.Single(f.Arr.SonarrSeries);
+
+        // No profile to send (the endpoint fails): Sonarr's refusal is reported, nothing retried.
+        using var g = new Fixture();
+        g.Arr.SonarrV3 = true;
+        g.Arr.Override = (service, request) => request.RequestUri!.AbsolutePath == "/api/v3/languageprofile" ? IntegrationTransport.Response("{}", 404) : null;
+        var refused = await g.Add("{\"mediaType\":\"tv\",\"instance\":0,\"tmdbId\":110492,\"scope\":\"season\",\"seasonNumber\":2,\"qualityProfileId\":4,\"rootFolderPath\":\"/tv\",\"search\":false}");
+        Assert.NotEqual(200, refused.StatusCode);
+        Assert.Single(g.Arr.Writes("sonarr"));
     }
 
     [Fact]

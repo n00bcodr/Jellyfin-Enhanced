@@ -528,7 +528,7 @@
         if (link) {
             urls.push(link[2]);
             title = stripMarkdown(link[1], urls);
-            meta = stripMarkdown(link[3], urls);
+            meta = keptLinks(link[3].replace(new RegExp(LINK_MARK, 'g'), ' '), urls);
             // A season/episode selector right after the link (or after its year) belongs to the title, as on plain
             // lines: "[The Flash](…) S01E08 (2014)", "[Peacemaker](…) — Season 1", "[Doctor Who](…) (2005) S1E11–S3E2".
             const selector = leadingSelector(meta);
@@ -537,7 +537,7 @@
                 meta = selector.rest;
             }
         } else {
-            text = stripMarkdown(text, urls);
+            text = keptLinks(text.replace(new RegExp(LINK_MARK, 'g'), ' '), urls);
         }
 
         let year = ctx.year;
@@ -599,7 +599,8 @@
             }
             // Bare ids after the year ("Batman (1989) tt0096895", "… · tmdb:movie:268 · Film") name this title; they
             // are not type words ("movie" in tmdb:movie:268).
-            metaIds = (structured.match(ID_TOKENS) || []).join(' ');
+            // Bare URLs are left to the link targets kept above (none from the commentary).
+            metaIds = (structured.match(ID_TOKENS) || []).filter(token => !/^https?:/i.test(token)).join(' ');
             structured = structured.replace(ID_TOKENS, ' ');
             const release = /[([]\s*([^)\]]+?)\s*[)\]]/.exec(structured);
             if (release) {
@@ -640,7 +641,8 @@
                 // Bare ids after the reference ("Flash S1E8 tmdb:tv:60735") name the title; they are never the note.
                 const afterIds = after.match(ID_TOKENS);
                 if (afterIds) {
-                    metaIds = [metaIds, ...afterIds].filter(Boolean).join(' ');
+                    // A bare URL here counts through the kept link targets (only before the commentary starts).
+                    metaIds = [metaIds, ...afterIds.filter(token => !/^https?:/i.test(token))].filter(Boolean).join(' ');
                     after = after.replace(ID_TOKENS, ' ').replace(/\s+/g, ' ').trim();
                 }
                 if (!note && after && !/^[.,;:]?$/.test(after)) note = after.replace(/^[.,;:—–-]\s*/, '');
@@ -714,6 +716,66 @@
     }
 
     /**
+     * Strips a line's markdown and adds to `urls` only the link targets (markdown links, autolinks, bare URLs) that
+     * start before its commentary ({@link commentaryStart}): a link in "— watch before [The Penguin](…)" or "(see
+     * https://… for Legends)" is about another title. Bare non-URL id tokens stay in the text and count anywhere.
+     * @param {string} value Raw markdown text.
+     * @param {string[]} urls Receives the kept link targets.
+     * @returns {string} The stripped text.
+     */
+    function keptLinks(value, urls) {
+        const found = [];
+        const links = [];
+        const stripped = stripMarkdown(value, found, links);
+        const cut = commentaryStart(stripped);
+        for (const link of locateLinks(stripped, found, links).sort((a, b) => a.at - b.at)) {
+            if (link.at < cut) urls.push(link.url);
+        }
+        return stripped;
+    }
+
+    /**
+     * Where the commentary of a plain line starts (its length when there is none): an em/en dash note (not one that
+     * introduces a season, episode reference or year: "Peacemaker — Season 1"); after an episode reference a
+     * parenthetical other than a year, a spaced dash or a sentence end; after the release year a dash or colon
+     * followed by words, a parenthetical or a sentence end. A URL or parenthetical URL right after one of these
+     * separators still belongs to the title ("Superman (2025) - https://…").
+     * @param {string} text Stripped text.
+     * @returns {number} Offset of the commentary.
+     */
+    function commentaryStart(text) {
+        let cut = text.length;
+        const notUrl = '(?!\\s*<?https?:)';
+        for (const dash of text.matchAll(/\s[—–]\s*/g)) {
+            const before = text.slice(0, dash.index);
+            if ((before.match(/[([]/g) || []).length > (before.match(/[)\]]/g) || []).length) continue; // "(2012 – 2020)"
+            const rest = text.slice(dash.index + dash[0].length);
+            const ref = findEpisodeRef(rest);
+            if (/^(?:seasons?\s+\d|[([]\s*\d{4}|<?https?:)/i.test(rest) || (ref && ref.index === 0)) continue;
+            cut = dash.index;
+            break;
+        }
+        const ref = findEpisodeRef(text);
+        if (ref && ref.end < cut) {
+            const tail = text.slice(ref.end);
+            const at = tail.search(new RegExp(`\\((?!\\s*\\d{4}\\s*\\))${notUrl}|\\s[—–-]\\s+${notUrl}|[.;!?](?:\\s|$)`));
+            if (at >= 0) cut = Math.min(cut, ref.end + at);
+        }
+        const year = /[([]\s*(?:\d{4}(?:-\d{2}-\d{2})?|\d{4}\s*[–—-]\s*(?:\d{2,4})?)\s*[)\]]/.exec(text);
+        if (year && year.index < cut) {
+            const end = year.index + year[0].length;
+            const tail = text.slice(end);
+            const selector = tail.replace(/^\s*[—–:-]?\s*/, '');
+            const ref = findEpisodeRef(selector);
+            if (!/^seasons?\s+\d/i.test(selector) && !(ref && ref.index === 0)) {
+                const at = new RegExp(`^\\s*(?:[-:]\\s+${notUrl}(?=\\S)|\\(${notUrl}|[.;!?](?:\\s|$))`).exec(tail);
+                if (at) cut = Math.min(cut, end + at[0].search(/[-:(.;!?]/));
+            }
+        }
+        return cut;
+    }
+
+    /**
      * Cleans one option of a `→` chain segment: drops a plain label ("Optional setup:") and the commentary after the
      * episode reference or first sentence; a trailing instruction parenthetical becomes a note. A prefix that carries
      * its own episode reference ("Supergirl 2x08: Medusa") is the entry, not a label. Bare ids in the commentary
@@ -765,7 +827,9 @@
             }
             part = kept;
         } else {
-            part = part.split(/(?<=[a-z0-9!?)])[.;]\s+/i)[0];
+            // The first sentence, but a period after a title abbreviation ("Dr. No", "Vol. 2", "Mr. & Mrs. Smith") is
+            // part of the title. (A single letter isn't treated as an initial: "Movie B. See also …" ends there.)
+            part = part.split(/(?<=[a-z0-9!?)])(?:(?<!\b(?:Dr|Mrs?|Ms|St|Vol|Pts?|Jr|Sr|No|vs|Ep|Mt|Ft|Ch|Bk))\.|;)\s+/i)[0];
         }
         // Only link targets that start in the kept text name the title; links in dropped commentary ("(see also
         // [Legends](…))", "— then read [Crisis](…)", a second sentence) are about other titles.

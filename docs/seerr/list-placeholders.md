@@ -316,7 +316,7 @@ The dialog asks for the **Instance** (the enabled instances on the [*arr Setting
 
 !!! note "Sonarr v3"
 
-    Adding a single season relies on Sonarr v4. On Sonarr v3 the chosen season is monitored as asked, but seasons added later may be monitored too.
+    Adding a single season relies on Sonarr v4. On Sonarr v3 the chosen season is monitored as asked, but seasons added later may be monitored too. A new series gets Sonarr v3's first language profile.
 
 ## Permissions
 

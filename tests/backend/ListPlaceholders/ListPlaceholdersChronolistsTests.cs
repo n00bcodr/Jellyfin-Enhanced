@@ -1116,6 +1116,105 @@ public class ListPlaceholdersChronolistsTests
         Assert.Equal(new[] { "88:S1E1", "7", "88:S1E2,3", "6", "1412:S3E2,3", "8", "1412:S3E4" }, w.Order());
     }
 
+    // Review round 8: a run whose later episode was already swapped in (it sits before the run's token) is split with
+    // the first half's token moved before that episode, so the episodes arriving later still play in source order.
+    [Fact]
+    public async Task SplittingARunWithASwappedInLaterEpisodeKeepsTheSourceOrder()
+    {
+        using var w = new World(realLibrary: true);
+        var show = w.H.Host.AddSeries(tmdb: 88, tvdb: 1088);
+        w.H.Fetcher.Items = new List<SourceItem> { Eighty(1), Eighty(2), Eighty(3), Film(6) };
+        Assert.Equal(200, (await w.H.Sources.LinkAsync(w.Access, new LinkSourceRequest { Url = DctvUrl, SyncEnabled = true }, None)).StatusCode);
+        await w.Sync();
+        Assert.Equal(new[] { "88:S1", "6" }, w.Order());
+
+        var e3 = w.H.Host.AddEpisode(show, 1, 3);
+        await w.H.Swap.RunListPassAsync(w.Id, null, MetadataMode.None, None);
+        Assert.Equal(new[] { "REAL", "88:S1", "6" }, w.Order());
+
+        // Upstream: movie 7 between 1x01 and 1x02.
+        w.H.Fetcher.Items = new List<SourceItem> { Eighty(1), Film(7), Eighty(2), Eighty(3), Film(6) };
+        Assert.Equal(1, (await w.Sync()).Added);
+        Assert.Equal(new[] { "88:S1E1", "7", "REAL", "88:S1E2,3", "6" }, w.Order());
+
+        var e1 = w.H.Host.AddEpisode(show, 1, 1);
+        await w.H.Swap.RunListPassAsync(w.Id, null, MetadataMode.None, None);
+        var e2 = w.H.Host.AddEpisode(show, 1, 2);
+        await w.H.Swap.RunListPassAsync(w.Id, null, MetadataMode.None, None);
+        Assert.Equal(new[] { e1, e2, e3 }, w.H.Host.Resolved(w.List.Info.Id));
+        Assert.Equal(new[] { "REAL", "7", "REAL", "REAL", "6" }, w.Order());
+    }
+
+    // Review round 8: fills on both sides of the cut (1x01 and 1x04 swapped in) keep their order through the split.
+    [Fact]
+    public async Task SplittingARunWithFillsOnBothSidesKeepsTheSourceOrder()
+    {
+        using var w = new World(realLibrary: true);
+        var show = w.H.Host.AddSeries(tmdb: 88, tvdb: 1088);
+        w.H.Fetcher.Items = new List<SourceItem> { Eighty(1), Eighty(2), Eighty(3), Eighty(4), Film(6) };
+        Assert.Equal(200, (await w.H.Sources.LinkAsync(w.Access, new LinkSourceRequest { Url = DctvUrl, SyncEnabled = true }, None)).StatusCode);
+        await w.Sync();
+        var e4 = w.H.Host.AddEpisode(show, 1, 4);
+        await w.H.Swap.RunListPassAsync(w.Id, null, MetadataMode.None, None);
+        var e1 = w.H.Host.AddEpisode(show, 1, 1);
+        await w.H.Swap.RunListPassAsync(w.Id, null, MetadataMode.None, None);
+        Assert.Equal(new[] { e1, e4 }, w.H.Host.Resolved(w.List.Info.Id));
+
+        // Upstream: movie 7 between 1x02 and 1x03.
+        w.H.Fetcher.Items = new List<SourceItem> { Eighty(1), Eighty(2), Film(7), Eighty(3), Eighty(4), Film(6) };
+        Assert.Equal(1, (await w.Sync()).Added);
+        Assert.Equal(new[] { "REAL", "88:S1E1,2", "7", "REAL", "88:S1E3,4", "6" }, w.Order());
+
+        var e2 = w.H.Host.AddEpisode(show, 1, 2);
+        var e3 = w.H.Host.AddEpisode(show, 1, 3);
+        await w.H.Swap.RunListPassAsync(w.Id, null, MetadataMode.None, None);
+        Assert.Equal(new[] { e1, e2, e3, e4 }, w.H.Host.Resolved(w.List.Info.Id));
+        Assert.Equal(new[] { "REAL", "REAL", "7", "REAL", "REAL", "6" }, w.Order());
+    }
+
+    // Review round 8: when a filled episode of the first half sits after the second half's earliest fill, the halves
+    // can't be ordered without moving real items: nothing is split.
+    [Fact]
+    public void ARunIsNotSplitWhenItsFillsCannotBeOrderedAroundTheCut()
+    {
+        var run = Ph("{\"kind\":\"episodes\",\"tmdbId\":88,\"title\":\"Eighty\",\"seasonNumber\":1,\"episodes\":[{\"s\":1,\"e\":1},{\"s\":1,\"e\":2},{\"s\":1,\"e\":3}]}");
+        var (r1, r3) = (Guid.NewGuid(), Guid.NewGuid());
+        run.Filled.Add(new FilledEpisode { ItemId = r1.ToString("N"), S = 1, E = 1 });
+        run.Filled.Add(new FilledEpisode { ItemId = r3.ToString("N"), S = 1, E = 3 });
+        ListDoc Doc(params string[] order)
+        {
+            var doc = new ListDoc { ListKind = ListKinds.Playlist, Items = new List<Placeholder> { Copy(run) }, Order = order.ToList(), Source = new ListSource() };
+            foreach (var e in new[] { 1, 2, 3 })
+            {
+                ListSourceProvenance.RecordAdded(doc.Source, $"tv|88|1|{e}", run.Id, null);
+            }
+
+            doc.Source.Owned["tv|88|1|1"].ItemIds.Add(r1.ToString("N"));
+            doc.Source.Owned["tv|88|1|3"].ItemIds.Add(r3.ToString("N"));
+            return doc;
+        }
+
+        var keys = new List<string> { "tv|88|1|1", "tv|88|1|2", "movie|7||", "tv|88|1|3" };
+        string R(Guid id) => ListPlaceholderOrder.RealToken(id, 0);
+
+        // 1x03 before 1x01: no split, the order untouched.
+        var crossed = Doc(R(r3), R(r1), P(run.Id));
+        var order = crossed.Order.ToList();
+        Assert.False(ListSourceProvenance.SplitRunsAround(crossed, order, keys, new[] { 2 }));
+        Assert.Equal(crossed.Order, order);
+        Assert.Single(crossed.Items);
+
+        // In order: split, the first half's token just before 1x03.
+        var straight = Doc(R(r1), R(r3), P(run.Id));
+        order = straight.Order.ToList();
+        Assert.True(ListSourceProvenance.SplitRunsAround(straight, order, keys, new[] { 2 }));
+        Assert.Equal(new[] { R(r1), P(run.Id), R(r3), P(straight.Items[1].Id) }, order);
+        Assert.Equal(new[] { 1 }, straight.Items[0].Filled.Select(f => f.E));
+        Assert.Equal(new[] { 3 }, straight.Items[1].Filled.Select(f => f.E));
+
+        static Placeholder Copy(Placeholder p) => System.Text.Json.JsonSerializer.Deserialize<Placeholder>(System.Text.Json.JsonSerializer.Serialize(p))!;
+    }
+
     // Review round: with removeDropped, an episode that left a whole-season run must not come back through the season
     // placeholder once it arrives in the library: the placeholder is narrowed to the episodes still listed.
     [Fact]
