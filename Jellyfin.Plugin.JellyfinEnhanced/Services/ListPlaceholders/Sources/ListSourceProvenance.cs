@@ -86,7 +86,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
         /// Swap-in hook (phase 3): <paramref name="itemIds"/> ("N") replaced or partly filled <paramref name="placeholder"/>.
         /// Every key that owns the placeholder (one per episode for grouped sources, or overlapping keys that share it)
         /// takes the items it stands for: an item the placeholder recorded as filled for an episode goes to that episode's
-        /// key and to the owning keys of a wider scope (season, series), never to another episode's key; any other item (a
+        /// key and to the owning keys of a wider scope that contains it (its season's key, a series key), never to another
+        /// episode's or season's key; any other item (a
         /// movie, a collection's Season item) goes to every owning key. Once the placeholder is no longer in <c>doc.Items</c> (retired)
         /// the keys own only the items. Call it AFTER updating <c>doc.Items</c> and <c>Filled</c>, in the same locked
         /// write. A placeholder that was only "present" (not added by sync) stays unowned.
@@ -149,8 +150,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 var targets = keys;
                 if (filled.TryGetValue(itemId, out var episodes))
                 {
-                    // Episode keys only take their own episode; scope keys take every episode of their placeholder.
-                    var matching = keys.Where(k => SourceKeys.EpisodeOf(k) is not { } c || episodes.Contains(c)).ToList();
+                    // Each key takes the fills of its own scope: a series key every episode, a season key its season's,
+                    // an episode key its episode (as AttachCovered does).
+                    var matching = keys.Where(k => KeyCovers(k, episodes)).ToList();
                     if (matching.Count > 0)
                     {
                         targets = matching;
@@ -445,6 +447,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             }
 
             return plan;
+        }
+
+        // Whether a key's scope takes any of these filled episodes: a series key (no season, or a key of another shape)
+        // all of them, a season key those of its season, an episode key its own episode.
+        private static bool KeyCovers(string key, HashSet<(int, int)> episodes)
+        {
+            var parts = key.Split('|');
+            if (parts.Length != 4 || parts[2].Length == 0 || !int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var season))
+            {
+                return true;
+            }
+
+            if (parts[3].Length == 0)
+            {
+                return episodes.Any(c => c.Item1 == season);
+            }
+
+            return int.TryParse(parts[3], NumberStyles.None, CultureInfo.InvariantCulture, out var episode) && episodes.Contains((season, episode));
         }
 
         // Whether a key still in the source that owns the placeholder covers this episode: a series key (no season), a key

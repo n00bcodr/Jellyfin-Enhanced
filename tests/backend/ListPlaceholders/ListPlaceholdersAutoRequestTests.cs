@@ -490,6 +490,40 @@ public class ListPlaceholdersAutoRequestTests
         Assert.Equal(new[] { "movie|101", "movie|102" }, retry.Requested);
     }
 
+    // R4-6: the admin points JE at another Seerr while a run is going (there, the run's Seerr user id may be someone
+    // else): nothing more is sent, neither the details read nor the request, and the reservation is released.
+    [Theory]
+    [InlineData("/api/v1/user")]
+    [InlineData("/api/v1/movie/101")]
+    public async Task ARunStopsWhenTheSeerrConfigurationChanges(string changedDuring)
+    {
+        using var f = new Fixture(count: 3);
+        var played = f.H.Host.AddItem();
+        f.Seerr.Movies[101] = FakeSeerr.MovieJson(101, Past);
+        f.Seerr.Movies[102] = FakeSeerr.MovieJson(102, Past);
+        f.Playlist(played, Movie(101, Past), Movie(102, Past));
+        f.H.Reply = request =>
+        {
+            if (request.RequestUri!.AbsolutePath == changedDuring)
+            {
+                f.H.Plugin.Plugin.Configuration.JellyseerrUrls = "http://other-seerr.test";
+            }
+
+            return f.Seerr.Handle(request);
+        };
+
+        var run = await f.Service.RunAsync(f.Viewer.Id, f.Played(played), CancellationToken.None);
+        Assert.Equal("seerr config changed", run.StoppedReason);
+        Assert.Empty(f.Seerr.Posts);
+        Assert.Empty(run.Requested);
+        Assert.Equal(changedDuring == "/api/v1/user" ? 0 : 1, f.Seerr.Gets.Count(g => g.StartsWith("/api/v1/movie/", StringComparison.Ordinal)));
+
+        // The next run resolves the account on the new Seerr and requests both.
+        f.H.Reply = f.Seerr.Handle;
+        var next = await f.Service.RunAsync(f.Viewer.Id, f.Played(played), CancellationToken.None);
+        Assert.Equal(new[] { "movie|101", "movie|102" }, next.Requested);
+    }
+
     [Fact]
     public async Task RestrictedUsersNeverRequestTitlesTheirParentalControlsHide()
     {
@@ -829,7 +863,8 @@ public class ListPlaceholdersAutoRequestTests
         var gateway = new SeerrRequestGateway(h.Transport, h.Plugin.Core.Logger);
 
         var account = await gateway.ResolveAccountAsync(Guid.Empty, CancellationToken.None);
-        Assert.Equal(new SeerrAccount(SeerrAccountState.Linked, 7, Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr.JellyseerrPermission.REQUEST), account);
+        Assert.Equal(new SeerrAccount(SeerrAccountState.Linked, 7, Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr.JellyseerrPermission.REQUEST), account with { Config = null });
+        Assert.NotNull(account.Config);
         await gateway.ResolveAccountAsync(Guid.Empty, CancellationToken.None); // cached
 
         var post = await gateway.PostRequestAsync(7, "{}", CancellationToken.None);

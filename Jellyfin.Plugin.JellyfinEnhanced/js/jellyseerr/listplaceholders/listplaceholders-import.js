@@ -470,9 +470,11 @@
             const overridden = !!(row.override && !row.both);
             out = cands.map((cand) => {
                 // The rest of a chosen alternative's scope (not for a scope the user set by hand; Change match always
-                // sets one for a show, so one equal to the alternative's first part is no change of scope).
+                // sets one for a show, so one equal to the alternative's first part is no change of scope). That first
+                // part is compared as it was when Change match was done: a later library check may narrow the
+                // candidate's episodes (it looks at 100 at most).
                 const first = placeholderFromCandidate(cand, row.entry, row.result?.kind);
-                const more = overridden && !sameScope(row.override, first) ? [] : alternativeMore(cand, row.entry, first)
+                const more = overridden && !sameScope(row.override, row.overrideFirst || first) ? [] : alternativeMore(cand, row.entry, first)
                     .map(placeholder => ({ type: 'placeholder', placeholder }));
                 if (row.action === 'item' && !overridden) {
                     const itemId = libraryItemFor(cand, listKind);
@@ -1691,6 +1693,7 @@
                 row.cand = row.cands.indexOf(cand);
                 row.both = both;
                 row.override = override;
+                row.overrideFirst = override ? placeholderFromCandidate(cand, row.entry, row.result?.kind) : null;
                 row.confirmed = true;
                 row.action = fromLibrary(cand, listKind) && !override ? 'item' : 'placeholder';
                 closeEditor();
@@ -1723,6 +1726,7 @@
             if (!scope) return;
             const probe = { index: 0, title: clip(cand.title, 200), ids: { tmdb: Number(cand.tmdbId), tmdbType: cand.mediaType } };
             if (Number.isInteger(scope.seasonNumber)) probe.season = scope.seasonNumber;
+            const cut = scope.kind === 'episodes' && (scope.episodes || []).length > 100;
             if (scope.kind === 'episodes') probe.episodes = (scope.episodes || []).slice(0, 100).map(e => ({ s: scope.seasonNumber, e: Number(e.e) }));
             const token = row.libraryToken = (row.libraryToken || 0) + 1;
             row.libraryPending = true;
@@ -1748,7 +1752,8 @@
                     tvdbId: cand.tvdbId ?? match.tvdbId,
                     imdbId: cand.imdbId ?? match.imdbId,
                     season: match.season ?? cand.season,
-                    episodes: match.episodes ?? cand.episodes,
+                    // A probe cut at 100 episodes answers for those only: the candidate keeps its full scope.
+                    episodes: cut ? cand.episodes : (match.episodes ?? cand.episodes),
                     episodeTotal: match.episodeTotal ?? cand.episodeTotal
                 };
                 row.cands[row.cand] = fresh;

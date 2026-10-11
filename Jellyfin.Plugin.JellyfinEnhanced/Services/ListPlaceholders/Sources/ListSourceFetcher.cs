@@ -601,37 +601,62 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
                 case "list":
                 {
-                    var items = new List<SourceItem>();
-                    string? title = null;
-                    var total = 0;
-                    var truncated = false;
-                    for (var page = 1; page <= 100; page++)
+                    // Offset pages: an edit while they are read shifts rows between pages. Checked (PageDrift) and read
+                    // once more; still inconsistent → Partial, so a sync adds but never removes on this snapshot.
+                    for (var attempt = 1; ; attempt++)
                     {
-                        var json = await TmdbGetAsync("list/" + id, "?page=" + page.ToString(CultureInfo.InvariantCulture), key, cancellationToken).ConfigureAwait(false);
-                        if (json == null)
+                        var drift = new PageDrift();
+                        var items = new List<SourceItem>();
+                        string? title = null;
+                        var total = 0;
+                        var truncated = false;
+                        for (var page = 1; page <= 100; page++)
                         {
-                            return page == 1 ? SourceFetchResult.Fail(source, "not_found", "TMDB has no public list with this id.") : throw new SourceHttpException("upstream_error", "TMDB stopped answering while reading the list.");
+                            var json = await TmdbGetAsync("list/" + id, "?page=" + page.ToString(CultureInfo.InvariantCulture), key, cancellationToken).ConfigureAwait(false);
+                            if (json == null)
+                            {
+                                return page == 1 ? SourceFetchResult.Fail(source, "not_found", "TMDB has no public list with this id.") : throw new SourceHttpException("upstream_error", "TMDB stopped answering while reading the list.");
+                            }
+
+                            using var doc = JsonDocument.Parse(json);
+                            title ??= Str(doc.RootElement, "name");
+                            var itemCount = Int(doc.RootElement, "item_count");
+                            drift.Total(itemCount);
+                            total = itemCount ?? total;
+                            var rows = ListArray(doc.RootElement, "items").ToList();
+                            var pageItems = new List<SourceItem>();
+                            foreach (var row in rows)
+                            {
+                                var item = TmdbItem(row, null, null);
+                                drift.Row(Str(row, "media_type") is { } mediaType && Int(row, "id") is { } rowId ? mediaType + "|" + rowId.ToString(CultureInfo.InvariantCulture) : item?.Key);
+                                if (item != null)
+                                {
+                                    pageItems.Add(item);
+                                }
+                            }
+
+                            items.AddRange(pageItems);
+                            var pages = Int(doc.RootElement, "total_pages") ?? 1;
+                            if (items.Count >= MaxItems)
+                            {
+                                truncated = items.Count > MaxItems || page < pages;
+                                break;
+                            }
+
+                            if (page >= pages || rows.Count == 0)
+                            {
+                                drift.End();
+                                break;
+                            }
                         }
 
-                        using var doc = JsonDocument.Parse(json);
-                        title ??= Str(doc.RootElement, "name");
-                        total = Int(doc.RootElement, "item_count") ?? total;
-                        var pageItems = ListArray(doc.RootElement, "items").Select(p => TmdbItem(p, null, null)).OfType<SourceItem>().ToList();
-                        items.AddRange(pageItems);
-                        var pages = Int(doc.RootElement, "total_pages") ?? 1;
-                        if (items.Count >= MaxItems)
+                        if (drift.Consistent || attempt == 2)
                         {
-                            truncated = items.Count > MaxItems || page < pages;
-                            break;
+                            return Done(source, "tmdb", title, items, Math.Max(total, items.Count), truncated, partial: !drift.Consistent);
                         }
 
-                        if (page >= pages || pageItems.Count == 0)
-                        {
-                            break;
-                        }
+                        _logger.Debug($"[ListPlaceholders] TMDB list {id} changed while it was read; reading it again");
                     }
-
-                    return Done(source, "tmdb", title, items, Math.Max(total, items.Count), truncated);
                 }
 
                 default:
@@ -843,52 +868,107 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                     break;
             }
 
-            var items = new List<SourceItem>();
-            var truncated = false;
-            var total = 0;
-            for (var page = 1; page <= 20; page++)
+            // Offset pages of a list or watchlist: an edit while they are read shifts rows between pages. After each later
+            // page, the last row of the page before is read again (limit=1): a different row there, a total that moved,
+            // a row read twice or a row count that doesn't match the total mean the list changed meanwhile (PageDrift):
+            // read once more, then Partial. Charts change all the time and never remove anything, so they aren't checked.
+            var checkDrift = source.Shape != "chart";
+            string? RowIdentity(JsonElement row, SourceItem? item) =>
+                row.ValueKind == JsonValueKind.Object && row.TryGetProperty("id", out var rowId) && rowId.ValueKind == JsonValueKind.Number ? "id|" + rowId.GetRawText() : item?.Key;
+            for (var attempt = 1; ; attempt++)
             {
-                var url = "https://api.trakt.tv" + path + "?page=" + page.ToString(CultureInfo.InvariantCulture) + "&limit=100";
-                var response = await SendAsync(HttpMethod.Get, url, headers, null, cancellationToken).ConfigureAwait(false);
-                if (response.Status == 404)
+                var drift = new PageDrift();
+                var items = new List<SourceItem>();
+                var truncated = false;
+                var total = 0;
+                var rowsBefore = 0;
+                string? lastRow = null;
+                for (var page = 1; page <= 20; page++)
                 {
-                    return page == 1 ? SourceFetchResult.Fail(source, "not_found", "Trakt didn't find this list (only public lists can be imported).") : throw new SourceHttpException("upstream_error", "Trakt stopped answering while reading the list.");
+                    var url = "https://api.trakt.tv" + path + "?page=" + page.ToString(CultureInfo.InvariantCulture) + "&limit=100";
+                    var response = await SendAsync(HttpMethod.Get, url, headers, null, cancellationToken).ConfigureAwait(false);
+                    if (response.Status == 404)
+                    {
+                        return page == 1 ? SourceFetchResult.Fail(source, "not_found", "Trakt didn't find this list (only public lists can be imported).") : throw new SourceHttpException("upstream_error", "Trakt stopped answering while reading the list.");
+                    }
+
+                    if (response.Status is 401 or 403)
+                    {
+                        return SourceFetchResult.Fail(source, "trakt_unauthorized", "Trakt refused the request: check the Trakt client ID, and that the list is public.");
+                    }
+
+                    if (response.Status != 200 || response.Body == null)
+                    {
+                        throw Upstream(response, "Trakt");
+                    }
+
+                    using var doc = JsonDocument.Parse(response.Body);
+                    if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                    {
+                        throw new InvalidDataException("unexpected Trakt JSON");
+                    }
+
+                    var rows = doc.RootElement.EnumerateArray().ToList();
+                    var pageItems = new List<SourceItem>();
+                    string? pageLast = null;
+                    foreach (var row in rows)
+                    {
+                        var item = TraktItem(row, defaultType);
+                        // Trakt's list-item id identifies a row; without one, the entry's own key.
+                        pageLast = RowIdentity(row, item);
+                        drift.Row(pageLast);
+                        if (item != null)
+                        {
+                            pageItems.Add(item);
+                        }
+                    }
+
+                    if (checkDrift && page > 1 && drift.Consistent)
+                    {
+                        var probeUrl = "https://api.trakt.tv" + path + "?page=" + rowsBefore.ToString(CultureInfo.InvariantCulture) + "&limit=1";
+                        var probe = await SendAsync(HttpMethod.Get, probeUrl, headers, null, cancellationToken).ConfigureAwait(false);
+                        if (probe.Status != 200 || probe.Body == null)
+                        {
+                            throw Upstream(probe, "Trakt");
+                        }
+
+                        using var probeDoc = JsonDocument.Parse(probe.Body);
+                        var probeRow = probeDoc.RootElement.ValueKind == JsonValueKind.Array ? probeDoc.RootElement.EnumerateArray().FirstOrDefault() : default;
+                        if (probeRow.ValueKind != JsonValueKind.Object || RowIdentity(probeRow, TraktItem(probeRow, defaultType)) != lastRow)
+                        {
+                            drift.Mismatch();
+                        }
+                    }
+
+                    rowsBefore += rows.Count;
+                    lastRow = pageLast ?? lastRow;
+
+                    items.AddRange(pageItems);
+                    var pages = response.Headers.TryGetValue("X-Pagination-Page-Count", out var countText) && int.TryParse(countText, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : 1;
+                    int? reported = response.Headers.TryGetValue("X-Pagination-Item-Count", out var itemText) && int.TryParse(itemText, NumberStyles.None, CultureInfo.InvariantCulture, out var itemCount) ? itemCount : null;
+                    drift.Total(reported);
+                    total = reported ?? items.Count;
+                    if (items.Count >= cap)
+                    {
+                        truncated = source.Shape != "chart" && (items.Count > cap || page < pages);
+                        break;
+                    }
+
+                    if (page >= pages || rows.Count == 0)
+                    {
+                        drift.End();
+                        break;
+                    }
                 }
 
-                if (response.Status is 401 or 403)
+                if (!checkDrift || drift.Consistent || attempt == 2)
                 {
-                    return SourceFetchResult.Fail(source, "trakt_unauthorized", "Trakt refused the request: check the Trakt client ID, and that the list is public.");
+                    var capped = items.Take(cap).ToList();
+                    return Done(source, "trakt", null, capped, Math.Max(total, capped.Count), truncated, partial: checkDrift && !drift.Consistent);
                 }
 
-                if (response.Status != 200 || response.Body == null)
-                {
-                    throw Upstream(response, "Trakt");
-                }
-
-                using var doc = JsonDocument.Parse(response.Body);
-                if (doc.RootElement.ValueKind != JsonValueKind.Array)
-                {
-                    throw new InvalidDataException("unexpected Trakt JSON");
-                }
-
-                var pageItems = doc.RootElement.EnumerateArray().Select(e => TraktItem(e, defaultType)).OfType<SourceItem>().ToList();
-                items.AddRange(pageItems);
-                var pages = response.Headers.TryGetValue("X-Pagination-Page-Count", out var countText) && int.TryParse(countText, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : 1;
-                total = response.Headers.TryGetValue("X-Pagination-Item-Count", out var itemText) && int.TryParse(itemText, NumberStyles.None, CultureInfo.InvariantCulture, out var itemCount) ? itemCount : items.Count;
-                if (items.Count >= cap)
-                {
-                    truncated = source.Shape != "chart" && (items.Count > cap || page < pages);
-                    break;
-                }
-
-                if (page >= pages || pageItems.Count == 0)
-                {
-                    break;
-                }
+                _logger.Debug($"[ListPlaceholders] Trakt list {path} changed while it was read; reading it again");
             }
-
-            var capped = items.Take(cap).ToList();
-            return Done(source, "trakt", null, capped, Math.Max(total, capped.Count), truncated);
         }
 
         private static SourceItem? TraktItem(JsonElement element, string? defaultType)
@@ -1310,7 +1390,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
         // ── Helpers ─────────────────────────────────────────────────────────
 
-        private static SourceFetchResult Done(ParsedSourceUrl source, string provider, string? title, List<SourceItem> items, int total, bool truncated)
+        private static SourceFetchResult Done(ParsedSourceUrl source, string provider, string? title, List<SourceItem> items, int total, bool truncated, bool partial = false)
         {
             var capped = items.Count > MaxItems ? items.Take(MaxItems).ToList() : items;
             return new SourceFetchResult
@@ -1323,7 +1403,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 Items = capped,
                 Total = Math.Max(total, capped.Count),
                 Truncated = truncated || items.Count > MaxItems,
+                Partial = partial,
             };
+        }
+
+        // Signs that an offset-paged list changed while its pages were read (a row added or removed before the page being
+        // read shifts later rows across the page boundary: one is then read twice or never): the reported total moved
+        // between pages, a row came back on a later page, or a complete read has fewer or more rows than the total.
+        private sealed class PageDrift
+        {
+            private readonly HashSet<string> _rows = new(StringComparer.Ordinal);
+            private int? _total;
+            private int _count;
+
+            public bool Consistent { get; private set; } = true;
+
+            public void Mismatch() => Consistent = false;
+
+            public void Total(int? reported)
+            {
+                if (reported is not int value)
+                {
+                    return;
+                }
+
+                if (_total.HasValue && _total.Value != value)
+                {
+                    Consistent = false;
+                }
+
+                _total ??= value;
+            }
+
+            public void Row(string? identity)
+            {
+                _count++;
+                if (identity != null && !_rows.Add(identity))
+                {
+                    Consistent = false;
+                }
+            }
+
+            // The last page was read: every row of the reported total (when the source reports one) must have been seen.
+            public void End()
+            {
+                if (_total is int value && value != _count)
+                {
+                    Consistent = false;
+                }
+            }
         }
 
         // Makes room for a result of `incoming` entries: expired results go, then the oldest until both the result and

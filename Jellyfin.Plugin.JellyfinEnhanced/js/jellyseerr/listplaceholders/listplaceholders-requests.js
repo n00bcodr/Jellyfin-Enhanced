@@ -155,9 +155,27 @@
     }
 
     /**
+     * Sends a direct movie request, unless the user changed meanwhile. Seerr's override rules are read first (a
+     * network call when not cached) and passed as the request's settings, so nothing awaits between the last epoch
+     * check and the POST: a request is never sent with the next user's session.
+     * @param {number} tmdbId
+     * @param {Object} details - Seerr details (or the placeholder as a Seerr item) the rules are matched against.
+     * @param {boolean} is4k
+     * @param {number} epoch - Session epoch the click started in.
+     * @returns {Promise<boolean>} True when the request was sent (and succeeded).
+     */
+    async function requestMovie(tmdbId, details, is4k, epoch) {
+        const api = JE.jellyseerrAPI;
+        const overrides = typeof api.evaluateOverrideRules === 'function' ? await api.evaluateOverrideRules(details, 'movie', is4k) : null;
+        if (!lp.isCurrentEpoch(epoch)) return false;
+        await api.requestMedia(tmdbId, 'movie', overrides ? { ...overrides } : {}, is4k, null);
+        return true;
+    }
+
+    /**
      * 4K movie request from a placeholder card's "Request in 4K" (the advanced-options modal when allowed).
      * Fresh Seerr details are read first: a title already requested (or available) in 4K is announced as requested
-     * without opening a modal, since Seerr would answer 409, which the advanced modal only reports as a failure.
+     * without opening a modal. The details can be cached, so the advanced modal also counts Seerr's 409 as requested.
      * @param {Object} ph - Placeholder (tmdb-backed movie).
      * @param {number} epoch - Session epoch the click started in.
      * @returns {Promise<void>}
@@ -172,18 +190,20 @@
             return;
         }
         const item = details || lp.render.toSeerrItem(ph);
+        const already = () => {
+            announce4k(tmdbId);
+            JE.toast(JE.t('listPlaceholders_already_requested_4k', { title: lp.render.esc(ph.title) }), 3000);
+        };
         if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-            await JE.jellyseerrUI.showMovieRequestModal(tmdbId, ph.title, item, true);
+            await JE.jellyseerrUI.showMovieRequestModal(tmdbId, ph.title, item, true, { onAlreadyRequested: already });
             return;
         }
         try {
-            await JE.jellyseerrAPI.requestMedia(tmdbId, 'movie', {}, true, item);
+            if (!(await requestMovie(tmdbId, item, true, epoch))) return;
             JE.toast(JE.t('listPlaceholders_requested_4k', { title: lp.render.esc(ph.title) }), 3000);
         } catch (error) {
             if (error?.status === 409) {
-                // Seerr already has a 4K request for it.
-                announce4k(tmdbId);
-                JE.toast(JE.t('listPlaceholders_already_requested_4k', { title: lp.render.esc(ph.title) }), 3000);
+                already(); // Seerr already has a 4K request for it.
                 return;
             }
             await showRequestError(error);
@@ -269,12 +289,12 @@
                 return;
             }
             if (api.shouldShowAdvanced()) {
-                await ui.showMovieRequestModal(tmdbId, ph.title, details, false);
+                // Seerr's 409 counts as requested here too (B5): the details read above can be cached.
+                await ui.showMovieRequestModal(tmdbId, ph.title, details, false, { onAlreadyRequested: () => announce(ph) });
                 return;
             }
             if (button) button.innerHTML = `<span>${lp.render.esc(JE.t('jellyseerr_btn_requesting'))}</span><span class="je-lp-spinner"></span>`;
-            await api.requestMedia(tmdbId, 'movie', {}, false, details);
-            requested = true;
+            requested = await requestMovie(tmdbId, details, false, epoch);
         } catch (error) {
             if (error?.status === 409) {
                 announce(ph);

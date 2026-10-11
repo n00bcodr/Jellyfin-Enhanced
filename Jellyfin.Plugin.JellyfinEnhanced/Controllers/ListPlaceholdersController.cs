@@ -154,7 +154,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return sourceError;
                 }
 
-                return ToResult(await _service.ApplyAsync(access, entries!, request.Position, request.Rev, request.RequestId, cancellationToken, hooks?.Invoke(access.UserIdN)).ConfigureAwait(false));
+                return ToResult(await _service.ApplyAsync(access, entries!, request.Position, request.Rev, request.RequestId, cancellationToken, hooks?.Invoke(access.UserIdN), recheckAccess: true).ConfigureAwait(false));
             });
 
         /// <summary>Edits a placeholder: note, or link a custom entry to a TMDB title.</summary>

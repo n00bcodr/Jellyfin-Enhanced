@@ -18,8 +18,11 @@
      * @param {number} tmdbId - TMDB ID of the movie.
      * @param {string} title - Display title of the movie.
      * @param {Object|null} searchResultItem - Original search result data.
+     * @param {boolean} [is4k=false] - Request in 4K.
+     * @param {{onAlreadyRequested?: function(): void}} [options] - onAlreadyRequested: Seerr's 409 ("already
+     *   requested") counts as requested (list placeholders): called instead of the error toast, then the modal closes.
      */
-    ui.showMovieRequestModal = async function(tmdbId, title, searchResultItem, is4k = false) {
+    ui.showMovieRequestModal = async function(tmdbId, title, searchResultItem, is4k = false, options = {}) {
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
         const { requestMedia, fetchAdvancedRequestData, fetchUserQuota } = JE.jellyseerrAPI;
 
@@ -54,6 +57,11 @@
                     }
                     closeFn();
                 } catch (error) {
+                    if (error?.status === 409 && typeof options?.onAlreadyRequested === 'function') {
+                        options.onAlreadyRequested();
+                        closeFn();
+                        return;
+                    }
                     await internal.handleRequestError(error, 'movie', requestBtn, JE.t('jellyseerr_modal_request'));
                 }
             }

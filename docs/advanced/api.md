@@ -612,7 +612,7 @@ The [List Placeholders](../seerr/list-placeholders.md) routes live in their own 
 
 - `{listId}` is a playlist or collection id. A list the caller can't see answers `404 not_found`; editing without the [same rights as the UI](../seerr/list-placeholders.md#permissions) answers `403 forbidden`. Responses only contain what the caller may see.
 - Errors are `{"code": …, "message": …}`. `503 store_unavailable` means the list's stored document can't be read.
-- `PATCH`, `DELETE` and `PUT …/order` need the list's current `rev` (from the view); `POST …/items` and `…/apply` accept it. A stale `rev` answers `409 rev_conflict` with the fresh view.
+- `PATCH` and `DELETE …/items/{placeholderId}` and `PUT …/order` need the list's current `rev` (from the view); `POST …/items` and `…/apply` accept it. A stale `rev` answers `409 rev_conflict` with the fresh view. `DELETE …/source` takes no `rev`: it unlinks whatever source the list has.
 - Mutations take an optional client `requestId`: repeating a successful request within 10 minutes replays its result instead of applying it twice.
 
 | Method | Path | Purpose |

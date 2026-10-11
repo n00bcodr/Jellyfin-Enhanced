@@ -282,8 +282,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <param name="requestId">Client request id.</param>
         /// <param name="cancellationToken">Cancellation.</param>
         /// <param name="hooks">Optional precondition / same-write follow-up (linked-source provenance and sync).</param>
+        /// <param name="recheckAccess">
+        /// Re-resolve the caller's rights under the list lock and write with them (404 when the list can no longer be
+        /// viewed, 403 when it can no longer be edited): set by the HTTP route, whose access was checked before the
+        /// validation, library expansion and (URL imports) source fetch that run first and can take seconds.
+        /// </param>
         /// <returns>The outcome (<see cref="ApplyResultDto"/>).</returns>
-        public async Task<ListOutcome> ApplyAsync(ListAccess access, IReadOnlyList<ApplyEntry> entries, PositionDto? position, int? expectedRev, string? requestId, CancellationToken cancellationToken, ApplyHooks? hooks = null)
+        public async Task<ListOutcome> ApplyAsync(ListAccess access, IReadOnlyList<ApplyEntry> entries, PositionDto? position, int? expectedRev, string? requestId, CancellationToken cancellationToken, ApplyHooks? hooks = null, bool recheckAccess = false)
         {
             var skipped = new List<SkippedEntryDto>();
             var accepted = await PrevalidateAsync(access, entries, skipped, cancellationToken).ConfigureAwait(false);
@@ -292,7 +297,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var visibility = await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
 
             var outcome = await RunLockedAsync(access.ListIdN, access.ListIdN, requestId, access.UserIdN, cancellationToken, () =>
-                ApplyLockedAsync(access, accepted, skipped, position, expectedRev, visibility, hooks)).ConfigureAwait(false);
+            {
+                if (recheckAccess)
+                {
+                    var (denied, current) = RecheckAccess(access);
+                    if (denied != null)
+                    {
+                        return Task.FromResult(denied);
+                    }
+
+                    access = current!;
+                }
+
+                return ApplyLockedAsync(access, accepted, skipped, position, expectedRev, visibility, hooks);
+            }).ConfigureAwait(false);
             if (outcome.Value is ApplyResultDto { Added.Count: > 0 } applied)
             {
                 // Seerr metadata (dates, ids, expected episodes) for the new placeholders, then a swap check, in the background.
@@ -1577,6 +1595,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
 
             return _store.Load(doc.ListId);
+        }
+
+        // The caller's rights now (a fresh user, so a policy change counts too): their share may have been removed or
+        // made read-only while the request was validating or fetching.
+        private (ListOutcome? Denied, ListAccess? Current) RecheckAccess(ListAccess access)
+        {
+            var user = _userManager.GetUserById(access.User.Id);
+            var current = user == null ? null : _access.Resolve(access.List.Id, user);
+            if (current == null || !current.Permissions.CanView)
+            {
+                return (ListOutcome.Error(404, "not_found", "List not found."), null);
+            }
+
+            return current.Permissions.CanEdit ? (null, current) : (ListOutcome.Error(403, "forbidden", "You can't edit this list."), null);
         }
 
         private async Task<ListOutcome> RunLockedAsync(string listIdN, string scope, string? requestId, string userIdN, CancellationToken cancellationToken, Func<Task<ListOutcome>> body)

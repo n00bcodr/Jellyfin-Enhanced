@@ -63,6 +63,9 @@
         [/\bchronolists\.com\/[a-z0-9][a-z0-9-]{0,63}\/?(?=$|[?#>)])/i, 'chronolists']
     ];
 
+    // Instruction labels before a chain option ("Optional setup:", "Then:", "Part 2:").
+    const CHAIN_LABEL = /^(?:(?:optional|required|recommended|bonus|extra)\s+)?(?:setup|optional|then|next|finally|start|start here|bonus|extra|prologue|epilogue|watch first|watch next|part \d+)$/i;
+
     // Episode notation: S01E08, S8E01–05, S01E01-E03, S1E5-S2E3 and 1x08, 8x01–05, 1x22-2x01.
     const SXE = /\bS(\d{1,3})\s?E(\d{1,4})(?:\s*[-–—]\s*(?:S(\d{1,3})\s?)?E?(\d{1,4}))?(?![\d])/i;
     const NXM = /(?:^|[^\w])(\d{1,3})x(\d{1,4})(?:\s*[-–—]\s*(?:(\d{1,3})x)?(\d{1,4}))?(?![\w])/i;
@@ -701,10 +704,14 @@
         const ref = findEpisodeRef(plainPart);
         // A plain label before an episode reference ("Optional setup: Supergirl 2x08"); the reference (or quoted
         // episode title) must follow the colon, so "Supergirl 2x08: Medusa" keeps its show and episode.
+        // Before a numeric reference any short multi-word prefix is a label; before only a quoted episode title it must
+        // be a known instruction word, since "The Flash: \"Invasion!\"" is a show and its episode.
         const label = /^([^:"]{2,40}):\s+(.+)$/.exec(plainPart);
+        const instructionLabel = label && CHAIN_LABEL.test(label[1].trim());
         const labelled = label && !findEpisodeRef(label[1])
-            && (findEpisodeRef(label[2]) || /"[^"]+"/.test(label[2]))
-            && (/\s/.test(label[1]) || /^(setup|optional|then|finally|start|bonus|extra|part \d+)$/i.test(label[1]));
+            && (findEpisodeRef(label[2])
+                ? (/\s/.test(label[1]) || instructionLabel)
+                : (/"[^"]+"/.test(label[2]) && instructionLabel));
         part = labelled ? label[2] : plainPart;
         if (ref || /"[^"]+"/.test(part)) {
             // Keep the title + reference, drop the commentary after it (but not the bare ids in it).
@@ -741,10 +748,28 @@
     }
 
     /**
-     * " / " alternatives of a chain option that each name their own episode ("[Flash](…) 1x08 / [Arrow](…) 3x09").
-     * A piece without its own reference or quoted episode title is commentary ("Supergirl 2x08 — optional /
-     * skippable") and stays with the piece before it. Null unless at least two pieces carry a reference: the caller
-     * then cleans the option first and splits what is left (plain "A / B" titles).
+     * Plain " / " alternatives of a cleaned chain option ("Movie A / Movie B"): split at depth-0 " / " only (never
+     * inside parentheses: "Blade Runner (theatrical / final cut)"), and never in commentary after an em or en dash
+     * ("Justice League (2017) — skip / optional"), which stays with the last piece.
+     * @param {string} text Cleaned option text.
+     * @returns {string[]} The pieces (one when nothing splits).
+     */
+    function slashAlternatives(text) {
+        const dash = /\s[—–]\s/.exec(text);
+        const head = dash ? text.slice(0, dash.index) : text;
+        const pieces = splitTopLevelSlash(head);
+        if (!pieces.length) return [text.trim()].filter(Boolean);
+        if (dash) pieces[pieces.length - 1] += text.slice(dash.index);
+        return pieces;
+    }
+
+    /**
+     * " / " alternatives of a chain option that each name their own episode or title ("[Flash](…) 1x08 /
+     * [Arrow](…) 3x09", "[Justice League](tmdb…) / [Zack Snyder's Justice League](tmdb…)"): a piece counts when it has
+     * an episode reference, a quoted episode title or its own id (a TMDB/IMDb/TVDB link or token). A piece with none
+     * of these is commentary ("Supergirl 2x08 — optional / skippable") and stays with the piece before it. Null unless
+     * at least two pieces count: the caller then cleans the option first and splits what is left (plain "A / B").
+     * Each raw alternative is cleaned on its own, so it keeps its own link targets.
      * @param {string} option Raw option text.
      * @returns {string[]|null} Raw alternatives, or null.
      */
@@ -752,8 +777,9 @@
         const merged = [];
         let pending = '';
         for (const piece of splitTopLevelSlash(option)) {
-            const plainPiece = stripMarkdown(piece, []);
-            if (findEpisodeRef(plainPiece) || /"[^"]+"/.test(plainPiece)) {
+            const urls = [];
+            const plainPiece = stripMarkdown(piece, urls);
+            if (findEpisodeRef(plainPiece) || /"[^"]+"/.test(plainPiece) || extractIds(plainPiece, urls).ids) {
                 merged.push(pending ? `${pending} / ${piece}` : piece);
                 pending = '';
             } else if (merged.length) {
@@ -795,7 +821,7 @@
                     });
                 }
                 const cleaned = cleanChainSegment(option);
-                const pieces = ctx.allowSlash !== false ? splitAlternatives(cleaned.part, true) : [cleaned.part];
+                const pieces = ctx.allowSlash !== false ? slashAlternatives(cleaned.part) : [cleaned.part];
                 // Link targets carry ids (TMDB/IMDb/TVDB URLs): they belong to this option unless " / " splits it further.
                 return pieces.map(part => ({ part, note: cleaned.note, urls: pieces.length === 1 ? cleaned.urls : [] }));
             });

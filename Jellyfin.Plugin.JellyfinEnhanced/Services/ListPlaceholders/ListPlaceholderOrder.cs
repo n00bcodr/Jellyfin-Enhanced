@@ -277,7 +277,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             return new OrderMergeResult(true, null, desired, realMoved);
         }
 
-        /// <summary>Splices a reordered projection back into the canonical order; hidden tokens follow their anchor.</summary>
+        /// <summary>
+        /// Splices a reordered projection back into the canonical order; hidden tokens follow their anchor (the nearest
+        /// visible token before them). When that would carry a hidden REAL row along with a placeholder the caller moved
+        /// (so the real rows would no longer be in Jellyfin's order), hidden real rows anchor to the nearest visible real
+        /// row before them (or the start) instead.
+        /// </summary>
         /// <param name="canonical">Canonical order.</param>
         /// <param name="visible">Tokens of the projection.</param>
         /// <param name="requested">Reordered projection.</param>
@@ -285,8 +290,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <returns>The desired canonical order.</returns>
         public static List<string> Splice(IReadOnlyList<string> canonical, ISet<string> visible, IReadOnlyList<string> requested, string? excludeAnchor)
         {
+            var spliced = Splice(canonical, visible, requested, excludeAnchor, realAnchorsOnly: false);
+            bool Kept(string t) => IsReal(t) && !string.Equals(t, excludeAnchor, StringComparison.Ordinal);
+            return spliced.Where(Kept).SequenceEqual(canonical.Where(Kept), StringComparer.Ordinal)
+                ? spliced
+                : Splice(canonical, visible, requested, excludeAnchor, realAnchorsOnly: true);
+        }
+
+        private static List<string> Splice(IReadOnlyList<string> canonical, ISet<string> visible, IReadOnlyList<string> requested, string? excludeAnchor, bool realAnchorsOnly)
+        {
             var anchored = new Dictionary<string, List<string>>(StringComparer.Ordinal);
             var last = string.Empty;
+            var lastReal = string.Empty;
             foreach (var token in canonical)
             {
                 if (visible.Contains(token))
@@ -294,11 +309,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     if (!string.Equals(token, excludeAnchor, StringComparison.Ordinal))
                     {
                         last = token;
+                        if (IsReal(token))
+                        {
+                            lastReal = token;
+                        }
                     }
                 }
                 else
                 {
-                    GetList(anchored, last).Add(token);
+                    GetList(anchored, realAnchorsOnly && IsReal(token) ? lastReal : last).Add(token);
                 }
             }
 

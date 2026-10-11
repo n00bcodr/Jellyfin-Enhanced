@@ -73,6 +73,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         private const int MaxDetailFailures = 3;
         private const int PruneEvery = 256;
         private const int MaxProjectionPasses = 8;
+        private const string ConfigChangedReason = "seerr config changed";
 
         private readonly ListPlaceholderStore _store;
         private readonly ListAccessService _access;
@@ -485,7 +486,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             // Held from the status re-check (D3) to the POST's answer: another run (another user, or a sibling
             // auto-request service) for the same title waits, then sees this request in its own re-check.
             using var titleLock = await SeerrRequestLocks.AcquireAsync(SeerrRequestLocks.TitleKey(mediaType, tmdbId), cancellationToken).ConfigureAwait(false);
-            var details = await _seerr.GetAsync(DetailsPath(mediaType, tmdbId), cancellationToken).ConfigureAwait(false);
+            var details = await _seerr.GetAsync(DetailsPath(mediaType, tmdbId), cancellationToken, account.Config).ConfigureAwait(false);
+            if (details.ConfigChanged)
+            {
+                run.StoppedReason = ConfigChangedReason;
+                return Verdict.Stopped;
+            }
+
             if (!details.Reached)
             {
                 run.StoppedReason = "seerr unreachable";
@@ -548,7 +555,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
             var label = Describe(placeholder, mediaType, tmdbId, season);
             var body = ListPlaceholderAutoRequestRules.BuildRequestBody(mediaType, tmdbId, season);
-            var post = await _seerr.PostRequestAsync(account.SeerrUserId, body, cancellationToken).ConfigureAwait(false);
+            var post = await _seerr.PostRequestAsync(account.SeerrUserId, body, cancellationToken, account.Config).ConfigureAwait(false);
             if (post.Ok && post.StatusCode == 202)
             {
                 run.AlreadyRequested.Add(key);
@@ -581,7 +588,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
 
             Release(user, key);
-            if (!post.Reached)
+            if (post.ConfigChanged)
+            {
+                // The account belongs to the Seerr this run started with; the user id may be someone else on the new one.
+                run.StoppedReason = ConfigChangedReason;
+                _logger.Info($"[ListPlaceholders] Auto-request of {label} for {user.Username} not sent: the Seerr configuration changed during the run");
+            }
+            else if (!post.Reached)
             {
                 run.StoppedReason = "seerr unreachable";
                 _logger.Warning($"[ListPlaceholders] Auto-request of {label} for {user.Username} failed: Seerr unreachable");

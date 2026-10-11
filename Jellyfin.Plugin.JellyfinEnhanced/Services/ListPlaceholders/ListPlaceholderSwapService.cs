@@ -545,7 +545,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     // fresh metadata; only without Seerr, where nothing could ever confirm it, does the stored state decide.
                     var confirmed = placeholder.Kind == PlaceholderKinds.Episodes || fresh.Contains(placeholderId)
                         || (placeholder.InProduction == false && !ListPlaceholderMetadataService.IsAvailable);
-                    if (confirmed)
+                    // The library already contradicts the metadata (an episode the expected set doesn't know as aired was
+                    // filled), which a cached read can't see: read it again first. Retire on the Force pass, or when
+                    // MayForce refuses, so a numbering mismatch never pins the placeholder.
+                    if (PlaceholderProgress.HasUnexpectedFills(placeholder, context.Today) && (passMode & MetadataMode.Force) == 0
+                        && ListPlaceholderMetadataService.IsAvailable && MayForce(context.ListIdN, placeholderId))
+                    {
+                        forced.Add(placeholderId);
+                    }
+                    else if (confirmed)
                     {
                         Retire(context, placeholder);
                     }
@@ -1114,6 +1122,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 _logger.Info($"[ListPlaceholders] Completed an interrupted swap-in of \"{placeholder.Title}\" in list {context.ListIdN}.");
                 if (context.List.Kind == ListKinds.Collection)
                 {
+                    if (placeholder.Kind is PlaceholderKinds.Movie or PlaceholderKinds.Series)
+                    {
+                        // The title is in the collection through the copy JE added, whichever copy the resolver lists
+                        // first now (another library copy may have been scanned since): retire it, owning what landed,
+                        // so the swap below never adds a second copy.
+                        Retire(context, placeholder, landed.Select(N).ToList());
+                        continue;
+                    }
+
                     var resolution = _resolver.Resolve(placeholder, ListKinds.Collection, Array.Empty<User>());
                     if (resolution.Found)
                     {
@@ -1405,10 +1422,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             {
                 try
                 {
-                    var poster = await _metadata.FetchTmdbPosterAsync(p, token).ConfigureAwait(false);
-                    if (PlaceholderRules.IsValidPosterPath(poster))
+                    // A title TMDB read without a poster also counts: it replaces (clears) an unverified client poster.
+                    var (poster, answered) = await _metadata.ReadTmdbPosterAsync(p, token).ConfigureAwait(false);
+                    if (answered)
                     {
-                        fetched[p.Id] = new PlaceholderMetadata { FetchedAtUtc = DateTime.UtcNow, PosterPath = poster, Partial = true };
+                        fetched[p.Id] = new PlaceholderMetadata { FetchedAtUtc = DateTime.UtcNow, PosterPath = PlaceholderRules.IsValidPosterPath(poster) ? poster : null, Partial = true };
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)

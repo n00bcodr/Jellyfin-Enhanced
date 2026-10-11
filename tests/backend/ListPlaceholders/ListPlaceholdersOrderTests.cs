@@ -115,6 +115,22 @@ public class ListPlaceholdersOrderTests
     }
 
     [Fact]
+    public void AHiddenRealRowNeverTravelsWithAMovedPlaceholder()
+    {
+        // R4-2: canonical [A P1 H P2 B], H (D) hidden from the caller. The caller drags P1 and P2 to the end. H must stay
+        // between A and B (Jellyfin's real order), not ride along with P1, so the next reconcile keeps P1/P2 in place.
+        var canonical = new[] { A0, P1, D0, P2, B0 };
+        var merge = O.MergeProjection(canonical, new[] { A0, P1, P2, B0 }, new[] { A0, B0, P1, P2 }, null);
+        Assert.True(merge.Ok);
+        Assert.False(merge.RealMoved);
+        Assert.Equal(new[] { A0, D0, B0, P1, P2 }, merge.Desired);
+        Assert.Equal(merge.Desired, O.Reconcile(merge.Desired, new[] { A0, D0, B0 }, new[] { Id1, Id2 }));
+
+        // A no-op keeps the canonical order exactly (H stays after P1).
+        Assert.Equal(canonical, O.MergeProjection(canonical, new[] { A0, P1, P2, B0 }, new[] { A0, P1, P2, B0 }, null).Desired);
+    }
+
+    [Fact]
     public void MergeAcceptsOneMovedRealRowAndDoesNotDragHiddenRowsAlong()
     {
         // Canonical [A H B]; H hidden from the caller; caller moves A after B.

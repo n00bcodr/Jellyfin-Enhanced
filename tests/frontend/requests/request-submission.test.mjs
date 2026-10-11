@@ -349,6 +349,20 @@ test('movie request modal needs every advanced option before it submits them', a
   assert.deepEqual([h.calls[0][1].body.serverId, h.calls[0][1].body.profileId, h.calls[0][1].body.rootFolder], [2, 5, '/movies']);
 });
 
+// R4-11: a caller that counts Seerr's 409 as "already requested" (list placeholders) gets it instead of an error toast.
+for (const counted of [true, false]) test(`movie request modal 409 ${counted ? 'calls onAlreadyRequested' : 'is an error without the option'}`, async t => {
+  const h = requestModals(t, { post: async () => { throw { status: 409, responseJSON: { message: 'Request for this media already exists.' } }; } });
+  h.api.fetchAdvancedRequestData = async () => ({});
+  let already = 0;
+  await h.JE.jellyseerrUI.showMovieRequestModal(42, 'Film', null, true, counted ? { onAlreadyRequested: () => { already++; } } : undefined);
+  for (const id of ['movie-server', 'movie-quality', 'movie-folder']) h.modal().querySelector(`#${id}`).selectedIndex = 1;
+  const toasts = h.toasts.length;
+  await h.save();
+  assert.equal(h.calls.length, 1);
+  assert.equal(already, counted ? 1 : 0);
+  assert.equal(h.toasts.length, toasts + (counted ? 0 : 1));
+});
+
 test('collection request modal escapes titles, skips owned movies and stops at the quota', async t => {
   let posts = 0;
   const h = requestModals(t, { post: async () => { if (++posts === 1) throw { status: 403, responseJSON: { message: 'Movie Quota exceeded.' } }; return { id: 7 }; } });

@@ -25,6 +25,23 @@
     /** @type {Record<string, Promise<any>>} */
     let optionsInFlight = {};
 
+    /**
+     * Current identity epoch (0 when the session module is absent).
+     * @returns {number}
+     */
+    function epochNow() {
+        return JE.session?.getEpoch ? JE.session.getEpoch() : 0;
+    }
+
+    /**
+     * Whether an epoch captured before an await still belongs to the signed-in user.
+     * @param {number} epoch
+     * @returns {boolean}
+     */
+    function isCurrentEpoch(epoch) {
+        return !JE.session?.isCurrent || JE.session.isCurrent(epoch);
+    }
+
     // Options are per server configuration, the remembered choices per user: drop both on a user switch.
     JE.session?.onUserChange?.('list-placeholders-arr', () => {
         optionsCache = {};
@@ -656,8 +673,15 @@
                     setAdding(true);
                     button.textContent = JE.t('listPlaceholders_arr_adding');
                     messageEl.textContent = '';
+                    // An add can take a while: if another user signed in meanwhile, its result (toast with the
+                    // arr link, remembered choices, callbacks, navigation) is not theirs to see.
+                    const epoch = epochNow();
                     try {
                         const result = await add(body);
+                        if (!isCurrentEpoch(epoch)) {
+                            finish(null);
+                            return;
+                        }
                         saveChoice(service, choices.instanceRef, choices);
                         JE.toast(resultMessage(result), RESULT_TOAST_MS);
                         if (typeof options.onDone === 'function') {
@@ -668,6 +692,10 @@
                         // A dialog the admin already closed has no entry left: going back would leave their page.
                         if (!closed) history.back();
                     } catch (error) {
+                        if (!isCurrentEpoch(epoch)) {
+                            finish(null);
+                            return;
+                        }
                         console.warn(`${logPrefix} add failed:`, error?.status, error?.responseJSON?.code);
                         // The instances, profiles or folders this dialog offered are out of date (or the arr is
                         // down): the next dialog must read them again instead of offering the same stale choices.

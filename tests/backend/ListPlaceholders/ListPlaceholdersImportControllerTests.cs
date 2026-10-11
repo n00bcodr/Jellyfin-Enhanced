@@ -5,6 +5,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources;
 using Microsoft.AspNetCore.Authentication;
@@ -316,6 +317,38 @@ public class ListPlaceholdersImportControllerTests
         using var fresh = await owner.PostAsync("/JellyfinEnhanced/list-placeholders/playlists",
             Json("{\"requestId\":\"new-2\",\"name\":\"Other\",\"entries\":" + Entries + ",\"source\":{\"url\":\"https://mdblist.com/lists/a/b\"}}"));
         Assert.Equal((HttpStatusCode)429, fresh.StatusCode);
+    }
+
+    // R4-1/R4-9: a URL import whose fetch was still running when the owner removed the editor's share (or made it
+    // read-only) writes nothing: rights are checked again under the list lock, as PUT /source does (H8).
+    [Theory]
+    [InlineData(false, HttpStatusCode.NotFound)]
+    [InlineData(true, HttpStatusCode.Forbidden)]
+    public async Task AUrlImportFetchedAfterTheEditorLostTheirRightsWritesNothing(bool keepViewShare, HttpStatusCode expected)
+    {
+        using var f = new Fixture();
+        var editor = f.H.NewUser("editor");
+        var playlist = f.H.Host.AddPlaylist(f.Owner, false, new ListShare(editor.Id, true));
+        var listId = playlist.Info.Id.ToString("N");
+        f.H.Fetcher.OnFetch = () =>
+        {
+            playlist.Info = playlist.Info with
+            {
+                Shares = keepViewShare
+                    ? new[] { new ListShare(editor.Id, false) }
+                    : Array.Empty<ListShare>(),
+            };
+            return Task.CompletedTask;
+        };
+
+        using var client = f.Client(editor);
+        const string Entries = "[{\"type\":\"placeholder\",\"sourceKey\":\"movie|49521||\",\"placeholder\":{\"kind\":\"movie\",\"tmdbId\":49521,\"title\":\"Man of Steel\"}}]";
+        using var applied = await client.PostAsync($"/JellyfinEnhanced/list-placeholders/{listId}/apply",
+            Json("{\"requestId\":\"imp-r4\",\"entries\":" + Entries + ",\"source\":{\"url\":\"https://mdblist.com/lists/a/b\",\"syncEnabled\":true}}"));
+        Assert.Equal(expected, applied.StatusCode);
+        Assert.Single(f.H.Fetcher.Calls);
+        var doc = f.H.Store.Load(listId);
+        Assert.True(doc == null || (doc.Source == null && doc.Items.Count == 0));
     }
 
     [Fact]

@@ -199,17 +199,22 @@ public class ListPlaceholdersSourceTests
         Assert.Empty(net.Requests);
 
         net.Plugin.Plugin.Configuration.TraktClientId = "trakt-client";
-        var pages = 0;
+        var rows = new[]
+        {
+            "{\"rank\":1,\"type\":\"movie\",\"notes\":\"start here\",\"movie\":{\"title\":\"Man of Steel\",\"year\":2013,\"ids\":{\"trakt\":1,\"imdb\":\"tt0770828\",\"tmdb\":49521}}}",
+            "{\"rank\":2,\"type\":\"season\",\"season\":{\"number\":1,\"ids\":{\"tmdb\":163789}},\"show\":{\"title\":\"Peacemaker\",\"year\":2022,\"ids\":{\"tmdb\":110492,\"tvdb\":391153}}}",
+            "{\"rank\":3,\"type\":\"episode\",\"episode\":{\"season\":1,\"number\":8,\"ids\":{}},\"show\":{\"title\":\"The Flash\",\"year\":2014,\"ids\":{\"tmdb\":60735}}}",
+            "{\"rank\":4,\"type\":\"person\",\"person\":{\"name\":\"x\"}}",
+        };
         net.Routes["https://api.trakt.tv/users/justin/lists/dc/items/movie,show,season,episode"] = request =>
         {
             Assert.Equal("trakt-client", Assert.Single(request.Headers.GetValues("trakt-api-key")));
             Assert.Equal("2", Assert.Single(request.Headers.GetValues("trakt-api-version")));
-            pages++;
-            var response = Json(pages == 1
-                ? "[{\"rank\":1,\"type\":\"movie\",\"notes\":\"start here\",\"movie\":{\"title\":\"Man of Steel\",\"year\":2013,\"ids\":{\"trakt\":1,\"imdb\":\"tt0770828\",\"tmdb\":49521}}},"
-                  + "{\"rank\":2,\"type\":\"season\",\"season\":{\"number\":1,\"ids\":{\"tmdb\":163789}},\"show\":{\"title\":\"Peacemaker\",\"year\":2022,\"ids\":{\"tmdb\":110492,\"tvdb\":391153}}}]"
-                : "[{\"rank\":3,\"type\":\"episode\",\"episode\":{\"season\":1,\"number\":8,\"ids\":{}},\"show\":{\"title\":\"The Flash\",\"year\":2014,\"ids\":{\"tmdb\":60735}}},"
-                  + "{\"rank\":4,\"type\":\"person\",\"person\":{\"name\":\"x\"}}]");
+            // Two rows per page; the fetcher's boundary check reads single rows (limit=1).
+            var query = System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query);
+            var page = int.Parse(query["page"]!, System.Globalization.CultureInfo.InvariantCulture);
+            var size = query["limit"] == "1" ? 1 : 2;
+            var response = Json("[" + string.Join(',', rows.Skip((page - 1) * size).Take(size)) + "]");
             response.Headers.Add("X-Pagination-Page-Count", "2");
             response.Headers.Add("X-Pagination-Item-Count", "4");
             return response;
@@ -310,6 +315,77 @@ public class ListPlaceholdersSourceTests
         Assert.Single(net.Requests, r => r.RequestUri!.AbsolutePath == "/lists/me/ok/json");
         await net.Fetch("https://mdblist.com/lists/me/ok", new SourceFetchOptions { Fresh = true });
         Assert.Equal(2, net.Requests.Count(r => r.RequestUri!.AbsolutePath == "/lists/me/ok/json"));
+    }
+
+    // R4-7: offset pages of a Trakt list that change while they are read: the list is read again;
+    // a list that keeps changing is reported Partial, so a sync never removes on it.
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(99, true)]
+    public async Task ATraktListEditedWhileItsPagesAreReadIsReadAgainOrReportedPartial(int edits, bool partial)
+    {
+        using var net = new Net();
+        net.Plugin.Plugin.Configuration.TraktClientId = "trakt-client";
+        var rows = Enumerable.Range(1, 201).ToList();
+        var next = 1000;
+        var editsLeft = edits;
+        net.Routes["https://api.trakt.tv/users/me/lists/drift/items/movie,show,season,episode"] = request =>
+        {
+            var query = System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query);
+            var page = int.Parse(query["page"]!, System.Globalization.CultureInfo.InvariantCulture);
+            var limit = int.Parse(query["limit"]!, System.Globalization.CultureInfo.InvariantCulture);
+            if (page == 2 && limit == 100 && editsLeft-- > 0)
+            {
+                // Between page 1 and page 2 the owner removes the first row (and adds a new one at the end): the count stays.
+                rows.RemoveAt(0);
+                rows.Add(next++);
+                if (edits > 1)
+                {
+                    rows.RemoveAt(0);
+                }
+            }
+
+            var slice = rows.Skip((page - 1) * limit).Take(limit);
+            var response = Json("[" + string.Join(',', slice.Select(i => $"{{\"id\":{i},\"type\":\"movie\",\"movie\":{{\"title\":\"M{i}\",\"ids\":{{\"tmdb\":{i}}}}}}}")) + "]");
+            response.Headers.Add("X-Pagination-Page-Count", ((rows.Count + limit - 1) / limit).ToString(System.Globalization.CultureInfo.InvariantCulture));
+            response.Headers.Add("X-Pagination-Item-Count", rows.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return response;
+        };
+
+        var result = await net.Fetch("https://trakt.tv/users/me/lists/drift");
+        Assert.True(result.Ok);
+        Assert.Equal(partial, result.Partial);
+        if (!partial)
+        {
+            Assert.Equal(Enumerable.Range(2, 200).Append(1000), result.Items.Select(i => i.TmdbId!.Value));
+        }
+    }
+
+    // R4-7: the same for a TMDB list (a row removed before page 2 is read: item_count drops and a row is never seen).
+    [Fact]
+    public async Task ATmdbListEditedWhileItsPagesAreReadIsReadAgain()
+    {
+        using var net = new Net();
+        net.Plugin.Plugin.Configuration.TMDB_API_KEY = "tmdb-key";
+        var rows = Enumerable.Range(1, 5).ToList();
+        var edited = false;
+        net.Routes["https://api.themoviedb.org/3/list/77"] = request =>
+        {
+            var page = int.Parse(System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query)["page"]!, System.Globalization.CultureInfo.InvariantCulture);
+            if (page == 2 && !edited)
+            {
+                edited = true;
+                rows.RemoveAt(0);
+            }
+
+            var slice = rows.Skip((page - 1) * 2).Take(2);
+            return Json($"{{\"name\":\"Drift\",\"item_count\":{rows.Count},\"total_pages\":{(rows.Count + 1) / 2},\"items\":[" + string.Join(',', slice.Select(i => $"{{\"id\":{i},\"media_type\":\"movie\",\"title\":\"M{i}\"}}")) + "]}");
+        };
+
+        var result = await net.Fetch("https://www.themoviedb.org/list/77");
+        Assert.True(result.Ok);
+        Assert.False(result.Partial);
+        Assert.Equal(new[] { 2, 3, 4, 5 }, result.Items.Select(i => i.TmdbId!.Value));
     }
 
     [Fact]

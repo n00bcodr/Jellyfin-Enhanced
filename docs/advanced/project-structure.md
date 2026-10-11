@@ -451,7 +451,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   * **`ApplyHooks.cs`**: Hooks that run inside an apply's locked write (precondition, ordered placement, late exclusion, provenance after success or failure), used by URL imports and the sync.
   * **`ListPlaylistPlacement.cs`**: Inserts real items into a playlist at a position (Jellyfin 12 positional insert, 10.11 append + move) and verifies the result; shared by adds and swap-in.
   * **`ListPlaceholderResolver.cs`**: Which library items cover a placeholder's scope (movie, series, season, episodes) for a set of users, plus fill progress and the completion rule.
-  * **`ListPlaceholderMetadata.cs`**: Release dates, episode lists, posters and production state read from Seerr, cached and single-flight.
+  * **`ListPlaceholderMetadata.cs`**: Release dates, episode lists, posters and production state read from Seerr (cached and single-flight), and posters read from TMDB with JE's TMDB key when Seerr is off (cached; used by the swap passes and the collage).
   * **`ListPlaceholderSwapService.cs`**: Swap-in: library events mapped to placeholders, coalesced passes per list, persisted swap intents, playlist and collection inserts, retirement once complete.
   * **`ListPlaceholderSwapMonitor.cs`**: Hosted service feeding library item events to the swap service, plus a pass after startup.
   * **`ListPlaceholderLifecycle.cs`**: Hosted service that deletes a list's document when the playlist or collection is removed, and sweeps orphans.

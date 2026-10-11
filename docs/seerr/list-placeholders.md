@@ -68,7 +68,7 @@ A playlist or collection that only holds placeholders shows Jellyfin's generic i
 
 - The collage is only used while the list has no real items. Once one arrives, the collage is removed and Jellyfin makes its own image again (for collections Jellyfin 12 makes none, so the generic icon comes back).
 - It never replaces an image you set. To keep a list without a collage, give it your own image; deleting the collage alone doesn't help, it comes back.
-- When users with parental controls can see the list, only posters every one of them may see are used, each the one Seerr has for that title (or TMDB's, when Seerr is off and a TMDB API key is set), so the collage can have fewer posters, or none. If Seerr or TMDB doesn't answer, the collage is removed and checked again a few minutes later.
+- When users with parental controls can see the list, only posters every one of them may see are used, each the one Seerr has for that title (or TMDB's, when Seerr is off and a TMDB API key is set), so the collage can have fewer posters, or none. Titles whose poster source doesn't answer are left out, so the collage may be rebuilt with fewer posters, or removed if none are left. The list is then checked again after 5 minutes, and after longer and longer waits (up to 6 hours) while the source still doesn't answer.
 - It appears about 15 seconds after the list changes. Turning the setting off removes every collage the plugin made.
 
 ## Requesting
@@ -144,7 +144,7 @@ Entries are added in the list's order. A toast reports how many went in as place
 
 - **From your library**, **Placeholder**, **Custom entry** or **Skip**: what the row becomes.
 - The ✎ button opens **Change match**: the other candidates, **Search for another title**, and for a show **What to add** (whole series, one season or specific episodes, preselected from the line). For "A or B" lines, pick either version or **Add both versions, in this order**.
-- **Accept all high-confidence matches** sets every sure match to its suggested choice at once; only rows you settled with **Change match** are left alone. **Show only entries to review** hides the rest.
+- **Accept all sure and likely matches** sets every sure and likely match to its suggested choice at once. Likely matches then count as reviewed and leave **Show only entries to review**, so look them over first. Rows you settled with **Change match**, repeats of another row and "A or B" lines are left alone. **Show only entries to review** hides the rest.
 - **Retry failed lookups** appears when Seerr didn't answer for some rows.
 - A row naming the same title as an earlier one is flagged as a duplicate.
 
@@ -244,7 +244,7 @@ How syncing works:
 - **Only sure matches** are added, because nobody reviews them. The rest is tried again next time. Chronolists entries need no lookup; other sources need Seerr.
 - Entries you skipped in the review or removed later aren't added back (they're remembered for 90 days), and a title the list already has (for example a new episode of a season that's a placeholder) gets no second entry.
 - **As whom:** a sync runs with the rights of the user who linked the list. If that user is deleted, can no longer edit the list, or can't see an entry that should be removed, syncing pauses and the link says why. When an editor changes an option in the link's menu, the list is linked again as them and syncing resumes.
-- When a list site answers only partly, answers with no entries at all after earlier syncs found some, or the list is longer than the limit, nothing is removed. If a site sends an error page in place of the list, the sync fails and nothing changes. Once a list holds 2000 placeholders, syncing adds no new placeholders (titles you have still go in) and says the list is full.
+- When a list site answers only partly, answers with no entries at all after earlier syncs found some, or the list is longer than the limit, nothing is removed. A Trakt or TMDB list that changes while its pages are read is read again once; if it is still changing, that sync only adds. If a site sends an error page in place of the list, the sync fails and nothing changes. Once a list holds 2000 placeholders, syncing adds no new placeholders (titles you have still go in) and says the list is full.
 
 ## When a title arrives
 

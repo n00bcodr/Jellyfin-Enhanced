@@ -36,7 +36,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
     /// <param name="State">Mapping state.</param>
     /// <param name="SeerrUserId">Seerr user id when linked.</param>
     /// <param name="Permissions">Seerr permission bits when linked.</param>
-    public readonly record struct SeerrAccount(SeerrAccountState State, int SeerrUserId, JellyseerrPermission Permissions);
+    /// <param name="Config">
+    /// Fingerprint of the Seerr configuration (URLs + API key hash) the account was resolved against. Pass it to
+    /// <see cref="SeerrRequestGateway.GetAsync"/> / <see cref="SeerrRequestGateway.PostRequestAsync"/> so a run never
+    /// talks to another Seerr (where the same user id may be someone else) after the admin changed the configuration.
+    /// </param>
+    public readonly record struct SeerrAccount(SeerrAccountState State, int SeerrUserId, JellyseerrPermission Permissions, string? Config = null);
 
     /// <summary>The outcome of one Seerr call.</summary>
     /// <param name="Reached">Some configured URL answered with HTTP (false = transport failure on every URL).</param>
@@ -52,6 +57,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// failed after the request could have been sent. Treat it as "maybe done", never as "not sent".
         /// </summary>
         public bool MaybeSent { get; init; }
+
+        /// <summary>Not sent: the Seerr configuration is no longer the one the caller's account was resolved against.</summary>
+        public bool ConfigChanged { get; init; }
     }
 
     /// <summary>
@@ -107,7 +115,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 return new SeerrAccount(SeerrAccountState.Blocked, 0, JellyseerrPermission.NONE);
             }
 
-            var cacheKey = Fingerprint(urls, apiKey) + "|" + userIdN;
+            var fingerprint = Fingerprint(urls, apiKey);
+            var cacheKey = fingerprint + "|" + userIdN;
             var useCache = !config.JellyseerrDisableCache;
             if (useCache && _accounts.TryGetValue(cacheKey, out var cached))
             {
@@ -120,13 +129,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
             }
 
-            var result = await SendAsync(HttpMethod.Get, "/api/v1/user?take=1000", null, null, idempotent: true, cancellationToken).ConfigureAwait(false);
+            var result = await SendAsync(HttpMethod.Get, "/api/v1/user?take=1000", null, null, idempotent: true, fingerprint, cancellationToken).ConfigureAwait(false);
             if (!result.Ok)
             {
                 return new SeerrAccount(SeerrAccountState.Unavailable, 0, JellyseerrPermission.NONE);
             }
 
-            var account = new SeerrAccount(SeerrAccountState.Unlinked, 0, JellyseerrPermission.NONE);
+            var account = new SeerrAccount(SeerrAccountState.Unlinked, 0, JellyseerrPermission.NONE, fingerprint);
             try
             {
                 using var document = JsonDocument.Parse(result.Body!);
@@ -143,7 +152,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                             var permissions = user.TryGetProperty("permissions", out var bits) && bits.ValueKind == JsonValueKind.Number && bits.TryGetInt64(out var value)
                                 ? (JellyseerrPermission)value
                                 : JellyseerrPermission.NONE;
-                            account = new SeerrAccount(SeerrAccountState.Linked, seerrId, permissions);
+                            account = new SeerrAccount(SeerrAccountState.Linked, seerrId, permissions, fingerprint);
                             break;
                         }
                     }
@@ -170,9 +179,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <summary>GETs a Seerr API path (e.g. <c>/api/v1/movie/550</c>) with the API key only (no user).</summary>
         /// <param name="apiPath">Path starting with <c>/api/v1/</c>.</param>
         /// <param name="cancellationToken">Cancellation.</param>
+        /// <param name="config">
+        /// <see cref="SeerrAccount.Config"/> of the run's account: when the configuration changed since, nothing is sent
+        /// (<see cref="SeerrCallResult.ConfigChanged"/>). Null = any configuration.
+        /// </param>
         /// <returns>The result.</returns>
-        public Task<SeerrCallResult> GetAsync(string apiPath, CancellationToken cancellationToken) =>
-            SendAsync(HttpMethod.Get, apiPath, null, null, idempotent: true, cancellationToken);
+        public Task<SeerrCallResult> GetAsync(string apiPath, CancellationToken cancellationToken, string? config = null) =>
+            SendAsync(HttpMethod.Get, apiPath, null, null, idempotent: true, config, cancellationToken);
 
         /// <summary>
         /// POSTs <c>/api/v1/request</c> as a Seerr user (<c>X-Api-User</c>). The next URL is only tried when the
@@ -184,18 +197,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <param name="seerrUserId">Seerr user id.</param>
         /// <param name="bodyJson">Request body.</param>
         /// <param name="cancellationToken">Cancellation.</param>
+        /// <param name="config">
+        /// <see cref="SeerrAccount.Config"/> the Seerr user id belongs to: when the configuration changed since, the
+        /// request is not sent (<see cref="SeerrCallResult.ConfigChanged"/>). Null = any configuration.
+        /// </param>
         /// <returns>The result (any HTTP status).</returns>
-        public Task<SeerrCallResult> PostRequestAsync(int seerrUserId, string bodyJson, CancellationToken cancellationToken) =>
-            SendAsync(HttpMethod.Post, "/api/v1/request", seerrUserId.ToString(System.Globalization.CultureInfo.InvariantCulture), bodyJson, idempotent: false, cancellationToken);
+        public Task<SeerrCallResult> PostRequestAsync(int seerrUserId, string bodyJson, CancellationToken cancellationToken, string? config = null) =>
+            SendAsync(HttpMethod.Post, "/api/v1/request", seerrUserId.ToString(System.Globalization.CultureInfo.InvariantCulture), bodyJson, idempotent: false, config, cancellationToken);
 
         /// <summary>Forgets cached account lookups.</summary>
         public void ClearCache() => _accounts.Clear();
 
-        private async Task<SeerrCallResult> SendAsync(HttpMethod method, string apiPath, string? seerrUserId, string? body, bool idempotent, CancellationToken cancellationToken)
+        private async Task<SeerrCallResult> SendAsync(HttpMethod method, string apiPath, string? seerrUserId, string? body, bool idempotent, string? config, CancellationToken cancellationToken)
         {
             if (!TryGetConfig(out var urls, out var apiKey))
             {
-                return new SeerrCallResult(false, 0, null);
+                return new SeerrCallResult(false, 0, null) { ConfigChanged = config != null };
+            }
+
+            // Sent with exactly this snapshot of the configuration, which must be the caller's.
+            if (config != null && !string.Equals(Fingerprint(urls, apiKey), config, StringComparison.Ordinal))
+            {
+                _logger.Debug($"[ListPlaceholders] Seerr {method} {apiPath} not sent: the Seerr configuration changed");
+                return new SeerrCallResult(false, 0, null) { ConfigChanged = true };
             }
 
             // The URL that answered last goes first: a URL that hangs (timeout) would otherwise stop every POST, which
