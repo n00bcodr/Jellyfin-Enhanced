@@ -301,11 +301,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             result.Changed = true;
         }
 
+        // The stored block can carry explicit nulls ("Following": null overrides the initializer); a
+        // null list is never the same as the normalised one, so the block is rewritten clean.
         private static bool SameMeta(UserSettingsMeta a, UserSettingsMeta b)
             => a.Schema == b.Schema
-                && a.Following.SequenceEqual(b.Following, StringComparer.Ordinal)
-                && a.Chosen.SequenceEqual(b.Chosen, StringComparer.Ordinal)
-                && a.ChangedByAdmin.SequenceEqual(b.ChangedByAdmin, StringComparer.Ordinal);
+                && a.Following is { } following && following.SequenceEqual(b.Following, StringComparer.Ordinal)
+                && a.Chosen is { } chosen && chosen.SequenceEqual(b.Chosen, StringComparer.Ordinal)
+                && a.ChangedByAdmin is { } changedByAdmin && changedByAdmin.SequenceEqual(b.ChangedByAdmin, StringComparer.Ordinal);
 
         private static string Describe(object? value) => value switch
         {

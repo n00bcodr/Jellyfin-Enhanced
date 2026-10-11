@@ -583,6 +583,37 @@ public class CoreSettingsPatchTests
         }
     }
 
+    [Theory]
+    [InlineData("{\"Following\":null}")]
+    [InlineData("{\"Chosen\":null}")]
+    [InlineData("{\"ChangedByAdmin\":null}")]
+    [InlineData("{\"Schema\":2,\"Following\":null,\"Chosen\":null,\"ChangedByAdmin\":null,\"Ops\":null}")]
+    public void ABlockWithNullListsStillTakesWritesAndIsRewrittenClean(string block)
+    {
+        using var endpoints = new Endpoints();
+        var file = "{\"AutoPipEnabled\":true,\"_je\":" + block + "}";
+        endpoints.Plugin.Core.Write(UserA.ToString("N"), file);
+        var (settings, meta) = endpoints.GetWithMeta();
+        Assert.True(settings.Value<bool>("AutoPipEnabled"));
+        Assert.Empty(Strings(meta["Following"]));
+
+        Ok(endpoints.Patch(@"{""Set"":{""AutoPauseEnabled"":true}}"));
+        var disk = endpoints.OnDisk();
+        Assert.Equal(new[] { "AutoPauseEnabled" }, Strings(disk["_je"]!["Chosen"]));
+        Assert.Empty(Strings(disk["_je"]!["Following"]));
+        Assert.Empty(Strings(disk["_je"]!["ChangedByAdmin"]));
+
+        // The legacy POST, even one that changes no value, also writes and rewrites the block.
+        endpoints.Plugin.Core.Write(UserA.ToString("N"), file);
+        Ok(endpoints.Post(@"{""AutoPipEnabled"":true}"));
+        disk = endpoints.OnDisk();
+        Assert.True(disk.Value<bool>("AutoPipEnabled"));
+        foreach (var list in new[] { "Following", "Chosen", "ChangedByAdmin" })
+        {
+            Assert.Empty(Strings(disk["_je"]![list]));
+        }
+    }
+
     /// <summary>The typed model of a JE release before C1: the same keys, no "_je" member.</summary>
     private sealed class OldTypedModel : DefaultContractResolver
     {
