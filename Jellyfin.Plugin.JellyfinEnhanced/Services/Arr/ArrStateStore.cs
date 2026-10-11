@@ -30,7 +30,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
     /// <item><description>The library index is warm-started from a slim cache file after a restart.</description></item>
     /// </list>
     /// </summary>
-    public sealed class ArrStateStore : IDisposable
+    public sealed partial class ArrStateStore : IDisposable
     {
         /// <summary>Folder (inside the JE data folder) for the warm-start cache files.</summary>
         public const string CacheFolderName = "arr-state";
@@ -429,6 +429,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 else
                     _logger?.Info($"Arr state: {name} {kind.ToString().ToLowerInvariant()} can be read again.");
             }
+            WireLiveChanges(state);
             state.Library.HealthChanged += Log;
             state.Queue.HealthChanged += Log;
             state.History.HealthChanged += Log;
@@ -708,11 +709,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     }
                     var client = Client;
                     slot = new ArrSnapshotSlot<ArrEpisodesSnapshot>(ArrSnapshotKind.Episodes, (_, ct) => ArrStateLoaders.LoadEpisodesAsync(client, seriesId, ct));
+                    slot.Replaced += (before, after) => EpisodesReplaced?.Invoke(before, after);
                     slot.Touch(now);
                     _episodes[seriesId] = slot;
                     return slot;
                 }
             }
+
+            /// <summary>Raised when a series' episodes were read again (before: null on the first read).</summary>
+            public Action<ArrEpisodesSnapshot?, ArrEpisodesSnapshot>? EpisodesReplaced { get; set; }
 
             /// <summary>The episodes slot of a series if one exists.</summary>
             public ArrSnapshotSlot<ArrEpisodesSnapshot>? ExistingEpisodes(int seriesId)
@@ -725,6 +730,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             {
                 lock (_episodesLock) return _episodes.Values.ToList();
             }
+
+            /// <summary>Guards <see cref="TitleStamps"/> and the library patches that set them.</summary>
+            public object TitleGate { get; } = new();
+
+            /// <summary>Arr id → stamp of the newest live patch of that title (see PatchLibrary).</summary>
+            public Dictionary<int, long> TitleStamps { get; } = new();
 
             public IArrSnapshotSlot Slot(ArrSnapshotKind kind) => kind switch
             {

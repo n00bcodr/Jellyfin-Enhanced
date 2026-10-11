@@ -32,7 +32,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>
         /// Statuses for many items at once (poster cards on a page): <paramref name="ids"/> are
         /// Jellyfin item ids (up to 100; items the caller can't see are left out),
-        /// <paramref name="keys"/> title keys such as <c>movie:tmdb:603</c> or <c>series:tvdb:78874</c> (up to 50).
+        /// <paramref name="keys"/> title keys such as <c>movie:tmdb:603</c> or <c>tv:tvdb:78874</c> (up to 50).
         /// </summary>
         [HttpGet("acquire/status")]
         [Authorize]

@@ -340,6 +340,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Title key (<see cref="TitleKey"/>), the id the change feed refers to.</summary>
         public string Key { get; init; } = string.Empty;
 
+        /// <summary>
+        /// The key the change feed announces this title under, when it differs from <see cref="Key"/>:
+        /// a title Jellyfin knows only by its IMDb id (or a series by TMDB/IMDb) is announced under
+        /// the TMDB movie / TVDB series id of its arr copy. Absent otherwise.
+        /// </summary>
+        public string? LiveKey { get; set; }
+
         /// <summary>The Jellyfin item this status was asked for, if any.</summary>
         public string? ItemId { get; init; }
 

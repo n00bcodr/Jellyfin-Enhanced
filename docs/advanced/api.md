@@ -710,7 +710,14 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 | GET | `arr/admin/audit` | Admin, Requests & downloads (new): recent audited arr actions |
 | GET | `arr/admin/state` | Admin: the in-memory Sonarr/Radarr snapshots behind the routes below (age, size, last refresh error per instance) and per-route counters of upstream calls made by requests themselves |
 | POST | `arr/admin/state/refresh?instanceId=&kind=` | Admin: ask for a refresh of one snapshot (`library`, `queue`, `history`, `calendar`, `system`, `episodes`; debounced two seconds) |
-| GET | `acquire/status?ids=&keys=` | Any user, Requests & downloads + status on pages on: where each title has got to, for up to 100 Jellyfin item ids (items the caller can't open are left out) and up to 50 title keys (`movie:tmdb:603`, `series:tvdb:78874`) |
+| GET | `arr/admin/live` | Admin, Requests & downloads (new): live updates per instance (connection state, webhook traffic, a "silent for a day" warning) and the change feed's position |
+| GET | `arr/admin/instances/{id}/webhook` | Admin, Requests & downloads (new): Jellyfin Enhanced's webhook(s) in that arr's Connect list (address, events, whether the secret matches; never the secret) |
+| POST | `arr/admin/instances/{id}/webhook` | Admin, phase 1 on: set up or repair the webhook (body `{"consent":true,"jellyfinUrl":"http://jellyfin:8096","idempotencyKey":"…"}`; audited, idempotent) |
+| DELETE | `arr/admin/instances/{id}/webhook` | Admin, Requests & downloads (new): remove the webhook and forget its secret (body `{"consent":true}`; audited) |
+| POST | `arr/admin/instances/{id}/webhook/manual` | Admin, phase 1 on: copy-paste set-up (address, header name and the secret); audited |
+| POST | `arr/hook/{instanceId}` | Anonymous, phase 1 on: the arrs' webhook receiver. Needs the instance's secret in `X-JE-Hook-Secret`; body ≤ 1 MiB; only triggers re-reads; `204`, or `401`/`400`/`413`/`429` with no body |
+| POST | `acquire/changes` | Any signed-in user, phase 1 on: the change feed. Body `{"epoch","cursor","keys":["movie:tmdb:…","tv:tvdb:…[:s…[:e…]]"],"wait":25}`; answers `{"epoch","cursor","keys","reset"}` as soon as a title the caller asked about (and may open) changes, or after `wait` seconds. The first call (no epoch) returns the current position. At most 500 keys (`400 too_many_keys` beyond; send no keys to hear about every title the caller may open). At most 4 waits per user (`429` beyond) |
+| GET | `acquire/status?ids=&keys=` | Any user, Requests & downloads + status on pages on: where each title has got to, for up to 100 Jellyfin item ids (items the caller can't open are left out) and up to 50 title keys (`movie:tmdb:603`, `tv:tvdb:78874`) |
 | GET | `acquire/status/item/{itemId}` | Same, for one item's details page: the journey (movies, episodes), per-season state (series) or per-episode state (seasons). An empty `items` list when the caller can't see the item or it has no status (other item types, no provider id) |
 | POST | `admin/secrets/rollback` | Admin: write stored credentials back into the plugin configuration before a downgrade (body `{"confirm":"write-credentials-to-plugin-config"}`; `409` if `secrets.json` can't be read) |
 | GET | `arr/identify-url` | Resolve which configured instance owns a given item |
@@ -736,7 +743,9 @@ is switched off answers `403` with `code: "feature_disabled"`.
 
 The `acquire/status` routes answer with a stage (`asked`, `approved`, `notOut`, `looking`, `downloading`,
 `almostReady`, `ready`, `notHere`, `none`), a reason code with parameters (dates, percent, ETA) and, for
-series and seasons, counts. Non-admins never get instance names, URLs, paths, download clients, release names or
+series and seasons, counts. Each status has a `key`; a title Jellyfin knows only by another id (an IMDb-only movie,
+a series without a TVDB id) also gets `liveKey`, the `movie:tmdb:…`/`tv:tvdb:…` key `acquire/changes` announces it
+under. Non-admins never get instance names, URLs, paths, download clients, release names or
 the arr's own messages; admins also get an `admin` block with one entry per instance. Responses are
 per user with a private `ETag` (`Cache-Control: private, no-cache`; `If-None-Match` answers `304`), are
 served from the snapshots without calling Sonarr or Radarr, and answer `403` with `code: "feature_disabled"`

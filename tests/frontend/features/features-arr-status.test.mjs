@@ -178,7 +178,7 @@ test('series and season summaries read like "Seasons 1–2 ready · Season 3 air
   same(h.S.summaryPieces(starts).map(p => p.text), ['Seasons 1, 3 ready', 'Season 4 starts tomorrow']);
   const season = { kind: 'season', summary: { aired: 10, ready: 8, downloading: 1, missing: 1, attention: 1, nextAir: iso(1), nextEpisode: 11 } };
   same(h.S.summaryPieces(season).map(p => p.text), ['8 of 10 ready', 'Episode 11 airs tomorrow', '1 downloading', '1 missing', '1 taking longer than usual']);
-  const block = h.S.buildSummary({ ...season, key: 'series:tvdb:1:s9' });
+  const block = h.S.buildSummary({ ...season, key: 'tv:tvdb:1:s9' });
   assert.equal(block.querySelectorAll('.je-arr-pill-small').length, 5);
   assert.equal(h.S.buildSummary({ kind: 'season', summary: {} }), null);
 });
@@ -227,7 +227,7 @@ test('a quiet status draws nothing; a 403 switches the surfaces off for the page
 
 test('season pages: chips on the rows the viewer has, the others in the banner, never both', async t => {
   const season = {
-    key: 'series:tvdb:1:s1', kind: 'season', stage: 'downloading', reason: { code: 'downloading' },
+    key: 'tv:tvdb:1:s1', kind: 'season', stage: 'downloading', reason: { code: 'downloading' },
     summary: { aired: 4, ready: 1, downloading: 1, missing: 1, almostReady: 1, attention: 0 },
     episodes: [
       { key: 'e1', season: 1, episode: 1, itemId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1', row: true, stage: 'ready', reason: { code: 'ready' } },
@@ -362,15 +362,15 @@ test('subscribe hands keys to the change feed when there is one and unsubscribes
   const h = setup(t);
   const seen = [];
   let external = 0;
-  h.JE.arr = { onStatusChange: (keys, cb) => { seen.push(keys); cb(['series:tvdb:1:s1e2']); return () => { external++; }; } };
+  h.JE.arr = { onStatusChange: (keys, cb) => { seen.push(keys); cb(['tv:tvdb:1:s1:e2']); return () => { external++; }; } };
   const got = [];
-  const off = h.S.subscribe(['series:tvdb:1:s1', 'series:tvdb:1:s1'], keys => got.push(keys));
-  same(seen, [['series:tvdb:1:s1']]);
-  same(got, [['series:tvdb:1:s1e2']]);
-  assert.equal(h.S.refresh(['series:tvdb:1']), 1, 'a series change refreshes its season surfaces');
+  const off = h.S.subscribe(['tv:tvdb:1:s1', 'tv:tvdb:1:s1'], keys => got.push(keys));
+  same(seen, [['tv:tvdb:1:s1', 'tv:tvdb:1']], 'a season surface also follows its series (new episodes are announced under it first)');
+  same(got, [['tv:tvdb:1:s1:e2']]);
+  assert.equal(h.S.refresh(['tv:tvdb:1']), 1, 'a series change refreshes its season surfaces');
   off();
   assert.equal(external, 1);
-  assert.equal(h.S.refresh(['series:tvdb:1:s1']), 0);
+  assert.equal(h.S.refresh(['tv:tvdb:1:s1']), 0);
 });
 
 test('poster badges forget titles whose cards are gone: no re-fetch, no subscription for them', async t => {

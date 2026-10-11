@@ -2526,10 +2526,10 @@
                                 <div id="arrIntegrationCheckResult" class="je-arr-check-result" aria-live="polite"></div>
                             </div>
 
-                            <!-- Requests & downloads, phase 1: status on pages -->
+                            <!-- Requests & downloads, phase 1: status on pages, kept current by live updates -->
                             <div class="checkboxContainer"><label><input id="arrPhase1Enabled" is="emby-checkbox" type="checkbox"/><span>Show where things have got to (status on pages)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase1Enabled">
-                                <div class="fieldDescription je-field-desc-xl">Adds a status pill to movie, series, season and episode pages ("Downloading · 42% · about 12 min", "Almost ready", "Not out yet, expected 14 Nov"), with a tap-to-open journey, badges on posters, chips on episodes and a "Not in the library yet" line on season pages. Everyone sees plain words; administrators also see the instance, the arr's own message and what would fix it. Status is read from Sonarr/Radarr in the background, never while a page loads.</div>
+                                <div class="fieldDescription je-field-desc-xl">Adds a status pill to movie, series, season and episode pages ("Downloading · 42% · about 12 min", "Almost ready", "Not out yet, expected 14 Nov"), with a tap-to-open journey, badges on posters, chips on episodes and a "Not in the library yet" line on season pages. Everyone sees plain words; administrators also see the instance, the arr's own message and what would fix it. Status is read from Sonarr/Radarr in the background, never while a page loads, and updates on open pages within seconds without a reload: Jellyfin Enhanced keeps one connection open to each Sonarr/Radarr above (nothing to set up there); browsers only ever ask Jellyfin.</div>
                             </div>
                             <div class="checkboxContainer"><label><input id="arrStatusPosterBadges" is="emby-checkbox" type="checkbox"/><span>Show status badges on posters</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrStatusPosterBadges">
@@ -2548,6 +2548,21 @@
                             </div>
                             <div class="je-setting-description" data-desc-for="arrHouseholdContactName">
                                 <div class="fieldDescription">Used in family status texts, e.g. "Waiting for Dad to OK it". Leave empty for a neutral wording.</div>
+                            </div>
+                            <!-- Phase 1 live updates: webhooks and per-instance live status (the phase 1 switch above covers both). -->
+                            <div id="arrLiveSettings" class="je-arr-live-settings">
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrWebhookJellyfinUrl">Jellyfin's address as Sonarr/Radarr see it</label>
+                                    <input id="arrWebhookJellyfinUrl" is="emby-input" type="text" autocomplete="off" placeholder="e.g. http://jellyfin:8096 or http://192.168.1.10:8096"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="arrWebhookJellyfinUrl">
+                                    <div class="fieldDescription">Only for the optional webhooks below, which add a second, instant path for downloads and imports. Use the address Sonarr/Radarr can reach Jellyfin at (often the container name or LAN address, not the public URL).</div>
+                                </div>
+                                <div class="inputContainer">
+                                    <button is="emby-button" type="button" id="arrLiveCheckBtn" class="raised emby-button">Live updates status</button>
+                                    <div class="fieldDescription">Shows each instance's live connection and webhook, and lets you set up or remove the webhook. Save first if you changed anything above.</div>
+                                    <div id="arrLiveResult" class="je-arr-check-result" aria-live="polite"></div>
+                                </div>
                             </div>
                             <!-- /Requests & downloads, phase 1 -->
                         </div>
@@ -5328,9 +5343,19 @@
                 createEl('div', { className: 'fieldDescription', textContent: 'Only needed when ' + label + ' and Jellyfin see the same folders under different paths. One per line: ' + label.toLowerCase() + '_path|jellyfin_path, for example /movies|/media/movies.' })
             ]);
 
+            // Live updates (phase 1): this instance's SignalR connection; on unless switched off here.
+            var liveCb = createEl('input', { type: 'checkbox', className: 'arr-instance-live' });
+            liveCb.checked = String(instance.LiveUpdates || 'auto').toLowerCase() !== 'off';
+            var liveRow = createEl('div', { style: 'margin-top: 0.75em;' }, [
+                createEl('label', { className: 'je-arr-v2-check', style: 'display:flex;align-items:center;gap:0.5em;' }, [
+                    liveCb, createEl('span', { textContent: 'Live updates from this ' + label })
+                ]),
+                createEl('div', { className: 'fieldDescription', textContent: 'With download status (phase 1) on, Jellyfin Enhanced keeps one connection open to ' + label + ' so changes show within seconds. Turn off only if ' + label + ' is behind something that drops long-lived connections; status then refreshes every 30 seconds.' })
+            ]);
+
             return createEl('div', { className: 'je-arr-v2' }, [
                 createEl('div', { className: 'je-arr-v2-heading', textContent: 'Requests & downloads' }),
-                roleContainer, defaultRow, libsContainer, pathsContainer
+                roleContainer, defaultRow, libsContainer, pathsContainer, liveRow
             ]);
         }
 
@@ -5357,6 +5382,8 @@
                 // Libraries not loaded yet: keep what was stored.
                 out.LinkedLibraryIds = base.LinkedLibraryIds || [];
             }
+            var live = card.querySelector('.arr-instance-live');
+            out.LiveUpdates = live ? (live.checked ? 'auto' : 'off') : (base.LiveUpdates || 'auto');
             var paths = card.querySelector('.arr-instance-pathmappings');
             out.PathMappings = paths ? paths.value.split(/\r?\n/).map(function(line) {
                 var i = line.indexOf('|');
@@ -5830,6 +5857,151 @@
 
         document.querySelector('#arrIntegrationEnabled').addEventListener('change', jeApplyArrIntegrationVisibility);
         document.querySelector('#arrIntegrationCheckBtn').addEventListener('click', jeCheckArrConnections);
+        document.querySelector('#arrLiveCheckBtn').addEventListener('click', function() { jeArrLiveStatus(); });
+
+        /**
+         * Describes an instance's live connection for the admin ("Connected since 14:02 · v6.0.4").
+         * @param {Object} s - signalR status from arr/admin/live
+         * @returns {string}
+         */
+        function jeArrLiveConnectionText(s) {
+            s = s || {};
+            var when = s.since ? new Date(s.since).toLocaleTimeString() : '';
+            switch (s.state) {
+                case 'Connected': return 'Live connection: connected' + (when ? ' since ' + when : '') + (s.version ? ' · v' + s.version : '') + (s.reconnects ? ' · ' + s.reconnects + ' reconnect(s)' : '');
+                case 'Connecting': return 'Live connection: connecting...';
+                case 'Waiting': return 'Live connection: reconnecting' + (s.lastError ? ' (' + s.lastError + ')' : '') + '. Status refreshes every 30 seconds meanwhile.';
+                default: return 'Live connection: off';
+            }
+        }
+
+        /**
+         * Describes an instance's webhook for the admin.
+         * @param {Object} w - webhook part of arr/admin/live
+         * @returns {string}
+         */
+        function jeArrLiveWebhookText(w) {
+            w = w || {};
+            if (!w.secretSet) return 'Webhook: not set up (optional).';
+            var last = w.lastEventAt ? new Date(w.lastEventAt).toLocaleString() + (w.lastEventType ? ' (' + w.lastEventType + ')' : '') : 'none since Jellyfin started';
+            return 'Webhook: set up · last event ' + last + (w.refused ? ' · ' + w.refused + ' refused' : '') + (w.silent ? ' · no events for a day although things were imported: check the address with Repair.' : '');
+        }
+
+        /**
+         * Asks the server to set up, repair or remove an instance's webhook, after the admin agreed.
+         * @param {Object} inst - instance row from arr/admin/live
+         * @param {'provision'|'remove'} what
+         * @param {HTMLElement} out - where the outcome is written
+         * @returns {Promise<void>}
+         */
+        async function jeArrLiveWebhookAction(inst, what, out) {
+            var url = (document.getElementById('arrWebhookJellyfinUrl').value || '').trim();
+            var message = what === 'provision'
+                ? 'Jellyfin Enhanced will add (or update) a webhook named "Jellyfin Enhanced" in ' + inst.name + ' (Settings > Connect) that sends download, import, delete and health events to ' + (url || '(address not set)') + '/JellyfinEnhanced/arr/hook/... with a secret header. ' + inst.name + ' sends a test event first, so this also proves it can reach Jellyfin. Continue?'
+                : 'Remove Jellyfin Enhanced\'s webhook from ' + inst.name + ' and forget its secret? Live updates keep working through the live connection.';
+            if (!window.confirm(message)) return;
+            out.textContent = what === 'provision' ? 'Setting up...' : 'Removing...';
+            try {
+                var r = await ApiClient.ajax({
+                    type: what === 'provision' ? 'POST' : 'DELETE',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/instances/' + encodeURIComponent(inst.id) + '/webhook'),
+                    data: JSON.stringify({ consent: true, jellyfinUrl: url || null, idempotencyKey: jeNewGuid() }),
+                    contentType: 'application/json',
+                    dataType: 'json'
+                });
+                var ok = r && r.status === 'Succeeded';
+                out.textContent = (ok ? '✓ ' : '✗ ') + ((r && (r.readBack || r.message)) || 'Done.') + (r && r.error && r.error.message && !ok ? ' ' + r.error.message : '');
+            } catch (e) {
+                var code = e && e.status;
+                out.textContent = code === 400 ? '✗ Enter Jellyfin\'s address as ' + inst.name + ' sees it, save, and try again.' : '✗ Failed (error ' + (code || '?') + ').';
+            }
+            jeArrLiveStatus(true);
+        }
+
+        /**
+         * Shows the copy-paste webhook set-up (address, header and secret) for doing it by hand.
+         * @param {Object} inst - instance row from arr/admin/live
+         * @param {HTMLElement} out - where the instructions are written
+         * @returns {Promise<void>}
+         */
+        async function jeArrLiveManual(inst, out) {
+            var url = (document.getElementById('arrWebhookJellyfinUrl').value || '').trim();
+            out.textContent = 'Loading...';
+            try {
+                var m = await ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/instances/' + encodeURIComponent(inst.id) + '/webhook/manual'),
+                    data: JSON.stringify({ jellyfinUrl: url || null }),
+                    contentType: 'application/json',
+                    dataType: 'json'
+                });
+                out.textContent = '';
+                var lines = [
+                    'In ' + inst.name + ': Settings > Connect > + > Webhook.',
+                    'Name: Jellyfin Enhanced',
+                    'Notification Triggers: ' + (m.triggers || []).join(', '),
+                    'Webhook URL: ' + m.url,
+                    'Method: ' + m.method,
+                    'Headers (advanced settings): ' + m.headerName + ' = ' + m.headerValue,
+                    'Then Test and Save. Keep the header value private; removing the webhook here makes a new one.'
+                ];
+                lines.forEach(function(line) { out.appendChild(createEl('div', { className: 'fieldDescription je-arr-check-note', textContent: line })); });
+            } catch (e) {
+                out.textContent = e && e.status === 400 ? '✗ Enter Jellyfin\'s address as ' + inst.name + ' sees it first.' : '✗ Failed (error ' + (e && e.status ? e.status : '?') + ').';
+            }
+        }
+
+        /**
+         * "Live updates status": per instance, the live connection and the webhook, with Set up /
+         * Repair, Remove and Copy-paste set-up buttons.
+         * @param {boolean} [quiet] - keep the current list while reloading
+         * @returns {Promise<void>}
+         */
+        async function jeArrLiveStatus(quiet) {
+            var out = document.getElementById('arrLiveResult');
+            if (!out) return;
+            if (!quiet) out.textContent = 'Loading...';
+            var data;
+            try {
+                data = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/live'), dataType: 'json' });
+            } catch (e) {
+                out.textContent = e && e.status === 404 ? 'Save with "Requests & downloads (new)" turned on, then check again.' : 'Could not load the live-updates status.';
+                return;
+            }
+            out.textContent = '';
+            if (!data.enabled) {
+                out.appendChild(createEl('div', { className: 'fieldDescription', textContent: 'Phase 1 is off: no live connections are open. Turn it on and save to start them.' }));
+            }
+            (data.instances || []).forEach(function(inst) {
+                var row = createEl('div', { className: 'je-arr-check-row' });
+                row.appendChild(createEl('div', { className: 'je-arr-check-title', textContent: (inst.name || inst.kind) + ' (' + inst.kind + (inst.usable ? '' : ', disabled') + (inst.liveUpdates === 'off' ? ', live updates off' : '') + ')' }));
+                row.appendChild(createEl('div', { className: 'fieldDescription', textContent: jeArrLiveConnectionText(inst.signalR) }));
+                row.appendChild(createEl('div', { className: 'fieldDescription', textContent: jeArrLiveWebhookText(inst.webhook) }));
+                row.classList.add(inst.signalR && inst.signalR.state === 'Connected' ? 'je-arr-check-ok' : (data.enabled && inst.usable && inst.liveUpdates !== 'off' ? 'je-arr-check-bad' : 'je-arr-check-off'));
+                var note = createEl('div', { className: 'je-arr-live-note' });
+                if (data.enabled && inst.usable) {
+                    var actions = createEl('div', { style: 'display:flex;flex-wrap:wrap;gap:0.5em;margin-top:0.35em;' });
+                    var setup = createEl('button', { type: 'button', className: 'raised emby-button', textContent: inst.webhook && inst.webhook.secretSet ? 'Repair webhook' : 'Set up instant updates' });
+                    setup.addEventListener('click', function() { jeArrLiveWebhookAction(inst, 'provision', note); });
+                    actions.appendChild(setup);
+                    var manual = createEl('button', { type: 'button', className: 'raised emby-button', textContent: 'Copy-paste set-up' });
+                    manual.addEventListener('click', function() { jeArrLiveManual(inst, note); });
+                    actions.appendChild(manual);
+                    if (inst.webhook && inst.webhook.secretSet) {
+                        var remove = createEl('button', { type: 'button', className: 'raised emby-button', textContent: 'Remove webhook' });
+                        remove.addEventListener('click', function() { jeArrLiveWebhookAction(inst, 'remove', note); });
+                        actions.appendChild(remove);
+                    }
+                    row.appendChild(actions);
+                } else if (inst.webhook && inst.webhook.secretSet) {
+                    var removeOnly = createEl('button', { type: 'button', className: 'raised emby-button', textContent: 'Remove webhook' });
+                    removeOnly.addEventListener('click', function() { jeArrLiveWebhookAction(inst, 'remove', note); });
+                    row.appendChild(removeOnly);
+                }
+                row.appendChild(note);
+                out.appendChild(row);
+            });
+        }
 
         /** Reconstructs a Sonarr/Radarr instance's own URL from Seerr's settings shape. */
         function buildArrUrlFromSeerrInstance(inst) {
@@ -7174,6 +7346,7 @@
                 document.querySelector('#arrStatusPosterBadges').checked = config.ArrStatusPosterBadges !== false;
                 document.querySelector('#arrStatusLookingHours').value = (config.ArrStatusLookingHours !== undefined && config.ArrStatusLookingHours !== null) ? config.ArrStatusLookingHours : 24;
                 document.querySelector('#arrHouseholdContactName').value = config.ArrHouseholdContactName || '';
+                document.querySelector('#arrWebhookJellyfinUrl').value = config.ArrWebhookJellyfinUrl || '';
                 jeApplyArrIntegrationVisibility();
                 document.querySelector('#bazarrUrlMappings').value = config.BazarrUrlMappings || '';
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
@@ -7799,6 +7972,7 @@
             var __lookingHours = parseInt(document.querySelector('#arrStatusLookingHours').value, 10);
             config.ArrStatusLookingHours = isNaN(__lookingHours) ? 24 : Math.min(720, Math.max(1, __lookingHours));
             config.ArrHouseholdContactName = (document.querySelector('#arrHouseholdContactName').value || '').trim().slice(0, 40);
+            config.ArrWebhookJellyfinUrl = document.querySelector('#arrWebhookJellyfinUrl').value.trim();
             config.BazarrUrlMappings = document.querySelector('#bazarrUrlMappings').value || '';
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShokoUrlMappings = document.querySelector('#shokoUrlMappings').value || '';
@@ -9225,8 +9399,8 @@
             { parent: 'showDownloadsInRequests', label: 'Show Downloads in Requests Page', children: ['downloadsFilterByUserRequests'] },
             { parent: 'downloadsShowHistory', label: 'Show Download History Section', children: ['downloadsHistoryAdminOnly'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
-            { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn', 'arrPhase1Enabled'] },
-            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName'] },
+            { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn', 'arrPhase1Enabled', 'arrLiveCheckBtn'] },
+            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName', 'arrWebhookJellyfinUrl'] },
             { parent: 'backupIncludeSecrets', label: 'Include API keys and passwords, encrypted', children: ['backupPassphrase'] },
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },

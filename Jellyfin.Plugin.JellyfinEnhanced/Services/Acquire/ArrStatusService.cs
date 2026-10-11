@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
@@ -44,21 +45,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly IArrRequestFacts _requests;
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
+        private readonly ArrChangeFeed? _feed;
 
         /// <summary>The service for a Jellyfin installation (DI).</summary>
-        public ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests)
-            : this(store, view, requests, null, null)
+        public ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, ArrChangeFeed feed)
+            : this(store, view, requests, null, null, feed)
         {
         }
 
-        /// <summary>A service with explicit configuration and clock (tests).</summary>
-        internal ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now)
+        /// <summary>A service with explicit configuration, clock and change feed (tests).</summary>
+        internal ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, ArrChangeFeed? feed = null)
         {
             _store = store;
             _view = view;
             _requests = requests;
             _config = config ?? (() => JellyfinEnhanced.Instance?.Configuration);
             _now = now ?? (() => DateTimeOffset.UtcNow);
+            _feed = feed;
         }
 
         /// <summary>The per-user body cache.</summary>
@@ -98,6 +101,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var item in items)
             {
                 var facts = gather.Facts[item.Key!.Title];
+                var added = statuses.Count;
                 switch (item.Kind)
                 {
                     case "movie":
@@ -119,6 +123,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         statuses.Add(StatusComposer.Episode(facts, item, c, detail: false));
                         break;
                 }
+                if (statuses.Count > added) WithLiveKey(statuses[^1], facts);
             }
             foreach (var key in titleKeys)
             {
@@ -128,9 +133,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 // their rating isn't known until the title is in Jellyfin. Anyone else who can't open
                 // any copy gets exactly the answer of a title nobody has (the composer sees to it).
                 if (!viewer.IsAdmin && viewer.HasParentalLimit && !copies.Any(x => x.Visible)) continue;
-                statuses.Add(key.IsMovie
+                statuses.Add(WithLiveKey(key.IsMovie
                     ? StatusComposer.Movie(facts, null, copies, c, detail: false)
-                    : StatusComposer.SeriesByKey(facts, copies, c, copies.FirstOrDefault(x => x.Visible) is { } shown ? HiddenFromViewer(facts, shown.ItemId, viewer) : null));
+                    : StatusComposer.SeriesByKey(facts, copies, c, copies.FirstOrDefault(x => x.Visible) is { } shown ? HiddenFromViewer(facts, shown.ItemId, viewer) : null), facts));
             }
             return Cache.Put(cacheKey, Serialize(statuses));
         }
@@ -175,7 +180,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     status = StatusComposer.Episode(facts, item, c, detail: true, seriesCopies);
                     break;
             }
-            return Cache.Put(cacheKey, Serialize(new[] { status }));
+            return Cache.Put(cacheKey, Serialize(new[] { WithLiveKey(status, facts) }));
+        }
+
+        /// <summary>
+        /// Sets the key the change feed announces a title under when it differs from the status key
+        /// (a Jellyfin title known only by IMDb, or a series by TMDB/IMDb): the arr copy's TMDB
+        /// movie or TVDB series id, with the status' season and episode.
+        /// </summary>
+        private static TitleStatus WithLiveKey(TitleStatus status, TitleFacts facts)
+        {
+            if (facts.LiveKey is not { } live || live.Equals(facts.Key) || TitleKey.Parse(status.Key) is not { } key) return status;
+            status.LiveKey = (key.Episode is int e && key.Season is int se ? live.WithEpisode(se, e)
+                : key.Season is int s ? live.WithSeason(s) : live).ToString();
+            return status;
         }
 
         /// <summary>
@@ -255,6 +273,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (distinct.Any(t => !t.IsMovie)) kinds.Add(ArrKind.Sonarr);
             var load = new HashSet<TitleKey>(loadEpisodes ?? Array.Empty<TitleKey>());
             var peek = new HashSet<TitleKey>(peekEpisodes ?? Array.Empty<TitleKey>());
+            AppendFeedRevisions(revision, distinct);
 
             foreach (var kind in kinds)
             {
@@ -286,6 +305,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         {
                             var movie = title.Provider == "tmdb" && title.NumericId is int tmdb ? library.Value.MovieByTmdb(tmdb) : library.Value.MovieByImdb(title.Id);
                             if (movie == null) continue;
+                            if (movie.TmdbId is > 0 and var canonical) NoteLiveKey(revision, facts, TitleKey.ForMovie(canonical.ToString(CultureInfo.InvariantCulture), null));
                             facts.Copies.Add(new ArrCopyFacts(instance)
                             {
                                 Movie = movie,
@@ -305,6 +325,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                                 _ => null,
                             };
                             if (series == null) continue;
+                            if (series.TvdbId is > 0 and var canonical) NoteLiveKey(revision, facts, TitleKey.ForSeries(canonical.ToString(CultureInfo.InvariantCulture), null, null));
                             ArrSnapshotRead<ArrEpisodesSnapshot>? episodes = null;
                             if (load.Contains(title)) episodes = await _store.GetEpisodesAsync(instance, series.Id, ct).ConfigureAwait(false);
                             else if (peek.Contains(title)) episodes = _store.PeekEpisodes(instance, series.Id);
@@ -327,6 +348,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return result;
         }
 
+        /// <summary>
+        /// Records the key the change feed announces a matched arr copy under (TMDB movie, TVDB
+        /// series). When the title's own key is another one (IMDb, TMDB series), that key never
+        /// moves in the feed, so the canonical key's revision joins the facts revision: a live patch
+        /// of the copy (which keeps the snapshot's age) still changes the cached body.
+        /// </summary>
+        private void NoteLiveKey(StringBuilder revision, TitleFacts facts, TitleKey? canonical)
+        {
+            if (canonical == null || canonical.Equals(facts.Key)) return;
+            facts.LiveKey ??= canonical;
+            if (_feed != null) revision.Append("live:").Append(canonical).Append('=').Append(_feed.Revision(canonical.ToString()).ToString(CultureInfo.InvariantCulture)).Append(';');
+        }
+
         private static string Stamp(DateTimeOffset? at) => at?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? "-";
+
+        /// <summary>
+        /// The change feed's revision of each title (its epoch first). The feed bumps a title for
+        /// every change it sees — a queue row, a live library patch from SignalR or a webhook re-read
+        /// (which keeps the snapshot's age), a new history event, its episodes, a Jellyfin add or
+        /// remove — so a cached body never outlives a change the browser was just told about. A
+        /// season or episode change also bumps its series, so the series key covers them.
+        /// </summary>
+        private void AppendFeedRevisions(StringBuilder revision, IEnumerable<TitleKey> titles)
+        {
+            if (_feed == null) return;
+            revision.Append("feed:").Append(_feed.Epoch);
+            foreach (var title in titles.OrderBy(t => t.ToString(), StringComparer.Ordinal))
+            {
+                revision.Append(',').Append(_feed.Revision(title.Title.ToString()).ToString(CultureInfo.InvariantCulture));
+            }
+            revision.Append(';');
+        }
     }
 }

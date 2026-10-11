@@ -11,6 +11,8 @@
     'use strict';
 
     const logPrefix = '🪼 Jellyfin Enhanced: Status:';
+    /** Longest wait for the change feed's first position before the first status read. */
+    const PRIME_WAIT_MS = 1500;
     const STAGE_ICONS = {
         asked: 'hourglass_empty',
         approved: 'thumb_up',
@@ -58,12 +60,50 @@
     }
 
     /**
+     * The change-feed position to hand to subscriptions made after a status read (the read can't
+     * miss a change made after it). Waits, once per tab and at most PRIME_WAIT_MS, for the feed to
+     * have a position; null without the live module.
+     * @returns {Promise<{epoch: string, cursor: number}|null>} The position.
+     */
+    async function feedPosition() {
+        const live = JE.arr?.live;
+        if (!live || typeof live.position !== 'function') return null;
+        const known = live.position();
+        if (known || typeof live.prime !== 'function') return known;
+        let timer = null;
+        try {
+            return await Promise.race([
+                live.prime(),
+                new Promise(resolve => { timer = setTimeout(() => resolve(null), PRIME_WAIT_MS); })
+            ]);
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    /**
      * GET a status route. A 403 feature_disabled switches the module off for this page load.
+     * The answer carries `since`: the change-feed position from before the read, for
+     * {@link subscribe}.
      * @param {string} path Path under /JellyfinEnhanced.
      * @param {{priority?: 'low', signal?: AbortSignal}} [options] Fetch options.
-     * @returns {Promise<{contact: string, lookingHours: number, items: Array<Object>}|null>} The response, or null.
+     * @returns {Promise<{contact: string, lookingHours: number, items: Array<Object>, since?: {epoch: string, cursor: number}|null}|null>} The response, or null.
      */
     async function get(path, options) {
+        if (!enabled()) return null;
+        const since = await feedPosition();
+        const data = await read(path, options);
+        if (data && typeof data === 'object') data.since = since;
+        return data;
+    }
+
+    /**
+     * The request behind {@link get}.
+     * @param {string} path Path under /JellyfinEnhanced.
+     * @param {{priority?: 'low', signal?: AbortSignal}} [options] Fetch options.
+     * @returns {Promise<Object|null>} The response, or null.
+     */
+    async function read(path, options) {
         if (!enabled()) return null;
         const api = JE.core?.api;
         try {
@@ -571,9 +611,13 @@
      * (from the change feed when present, or JE.arrStatus.refresh) calls it with the keys that changed.
      * @param {string[]} keys Title keys (season/episode keys refresh their series too).
      * @param {(keys: string[]) => void} callback Re-render callback.
+     * @param {{since?: {epoch: string, cursor: number}|null}} [options] `since`: the `since` of the
+     *   status answer the surface shows, so changes made after that read are delivered even if they
+     *   happened before this subscription. `null` (the read had no feed position) gets one callback
+     *   once the feed has a position, so the surface re-reads from there.
      * @returns {() => void} Unsubscribe.
      */
-    function subscribe(keys, callback) {
+    function subscribe(keys, callback, options) {
         const list = [...new Set((keys || []).filter(Boolean))];
         for (const key of list) {
             if (!subscribers.has(key)) subscribers.set(key, new Set());
@@ -582,7 +626,11 @@
         let external = null;
         if (typeof JE.arr?.onStatusChange === 'function') {
             try {
-                external = JE.arr.onStatusChange(list, (changed) => callback(Array.isArray(changed) ? changed : list));
+                // A season or episode surface also follows its series: Jellyfin announces a new
+                // episode under its series before it knows the episode's numbers.
+                const feedKeys = [...new Set(list.concat(list.map(key => key.replace(/:s\d+(:e\d+)?$/, ''))))];
+                const since = options?.since ? { since: options.since } : options?.since === null ? { since: null } : undefined;
+                external = JE.arr.onStatusChange(feedKeys, (changed) => callback(Array.isArray(changed) ? changed : list), since);
             } catch (err) {
                 console.warn(`${logPrefix} change feed subscription failed`, err);
             }
@@ -610,11 +658,11 @@
         for (const key of keys || []) {
             if (typeof key !== 'string') continue;
             wanted.add(key);
-            wanted.add(key.replace(/:s\d+(e\d+)?$/, ''));
+            wanted.add(key.replace(/:s\d+(:e\d+)?$/, ''));
         }
         const callbacks = new Set();
         for (const [key, set] of subscribers) {
-            const title = key.replace(/:s\d+(e\d+)?$/, '');
+            const title = key.replace(/:s\d+(:e\d+)?$/, '');
             if (wanted.has(key) || wanted.has(title)) set.forEach(cb => callbacks.add(cb));
         }
         callbacks.forEach(cb => {

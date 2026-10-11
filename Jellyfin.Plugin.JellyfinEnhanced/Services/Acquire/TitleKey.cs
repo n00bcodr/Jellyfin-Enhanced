@@ -6,16 +6,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
     /// <summary>
     /// Provider-id key of a title, shared by the status routes, the client and the change feed:
-    /// <c>movie:tmdb:603</c>, <c>movie:imdb:tt0133093</c>, <c>series:tvdb:78874</c> (or
-    /// <c>series:tmdb:…</c> / <c>series:imdb:…</c> when there is no TVDB id), a season
-    /// <c>series:tvdb:78874:s1</c> and an episode <c>series:tvdb:78874:s1e2</c>.
+    /// <c>movie:tmdb:603</c>, <c>movie:imdb:tt0133093</c>, <c>tv:tvdb:78874</c> (or
+    /// <c>tv:tmdb:…</c> / <c>tv:imdb:…</c> when there is no TVDB id), a season
+    /// <c>tv:tvdb:78874:s1</c> and an episode <c>tv:tvdb:78874:s1:e2</c>. The TMDB movie and TVDB
+    /// series forms are the ones the change feed announces (<see cref="Arr.Live.ArrTitleKey"/>).
     /// The key names the title, not a Jellyfin item or an arr row, so every copy and every
     /// instance of the same title share it.
     /// </summary>
     public sealed class TitleKey : IEquatable<TitleKey>
     {
         private static readonly Regex Pattern = new(
-            @"^(movie|series):(tmdb|tvdb|imdb):(tt[0-9]{1,12}|[0-9]{1,12})(?::s([0-9]{1,4})(?:e([0-9]{1,5}))?)?$",
+            @"^(movie|tv):(tmdb|tvdb|imdb):(tt[0-9]{1,12}|[0-9]{1,12})(?::s([0-9]{1,4})(?::e([0-9]{1,5}))?)?$",
             RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
             TimeSpan.FromMilliseconds(100));
 
@@ -107,9 +108,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <inheritdoc />
         public override string ToString()
         {
-            var s = (IsMovie ? "movie:" : "series:") + Provider + ":" + Id;
+            var s = (IsMovie ? "movie:" : "tv:") + Provider + ":" + Id;
             if (Season is int season) s += ":s" + season.ToString(CultureInfo.InvariantCulture);
-            if (Episode is int episode) s += "e" + episode.ToString(CultureInfo.InvariantCulture);
+            if (Episode is int episode) s += ":e" + episode.ToString(CultureInfo.InvariantCulture);
             return s;
         }
 

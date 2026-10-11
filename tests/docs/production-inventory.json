@@ -67,6 +67,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrLiveController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrStateController.cs",
       "category": "Controllers"
     },
@@ -431,11 +435,55 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrStateStore.Live.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrStateStore.cs",
       "category": "Services"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/ArrSystemStatus.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/Live/ArrChangeDetector.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/Live/ArrChangeFeed.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/Live/ArrChangeTracker.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/Live/ArrFeedAudience.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/Live/ArrLiveRouter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/Live/ArrLiveService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/Live/ArrSignalR.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/Live/ArrTitleKey.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/Live/ArrWebhookProvisioner.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Arr/Live/ArrWebhookReceiver.cs",
       "category": "Services"
     },
     {
@@ -788,6 +836,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/calendar/calendar-page-styles.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/live/arr-live.js",
       "category": "js"
     },
     {
@@ -1621,6 +1673,71 @@
       "path": "/JellyfinEnhanced/admin/secrets/rollback",
       "method": "RollbackSecrets",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAdminController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/arr/hook/{instanceId}",
+      "method": "ReceiveWebhook",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrLiveController.cs",
+      "following_attributes": [
+        "AllowAnonymous",
+        "RequestSizeLimit(ArrWebhookReceiver.MaxBodyBytes + 4096)"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/changes",
+      "method": "GetChanges",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrLiveController.cs",
+      "following_attributes": [
+        "Authorize",
+        "RequestSizeLimit(256 * 1024)"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/live",
+      "method": "GetLiveStatus",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrLiveController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/instances/{id}/webhook",
+      "method": "GetWebhook",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrLiveController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/arr/admin/instances/{id}/webhook",
+      "method": "ProvisionWebhook",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrLiveController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "DELETE",
+      "path": "/JellyfinEnhanced/arr/admin/instances/{id}/webhook",
+      "method": "RemoveWebhook",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrLiveController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/arr/admin/instances/{id}/webhook/manual",
+      "method": "ManualWebhook",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrLiveController.cs",
       "following_attributes": [
         "Authorize"
       ]
@@ -4741,6 +4858,14 @@
       "type": "string",
       "initializer": "string.Empty",
       "constructor_assignment": "\"\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrWebhookJellyfinUrl",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": "string.Empty",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -8021,9 +8146,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 391,
-    "routes": 185,
-    "configuration_properties": 530,
+    "files": 404,
+    "routes": 192,
+    "configuration_properties": 531,
     "storage_references": 79,
     "scheduled_tasks": 14,
     "locales": 33

@@ -242,10 +242,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             }
             foreach (var s in series)
             {
+                _seriesById.TryAdd(s.Id, s);
                 if (s.TvdbId is > 0 and var tvdb) _seriesByTvdb.TryAdd(tvdb, s);
                 if (s.TmdbId is > 0 and var tmdb) _seriesByTmdb.TryAdd(tmdb, s);
                 if (!string.IsNullOrWhiteSpace(s.ImdbId)) _seriesByImdb.TryAdd(s.ImdbId.Trim(), s);
-                _seriesById.TryAdd(s.Id, s);
             }
         }
 
@@ -281,6 +281,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         public ArrSeriesEntry? SeriesByImdb(string? imdbId)
             => !string.IsNullOrWhiteSpace(imdbId) && _seriesByImdb.TryGetValue(imdbId.Trim(), out var s) ? s : null;
 
+        /// <summary>
+        /// A copy with titles added or replaced (by arr id) and removed (by arr id); the tag labels
+        /// stay. Returns this snapshot when nothing would change.
+        /// </summary>
+        public ArrLibrarySnapshot With(IReadOnlyCollection<ArrMovieEntry> movies, IReadOnlyCollection<ArrSeriesEntry> series, IReadOnlyCollection<int> removedIds)
+        {
+            var changed = removedIds.Any(id => _moviesById.ContainsKey(id) || _seriesById.ContainsKey(id))
+                || movies.Any(m => !_moviesById.TryGetValue(m.Id, out var old) || !ArrLibraryFacts.Same(old, m))
+                || series.Any(x => !_seriesById.TryGetValue(x.Id, out var old) || !ArrLibraryFacts.Same(old, x));
+            if (!changed) return this;
+
+            var removed = new HashSet<int>(removedIds);
+            var movieUpserts = movies.GroupBy(m => m.Id).ToDictionary(g => g.Key, g => g.Last());
+            var seriesUpserts = series.GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.Last());
+            var nextMovies = new List<ArrMovieEntry>(Movies.Count + movieUpserts.Count);
+            foreach (var m in Movies)
+            {
+                if (removed.Contains(m.Id)) continue;
+                nextMovies.Add(movieUpserts.Remove(m.Id, out var replacement) ? replacement : m);
+            }
+            nextMovies.AddRange(movieUpserts.Values.Where(m => !removed.Contains(m.Id)));
+            var nextSeries = new List<ArrSeriesEntry>(Series.Count + seriesUpserts.Count);
+            foreach (var x in Series)
+            {
+                if (removed.Contains(x.Id)) continue;
+                nextSeries.Add(seriesUpserts.Remove(x.Id, out var replacement) ? replacement : x);
+            }
+            nextSeries.AddRange(seriesUpserts.Values.Where(x => !removed.Contains(x.Id)));
+            return new ArrLibrarySnapshot(nextMovies, nextSeries, Tags);
+        }
+
         /// <summary>Labels for tag ids (unknown ids are skipped).</summary>
         public List<string> Labels(IEnumerable<int> tagIds)
         {
@@ -291,6 +322,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             }
             return labels;
         }
+    }
+
+    /// <summary>Compares library entries on the facts a title's status depends on.</summary>
+    public static class ArrLibraryFacts
+    {
+        /// <summary>True when two movie entries agree on everything the store keeps.</summary>
+        public static bool Same(ArrMovieEntry a, ArrMovieEntry b)
+            => a.Id == b.Id && a.TmdbId == b.TmdbId && a.Monitored == b.Monitored && a.HasFile == b.HasFile
+               && a.SizeOnDisk == b.SizeOnDisk && a.QualityProfileId == b.QualityProfileId
+               && string.Equals(a.Path, b.Path, StringComparison.Ordinal) && string.Equals(a.Title, b.Title, StringComparison.Ordinal)
+               && a.Year == b.Year && string.Equals(a.ImdbId, b.ImdbId, StringComparison.Ordinal) && a.Tags.SequenceEqual(b.Tags)
+               && string.Equals(a.Status, b.Status, StringComparison.Ordinal) && a.IsAvailable == b.IsAvailable
+               && string.Equals(a.MinimumAvailability, b.MinimumAvailability, StringComparison.Ordinal)
+               && a.InCinemas == b.InCinemas && a.DigitalRelease == b.DigitalRelease && a.PhysicalRelease == b.PhysicalRelease
+               && a.Added == b.Added && a.LastSearchTime == b.LastSearchTime;
+
+        /// <summary>True when two series entries agree on everything the store keeps.</summary>
+        public static bool Same(ArrSeriesEntry a, ArrSeriesEntry b)
+            => a.Id == b.Id && a.TvdbId == b.TvdbId && a.TmdbId == b.TmdbId && a.Monitored == b.Monitored
+               && a.EpisodeFileCount == b.EpisodeFileCount && a.EpisodeCount == b.EpisodeCount
+               && a.PercentOfEpisodes.Equals(b.PercentOfEpisodes) && a.SizeOnDisk == b.SizeOnDisk
+               && a.QualityProfileId == b.QualityProfileId && string.Equals(a.Path, b.Path, StringComparison.Ordinal)
+               && string.Equals(a.Title, b.Title, StringComparison.Ordinal) && string.Equals(a.TitleSlug, b.TitleSlug, StringComparison.Ordinal)
+               && string.Equals(a.ImdbId, b.ImdbId, StringComparison.Ordinal) && a.Tags.SequenceEqual(b.Tags)
+               && string.Equals(a.Status, b.Status, StringComparison.Ordinal) && a.NextAiring == b.NextAiring && a.Added == b.Added
+               && a.Seasons.Count == b.Seasons.Count && a.Seasons.Zip(b.Seasons).All(p => Same(p.First, p.Second));
+
+        /// <summary>True when two season entries agree (number, monitored, statistics, next airing).</summary>
+        public static bool Same(ArrSeasonEntry a, ArrSeasonEntry b)
+            => a.SeasonNumber == b.SeasonNumber && a.Monitored == b.Monitored && a.EpisodeFileCount == b.EpisodeFileCount
+               && a.EpisodeCount == b.EpisodeCount && a.TotalEpisodeCount == b.TotalEpisodeCount && a.NextAiring == b.NextAiring;
     }
 
     /// <summary>One queue row (slim). Status messages are capped (5 × 200 characters).</summary>

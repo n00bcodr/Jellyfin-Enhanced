@@ -33,6 +33,12 @@ internal sealed class FakeArr : IDisposable
         public string? RedirectTo { get; set; }
         /// <summary>Non-null: awaited (with the call's cancellation token) before a call to this path is answered.</summary>
         public Func<string, CancellationToken, Task>? Before { get; set; }
+        /// <summary>Connect → notifications (webhooks) the arr holds, with ids.</summary>
+        public List<JsonObject> Notifications { get; } = new();
+        /// <summary>Called when a notification is created or changed, or tested (the arr would send its Test event here); return an error message to fail the save.</summary>
+        public Func<JsonObject, string?>? OnNotificationTest { get; set; }
+        /// <summary>Request bodies of writes, by method and path.</summary>
+        public List<(string Method, string Path, string Body)> Writes { get; } = new();
     }
 
     public ApiPluginFixture Plugin { get; } = new();
@@ -166,6 +172,8 @@ internal sealed class FakeArr : IDisposable
         string Json(object o) => JsonSerializer.Serialize(o);
         lock (host)
         {
+            if (path.StartsWith("/api/v3/notification", StringComparison.Ordinal)) return Notification(host, request, path);
+            if (request.Method == HttpMethod.Get && TitleById(host, path) is { } title) return title;
             switch (path)
             {
                 case "/api/v3/system/status":
@@ -203,6 +211,73 @@ internal sealed class FakeArr : IDisposable
                     return IntegrationTransport.Response("{}", 404);
             }
         }
+    }
+
+    // GET /api/v3/movie/{id} and /api/v3/series/{id}: one title, or 404.
+    private static HttpResponseMessage? TitleById(Host host, string path)
+    {
+        foreach (var (prefix, list) in new[] { ("/api/v3/movie/", host.Movies), ("/api/v3/series/", host.Series) })
+        {
+            if (!path.StartsWith(prefix, StringComparison.Ordinal) || !int.TryParse(path[prefix.Length..], out var id)) continue;
+            var row = list.FirstOrDefault(m => (int)m["id"]! == id);
+            return row == null ? IntegrationTransport.Response("{\"message\":\"NotFound\"}", 404) : IntegrationTransport.Response(row.ToJsonString());
+        }
+        return null;
+    }
+
+    // Connect → notifications: list, schema (Webhook only), create (tests first), update, delete, test.
+    private static HttpResponseMessage Notification(Host host, HttpRequestMessage request, string path)
+    {
+        var body = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+        if (request.Method != HttpMethod.Get) host.Writes.Add((request.Method.Method, path, body));
+        string? Tested(JsonObject n) => host.OnNotificationTest?.Invoke(n);
+        HttpResponseMessage Rejected(string message) => IntegrationTransport.Response(
+            new JsonArray(new JsonObject { ["propertyName"] = "Url", ["errorMessage"] = message }).ToJsonString(), 400);
+        if (path == "/api/v3/notification/schema")
+        {
+            var events = host.App == "Sonarr"
+                ? new[] { "Grab", "Download", "Upgrade", "ImportComplete", "Rename", "SeriesAdd", "SeriesDelete", "EpisodeFileDelete", "EpisodeFileDeleteForUpgrade", "HealthIssue", "HealthRestored", "ApplicationUpdate", "ManualInteractionRequired" }
+                : new[] { "Grab", "Download", "Upgrade", "Rename", "MovieAdded", "MovieDelete", "MovieFileDelete", "MovieFileDeleteForUpgrade", "HealthIssue", "HealthRestored", "ApplicationUpdate", "ManualInteractionRequired" };
+            var template = new JsonObject { ["name"] = "", ["implementation"] = "Webhook", ["implementationName"] = "Webhook", ["configContract"] = "WebhookSettings", ["tags"] = new JsonArray(), ["includeHealthWarnings"] = false };
+            foreach (var e in events) { template["on" + e] = false; template["supportsOn" + e] = true; }
+            template["fields"] = new JsonArray(
+                new JsonObject { ["order"] = 0, ["name"] = "url", ["type"] = "url" },
+                new JsonObject { ["order"] = 1, ["name"] = "method", ["value"] = 1, ["type"] = "select" },
+                new JsonObject { ["order"] = 2, ["name"] = "username", ["type"] = "textbox" },
+                new JsonObject { ["order"] = 3, ["name"] = "password", ["type"] = "password" },
+                new JsonObject { ["order"] = 4, ["name"] = "headers", ["value"] = new JsonArray(), ["type"] = "keyValueList" });
+            return IntegrationTransport.Response(new JsonArray(template, new JsonObject { ["implementation"] = "Discord", ["name"] = "" }).ToJsonString());
+        }
+        if (path == "/api/v3/notification" && request.Method == HttpMethod.Get)
+            return IntegrationTransport.Response(new JsonArray(host.Notifications.Select(n => n.DeepClone()).ToArray()).ToJsonString());
+        if (path == "/api/v3/notification/test" && request.Method == HttpMethod.Post)
+        {
+            var error = Tested(JsonNode.Parse(body)!.AsObject());
+            return error == null ? IntegrationTransport.Response("{}") : Rejected(error);
+        }
+        if (path == "/api/v3/notification" && request.Method == HttpMethod.Post)
+        {
+            var created = JsonNode.Parse(body)!.AsObject();
+            if (Tested(created) is { } error) return Rejected(error);
+            created["id"] = host.Notifications.Count == 0 ? 1 : host.Notifications.Max(n => (int)n["id"]!) + 1;
+            host.Notifications.Add(created);
+            return IntegrationTransport.Response(created.ToJsonString(), 201);
+        }
+        if (int.TryParse(path["/api/v3/notification/".Length..], out var id))
+        {
+            var index = host.Notifications.FindIndex(n => (int)n["id"]! == id);
+            if (index < 0) return IntegrationTransport.Response("{\"message\":\"NotFound\"}", 404);
+            if (request.Method == HttpMethod.Delete) { host.Notifications.RemoveAt(index); return IntegrationTransport.Response("{}"); }
+            if (request.Method == HttpMethod.Put)
+            {
+                var updated = JsonNode.Parse(body)!.AsObject();
+                if (updated.ToJsonString() != host.Notifications[index].ToJsonString() && Tested(updated) is { } error) return Rejected(error);
+                host.Notifications[index] = updated;
+                return IntegrationTransport.Response(updated.ToJsonString(), 202);
+            }
+            return IntegrationTransport.Response(host.Notifications[index].ToJsonString());
+        }
+        return IntegrationTransport.Response("{}", 404);
     }
 
     private static HttpResponseMessage Page(List<JsonObject> all, System.Collections.Specialized.NameValueCollection query)

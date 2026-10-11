@@ -194,6 +194,49 @@ Turning it on currently adds:
 
 Each instance also gets a permanent id the first time the plugin starts with this version, whether or not the switch is on.
 
+### Live updates (phase 1)
+
+**Show where things have got to (status on pages)**, under the master switch, shows each title's status
+(details-page pill and journey, poster badges, episode chips) and keeps it current within seconds, without a
+page reload. Off by default; it needs **Requests & downloads (new)**.
+
+- **Live connection (nothing to set up).** Jellyfin Enhanced keeps one connection open to each enabled
+  Sonarr/Radarr, the same kind of connection their own web pages use, and reads the queue, history or a
+  single title again whenever one reports a change. The API key travels in a request header only. The
+  connection reconnects by itself (waiting 2 seconds, then longer, up to 2 minutes), and after every
+  reconnect it reads the queue, history and library again (the library at most once a minute per
+  instance; a quicker reconnect gets its library read when the minute is up), because the arrs don't
+  replay what was missed. Each instance box has **Live updates from this Sonarr/Radarr** to turn
+  it off for one instance; status then refreshes every 30 seconds while someone is looking.
+- **Webhooks (optional, instant).** A second path for downloads, imports, deletions and health events.
+  **Live updates status** lists each instance with its connection and webhook, and offers:
+    - **Set up instant updates** / **Repair webhook**: after you agree, adds (or updates) a webhook named
+      "Jellyfin Enhanced" in that app (Settings → Connect) pointing at
+      `<Jellyfin's address>/JellyfinEnhanced/arr/hook/<instance id>`, with a secret header and every
+      event the app offers switched on. The app sends a test event when it saves, so a success also
+      proves it can reach Jellyfin. Doing it again updates the same webhook (never a second copy) and
+      keeps the secret. Every change is recorded in the arr action audit log.
+    - **Copy-paste set-up**: the address, header and triggers to enter by hand instead. This is the only
+      place the secret is shown (also recorded in the audit log).
+    - **Remove webhook**: deletes Jellyfin Enhanced's webhook from the app and forgets the secret, so
+      anything still sending with it is refused. **Live updates status** and removal stay available with
+      phase 1 off (only the master switch is needed), so webhooks can be cleaned up after turning it off.
+
+    Set **Jellyfin's address as Sonarr/Radarr see it** first (often the container name or LAN address,
+    for example `http://jellyfin:8096`). A webhook is only ever a hint: Jellyfin Enhanced reads the
+    app again before showing anything, never acts on what the webhook says, refuses calls without the
+    right secret (compared in constant time), limits how often an instance can call and how often an
+    address can fail (a failing address never blocks the app's own correctly signed calls), and
+    ignores bodies over 1 MiB. The status line warns when a set-up webhook has been silent
+    for a day although the app imported something.
+- **In the browser.** Pages showing download status long-poll Jellyfin Enhanced (never Sonarr or
+  Radarr) while the tab is visible and update the pill, badges and chips in place when a title they show
+  changes, and only hear about titles the person may open in Jellyfin (an
+  episode or season Jellyfin hides from them stays hidden even when its series is visible). A title
+  that isn't in Jellyfin yet is announced only to people with no content limit (parental rating,
+  blocked or allowed tags, unrated items, blocked folders), and only when they can open one of the
+  libraries the instance holding it is linked to (if it is linked to any).
+
 ---
 
 ## Shoko

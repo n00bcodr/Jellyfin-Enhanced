@@ -9,7 +9,9 @@
     'use strict';
 
     const SURFACE = 'details';
-    let current = null; // { itemId, controller, unsubscribe, key }
+    /** Pauses before asking again after a failed re-read (the page keeps following meanwhile). */
+    const RETRY_MS = [5000, 15000, 60000];
+    let current = null; // { itemId, controller, loading, quiet, unsubscribe, retries, retryTimer }
     let started = false;
 
     /**
@@ -86,6 +88,9 @@
 
     /**
      * Loads and renders the status of the details page shown now (once per item; again on refresh).
+     * A re-read of the item shown (a change was reported) keeps following the title until its
+     * answer arrives; if it fails, the page keeps what it shows, keeps following and asks again
+     * after a pause, so one failed request doesn't end the live updates of the page view.
      * @param {boolean} [force] Fetch even if this item is already shown.
      * @returns {Promise<void>}
      */
@@ -98,25 +103,53 @@
             return;
         }
         if (!force && current && current.itemId === itemId && (current.loading || page.querySelector(`.je-arr-status[data-je-arr-surface="${SURFACE}"]`) || current.quiet)) return;
+        // The subscription of the item shown is handed over until the new answer replaces it.
+        const previous = force && current && current.itemId === itemId ? current : null;
+        const kept = previous ? previous.unsubscribe : null;
+        const retries = previous ? previous.retries : 0;
+        if (previous) previous.unsubscribe = null;
         stop();
         const controller = new AbortController();
-        const state = { itemId, controller, loading: true, quiet: false, unsubscribe: null };
+        const state = { itemId, controller, loading: true, quiet: false, unsubscribe: kept, retries, retryTimer: null };
         current = state;
         const data = await JE.arrStatus.fetchItem(itemId, controller.signal);
         if (current !== state) return;
         state.loading = false;
+        if (!data && kept) {
+            // The re-read failed (or timed out): keep what is shown and the subscription, ask again later.
+            state.retries = retries + 1;
+            state.retryTimer = setTimeout(() => {
+                state.retryTimer = null;
+                if (current === state) update(true);
+            }, RETRY_MS[Math.min(state.retries, RETRY_MS.length) - 1]);
+            return;
+        }
+        state.retries = 0;
+        state.unsubscribe = null;
+        // The handed-over subscription ends once the new one (if any) is in place, so the feed's
+        // running poll isn't restarted for the same titles.
+        const release = () => { if (typeof kept === 'function') kept(); };
         const status = data?.items?.[0];
         if (!status) {
             // Nothing to show (a person, collection or album page, an item without provider ids, or a
-            // failed request): don't ask again for this page view.
+            // failed first request): don't ask again for this page view, and drop what was shown.
             state.quiet = true;
+            clear();
+            JE.internals?.arrStatusEpisodes?.clear?.();
+            release();
             return;
         }
         const livePage = visiblePage();
-        if (!livePage || itemIdFromHash() !== itemId) return;
+        if (!livePage || itemIdFromHash() !== itemId) {
+            release();
+            return;
+        }
         const block = render(livePage, status, data);
         state.quiet = !block;
-        state.unsubscribe = JE.arrStatus.subscribe([status.key], () => update(true));
+        // The title's own key and, for a title Jellyfin knows by another id, the key the feed announces it under.
+        const keys = [status.key, status.liveKey].filter(Boolean);
+        state.unsubscribe = JE.arrStatus.subscribe(keys, () => update(true), { since: data.since ?? null });
+        release();
     }
 
     /**
@@ -126,6 +159,7 @@
     function stop() {
         if (!current) return;
         current.controller.abort();
+        if (current.retryTimer) clearTimeout(current.retryTimer);
         if (typeof current.unsubscribe === 'function') current.unsubscribe();
         current = null;
     }

@@ -25,7 +25,17 @@
     let started = false;
     let unsubscribe = null;
     let subscribedKeys = '';
+    /** @type {{epoch: string, cursor: number}|null} the oldest feed position of answers not yet followed */
+    let followSince = null;
+    /** An answer painted since the last subscription was read without a feed position. */
+    let followUnknown = false;
     let resubscribeTimer = null;
+    /** Failed batches in a row (their ids are asked again after a growing pause). */
+    let failures = 0;
+    let retryTimer = null;
+    /** @type {Set<string>} ids of failed batches waiting for the retry */
+    const retryIds = new Set();
+    const RETRY_MS = [5000, 15000, 60000];
 
     /** JE poster tags and their default corners (tag-pipeline's own defaults). */
     const TAG_CORNERS = [['quality', 'top-left'], ['genre', 'top-right'], ['language', 'bottom-left'], ['rating', 'bottom-right'], ['ageRating', 'bottom-right']];
@@ -118,8 +128,16 @@
                 const id = status.itemId.toLowerCase();
                 answered.set(id, status);
                 if (status.key) follow(status.key, id);
+                if (status.liveKey) follow(status.liveKey, id);
             }
-            if (!data) continue; // failed: try again on a later scan
+            if (!data) {
+                // Failed (a re-fetch after a change, or a first look): ask again for the cards
+                // still shown after a pause, so a badge doesn't stay at what it showed before.
+                retryLater(batch);
+                continue;
+            }
+            failures = 0;
+            noteSince(data.since);
             for (const id of batch) cache.set(id, { status: answered.get(id) || null, at: now });
             paintAll(new Set(batch));
         }
@@ -186,7 +204,8 @@
         if (entry && Date.now() - entry.at < TTL_MS) {
             paint(card, entry.status);
             // Painted from the cache: follow the title again (a prune may have dropped it), once per burst.
-            if (entry.status?.key && follow(entry.status.key, id) && !resubscribeTimer) {
+            const followed = [entry.status?.key, entry.status?.liveKey].filter(Boolean).map(key => follow(key, id)).some(Boolean);
+            if (followed && !resubscribeTimer) {
                 resubscribeTimer = setTimeout(() => {
                     resubscribeTimer = null;
                     resubscribe();
@@ -219,10 +238,57 @@
     function resubscribe() {
         const keys = [...idsByKey.keys()].sort();
         const joined = keys.join(',');
-        if (joined === subscribedKeys && (unsubscribe || !keys.length)) return;
+        const since = followSince;
+        const unknown = followUnknown;
+        followSince = null;
+        followUnknown = false;
+        if (joined === subscribedKeys && (unsubscribe || !keys.length) && !(unknown && keys.length)) {
+            // Same titles: the feed still moves back to where the newest answers were read.
+            if (since && unsubscribe) JE.arr?.live?.seed?.(since.epoch, since.cursor);
+            return;
+        }
         if (typeof unsubscribe === 'function') unsubscribe();
         subscribedKeys = joined;
-        unsubscribe = keys.length ? JE.arrStatus.subscribe(keys, refreshKeys) : null;
+        // An answer read without a feed position: the new subscription is called back once the
+        // feed has one (the cards are asked again from there).
+        unsubscribe = keys.length ? JE.arrStatus.subscribe(keys, refreshKeys, { since: unknown ? null : since || undefined }) : null;
+    }
+
+    /**
+     * Asks again, after a pause that grows with failures in a row, for the ids of a failed batch
+     * whose cards are still on the page.
+     * @param {string[]} ids Item ids of the failed batch.
+     * @returns {void}
+     */
+    function retryLater(ids) {
+        failures++;
+        ids.forEach(id => {
+            cache.delete(id);
+            retryIds.add(id);
+        });
+        if (retryTimer) return;
+        retryTimer = setTimeout(() => {
+            retryTimer = null;
+            const onPage = idsOnPage();
+            for (const id of retryIds) if (onPage.has(id) && !cache.has(id)) queued.add(id);
+            retryIds.clear();
+            if (queued.size && !flushTimer) flushTimer = setTimeout(flush, FLUSH_MS);
+        }, RETRY_MS[Math.min(failures, RETRY_MS.length) - 1]);
+    }
+
+    /**
+     * Remembers the oldest feed position of the answers painted since the last subscription, so
+     * changes made after those reads reach the cards (see JE.arrStatus.subscribe). An answer read
+     * without a position marks the next subscription as made without one.
+     * @param {{epoch: string, cursor: number}|null|undefined} since Position from before a read.
+     * @returns {void}
+     */
+    function noteSince(since) {
+        if (!since || typeof since.cursor !== 'number') {
+            followUnknown = true;
+            return;
+        }
+        if (!followSince || followSince.epoch !== since.epoch || since.cursor < followSince.cursor) followSince = since;
     }
 
     /**
@@ -234,7 +300,7 @@
         const wanted = new Set(keys);
         const onPage = idsOnPage();
         for (const [key, ids] of idsByKey) {
-            if (!wanted.has(key) && !wanted.has(key.replace(/:s\d+(e\d+)?$/, ''))) continue;
+            if (!wanted.has(key) && !wanted.has(key.replace(/:s\d+(:e\d+)?$/, ''))) continue;
             ids.forEach(id => {
                 cache.delete(id);
                 // Only cards still shown are asked for again; the rest come back fresh when seen.
@@ -282,6 +348,10 @@
         cache.clear();
         idsByKey.clear();
         queued.clear();
+        retryIds.clear();
+        failures = 0;
+        followSince = null;
+        followUnknown = false;
         seen = new WeakSet();
         if (typeof unsubscribe === 'function') unsubscribe();
         unsubscribe = null;

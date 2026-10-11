@@ -96,7 +96,7 @@ public class ApiArrStatusTests
             ShowsMissing = View.AddUser(admin: false, policy: "missing", missing: true);
 
             var sintelKey = TitleKey.Parse("movie:tmdb:45745")!;
-            var fireflyKey = TitleKey.Parse("series:tvdb:78874")!;
+            var fireflyKey = TitleKey.Parse("tv:tvdb:78874")!;
             View.AddItem(new JfItemRef { ItemId = Sintel, Kind = "movie", Key = sintelKey, Path = "/media/movies/Sintel (2010)/Sintel (2010) Bluray-1080p.mkv", DateCreated = Arr.Now.UtcDateTime.AddDays(-30) });
             View.AddCopy(sintelKey, new JfCopy { ItemId = Sintel, Path = "/media/movies/Sintel (2010)/Sintel (2010) Bluray-1080p.mkv", LibraryName = "Movies", DateCreated = Arr.Now.UtcDateTime.AddDays(-30) });
             View.AddItem(new JfItemRef { ItemId = Firefly, Kind = "series", Key = fireflyKey });
@@ -174,11 +174,11 @@ public class ApiArrStatusTests
         Assert.Equal((403, "user_required"), await Code(Batch(rig, null, rig.Ids(rig.Sintel))));
         Assert.Equal((400, "invalid_id"), await Code(Batch(rig, rig.Member, "not-a-guid")));
         Assert.Equal((400, "invalid_key"), await Code(Batch(rig, rig.Member, null, "movie:tvdb:1")));
-        Assert.Equal((400, "invalid_key"), await Code(Batch(rig, rig.Member, null, "series:tvdb:1:s1")));
+        Assert.Equal((400, "invalid_key"), await Code(Batch(rig, rig.Member, null, "tv:tvdb:1:s1")));
         Assert.Equal((400, "too_many"), await Code(Batch(rig, rig.Member, string.Join(",", Enumerable.Range(0, 101).Select(_ => Guid.NewGuid().ToString("N"))))));
         Assert.Equal((400, "invalid_id"), await Code(Call(rig, rig.Member, ctl => ctl.GetItemStatus("x", CancellationToken.None))));
         // Non-ASCII digits match \d but not int.Parse: refused, never a server error.
-        Assert.Equal((400, "invalid_key"), await Code(Batch(rig, rig.Member, null, "series:tvdb:5:s\u0661")));
+        Assert.Equal((400, "invalid_key"), await Code(Batch(rig, rig.Member, null, "tv:tvdb:5:s\u0661")));
         Assert.Equal((400, "invalid_key"), await Code(Batch(rig, rig.Member, null, "movie:tmdb:\u0661")));
         Assert.Equal(200, (await Batch(rig, rig.Member, rig.Ids(rig.Sintel))).Status);
 
@@ -208,7 +208,7 @@ public class ApiArrStatusTests
     {
         using var rig = new Rig();
         var all = rig.Ids(rig.Sintel, rig.Firefly, rig.Season1, rig.Episode1, rig.Episode3, rig.AdminOnly);
-        const string keys = "movie:tmdb:693134,movie:tmdb:45745,series:tvdb:78874,movie:tmdb:1";
+        const string keys = "movie:tmdb:693134,movie:tmdb:45745,tv:tvdb:78874,movie:tmdb:1";
         var replies = new List<Reply> { await Batch(rig, rig.Member, all, keys) };
         foreach (var id in new[] { rig.Sintel, rig.Firefly, rig.Season1, rig.Episode1, rig.Episode3 }) replies.Add(await Item(rig, rig.Member, id));
         foreach (var reply in replies)
@@ -454,10 +454,10 @@ public class ApiArrStatusTests
         upgrade["episodeId"] = 101;
         rig.Sonarr.Queue.Add(upgrade);
         HideEpisode1FromAllButTheAdmin(rig);
-        rig.View.AddCopy(TitleKey.Parse("series:tvdb:78874")!, new JfCopy { ItemId = rig.Firefly, Path = "/media/tv/Firefly", LibraryName = "TV" });
+        rig.View.AddCopy(TitleKey.Parse("tv:tvdb:78874")!, new JfCopy { ItemId = rig.Firefly, Path = "/media/tv/Firefly", LibraryName = "TV" });
         rig.View.Rev++;
 
-        var card = Items(await Batch(rig, rig.Kid, rig.Ids(rig.Firefly), "series:tvdb:78874")).EnumerateArray().ToList();
+        var card = Items(await Batch(rig, rig.Kid, rig.Ids(rig.Firefly), "tv:tvdb:78874")).EnumerateArray().ToList();
         Assert.Equal(2, card.Count);
         foreach (var status in card)
         {
@@ -466,7 +466,7 @@ public class ApiArrStatusTests
         }
         Assert.True(card[0].GetProperty("quiet").GetBoolean());
         // The admin (who sees E1) gets the upgrade on both.
-        var admin = Items(await Batch(rig, rig.Admin, rig.Ids(rig.Firefly), "series:tvdb:78874")).EnumerateArray().ToList();
+        var admin = Items(await Batch(rig, rig.Admin, rig.Ids(rig.Firefly), "tv:tvdb:78874")).EnumerateArray().ToList();
         Assert.Equal(75, admin[0].GetProperty("progress").GetProperty("percent").GetInt32());
         Assert.Equal("downloading", admin[1].GetProperty("stage").GetString());
     }

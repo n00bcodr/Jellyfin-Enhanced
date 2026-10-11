@@ -96,7 +96,7 @@ test('instance registry fields round-trip, keeping links to libraries that are n
   assert.deepEqual(labels, ['Movies', 'Movies <4K>']);
   assert.equal(card.querySelector('.arr-instance-libraries').innerHTML.includes('<4K>'), false); // text, not markup
   const out = JSON.parse(JSON.stringify(je.jeReadInstanceRegistryFields(card)));
-  assert.deepEqual(out, { Role: '4k', IsDefault: true, LinkedLibraryIds: ['bbbb2222', 'gone0000'], PathMappings: [{ ArrPath: '/movies', JellyfinPath: '/media/movies' }] });
+  assert.deepEqual(out, { Role: '4k', IsDefault: true, LinkedLibraryIds: ['bbbb2222', 'gone0000'], LiveUpdates: 'auto', PathMappings: [{ ArrPath: '/movies', JellyfinPath: '/media/movies' }] });
   card.querySelector('[data-library-id="aaaa1111"]').checked = true;
   card.querySelector('.arr-instance-role').value = 'anime';
   card.querySelector('.arr-instance-pathmappings').value = '/tv|/media/tv\nbroken line\n|/x';
@@ -104,6 +104,11 @@ test('instance registry fields round-trip, keeping links to libraries that are n
   assert.deepEqual(edited.LinkedLibraryIds.sort(), ['aaaa1111', 'bbbb2222', 'gone0000']);
   assert.equal(edited.Role, 'anime');
   assert.deepEqual(edited.PathMappings, [{ ArrPath: '/tv', JellyfinPath: '/media/tv' }]);
+  // Live updates (phase 1): on unless switched off for this instance; a stored "off" is kept.
+  card.querySelector('.arr-instance-live').checked = false;
+  assert.equal(je.jeReadInstanceRegistryFields(card).LiveUpdates, 'off');
+  const off = je.jeBuildInstanceRegistryFields('radarr', { LiveUpdates: 'off' });
+  assert.equal(off.querySelector('.arr-instance-live').checked, false);
 });
 
 // What fetch / XMLHttpRequest do with a header value: anything outside Latin-1 throws before sending.

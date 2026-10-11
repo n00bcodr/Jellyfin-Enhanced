@@ -68,6 +68,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.IArrJellyfinView, Services.Acquire.ArrJellyfinView>();
             serviceCollection.TryAddSingleton<Services.Acquire.IArrRequestFacts, Services.Acquire.NoRequestFacts>();
             serviceCollection.AddSingleton<Services.Acquire.ArrStatusService>();
+            // Live updates (phase 1, inert while off): the change feed browsers long-poll, what feeds
+            // it (snapshot diffs, Jellyfin library adds/removes), one SignalR connection per arr,
+            // the webhook receiver + one-click set-up, and the re-reads live hints trigger.
+            serviceCollection.AddSingleton<Services.Arr.Live.ArrChangeFeed>();
+            serviceCollection.AddSingleton<Services.Arr.Live.ArrFeedLimits>();
+            serviceCollection.AddSingleton<Services.Arr.Live.IArrFeedAudience, Services.Arr.Live.ArrFeedAudience>();
+            serviceCollection.AddSingleton<Services.Arr.Live.ArrLiveRouter>();
+            serviceCollection.AddSingleton<Services.Arr.Live.ArrChangeTracker>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Arr.Live.ArrChangeTracker>());
+            serviceCollection.AddSingleton<Services.Arr.Live.ArrLiveService>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Arr.Live.ArrLiveService>());
+            serviceCollection.AddSingleton<Services.Arr.Live.ArrWebhookReceiver>();
+            serviceCollection.AddSingleton<Services.Arr.Live.ArrWebhookProvisioner>();
             // JE backup/export/restore (Jellyfin's own backups don't include plugin data).
             serviceCollection.AddSingleton<Services.Backup.JeBackupService>();
             serviceCollection.AddTransient<JeBackupTask>();

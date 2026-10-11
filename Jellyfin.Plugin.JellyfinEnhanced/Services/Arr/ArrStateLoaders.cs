@@ -287,6 +287,56 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             }).ToArray(),
         };
 
+        /// <summary>
+        /// A movie entry from a resource a live event carried, keeping the previous entry's value
+        /// for every field the resource left out (a partial resource must not reset facts).
+        /// </summary>
+        internal static ArrMovieEntry MergeMovie(ArrMovieEntry? old, ArrWireMovie m) => new()
+        {
+            Id = m.Id,
+            TmdbId = m.TmdbId ?? old?.TmdbId,
+            ImdbId = string.IsNullOrWhiteSpace(m.ImdbId) ? old?.ImdbId : m.ImdbId,
+            Title = m.Title ?? m.OriginalTitle ?? old?.Title ?? string.Empty,
+            Year = m.Year ?? old?.Year,
+            Monitored = m.Monitored ?? old?.Monitored ?? false,
+            HasFile = m.HasFile ?? old?.HasFile ?? false,
+            SizeOnDisk = m.SizeOnDisk ?? old?.SizeOnDisk ?? 0,
+            Path = m.Path ?? old?.Path,
+            QualityProfileId = m.QualityProfileId ?? old?.QualityProfileId ?? 0,
+            Tags = m.Tags?.ToArray() ?? old?.Tags ?? Array.Empty<int>(),
+            Status = m.Status != null ? Intern(m.Status) : old?.Status,
+            IsAvailable = m.IsAvailable ?? old?.IsAvailable ?? true,
+            MinimumAvailability = m.MinimumAvailability != null ? Intern(m.MinimumAvailability) : old?.MinimumAvailability,
+            InCinemas = ArrDates.Parse(m.InCinemas) ?? old?.InCinemas,
+            DigitalRelease = ArrDates.Parse(m.DigitalRelease) ?? old?.DigitalRelease,
+            PhysicalRelease = ArrDates.Parse(m.PhysicalRelease) ?? old?.PhysicalRelease,
+            Added = ArrDates.Parse(m.Added) ?? old?.Added,
+            LastSearchTime = ArrDates.Parse(m.LastSearchTime) ?? old?.LastSearchTime,
+        };
+
+        /// <summary>A series entry from a live resource; statistics the resource lacks are kept.</summary>
+        internal static ArrSeriesEntry MergeSeries(ArrSeriesEntry? old, ArrWireSeries s) => new()
+        {
+            Id = s.Id,
+            TvdbId = s.TvdbId ?? old?.TvdbId,
+            TmdbId = s.TmdbId ?? old?.TmdbId,
+            ImdbId = string.IsNullOrWhiteSpace(s.ImdbId) ? old?.ImdbId : s.ImdbId,
+            Title = s.Title ?? old?.Title ?? string.Empty,
+            TitleSlug = s.TitleSlug ?? old?.TitleSlug,
+            Monitored = s.Monitored ?? old?.Monitored ?? false,
+            Path = s.Path ?? old?.Path,
+            QualityProfileId = s.QualityProfileId ?? old?.QualityProfileId ?? 0,
+            Tags = s.Tags?.ToArray() ?? old?.Tags ?? Array.Empty<int>(),
+            EpisodeFileCount = s.Statistics?.EpisodeFileCount ?? old?.EpisodeFileCount ?? 0,
+            EpisodeCount = s.Statistics?.EpisodeCount ?? old?.EpisodeCount ?? 0,
+            PercentOfEpisodes = s.Statistics?.PercentOfEpisodes ?? old?.PercentOfEpisodes ?? 0,
+            SizeOnDisk = s.Statistics?.SizeOnDisk ?? old?.SizeOnDisk ?? 0,
+            Status = s.Status != null ? Intern(s.Status) : old?.Status,
+            NextAiring = ArrDates.Parse(s.NextAiring) ?? (s.Statistics != null ? null : old?.NextAiring),
+            Added = ArrDates.Parse(s.Added) ?? old?.Added,
+            Seasons = s.Seasons != null ? ToSeries(s).Seasons : old?.Seasons ?? Array.Empty<ArrSeasonEntry>(),
+        };
+
         internal static ArrQueueEntry ToQueueEntry(ArrWireQueueRecord r)
         {
             var messages = new List<string>();

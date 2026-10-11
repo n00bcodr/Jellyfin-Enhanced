@@ -61,6 +61,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Request facts (Seerr read model), if any.</summary>
         public RequestFacts? Request { get; set; }
+
+        /// <summary>The key the change feed announces the title under, when an arr copy names it differently (see <see cref="TitleStatus.LiveKey"/>).</summary>
+        public TitleKey? LiveKey { get; set; }
     }
 
     /// <summary>

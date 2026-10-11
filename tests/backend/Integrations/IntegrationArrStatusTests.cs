@@ -24,7 +24,7 @@ public class IntegrationArrStatusTests
     private static readonly StatusViewer Member = new() { UserId = Guid.NewGuid(), IsAdmin = false, PolicyRevision = "m" };
     private static readonly StatusViewer Admin = new() { UserId = Guid.NewGuid(), IsAdmin = true, PolicyRevision = "a" };
     private static readonly TitleKey MovieKey = TitleKey.Parse("movie:tmdb:693134")!;
-    private static readonly TitleKey ShowKey = TitleKey.Parse("series:tvdb:279121")!;
+    private static readonly TitleKey ShowKey = TitleKey.Parse("tv:tvdb:279121")!;
 
     private static ComposeContext Ctx(StatusViewer? viewer = null) => new(viewer ?? Member, Now, 24);
 
@@ -327,7 +327,7 @@ public class IntegrationArrStatusTests
         var season = new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Key = ShowKey.WithSeason(9), SeriesId = SeriesItem, Season = 9 };
         var status = StatusComposer.Season(facts, season, jf, Ctx(), detail: true);
 
-        Assert.Equal("series:tvdb:279121:s9", status.Key);
+        Assert.Equal("tv:tvdb:279121:s9", status.Key);
         var byNumber = status.Episodes!.ToDictionary(e => e.Episode);
         Assert.Equal((StatusStage.Ready, true), (byNumber[1].Stage, byNumber[1].Row));
         Assert.Equal((StatusStage.Looking, StatusReasonCode.NoReleaseYet, true), (byNumber[2].Stage, byNumber[2].Reason.Code, byNumber[2].Row));
@@ -399,7 +399,7 @@ public class IntegrationArrStatusTests
         Assert.Equal((StatusStage.NotOut, StatusReasonCode.NotAired, false), Of(StatusComposer.Episode(facts, Episode(7, true), Ctx(), true)));
         var ready = StatusComposer.Episode(facts, Episode(1, false), Ctx(), true);
         Assert.Equal((StatusStage.Ready, StatusReasonCode.Ready, true), (ready.Stage, ready.Reason.Code, ready.Quiet));
-        Assert.Equal("series:tvdb:279121:s9e1", ready.Key);
+        Assert.Equal("tv:tvdb:279121:s9:e1", ready.Key);
     }
 
     [Fact]
@@ -430,11 +430,11 @@ public class IntegrationArrStatusTests
     public void TitleKeysParseNormaliseAndRejectJunk()
     {
         Assert.Equal("movie:tmdb:603", TitleKey.Parse("MOVIE:TMDB:0603")!.ToString());
-        Assert.Equal("series:tvdb:78874:s1e2", TitleKey.Parse("series:tvdb:78874:s1e2")!.ToString());
-        Assert.Equal("series:tvdb:78874", TitleKey.Parse("series:tvdb:78874:s1e2")!.Title.ToString());
+        Assert.Equal("tv:tvdb:78874:s1:e2", TitleKey.Parse("tv:tvdb:78874:s1:e2")!.ToString());
+        Assert.Equal("tv:tvdb:78874", TitleKey.Parse("tv:tvdb:78874:s1:e2")!.Title.ToString());
         Assert.Equal("movie:imdb:tt0133093", TitleKey.ForMovie(null, "tt0133093")!.ToString());
-        Assert.Equal("series:tmdb:1437", TitleKey.ForSeries(" ", "1437", "tt0303461")!.ToString());
-        foreach (var bad in new[] { "", "movie:tvdb:1", "movie:tmdb:1:s1", "series:imdb:123", "movie:tmdb:tt1", "movie:tmdb:0", "x:tmdb:1", "movie:tmdb:1<script>", new string('1', 80) })
+        Assert.Equal("tv:tmdb:1437", TitleKey.ForSeries(" ", "1437", "tt0303461")!.ToString());
+        foreach (var bad in new[] { "", "movie:tvdb:1", "movie:tmdb:1:s1", "tv:imdb:123", "movie:tmdb:tt1", "movie:tmdb:0", "x:tmdb:1", "movie:tmdb:1<script>", new string('1', 80) })
             Assert.Null(TitleKey.Parse(bad));
     }
 
@@ -568,7 +568,7 @@ public class IntegrationArrStatusTests
     [Fact]
     public void KeysWithNonAsciiDigitsAreRejectedNotAServerError()
     {
-        foreach (var bad in new[] { "series:tvdb:5:s\u0661", "series:tvdb:5:s1e\u0662", "movie:tmdb:\u0661\u0662", "movie:imdb:tt\u0661" })
+        foreach (var bad in new[] { "tv:tvdb:5:s\u0661", "tv:tvdb:5:s1:e\u0662", "movie:tmdb:\u0661\u0662", "movie:imdb:tt\u0661" })
             Assert.Null(TitleKey.Parse(bad));
     }
 

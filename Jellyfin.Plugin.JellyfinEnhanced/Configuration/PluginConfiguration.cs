@@ -221,11 +221,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
             // Requests & downloads (new): master switch for the arr integration, off by default.
             ArrIntegrationEnabled = false;
-            // Requests & downloads, phase 1 status UI (status pill, poster badges, episode chips): off by default.
+            // Requests & downloads, phase 1 (status on pages + live updates): off by default.
             ArrPhase1Enabled = false;
             ArrStatusPosterBadges = true;
             ArrStatusLookingHours = 24;
             ArrHouseholdContactName = "";
+            ArrWebhookJellyfinUrl = string.Empty;
 
             // Shoko Settings (single-instance, like Jellyseerr — Shoko is one server per household)
             ShokoUrl = "";
@@ -794,11 +795,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public bool ArrIntegrationEnabled { get; set; }
 
-        // ---- Requests & downloads, phase 1: status on pages ----
+        // ---- Requests & downloads, phase 1: status on pages and live updates ----
 
         /// <summary>
         /// Phase 1 of "Requests &amp; downloads (new)": where each title has got to (status pill and
-        /// journey on details pages, poster badges, episode chips and the missing-episodes banner).
+        /// journey on details pages, poster badges, episode chips and the missing-episodes banner),
+        /// kept current by live updates from Sonarr/Radarr (SignalR, webhooks, the change feed).
         /// Only takes effect while <see cref="ArrIntegrationEnabled"/> is on. Off by default.
         /// </summary>
         public bool ArrPhase1Enabled { get; set; }
@@ -811,6 +813,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>What the household calls the person who runs the server ("Dad"); empty uses a neutral word. Shown in family status texts.</summary>
         public string ArrHouseholdContactName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Jellyfin's address as Sonarr/Radarr see it (for example <c>http://jellyfin:8096</c>), used
+        /// when setting up their webhooks. Empty: the administrator types it when setting one up.
+        /// </summary>
+        public string ArrWebhookJellyfinUrl { get; set; } = string.Empty;
 
         /// <summary>
         /// Folder the scheduled "Back up Jellyfin Enhanced data" task writes to. Empty: the

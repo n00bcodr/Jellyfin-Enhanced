@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -28,8 +29,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         private DateTimeOffset? _requestedFor;
         private Task? _inflight;
         private bool _retired;
+        private DateTimeOffset? _inflightStartedAt;
         private long _refreshes;
         private long _failedRefreshes;
+        private List<Func<T, T?>>? _patchesDuringRefresh;
 
         public ArrSnapshotSlot(ArrSnapshotKind kind, Func<T?, CancellationToken, Task<ArrResult<T>>> loader)
         {
@@ -39,6 +42,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>Raised after every refresh (on the refresh's thread) with the value when it succeeded.</summary>
         public event Action<ArrSnapshotSlot<T>, T?>? Refreshed;
+
+        /// <summary>
+        /// Raised after a successful refresh or a patch, with the value before and after (the value
+        /// before is null on the first load). Raised outside the slot's lock, on the refresh's thread.
+        /// </summary>
+        public event Action<T?, T>? Replaced;
 
         /// <summary>
         /// Raised when reads start failing (with the error) and when they work again (null), not on
@@ -146,6 +155,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         }
 
         /// <summary>
+        /// Changes the value in place (a live event carried the new data), keeping its age. The patch
+        /// returns the new value, or null for "no change". A patch made while a refresh is running is
+        /// applied again to that refresh's result, so the older read can't undo it, unless the patch
+        /// comes from a read that started (<paramref name="readStartedAt"/>) before that refresh did:
+        /// then the refresh is the newer read and its result stands. Returns the value before and
+        /// after, or null when nothing changed (or nothing is loaded yet).
+        /// </summary>
+        public (T Before, T After)? Patch(Func<T, T?> patch, DateTimeOffset? readStartedAt = null)
+        {
+            T before, after;
+            lock (_lock)
+            {
+                if (_value == null) return null;
+                var next = patch(_value);
+                if (next == null || ReferenceEquals(next, _value)) return null;
+                before = _value;
+                after = next;
+                _value = next;
+                // A refresh that hasn't started reading yet (no start time) reads after this read.
+                var newerThanRefresh = readStartedAt is not { } read || (_inflightStartedAt is { } refresh && refresh <= read);
+                if (_inflight != null && newerThanRefresh) (_patchesDuringRefresh ??= new List<Func<T, T?>>()).Add(patch);
+            }
+            return (before, after);
+        }
+
+        /// <summary>
         /// Starts a refresh unless one is running (single flight) and returns it. The refresh runs on
         /// the thread pool outside the caller's execution context, with <paramref name="background"/>
         /// as its call counter, and stops when <paramref name="shutdown"/> fires. A retired slot
@@ -158,6 +193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 if (_inflight != null) return _inflight;
                 if (_retired) return Task.CompletedTask;
                 _requestedFor = null;
+                _inflightStartedAt = null;
                 Task<Task> outer;
                 using (ExecutionContext.SuppressFlow())
                 {
@@ -174,8 +210,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         {
             ArrCallCounter.Current.Value = background;
             T? previous;
-            lock (_lock) previous = _value;
-            var started = now();
+            DateTimeOffset started;
+            lock (_lock)
+            {
+                previous = _value;
+                started = now();
+                _inflightStartedAt = started;
+            }
             ArrResult<T> result;
             try
             {
@@ -191,14 +232,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             }
 
             bool startedFailing, recovered;
+            T? before = null;
+            T? after = null;
             lock (_lock)
             {
                 _refreshes++;
                 startedFailing = !result.Ok && _failures == 0;
                 recovered = result.Ok && _failures > 0;
+                var patches = _patchesDuringRefresh;
+                _patchesDuringRefresh = null;
                 if (result.Ok)
                 {
-                    _value = result.Value;
+                    var value = result.Value!;
+                    // Live patches that arrived while this read ran are newer than (or equal to) it.
+                    foreach (var patch in patches ?? new List<Func<T, T?>>())
+                    {
+                        try
+                        {
+                            value = patch(value) ?? value;
+                        }
+                        catch (Exception)
+                        {
+                            // A patch that no longer applies is dropped; the read is the truth.
+                        }
+                    }
+                    before = _value;
+                    after = value;
+                    _value = value;
                     _loadedAt = started;
                     _error = null;
                     _failures = 0;
@@ -211,16 +271,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     _failedRefreshes++;
                 }
                 _inflight = null;
+                _inflightStartedAt = null;
             }
 
+            // Observers (the warm-start cache writer, the log, the change feed) must never fail a
+            // refresh, nor stop each other.
+            Notify(() => Refreshed?.Invoke(this, result.Ok ? after : null));
+            if (after != null) Notify(() => Replaced?.Invoke(before, after));
+            if (startedFailing || recovered) Notify(() => HealthChanged?.Invoke(Kind, result.Error));
+        }
+
+        private static void Notify(Action raise)
+        {
             try
             {
-                Refreshed?.Invoke(this, result.Ok ? result.Value : null);
-                if (startedFailing || recovered) HealthChanged?.Invoke(Kind, result.Error);
+                raise();
             }
             catch (Exception)
             {
-                // Observers (the warm-start cache writer, the log) must never fail a refresh.
+                // see above
             }
         }
 
@@ -262,6 +331,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         bool Retired { get; }
 
         bool InBackoff(DateTimeOffset now);
+
+        void Touch(DateTimeOffset now);
 
         bool RequestDue(DateTimeOffset now);
 

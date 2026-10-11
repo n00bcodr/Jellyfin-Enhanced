@@ -28,6 +28,9 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │                                     # ArrAdminController.cs — arr registry/diagnostics
 │                                     # and the credential rollback (admin only);
 │                                     # ArrStateController.cs — arr snapshot diagnostics;
+│                                     # ArrLiveController.cs — arr webhook receiver,
+│                                     # change feed and webhook set-up;
+│                                     # ArrStatusController.cs — title status routes;
 │                                     # JeBackupController.cs — backup/export/restore
 ├── PluginPages/                      # HTML wrappers for the sidebar/plugin pages
 ├── Assets/
@@ -180,6 +183,10 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── arr-tag-links.js
     │   ├── calendar/                 # 7 modules: styles, data, render-events,
     │   │   └── …                     # render-views, actions, init, custom-tab
+    │   ├── live/
+    │   │   └── arr-live.js           # JE.arr.onStatusChange (change-feed long-poll)
+    │   ├── status/                   # 5 modules: core, episodes, details, cards,
+    │   │   └── …                     # styles (status pill, chips, poster badges)
     │   └── requests/                 # 8 modules: styles, data, render-helpers,
     │       └── …                     # render-cards, render, actions, init, custom-tab
     ├── tags/
@@ -288,6 +295,8 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`arr-links.js`**: Links to Sonarr, Radarr and Bazarr on item detail pages, for administrators only.
     * **`arr-tag-links.js`**: Synced *arr tags as clickable links on item detail pages, with show/hide filtering.
     * **`/calendar/`**: The calendar page — upcoming items from Radarr and Sonarr, available via the sidebar or a tab.
+    * **`/live/arr-live.js`**: `JE.arr.onStatusChange(keys, cb)` — pages showing download status subscribe to title keys and are called when they change; one long-poll per visible tab against `acquire/changes`, with backoff (Requests & downloads, phase 1).
+    * **`/status/`**: Where each title has got to (Requests & downloads, phase 1): `status-core.js` (`JE.arrStatus`: status reads, family texts, pill, journey, badges, and subscriptions to the change feed that re-render a surface in place), `status-details.js` (pill on details pages), `status-episodes.js` (episode chips and the missing-episodes banner), `status-cards.js` (lazy, batched poster badges) and `status-styles.js`.
     * **`/requests/`**: The requests page — requests, download queue, issues and import history from the *arrs and Seerr, available via the sidebar or a tab.
 
 * **`/tags/`**: Poster tag renderers. Five of them (genre, language, quality, rating, age rating) are built on `core/tag-renderer-base.js`; `peopletags.js` and `userreviewtags.js` render independently.
@@ -341,7 +350,10 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`ArrClient.cs`** / **`ArrClientFactory.cs`** / **`ArrHttp.cs`**: One client per instance on a named HttpClient that never follows redirects and checks the address it connects to; per-call timeouts and size caps, typed `ArrError`s, GET backoff, paging, `appName` and version detection (`ArrSystemStatus.cs`).
     * **`ArrActionRunner.cs`** / **`ArrAuditLog.cs`** / **`ArrConfirmationTokens.cs`**: Direct arr writes with an idempotency key, read-back, an append-only `arr-audit.jsonl` and confirmation tokens for destructive actions.
     * **`ArrDiagnostics.cs`**: The connection check used by the admin test routes.
-    * **`ArrStateStore.cs`** / **`ArrSnapshotSlot.cs`** / **`ArrStateLoaders.cs`** / **`ArrStateModels.cs`**: In-memory snapshots per instance (library index with provider ids and tags, the whole queue, a history ring kept current with `history/since`, a calendar window, system facts), refreshed in the background, single-flight, with failure backoff and a warm-start file for the library. The existing queue, history, calendar, link and tag-sync code reads from it, so serving a page makes no arr call. **`ArrStateReconciler.cs`** is the hosted loop that runs due refreshes; **`ArrCallAttribution.cs`** counts upstream calls per request; **`ArrLegacyViews.cs`** builds the existing routes' response shapes from the snapshots.
+    * **`ArrStateStore.cs`** / **`ArrSnapshotSlot.cs`** / **`ArrStateLoaders.cs`** / **`ArrStateModels.cs`**: In-memory snapshots per instance (library index with provider ids and tags, the whole queue, a history ring kept current with `history/since`, a calendar window, system facts), refreshed in the background, single-flight, with failure backoff and a warm-start file for the library. The existing queue, history, calendar, link and tag-sync code reads from it, so serving a page makes no arr call. **`ArrStateReconciler.cs`** is the hosted loop that runs due refreshes; **`ArrCallAttribution.cs`** counts upstream calls per request; **`ArrLegacyViews.cs`** builds the existing routes' response shapes from the snapshots. **`ArrStateStore.Live.cs`** adds what live updates need: change notifications, in-place library patches, refreshes for live hints and single-title re-reads.
+    * **`/Live/`**: Live updates (phase 1). **`ArrSignalR.cs`** is the hand-rolled SignalR hub client (one connection per instance, backoff, pings) and **`ArrLiveService.cs`** the hosted service that runs them and turns messages into re-reads; **`ArrLiveRouter.cs`** coalesces those hints. **`ArrWebhookReceiver.cs`** checks webhook calls (per-instance secret, rate limits) and **`ArrWebhookProvisioner.cs`** sets the webhook up in the arr with consent. **`ArrChangeDetector.cs`** / **`ArrChangeTracker.cs`** turn snapshot changes and Jellyfin library adds/removes into title-key revisions in **`ArrChangeFeed.cs`**, which browsers long-poll; **`ArrFeedAudience.cs`** filters it per user; **`ArrTitleKey.cs`** defines the keys (`movie:tmdb:…`, `tv:tvdb:…[:s…[:e…]]`).
+
+* **`/Services/Acquire/`**: The status composer behind "where has it got to" (Requests & downloads, phase 1). **`StatusComposer.cs`** derives stage, reason code and journey from the arr snapshots, Jellyfin and request facts; **`ArrStatusService.cs`** serves them per user from memory with a per-user body cache (**`ArrStatusCache.cs`**) keyed by the snapshots, the Jellyfin library and the change feed's per-title revisions; **`ArrJellyfinView.cs`** is the Jellyfin side (items, copies, episodes as each viewer may see them); **`TitleKey.cs`** the title keys shared with the change feed.
 
 * **`/Services/Backup/JeBackupService.cs`**: Export (zip with manifest and checksums; credentials left out or AES-GCM encrypted with a passphrase), scheduled copies with rotation (`ScheduledTasks/JeBackupTask.cs`, "Back up Jellyfin Enhanced data", no default triggers) and verified restore with a safety copy (`JellyfinEnhanced.RestoreConfiguration` applies the configuration).
 
