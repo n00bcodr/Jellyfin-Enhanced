@@ -23,6 +23,7 @@ Search, request, and discover media directly from Jellyfin using your Seerr inst
 - **Recommendations + Discovery** - Recommendations and similar items on detail pages
 - **Issue Reporting** - Report problems directly to Seerr
 - **Watchlist Sync** - Auto-add requested media to Jellyfin watchlist *([requires the KefinTweaks plugin](https://github.com/ranaldsgift/KefinTweaks)*)
+- **[List Placeholders](list-placeholders.md)** - Titles you don't have yet on collections and playlists, with their status and a request button, replaced by the real item when it arrives. Import whole lists or watch orders and keep them in sync
 
 
 !!! tip "How it works"
@@ -399,3 +400,11 @@ Automatically request media based on viewing behavior.
 - Trigger on playback start
 - Trigger after X minutes watched
 - Check release date (only request if released)
+
+#### List Placeholder Requests:
+
+- Request the next **Not in your library** titles of the playlist or collection being watched, as the watching user
+- Request 1-10 titles each time
+- Trigger after X minutes watched (0 = on playback start)
+- Only request released titles (optional)
+- See [List Placeholders → Automatic requests](list-placeholders.md#automatic-requests)

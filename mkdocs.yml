@@ -131,6 +131,7 @@ nav:
   - Seerr:
     # Features overview
     - Seerr Features: seerr/seerr-features.md
+    - List Placeholders: seerr/list-placeholders.md
 
     # Seerr Settings
     - Seerr Settings: seerr/seerr-settings.md

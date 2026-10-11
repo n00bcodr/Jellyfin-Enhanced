@@ -23,8 +23,11 @@ Jellyfin.Plugin.JellyfinEnhanced/
 ├── Configuration/                    # PluginConfiguration.cs, UserConfiguration*.cs,
 │                                     # configPage.html + configPage.css — the admin
 │                                     # settings page
-├── Controllers/                      # JellyfinEnhancedController.cs — every
-│                                     # /JellyfinEnhanced/* endpoint the client calls
+├── Controllers/                      # JellyfinEnhancedController.cs — most
+│                                     # /JellyfinEnhanced/* endpoints the client calls;
+│                                     # ListPlaceholdersController.cs,
+│                                     # ListPlaceholderImportController.cs and
+│                                     # ListPlaceholdersArrController.cs — list-placeholders/*
 ├── PluginPages/                      # HTML wrappers for the sidebar/plugin pages
 ├── Assets/
 │   └── PosterTags/                   # Embedded fonts, icon paths, flags, age-rating
@@ -36,13 +39,19 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │                                     # SeerrTagSignatureExtractor
 ├── EventHandlers/
 │   ├── ContinueWatchingPlaybackEvents.cs
+│   ├── ListPlaceholderAutoRequestConsumers.cs
 │   ├── MaintenancePlaybackReminder.cs
 │   ├── SpoilerAutoEnableEvents.cs
 │   └── UserTopologyEvents.cs
 ├── Model/
 │   ├── TagCacheEntry.cs
 │   ├── Arr/                          # ArrInstance.cs, ArrItem.cs, ArrType.cs
-│   └── Jellyseerr/                   # JellyseerrPermission.cs, JellyseerrUser.cs
+│   ├── Jellyseerr/                   # JellyseerrPermission.cs, JellyseerrUser.cs
+│   └── ListPlaceholders/             # stored list document + wire DTOs
+│       ├── ListDoc.cs
+│       ├── ListImportDtos.cs
+│       ├── ListPlaceholderArrDtos.cs
+│       └── ListPlaceholderDtos.cs
 ├── Services/
 │   ├── …                             # root-level services (Radarr, Sonarr,
 │   │                                 # TagCache*, CdnAsset, WatchlistMonitor,
@@ -52,6 +61,48 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   │                                 # ClientScriptBundle, …)
 │   ├── Identity/
 │   │   └── RequestIdentityService.cs
+│   ├── ListPlaceholders/             # "Not in your library" list placeholders
+│   │   ├── ApplyHooks.cs
+│   │   ├── AutoRequestLibrary.cs
+│   │   ├── ListAccessService.cs
+│   │   ├── ListCollageMarkerStore.cs
+│   │   ├── ListImageHost.cs
+│   │   ├── ListPlaceholderArrService.cs
+│   │   ├── ListPlaceholderAutoRequestRules.cs
+│   │   ├── ListPlaceholderAutoRequestService.cs
+│   │   ├── ListPlaceholderCollageRenderer.cs
+│   │   ├── ListPlaceholderCollageService.cs
+│   │   ├── ListPlaceholderHost.cs
+│   │   ├── ListPlaceholderLifecycle.cs
+│   │   ├── ListPlaceholderMetadata.cs
+│   │   ├── ListPlaceholderOrder.cs
+│   │   ├── ListPlaceholderResolver.cs
+│   │   ├── ListPlaceholderService.cs
+│   │   ├── ListPlaceholderStore.cs
+│   │   ├── ListPlaceholderSwapMonitor.cs
+│   │   ├── ListPlaceholderSwapService.cs
+│   │   ├── ListPlaylistPlacement.cs
+│   │   ├── PlaceholderRules.cs
+│   │   ├── SeerrMediaIndex.cs
+│   │   ├── SeerrRequestGateway.cs
+│   │   ├── SeerrRequestLocks.cs
+│   │   ├── Import/                   # paste/URL import: Seerr lookups, scoring, pacing
+│   │   │   ├── ImportLookup.cs
+│   │   │   ├── ImportPlaceholders.cs
+│   │   │   ├── ImportScoring.cs
+│   │   │   ├── ListImportResolver.cs
+│   │   │   ├── ListLibraryLookup.cs
+│   │   │   ├── SeerrCallLimiter.cs
+│   │   │   └── SeerrUserLink.cs
+│   │   └── Sources/                  # list URL sources, provenance, linked-list sync
+│   │       ├── ChronolistsPage.cs
+│   │       ├── ListEntryRemover.cs
+│   │       ├── ListSourceFetcher.cs
+│   │       ├── ListSourceGroups.cs
+│   │       ├── ListSourcePlacement.cs
+│   │       ├── ListSourceProvenance.cs
+│   │       ├── ListSourceService.cs
+│   │       └── ListSourceUrl.cs
 │   ├── PosterTags/                   # Native Poster Tags (experimental)
 │   │   ├── PosterTagModel.cs         # semantic layout contract (groups, corners, tags)
 │   │   ├── PosterTagSettings.cs      # effective per-user settings + digest
@@ -164,6 +215,22 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   │   ├── network-discovery.js
     │   │   ├── person-discovery.js
     │   │   └── tag-discovery.js
+    │   ├── listplaceholders/
+    │   │   ├── listplaceholders-actions.js
+    │   │   ├── listplaceholders-api.js
+    │   │   ├── listplaceholders-arr.js
+    │   │   ├── listplaceholders-collection.js
+    │   │   ├── listplaceholders-granularity.js
+    │   │   ├── listplaceholders-import.js
+    │   │   ├── listplaceholders-init.js
+    │   │   ├── listplaceholders-parser.js
+    │   │   ├── listplaceholders-picker.js
+    │   │   ├── listplaceholders-playlist.js
+    │   │   ├── listplaceholders-render.js
+    │   │   ├── listplaceholders-requests.js
+    │   │   ├── listplaceholders-search.js
+    │   │   ├── listplaceholders-source.js
+    │   │   └── listplaceholders-styles.js
     │   ├── moreinfo/                 # 8 modules: styles, data, seasons, badges,
     │   │   └── …                     # render, actions, actions-tv, init
     │   ├── recommendations/          # 8 modules: styles, catalog, data, render,
@@ -276,6 +343,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`seamless-scroll.js`**: The buffer-fill infinite-scroll engine shared by the search row, the discovery modules and the Recommendations category page: keeps several screens of cards rendered ahead, passes each consumer a hint (deficit, engagement, empty-page budget) so it can fetch several pages in parallel and prefetch the next, pauses on a "Keep looking" button after 40 consecutive empty pages, and retries failures with backoff. Also owns the deduplicator helper.
     * **`seerr-detail-link.js`** / **`seerr-status.js`**: Detail-page link into Seerr, and the shared media/display status constants.
     * **`/discovery/`**: `discovery-base.js` owns the whole discovery lifecycle — three pagination strategies, abort handling, config gating, card rendering, filtering and cleanup. Each of `genre`, `network`, `person`, `tag` and `collection` supplies a small spec describing how to resolve its feeds. `discovery-filter-utils.js` provides shared TV/Movies/All filtering and card creation.
+    * **`/listplaceholders/`**: List Placeholders — "Not in your library" entries on playlist and collection pages, the Add title and "Add to collection or playlist" dialogs, list import and the admin Radarr/Sonarr add (see [List Placeholders](#list-placeholders) below).
     * **`/moreinfo/`**: The Seerr More Info modal — cast, crew, extended metadata, seasons and request actions.
     * **`/recommendations/`**: The Recommendations page — Trending/Popular/Upcoming rows plus Studios and Networks tiles, with a "View All" category page. Available as a sidebar page or a tab.
     * **`/ui/`**: All visual elements of the integration — result cards, request buttons, status badges, quota display, the download-progress popover and the season/request modals.
@@ -359,3 +427,83 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`/Helpers/AudioLanguageTagHelper.cs`**: Maps stream language codes to tag names (base and regional) and computes the tag changes for an item.
     * **`/ScheduledTasks/AudioLanguageTagsSyncTask.cs`**: "Sync Audio Language Tags to Jellyfin" (no default triggers). Writes the tags for every movie and series.
     * **`/Services/TagCacheService.cs`**: Applies the same tags to a movie or series when its cache entry is rebuilt after a library event.
+
+### List Placeholders
+
+"Not in your library" entries on collections and playlists ([feature page](../seerr/list-placeholders.md)). The server keeps one JSON document per list in `<plugin configuration folder>/list-placeholders/<listId>.json` and serves each caller a projection of it; the client never edits Jellyfin's playlist rows directly. While `ListPlaceholdersEnabled` is off the routes answer 404 and the client modules stay inert (no styles, listeners or requests).
+
+* **Controllers and models:**
+  * **`/Controllers/ListPlaceholdersController.cs`**: `list-placeholders/*` routes for list views, adding and applying entries, edits, removal, playlist order, editable lists and creating playlists/collections.
+  * **`/Controllers/ListPlaceholderImportController.cs`**: `resolve`, `source/fetch`, `source/providers` and a list's `source` link/unlink/sync routes.
+  * **`/Controllers/ListPlaceholdersArrController.cs`**: Admin-only `list-placeholders/arr/*` routes (options, lookup, add); 404 unless both switches are on.
+  * **`/Model/ListPlaceholders/ListDoc.cs`**: The stored list document: placeholders of every kind, the canonical playlist order, `rev`, the linked source (provenance, tombstones, last sync) and swap intents.
+  * **`/Model/ListPlaceholders/ListPlaceholderDtos.cs`**: camelCase wire DTOs for views, adds, applies and edits.
+  * **`/Model/ListPlaceholders/ListImportDtos.cs`**: Wire DTOs for `resolve`, source fetch, link and sync.
+  * **`/Model/ListPlaceholders/ListPlaceholderArrDtos.cs`**: Wire DTOs for the `arr/*` routes.
+
+* **Server, `Services/ListPlaceholders/`:**
+  * **`ListPlaceholderStore.cs`**: Strict reads, temp-file + atomic replace writes, per-list locks, an in-memory cache, the reverse index (TMDB/TVDB/IMDb id → placeholders), the 2000-entry cap and the `requestId` replay cache.
+  * **`ListPlaceholderOrder.cs`**: Pure order algebra: `e:<itemId>:<occurrence>` / `p:<id>` tokens, reconciling with Jellyfin's current order, per-user projection, drag merges, insert positions in Jellyfin's two coordinate systems, and the collection sort.
+  * **`PlaceholderRules.cs`**: Input validation and normalisation, the identity key used for duplicates, and the "released" rule.
+  * **`ListAccessService.cs`**: Who may view or edit a list (with the admin extension for playlists) and the parental filter for placeholders (fail closed).
+  * **`ListPlaceholderHost.cs`**: The seam to Jellyfin's library, playlist and collection managers, including library lookups by provider id; the only `#if JF12` is the positional playlist insert.
+  * **`ListPlaceholderService.cs`**: Views, adds and ordered applies (library titles become real items, TV scopes expand into the episodes present), edits, reorder with the server-side Jellyfin move, editable lists and list creation.
+  * **`ApplyHooks.cs`**: Hooks that run inside an apply's locked write (precondition, ordered placement, late exclusion, provenance after success or failure), used by URL imports and the sync.
+  * **`ListPlaylistPlacement.cs`**: Inserts real items into a playlist at a position (Jellyfin 12 positional insert, 10.11 append + move) and verifies the result; shared by adds and swap-in.
+  * **`ListPlaceholderResolver.cs`**: Which library items cover a placeholder's scope (movie, series, season, episodes) for a set of users, plus fill progress and the completion rule.
+  * **`ListPlaceholderMetadata.cs`**: Release dates, episode lists, posters and production state read from Seerr, cached and single-flight.
+  * **`ListPlaceholderSwapService.cs`**: Swap-in: library events mapped to placeholders, coalesced passes per list, persisted swap intents, playlist and collection inserts, retirement once complete.
+  * **`ListPlaceholderSwapMonitor.cs`**: Hosted service feeding library item events to the swap service, plus a pass after startup.
+  * **`ListPlaceholderLifecycle.cs`**: Hosted service that deletes a list's document when the playlist or collection is removed, and sweeps orphans.
+  * **`SeerrMediaIndex.cs`**: One shared, user-independent index of Seerr media and request status (full rebuilds swapped in atomically, incremental refreshes), so list views make no per-card Seerr calls.
+  * **`ListPlaceholderAutoRequestService.cs`**: Requests the next placeholders of a list during playback, as the playing user.
+  * **`ListPlaceholderAutoRequestRules.cs`**: The pure auto-request rules: trigger, list windows, the season a TV placeholder requests, released, Seerr status and the request body.
+  * **`AutoRequestLibrary.cs`**: The played-item record and the premiere-date seam auto-requests use to order collections.
+  * **`SeerrRequestGateway.cs`**: Seerr access as a given user without an HTTP context (background auto-requests).
+  * **`SeerrRequestLocks.cs`**: A process-wide per-title request lock shared with Auto Season and Auto Movie Requests.
+  * **`ListPlaceholderArrService.cs`**: Radarr/Sonarr options, lookup and add, monitoring only the placeholder's scope, also on a series Sonarr already has.
+  * **`ListPlaceholderCollageService.cs`**: Sets, re-renders and removes poster collages on lists that only hold placeholders (debounced triggers, ownership markers, parental filtering of posters).
+  * **`ListPlaceholderCollageRenderer.cs`**: Pure SkiaSharp layout and render of 1–4 posters, with strict decoding.
+  * **`ListImageHost.cs`**: The seam to Jellyfin's image save, delete and refresh APIs, re-checking the current image right before each write.
+  * **`ListCollageMarkerStore.cs`**: Sidecar markers recording which image is the plugin's collage (path and SHA-256).
+
+* **Server, `Services/ListPlaceholders/Import/`:**
+  * **`ListImportResolver.cs`**: Backs `/resolve`: matches parsed entries to TMDB titles through Seerr, with confidence, review reasons and library state.
+  * **`ImportLookup.cs`**: Cached Seerr search and details lookups (30 minutes).
+  * **`ImportScoring.cs`**: Pure match scoring and confidence levels.
+  * **`ImportPlaceholders.cs`**: Turns a matched candidate into a placeholder body; the sync builds its entries with it too.
+  * **`ListLibraryLookup.cs`**: "Already in your library?" for an entry, through the granularity resolver, and the source keys of library items.
+  * **`SeerrCallLimiter.cs`**: The one global pace for import and sync Seerr calls: 4 in flight, ~10/s, round-robin per user, interactive before background.
+  * **`SeerrUserLink.cs`**: The Seerr-linked gate for lookups (administrators always pass).
+
+* **Server, `Services/ListPlaceholders/Sources/`:**
+  * **`ListSourceUrl.cs`**: Host allowlist and URL shapes for MDBList, TMDB, Trakt, IMDb and Chronolists (Letterboxd is recognised only to explain why it isn't fetched).
+  * **`ListSourceFetcher.cs`**: Fetches list URLs (TMDB directly or through Seerr) without redirects, with timeouts, size and entry caps, and a 5-minute cache.
+  * **`ChronolistsPage.cs`**: Reads a Chronolists watch-order page's embedded data into exact entries.
+  * **`ListSourceGroups.cs`**: Groups consecutive episodes of exact sources into season or episodes entries.
+  * **`ListSourceService.cs`**: Fetching for the review, linking and unlinking, import provenance, and the sync itself (scheduled or Sync now), including pauses.
+  * **`ListSourceProvenance.cs`**: Which entries a sync owns, tombstones for entries editors removed, and what a sync may remove.
+  * **`ListSourcePlacement.cs`**: Pure ordered insertion: where a new source entry goes in the playlist.
+  * **`ListEntryRemover.cs`**: Removes real entries from a playlist or collection for "Remove entries that leave the list".
+
+* **Scheduled tasks and events:**
+  * **`/ScheduledTasks/ListPlaceholdersMaintenanceTask.cs`**: "List Placeholders Maintenance" (daily 04:30): metadata refresh, swap-in pass, orphan cleanup.
+  * **`/ScheduledTasks/ListPlaceholdersSyncTask.cs`**: "Sync linked lists (list placeholders)" (every 12 h); needs `ListPlaceholdersSyncEnabled`.
+  * **`/EventHandlers/ListPlaceholderAutoRequestConsumers.cs`**: Playback start/progress/stop consumers that hand off to the auto-request service.
+
+* **Client, `js/jellyseerr/listplaceholders/`** (one IIFE per file, registered in `component-scripts.json` after the recommendations modules; started by `JE.initializeListPlaceholders` from `plugin.js` only when the feature is on):
+  * **`listplaceholders-api.js`**: The `JE.internals.listPlaceholders` namespace and route wrappers: shared view GETs, `skipRetry` and a fresh `requestId` on every mutation, published views (`je-lp-view`).
+  * **`listplaceholders-styles.js`**: CSS, injected on first use only.
+  * **`listplaceholders-render.js`**: Playlist rows and collection cards (built on the Seerr card), kind/date/progress subtitles and status badges.
+  * **`listplaceholders-requests.js`**: Request buttons: the movie flow, and the season modal with the placeholder's season preselected.
+  * **`listplaceholders-granularity.js`**: The shared whole series / one season / specific episodes picker.
+  * **`listplaceholders-actions.js`**: The ⋮ menu: More info, Move up/down, Link to a title, Remove (plus the admin Radarr/Sonarr entry).
+  * **`listplaceholders-search.js`**: The editor toolbar and the Add title dialog (Seerr search, admin Radarr/Sonarr results, custom entry, link mode).
+  * **`listplaceholders-picker.js`**: "Add to collection or playlist" on Seerr cards and in the More Info modal.
+  * **`listplaceholders-playlist.js`**: Inline rows on playlist pages: placement from the merged order, re-insertion after jellyfin-web re-renders, drag-and-drop through jellyfin-web's Sortable (real-row moves are made by the server), freshness on `LibraryChanged`.
+  * **`listplaceholders-collection.js`**: The "Not in your library" section on collection pages.
+  * **`listplaceholders-parser.js`**: Pure paste parser for imports: numbered lines, Markdown tables, CSV exports, links and ids, episode notation, chains, list URLs; no load-time work.
+  * **`listplaceholders-import.js`**: The Import list dialog: paste or URL, chunked lookups with progress and retries, review, apply or new playlist, link options.
+  * **`listplaceholders-source.js`**: The toolbar's Import list button, the linked-source chip and its menu, and the global "Import list…" button on the Playlists page.
+  * **`listplaceholders-init.js`**: `JE.initializeListPlaceholders` (page hooks, library-change and request listeners, user switches) and the `JE.listPlaceholders` facade.
+  * **`listplaceholders-arr.js`**: The admin "Add to Radarr/Sonarr" dialog and the Radarr/Sonarr search used by Add title (`JE.listPlaceholders.arr`); loads after `init.js`.

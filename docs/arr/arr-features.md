@@ -26,6 +26,7 @@ The ARR integration provides convenient links to your Sonarr, Radarr, and Bazarr
 - **Tag Links** - Display *arr tags as clickable links with filtering
 - **Calendar View** - Upcoming releases from Sonarr/Radarr
 - **Requests Page** - Monitor download queue and status
+- **Add from list placeholders** - Send a list's "Not in your library" titles straight to Radarr or Sonarr, a single season or episodes included *([List Placeholders](../seerr/list-placeholders.md#add-to-radarr-and-sonarr-admins), admins only)*
 - **Admin Only** - Links only visible to administrators
 
 ## ARR Links

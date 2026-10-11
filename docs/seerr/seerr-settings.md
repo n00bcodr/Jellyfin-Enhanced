@@ -171,3 +171,54 @@ Display Seerr issues on the Requests page.
 - **Poll Interval** - How often to refresh (30-300 seconds, default: 30)
   - Lower = more frequent updates (higher server load)
   - Higher = less frequent updates (lower server load)
+
+## List Placeholders
+
+Lets users put titles they don't have yet on collections and playlists, as **Not in your library** entries. See [List Placeholders](list-placeholders.md) for how the feature works.
+
+Found in the **Seerr Settings** tab under **List Placeholders**. Everything is off by default, and the other options need the first one.
+
+![The List Placeholders settings](../images/list-placeholders-settings.png)
+
+| Setting | Default | Description |
+|---|---|---|
+| **Show titles you don't have on collections and playlists** | Off | Lets users add movies, series, seasons, episodes and custom entries that aren't in your library to collections and playlists. They show their Seerr status and a request button, and are replaced by the real item once it arrives. Who can add them: a playlist's owner, users it's shared with as editors, and administrators; for collections, administrators and users allowed to manage collections |
+| **Give lists with only "Not in your library" titles a poster collage** | Off | Gives a playlist or collection with no real items yet a collage of its first placeholder posters instead of Jellyfin's generic icon. Only used while the list has no real items, and never replaces an image you set. Turning it off removes the collages. See [Poster collage](list-placeholders.md#poster-collage) |
+| **Keep linked lists in sync** | Off | Lets the **Sync linked lists (list placeholders)** scheduled task (every 12 hours by default) update playlists and collections linked to a list URL. Editors can always use **Sync now** |
+| **Trakt Client ID** | *(empty)* | Needed to import Trakt lists, watchlists and charts (see [below](#trakt-client-id)). Server-side only |
+| **Allow IMDb list URLs (unofficial)** | Off | Reads IMDb lists, public watchlists and charts through IMDb's unofficial website API, which may stop working at any time and is for personal use only. Without it, mirror the list on MDBList or paste an IMDb CSV export |
+| **Let administrators add placeholders to Radarr and Sonarr** | Off | Adds **Add to Radarr** / **Add to Sonarr** to placeholder menus, and Radarr/Sonarr results to **Add title**, for administrators only. Uses the enabled instances on the ***arr Settings** tab, with a choice of instance, quality profile and root folder. Works without Seerr |
+
+List URLs from TMDB use the [TMDB API Key](../elsewhere/elsewhere-settings.md#getting-a-tmdb-api-key) for user lists and most charts, and private MDBList lists use the [MDBList API Key](../other/other-settings.md#mdblist-ratings). Chronolists watch orders need no key. See [From a list URL](list-placeholders.md#from-a-list-url).
+
+### Trakt Client ID
+
+1. Create an API app at [developer.trakt.tv/apps](https://developer.trakt.tv/apps)
+2. Copy its **Client ID** (not the Client Secret) into **Trakt Client ID**
+3. Click **Save**
+
+!!! note
+
+    Trakt deletes apps that aren't used for 30 days. Linked lists that sync keep the app in use. Only public Trakt lists can be imported.
+
+### List Placeholder Requests
+
+Found in the **Seerr Settings** tab under **Automatic Requests** → **List Placeholder Requests**. Needs Seerr and **Show titles you don't have on collections and playlists**. See [Automatic requests](list-placeholders.md#automatic-requests).
+
+| Setting | Default | Description |
+|---|---|---|
+| **Request the next titles of a list while it's being watched** | Off | When someone plays an item of a playlist or collection with **Not in your library** titles, requests the titles that come next in that list from Seerr, as that user. A season requests that season, specific episodes the season they belong to, and a whole series its first season (or, once some of it is in the list, the first season with episodes missing) |
+| **Titles to request each time** | 1 | How many of the next titles to request (1-10) |
+| **Minutes watched before requesting** | 5 | Request once playback reaches this position (0-600 minutes). 0 requests as soon as playback starts |
+| **Only request released titles** | On | Skip titles that aren't out yet, including ones without a date (TBA) |
+
+These work independently of Auto Season Requests and Auto Movie Requests. With Auto Season Requests also on, a series requested here gets its later seasons from that feature.
+
+### Scheduled Tasks
+
+In **Dashboard** → **Scheduled Tasks**, category **Jellyfin Enhanced**:
+
+| Task | Default trigger | What it does |
+|---|---|---|
+| **List Placeholders Maintenance** | Daily at 04:30 | Refreshes release dates and episode lists of placeholders, adds titles that arrived in the library to their playlists and collections, and removes the placeholders of deleted lists. Does nothing while the feature is off |
+| **Sync linked lists (list placeholders)** | Every 12 hours | Re-reads the lists that playlists and collections are linked to, adds new entries and, where the link asks for it, removes entries that left. Does nothing unless **Keep linked lists in sync** is on |

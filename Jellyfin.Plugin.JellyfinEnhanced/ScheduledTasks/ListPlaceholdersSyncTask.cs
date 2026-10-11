@@ -34,7 +34,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         public string Key => "JellyfinEnhancedListPlaceholdersSync";
 
         /// <inheritdoc />
-        public string Description => "Re-fetches playlists and collections that are linked to an MDBList, TMDB, Trakt or IMDb list and adds new entries (or removes dropped ones, if the link asks for it). Requires \"Keep linked lists in sync\" in the List Placeholders settings.";
+        public string Description => "Re-fetches playlists and collections that are linked to an MDBList, TMDB, Trakt, IMDb or Chronolists list and adds new entries (or removes dropped ones, if the link asks for it). Requires \"Keep linked lists in sync\" in the List Placeholders settings.";
 
         /// <inheritdoc />
         public string Category => "Jellyfin Enhanced";

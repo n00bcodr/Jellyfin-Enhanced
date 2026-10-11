@@ -47,6 +47,7 @@ The essential enhancement suite for Jellyfin, bundling advanced features and cus
 - **Watchlist Sync** - Auto-sync with Jellyfin watchlist
 - **Auto Requests** - Auto next season and next movie (in collection) requests
 - **Requests Page** - Monitor downloads and Seerr requests
+- **[List Placeholders](seerr/list-placeholders.md)** - Titles you don't have yet on collections and playlists, swapped for the real item when it arrives; import and sync lists and watch orders
 
 ### 🔗 *arr Integration
 - **Quick Links** - Jump to Sonarr, Radarr, Bazarr pages

@@ -580,7 +580,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 | GET | `jellyseerr/{type}/{serverId}` | Sonarr/Radarr server details by Seerr service id |
 | GET | `jellyseerr/settings/{type}` | Admin-only: Seerr's own Radarr/Sonarr instance connection settings (hostname, port, **apiKey**, externalUrl, ...). Backs the *arr tab's "Import from Seerr" button; not the same endpoint as `jellyseerr/sonarr`/`jellyseerr/radarr` above |
 | GET | `jellyfin-urls` | Admin-only: Jellyfin's own detected internal LAN URL and "Published server URIs" external/all override from Dashboard → Networking → Advanced, if configured. Backs the Seerr-import URL Mapping pre-fill |
-| POST / GET | `jellyseerr/request` | Create / list Seerr requests |
+| POST / GET | `jellyseerr/request` | Create / list Seerr requests. A request body without `is4k` is sent with `"is4k": false`, so Seerr's own duplicate check applies |
 | GET | `jellyseerr/quota` | Calling user's Seerr request quota |
 | GET | `jellyseerr/tv/{tmdbId}`, `jellyseerr/movie/{tmdbId}` | TV/movie detail proxy |
 | GET | `.../season/{seasonNumber}` | Season detail proxy |
@@ -605,6 +605,38 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 | GET | `jellyseerr/settings/partial-requests` | Whether Seerr allows partial season requests |
 | GET | `jellyseerr/issue`, `jellyseerr/issue/{id}` | List / get Seerr issues |
 | POST | `jellyseerr/issue` | File a Seerr issue |
+
+### List Placeholders
+
+The [List Placeholders](../seerr/list-placeholders.md) routes live in their own controllers: `Controllers/ListPlaceholdersController.cs` (lists and entries), `ListPlaceholderImportController.cs` (import and linked lists) and `ListPlaceholdersArrController.cs` (Radarr/Sonarr). All are `[Authorize]` and answer `404 {"message":"disabled"}` while **Show titles you don't have on collections and playlists** is off.
+
+- `{listId}` is a playlist or collection id. A list the caller can't see answers `404 not_found`; editing without the [same rights as the UI](../seerr/list-placeholders.md#permissions) answers `403 forbidden`. Responses only contain what the caller may see.
+- Errors are `{"code": …, "message": …}`. `503 store_unavailable` means the list's stored document can't be read.
+- `PATCH`, `DELETE` and `PUT …/order` need the list's current `rev` (from the view); `POST …/items` and `…/apply` accept it. A stale `rev` answers `409 rev_conflict` with the fresh view.
+- Mutations take an optional client `requestId`: repeating a successful request within 10 minutes replays its result instead of applying it twice.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `list-placeholders/{listId}` | The caller's view of a list: placeholders with their Seerr status and fill progress, the merged order of real items and placeholders (playlists), the linked source, `canEdit` and `rev` |
+| POST | `list-placeholders/{listId}/items` | Editors: add placeholders at a position. Titles already in the library go in as real items: in playlists a show you partly have becomes its present episodes plus a placeholder, in collections its Series or Season item |
+| POST | `list-placeholders/{listId}/apply` | Editors: add an ordered mix of library items and placeholders at a position (what an import applies). With `source`, the list is also linked to that URL in the same write |
+| PATCH | `list-placeholders/{listId}/items/{placeholderId}` | Editors: change a placeholder's note, or link a custom entry to a TMDB title |
+| DELETE | `list-placeholders/{listId}/items/{placeholderId}?rev=` | Editors: remove a placeholder |
+| PUT | `list-placeholders/{listId}/order` | Playlist editors: save the order after a drag. A moved real item is moved in the Jellyfin playlist too (as the owner when an administrator isn't a native editor) |
+| GET | `list-placeholders/editable-lists` | Playlists and collections the caller can edit. Administrators also get other users' playlists |
+| POST | `list-placeholders/playlists` | Create a playlist owned by the caller, optionally with entries and a linked `source` |
+| POST | `list-placeholders/collections` | Administrators and collection managers: create a collection, optionally with entries and a linked `source` |
+| POST | `list-placeholders/resolve` | Seerr-linked users (not on the user import blocklist) and administrators: match up to 25 parsed import entries through Seerr (paced and cached server-side). `503 seerr_unavailable`, `403 seerr_unlinked`; `429 busy` and `504 parental_pending` come with `Retry-After` |
+| POST | `list-placeholders/source/fetch` | Read an MDBList, TMDB, Trakt, Chronolists or IMDb list URL into import entries. Chronolists entries come grouped and already matched. Optional `listId` (needs edit rights) for the library check |
+| GET | `list-placeholders/source/providers` | Which list sources work on this server, whether scheduled sync is on, and the entry cap (no secrets) |
+| PUT | `list-placeholders/{listId}/source` | Editors: link the list to a list URL with `syncEnabled` and `removeDropped`. Linking again (same URL) makes the caller the linker and resumes a paused sync |
+| DELETE | `list-placeholders/{listId}/source` | Editors: unlink the list. Its entries stay |
+| POST | `list-placeholders/{listId}/source/sync` | Editors: sync the linked list now. `202` while it's still running |
+| GET | `list-placeholders/arr/options?type=` | Admin: enabled Radarr (`movie`) / Sonarr (`tv`) instances with their quality profiles and root folders |
+| GET | `list-placeholders/arr/lookup?type=&term=&instance=` | Admin: look a title up in Radarr or Sonarr (`tmdb:N`, `tvdb:N`, `imdb:ttN` or text) |
+| POST | `list-placeholders/arr/add` | Admin: add a movie, series, season or episodes to Radarr or Sonarr, monitoring only that scope. On a series Sonarr already has, a season or episodes are added to its monitoring; a movie or whole series that's already there answers `already_exists` and nothing changes |
+
+The `arr/*` routes also need **Let administrators add placeholders to Radarr and Sonarr**, answer `403` for non-admins and `404 not_configured` when no enabled instance of the needed service exists. They only ever call the instances configured on the *arr tab.
 
 ### TMDB Proxy & Metadata
 
