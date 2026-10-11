@@ -1,0 +1,581 @@
+[
+  {
+    "Key": "AutoPauseEnabled",
+    "AdminKey": "AutoPauseEnabled",
+    "AdminValue": true,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "autoPauseEnabled"
+  },
+  {
+    "Key": "AutoResumeEnabled",
+    "AdminKey": "AutoResumeEnabled",
+    "AdminValue": false,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "autoResumeEnabled"
+  },
+  {
+    "Key": "AutoPipEnabled",
+    "AdminKey": "AutoPipEnabled",
+    "AdminValue": false,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "autoPipEnabled"
+  },
+  {
+    "Key": "LongPress2xEnabled",
+    "AdminKey": "LongPress2xEnabled",
+    "AdminValue": false,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "longPress2xEnabled"
+  },
+  {
+    "Key": "PauseScreenEnabled",
+    "AdminKey": "PauseScreenEnabled",
+    "AdminValue": true,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "pauseScreenEnabled"
+  },
+  {
+    "Key": "PauseScreenDelaySeconds",
+    "AdminKey": "PauseScreenDelaySeconds",
+    "AdminValue": 5,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": false,
+    "Locked": false
+  },
+  {
+    "Key": "AutoSkipIntro",
+    "AdminKey": "AutoSkipIntro",
+    "AdminValue": false,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "autoSkipIntro"
+  },
+  {
+    "Key": "AutoSkipOutro",
+    "AdminKey": "AutoSkipOutro",
+    "AdminValue": false,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "autoSkipOutro"
+  },
+  {
+    "Key": "DisableCustomSubtitleStyles",
+    "AdminKey": "DisableCustomSubtitleStyles",
+    "AdminValue": false,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "disableCustomSubtitleStyles"
+  },
+  {
+    "Key": "SelectedStylePresetIndex",
+    "AdminKey": "DefaultSubtitleStyle",
+    "AdminValue": 0,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "DefaultSubtitleStyle"
+  },
+  {
+    "Key": "SelectedFontSizePresetIndex",
+    "AdminKey": "DefaultSubtitleSize",
+    "AdminValue": 2,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "DefaultSubtitleSize"
+  },
+  {
+    "Key": "SelectedFontFamilyPresetIndex",
+    "AdminKey": "DefaultSubtitleFont",
+    "AdminValue": 0,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "DefaultSubtitleFont"
+  },
+  {
+    "Key": "SelectedTextEffectPresetIndex",
+    "AdminKey": "DefaultSubtitleTextEffect",
+    "AdminValue": 0,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "DefaultSubtitleTextEffect"
+  },
+  {
+    "Key": "RandomButtonEnabled",
+    "AdminKey": "RandomButtonEnabled",
+    "AdminValue": true,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "randomButtonEnabled"
+  },
+  {
+    "Key": "RandomUnwatchedOnly",
+    "AdminKey": "RandomUnwatchedOnly",
+    "AdminValue": false,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "randomUnwatchedOnly"
+  },
+  {
+    "Key": "RandomIncludeMovies",
+    "AdminKey": "RandomIncludeMovies",
+    "AdminValue": true,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "randomIncludeMovies"
+  },
+  {
+    "Key": "RandomIncludeShows",
+    "AdminKey": "RandomIncludeShows",
+    "AdminValue": true,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "randomIncludeShows"
+  },
+  {
+    "Key": "RandomScopeCurrentContainer",
+    "AdminKey": "RandomScopeCurrentContainer",
+    "AdminValue": false,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "randomScopeCurrentContainer"
+  },
+  {
+    "Key": "ShowWatchProgress",
+    "AdminKey": "ShowWatchProgress",
+    "AdminValue": false,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "showWatchProgress"
+  },
+  {
+    "Key": "WatchProgressMode",
+    "AdminKey": "WatchProgressDefaultMode",
+    "AdminValue": "percentage",
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "watchProgressDefaultMode"
+  },
+  {
+    "Key": "WatchProgressTimeFormat",
+    "AdminKey": "WatchProgressTimeFormat",
+    "AdminValue": "hours",
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "watchProgressTimeFormat"
+  },
+  {
+    "Key": "ShowFileSizes",
+    "AdminKey": "ShowFileSizes",
+    "AdminValue": false,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "showFileSizes"
+  },
+  {
+    "Key": "ShowAudioLanguages",
+    "AdminKey": "ShowAudioLanguages",
+    "AdminValue": true,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "showAudioLanguages"
+  },
+  {
+    "Key": "QualityTagsEnabled",
+    "AdminKey": "QualityTagsEnabled",
+    "AdminValue": false,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "qualityTagsEnabled"
+  },
+  {
+    "Key": "ShowResolutionTag",
+    "AdminKey": "ShowResolutionTag",
+    "AdminValue": true,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "showResolutionTag"
+  },
+  {
+    "Key": "ShowSourceTag",
+    "AdminKey": "ShowSourceTag",
+    "AdminValue": true,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "showSourceTag"
+  },
+  {
+    "Key": "ShowDynamicRangeTag",
+    "AdminKey": "ShowDynamicRangeTag",
+    "AdminValue": true,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "showDynamicRangeTag"
+  },
+  {
+    "Key": "ShowSpecialFormatTag",
+    "AdminKey": "ShowSpecialFormatTag",
+    "AdminValue": true,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "showSpecialFormatTag"
+  },
+  {
+    "Key": "ShowVideoCodecTag",
+    "AdminKey": "ShowVideoCodecTag",
+    "AdminValue": true,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "showVideoCodecTag"
+  },
+  {
+    "Key": "ShowAudioInfoTag",
+    "AdminKey": "ShowAudioInfoTag",
+    "AdminValue": true,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "showAudioInfoTag"
+  },
+  {
+    "Key": "ResolutionTagOrder",
+    "AdminKey": "ResolutionTagOrder",
+    "AdminValue": 1,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "RowKey": "ResolutionTagOrder"
+  },
+  {
+    "Key": "SourceTagOrder",
+    "AdminKey": "SourceTagOrder",
+    "AdminValue": 2,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "RowKey": "SourceTagOrder"
+  },
+  {
+    "Key": "DynamicRangeTagOrder",
+    "AdminKey": "DynamicRangeTagOrder",
+    "AdminValue": 3,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "RowKey": "DynamicRangeTagOrder"
+  },
+  {
+    "Key": "SpecialFormatTagOrder",
+    "AdminKey": "SpecialFormatTagOrder",
+    "AdminValue": 4,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "RowKey": "SpecialFormatTagOrder"
+  },
+  {
+    "Key": "VideoCodecTagOrder",
+    "AdminKey": "VideoCodecTagOrder",
+    "AdminValue": 5,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "RowKey": "VideoCodecTagOrder"
+  },
+  {
+    "Key": "AudioInfoTagOrder",
+    "AdminKey": "AudioInfoTagOrder",
+    "AdminValue": 6,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "RowKey": "AudioInfoTagOrder"
+  },
+  {
+    "Key": "GenreTagsEnabled",
+    "AdminKey": "GenreTagsEnabled",
+    "AdminValue": false,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "genreTagsEnabled"
+  },
+  {
+    "Key": "LanguageTagsEnabled",
+    "AdminKey": "LanguageTagsEnabled",
+    "AdminValue": false,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "languageTagsEnabled"
+  },
+  {
+    "Key": "RatingTagsEnabled",
+    "AdminKey": "RatingTagsEnabled",
+    "AdminValue": false,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "ratingTagsEnabled"
+  },
+  {
+    "Key": "AgeRatingTagsEnabled",
+    "AdminKey": "AgeRatingTagsEnabled",
+    "AdminValue": false,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "ageRatingTagsEnabled"
+  },
+  {
+    "Key": "PeopleTagsEnabled",
+    "AdminKey": "PeopleTagsEnabled",
+    "AdminValue": false,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "peopleTagsEnabled"
+  },
+  {
+    "Key": "TagsHideOnHover",
+    "AdminKey": "TagsHideOnHover",
+    "AdminValue": false,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "tagsHideOnHover"
+  },
+  {
+    "Key": "QualityTagsPosition",
+    "AdminKey": "QualityTagsPosition",
+    "AdminValue": "top-left",
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "qualityTagsPosition"
+  },
+  {
+    "Key": "QualityTagsPreferredAudioLanguage",
+    "AdminKey": "QualityTagsPreferredAudioLanguage",
+    "AdminValue": "",
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "qualityTagsPreferredAudioLanguage"
+  },
+  {
+    "Key": "GenreTagsPosition",
+    "AdminKey": "GenreTagsPosition",
+    "AdminValue": "top-right",
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "genreTagsPosition"
+  },
+  {
+    "Key": "LanguageTagsPosition",
+    "AdminKey": "LanguageTagsPosition",
+    "AdminValue": "bottom-left",
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "languageTagsPosition"
+  },
+  {
+    "Key": "RatingTagsPosition",
+    "AdminKey": "RatingTagsPosition",
+    "AdminValue": "bottom-right",
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "ratingTagsPosition"
+  },
+  {
+    "Key": "RatingTagsOnMovies",
+    "AdminKey": "RatingTagsOnMovies",
+    "AdminValue": true,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "ratingTagsOnMovies"
+  },
+  {
+    "Key": "RatingTagsOnSeries",
+    "AdminKey": "RatingTagsOnSeries",
+    "AdminValue": true,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "ratingTagsOnSeries"
+  },
+  {
+    "Key": "RatingTagsOnSeasons",
+    "AdminKey": "RatingTagsOnSeasons",
+    "AdminValue": true,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "ratingTagsOnSeasons"
+  },
+  {
+    "Key": "RatingTagsOnEpisodes",
+    "AdminKey": "RatingTagsOnEpisodes",
+    "AdminValue": true,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "ratingTagsOnEpisodes"
+  },
+  {
+    "Key": "RatingTagsOnContinueWatching",
+    "AdminKey": "RatingTagsOnContinueWatching",
+    "AdminValue": true,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "ratingTagsOnContinueWatching"
+  },
+  {
+    "Key": "RatingTagsOnNextUp",
+    "AdminKey": "RatingTagsOnNextUp",
+    "AdminValue": true,
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "ratingTagsOnNextUp"
+  },
+  {
+    "Key": "AgeRatingTagsPosition",
+    "AdminKey": "AgeRatingTagsPosition",
+    "AdminValue": "bottom-right",
+    "Reach": "Both",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "ageRatingTagsPosition"
+  },
+  {
+    "Key": "ShowRatingInPlayer",
+    "AdminKey": "ShowRatingInPlayer",
+    "AdminValue": true,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "showRatingInPlayer"
+  },
+  {
+    "Key": "RemoveContinueWatchingEnabled",
+    "AdminKey": "RemoveContinueWatchingEnabled",
+    "AdminValue": false,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "removeContinueWatchingEnabled"
+  },
+  {
+    "Key": "ReviewsExpandedByDefault",
+    "AdminKey": "ReviewsExpandedByDefault",
+    "AdminValue": false,
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "reviewsExpandedByDefault"
+  },
+  {
+    "Key": "DisplayLanguage",
+    "AdminKey": "DefaultLanguage",
+    "AdminValue": "",
+    "Reach": "Web",
+    "EffectiveReach": "Web",
+    "Lockable": true,
+    "Locked": false,
+    "ControlId": "DefaultLanguage"
+  }
+]

@@ -15,6 +15,44 @@
         link.href = ApiClient.getUrl('/JellyfinEnhanced/Configuration/configPage.css', jeCssVersion ? { v: jeCssVersion } : undefined);
         document.head.appendChild(link);
 
+        // The "User settings policy" add-on (js/admin/user-settings-policy.js). Loaded as an async
+        // script, never a static <script src>: jellyfin-web would fetch that with a synchronous XHR,
+        // and a root-relative src breaks under a BaseUrl. The route is cached immutable, so the URL
+        // is always versioned (client tag, else the anonymous /version route); without a version it
+        // is not loaded at all and saves leave the locks untouched.
+        (function () {
+            function loadPolicyScript(version) {
+                if (!version || version === 'unknown') {
+                    window.JellyfinEnhancedAdminPolicyFailed = true;
+                    return;
+                }
+                var src = ApiClient.getUrl('/JellyfinEnhanced/js/admin/user-settings-policy.js', { v: version });
+                if (document.querySelector('script[data-je-admin-policy="' + version + '"]')) return;
+                var script = document.createElement('script');
+                script.src = src;
+                script.async = true;
+                script.setAttribute('data-je-admin-policy', version);
+                script.onerror = function () {
+                    window.JellyfinEnhancedAdminPolicyFailed = true;
+                    var status = document.querySelector('#jeUserSettingsPolicyStatus');
+                    if (status) {
+                        status.textContent = 'The user settings policy could not be loaded, so locks cannot be changed right now. Saving keeps the current locks.';
+                        status.classList.add('je-policy-status-error');
+                    }
+                };
+                document.head.appendChild(script);
+            }
+            window.JellyfinEnhancedAdminPolicyFailed = false;
+            if (jeCssVersion) {
+                loadPolicyScript(jeCssVersion);
+            } else {
+                fetch(ApiClient.getUrl('/JellyfinEnhanced/version'))
+                    .then(function (response) { return response.ok ? response.text() : ''; })
+                    .then(function (version) { loadPolicyScript(String(version || '').trim()); })
+                    .catch(function () { loadPolicyScript(''); });
+            }
+        })();
+
         // Local CDN route helper. Every external CDN asset this admin page used to load
         // directly (icons, screenshots, the Material Symbols font) is served from the
         // plugin's own /JellyfinEnhanced/cdn/ route instead. Base-path-safe via
@@ -2987,6 +3025,26 @@
 
                 <div id="admin" class="jellyfin-tab-content">
 
+                    <fieldset id="jeUserSettingsPolicy" class="je-fieldset-wide">
+                        <legend class="sectionTitle">User settings policy</legend>
+                        <div class="configSection">
+                            <div class="je-setting-description">
+                                <div class="fieldDescription">Settings marked "User default" on the other tabs are only a starting point: each user can change them in the Jellyfin Enhanced panel. Lock one to make every user use your default. A user's own choice is kept and comes back if you unlock it. Locks are saved with the Save button, like your other settings.</div>
+                            </div>
+                            <div id="jeUserSettingsPolicyStatus" class="je-policy-status" role="status" aria-live="polite">Loading the user settings policy…</div>
+                            <div id="jeUserSettingsPolicyImpact" class="je-policy-impact" aria-live="polite" hidden></div>
+                            <details id="jeUserSettingsPolicyDetails" class="je-details-section">
+                                <summary>Lock settings for every user <span id="jeUserSettingsPolicySummaryCount" class="je-policy-count"></span></summary>
+                                <div class="je-details-body">
+                                    <table id="jeUserSettingsPolicyTable" class="je-policy-table">
+                                        <thead><tr><th scope="col">Setting</th><th scope="col">Server default</th><th scope="col">Reach</th><th scope="col">Lock</th></tr></thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </details>
+                        </div>
+                    </fieldset>
+
                     <fieldset class="je-fieldset-wide">
                         <legend class="sectionTitle">Usage Statistics</legend>
                         <div class="configSection">
@@ -4088,6 +4146,7 @@
                     if (el.closest('.je-arr-seerr-import-picker')) return; // transient browsing state, not a form change until actually imported
                     if (el.closest('.je-spoiler-apply-existing')) return; // per-run option of an action, not a saved setting
                     if (el.closest('#tagStylePanel, #tagStylePresets')) return; // Tag Styles editor inputs; its saved state is jeTagStylesValue
+                    if (el.closest('#jeUserSettingsPolicy')) return; // lock boxes, rendered late by the policy script; their edits are jeUserSettingsPolicyPending
                     // Indexed among the tracked controls only, so a skipped control appearing does not shift the keys.
                     controls.push({ key: el.id || el.name || ('#' + controls.length), value: el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value, el: el });
                 });
@@ -4104,6 +4163,16 @@
                 return Array.from(form.querySelectorAll('#qualityCategoriesAdmin .je-quality-cat-admin-row')).map(r => r.dataset.orderKey);
             }
 
+            /**
+             * Unsaved lock edits in the User settings policy table ('' when none). The policy script
+             * renders its boxes after the form loads, so they are compared with the locks they
+             * were rendered from instead of being part of the control walk.
+             */
+            function jeUserSettingsPolicyPending() {
+                const policy = window.JellyfinEnhancedAdminPolicy;
+                return policy && typeof policy.pendingState === 'function' ? policy.pendingState() : '';
+            }
+
             /** Tag Styles as they would be saved (overrides, preset, scope); JS state, not form inputs. */
             function jeTagStylesValue() {
                 const settings = tagStyles.settings();
@@ -4117,6 +4186,7 @@
                 // Swapping two MDBList rows with the same on/off state leaves the control walk unchanged.
                 parts.push('mdblistSources=' + jeMdblistSourcesValue());
                 parts.push('tagStyles=' + jeTagStylesValue());
+                parts.push('locks=' + jeUserSettingsPolicyPending());
                 return parts.join('');
             }
 
@@ -4145,6 +4215,7 @@
                 return jeTrackedControls()
                     .filter(c => !(c.el.id && c.el.id in draftable) && !c.el.classList.contains('je-mdblist-source-toggle'))
                     .map(c => (c.el.name || c.el.className) + '=' + c.value)
+                    .concat(['locks=' + jeUserSettingsPolicyPending()])
                     .join('\n');
             }
 
@@ -7244,11 +7315,51 @@
                 // rendered instance cards and loaded Seerr fields.
                 updateRequestsRequirementsBanner();
 
+                // The policy script re-reads the locks and badges on every visit (views are cached).
+                jeDecorateUserSettingsPolicy();
+
                 Dashboard.hideLoadingMsg();
                 // Delay so late-finishing sub-populations (maintenance users, branding previews) settle first,
                 // then offer any unsaved-changes draft left by the previous visit.
                 setTimeout(function () { jeMarkSaved(); jeOfferDraftRestore(); }, 500);
             });
+        }
+
+        /**
+         * Asks the User settings policy script to render its lock table and the control badges.
+         * A script that loads later finds the marker and decorates by itself.
+         */
+        function jeDecorateUserSettingsPolicy() {
+            page.dataset.jeConfigLoaded = String(Date.now());
+            const policy = window.JellyfinEnhancedAdminPolicy;
+            if (policy && typeof policy.decorate === 'function') policy.decorate(page);
+        }
+
+        /**
+         * Sets LockedUserSettings for a save from the policy table's lock boxes, only while the
+         * policy script is ready. Otherwise (failed, blocked or still loading) the value fetched
+         * from the server is left exactly as it is, so a save never wipes locks, and the policy
+         * fieldset says so.
+         * @param {object} config The configuration about to be saved (fetched from the server).
+         * @returns {boolean} Whether the locks came from the policy table.
+         */
+        function jeApplyUserSettingsLocks(config) {
+            const policy = window.JellyfinEnhancedAdminPolicy;
+            const merged = policy && policy.ready === true && typeof policy.applyLocks === 'function'
+                ? policy.applyLocks(config.LockedUserSettings)
+                : null;
+            if (Array.isArray(merged)) {
+                config.LockedUserSettings = merged;
+                return true;
+            }
+            const status = document.querySelector('#jeUserSettingsPolicyStatus');
+            if (status) {
+                status.textContent = 'The user settings policy did not load, so this save left the user settings locks as they were.';
+                status.hidden = false;
+                status.classList.add('je-policy-status-error');
+            }
+            console.warn('[JE] user settings policy not ready; LockedUserSettings left unchanged');
+            return false;
         }
 
         async function buildConfigFromForm() {
@@ -7259,6 +7370,7 @@
                 if (index !== -1) finalShortcuts[index] = override;
             });
             config.Shortcuts = finalShortcuts;
+            jeApplyUserSettingsLocks(config);
             config.DevMode = document.querySelector('#devMode').checked;
             // A timed window switches maintenance off by itself (and another admin or the API can
             // flip it) while this page is open. When the toggle was not touched since it was loaded,
@@ -7904,6 +8016,10 @@
                 }
 
                 Dashboard.processPluginConfigurationUpdateResult(result);
+                const savedPolicy = window.JellyfinEnhancedAdminPolicy;
+                if (savedPolicy && savedPolicy.ready === true && typeof savedPolicy.markSaved === 'function') {
+                    savedPolicy.markSaved(config.LockedUserSettings);
+                }
                 // The form now is the just-saved state, so re-snapshot immediately.
                 jeMarkSaved();
                 jeDiscardDraft();

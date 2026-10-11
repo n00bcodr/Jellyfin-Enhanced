@@ -153,7 +153,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         /// </summary>
         public string ConfigEpoch { get; private set; } = NewConfigEpoch();
 
-        private static string NewConfigEpoch() => Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
+        /// <summary>
+        /// Remembers the keys an admin save unlocked (for the legacy POST's stale-tab guard) and logs
+        /// the lock changes, plus any LockedUserSettings entry that is not a lockable setting (ignored).
+        /// </summary>
+        private void RecordLockChanges(PluginConfiguration? previous, PluginConfiguration? current)
+        {
+            try
+            {
+                RecentlyUnlockedSettings.Record(previous, current);
+                var before = UserSettingsResolver.LockedKeys(previous);
+                var after = UserSettingsResolver.LockedKeys(current);
+                var locked = after.Except(before, StringComparer.Ordinal).ToArray();
+                var unlocked = before.Except(after, StringComparer.Ordinal).ToArray();
+                if (locked.Length > 0 || unlocked.Length > 0)
+                {
+                    _logger.Info($"User settings locks changed: locked [{string.Join(", ", locked)}], unlocked [{string.Join(", ", unlocked)}]; {after.Count} locked in total.");
+                }
+
+                var ignored = UserSettingsResolver.IgnoredLockEntries(current);
+                if (ignored.Count > 0)
+                {
+                    _logger.Warning($"LockedUserSettings has entries that are not lockable settings and are ignored: {string.Join(", ", ignored)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not record user settings lock changes: {ex.Message}");
+            }
+        }
+
+        private static string NewConfigEpoch() =>Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
 
         private string IndexHtmlPath => Path.Combine(_applicationPaths.WebPath, "index.html");
 
@@ -277,7 +307,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     }
                 }
 
+                if (configuration is PluginConfiguration saved)
+                {
+                    // Admin saves arrive through Jellyfin's JSON plugin-config endpoint, where
+                    // "LockedUserSettings": null is possible; keep the property non-null.
+                    saved.LockedUserSettings ??= Array.Empty<string>();
+                }
+
+                var previous = Configuration;
                 base.UpdateConfiguration(configuration);
+                RecordLockChanges(previous, Configuration);
             }
             ConfigEpoch = NewConfigEpoch();
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);

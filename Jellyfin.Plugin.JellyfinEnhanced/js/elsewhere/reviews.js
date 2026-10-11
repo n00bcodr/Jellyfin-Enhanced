@@ -825,6 +825,9 @@
                     try {
                         if (!window.JellyfinEnhanced) return;
                         const JE = window.JellyfinEnhanced;
+                        // Locked by an administrator: the section still opens or closes on this page,
+                        // but the choice is not remembered (the server would refuse it anyway).
+                        if (JE.settings?.isLocked?.('reviewsExpandedByDefault')) return;
                         JE.currentSettings = JE.currentSettings || JE.loadSettings?.() || {};
                         if (JE.currentSettings.reviewsExpandedByDefault !== reviewsSection.open) {
                             JE.currentSettings.reviewsExpandedByDefault = reviewsSection.open;

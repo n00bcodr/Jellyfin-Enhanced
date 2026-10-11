@@ -61,6 +61,20 @@
         get: () => JE.userConfig?.settingsMeta || null
     });
 
+    JE.settings = JE.settings || {};
+    /**
+     * Whether an administrator locks the setting for the signed-in user (Meta.Locked): the server
+     * serves the admin value and refuses writes, so callers show the value read-only and do not save.
+     * @param {string} key The setting, in camelCase ('watchProgressMode') or PascalCase.
+     * @returns {boolean}
+     */
+    JE.settings.isLocked = (key) => {
+        const locked = JE.settingsMeta?.locked;
+        if (!Array.isArray(locked) || typeof key !== 'string' || !key) return false;
+        const camel = key.charAt(0).toLowerCase() + key.slice(1);
+        return locked.includes(camel);
+    };
+
     // ---- Key-level settings.json saves (POST settings.json/patch) ----
     // A save sends only the keys that differ from the last values the server confirmed (the
     // baseline), so two devices or tabs no longer revert each other's unrelated settings, and an

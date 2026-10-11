@@ -200,19 +200,27 @@
         const epoch = JE.session ? JE.session.getEpoch() : 0;
         if (currentUserId) {
             try {
-                // Fetch fresh settings for the current user
+                // Fetch fresh settings for the current user, with their per-key state (locks and
+                // the like) so the rows show what an administrator changed since the page loaded.
                 const settingsResponse = await ApiClient.ajax({
                     type: 'GET',
-                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${currentUserId}/settings.json?_=${Date.now()}`),
+                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${currentUserId}/settings.json?meta=true&_=${Date.now()}`),
                     dataType: 'json'
                 });
                 if (JE.session && !JE.session.isCurrent(epoch)) return;
 
+                // A server without Meta answers the plain document (it never has a Settings key).
+                const withMeta = settingsResponse && settingsResponse.Settings && typeof settingsResponse.Settings === 'object' && settingsResponse.Meta;
+                const settingsDocument = withMeta ? settingsResponse.Settings : settingsResponse;
+
                 // Update the userConfig with fresh data
-                if (settingsResponse) {
+                if (settingsDocument) {
                     JE.userConfig = JE.userConfig || {};
-                    JE.userConfig.settings = window.JellyfinEnhanced.toCamelCase(settingsResponse);
+                    JE.userConfig.settings = window.JellyfinEnhanced.toCamelCase(settingsDocument);
                     JE.userConfig.settingsStatus = 'ok';
+                    if (withMeta && typeof JE.camelCaseSettingsMeta === 'function') {
+                        JE.userConfig.settingsMeta = JE.camelCaseSettingsMeta(settingsResponse.Meta);
+                    }
 
                     // Reload current settings
                     if (typeof JE.loadSettings === 'function') {
@@ -631,6 +639,8 @@
         JE.internals.spoilerGuard?.wireSettings?.(ctx);
         internal.wireMiscSettingsControls(ctx);
         internal.wireLanguageControls(ctx);
+        // After the wiring above, which sets the controls' initial state: locks and gates disable rows.
+        internal.decorateSettingsProvenance?.(ctx);
 
         // 'loading': opened right after a user switch and the refresh above failed too.
         const settingsStatus = JE.userConfig?.settingsStatus;

@@ -219,11 +219,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         }
 
         /// <summary>
-        /// Whether a whole-document post carries the value a lock enforced until it was lifted moments
-        /// ago (a tab that loaded while the key was locked) over a different stored choice. Locks do not
-        /// exist yet, so nothing is recently unlocked.
+        /// Whether a whole-document post carries the value a lock enforced until an admin lifted it in
+        /// this process (a tab that loaded while the key was locked) over a different stored choice.
         /// </summary>
-        private static bool IsStaleUnlockedValue(UserSettingDescriptor descriptor, object? posted, UserSettings stored) => false;
+        private static bool IsStaleUnlockedValue(UserSettingDescriptor descriptor, object? posted, UserSettings stored)
+            => RecentlyUnlockedSettings.TryGetEnforcedValue(descriptor.Key, out var enforced)
+                && Equals(posted, enforced)
+                && !Equals(posted, descriptor.Property.GetValue(stored));
 
         /// <summary>Re-caches every Following key's stored value as its current resolved value.</summary>
         private static bool RefreshFollowing(UserSettings document, ResolvedUserSettings resolved, UserSettingsWriteResult result)

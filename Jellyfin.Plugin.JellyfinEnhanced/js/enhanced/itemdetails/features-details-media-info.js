@@ -180,7 +180,10 @@
         placeholder.style.verticalAlign = 'middle';
         placeholder.style.alignItems = 'center';
         placeholder.style.margin = '0 1em 0 0 !important';
-        placeholder.style.cursor = 'pointer';
+        // An administrator lock on the display mode: the chip shows the enforced mode read-only.
+        const modeLocked = !!window.JellyfinEnhanced?.settings?.isLocked?.('watchProgressMode');
+        placeholder.style.cursor = modeLocked ? 'default' : 'pointer';
+        if (modeLocked && typeof JE.t === 'function') placeholder.title = JE.t('panel_provenance_locked');
         const getWatchProgressDisplay = (watchProgress, mode) => {
             const safeTotal = Math.max(0, watchProgress.totalRuntimeTicks || 0);
             const safePlayed = Math.max(0, Math.min(safeTotal, watchProgress.totalPlaybackTicks || 0));
@@ -214,6 +217,7 @@
 
         // onClick handler to toggle between percentage and time-based display
         placeholder.addEventListener('click', () => {
+            if (modeLocked) return;
             const watchProgress = watchProgressCache.get(itemId);
             if (!watchProgress) return;
 

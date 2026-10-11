@@ -5224,6 +5224,67 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
+        /// The per-user settings that have an admin default, for the admin page's "User settings
+        /// policy" table and control badges: each key with its admin property and current saved
+        /// admin value, declared and effective reach, whether it can be and is locked, and where its
+        /// admin control is (an element id, or a data-order-key row). Reads only the plugin
+        /// configuration, never a user's file.
+        /// </summary>
+        /// <returns>One entry per registry key with an admin default, in registry order.</returns>
+        [HttpGet("admin/user-settings/registry")]
+        [Authorize]
+        [Produces("application/json")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult GetUserSettingsRegistry()
+        {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+            {
+                return StatusCode(503);
+            }
+
+            var locked = UserSettingsResolver.LockedKeys(config);
+            var entries = new System.Text.Json.Nodes.JsonArray();
+            foreach (var descriptor in UserSettingsRegistry.All)
+            {
+                var admin = descriptor.AdminProperty;
+                if (admin == null)
+                {
+                    continue;
+                }
+
+                var setting = descriptor.Setting;
+                var entry = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["Key"] = descriptor.Key,
+                    ["AdminKey"] = admin.Name,
+                    ["AdminValue"] = System.Text.Json.JsonSerializer.SerializeToNode(admin.GetValue(config), admin.PropertyType),
+                    ["Reach"] = setting.Reach.ToString(),
+                    ["EffectiveReach"] = UserSettingsRegistry.EffectiveReach(descriptor, config).ToString(),
+                    ["Lockable"] = setting.Lockable,
+                    ["Locked"] = locked.Contains(descriptor.Key, StringComparer.Ordinal),
+                };
+                if (setting.Lockable && setting.AdminRowKey != null)
+                {
+                    entry["RowKey"] = setting.AdminRowKey;
+                }
+                else if (setting.Lockable)
+                {
+                    entry["ControlId"] = setting.AdminControlId ?? char.ToLowerInvariant(admin.Name[0]) + admin.Name[1..];
+                }
+
+                entries.Add(entry);
+            }
+
+            return Ok(entries);
+        }
+
+        /// <summary>
         /// Reads a /patch body: an object with an optional "Set" object, an optional "Follow" array of
         /// strings and an optional "IfRevision" string (names matched ignoring case; others ignored).
         /// </summary>

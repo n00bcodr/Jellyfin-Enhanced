@@ -26,7 +26,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Gets the stored provenance, normalised to registry keys (empty lists for a legacy file).</summary>
         public UserSettingsMeta Meta { get; }
 
-        /// <summary>Gets the keys an admin lock forces to the admin value (always empty until locks exist).</summary>
+        /// <summary>Gets the keys an admin lock forces to the admin value.</summary>
         public IReadOnlyList<string> Locked { get; }
 
         /// <summary>Whether the key follows the admin default.</summary>
@@ -43,7 +43,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     /// <summary>
     /// The one place that turns a stored settings.json into the values the server serves (the GET,
     /// bootstrap and the native poster path), first match winning:
-    /// 1. Locked: the admin value (the hook is in place; locks arrive with LockedUserSettings).
+    /// 1. Locked: the admin value (PluginConfiguration.LockedUserSettings, read through LockedKeys).
     /// 2. Following: the current admin default, as the seed would write it.
     /// 3. Chosen or Existing: the stored value, sentinels included (null *TagOrder, "" positions).
     /// 4. A key missing from the file already holds its C# initializer from the typed read.
@@ -186,12 +186,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         }
 
         /// <summary>
-        /// The keys an admin lock forces to the admin value. Locks (LockedUserSettings) are not part of
-        /// the configuration yet, so nothing is locked; every read and write path already consults this.
+        /// The keys an admin lock forces to the admin value: the one reader of
+        /// <see cref="PluginConfiguration.LockedUserSettings"/>. Null-safe (a JSON null or a missing
+        /// element reads as no locks); entries are matched to registry keys ignoring case and
+        /// returned once each, in registry order, in their canonical spelling; anything that is not a
+        /// Lockable registry key (unknown, renamed or user-only) is ignored. Every read and write path
+        /// (GET, bootstrap, the legacy POST, /patch and the native poster path) goes through this.
+        /// </summary>
+        /// <param name="config">The plugin configuration, or null when it is not loaded (no locks).</param>
+        /// <returns>The locked registry keys.</returns>
+        public static IReadOnlyList<string> LockedKeys(PluginConfiguration? config)
+        {
+            var entries = config?.LockedUserSettings;
+            if (entries == null || entries.Length == 0)
+            {
+                return Array.Empty<string>();
+            }
+
+            var wanted = Keys(entries);
+            return UserSettingsRegistry.All
+                .Where(descriptor => descriptor.Setting.Lockable && wanted.Contains(descriptor.Key))
+                .Select(descriptor => descriptor.Key)
+                .ToArray();
+        }
+
+        /// <summary>
+        /// The entries of <see cref="PluginConfiguration.LockedUserSettings"/> that
+        /// <see cref="LockedKeys"/> ignores (not a Lockable registry key), for the log.
         /// </summary>
         /// <param name="config">The plugin configuration.</param>
-        /// <returns>The locked registry keys.</returns>
-        internal static IReadOnlyList<string> LockedKeys(PluginConfiguration? config) => Array.Empty<string>();
+        /// <returns>The ignored entries, as stored.</returns>
+        public static IReadOnlyList<string> IgnoredLockEntries(PluginConfiguration? config)
+            => (config?.LockedUserSettings ?? Array.Empty<string>())
+                .Where(entry => !(entry != null && UserSettingsRegistry.TryGet(entry, out var descriptor) && descriptor.Setting.Lockable))
+                .Select(entry => entry ?? "(null)")
+                .ToArray();
 
         private static JsonArray Names(IEnumerable<string> keys) => new(keys.Select(key => (JsonNode?)key).ToArray());
 

@@ -61,7 +61,7 @@
     function positionSelectorHtml(settingKey) {
         const cells = TAG_POSITIONS.map(([pos, labelKey, labelText]) =>
             `<button type="button" data-pos="${pos}" aria-label="${escapeHtml(tWithFallback(labelKey, labelText))}" aria-pressed="false" style="display:block; width:100%; height:100%; min-width:24px; min-height:24px; margin:0; padding:0; border:none; border-radius:2px; background:transparent; cursor:pointer; transition:background 0.2s;"></button>`).join('');
-        return `<div class="position-selector" data-setting="${escapeHtml(settingKey)}" role="group" aria-label="${escapeHtml(tWithFallback('panel_position_group', 'Tag position'))}" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; box-sizing:content-box; width:50px; height:50px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">${cells}</div>`;
+        return `<div class="position-selector" data-setting="${escapeHtml(settingKey)}" data-setting-key="${escapeHtml(settingKey)}" data-setting-label="${escapeHtml(tWithFallback('panel_position_group', 'Tag position'))}" role="group" aria-label="${escapeHtml(tWithFallback('panel_position_group', 'Tag position'))}" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; box-sizing:content-box; width:50px; height:50px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">${cells}</div>`;
     }
 
     /**
@@ -218,36 +218,36 @@
                     <section class="je-pane" data-pane="playback">
                         <h3 class="je-pane-title">${JE.icon(JE.IconName.PLAYBACK)} ${JE.t('panel_settings_playback')}</h3>
                         <div style="padding: 0 16px 16px 16px;">
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="autoPauseEnabled" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="autoPauseToggle" ${JE.currentSettings.autoPauseEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_auto_pause')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_auto_pause_desc')}</div></div>
                                 </label>
                             </div>
-                           <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                           <div data-setting-row data-setting-key="autoResumeEnabled" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="autoResumeToggle" ${JE.currentSettings.autoResumeEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_auto_resume')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_auto_resume_desc')}</div></div>
                                 </label>
                             </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="autoPipEnabled" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="autoPipToggle" ${JE.currentSettings.autoPipEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_auto_pip')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_auto_pip_desc')}</div></div>
                                 </label>
                             </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="longPress2xEnabled" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="longPress2xEnabled" ${JE.currentSettings.longPress2xEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_long_press_2x_speed')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_long_press_desc')}</div></div>
                                 </label>
                             </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="pauseScreenEnabled" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="pauseScreenToggle" ${JE.currentSettings.pauseScreenEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_custom_pause_screen')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_custom_pause_screen_desc')}</div></div>
                                 </label>
-                                <div class="je-pause-delay-row" style="margin-top:10px; display:flex; align-items:center; gap:8px; padding-left:30px;">
+                                <div class="je-pause-delay-row" data-setting-key="pauseScreenDelaySeconds" style="margin-top:10px; display:flex; align-items:center; gap:8px; padding-left:30px;">
                                     <label for="pauseScreenDelayInput" style="font-size:12px; color:rgba(255,255,255,0.7); white-space:nowrap;">${JE.t('panel_settings_pause_screen_delay_label')}</label>
                                     <input type="number" id="pauseScreenDelayInput" min="1" max="60" value="${JE.currentSettings.pauseScreenDelaySeconds ?? 5}" style="width:60px; padding:4px 6px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:4px; color:#fff; font-size:12px; text-align:center;">
                                 </div>
@@ -258,13 +258,13 @@
                         <h3 class="je-pane-title">${JE.icon(JE.IconName.SKIP)} ${JE.t('panel_settings_auto_skip')}</h3>
                         <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-left: 18px; margin-bottom: 10px;">${JE.t('panel_settings_auto_skip_depends')}</div>
                         <div style="padding: 0 16px 16px 16px;">
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="autoSkipIntro" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="autoSkipIntroToggle" ${JE.currentSettings.autoSkipIntro ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_auto_skip_intro')}</div></div>
                                 </label>
                             </div>
-                            <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="autoSkipOutro" style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="autoSkipOutroToggle" ${JE.currentSettings.autoSkipOutro ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_auto_skip_outro')}</div></div>
@@ -275,7 +275,7 @@
                     <section class="je-pane" data-pane="subtitles">
                         <h3 class="je-pane-title">${JE.icon(JE.IconName.SUBTITLES)} ${JE.t('panel_settings_subtitles')}</h3>
                         <div style="padding: 0 16px 16px 16px;">
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="disableCustomSubtitleStyles" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="disableCustomSubtitleStyles" ${JE.currentSettings.disableCustomSubtitleStyles ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_disable_custom_styles')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_disable_custom_styles_desc')}</div></div>
@@ -285,7 +285,7 @@
                                 <span class="material-icons" style="font-size:16px; line-height:1.4;">info</span>
                                 <span>${JE.t('panel_settings_subtitles_format_warning')}</span>
                             </div>
-                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_style')}</div><div id="subtitle-style-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.subtitlePresets, 'style')}</div></div>
+                            <div data-setting-row data-setting-key="selectedStylePresetIndex" style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_style')}</div><div id="subtitle-style-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.subtitlePresets, 'style')}</div></div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${primaryAccentColor};">
                                 <div style="font-weight: 600; margin-bottom: 12px;">${JE.icon(JE.IconName.PAINT)}</div>
                                 <div class="je-subtitle-color-layout" style="display: flex; gap: 12px;">
@@ -308,9 +308,9 @@
                                     <div id="subtitleColorPreview" style="display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 600; border-radius: 6px; background: rgba(0,0,0,0.3); color: ${JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF'}; background-color: ${JE.currentSettings.customSubtitleBgColor || '#00000000'}; text-shadow: ${previewTextShadow}; padding: 12px 20px; flex: 0.5; align-self: center;">AaBbCcDd</div>
                                 </div>
                             </div>
-                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_size')}</div><div id="font-size-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontSizePresets, 'font-size')}</div></div>
-                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_font')}</div><div id="font-family-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontFamilyPresets, 'font-family')}</div></div>
-                            <div style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_text_effect')}</div><div id="text-effect-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.subtitleTextEffectPresets, 'text-effect')}</div></div>
+                            <div data-setting-row data-setting-key="selectedFontSizePresetIndex" style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_size')}</div><div id="font-size-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontSizePresets, 'font-size')}</div></div>
+                            <div data-setting-row data-setting-key="selectedFontFamilyPresetIndex" style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_font')}</div><div id="font-family-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.fontFamilyPresets, 'font-family')}</div></div>
+                            <div data-setting-row data-setting-key="selectedTextEffectPresetIndex" style="margin-bottom: 16px;"><div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_subtitles_text_effect')}</div><div id="text-effect-presets-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">${generatePresetHTML(JE.subtitleTextEffectPresets, 'text-effect')}</div></div>
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                                     <span style="font-weight: 600;">${JE.t('panel_settings_subtitles_position')}</span>
@@ -335,20 +335,20 @@
                     <section class="je-pane" data-pane="random-button">
                         <h3 class="je-pane-title">${JE.icon(JE.IconName.RANDOM)} ${JE.t('panel_settings_random_button')}</h3>
                         <div style="padding: 0 16px 16px 16px;">
-                            <div style="margin-bottom:16px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="randomButtonEnabled" style="margin-bottom:16px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;"><input type="checkbox" id="randomButtonToggle" ${JE.currentSettings.randomButtonEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><div><div style="font-weight:500;">${JE.t('panel_settings_random_button_enable')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_random_button_enable_desc')}</div></div></label>
                                 <br>
-                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;"><input type="checkbox" id="randomUnwatchedOnly" ${JE.currentSettings.randomUnwatchedOnly ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><div><div style="font-weight:500;">${JE.t('panel_settings_random_button_unwatched')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_random_button_unwatched_desc')}</div></div></label>
+                                <label data-setting-key="randomUnwatchedOnly" data-setting-label="${escapeHtml(JE.t('panel_settings_random_button_unwatched'))}" style="display: flex; align-items: center; gap: 12px; cursor: pointer;"><input type="checkbox" id="randomUnwatchedOnly" ${JE.currentSettings.randomUnwatchedOnly ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><div><div style="font-weight:500;">${JE.t('panel_settings_random_button_unwatched')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_random_button_unwatched_desc')}</div></div></label>
                             </div>
                             <div style="font-weight:500; margin-bottom:8px;">${JE.t('panel_settings_random_button_types')}</div>
-                            <div style="display:flex; gap:16px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="randomIncludeMovies" ${JE.currentSettings.randomIncludeMovies ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><span>${JE.t('panel_settings_random_button_movies')}</span></label>
-                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="randomIncludeShows" ${JE.currentSettings.randomIncludeShows ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><span>${JE.t('panel_settings_random_button_shows')}</span></label>
+                            <div data-setting-row style="display:flex; flex-wrap:wrap; gap:16px; padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid ${toggleAccentColor};">
+                                <label data-setting-key="randomIncludeMovies" data-setting-label="${escapeHtml(JE.t('panel_settings_random_button_movies'))}" style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="randomIncludeMovies" ${JE.currentSettings.randomIncludeMovies ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><span>${JE.t('panel_settings_random_button_movies')}</span></label>
+                                <label data-setting-key="randomIncludeShows" data-setting-label="${escapeHtml(JE.t('panel_settings_random_button_shows'))}" style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" id="randomIncludeShows" ${JE.currentSettings.randomIncludeShows ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><span>${JE.t('panel_settings_random_button_shows')}</span></label>
                             </div>
                             <div style="font-weight:500; margin:16px 0 8px;">${JE.t('panel_settings_random_button_source')}</div>
-                            <div style="padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="randomScopeCurrentContainer" style="padding:12px; background:${presetBoxBackground}; border-radius:6px; border-left:3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;"><input type="checkbox" id="randomScopeCurrentContainer" ${JE.currentSettings.randomScopeCurrentContainer ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;"><div><div style="font-weight:500;">${JE.t('panel_settings_random_button_scope_current')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_random_button_scope_current_desc')}</div></div></label>
-                                <div style="margin-top:12px;">
+                                <div data-setting-key="randomSourceId" style="margin-top:12px;">
                                     <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-bottom:6px;">${JE.t('panel_settings_random_button_source_desc')}</div>
                                     <!-- Playlists/collections are appended asynchronously in wireMiscSettingsControls -->
                                     <select id="randomSourceSelect" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;"><option value="">${JE.t('panel_settings_random_button_source_library')}</option></select>
@@ -359,47 +359,47 @@
                     <section class="je-pane" data-pane="ui">
                         <h3 class="je-pane-title">${JE.icon(JE.IconName.UI)} ${JE.t('panel_settings_ui')}</h3>
                         <div style="padding: 0 16px 16px 16px;">
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="showWatchProgress" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="showWatchProgressToggle" ${JE.currentSettings.showWatchProgress ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_ui_watch_progress')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_watch_progress_desc')}</div></div>
                                 </label>
                                 <div style="display:flex; gap:12px; margin-top:10px;">
                                     <div style="flex:1;">
-                                        <select id="watchProgressModeSelect" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
+                                        <select id="watchProgressModeSelect" data-setting-key="watchProgressMode" data-setting-label="${escapeHtml(tWithFallback('panel_settings_ui_watch_progress_mode_label', 'Watch progress display'))}" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
                                             <option value="percentage" ${JE.currentSettings.watchProgressMode === 'percentage' ? 'selected' : ''}>Percentage</option>
                                             <option value="time" ${JE.currentSettings.watchProgressMode === 'time' ? 'selected' : ''}>Time Watched</option>
                                             <option value="remaining" ${JE.currentSettings.watchProgressMode === 'remaining' ? 'selected' : ''}>Time Remaining</option>
                                         </select>
                                     </div>
                                     <div style="flex:1;">
-                                        <select id="watchProgressTimeFormatSelect" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
+                                        <select id="watchProgressTimeFormatSelect" data-setting-key="watchProgressTimeFormat" data-setting-label="${escapeHtml(tWithFallback('panel_settings_ui_watch_progress_time_format_label', 'Time format'))}" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
                                             <option value="hours" ${JE.currentSettings.watchProgressTimeFormat === 'hours' ? 'selected' : ''}>h:m</option>
                                             <option value="full" ${JE.currentSettings.watchProgressTimeFormat === 'full' ? 'selected' : ''}>y:mo:d:h:m</option>
                                         </select>
                                     </div>
                                 </div>
                             </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="showFileSizes" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="showFileSizesToggle" ${JE.currentSettings.showFileSizes ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_ui_file_sizes')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_file_sizes_desc')}</div></div>
                                 </label>
                             </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="showAudioLanguages" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="showAudioLanguagesToggle" ${JE.currentSettings.showAudioLanguages ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_ui_audio_languages')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_audio_languages_desc')}</div></div>
                                 </label>
                             </div>
                             ${JE.pluginConfig?.NativePosterTagsEnabled === true ? `
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="useNativePosterTags" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="nativePosterTagsToggle" ${JE.currentSettings.useNativePosterTags !== false ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer; flex-shrink:0;">
                                     <div><div style="font-weight:500;">${escapeHtml(JE.t('panel_settings_ui_native_poster_tags'))}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${escapeHtml(JE.t('panel_settings_ui_native_poster_tags_desc'))}</div></div>
                                 </label>
                             </div>` : ''}
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="qualityTagsEnabled" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
                                     <label style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; cursor: pointer;">
                                         <input type="checkbox" id="qualityTagsToggle" ${JE.currentSettings.qualityTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
@@ -449,18 +449,18 @@
                                             const upDisabled = idx === 0 ? 'disabled' : '';
                                             const downDisabled = idx === sorted.length - 1 ? 'disabled' : '';
                                             return `
-                                                <div class="je-quality-cat-row" data-cat-key="${c.settingKey}" data-order-key="${c.orderKey}" data-default-order="${c.defaultOrder}">
+                                                <div class="je-quality-cat-row" data-cat-key="${c.settingKey}" data-order-key="${c.orderKey}" data-default-order="${c.defaultOrder}" data-setting-key="${c.settingKey}" data-setting-label="${escapeHtml(JE.t(c.labelKey))}">
                                                     <label class="je-quality-cat-label-wrap">
                                                         <input type="checkbox" id="${c.id}" ${checked} style="accent-color:${toggleAccentColor};">
                                                         <span class="je-quality-cat-label">${JE.t(c.labelKey)}</span>
                                                     </label>
-                                                    <button type="button" class="je-cat-btn je-cat-up" ${upDisabled} aria-label="${JE.t('panel_settings_ui_quality_tags_move_up')}"><span class="material-icons" aria-hidden="true">arrow_upward</span></button>
-                                                    <button type="button" class="je-cat-btn je-cat-down" ${downDisabled} aria-label="${JE.t('panel_settings_ui_quality_tags_move_down')}"><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
+                                                    <button type="button" class="je-cat-btn je-cat-up" data-setting-key="${c.orderKey}" data-setting-group="tagOrder" data-setting-label="${escapeHtml(tWithFallback('panel_settings_ui_quality_tags_order_label', 'Tag order'))}" ${upDisabled} aria-label="${JE.t('panel_settings_ui_quality_tags_move_up')}"><span class="material-icons" aria-hidden="true">arrow_upward</span></button>
+                                                    <button type="button" class="je-cat-btn je-cat-down" data-setting-key="${c.orderKey}" data-setting-group="tagOrder" data-setting-label="${escapeHtml(tWithFallback('panel_settings_ui_quality_tags_order_label', 'Tag order'))}" ${downDisabled} aria-label="${JE.t('panel_settings_ui_quality_tags_move_down')}"><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
                                                 </div>
                                             `;
                                         }).join('');
                                     })()}
-                                    <div class="je-quality-audio-lang">
+                                    <div class="je-quality-audio-lang" data-setting-key="qualityTagsPreferredAudioLanguage" data-setting-label="${escapeHtml(JE.t('panel_settings_ui_quality_tags_audio_language'))}">
                                         <label for="qualityTagsAudioLanguageSelect" style="display:block; font-size:12px; color:rgba(255,255,255,0.6); margin:10px 0 4px;">${JE.t('panel_settings_ui_quality_tags_audio_language')}</label>
                                         <select id="qualityTagsAudioLanguageSelect" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
                                             <option value="">${JE.t('panel_settings_ui_quality_tags_audio_language_default')}</option>
@@ -471,7 +471,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="genreTagsEnabled" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
                                     <label style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; cursor: pointer;">
                                         <input type="checkbox" id="genreTagsToggle" ${JE.currentSettings.genreTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
@@ -480,7 +480,7 @@
                                     ${positionSelectorHtml('genreTagsPosition')}
                                 </div>
                             </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="languageTagsEnabled" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
                                     <label style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; cursor: pointer;">
                                         <input type="checkbox" id="languageTagsToggle" ${JE.currentSettings.languageTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
@@ -489,7 +489,7 @@
                                     ${positionSelectorHtml('languageTagsPosition')}
                                 </div>
                             </div>
-                                <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <div data-setting-row data-setting-key="ratingTagsEnabled" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
                                         <label style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; cursor: pointer;">
                                             <input type="checkbox" id="ratingTagsToggle" ${JE.currentSettings.ratingTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
@@ -517,7 +517,7 @@
                                             const a = JE.pluginConfig?.[c.pluginKey];
                                             const on = typeof u === 'boolean' ? u : (typeof a === 'boolean' ? a : true);
                                             return `
-                                                <div class="je-quality-cat-row" data-cat-key="${c.settingKey}">
+                                                <div class="je-quality-cat-row" data-cat-key="${c.settingKey}" data-setting-key="${c.settingKey}" data-setting-label="${escapeHtml(JE.t(c.labelKey))}">
                                                     <label class="je-quality-cat-label-wrap">
                                                         <input type="checkbox" id="${c.id}" ${on ? 'checked' : ''} style="accent-color:${toggleAccentColor};">
                                                         <span class="je-quality-cat-label">${JE.t(c.labelKey)}</span>
@@ -527,7 +527,7 @@
                                         }).join('')}
                                     </div>
                                 </div>
-                                <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <div data-setting-row data-setting-key="ageRatingTagsEnabled" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
                                         <label style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; cursor: pointer;">
                                             <input type="checkbox" id="ageRatingTagsToggle" ${JE.currentSettings.ageRatingTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
@@ -536,19 +536,19 @@
                                         ${positionSelectorHtml('ageRatingTagsPosition')}
                                     </div>
                                 </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="peopleTagsEnabled" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="peopleTagsToggle" ${JE.currentSettings.peopleTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_ui_people_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_people_tags_desc')}</div></div>
                                 </label>
                             </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="tagsHideOnHover" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="tagsHideOnHoverToggle" ${JE.currentSettings.tagsHideOnHover ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_ui_hide_tags_on_hover')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_hide_tags_on_hover_desc')}</div></div>
                                 </label>
                             </div>
-                            <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                            <div data-setting-row data-setting-key="removeContinueWatchingEnabled" style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                     <input type="checkbox" id="removeContinueWatchingToggle" ${JE.currentSettings.removeContinueWatchingEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_ui_remove_continue_watching')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_remove_continue_watching_desc')}</div></div>
@@ -682,7 +682,7 @@
                     <section class="je-pane" data-pane="language">
                         <h3 class="je-pane-title">${JE.icon(JE.IconName.LANGUAGE)} ${JE.t('panel_settings_language')}</h3>
                         <div style="padding: 0 16px 16px 16px;">
-                            <div style="margin-bottom: 16px;">
+                            <div data-setting-row data-setting-key="displayLanguage" style="margin-bottom: 16px;">
                                 <div style="font-weight: 600; margin-bottom: 8px;">${JE.t('panel_settings_language_display')}</div>
                                 <select id="displayLanguageSelect" style="width: 100%; padding: 12px; background: ${presetBoxBackground}; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; font-size: 14px; cursor: pointer; font-family: inherit;">
                                     <option value="" style="background: rgba(30,30,30,1); color: #fff;">Auto</option>

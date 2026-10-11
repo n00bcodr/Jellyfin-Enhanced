@@ -105,3 +105,10 @@ test('a prefetch the chips took over lets go of its visit, which holds the view 
  h.api.discardItemStatsPrefetch(visit);h.container.replaceChildren();h.api.displayItemSize('item',h.container,null);await h.settle();
  assert.equal(h.calls.length,1);assert.match(h.container.textContent,/1 GB/);
 });
+test('a watch-progress mode locked by the administrator shows read-only and is never saved (design item C2)',async t=>{
+ const h=setup(t);h.JE.currentSettings.watchProgressMode='time';h.JE.settings={isLocked:key=>key==='watchProgressMode'};
+ h.api.displayWatchProgress('item',h.container);await h.settle();const chip=h.container.firstChild;
+ assert.match(chip.textContent,/1m.*2m/);assert.equal(chip.title,'panel_provenance_locked');assert.equal(chip.style.cursor,'default');
+ chip.click();chip.click();
+ assert.equal(h.JE.currentSettings.watchProgressMode,'time');assert.match(chip.textContent,/1m.*2m/);assert.equal(h.saved.length,0);
+});

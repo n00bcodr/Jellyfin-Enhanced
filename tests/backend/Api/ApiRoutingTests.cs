@@ -55,6 +55,7 @@ public class ApiRoutingTests
     [Theory]
     [InlineData("script", "application/javascript")]
     [InlineData("js/component-scripts.json", "application/json")]
+    [InlineData("js/admin/user-settings-policy.js", "application/javascript")]
     [InlineData("Configuration/configPage.css", "text/css")]
     [InlineData("locales/de-DE.json", "application/json")]
     [InlineData("fonts/materialsymbolsrounded-subset.woff2", "font/woff2")]
@@ -71,6 +72,7 @@ public class ApiRoutingTests
 
     [Theory]
     [InlineData("private-config")]
+    [InlineData("admin/user-settings/registry")]
     [InlineData("host-compat")]
     [InlineData("jellyfin-urls")]
     [InlineData("jellyseerr/status")]

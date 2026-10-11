@@ -136,3 +136,14 @@ test('successful review creation refreshes persisted content and edit prepopulat
   assert.equal(saved.length,2);assert.equal(h.document.querySelector('.je-user-review-card .tmdb-review-text').textContent,'Updated version');
   assert.equal(h.document.querySelector('.je-review-form'),null);
 });
+
+test('a reviews default locked by the administrator still opens the section but is not remembered (design item C2)',async t=>{
+  for(const locked of [true,false]){
+    const h=await setup(t,{reviews:[{userId:'other',userName:'Other',content:'Review',rating:3}]});
+    const saved=[];h.JE.currentSettings={reviewsExpandedByDefault:false};h.JE.saveUserSettings=async(file,data)=>saved.push({...data});
+    h.JE.settings={isLocked:key=>locked&&key==='reviewsExpandedByDefault'};
+    const section=h.document.querySelector('.tmdb-reviews-section');section.open=true;section.dispatchEvent(new h.window.Event('toggle'));
+    assert.equal(section.open,true);
+    assert.equal(h.JE.currentSettings.reviewsExpandedByDefault,!locked);assert.equal(saved.length,locked?0:1);
+  }
+});
