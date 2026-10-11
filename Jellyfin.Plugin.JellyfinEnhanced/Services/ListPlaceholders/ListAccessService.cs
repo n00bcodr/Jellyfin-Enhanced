@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Jellyfin.Data;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
+using Jellyfin.Plugin.JellyfinEnhanced.Extensions;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using MediaBrowser.Controller.Library;
 
@@ -206,6 +207,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <returns>Whether the user is restricted.</returns>
         public bool IsRestricted(User user) =>
             _parentalFilter.TryGetRestrictedPolicy(user.Id.ToString("N", System.Globalization.CultureInfo.InvariantCulture), out _);
+
+        /// <summary>
+        /// The users with parental controls who may see a list (Jellyfin's visibility or JE's own view permission).
+        /// Fails closed: a user whose visibility can't be checked counts as a viewer. Used for what every viewer sees
+        /// at once, e.g. the list's poster collage.
+        /// </summary>
+        /// <param name="list">List.</param>
+        /// <returns>The restricted users who can see it.</returns>
+        public IReadOnlyList<User> GetRestrictedViewers(ListInfo list)
+        {
+            var viewers = new List<User>();
+            foreach (var user in _userManager.GetAllUsers())
+            {
+                if (user == null || !IsRestricted(user))
+                {
+                    continue;
+                }
+
+                bool canView;
+                try
+                {
+                    canView = _host.IsListVisible(list.Id, user) || Evaluate(list, user).Permissions.CanView;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Debug($"[ListPlaceholders] Visibility check failed for list {list.Id:N}: {ex.Message}");
+                    canView = true;
+                }
+
+                if (canView)
+                {
+                    viewers.Add(user);
+                }
+            }
+
+            return viewers;
+        }
 
         /// <summary>Whether a TMDB title is blocked for the user (false for unrestricted users, no lookups).</summary>
         /// <param name="mediaType">"movie" or "tv".</param>

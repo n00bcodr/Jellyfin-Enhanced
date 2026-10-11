@@ -439,6 +439,14 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListCollageMarkerStore.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListImageHost.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderArrService.cs",
       "category": "Services"
     },
@@ -448,6 +456,14 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderAutoRequestService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderCollageRenderer.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderCollageService.cs",
       "category": "Services"
     },
     {
@@ -5084,6 +5100,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ListPlaceholdersPosterCollage",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "AddRequestedMediaToWatchlist",
       "type": "bool",
       "initializer": null,
@@ -7670,6 +7694,10 @@
     },
     {
       "literal": "*.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListCollageMarkerStore.cs"
+    },
+    {
+      "literal": "*.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/ListPlaceholders/ListPlaceholderStore.cs"
     },
     {
@@ -7985,10 +8013,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 408,
+    "files": 412,
     "routes": 188,
-    "configuration_properties": 521,
-    "storage_references": 64,
+    "configuration_properties": 522,
+    "storage_references": 65,
     "scheduled_tasks": 15,
     "locales": 33
   }

@@ -305,6 +305,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 episodes);
         }
 
+        /// <summary>True when <paramref name="posterPath"/> is a TMDB poster path JE accepts (e.g. <c>/abc.jpg</c>).</summary>
+        /// <param name="posterPath">Candidate path.</param>
+        /// <returns>Whether it is valid.</returns>
+        public static bool IsValidPosterPath(string? posterPath) => posterPath != null && PosterRegex.IsMatch(posterPath);
+
         /// <summary>True when the placeholder's release date is today or earlier (UTC). TBA = not released.</summary>
         /// <param name="placeholder">Placeholder.</param>
         /// <param name="todayUtc">Today (UTC).</param>

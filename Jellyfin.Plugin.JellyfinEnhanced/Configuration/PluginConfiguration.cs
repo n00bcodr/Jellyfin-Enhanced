@@ -275,6 +275,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ListPlaceholdersAutoRequestCount = 1; // Next N placeholders per playback (1-10)
             ListPlaceholdersAutoRequestMinutes = 5; // Minutes watched before requesting (0 = on playback start, max 600)
             ListPlaceholdersAutoRequestOnlyReleased = true; // Skip unreleased and TBA titles
+            ListPlaceholdersPosterCollage = false; // Poster collage on placeholder-only lists (needs ListPlaceholdersEnabled)
 
             // Watchlist Settings
             AddRequestedMediaToWatchlist = false;
@@ -843,6 +844,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int ListPlaceholdersAutoRequestCount { get; set; }
         public int ListPlaceholdersAutoRequestMinutes { get; set; }
         public bool ListPlaceholdersAutoRequestOnlyReleased { get; set; }
+        // Placeholder-only playlists/collections get a collage of their placeholders' TMDB posters as their image while
+        // they have no real items (never replaces an image someone set; removed once a real item arrives). Server-only.
+        public bool ListPlaceholdersPosterCollage { get; set; }
 
         // Watchlist Settings
         public bool AddRequestedMediaToWatchlist { get; set; }

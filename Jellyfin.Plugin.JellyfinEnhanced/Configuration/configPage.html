@@ -2000,6 +2000,10 @@
                             <div class="je-setting-description" data-desc-for="listPlaceholdersEnabled">
                                 <div class="fieldDescription je-field-desc-xl">Lets users add movies, series, seasons or episodes that aren't in your library to collections and playlists. They show up as "Not in your library" entries with their Seerr status and a request button, and are replaced by the real item once it arrives. Users who can edit a list can add and arrange them: the playlist's owner and anyone it's shared with as an editor, and administrators; for collections, administrators and users allowed to manage collections. Parental controls hide titles a restricted user may not see.</div>
                             </div>
+                            <div class="checkboxContainer"><label><input id="listPlaceholdersPosterCollage" is="emby-checkbox" type="checkbox"/><span>Give lists with only "Not in your library" titles a poster collage</span></label></div>
+                            <div class="je-setting-description" data-desc-for="listPlaceholdersPosterCollage">
+                                <div class="fieldDescription je-field-desc-xl">A playlist or collection that has no real items yet shows Jellyfin's generic icon. With this on, JE gives it a collage of the posters of its first "Not in your library" titles instead (square for playlists, poster-shaped for collections). The collage is only used while the list has no real items and never replaces an image you set: once a real item is added, JE removes it. Playlists then get Jellyfin's own image made from their items; collections go back to Jellyfin's default look, as Jellyfin doesn't make images for collections. Turning this off removes the collages JE made. Posters are downloaded from TMDB.</div>
+                            </div>
                             <div class="checkboxContainer"><label><input id="listPlaceholdersSyncEnabled" is="emby-checkbox" type="checkbox"/><span>Keep linked lists in sync</span></label></div>
                             <div class="je-setting-description" data-desc-for="listPlaceholdersSyncEnabled">
                                 <div class="fieldDescription je-field-desc-xl">Playlists and collections imported from an MDBList, TMDB, Trakt or IMDb list can stay linked to it. When this is on, the "Sync linked lists" scheduled task (every 12 hours by default) adds titles that were added to the source list, and removes the ones that left it if the link asks for that. Only entries the import or sync added are ever removed. Editors can always press "Sync now".</div>
@@ -6215,6 +6219,7 @@
                 document.querySelector('#listPlaceholdersAutoRequestCount').value = config.ListPlaceholdersAutoRequestCount || 1;
                 document.querySelector('#listPlaceholdersAutoRequestMinutes').value = typeof config.ListPlaceholdersAutoRequestMinutes === 'number' ? config.ListPlaceholdersAutoRequestMinutes : 5;
                 document.querySelector('#listPlaceholdersAutoRequestOnlyReleased').checked = config.ListPlaceholdersAutoRequestOnlyReleased !== false;
+                document.querySelector('#listPlaceholdersPosterCollage').checked = config.ListPlaceholdersPosterCollage || false;
                 if ((config.AutoMovieRequestQualityMode || 'default') === 'custom') {
                     document.querySelector('#autoMovieRequestCustomSettings').style.display = 'block';
                     loadAutoMovieRadarrServers(config);
@@ -6830,6 +6835,7 @@
             const lpRequestMinutes = parseInt(document.querySelector('#listPlaceholdersAutoRequestMinutes').value, 10);
             config.ListPlaceholdersAutoRequestMinutes = isNaN(lpRequestMinutes) ? 5 : Math.min(Math.max(lpRequestMinutes, 0), 600);
             config.ListPlaceholdersAutoRequestOnlyReleased = document.querySelector('#listPlaceholdersAutoRequestOnlyReleased').checked;
+            config.ListPlaceholdersPosterCollage = document.querySelector('#listPlaceholdersPosterCollage').checked;
             config.AddRequestedMediaToWatchlist = document.querySelector('#addRequestedMediaToWatchlist').checked;
             config.SyncJellyseerrWatchlist = document.querySelector('#syncJellyseerrWatchlist').checked;
             config.SyncJellyfinWatchlistToSeerr = document.querySelector('#syncJellyfinWatchlistToSeerr').checked;
@@ -8265,7 +8271,7 @@
             { parent: 'catchUpEnabled', label: 'Enable Catch Up', children: ['catchUpLogEnabled', 'catchUpUseNativeTab', 'catchUpUsePluginPages', 'catchUpUseCustomTabs', 'catchUpAutoCreateCustomTab'] },
             { parent: 'autoMovieRequestEnabled', label: 'Enable Automatic Movie Requests', children: ['autoMovieRequestTriggerOnStart', 'autoMovieRequestTriggerOnMinutesWatched', 'autoMovieRequestMinutesWatched', 'autoMovieRequestCheckReleaseDate', 'autoMovieRequestQualityMode', 'autoMovieRequestFallbackOn4k'] },
             { parent: 'autoSeasonRequestEnabled', label: 'Enable Automatic Season Requests', children: ['autoSeasonRequestRequireAllWatched', 'autoSeasonRequestThresholdValue'] },
-            { parent: 'listPlaceholdersEnabled', label: "Show titles you don't have on collections and playlists", children: ['listPlaceholdersAutoRequestEnabled', 'listPlaceholdersAutoRequestCount', 'listPlaceholdersAutoRequestMinutes', 'listPlaceholdersAutoRequestOnlyReleased', 'listPlaceholdersSyncEnabled', 'traktClientId', 'listPlaceholdersImdbEnabled', 'listPlaceholdersArrEnabled'] },
+            { parent: 'listPlaceholdersEnabled', label: "Show titles you don't have on collections and playlists", children: ['listPlaceholdersAutoRequestEnabled', 'listPlaceholdersAutoRequestCount', 'listPlaceholdersAutoRequestMinutes', 'listPlaceholdersAutoRequestOnlyReleased', 'listPlaceholdersSyncEnabled', 'traktClientId', 'listPlaceholdersImdbEnabled', 'listPlaceholdersArrEnabled', 'listPlaceholdersPosterCollage'] },
             { parent: 'listPlaceholdersAutoRequestEnabled', label: "Request the next titles of a list while it's being watched", children: ['listPlaceholdersAutoRequestCount', 'listPlaceholdersAutoRequestMinutes', 'listPlaceholdersAutoRequestOnlyReleased'] },
             { parent: 'preventWatchlistReAddition', label: 'Prevent re-adding removed items', children: ['watchlistMemoryRetentionDays'] },
             { parent: 'triggerSeerrScanOnItemAdded', label: 'Trigger Seerr scan on item added', children: ['seerrScanDebounceSeconds'] },

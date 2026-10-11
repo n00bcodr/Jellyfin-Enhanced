@@ -93,6 +93,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.ListPlaceholders.ListPlaceholderLifecycle>();
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.ListPlaceholders.ListPlaceholderLifecycle>());
             serviceCollection.AddHostedService<Services.ListPlaceholders.ListPlaceholderSwapMonitor>();
+            // Poster collage of placeholder-only lists (ListPlaceholdersPosterCollage): debounced per list, hosted for its
+            // triggers (document changes, native list edits, startup pass, setting toggles).
+            serviceCollection.AddSingleton<Services.ListPlaceholders.IListImageHost, Services.ListPlaceholders.JellyfinListImageHost>();
+            serviceCollection.AddSingleton<Services.ListPlaceholders.ListPlaceholderCollageService>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.ListPlaceholders.ListPlaceholderCollageService>());
             // List placeholder auto-requests: always-registered playback consumers (settings checked per event)
             // request the next placeholders of a played list through Seerr as the playing user.
             serviceCollection.AddSingleton<Services.ListPlaceholders.SeerrRequestGateway>();

@@ -84,6 +84,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <summary>The directory holding the documents.</summary>
         public string DirectoryPath => _dir;
 
+        /// <summary>
+        /// Raised with the list id after a document was saved or deleted (any change of a list's placeholders). Runs on
+        /// the writer's thread, possibly under the list lock: handlers must only queue work and must not throw.
+        /// </summary>
+        public event Action<string>? Changed;
+
         /// <summary>True when <paramref name="listIdN"/> is a lowercase 32-hex id usable as a file name.</summary>
         /// <param name="listIdN">Candidate id.</param>
         /// <returns>Whether it is valid.</returns>
@@ -236,6 +242,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
 
             IndexList(doc);
+            RaiseChanged(doc.ListId);
             return doc;
         }
 
@@ -264,6 +271,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 RemoveFromIndexUnlocked(listIdN);
             }
 
+            RaiseChanged(listIdN);
             return existed;
         }
 
@@ -380,6 +388,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <returns>The copy.</returns>
         public static ListDoc Clone(ListDoc doc) =>
             JsonSerializer.Deserialize<ListDoc>(JsonSerializer.Serialize(doc, JsonOptions), JsonOptions)!;
+
+        private void RaiseChanged(string listIdN)
+        {
+            try
+            {
+                Changed?.Invoke(listIdN);
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug($"[ListPlaceholders] A document change listener failed: {ex.Message}");
+            }
+        }
 
         private static string ReplayKey(string scope, string requestId, string userIdN) => scope + "|" + userIdN + "|" + requestId;
 
