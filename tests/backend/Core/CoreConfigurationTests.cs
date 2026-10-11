@@ -8,6 +8,7 @@ public class CoreConfigurationTests
     [Fact]
     public void DefaultUserSettingsPreserveOptInAndInheritedChoices()
     {
+        // Every initializer is also golden (a) in tests/fixtures/settings/legacy-partial-files.json.
         var settings = new UserSettings();
         Assert.False(settings.AutoPauseEnabled);
         Assert.False(settings.AutoResumeEnabled);

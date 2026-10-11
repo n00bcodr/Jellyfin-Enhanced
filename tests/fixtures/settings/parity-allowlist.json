@@ -1,0 +1,42 @@
+{
+  "SeedVsReset": {
+    "WatchProgressMode": "Reset-all writes the initializer, not the admin's WatchProgressDefaultMode (design 2.3; A1 fixes it).",
+    "WatchProgressTimeFormat": "Reset-all writes the initializer, not the admin's WatchProgressTimeFormat (design 2.3; A1 fixes it)."
+  },
+  "JsDefaultsVsInitializers": {
+    "AutoPauseEnabled": "One of six booleans: C# initializer false, admin default and JS true (design 2.3).",
+    "PauseScreenEnabled": "One of six booleans: C# initializer false, admin default and JS true (design 2.3).",
+    "RandomButtonEnabled": "One of six booleans: C# initializer false, admin default and JS true (design 2.3).",
+    "RandomIncludeMovies": "One of six booleans: C# initializer false, admin default and JS true (design 2.3).",
+    "RandomIncludeShows": "One of six booleans: C# initializer false, admin default and JS true (design 2.3).",
+    "ShowAudioLanguages": "One of six booleans: C# initializer false, admin default and JS true (design 2.3).",
+    "SelectedFontSizePresetIndex": "Font size: C# initializer 0, admin default and JS 2 (design 2.3).",
+    "SubtitleVerticalPosition": "C# initializer 85, JS and the panel reset 95 (design 2.3; decision 3: not changed in this programme).",
+    "UseNativePosterTags": "C# null means not chosen, which the client resolves to on (UserConfiguration.cs).",
+    "ResolutionTagOrder": "C# null inherits the admin order; JS falls back to the shipped order.",
+    "SourceTagOrder": "C# null inherits the admin order; JS falls back to the shipped order.",
+    "DynamicRangeTagOrder": "C# null inherits the admin order; JS falls back to the shipped order.",
+    "SpecialFormatTagOrder": "C# null inherits the admin order; JS falls back to the shipped order.",
+    "VideoCodecTagOrder": "C# null inherits the admin order; JS falls back to the shipped order.",
+    "AudioInfoTagOrder": "C# null inherits the admin order; JS falls back to the shipped order.",
+    "LastOpenedTab": "C# initializer is empty; the seed and JS use 'shortcuts'.",
+    "DisableAllShortcuts": "Phantom client-only key; not a UserSettings property (decision 6: leave as is)."
+  },
+  "ClientFallbackVsSeed": {
+    "SubtitleVerticalPosition": "C# initializer 85 (not seeded), JS 95 (design 2.3; decision 3).",
+    "UseNativePosterTags": "The seed stores null (not chosen); the client resolves it to on.",
+    "DisableAllShortcuts": "Phantom client-only key; not a UserSettings property (decision 6).",
+    "SelectedTextEffectPresetIndex": "Text-effect alias missing from config.js: the fallback ignores DefaultSubtitleTextEffect (design 2.3; A9 fixes it).",
+    "TagsHideOnHover": "The seed ignores the admin TagsHideOnHover; the client fallback reads it (design 2.3; A9 fixes the seed).",
+    "QualityTagsPreferredAudioLanguage": "The seed stores '' (use the server default); the fallback copies the admin language itself.",
+    "WatchProgressMode": "A blank admin value seeds the initializer; the client fallback keeps the blank (BlankAdminUsesInitializer).",
+    "WatchProgressTimeFormat": "A blank admin value seeds the initializer; the client fallback keeps the blank (BlankAdminUsesInitializer)."
+  },
+  "ClientSeededVsSeed": {
+    "UseNativePosterTags": "The seed stores null (not chosen); currentSettings resolves it to on and saves null back (config.js saveUserSettings).",
+    "DisableAllShortcuts": "Phantom client-only key; not a UserSettings property (decision 6)."
+  },
+  "NotValueChecked": {
+    "ShowRatingInPlayer": "Seeded per user, but js/enhanced/player/osd-rating.js reads only the admin value; no value drift to check (decision 6: leave as is)."
+  }
+}
