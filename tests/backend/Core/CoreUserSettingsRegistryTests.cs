@@ -8,7 +8,8 @@ namespace JE.Tests;
 /// <summary>
 /// The [UserSetting] registry on UserSettings (design 7.1 and the build checks of section 8): every
 /// property is registered or deliberately left out, every admin default exists and fits, every
-/// string key is validated, the flags agree with each other and with the code that reads them,
+/// string key is validated, initializers equal the shipped admin defaults (bar a fixed drift list),
+/// the flags agree with each other and with the code that reads them,
 /// and every lockable key has exactly one admin control on configPage.html.
 /// </summary>
 public class CoreUserSettingsRegistryTests
@@ -134,6 +135,55 @@ public class CoreUserSettingsRegistryTests
             var admin = descriptor.AdminProperty.GetValue(shipped);
             Assert.True(Satisfies(descriptor.Setting, admin), $"{descriptor.Key}: shipped admin default {admin} fails the user key's validation");
         }
+    }
+
+    /// <summary>
+    /// Keys whose C# initializer differs from what <see cref="UserSettingsRegistry.BuildDefaults"/> copies
+    /// from the shipped admin default today, with the reason it is left alone. Fixed only by a behaviour
+    /// change; never add a new key here (design 3.3 rule 4, section 8).
+    /// </summary>
+    private static readonly Dictionary<string, string> InitializerDriftAllowlist = new(StringComparer.Ordinal)
+    {
+        // Design 2.2.3: "six booleans are false in C# but true in the admin config and JS, and font size
+        // is 0 vs 2". A legacy file without the key resolves to the initializer (rule 4), pinned by the
+        // B1 legacy golden (CoreSettingsDefaultsTests), so changing any of these is a behaviour change.
+        [nameof(UserSettings.AutoPauseEnabled)] = "false vs admin true; legacy missing-key value pinned by CorePersistenceTests",
+        [nameof(UserSettings.PauseScreenEnabled)] = "false vs admin true; legacy missing-key value",
+        [nameof(UserSettings.RandomButtonEnabled)] = "false vs admin true; legacy missing-key value",
+        [nameof(UserSettings.RandomIncludeMovies)] = "false vs admin true; legacy missing-key value",
+        [nameof(UserSettings.RandomIncludeShows)] = "false vs admin true; legacy missing-key value",
+        [nameof(UserSettings.ShowAudioLanguages)] = "false vs admin true; legacy missing-key value",
+        [nameof(UserSettings.SelectedFontSizePresetIndex)] = "0 vs admin DefaultSubtitleSize 2; legacy missing-key value",
+    };
+
+    /// <summary>Whether the value is the key's inherit sentinel (null or ""), which reads through to the admin default.</summary>
+    private static bool IsInheritSentinel(UserSettingAttribute setting, object? value)
+        => (setting.NullInheritsAdmin && value == null) || (setting.EmptyInheritsAdmin && value is "");
+
+    [Fact]
+    public void InitializersEqualShippedAdminDefaults()
+    {
+        var initializers = new UserSettings();
+        var seeded = UserSettingsRegistry.BuildDefaults(new PluginConfiguration());
+        var drifted = new HashSet<string>(StringComparer.Ordinal);
+        var unexpected = new List<string>();
+        foreach (var descriptor in UserSettingsRegistry.All)
+        {
+            if (descriptor.AdminProperty == null || descriptor.Setting.DefaultIsSentinel) continue;
+            // BuildDefaults already maps a blank admin value to the initializer where the key says so.
+            var initial = descriptor.Property.GetValue(initializers);
+            var shipped = descriptor.Property.GetValue(seeded);
+            // A sentinel initializer counts as equal: a missing key follows the admin default (design 3.3).
+            if (Equals(initial, shipped) || IsInheritSentinel(descriptor.Setting, initial)) continue;
+            drifted.Add(descriptor.Key);
+            if (!InitializerDriftAllowlist.ContainsKey(descriptor.Key))
+                unexpected.Add($"{descriptor.Key} (initializer {initial ?? "null"}, shipped admin default {shipped ?? "null"})");
+        }
+        Assert.True(unexpected.Count == 0,
+            "A key's C# initializer must equal its shipped admin default, or a missing key would not look like the default: " + string.Join(", ", unexpected));
+        // No stale entries: a fixed drift must leave the list.
+        var stale = InitializerDriftAllowlist.Keys.Where(k => !drifted.Contains(k)).ToList();
+        Assert.True(stale.Count == 0, "InitializerDriftAllowlist entries that no longer drift: " + string.Join(", ", stale));
     }
 
     [Fact]
