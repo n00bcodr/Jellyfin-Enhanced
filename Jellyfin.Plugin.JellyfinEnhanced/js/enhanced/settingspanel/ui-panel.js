@@ -10,6 +10,53 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
 
+    // Panes whose controls write settings.json; read-only while it failed to load.
+    const SETTINGS_DOCUMENT_PANES = ['playback', 'auto-skip', 'subtitles', 'random-button', 'ui'];
+
+    /**
+     * Shows the settings panes read-only with a Retry button when the stored
+     * settings.json failed to load (JE.userConfig.settingsStatus 'unavailable').
+     * The values on screen are then fallback defaults that JE.saveUserSettings
+     * refuses to write, so the controls are inert rather than silently unsaved.
+     * @param {HTMLElement} help - The panel root.
+     * @param {(ev: Event) => void} retry - Click handler of the Retry buttons.
+     */
+    function showSettingsUnavailable(help, retry) {
+        SETTINGS_DOCUMENT_PANES.forEach((paneName) => {
+            const pane = help.querySelector(`.je-pane[data-pane="${paneName}"]`);
+            if (!pane) return;
+            const title = pane.querySelector('.je-pane-title');
+            Array.from(pane.children).forEach((child) => {
+                if (child === title) return;
+                child.setAttribute('inert', '');
+                child.setAttribute('aria-disabled', 'true');
+                child.style.opacity = '0.5';
+            });
+
+            const notice = document.createElement('div');
+            notice.className = 'je-settings-unavailable';
+            notice.setAttribute('role', 'status');
+            Object.assign(notice.style, {
+                display: 'flex', alignItems: 'center', gap: '12px', margin: '0 16px 16px 16px', padding: '12px',
+                borderRadius: '6px', borderLeft: '3px solid #f0ad4e', background: 'rgba(240, 173, 78, 0.12)'
+            });
+            const text = document.createElement('span');
+            text.style.flex = '1';
+            text.textContent = JE.t('panel_settings_unavailable');
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'je-settings-unavailable-retry';
+            Object.assign(button.style, {
+                padding: '6px 14px', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '6px',
+                background: 'rgba(255,255,255,0.1)', color: '#fff', fontFamily: 'inherit', cursor: 'pointer'
+            });
+            button.textContent = JE.t('panel_settings_unavailable_retry');
+            button.addEventListener('click', retry);
+            notice.append(text, button);
+            if (title) title.after(notice); else pane.prepend(notice);
+        });
+    }
+
     /**
      * Toggles the main settings and help panel for the plugin.
      */
@@ -29,6 +76,7 @@
                 if (settingsResponse) {
                     JE.userConfig = JE.userConfig || {};
                     JE.userConfig.settings = window.JellyfinEnhanced.toCamelCase(settingsResponse);
+                    JE.userConfig.settingsStatus = 'ok';
 
                     // Reload current settings
                     if (typeof JE.loadSettings === 'function') {
@@ -332,20 +380,23 @@
             if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
             return tag === 'INPUT' && !['checkbox', 'radio', 'button', 'range', 'color'].includes(target.type);
         };
+        const closePanel = () => {
+            if (autoCloseTimer) clearTimeout(autoCloseTimer);
+            help.remove();
+            runPanelCleanups();
+            document.removeEventListener('keydown', closeHelp);
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            if (!JE.pluginConfig.DisableAllShortcuts) {
+                document.addEventListener('keydown', JE.keyListener, true);
+            }
+        };
         const closeHelp = (ev) => {
             const keyboardClose = ev.type === 'keydown'
                 && (ev.key === 'Escape' || (ev.key === '?' && !isEditableKeyboardTarget(ev.target)));
             if (keyboardClose || (ev.type === 'click' && ev.target.id === 'closeSettingsPanel')) {
                 ev.stopPropagation();
-                if (autoCloseTimer) clearTimeout(autoCloseTimer);
-                help.remove();
-                runPanelCleanups();
-                document.removeEventListener('keydown', closeHelp);
-                document.removeEventListener('mousemove', handleMouseMove);
-                document.removeEventListener('mouseup', handleMouseUp);
-                if (!JE.pluginConfig.DisableAllShortcuts) {
-                    document.addEventListener('keydown', JE.keyListener, true);
-                }
+                closePanel();
             }
         };
 
@@ -367,5 +418,14 @@
         JE.internals.spoilerGuard?.wireSettings?.(ctx);
         internal.wireMiscSettingsControls(ctx);
         internal.wireLanguageControls(ctx);
+
+        if (JE.userConfig?.settingsStatus === 'unavailable') {
+            // Retry = close and open again: opening re-fetches the settings first.
+            showSettingsUnavailable(help, (ev) => {
+                ev.stopPropagation(); // the panel's own click handler would re-arm its auto-close timer
+                closePanel();
+                JE.showEnhancedPanel();
+            });
+        }
     };
 })(window.JellyfinEnhanced);

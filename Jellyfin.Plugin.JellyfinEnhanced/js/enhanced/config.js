@@ -32,12 +32,17 @@
     // so two quick changes must reach the server in call order or the earlier
     // (smaller) snapshot can land last and drop the newer change.
     const _saveChain = {};
+    // Whether the "settings could not be loaded" warning was already logged this page load.
+    let _warnedSettingsUnavailable = false;
 
     /**
      * Saves user settings to the server.
      * Skips the POST if the data is identical to the last value saved this session
      * (prevents redundant writes). The first save per session for a given file is
      * always allowed through since the cache starts empty.
+     * Never saves settings.json while the stored document failed to load
+     * (JE.userConfig.settingsStatus 'unavailable'): the in-memory values are then
+     * fallback defaults and would overwrite the user's real preferences.
      * Failures are logged and swallowed unless the caller opts in to them.
      * @param {string} fileName Per-user settings file, e.g. 'settings.json'.
      * @param {object} settings The whole document to save.
@@ -47,6 +52,14 @@
      */
     JE.saveUserSettings = async (fileName, settings, options = {}) => {
         const throwOnError = options?.throwOnError === true;
+        if (fileName === 'settings.json' && JE.userConfig?.settingsStatus === 'unavailable') {
+            if (throwOnError) throw new Error('Settings could not be loaded; not saving');
+            if (!_warnedSettingsUnavailable) {
+                _warnedSettingsUnavailable = true;
+                console.warn('🪼 Jellyfin Enhanced: Your settings could not be loaded, so changes are not saved until they load.');
+            }
+            return;
+        }
         if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId) {
             if (throwOnError) throw new Error('ApiClient not available');
             console.error("🪼 Jellyfin Enhanced: ApiClient not available");

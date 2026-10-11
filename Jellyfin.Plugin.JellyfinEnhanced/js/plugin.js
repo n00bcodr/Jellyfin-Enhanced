@@ -976,15 +976,19 @@
      * keeps its default; settings, bookmark and hidden-content are converted
      * from PascalCase to camelCase. Shared by the per-endpoint loader and the
      * bootstrap payload so both build the object identically.
+     * `settingsStatus` is 'unavailable' when the settings document did not load:
+     * the settings are then fallback defaults that JE.saveUserSettings must not
+     * write over the stored file (and the panel shows read-only), else 'ok'.
      * @param {object} documents - Map of document name (settings, shortcuts,
      *   bookmark, elsewhere, hiddenContent) to its parsed JSON, or null.
      * @returns {object} A freshly-built userConfig object.
      */
     function buildUserConfig(documents) {
-        const userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
+        const userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} }, settingsStatus: 'unavailable' };
         for (const name of Object.keys(USER_CONFIG_DOCUMENTS)) {
             const value = documents ? documents[name] : null;
             if (!value || typeof value !== 'object') continue; // keep the default
+            if (name === 'settings') userConfig.settingsStatus = 'ok';
             // *** CONVERT PASCALCASE TO CAMELCASE ***
             if (name === 'settings' || name === 'bookmark' || name === 'hiddenContent') {
                 userConfig[name] = toCamelCase(value);
@@ -1004,7 +1008,8 @@
     function buildUserConfigFromBootstrap(userSettings) {
         const docs = userSettings && typeof userSettings === 'object' ? userSettings : {};
         return buildUserConfig({
-            settings: docs.Settings,
+            // A server that reports the stored settings unavailable sends no document.
+            settings: docs.SettingsStatus === 'unavailable' ? null : docs.Settings,
             shortcuts: docs.Shortcuts,
             bookmark: docs.Bookmark,
             elsewhere: docs.Elsewhere,

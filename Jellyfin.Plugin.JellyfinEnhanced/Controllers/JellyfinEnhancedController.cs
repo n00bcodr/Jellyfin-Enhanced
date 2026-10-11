@@ -3925,6 +3925,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var isAdmin = IsAdminUser();
+            var settingsDocument = TryLoadUserDocument("settings.json", authorizedUserId, () => LoadUserSettingsDocument(authorizedUserId));
 
             return new JsonResult(new
             {
@@ -3939,7 +3940,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 HasPluginPages = IsPluginInstalled("Plugin Pages"),
                 UserSettings = new
                 {
-                    Settings = TryLoadUserDocument("settings.json", authorizedUserId, () => LoadUserSettingsDocument(authorizedUserId)),
+                    Settings = settingsDocument,
+                    // "unavailable": the stored settings could not be loaded, so the client shows
+                    // them read-only instead of saving its fallback defaults over them.
+                    SettingsStatus = settingsDocument == null ? "unavailable" : "ok",
                     Shortcuts = TryLoadUserDocument("shortcuts.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json")),
                     Bookmark = TryLoadUserDocument("bookmark.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json")),
                     Elsewhere = TryLoadUserDocument("elsewhere.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json")),
@@ -4017,9 +4021,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>
         /// Loads one per-user document for the bootstrap payload. A failure yields
         /// null (the client then applies the same defaults it uses when the
-        /// standalone endpoint fails) instead of failing the whole bootstrap.
+        /// standalone endpoint fails; for settings.json it also stops saving)
+        /// instead of failing the whole bootstrap.
         /// </summary>
-        private object? TryLoadUserDocument(string fileName, string authorizedUserId, Func<object> load)
+        private object? TryLoadUserDocument(string fileName, string authorizedUserId, Func<object?> load)
         {
             try
             {
@@ -4906,36 +4911,78 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            return Ok(LoadUserSettingsDocument(authorizedUserId));
+            var document = LoadUserSettingsDocument(authorizedUserId);
+            if (document == null)
+            {
+                // The stored document exists but cannot be read right now. The client must not
+                // fall back to defaults and save them over it, so this is an error, not defaults.
+                return StatusCode(503, new { success = false, status = "unavailable", message = "Your settings could not be loaded right now. Please retry." });
+            }
+
+            return Ok(document);
         }
 
         /// <summary>
         /// Loads (seeding defaults on first access) the user's settings.json document
         /// with the caller's IsAdmin flag applied. Shared by the settings.json
         /// endpoint and /bootstrap so both return exactly the same shape.
+        /// A malformed file (empty, literal null, unparseable) is quarantined and
+        /// re-seeded from the admin defaults, never served as bare initializers.
+        /// Null when the stored document is unavailable (a read error, or a malformed
+        /// file that could not be moved aside): nothing is seeded or overwritten.
         /// </summary>
-        private object LoadUserSettingsDocument(string authorizedUserId)
+        private object? LoadUserSettingsDocument(string authorizedUserId)
         {
-            // Populate defaults from plugin configuration if missing. Checked again under the
-            // per-file lock so a save that lands between the first check and the seed (another
-            // tab's POST, a reset-all) is never overwritten with defaults.
-            if (!_userConfigurationManager.UserConfigurationExists(authorizedUserId, "settings.json"))
+            UserSettings? userConfig;
+            // Read, quarantine and seed under the per-file lock, so a save that lands meanwhile
+            // (another tab's POST, a reset-all) is never overwritten with defaults, and the
+            // served document is exactly what was read or written.
+            lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "settings.json"))
             {
-                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "settings.json"))
+                var status = _userConfigurationManager.ReadUserConfigurationChecked(authorizedUserId, "settings.json", out userConfig);
+                if (status == UserDocumentReadStatus.Unavailable)
+                {
+                    return null;
+                }
+
+                if (status != UserDocumentReadStatus.Loaded)
                 {
                     var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
-                    if (defaultConfig != null
-                        && !_userConfigurationManager.UserConfigurationExists(authorizedUserId, "settings.json"))
+                    if (defaultConfig == null)
                     {
-                        var defaultUserSettings = UserSettings.FromAdminDefaults(defaultConfig);
+                        // No admin defaults to seed from: a new user gets the unsaved initializers as
+                        // before, but a quarantined document is never replaced by them.
+                        if (status == UserDocumentReadStatus.Quarantined)
+                        {
+                            return null;
+                        }
 
-                        _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", defaultUserSettings);
-                        _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
+                        userConfig = new UserSettings();
+                    }
+                    else
+                    {
+                        userConfig = UserSettings.FromAdminDefaults(defaultConfig);
+                        try
+                        {
+                            _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfig);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.Error($"Could not save default settings.json for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                            return null;
+                        }
+
+                        if (status == UserDocumentReadStatus.Quarantined)
+                        {
+                            _logger.Warning($"Re-seeded settings.json for {ResolveUserDisplay(authorizedUserId)} from the admin defaults after its malformed file was quarantined.");
+                        }
+                        else
+                        {
+                            _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
+                        }
                     }
                 }
             }
-
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserSettings>(authorizedUserId, "settings.json");
 
             // IsAdmin reflects the CALLER's admin status (not the target user's, in the
             // rare admin-viewing-another-user's-settings case allowed by

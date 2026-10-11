@@ -236,3 +236,64 @@ for (const late of ['private-config', 'settings']) test(`per-endpoint fallback d
   assert.equal(h.plugin.pluginConfig.SonarrUrl, undefined);
   assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'user-c': { name: 'user-c' } });
 });
+
+// Settings that failed to load are fallback defaults: saving them would overwrite the stored
+// file, so settings.json saves are refused until a load succeeds (other documents still save).
+test('settings the bootstrap reports unavailable are never saved back; a user whose settings load saves normally', async t => {
+  const posts = [];
+  let current = 'user-a';
+  const h = setup(t, { ajax: async (path, request) => {
+    if (request.type === 'POST') { posts.push(path); return {}; }
+    if (path.endsWith('/bootstrap')) {
+      const user = current;
+      return user === 'user-a'
+        ? payload({ UserSettings: { Settings: null, SettingsStatus: 'unavailable', Shortcuts: { Shortcuts: [] } } })
+        : payload({ UserId: user, UserSettings: { Settings: { AutoPauseEnabled: false }, SettingsStatus: 'ok' } });
+    }
+    throw new Error(`Unexpected endpoint ${path}`);
+  } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.plugin.userConfig.settingsStatus, 'unavailable');
+  assert.equal(h.plugin.currentSettings.autoPauseEnabled, true, 'fallback defaults are in memory');
+  await h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings);
+  await assert.rejects(h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings, { throwOnError: true }), /could not be loaded/);
+  await h.plugin.saveUserSettings('shortcuts.json', { Shortcuts: [] });
+  assert.deepEqual(posts, ['/JellyfinEnhanced/user-settings/user-a/shortcuts.json']);
+
+  const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
+  current = 'user-b'; h.switchUser('user-b');
+  await loaded;
+  assert.equal(h.plugin.userConfig.settingsStatus, 'ok');
+  assert.equal(h.plugin.currentSettings.autoPauseEnabled, false);
+  await h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings, { throwOnError: true });
+  assert.deepEqual(posts.slice(1), ['/JellyfinEnhanced/user-settings/user-b/settings.json']);
+});
+
+for (const [label, userSettings, expected] of [
+  ['a loaded document', { Settings: { AutoPauseEnabled: false }, SettingsStatus: 'ok' }, 'ok'],
+  ['a document from a server that predates the status', { Settings: { AutoPauseEnabled: false } }, 'ok'],
+  ['no document', { Settings: null }, 'unavailable'],
+]) test(`bootstrap with ${label} marks settings ${expected}`, async t => {
+  const h = setup(t, { data: payload({ UserSettings: userSettings }) });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.plugin.userConfig.settingsStatus, expected);
+});
+
+for (const settingsFails of [true, false]) test(`per-endpoint fallback marks settings ${settingsFails ? 'unavailable when its GET fails' : 'ok when its GET succeeds'}`, async t => {
+  const posts = [];
+  const h = setup(t, { expectedConsoleErrors: ['Failed to fetch public config', 'Failed to fetch version'], ajax: async (path, request) => {
+    if (request.type === 'POST') { posts.push(path); return {}; }
+    if (path.endsWith('/component-scripts.json')) return modules;
+    if (path === '/Plugins') return [];
+    if (path === '/JellyfinEnhanced/user-settings/user-a/settings.json') {
+      if (settingsFails) throw new Error('503 Service Unavailable');
+      return { AutoPauseEnabled: false };
+    }
+    if (path.startsWith('/JellyfinEnhanced/user-settings/user-a/')) return {};
+    throw new Error('offline');
+  } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.plugin.userConfig.settingsStatus, settingsFails ? 'unavailable' : 'ok');
+  await h.plugin.saveUserSettings('settings.json', { ...h.plugin.currentSettings, autoPipEnabled: true });
+  assert.deepEqual(posts, settingsFails ? [] : ['/JellyfinEnhanced/user-settings/user-a/settings.json']);
+});

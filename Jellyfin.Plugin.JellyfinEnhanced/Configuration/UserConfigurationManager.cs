@@ -201,6 +201,72 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
+        /// <summary>
+        /// Read for a document that must never be served or saved as fallback defaults (the settings.json
+        /// GET and bootstrap). Unlike <see cref="GetUserConfigurationStrict{T}"/> it tells storage problems
+        /// from bad content and never deletes: a read error (I/O, permission) leaves the file in place and
+        /// returns <see cref="UserDocumentReadStatus.Unavailable"/>; malformed content (empty, literal
+        /// null, unparseable) is moved aside to <c>.corrupt-{ts}</c> and returns
+        /// <see cref="UserDocumentReadStatus.Quarantined"/>, or <see cref="UserDocumentReadStatus.Unavailable"/>
+        /// when the move fails. Callers that seed must hold <see cref="GetUserFileLock"/>.
+        /// </summary>
+        public UserDocumentReadStatus ReadUserConfigurationChecked<T>(string userId, string fileName, out T? value) where T : class
+        {
+            value = null;
+            var configPath = ResolveUserFile(userId, fileName);
+
+            string json;
+            try
+            {
+                if (!File.Exists(configPath)) return UserDocumentReadStatus.Missing;
+                json = File.ReadAllText(configPath);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException)
+            {
+                return UserDocumentReadStatus.Missing;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Could not read '{fileName}' for user '{userId}'; left in place and reported unavailable: {ex.Message}");
+                return UserDocumentReadStatus.Unavailable;
+            }
+
+            string problem;
+            if (string.IsNullOrWhiteSpace(json)
+                || string.Equals(json.Trim(), "null", StringComparison.Ordinal))
+            {
+                problem = "is empty or literal null";
+            }
+            else
+            {
+                try
+                {
+                    // Same null-skipping policy as the other readers: a stored JSON null for a field that
+                    // has since become non-nullable is schema drift, not corruption.
+                    value = JsonConvert.DeserializeObject<T>(json, new JsonSerializerSettings
+                    {
+                        NullValueHandling = NullValueHandling.Ignore
+                    });
+                    if (value != null) return UserDocumentReadStatus.Loaded;
+                    problem = "deserialized to null";
+                }
+                catch (JsonException ex)
+                {
+                    value = null;
+                    problem = $"could not be parsed ({ex.Message})";
+                }
+            }
+
+            if (TryQuarantineFile(configPath, out var backupPath))
+            {
+                _logger.Warning($"'{fileName}' for user '{userId}' {problem}; quarantined to {backupPath}.");
+                return UserDocumentReadStatus.Quarantined;
+            }
+
+            _logger.Error($"'{fileName}' for user '{userId}' {problem} and could not be moved aside; left in place and reported unavailable.");
+            return UserDocumentReadStatus.Unavailable;
+        }
+
         // Locked read-modify-write: holds GetUserFileLock, strict-reads, mutates, and saves when the mutator returns > 0.
         public int RmwUserConfiguration<T>(string userId, string fileName, Func<T, int> mutate) where T : class, new()
         {
@@ -320,6 +386,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 _logger.Warning($"Could not read '{fileName}' for user '{userId}': {ex.Message}");
                 return string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Moves a malformed file aside to a unique <c>.corrupt-{ts}</c> name. Never deletes: false (logged)
+        /// when the move fails, and the file is then still in place.
+        /// </summary>
+        private bool TryQuarantineFile(string filePath, out string backupPath)
+        {
+            backupPath = filePath + ".corrupt-" + MigrationSuffix();
+            try
+            {
+                File.Move(filePath, backupPath);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to quarantine corrupt config '{filePath}': {ex.Message}");
+                return false;
             }
         }
 
@@ -971,5 +1056,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 _logger.Error($"Error cleaning up processed watchlist items for user {userId}: {ex.Message}");
             }
         }
+    }
+
+    /// <summary>Outcome of <see cref="UserConfigurationManager.ReadUserConfigurationChecked{T}"/>.</summary>
+    public enum UserDocumentReadStatus
+    {
+        /// <summary>No file yet; the caller may seed one.</summary>
+        Missing,
+
+        /// <summary>Read and parsed.</summary>
+        Loaded,
+
+        /// <summary>Malformed content was moved aside to a <c>.corrupt-{ts}</c> backup; the file is gone and the caller may re-seed it.</summary>
+        Quarantined,
+
+        /// <summary>The file could not be read, or its malformed content could not be moved aside. Nothing was moved or deleted; the caller must not seed or save over it.</summary>
+        Unavailable,
     }
 }
