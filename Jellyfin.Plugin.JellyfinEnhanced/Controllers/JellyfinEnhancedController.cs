@@ -3604,7 +3604,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 jellyseerrUrlMappings = config.JellyseerrUrlMappings ?? string.Empty;
             }
 
-            return new
+            var payload = new
             {
                 // Jellyfin Enhanced Settings
                 TmdbEnabled = tmdbEnabled,
@@ -3875,6 +3875,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // policy and are deliberately not exposed.
                 config.SpoilerAdvancedMode,
             };
+
+            // Signed-in callers also get the registry's per-user defaults (bool, int and choice
+            // values only), which the client's loadSettings falls back to; anonymous callers get the
+            // payload above unchanged.
+            return isAuthed
+                ? new PublicConfigPayload(payload, UserSettingsRegistry.PublicDefaults(config))
+                : payload;
         }
 
         /// <summary>

@@ -19,6 +19,8 @@ const publicConfigs = fixture('public-config-user-defaults.json');
 const allowlist = fixture('parity-allowlist.json');
 const camel = key => key.charAt(0).toLowerCase() + key.slice(1);
 const camelKeys = object => Object.fromEntries(Object.entries(object).map(([key, value]) => [camel(key), value]));
+/** The public config a server from before UserSettingDefaults sends (design B3: rolled-back server). */
+const withoutBlock = ({ UserSettingDefaults, ...config }) => config;
 
 /** JE.loadSettings from the real config.js, plus the plugin-config keys it read. */
 function loadSettings(t, pluginConfig, userSettings = {}) {
@@ -70,6 +72,17 @@ test('client fallback with no settings document matches the golden for each admi
   matchGolden('client-fallback.json', actual);
 });
 
+test('client fallback against a server without UserSettingDefaults matches the golden for each admin config', t => {
+  // A newer bundle talking to a server from before the block resolves exactly as config.js did
+  // before it: the same-named public-config fields and the legacy alias table.
+  const actual = {};
+  for (const [name, config] of Object.entries(publicConfigs)) {
+    assert.ok(Object.hasOwn(config, 'UserSettingDefaults'), `${name}: the backend golden must carry the block`);
+    actual[name] = loadSettings(t, withoutBlock(config)).settings;
+  }
+  matchGolden('client-fallback-legacy-server.json', actual);
+});
+
 test('legacy partial files resolve through config.js to the golden for each admin config', t => {
   // The golden holds, per admin config and legacy case, every key config.js resolves to a value other
   // than the one GET settings.json served (the served document camelCased like plugin.js toCamelCase).
@@ -118,4 +131,44 @@ test('the admin subtitle text effect is the fallback for selectedTextEffectPrese
   // A stored choice, including 0, still wins over the admin default.
   assert.equal(loadSettings(t, { DefaultSubtitleTextEffect: 3 }, { selectedTextEffectPresetIndex: 0 }).settings.selectedTextEffectPresetIndex, 0);
   assert.equal(loadSettings(t, {}).settings.selectedTextEffectPresetIndex, 0);
+});
+
+test('loadSettings resolves the user value, then UserSettingDefaults, then hardcodedDefaults', t => {
+  // Design 7.4 / B3: with the block the plain admin fields are not consulted for registry keys.
+  const config = {
+    UserSettingDefaults: { SelectedStylePresetIndex: 4, WatchProgressMode: 'time', QualityTagsPosition: 'bottom-left', AutoPauseEnabled: false, ResolutionTagOrder: 6, GenreTagsPosition: null },
+    DefaultSubtitleStyle: 1, WatchProgressDefaultMode: 'remaining', QualityTagsPosition: 'top-right', AutoPauseEnabled: true, ResolutionTagOrder: 2,
+    GenreTagsPosition: 'bottom-right', QualityTagsPreferredAudioLanguage: 'fra', ShowFileSizes: true,
+    DefaultLanguage: 'de', DisableAllShortcuts: true,
+  };
+  const { settings } = loadSettings(t, config, { selectedStylePresetIndex: 0, autoPauseEnabled: true, resolutionTagOrder: null });
+  // A stored value wins, including 0 and a value equal to the plain admin field.
+  assert.equal(settings.selectedStylePresetIndex, 0);
+  assert.equal(settings.autoPauseEnabled, true);
+  // Missing or null in the document: the block, not the plain or aliased admin field.
+  assert.equal(settings.resolutionTagOrder, 6);
+  assert.equal(settings.watchProgressMode, 'time');
+  assert.equal(settings.qualityTagsPosition, 'bottom-left');
+  // Missing or null in the block: hardcodedDefaults, not the plain admin field.
+  assert.equal(settings.genreTagsPosition, 'top-right');
+  assert.equal(settings.showFileSizes, false);
+  assert.equal(settings.qualityTagsPreferredAudioLanguage, '');
+  // Left out of the block on purpose: read from the plain public-config field.
+  assert.equal(settings.displayLanguage, 'de');
+  assert.equal(settings.disableAllShortcuts, true);
+
+  // The same config from a server without the block: the plain fields and the alias table.
+  const legacy = loadSettings(t, withoutBlock(config), { resolutionTagOrder: null }).settings;
+  assert.equal(legacy.selectedStylePresetIndex, 1);
+  assert.equal(legacy.watchProgressMode, 'remaining');
+  assert.equal(legacy.qualityTagsPosition, 'top-right');
+  assert.equal(legacy.resolutionTagOrder, 2);
+  assert.equal(legacy.genreTagsPosition, 'bottom-right');
+  assert.equal(legacy.showFileSizes, true);
+  assert.equal(legacy.qualityTagsPreferredAudioLanguage, 'fra');
+  assert.equal(legacy.displayLanguage, 'de');
+
+  // A malformed block is ignored (legacy lookup), and an empty one leaves only hardcodedDefaults.
+  assert.equal(loadSettings(t, { ...withoutBlock(config), UserSettingDefaults: [1] }).settings.selectedStylePresetIndex, 1);
+  assert.equal(loadSettings(t, { ...withoutBlock(config), UserSettingDefaults: {} }).settings.selectedStylePresetIndex, 0);
 });

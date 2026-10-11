@@ -21,10 +21,7 @@
   "ClientFallbackVsSeed": {
     "SubtitleVerticalPosition": "C# initializer 85 (not seeded), JS 95 (design 2.3; decision 3).",
     "UseNativePosterTags": "The seed stores null (not chosen); the client resolves it to on.",
-    "DisableAllShortcuts": "Phantom client-only key; not a UserSettings property (decision 6).",
-    "QualityTagsPreferredAudioLanguage": "The seed stores '' (use the server default); the fallback copies the admin language itself.",
-    "WatchProgressMode": "A blank admin value seeds the initializer; the client fallback keeps the blank (BlankAdminUsesInitializer).",
-    "WatchProgressTimeFormat": "A blank admin value seeds the initializer; the client fallback keeps the blank (BlankAdminUsesInitializer)."
+    "DisableAllShortcuts": "Phantom client-only key; not a UserSettings property (decision 6)."
   },
   "ClientSeededVsSeed": {
     "UseNativePosterTags": "The seed stores null (not chosen); currentSettings resolves it to on and saves null back (config.js saveUserSettings).",

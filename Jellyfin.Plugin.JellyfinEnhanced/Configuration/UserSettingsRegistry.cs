@@ -97,6 +97,62 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return settings;
         }
 
+        /// <summary>
+        /// Whether a key's default is published to signed-in users in the public config's
+        /// UserSettingDefaults block: it must copy an admin default (not a sentinel), and that admin
+        /// value must be a bool, an int or a string limited to the key's Choices. Free-form strings
+        /// (the display language) stay out, so the block never carries text an admin typed.
+        /// </summary>
+        /// <param name="descriptor">The registry entry.</param>
+        /// <returns>True when <see cref="PublicDefaults"/> includes the key.</returns>
+        public static bool IsPublicDefault(UserSettingDescriptor descriptor)
+        {
+            ArgumentNullException.ThrowIfNull(descriptor);
+            var admin = descriptor.AdminProperty;
+            if (admin == null || descriptor.Setting.DefaultIsSentinel)
+            {
+                return false;
+            }
+
+            return admin.PropertyType == typeof(bool)
+                || admin.PropertyType == typeof(int)
+                || (admin.PropertyType == typeof(string) && descriptor.Setting.Choices != null);
+        }
+
+        /// <summary>
+        /// The UserSettingDefaults block of the authenticated public config: for each
+        /// <see cref="IsPublicDefault"/> key, the value <see cref="BuildDefaults"/> seeds, by settings.json
+        /// key. The client falls back to it when a stored value is missing. A string outside the key's
+        /// Choices (an admin value saved through the API) is left out, so the client uses its own default.
+        /// </summary>
+        /// <param name="config">The plugin configuration holding the admin defaults.</param>
+        /// <returns>The published defaults, in UserSettings declaration order.</returns>
+        public static IReadOnlyDictionary<string, object> PublicDefaults(PluginConfiguration config)
+        {
+            var defaults = BuildDefaults(config);
+            var published = new Dictionary<string, object>(StringComparer.Ordinal);
+            foreach (var descriptor in Descriptors)
+            {
+                if (!IsPublicDefault(descriptor))
+                {
+                    continue;
+                }
+
+                var value = descriptor.Property.GetValue(defaults);
+                if (value is string text && !descriptor.Setting.Choices!.Contains(text, StringComparer.Ordinal))
+                {
+                    continue;
+                }
+
+                if (value != null)
+                {
+                    published[descriptor.Key] = value;
+                }
+            }
+
+            return published;
+        }
+
         private static UserSettingDescriptor[] Build()
         {
             var descriptors = new List<UserSettingDescriptor>();

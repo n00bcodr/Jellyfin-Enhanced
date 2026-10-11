@@ -241,7 +241,9 @@ public class CoreSettingsDefaultsTests
     [Fact]
     public void PublicConfigUserDefaultsForClientFallbackMatchGolden()
     {
-        var names = typeof(UserSettings).GetProperties().Select(p => p.Name).Concat(AdminDefaultAliases).ToHashSet();
+        // The block config.js reads first (design B3); the frontend tests strip it to check the
+        // fallback a server from before it gets.
+        var names = typeof(UserSettings).GetProperties().Select(p => p.Name).Concat(AdminDefaultAliases).Append("UserSettingDefaults").ToHashSet();
         var inputs = new JObject();
         foreach (var name in ConfigNames())
         {
@@ -249,7 +251,7 @@ public class CoreSettingsDefaultsTests
             var publicConfig = JObject.Parse(System.Text.Json.JsonSerializer.Serialize(Assert.IsType<JsonResult>(endpoints.Controller.GetPublicConfig()).Value));
             var subset = new JObject();
             foreach (var property in publicConfig.Properties().Where(p => names.Contains(p.Name))) subset[property.Name] = property.Value;
-            foreach (var alias in AdminDefaultAliases) Assert.True(subset.ContainsKey(alias), $"{alias} is no longer in the public config");
+            foreach (var alias in AdminDefaultAliases.Append("UserSettingDefaults")) Assert.True(subset.ContainsKey(alias), $"{alias} is no longer in the public config");
             inputs[name] = subset;
         }
         MatchGolden("public-config-user-defaults.json", inputs);

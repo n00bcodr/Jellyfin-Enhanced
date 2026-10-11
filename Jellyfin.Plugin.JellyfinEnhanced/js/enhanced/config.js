@@ -156,28 +156,51 @@
             disableAllShortcuts: false, longPress2xEnabled: false, lastOpenedTab: 'shortcuts'
         };
 
-        // Aliases mapping camelCase client settings keys to potential server plugin default keys
-        const pluginDefaultAliases = {
-            selectedStylePresetIndex: ['DefaultSubtitleStyle', 'SelectedStylePresetIndex'],
-            selectedFontSizePresetIndex: ['DefaultSubtitleSize', 'SelectedFontSizePresetIndex'],
-            selectedFontFamilyPresetIndex: ['DefaultSubtitleFont', 'SelectedFontFamilyPresetIndex'],
-            selectedTextEffectPresetIndex: ['DefaultSubtitleTextEffect', 'SelectedTextEffectPresetIndex'],
-            displayLanguage: ['DefaultLanguage', 'DisplayLanguage'],
-            watchProgressMode: ['WatchProgressDefaultMode', 'WatchProgressMode'],
-            watchProgressTimeFormat: ['WatchProgressTimeFormat'],
-            pauseScreenDelaySeconds: ['PauseScreenDelaySeconds']
+        // Per-user defaults the server builds from its settings registry (the values a new user is
+        // seeded with, by settings.json key), sent to signed-in users in the public config. When the
+        // block is there it is the only source of admin defaults for the keys below.
+        const userSettingDefaults = pluginDefaults.UserSettingDefaults
+            && typeof pluginDefaults.UserSettingDefaults === 'object'
+            && !Array.isArray(pluginDefaults.UserSettingDefaults)
+            ? pluginDefaults.UserSettingDefaults
+            : null;
+
+        // Public-config fields read by name instead, even with the block: the block leaves out the
+        // free-form display language, and disableAllShortcuts is a client-only key (no registry entry).
+        const plainAdminFields = {
+            displayLanguage: 'DefaultLanguage',
+            disableAllShortcuts: 'DisableAllShortcuts'
+        };
+
+        // Admin fields whose name differs from the client key. Only used without the block: a newer
+        // bundle talking to a server from before UserSettingDefaults (for example after a rollback).
+        const legacyPluginDefaultAliases = {
+            selectedStylePresetIndex: 'DefaultSubtitleStyle',
+            selectedFontSizePresetIndex: 'DefaultSubtitleSize',
+            selectedFontFamilyPresetIndex: 'DefaultSubtitleFont',
+            selectedTextEffectPresetIndex: 'DefaultSubtitleTextEffect',
+            displayLanguage: 'DefaultLanguage',
+            watchProgressMode: 'WatchProgressDefaultMode'
         };
 
         /**
-         * Resolves a default value from pluginDefaults for a given camelCase key.
+         * Resolves the admin default for a camelCase settings key: UserSettingDefaults when the
+         * server sends it, else the same-named or aliased public-config field.
+         * @param {string} key camelCase settings key.
+         * @returns {*} The default, or undefined when there is none (hardcodedDefaults applies).
          */
         const getPluginDefault = (key) => {
-            const aliases = pluginDefaultAliases[key] || [];
-            const candidates = [
-                key,
-                key.charAt(0).toUpperCase() + key.slice(1),
-                ...aliases
-            ];
+            const pascalKey = key.charAt(0).toUpperCase() + key.slice(1);
+            let candidates;
+            if (!userSettingDefaults) {
+                candidates = [key, pascalKey];
+                if (legacyPluginDefaultAliases[key]) candidates.push(legacyPluginDefaultAliases[key]);
+            } else if (Object.prototype.hasOwnProperty.call(plainAdminFields, key)) {
+                candidates = [plainAdminFields[key]];
+            } else {
+                const value = Object.prototype.hasOwnProperty.call(userSettingDefaults, pascalKey) ? userSettingDefaults[pascalKey] : undefined;
+                return value !== null && value !== undefined ? value : undefined;
+            }
 
             for (const candidate of candidates) {
                 const value = pluginDefaults[candidate];
