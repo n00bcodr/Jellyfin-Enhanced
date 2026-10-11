@@ -208,9 +208,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// returns <see cref="UserDocumentReadStatus.Unavailable"/>; malformed content (empty, literal
         /// null, unparseable) is moved aside to <c>.corrupt-{ts}</c> and returns
         /// <see cref="UserDocumentReadStatus.Quarantined"/>, or <see cref="UserDocumentReadStatus.Unavailable"/>
-        /// when the move fails. Callers that seed must hold <see cref="GetUserFileLock"/>.
+        /// when the move fails. With <paramref name="quarantine"/> false (the caller has nothing to re-seed
+        /// from) malformed content is left in place and reported unavailable too. Callers that seed must
+        /// hold <see cref="GetUserFileLock"/>.
         /// </summary>
-        public UserDocumentReadStatus ReadUserConfigurationChecked<T>(string userId, string fileName, out T? value) where T : class
+        public UserDocumentReadStatus ReadUserConfigurationChecked<T>(string userId, string fileName, out T? value, bool quarantine = true) where T : class
         {
             value = null;
             var configPath = ResolveUserFile(userId, fileName);
@@ -255,6 +257,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     value = null;
                     problem = $"could not be parsed ({ex.Message})";
                 }
+            }
+
+            if (!quarantine)
+            {
+                _logger.Error($"'{fileName}' for user '{userId}' {problem}; left in place and reported unavailable (nothing to re-seed it from).");
+                return UserDocumentReadStatus.Unavailable;
             }
 
             if (TryQuarantineFile(configPath, out var backupPath))
@@ -389,6 +397,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
+        // Test seam: runs just before a quarantine move, so a test can make the move fail portably
+        // (permission tricks do not stop root or Windows).
+        internal Action<string>? BeforeQuarantineMoveForTest { get; set; }
+
         /// <summary>
         /// Moves a malformed file aside to a unique <c>.corrupt-{ts}</c> name. Never deletes: false (logged)
         /// when the move fails, and the file is then still in place.
@@ -398,6 +410,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             backupPath = filePath + ".corrupt-" + MigrationSuffix();
             try
             {
+                BeforeQuarantineMoveForTest?.Invoke(filePath);
                 File.Move(filePath, backupPath);
                 return true;
             }

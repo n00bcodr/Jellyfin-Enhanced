@@ -4929,17 +4929,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// A malformed file (empty, literal null, unparseable) is quarantined and
         /// re-seeded from the admin defaults, never served as bare initializers.
         /// Null when the stored document is unavailable (a read error, or a malformed
-        /// file that could not be moved aside): nothing is seeded or overwritten.
+        /// file that could not be moved aside or has no admin defaults to be re-seeded
+        /// from): nothing is seeded or overwritten.
         /// </summary>
         private object? LoadUserSettingsDocument(string authorizedUserId)
         {
             UserSettings? userConfig;
+            // Without admin defaults there is nothing to re-seed a malformed file from, so it is
+            // left in place (reported unavailable) rather than moved aside and then served or
+            // saved as the bare initializers on the next request.
+            var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
             // Read, quarantine and seed under the per-file lock, so a save that lands meanwhile
             // (another tab's POST, a reset-all) is never overwritten with defaults, and the
             // served document is exactly what was read or written.
             lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "settings.json"))
             {
-                var status = _userConfigurationManager.ReadUserConfigurationChecked(authorizedUserId, "settings.json", out userConfig);
+                var status = _userConfigurationManager.ReadUserConfigurationChecked(authorizedUserId, "settings.json", out userConfig, quarantine: defaultConfig != null);
                 if (status == UserDocumentReadStatus.Unavailable)
                 {
                     return null;
@@ -4947,16 +4952,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 if (status != UserDocumentReadStatus.Loaded)
                 {
-                    var defaultConfig = JellyfinEnhanced.Instance?.Configuration;
                     if (defaultConfig == null)
                     {
-                        // No admin defaults to seed from: a new user gets the unsaved initializers as
-                        // before, but a quarantined document is never replaced by them.
-                        if (status == UserDocumentReadStatus.Quarantined)
-                        {
-                            return null;
-                        }
-
+                        // No admin defaults to seed from: a new user gets the unsaved initializers as before.
                         userConfig = new UserSettings();
                     }
                     else

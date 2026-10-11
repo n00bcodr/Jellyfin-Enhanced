@@ -297,3 +297,37 @@ for (const settingsFails of [true, false]) test(`per-endpoint fallback marks set
   await h.plugin.saveUserSettings('settings.json', { ...h.plugin.currentSettings, autoPipEnabled: true });
   assert.deepEqual(posts, settingsFails ? [] : ['/JellyfinEnhanced/user-settings/user-a/settings.json']);
 });
+
+// Between a user switch and the incoming user's settings arriving, JE.currentSettings is the
+// reset {}: a settings.json save in that gap would write it over that user's stored file.
+test('no settings.json save goes out while the incoming user\'s settings are still loading', async t => {
+  const posts = [];
+  const pending = deferred();
+  let bRequested = false, current = 'user-a';
+  const h = setup(t, { ajax: async (path, request) => {
+    if (request.type === 'POST') { posts.push(path); return {}; }
+    if (path.endsWith('/bootstrap')) {
+      if (current !== 'user-b') return payload({ UserSettings: { Settings: { AutoPauseEnabled: false }, SettingsStatus: 'ok' } });
+      bRequested = true;
+      return pending.promise;
+    }
+    throw new Error(`Unexpected endpoint ${path}`);
+  } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.plugin.userConfig.settingsStatus, 'ok');
+
+  current = 'user-b'; h.switchUser('user-b');
+  assert.equal(h.plugin.userConfig.settingsStatus, 'loading');
+  await until(() => bRequested);
+  await h.plugin.saveUserSettings('settings.json', { ...h.plugin.currentSettings, autoPipEnabled: true });
+  await assert.rejects(h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings, { throwOnError: true }), /still loading/);
+  await h.plugin.saveUserSettings('shortcuts.json', { Shortcuts: [] });
+  assert.deepEqual(posts, ['/JellyfinEnhanced/user-settings/user-b/shortcuts.json']);
+
+  const loaded = new Promise(resolve => h.document.addEventListener('je:user-data-loaded', resolve, { once: true }));
+  pending.resolve(payload({ UserId: 'user-b', UserSettings: { Settings: { AutoPauseEnabled: false, AutoPipEnabled: true }, SettingsStatus: 'ok' } }));
+  await loaded;
+  assert.equal(h.plugin.userConfig.settingsStatus, 'ok');
+  await h.plugin.saveUserSettings('settings.json', h.plugin.currentSettings, { throwOnError: true });
+  assert.deepEqual(posts.slice(1), ['/JellyfinEnhanced/user-settings/user-b/settings.json']);
+});

@@ -195,6 +195,17 @@ public class CoreSettingsCorruptionTests
     }
 
     [Fact]
+    public void WithoutQuarantineMalformedContentIsUnavailableAndLeftInPlace()
+    {
+        using var f = new CoreFixture();
+        var path = f.Write(User, "null");
+        Assert.Equal(UserDocumentReadStatus.Unavailable, f.Manager.ReadUserConfigurationChecked<UserSettings>(User, "settings.json", out var value, quarantine: false));
+        Assert.Null(value);
+        Assert.Equal("null", File.ReadAllText(path));
+        Assert.Single(Directory.GetFiles(Path.GetDirectoryName(path)!));
+    }
+
+    [Fact]
     public void MalformedContentThatCannotBeMovedAsideIsUnavailableAndNeverDeleted()
     {
         // A name at the file-system limit: the file itself can be written and deleted, but its
@@ -288,6 +299,39 @@ public class CoreSettingsCorruptionTests
         {
             Unrestrict(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         }
+        Assert.Equal("{broken", File.ReadAllText(endpoints.SettingsPath));
+        Assert.Empty(endpoints.Backups);
+    }
+
+    [Fact]
+    public void MalformedSettingsWhoseMoveFailsAreUnavailableAndNeverDeleted()
+    {
+        // Portable (also as root and on Windows): the quarantine move itself throws.
+        using var endpoints = new Endpoints();
+        endpoints.Plugin.Core.Write(User, "{broken");
+        endpoints.Manager.BeforeQuarantineMoveForTest = _ => throw new IOException("move refused");
+        AssertUnavailable(endpoints.Get());
+        Assert.Equal("unavailable", endpoints.Bootstrap()["SettingsStatus"]!.Value<string>());
+        Assert.Equal("{broken", File.ReadAllText(endpoints.SettingsPath));
+        Assert.Empty(endpoints.Backups);
+
+        // Once the move works, the file is quarantined and re-seeded as usual.
+        endpoints.Manager.BeforeQuarantineMoveForTest = null;
+        Assert.True(JToken.DeepEquals(endpoints.Seed, OkBody(endpoints.Get())));
+        Assert.Equal("{broken", File.ReadAllText(Assert.Single(endpoints.Backups)));
+    }
+
+    [Fact]
+    public void WithoutAdminDefaultsAMalformedFileStaysInPlaceAndUnavailable()
+    {
+        using var endpoints = new Endpoints();
+        endpoints.Plugin.Core.Write(User, "{broken");
+        typeof(Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced).GetProperty(nameof(Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.Instance))!.SetValue(null, null);
+
+        // Every request, not just the first: nothing is moved aside, so nothing is served or seeded.
+        // (The bootstrap itself refuses to run without the plugin instance.)
+        AssertUnavailable(endpoints.Get());
+        AssertUnavailable(endpoints.Get());
         Assert.Equal("{broken", File.ReadAllText(endpoints.SettingsPath));
         Assert.Empty(endpoints.Backups);
     }

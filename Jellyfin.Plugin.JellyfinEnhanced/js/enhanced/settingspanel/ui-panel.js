@@ -15,7 +15,8 @@
 
     /**
      * Shows the settings panes read-only with a Retry button when the stored
-     * settings.json failed to load (JE.userConfig.settingsStatus 'unavailable').
+     * settings.json failed to load (JE.userConfig.settingsStatus 'unavailable',
+     * or still 'loading' after a user switch).
      * The values on screen are then fallback defaults that JE.saveUserSettings
      * refuses to write, so the controls are inert rather than silently unsaved.
      * @param {HTMLElement} help - The panel root.
@@ -85,6 +86,16 @@
                 }
             } catch (e) {
                 console.warn("🪼 Jellyfin Enhanced: Could not refresh settings for panel display:", e);
+                // The server says the stored file cannot be read (it may have become unreadable
+                // since boot): show it read-only rather than let saves go on. A plain network
+                // failure keeps the status it had.
+                if (e?.status === 503 && typeof e.json === 'function') {
+                    const body = await e.json().catch(() => null);
+                    if (body?.status === 'unavailable') {
+                        JE.userConfig = JE.userConfig || {};
+                        JE.userConfig.settingsStatus = 'unavailable';
+                    }
+                }
             }
         }
 
@@ -419,7 +430,9 @@
         internal.wireMiscSettingsControls(ctx);
         internal.wireLanguageControls(ctx);
 
-        if (JE.userConfig?.settingsStatus === 'unavailable') {
+        // 'loading': opened right after a user switch and the refresh above failed too.
+        const settingsStatus = JE.userConfig?.settingsStatus;
+        if (settingsStatus === 'unavailable' || settingsStatus === 'loading') {
             // Retry = close and open again: opening re-fetches the settings first.
             showSettingsUnavailable(help, (ev) => {
                 ev.stopPropagation(); // the panel's own click handler would re-arm its auto-close timer

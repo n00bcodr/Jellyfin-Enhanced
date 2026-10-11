@@ -41,8 +41,9 @@
      * (prevents redundant writes). The first save per session for a given file is
      * always allowed through since the cache starts empty.
      * Never saves settings.json while the stored document failed to load
-     * (JE.userConfig.settingsStatus 'unavailable'): the in-memory values are then
-     * fallback defaults and would overwrite the user's real preferences.
+     * (JE.userConfig.settingsStatus 'unavailable') or is still loading after a
+     * user switch ('loading'): the in-memory values are then fallback defaults
+     * and would overwrite the user's real preferences.
      * Failures are logged and swallowed unless the caller opts in to them.
      * @param {string} fileName Per-user settings file, e.g. 'settings.json'.
      * @param {object} settings The whole document to save.
@@ -52,6 +53,10 @@
      */
     JE.saveUserSettings = async (fileName, settings, options = {}) => {
         const throwOnError = options?.throwOnError === true;
+        if (fileName === 'settings.json' && JE.userConfig?.settingsStatus === 'loading') {
+            if (throwOnError) throw new Error('Settings are still loading; not saving');
+            return;
+        }
         if (fileName === 'settings.json' && JE.userConfig?.settingsStatus === 'unavailable') {
             if (throwOnError) throw new Error('Settings could not be loaded; not saving');
             if (!_warnedSettingsUnavailable) {

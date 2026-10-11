@@ -1108,7 +1108,10 @@
         // Synchronous reset: wipe every boot-time global the moment the
         // identity changes, so nothing can read user A's data under user B.
         JE.session.onUserChange('plugin-globals', () => {
-            JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
+            // 'loading' until the incoming user's settings arrive: until then
+            // JE.saveUserSettings refuses settings.json, so a save in the gap
+            // cannot write this empty object over that user's stored file.
+            JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} }, settingsStatus: 'loading' };
             JE.currentSettings = {};
             // Cleared (not merged over) so user A's extra shortcuts don't
             // survive into user B's session — initializeShortcuts() merges.

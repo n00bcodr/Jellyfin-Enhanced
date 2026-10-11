@@ -83,3 +83,31 @@ test('a refresh failure on open keeps a panel whose settings did load editable',
   await h.JE.saveUserSettings('settings.json', h.JE.currentSettings, { throwOnError: true });
   assert.equal(h.posts.length, 1);
 });
+
+// ApiClient.ajax rejects with the fetch Response, so the panel can read the server's reason.
+const unavailable = () => { throw new Response(JSON.stringify({ success: false, status: 'unavailable', message: 'x' }), { status: 503 }); };
+
+test('settings that loaded at boot but are unreadable now make the panel read-only', async t => {
+  const h = setup(t, { settingsStatus: 'ok', respond: unavailable });
+  await h.JE.showEnhancedPanel();
+  assert.equal(h.JE.userConfig.settingsStatus, 'unavailable');
+  assert.ok(h.pane('playback').querySelector('.je-settings-unavailable'));
+  assert.equal(h.pane('playback').querySelector('.rows').hasAttribute('inert'), true);
+  await assert.rejects(h.JE.saveUserSettings('settings.json', h.JE.currentSettings, { throwOnError: true }), /could not be loaded/);
+  assert.deepEqual(h.posts, []);
+});
+
+test('a 503 that does not report the document unavailable keeps the panel editable', async t => {
+  const h = setup(t, { settingsStatus: 'ok', respond: () => { throw new Response('Service Unavailable', { status: 503 }); } });
+  await h.JE.showEnhancedPanel();
+  assert.equal(h.JE.userConfig.settingsStatus, 'ok');
+  assert.equal(h.pane('playback').querySelector('.je-settings-unavailable'), null);
+});
+
+test('a panel opened while a switched-to user\'s settings are still loading is read-only if its refresh fails', async t => {
+  const h = setup(t, { settingsStatus: 'loading', respond: () => { throw new Error('offline'); } });
+  await h.JE.showEnhancedPanel();
+  assert.ok(h.pane('playback').querySelector('.je-settings-unavailable'));
+  assert.equal(h.pane('playback').querySelector('.rows').hasAttribute('inert'), true);
+  assert.deepEqual(h.posts, []);
+});
