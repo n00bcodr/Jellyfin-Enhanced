@@ -36,11 +36,11 @@ public class CoreSettingsDefaultsTests
     private static string FixtureDirectory([CallerFilePath] string source = "")
         => Path.GetFullPath(Path.Combine(Path.GetDirectoryName(source)!, "..", "..", "fixtures", "settings"));
 
-    private static JObject ReadFixture(string name)
+    internal static JObject ReadFixture(string name)
         => JObject.Parse(File.ReadAllText(Path.Combine(FixtureDirectory(), name)));
 
     /// <summary>Compares with the committed golden, or rewrites it when JE_UPDATE_GOLDENS=1.</summary>
-    private static void MatchGolden(string name, JObject actual)
+    internal static void MatchGolden(string name, JObject actual)
     {
         var path = Path.Combine(FixtureDirectory(), name);
         if (Environment.GetEnvironmentVariable("JE_UPDATE_GOLDENS") == "1")

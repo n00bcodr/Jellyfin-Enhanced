@@ -180,6 +180,35 @@ public class CoreUserSettingDefaultsTests
         Assert.True(JToken.DeepEquals(expected, bootstrap["PublicConfig"]!["UserSettingDefaults"]));
     }
 
+    /// <summary>A payload's top-level fields in order, each with its JSON value kind.</summary>
+    private static JObject Shape(JObject payload)
+    {
+        var shape = new JObject();
+        foreach (var property in payload.Properties()) shape[property.Name] = property.Value.Type.ToString();
+        return shape;
+    }
+
+    [Fact]
+    public void AnonymousPublicConfigShapeMatchesThePreB3Golden()
+    {
+        // The golden was captured from the anonymous response before B3 (804aa2a8) with this config.
+        using var fixture = new ApiPluginFixture();
+        fixture.Plugin.Configuration.JellyseerrUrls = string.Empty;
+        fixture.Plugin.Configuration.JellyseerrUrlMappings = string.Empty;
+        var shapes = new JObject
+        {
+            ["Default"] = Shape(PublicConfig(fixture, null)),
+            ["PascalCase"] = Shape(PublicConfig(fixture, null, JsonDefaults.PascalCaseOptions)),
+        };
+        CoreSettingsDefaultsTests.MatchGolden("public-config-anonymous-shape.json", shapes);
+        // MatchGolden compares by name; the field order is part of the response too.
+        var golden = CoreSettingsDefaultsTests.ReadFixture("public-config-anonymous-shape.json");
+        foreach (var variant in shapes.Properties())
+        {
+            Assert.Equal(((JObject)golden[variant.Name]!).Properties().Select(p => p.Name), ((JObject)variant.Value).Properties().Select(p => p.Name));
+        }
+    }
+
     [Fact]
     public void AnonymousPublicConfigIsUnchangedAndDiffersOnlyByTheBlockAndSeerrFields()
     {
