@@ -24,9 +24,10 @@ test('tag pipeline rejects a late previous-user batch after identity reset',asyn
 });
 test('identity reset drops the previous user\'s review ratings',async t=>{
  const changes=new Map();
- const h=createHarness({globals:{requestIdleCallback:()=>{}},apiClient:{ajax:async()=>({reviewRatings:{'movie:42':{average:4.5}},items:{},count:0})},JE:{pluginConfig:{TagCacheServerMode:true},currentSettings:{},core:{tagRenderer:{applyCornerStacking(){},scheduleCornerStacking(){}}},
+ const h=createHarness({globals:{requestIdleCallback:()=>{}},apiClient:{ajax:async()=>({reviewRatings:{'movie:42':{average:4.5}},items:{},count:0})},JE:{pluginConfig:{TagCacheServerMode:true},currentSettings:{qualityTagsEnabled:true},helpers:{onBodyMutation(){},onNavigate(){},addCSS(){}},core:{tagRenderer:{applyCornerStacking(){},scheduleCornerStacking(){}}},
   session:{getUserId:()=>'user-a',getServerId:()=>'server-a',getEpoch:()=>0,isCurrent:()=>true,onUserChange:(id,fn)=>changes.set(id,fn)}}});t.after(()=>h.close());
- h.load('tags/tag-pipeline.js');await h.JE.tagPipeline.invalidateServerCache();
+ // The cache is only wanted while a tag type is on: start the pipeline with one enabled.
+ h.load('tags/tag-pipeline.js');h.JE.tagPipeline.initialize();await h.JE.tagPipeline.invalidateServerCache();
  assert.equal(h.JE.tagPipeline.peekReviewRatings()?.get('movie:42'),4.5);
  changes.get('tag-pipeline')({userId:'b'});assert.equal(h.JE.tagPipeline.peekReviewRatings(),null);
 });

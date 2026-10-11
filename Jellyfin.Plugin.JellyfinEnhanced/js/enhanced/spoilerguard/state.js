@@ -30,7 +30,10 @@
         // A response resolving after a user switch must not populate the
         // (already reset) state with the previous user's data.
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-        statePromise = request('/spoiler-blur/series')
+        // The page-load bootstrap carries this user's state (same body as the
+        // endpoint); it is handed out once, so later loads ask the server.
+        const prefetchedState = JE.takePrefetched?.('SpoilerBlurSeries');
+        statePromise = (prefetchedState ? Promise.resolve(prefetchedState) : request('/spoiler-blur/series'))
             .then(function(data) {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 const value = data || {};

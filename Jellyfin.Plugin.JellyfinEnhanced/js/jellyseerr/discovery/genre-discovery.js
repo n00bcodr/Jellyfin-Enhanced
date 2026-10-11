@@ -7,7 +7,10 @@
 (function(JE) {
     'use strict';
 
-    const genreInfoCache = new Map();
+    // Jellyfin genre id -> genre info ({id, name, type}); kept for the tab,
+    // per user (see JE.discoveryFilter.createSessionCache).
+    const genreInfoCache = JE.discoveryFilter.createSessionCache('genre-info',
+        (v) => !!v && typeof v === 'object' && typeof v.name === 'string');
 
     // Dynamic genre cache (populated from TMDB API)
     let tmdbGenreCache = null;
@@ -17,7 +20,8 @@
         JE.discoveryFilter.fetchWithManagedRequest(path, 'genre', options);
 
     /**
-     * Fetches TMDB genre lists and caches them
+     * Fetches TMDB genre lists and caches them. Normally already prefetched at
+     * startup or kept in sessionStorage (JE.discoveryFilter.fetchTmdbGenreList).
      * @param {AbortSignal} [signal] - Optional abort signal
      */
     async function fetchTmdbGenres(signal) {
@@ -30,8 +34,8 @@
 
             const fetchOptions = { signal };
             const [tvResponse, movieResponse] = await Promise.all([
-                fetchWithManagedRequest('/JellyfinEnhanced/tmdb/genres/tv', fetchOptions).catch(() => []),
-                fetchWithManagedRequest('/JellyfinEnhanced/tmdb/genres/movie', fetchOptions).catch(() => [])
+                JE.discoveryFilter.fetchTmdbGenreList('tv', fetchOptions).catch(() => []),
+                JE.discoveryFilter.fetchTmdbGenreList('movie', fetchOptions).catch(() => [])
             ]);
 
             if (signal?.aborted) {
@@ -65,8 +69,9 @@
      * @returns {Promise<Object|null>} Genre info object or null
      */
     async function getGenreInfo(genreId, signal) {
-        if (genreInfoCache.has(genreId)) {
-            return genreInfoCache.get(genreId);
+        const cache = genreInfoCache.scope();
+        if (cache.has(genreId)) {
+            return cache.get(genreId);
         }
         try {
             if (signal?.aborted) {
@@ -80,7 +85,7 @@
             }
 
             if (response) {
-                genreInfoCache.set(genreId, response);
+                cache.set(genreId, response);
             }
             return response;
         } catch (error) {

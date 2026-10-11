@@ -13,6 +13,14 @@
 
     const MEDIA_TYPES = new Set(['Movie', 'Episode', 'Series', 'Season', 'BoxSet', 'Video']);
     const FETCH_DEBOUNCE_MS = 150; // Debounce only the batch API call, not the scan
+    // Minimum spacing between the `?since=` deltas that navigations trigger.
+    // Each delta is a full walk of the server's cache for this user, and a
+    // browsing burst (a few pages in quick succession) can't have new library
+    // items on every step: one delta per 20 s picks them up within a page or
+    // two of being added, while rapid navigation collapses to a single
+    // request. Explicit refreshes (invalidation, user switch, a cache that was
+    // empty at startup) are not spaced out — see the navigation handler.
+    const NAV_REFRESH_MIN_INTERVAL_MS = 20000;
     const logPrefix = '🪼 Jellyfin Enhanced [TagPipeline]:';
 
     // ── Server cache state ─────────────────────────────────────────────
@@ -53,12 +61,16 @@
     let loadInFlight = null;         // Promise of the running loadServerCache(), shared by concurrent callers
     let loadInFlightEpoch = 0;       // session epoch that load was started for
     let refreshInFlight = null;      // Promise of the running refreshServerCache()
+    let lastNavigationRoute = null;  // route key of the last navigation the pipeline acted on (see navigationRoute)
+    let lastNavRefreshAt = -Infinity; // performance.now() of the last navigation-triggered delta
+    let navRefreshTimer = null;      // trailing delta for navigations that fell inside the minimum interval
     let reviewRatings = null;        // Map<"mediaType:tmdbKey", average> from the payload; null = unavailable
     let reviewRatingsRequestedAt = 0; // performance.now() when the request behind reviewRatings started
     const reviewRatingsListeners = new Set(); // called with the changed keys (Set, or null = all) when averages change
     const PERSIST_SLICE = 250;       // entries per idle-slice write (each put clones its entry on this thread)
     const PERSIST_START_DELAY_MS = 1500; // let the page's first tag scans have the idle time before persisting
-    const MEMORY_SOFT_CAP = 20000;   // entries kept in memory on the stored-copy path before it is reset
+    const MEMORY_SOFT_CAP = 20000;
+    const TAG_SETTING_KEYS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'languageTagsEnabled'];   // entries kept in memory on the stored-copy path before it is reset
 
     // ── State ──────────────────────────────────────────────────────────
 
@@ -67,6 +79,10 @@
     const firstEpisodeCache = new Map(); // seriesId → Promise<item|null>
     const parentSeriesCache = new Map(); // seriesId → Promise<item|null>
     let fetchTimer = null;
+    let pipelineStarted = false;           // initialize() has wired the observers and loaded the server cache
+    let startWhenRendererRegisters = false; // initialize() ran with no tag type enabled
+    let deferredLoad = null;               // { forceDownload } of an invalidation that skipped its reload (no tag type on)
+    let loadStartedForEpoch = null;        // session epoch in which a renderer registration started the load
     let isProcessing = false;
     let batchGeneration = 0; // Incremented on navigation to cancel stale in-flight batches
     let requestQueue = [];               // { el, itemId, itemType }
@@ -85,6 +101,7 @@
         '#devicesPage .cardImageContainer',
         '#mediaLibraryPage .cardImageContainer',
         '.listItemImage:not(.listItemImage-large)', // Small list rows (Playlists, Albums); listItemImage-large (e.g. episode lists) is big enough for overlays
+        '.jellyseerr-card .cardImageContainer',  // Seerr cards (search, discovery, recommendations): TMDB posters, no Jellyfin item id, so they can never get tags — mark them processed instead of re-walking them on every scan
     ];
     // One ancestor walk per card: closest() with a selector list matches the
     // element itself or any ancestor against every selector in one pass, which
@@ -135,6 +152,23 @@
             }
         }
         console.log(`${logPrefix} Renderer registered: ${name} (total: ${renderers.size})`);
+        // Starting now: initialize() scans once the server cache is loaded.
+        // (A renderer can register late, after its user switched to one with
+        // every tag type off: then there is still nothing to start.)
+        if (startWhenRendererRegisters && anyTagTypeEnabled()) {
+            loadStartedForEpoch = JE.session?.getEpoch?.() ?? null;
+            initialize();
+            return;
+        }
+        // The last invalidation skipped its reload while every tag type was off:
+        // run it now, as that invalidation (scans held, fresh download if needed).
+        if (deferredLoad && anyTagTypeEnabled()) {
+            const { forceDownload } = deferredLoad;
+            deferredLoad = null;
+            loadStartedForEpoch = JE.session?.getEpoch?.() ?? null;
+            JE.tagPipeline.invalidateServerCache({ reuseStored: !forceDownload }).catch(() => {});
+            return;
+        }
 
         // If cards are already on the page (renderer registered after initial scan),
         // clear processed set and rescan so existing cards get this renderer's tags.
@@ -599,6 +633,54 @@
         return refresh;
     }
 
+    /**
+     * Key identifying the page the current URL shows, for telling a page
+     * change from the search page rewriting its `query` parameter: path and
+     * hash route plus every query parameter except `query`, which only the
+     * search box uses (a details page's identity lives in `id`, a list's in
+     * `parentId`/`genreId`/..., so those still count as a change).
+     * @returns {string}
+     */
+    function navigationRoute() {
+        const url = new URL(window.location.href);
+        const [hashPath, hashQuery = ''] = url.hash.split('?');
+        const params = new URLSearchParams(hashQuery);
+        for (const [name, value] of url.searchParams) params.append(name, value);
+        params.delete('query');
+        params.sort();
+        return `${url.pathname}${hashPath}?${params}`;
+    }
+
+    /**
+     * The navigation-triggered delta, at most once per
+     * NAV_REFRESH_MIN_INTERVAL_MS: a navigation inside the interval arms one
+     * trailing delta for when it ends, so every navigation is still followed
+     * by a delta within the interval. Not spaced out while the server cache
+     * is not loaded (empty at startup): that path retries the full load, and
+     * each navigation is its chance to do so.
+     * @returns {void}
+     */
+    function scheduleNavigationRefresh() {
+        // Every tag type is off: nothing reads the cache until one is turned on.
+        if (!anyTagTypeEnabled()) return;
+        // Monotonic: a system clock change must not stretch the interval.
+        const now = performance.now();
+        const elapsed = now - lastNavRefreshAt;
+        if (!serverCache || elapsed >= NAV_REFRESH_MIN_INTERVAL_MS) {
+            if (navRefreshTimer) { clearTimeout(navRefreshTimer); navRefreshTimer = null; }
+            lastNavRefreshAt = now;
+            refreshServerCache();
+            return;
+        }
+        if (navRefreshTimer) return;
+        navRefreshTimer = setTimeout(() => {
+            navRefreshTimer = null;
+            if (!anyTagTypeEnabled()) return;
+            lastNavRefreshAt = performance.now();
+            refreshServerCache();
+        }, Math.min(NAV_REFRESH_MIN_INTERVAL_MS, NAV_REFRESH_MIN_INTERVAL_MS - elapsed));
+    }
+
     async function refreshServerCacheCore() {
         // If server cache was never loaded (e.g. cache was empty at startup),
         // retry the full load — the scheduled task may have built it since then.
@@ -827,6 +909,16 @@
      * Check whether at least one registered renderer is currently enabled.
      * @returns {boolean} True if any renderer reports enabled.
      */
+    /**
+     * Whether the user has any poster tag type on. Read from the settings as
+     * well as the registered renderers, because a renderer can register after
+     * the pipeline starts (quality tags wait for Jellyfin's audio preference).
+     * @returns {boolean}
+     */
+    function anyTagTypeEnabled() {
+        return TAG_SETTING_KEYS.some((key) => !!JE.currentSettings?.[key]) || hasAnyEnabledRenderer();
+    }
+
     function hasAnyEnabledRenderer() {
         for (const [, r] of renderers) {
             if (r.isEnabled()) return true;
@@ -1379,6 +1471,17 @@
             setTimeout(initialize, 100);
             return;
         }
+        if (pipelineStarted) return;
+        // No tag type is enabled, so nothing would ever be drawn: don't download
+        // the server cache, store it, or refresh it on every navigation. Turning
+        // a tag type on later registers its renderer, which starts the pipeline.
+        if (!anyTagTypeEnabled()) {
+            startWhenRendererRegisters = true;
+            console.log(`${logPrefix} No tag renderers enabled; idle until one is`);
+            return;
+        }
+        startWhenRendererRegisters = false;
+        pipelineStarted = true;
 
         // Register as body mutation subscriber at priority 0 (after hidden-content and prefetch).
         // Only trigger scans when nodes were actually added to the DOM — ignore attribute
@@ -1394,7 +1497,19 @@
 
         // Also trigger on navigation
         if (JE.helpers.onNavigate) {
+            lastNavigationRoute = navigationRoute();
             JE.helpers.onNavigate(() => {
+                // jellyfin-web rewrites the URL's `query` parameter on every
+                // keystroke in the search box (#/search?query=a → ?query=ab),
+                // which the navigation layer reports like any other navigation.
+                // Nothing below is needed for that: the page is the same, its
+                // new result cards reach the scan through the body observer,
+                // and the batch in flight for cards still on screen may as well
+                // finish. Anything else (another path, another item id) is a
+                // real page change.
+                const route = navigationRoute();
+                if (route === lastNavigationRoute) return;
+                lastNavigationRoute = route;
                 // Invalidate any in-flight batch processing (don't reset isProcessing
                 // directly — let stale batches finish naturally and discard results)
                 batchGeneration++;
@@ -1402,7 +1517,7 @@
                 parentSeriesCache.clear();
                 requestQueue = [];
                 // Pick up any new items added since last load
-                refreshServerCache();
+                scheduleNavigationRefresh();
                 scheduleScan();
             });
         }
@@ -1544,6 +1659,8 @@
          *   what a Spoiler Guard toggle just changed.
          */
         async invalidateServerCache(options) {
+            // Not started (no tag type enabled): no cache or overlays to replace.
+            if (!pipelineStarted) return;
             // Hold a flag for the duration of the reload so concurrent scheduleScan()
             // calls (from the body MutationObserver during the await) no-op instead of
             // processing cards against the empty cache. processedCards is reset a
@@ -1589,8 +1706,16 @@
                 } catch (domErr) {
                     console.warn(`${logPrefix} overlay cleanup during invalidate failed:`, domErr);
                 }
-                await loadServerCache({ forceDownload: !options?.reuseStored });
-                processedCards = new WeakSet();
+                const forceDownload = !options?.reuseStored;
+                if (anyTagTypeEnabled()) {
+                    deferredLoad = null;
+                    await loadServerCache({ forceDownload });
+                    processedCards = new WeakSet();
+                } else {
+                    // Every tag type is off: load when one is turned on (registerRenderer),
+                    // still as a fresh download if any skipped reload needed one.
+                    deferredLoad = { forceDownload: forceDownload || !!deferredLoad?.forceDownload };
+                }
             } catch (e) {
                 console.warn(`${logPrefix} invalidateServerCache failed:`, e);
             } finally {
@@ -1619,6 +1744,11 @@
         JE.tagPipeline.clearProcessed();
     });
     document.addEventListener('je:user-data-loaded', () => {
+        // The incoming user's tag types registered during the switch and
+        // already started loading their cache: don't drop it and load again.
+        const startedThisSwitch = loadStartedForEpoch !== null && loadStartedForEpoch === JE.session?.getEpoch?.();
+        loadStartedForEpoch = null;
+        if (startedThisSwitch) return;
         JE.tagPipeline.invalidateServerCache({ reuseStored: true }).catch(() => {});
     });
 

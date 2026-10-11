@@ -329,7 +329,7 @@
      * Fetches the one-request bootstrap payload for the signed-in user:
      * { Version, UserId, PublicConfig, PrivateConfig (admins only, else null),
      *   HasCustomTabs, HasPluginPages, UserSettings: { Settings, Shortcuts,
-     *   Bookmark, Elsewhere, HiddenContent }, ComponentScripts }.
+     *   Bookmark, Elsewhere, HiddenContent }, ComponentScripts, Prefetched }.
      * Each part has exactly the shape of the standalone endpoint it replaces.
      * Rejects on transport failure or an unexpected shape so callers can fall
      * back to the per-endpoint path.
@@ -361,6 +361,49 @@
         return !!payloadUser && payloadUser === normalize(userId);
     }
 
+    // Startup answers carried by the page-load bootstrap (its `Prefetched` block:
+    // the bodies of spoiler-blur/series, jellyseerr/user-status, jellyseerr/status
+    // and active-streams/sessions), handed out once each by JE.takePrefetched.
+    // { userId, receivedAt, parts } or null.
+    let prefetched = null;
+    const PREFETCHED_DEFAULT_MAX_AGE_MS = 10000;
+
+    /**
+     * Keeps the bootstrap's `Prefetched` block for the modules that would
+     * otherwise request each part themselves right after the bundle loads.
+     * @param {object} bootstrap - A bootstrap payload already matched to `userId`.
+     * @param {string} userId - The user the payload belongs to.
+     */
+    function storePrefetched(bootstrap, userId) {
+        const parts = bootstrap?.Prefetched;
+        prefetched = parts && typeof parts === 'object'
+            ? { userId, receivedAt: Date.now(), parts: Object.assign({}, parts) }
+            : null;
+    }
+
+    /**
+     * Hands out one prefetched startup answer, exactly the body its standalone
+     * endpoint returns, and forgets it. Returns undefined — the caller then
+     * requests the endpoint as before — when the bootstrap did not carry it
+     * (feature off, not permitted, or it would have needed an upstream call),
+     * it was already taken, it belongs to another user than the signed-in one,
+     * or it is older than `maxAgeMs`, so a module that first asks later than
+     * the page load still gets a fresh answer.
+     * @param {string} name - Part name (SpoilerBlurSeries, SeerrUserStatus,
+     *   SeerrStatus, ActiveStreamSessions).
+     * @param {number} [maxAgeMs] - Oldest acceptable answer, from receipt of the bootstrap.
+     * @returns {any} The endpoint body, or undefined.
+     */
+    JE.takePrefetched = function(name, maxAgeMs = PREFETCHED_DEFAULT_MAX_AGE_MS) {
+        if (!prefetched || !Object.prototype.hasOwnProperty.call(prefetched.parts, name)) return undefined;
+        const value = prefetched.parts[name];
+        delete prefetched.parts[name];
+        const currentUserId = typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : null;
+        if (!bootstrapMatchesUser({ UserId: prefetched.userId }, currentUserId)) return undefined;
+        if (Date.now() - prefetched.receivedAt > maxAgeMs) return undefined;
+        return value == null ? undefined : value;
+    };
+
     // The in-flight/settled bootstrap request and the user it was started for.
     // Shared between the early login-image/maintenance-banner check and
     // initialize() so a page load that is already signed in issues one request.
@@ -379,6 +422,7 @@
         bootstrapUserId = userId;
         const promise = fetchBootstrap().then((payload) => {
             if (!bootstrapMatchesUser(payload, userId)) throw new Error('Bootstrap response is for a different user');
+            storePrefetched(payload, userId);
             return payload;
         }).catch((e) => {
             if (bootstrapPromise === promise) bootstrapPromise = null;
@@ -1068,6 +1112,8 @@
             // during the re-bootstrap below.
             for (const key of privateConfigKeys) delete JE.pluginConfig[key];
             privateConfigKeys = [];
+            // Untaken startup answers belong to the previous user.
+            prefetched = null;
         });
 
         // Async re-bootstrap: after a switch to a signed-in user, reload that

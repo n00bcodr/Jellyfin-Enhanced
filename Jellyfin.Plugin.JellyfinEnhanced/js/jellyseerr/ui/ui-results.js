@@ -334,11 +334,15 @@
 
         positionSection();
 
-        const observer = new MutationObserver(() => {
+        const observer = new MutationObserver((records) => {
             if (!sectionToInject.isConnected) {
                 observer.disconnect();
                 return;
             }
+            // Only Jellyfin's own rendering can make the position wrong; the
+            // cards infinite scroll and the collection lookups add inside the
+            // section change nothing about where it sits.
+            if (records.every(record => sectionToInject.contains(record.target))) return;
             positionSection();
         });
         observer.observe(searchPage, { childList: true, subtree: true });

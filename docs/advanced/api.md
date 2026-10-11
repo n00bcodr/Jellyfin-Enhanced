@@ -583,6 +583,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 | POST / GET | `jellyseerr/request` | Create / list Seerr requests |
 | GET | `jellyseerr/quota` | Calling user's Seerr request quota |
 | GET | `jellyseerr/tv/{tmdbId}`, `jellyseerr/movie/{tmdbId}` | TV/movie detail proxy |
+| GET | `jellyseerr/movie-collections?ids=<tmdbId,...>` | The collection each listed movie belongs to (≤100 ids), in one request: Seerr's movie detail first, TMDB's when Seerr names none; same Seerr user, permission and parental checks as the per-movie proxy. `{ results: { "<id>": { id, name, posterPath, backdropPath } \| null } }` (null = no collection; failed or refused lookups are left out) |
 | GET | `.../season/{seasonNumber}` | Season detail proxy |
 | GET | `.../similar`, `.../recommendations` | Similar / recommended titles |
 | GET | `jellyseerr/movie/{tmdbId}/ratingscombined`, `jellyseerr/tv/{tmdbId}/ratings` | Combined critic/audience ratings |

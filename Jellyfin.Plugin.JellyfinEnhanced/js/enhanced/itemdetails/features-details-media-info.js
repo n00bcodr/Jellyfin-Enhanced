@@ -18,7 +18,12 @@
     // The watch-progress and file-size chips of one page share a single
     // /item-stats request (both values come from the same server-side walk).
     const ITEMSTATS_CACHE_TTL = 60 * 60 * 1000; // 1 hour
-    const itemStatsRequests = new Map(); // Map<`${itemId}|${mediaSourceId}`, { promise: Promise<object>, ts: number }>
+    // Map<`${itemId}|${mediaSourceId}`, { promise: Promise<object>, ts: number,
+    //   prefetched: boolean, visit: object|null, ctl: AbortController|null }>.
+    // `prefetched` marks a details-visit prefetch (see prefetchItemStats).
+    // `visit` and `ctl` are only kept until a chip takes it over: the entry
+    // outlives the visit, and the visit holds its view and item.
+    const itemStatsRequests = new Map();
 
     // Watch progress is per-user (and item metadata is fetched with the
     // signed-in user's access) — never carry it across a user switch.
@@ -26,6 +31,10 @@
         watchProgressCache.clear();
         fileSizeCache.clear();
         audioLanguageCache.clear();
+        // A prefetch no chip has taken over belongs to the previous user.
+        for (const entry of itemStatsRequests.values()) {
+            if (entry.visit) entry.ctl?.abort();
+        }
         itemStatsRequests.clear();
     });
 
@@ -36,30 +45,81 @@
      * page cost one round trip instead of two.
      * @param {string} itemId The ID of the item.
      * @param {string|null} mediaSourceId Optional selected media source (only affects the size).
+     * @param {object|null} [prefetchVisit=null] The details visit when called as a prefetch.
      * @returns {Promise<object>} `{ size, progress, totalPlaybackTicks, totalRuntimeTicks }`; rejects on a failed request.
      */
-    function fetchItemStats(itemId, mediaSourceId) {
+    function fetchItemStats(itemId, mediaSourceId, prefetchVisit = null) {
         const key = `${itemId}|${mediaSourceId || ''}`;
         const now = Date.now();
         const existing = itemStatsRequests.get(key);
         if (existing && (now - existing.ts) < ITEMSTATS_CACHE_TTL) {
+            if (existing.prefetched && !prefetchVisit) {
+                // A chip takes over a details-visit prefetch. A failed prefetch
+                // is never shown: the chip asks again, as it would have without
+                // the prefetch (the failed entry is already gone, so the second
+                // chip shares that request). Not after a user switch, where
+                // the chip discards the answer anyway.
+                existing.visit = null;
+                existing.ctl = null;
+                const claimEpoch = JE.session ? JE.session.getEpoch() : 0;
+                return existing.promise.catch((error) => {
+                    if (JE.session && !JE.session.isCurrent(claimEpoch)) throw error;
+                    return fetchItemStats(itemId, mediaSourceId);
+                });
+            }
             return existing.promise;
         }
 
         const path = `/item-stats/${ApiClient.getCurrentUserId()}/${itemId}${mediaSourceId ? `?mediaSourceId=${encodeURIComponent(mediaSourceId)}` : ''}`;
         // Through JE's request limiter, which keeps sockets free for
         // jellyfin-web's own requests (the chips start fetching as soon as
-        // they are placed, while the page is still loading).
+        // they are placed, while the page is still loading). A prefetch can
+        // be aborted, so one still queued when its visit ends is never sent.
+        const ctl = prefetchVisit ? new AbortController() : null;
         const promise = JE.core?.api?.plugin
-            ? JE.core.api.plugin(path, { skipRetry: true })
+            ? JE.core.api.plugin(path, ctl ? { skipRetry: true, signal: ctl.signal } : { skipRetry: true })
             : ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced${path}`), dataType: 'json' });
-        const entry = { promise, ts: now };
+        const entry = { promise, ts: now, prefetched: !!prefetchVisit, visit: prefetchVisit, ctl };
         itemStatsRequests.set(key, entry);
         // A failed request is not kept: the next visit may try again.
         promise.catch(() => {
             if (itemStatsRequests.get(key) === entry) itemStatsRequests.delete(key);
         });
         return promise;
+    }
+
+    /**
+     * Starts the item-stats request of a details visit before the chips are
+     * placed (they take it over through fetchItemStats). Only when a chip that
+     * is on would request: the same cache checks as displayWatchProgress and
+     * displayItemSize.
+     * @param {string} itemId The ID of the item.
+     * @param {string|null} mediaSourceId The source the chips will be given.
+     * @param {{watchProgress: boolean, fileSize: boolean}} chips Which chips are on.
+     * @param {object} visit The details visit (see discardItemStatsPrefetch).
+     */
+    function prefetchItemStats(itemId, mediaSourceId, { watchProgress, fileSize }, visit) {
+        if (!JE.core?.api?.plugin) return;
+        const now = Date.now();
+        const progress = watchProgressCache.get(itemId);
+        const size = fileSizeCache.get(`${itemId}|${mediaSourceId || ''}`);
+        const needed = (watchProgress && !(progress && (now - progress.ts) < WATCHPROGRESS_CACHE_TTL))
+            || (fileSize && !(size && (now - size.ts) < FILESIZE_CACHE_TTL));
+        if (needed) fetchItemStats(itemId, mediaSourceId, visit).catch(() => {});
+    }
+
+    /**
+     * Drops a visit's prefetches no chip took over, successful or not, so a
+     * later visit asks again exactly as it would have without them; one still
+     * queued is aborted and never sent.
+     * @param {object} visit The details visit that ended.
+     */
+    function discardItemStatsPrefetch(visit) {
+        for (const [key, entry] of itemStatsRequests) {
+            if (entry.visit !== visit) continue; // taken over, or another visit's
+            entry.ctl?.abort();
+            itemStatsRequests.delete(key);
+        }
     }
 
     /**
@@ -826,5 +886,7 @@
     internal.displayWatchProgress = displayWatchProgress;
     internal.displayItemSize = displayItemSize;
     internal.displayAudioLanguages = displayAudioLanguages;
+    internal.prefetchItemStats = prefetchItemStats;
+    internal.discardItemStatsPrefetch = discardItemStatsPrefetch;
 
 })(window.JellyfinEnhanced);

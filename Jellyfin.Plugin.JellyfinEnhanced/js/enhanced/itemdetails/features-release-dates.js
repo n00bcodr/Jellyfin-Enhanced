@@ -7,6 +7,21 @@
 
     const RELEASEDATE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
     const releaseDateCache = new Map(); // Map<itemId, { infos, ts }>
+    // Lookups in flight, so a chip takes one over instead of starting another:
+    // Map<itemId, { promise, visit, claimed, ctl }>. A details visit's prefetch
+    // (see prefetchReleaseDate) has `visit` set and `claimed` once a chip has
+    // taken it over; a chip's own lookup has no visit. A chip removes the entry
+    // once it has cached the answer, and a visit's unclaimed ones go with it.
+    const releaseLookups = new Map();
+
+    // TMDB answers don't depend on the user, so the answers cache stays as it
+    // was; prefetches no chip has taken over are aborted with their visit's.
+    JE.session?.onUserChange('release-dates', () => {
+        for (const entry of releaseLookups.values()) {
+            if (entry.visit && !entry.claimed) entry.ctl?.abort();
+        }
+        releaseLookups.clear();
+    });
 
     function tmdbGet(path) {
         const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb${path}`);
@@ -136,10 +151,15 @@
         }
 
         if (mediaType === 'Season' || mediaType === 'Episode') {
-            let seriesTmdbId = item?.SeriesProviderIds?.Tmdb;
-            if (!seriesTmdbId && item?.SeriesId) {
+            // The show's TMDB id lives on the parent Series (the DTO has no
+            // SeriesProviderIds); the shared item cache hands every module on
+            // the page the same fetch.
+            let seriesTmdbId = null;
+            if (item?.SeriesId) {
                 try {
-                    const series = await ApiClient.getItem(userId, item.SeriesId);
+                    const series = JE.helpers?.getItemCached
+                        ? await JE.helpers.getItemCached(item.SeriesId, { userId })
+                        : await ApiClient.getItem(userId, item.SeriesId);
                     seriesTmdbId = series?.ProviderIds?.Tmdb;
                 } catch (_) { /* fall through to empty below */ }
             }
@@ -187,13 +207,40 @@
         container.appendChild(placeholder);
 
         const performFetch = async () => {
+            let entry = null;
+            // A taken-over prefetch that fails after a user switch (the switch
+            // cancels the limiter's queued work) is neither retried as the
+            // previous user nor cached as "no dates" for the next one. Any
+            // other failure is logged and cached as it always was.
+            const epoch = JE.session ? JE.session.getEpoch() : 0;
+            let cutShort = false;
             try {
                 const userId = ApiClient.getCurrentUserId();
-                const item = JE.helpers?.getItemCached
-                    ? await JE.helpers.getItemCached(itemId, { userId })
-                    : await ApiClient.getItem(userId, itemId);
-                const infos = await resolveReleaseInfo(item, userId);
+                const lookupNow = async () => {
+                    const item = JE.helpers?.getItemCached
+                        ? await JE.helpers.getItemCached(itemId, { userId })
+                        : await ApiClient.getItem(userId, itemId);
+                    return resolveReleaseInfo(item, userId);
+                };
+                // Take over the details visit's prefetch (or a lookup already
+                // in flight) instead of starting another; register this one
+                // so a prefetch that comes later joins it.
+                entry = releaseLookups.get(itemId);
+                if (entry) entry.claimed = true;
+                else releaseLookups.set(itemId, entry = { promise: lookupNow(), visit: null, claimed: true, ctl: null });
+                // A failed prefetch is never shown: look it up now instead, as
+                // without the prefetch.
+                const infos = entry.visit
+                    ? await entry.promise.catch((error) => {
+                        if (JE.session && !JE.session.isCurrent(epoch)) {
+                            cutShort = true;
+                            throw error;
+                        }
+                        return lookupNow();
+                    })
+                    : await entry.promise;
                 releaseDateCache.set(itemId, { infos, ts: now });
+                if (releaseLookups.get(itemId) === entry) releaseLookups.delete(itemId);
                 // The chips' small DOM write lands with the next frame's own
                 // layout pass instead of forcing an extra one.
                 await new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -204,9 +251,11 @@
                     placeholder.remove();
                 }
             } catch (error) {
+                if (entry && releaseLookups.get(itemId) === entry) releaseLookups.delete(itemId);
+                placeholder.remove();
+                if (cutShort) return;
                 console.error(`🪼 Jellyfin Enhanced: Release Date: Error fetching release info for ${itemId}:`, error);
                 releaseDateCache.set(itemId, { infos: [], ts: now });
-                placeholder.remove();
             }
         };
 
@@ -286,6 +335,46 @@
         });
     }
 
+    /**
+     * Starts a details visit's release lookup before the chip is placed (the
+     * chip takes it over in displayReleaseDate). Nothing when the chip would
+     * not look up either (fresh answer cached) or a lookup is already running.
+     * Through JE's request limiter, as it starts while the page is loading.
+     * @param {string} itemId The ID of the item.
+     * @param {object} item The item (from the shared item cache).
+     * @param {object} visit The details visit (see discardReleasePrefetch).
+     */
+    function prefetchReleaseDate(itemId, item, visit) {
+        const cached = releaseDateCache.get(itemId);
+        if ((cached && (Date.now() - cached.ts) < RELEASEDATE_CACHE_TTL) || releaseLookups.has(itemId)) return;
+        const ctl = new AbortController();
+        const userId = ApiClient.getCurrentUserId();
+        const lookup = () => resolveReleaseInfo(item, userId);
+        const manager = JE.core?.api?.manager;
+        const promise = typeof manager?.withConcurrencyLimit === 'function'
+            ? manager.withConcurrencyLimit(lookup, { signal: ctl.signal })
+            : lookup();
+        // A chip that takes it over handles a failure itself.
+        promise.catch(() => {});
+        releaseLookups.set(itemId, { promise, visit, claimed: false, ctl });
+    }
+
+    /**
+     * Drops a visit's prefetches no chip took over, so a later visit looks up
+     * again exactly as it would have without them; one still queued in the
+     * limiter is aborted and never sent.
+     * @param {object} visit The details visit that ended.
+     */
+    function discardReleasePrefetch(visit) {
+        for (const [itemId, entry] of releaseLookups) {
+            if (entry.visit !== visit || entry.claimed) continue;
+            entry.ctl?.abort();
+            releaseLookups.delete(itemId);
+        }
+    }
+
     internal.displayReleaseDate = displayReleaseDate;
+    internal.prefetchReleaseDate = prefetchReleaseDate;
+    internal.discardReleasePrefetch = discardReleasePrefetch;
 
 })(window.JellyfinEnhanced);

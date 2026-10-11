@@ -6,7 +6,7 @@ The ordered module list lives in `js/component-scripts.json` (paths relative to 
 
 In production the server concatenates the manifest into one script, `GET /JellyfinEnhanced/bundle.js` (`Services/ClientScriptBundle.cs`: built once per process, cache-keyed and immutable like every other script, with a `sections` source map at `bundle.js.map` so DevTools and stack traces still show the original file names and lines). The bundle wraps each file in a function and publishes them as `window.__JE_BUNDLE_MODULES`; once the configuration is applied, `plugin.js` inserts the script and runs the functions in manifest order in short slices scheduled in the browser's idle time (`requestIdleCallback`, capped), so evaluating 150+ modules never delays jellyfin-web's own first view. A module that throws at its top level is reported and skipped, not re-run; if the request fails or the bundle does not parse, every file is injected individually with `script.async = false` (parallel download, manifest-order execution), exactly as before the bundle existed. Dev mode (`DevMode` config) always uses the individual files.
 
-`plugin.js` also fetches everything it needs before the component stage in one request, `GET /JellyfinEnhanced/bootstrap` (version, public config, admin-only private config, the Custom Tabs / Plugin Pages presence flags, the five per-user documents and the manifest), falling back to the individual endpoints if that fails.
+`plugin.js` also fetches everything it needs before the component stage in one request, `GET /JellyfinEnhanced/bootstrap` (version, public config, admin-only private config, the Custom Tabs / Plugin Pages presence flags, the five per-user documents and the manifest), falling back to the individual endpoints if that fails. Its `Prefetched` block also carries the small answers modules ask for on every page load (the user's Spoiler Guard state, the Seerr user status and reachability when no Seerr call is needed, the active-streams session list under that endpoint's gate), each exactly the body of its standalone endpoint; modules take them once through `JE.takePrefetched(name)` shortly after the page load and otherwise call the endpoint as before.
 
 Three client scripts are **not** in the manifest and are loaded by their own dedicated loaders: `others/splashscreen.js` and `extras/login-image.js` (both injected early, before the component stage, so they can affect the login screen) and `enhanced/translations.js` (loaded at the start of `initialize()`, in parallel with the bootstrap request, ahead of the component stage).
 
@@ -49,7 +49,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   │                                 # SeerrParentalFilter, MaintenanceMode*,
 │   │                                 # TmdbResponseCache, TmdbCompanyTvDiscover,
 │   │                                 # ItemStatsService, ScriptInjectionStartupFilter,
-│   │                                 # ClientScriptBundle, …)
+│   │                                 # ClientScriptBundle, MovieCollectionsBatch, …)
 │   ├── Identity/
 │   │   └── RequestIdentityService.cs
 │   ├── PosterTags/                   # Native Poster Tags (experimental)
@@ -245,7 +245,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`navigation.js`**: One deduped SPA navigation dispatcher (`onNavigate`, `onViewPage`), replacing the ad-hoc `hashchange`/`viewshow` listeners that previously double-fired on hash navigation and missed `pushState` navigation.
     * **`session.js`**: Identity-epoch tracker for SPA user switches. Logging out and back in as a different user never reloads the page, so this module detects the transition (an `ApiClient.setAuthenticationInfo` hook plus navigation/storage fallbacks), runs every registered per-feature reset handler (`JE.session.onUserChange`), and emits `je:user-changed`; `plugin.js` then re-fetches the incoming user's data and emits `je:user-data-loaded`. Async loaders capture `JE.session.getEpoch()` and drop stale results after a switch.
     * **`tag-renderer-base.js`**: The shared poster-tag engine — overlay creation, positioning, tagged-card deduplication, caching and reinitialisation. The five poster-overlay renderers (genre, language, quality, rating, age rating) supply a spec; `peopletags.js` and `userreviewtags.js` do not use it.
-    * **`ui-kit.js`**: `escapeHtml`, `toast`, deduped CSS injection, and scroll-friendly tap detection (`addTouchTapListener`).
+    * **`ui-kit.js`**: `escapeHtml`, `toast`, deduped CSS injection, and scroll-friendly tap detection (`addTouchTapListener`, and `addDelegatedTouchTapListener` for one set of listeners on a container of cards).
 
 * **`/enhanced/`**: Core "Jellyfin Enhanced" functionality.
     * **`config.js`**: Manages all settings, both from the plugin backend and the user's local storage.
@@ -269,7 +269,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`api.js`**: Communication with the Seerr proxy endpoints on the Jellyfin server.
     * **`hss-discovery-handler.js`**: Intercepts clicks on Home Screen Sections discover cards and opens the Seerr More Info modal instead of navigating to the external Seerr site.
     * **`issue-reporter.js`**: Report problems with media items directly from Jellyfin.
-    * **`item-details.js`**: Similar and Recommended rows on item detail pages, plus the "Request More" button for series with unrequested seasons.
+    * **`item-details.js`**: Similar and Recommended rows on item detail pages (when their data comes before Jellyfin has rendered the item, built ahead in idle time and inserted with that render), plus the "Request More" button for series with unrequested seasons.
     * **`jellyseerr.js`**: The Seerr search-results integration — intercepts Jellyfin's search page, renders Seerr results and handles their pagination/infinite scroll. Gated on `JellyseerrShowSearchResults`; the other Seerr components initialise independently of it.
     * **`modal.js`**: Advanced request modals.
     * **`request-manager.js`**: Thin alias onto `JE.core.api.manager`, kept as a stable public surface.
@@ -328,6 +328,8 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`SpoilerUserResolver.cs`**: Loads per-user Spoiler Guard state for the requesting user identified by `RequestIdentityService`.
 
 * **`/Services/ClientScriptBundle.cs`**: Builds and caches the component bundle (`/JellyfinEnhanced/bundle.js`) and its index source map from the embedded `js/component-scripts.json` manifest; also the source of the ordered list returned by `/bootstrap`.
+
+* **`/Services/MovieCollectionsBatch.cs`**: Id parsing and lookup scheduling for `GET /JellyfinEnhanced/jellyseerr/movie-collections`, the Seerr search row's one-request collection lookup for a batch of movies (Seerr's movie detail first, TMDB when Seerr names no collection).
 
 * **`/Services/PosterTags/`**: Native Poster Tags (experimental) — draws each user's poster tags into Primary images for native apps that don't run the web overlays. Off unless `NativePosterTagsEnabled` is set.
     * **`PosterTagModel.cs`**: The semantic layout passed from resolution to rendering — tag groups, their corners and stack order, and the tags themselves. Visual details belong to the renderer.

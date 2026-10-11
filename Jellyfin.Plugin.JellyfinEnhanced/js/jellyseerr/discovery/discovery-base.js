@@ -213,6 +213,9 @@
         /** @type {Array<any>} */
         let currentPagedResults = [];
         let renderedCount = 0;
+        // Bumped whenever the client-paged list is re-rendered from the top
+        // (filter / sort change): a chunk still being built is dropped.
+        let renderEpoch = 0;
 
         /**
          * Managed fetch through the shared request manager (cache prefix = key).
@@ -465,6 +468,7 @@
             if (!itemsContainer) return;
 
             if (reset) {
+                renderEpoch++;
                 JE.jellyseerrUI?.releasePosters?.(itemsContainer);
                 while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
                 renderedCount = 0;
@@ -487,6 +491,39 @@
         }
 
         /**
+         * Renders the next chunk of the client-paged list like renderChunk, but
+         * through JE.discoveryFilter.appendCards: the cards in view at once, the
+         * rest built in short slices and appended after them. The chunk counts
+         * as consumed only once it is in, as renderChunk's does: a card that
+         * fails to build takes the chunk's cards out again, so the retry renders
+         * the same chunk instead of skipping it.
+         * @param {HTMLElement|null} itemsContainer
+         * @param {string} mode - Current filter mode
+         * @param {number} chunkSize - How many items to render
+         * @param {AbortSignal} [signal] - Aborted by navigation
+         * @returns {Promise<void>} Settles once every card of the chunk is in
+         */
+        async function renderChunkInSlices(itemsContainer, mode, chunkSize, signal) {
+            if (!itemsContainer) return;
+
+            currentPagedResults = getPagedResultsForMode(mode);
+            const nextChunk = currentPagedResults.slice(renderedCount, renderedCount + chunkSize);
+            if (nextChunk.length === 0) {
+                hasMorePages = false;
+                return;
+            }
+
+            const epoch = renderEpoch;
+            const isCurrent = () => epoch === renderEpoch && !signal?.aborted;
+            await JE.discoveryFilter.appendCards(itemsContainer, nextChunk, { cardClass, isCurrent });
+            // A reset (filter / sort change) or navigation during the build owns
+            // the pagination state now.
+            if (!isCurrent()) return;
+            renderedCount += nextChunk.length;
+            hasMorePages = renderedCount < currentPagedResults.length;
+        }
+
+        /**
          * Loads more items for infinite scroll. dual-feed fetches the next
          * server page(s) for the active filter mode — several per feed in
          * parallel when the buffer deficit (or a low post-filter yield) calls
@@ -499,13 +536,14 @@
                 if (isLoading || !hasMorePages || !clientListActive) return;
 
                 isLoading = true;
+                const epoch = renderEpoch;
                 try {
                     const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
                     const itemsContainer = /** @type {HTMLElement|null} */ (
                         document.querySelector(`${sectionSelector} .itemsContainer`));
                     const chunk = Math.max(PAGE_SIZE, JE.seamlessScroll?.cardsNeeded?.(itemsContainer, hint, PAGE_SIZE) || PAGE_SIZE);
                     const before = renderedCount;
-                    renderChunk(itemsContainer, filterMode, false, chunk);
+                    await renderChunkInSlices(itemsContainer, filterMode, chunk, currentAbortController?.signal);
                     return { pages: 1, rendered: renderedCount - before };
                 } catch (error) {
                     if (error.name === 'AbortError') return;
@@ -513,6 +551,9 @@
                     throw error; // Re-throw for seamlessScroll retry handling
                 } finally {
                     isLoading = false;
+                    // A filter / sort change re-armed the engine while the chunk
+                    // was being built, found isLoading set and stopped; wake it now.
+                    if (epoch !== renderEpoch && scrollState.fill) scrollState.fill();
                 }
                 return;
             }
@@ -649,13 +690,23 @@
                 }
 
                 if (itemsContainer && itemsToAdd.length > 0) {
-                    const fragment = createCardsFragment(itemsToAdd);
-                    yieldStats.rendered += fragment.childNodes.length;
-                    lastBatchRendered = fragment.childNodes.length;
-                    if (fragment.childNodes.length > 0) {
-                        itemsContainer.appendChild(fragment);
-                    }
+                    // The cards in view go in at once; the rest of the batch is
+                    // built in short slices and goes in after them. This load
+                    // resolves (and the engine measures) only once every card is
+                    // in. A sort change or navigation aborts the signal and drops
+                    // the cards not in yet.
+                    const rendering = JE.discoveryFilter.appendCards(itemsContainer, itemsToAdd, {
+                        cardClass,
+                        isCurrent: () => !signal?.aborted
+                    });
                     ensureFilterControl(itemsContainer);
+                    const rendered = await rendering;
+                    if (signal?.aborted) return;
+                    // A filter change while the batch was being built started fresh
+                    // batch statistics: this batch's counts belong to the old mode.
+                    if (generation !== loadGeneration) return { pages: committedPages, rendered };
+                    yieldStats.rendered += rendered;
+                    lastBatchRendered = rendered;
                 }
 
                 // Keep the cache warm for the next load while this one renders.
@@ -985,6 +1036,11 @@
                         .then(r => ({ type: 'movie', data: r }))
                 );
             }
+            // These run while the page wait below is awaited; a navigation
+            // aborting the render then returns before Promise.all ever handles
+            // them, and their AbortError surfaced as an unhandled rejection.
+            // (Only an abort can reject them: the page-1 fetch is tolerant.)
+            fetchPromises.forEach(p => p.catch(() => {}));
 
             // Show the section as soon as the page can hold it: the header goes
             // in now and the cards stream in when page 1 lands, so the first

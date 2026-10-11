@@ -1077,8 +1077,11 @@
 
         // Verify Jellyseerr is reachable and active via the server-side status endpoint
         try {
+            // The page-load bootstrap carries the cached probe result when there
+            // is one (same body as the endpoint); handed out once.
             const statusUrl = ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/status');
-            const statusRes = await ApiClient.ajax({ type: 'GET', url: statusUrl, dataType: 'json' });
+            const statusRes = JE.takePrefetched?.('SeerrStatus')
+                || await ApiClient.ajax({ type: 'GET', url: statusUrl, dataType: 'json' });
             if (!statusRes || !statusRes.active) {
                 console.debug(`${logPrefix} Jellyseerr status check returned inactive, skipping reporter init`);
                 return;

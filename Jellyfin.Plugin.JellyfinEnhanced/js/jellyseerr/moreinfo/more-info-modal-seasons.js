@@ -256,9 +256,11 @@ async function enrichSeasonCardsWithJellyfinLinks(data, modal = state.currentMod
 /**
  * Check if a TV show has any unrequested seasons by querying the request endpoint
  * @param {object} data - The TV show data from Jellyseerr
+ * @param {AbortSignal} [signal] - Cancels the lookups (a details page left
+ *   before they answered); the result is then meaningless and false.
  * @returns {Promise<boolean>} - True if there are seasons that can be requested
  */
-async function checkForUnrequestedSeasons(data) {
+async function checkForUnrequestedSeasons(data, signal) {
     // Get all seasons from TMDB data that have episodes (excluding specials and unaired seasons)
     const tmdbSeasons = (data.seasons || []).filter(s => s.seasonNumber > 0 && s.episodeCount > 0);
     if (tmdbSeasons.length === 0) return false;
@@ -266,13 +268,10 @@ async function checkForUnrequestedSeasons(data) {
     const tmdbId = data.id;
 
     try {
-        // Query the request endpoint to get ALL requests for this show
-        const response = await ApiClient.ajax({
-            type: 'GET',
-            url: ApiClient.getUrl(`/JellyfinEnhanced/jellyseerr/request?take=500&skip=0&filter=all`),
-            headers: { 'X-Jellyfin-User-Id': ApiClient.getCurrentUserId() },
-            dataType: 'json'
-        });
+        // Query the request endpoint to get ALL requests for this show. Through
+        // the core client (single attempt, like ApiClient.ajax) so the caller's
+        // signal really cancels the request instead of only its result.
+        const response = await JE.core.api.plugin('/jellyseerr/request?take=500&skip=0&filter=all', { skipRetry: true, signal });
 
         // Collect all season statuses from all requests for this TMDB ID
         const statusMap = {};
@@ -319,16 +318,12 @@ async function checkForUnrequestedSeasons(data) {
             try {
                 const userId = ApiClient.getCurrentUserId?.();
                 if (userId) {
-                    const resp = await ApiClient.ajax({
-                        type: 'GET',
-                        url: ApiClient.getUrl(`/Users/${userId}/Items`, {
-                            ParentId: jellyfinMediaId,
-                            IncludeItemTypes: 'Season',
-                            Recursive: false,
-                            Fields: 'IndexNumber'
-                        }),
-                        dataType: 'json'
-                    });
+                    const resp = await JE.core.api.fetch(ApiClient.getUrl(`/Users/${userId}/Items`, {
+                        ParentId: jellyfinMediaId,
+                        IncludeItemTypes: 'Season',
+                        Recursive: false,
+                        Fields: 'IndexNumber'
+                    }), { skipRetry: true, signal });
                     jellyfinSeasonPresenceMap = {};
                     for (const s of (resp?.Items || [])) {
                         const idx = Number(s?.IndexNumber);
@@ -350,6 +345,7 @@ async function checkForUnrequestedSeasons(data) {
 
         return false;
     } catch (error) {
+        if (signal?.aborted) return false; // cancelled by the caller, not a failure
         console.error(`[More Info Modal] Error checking unrequested seasons:`, error);
         return false;
     }

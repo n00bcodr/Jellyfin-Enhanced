@@ -56,7 +56,14 @@
             .jellyseerr-media-badge-series { background-color: #d92cb8; }
             .jellyseerr-media-badge-collection { background-color: #0f9f6e; }
             .jellyseerr-collection-badge { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 1000; color: #fff; padding: 6px 16px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.2); font-size: 0.8em; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; text-transform: none; letter-spacing: .25px; text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8); background-color: rgba(16, 185, 129, .85); box-shadow: 0 0 0 1px rgba(16,185,129,.35), 0 8px 24px rgba(16,185,129,.25); cursor: pointer; transition: all 0.2s ease; max-width: 85%; pointer-events: auto; }
-            .cardImageContainer:has(.jellyseerr-elsewhere-icons:not(.has-icons)) .jellyseerr-collection-badge { bottom: 10px; }
+            /* Sits lower while the card shows no provider icons. The class mirrors .has-icons on the
+               card's icon strip (ui-badges.js); a :has() rule here made every icon or badge change
+               anywhere re-match every .cardImageContainer on the page. Same specificity as before.
+               Only where :has() is supported: elsewhere (older TV browsers) the :has() rule was
+               dropped and the badge stayed at bottom: 40px, so it still does. */
+            @supports selector(:has(a)) {
+                .cardImageContainer.jellyseerr-poster-image:not(.jellyseerr-has-provider-icons) .jellyseerr-collection-badge { bottom: 10px; }
+            }
             .jellyseerr-collection-badge:hover { transform: translateX(-50%) translateY(-2px); box-shadow: 0 0 0 1px rgba(16,185,129,.5), 0 12px 32px rgba(16,185,129,.35); }
             .jellyseerr-collection-badge .material-icons { font-size: 1.1em; flex-shrink: 0; }
             .jellyseerr-collection-badge span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

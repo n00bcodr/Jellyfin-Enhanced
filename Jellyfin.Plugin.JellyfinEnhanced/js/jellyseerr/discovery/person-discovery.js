@@ -9,9 +9,15 @@
 
     const logPrefix = '🪼 Jellyfin Enhanced: Person Discovery:';
 
-    // Cache for person ID mappings (personName -> TMDB personId)
-    const personIdCache = new Map();
-    const personInfoCache = new Map();
+    // Cache for person ID mappings (personName -> TMDB personId) and for the
+    // Jellyfin person's name and TMDB id (personId -> {name, tmdbId}); both
+    // kept for the tab, per user (see JE.discoveryFilter.createSessionCache:
+    // the person search is answered by Seerr for the signed-in user).
+    const personIdCache = JE.discoveryFilter.createSessionCache('person-id',
+        (v) => Number.isInteger(v) && v > 0);
+    const personInfoCache = JE.discoveryFilter.createSessionCache('person-info',
+        (v) => !!v && typeof v === 'object' && typeof v.name === 'string'
+            && (v.tmdbId === null || v.tmdbId === undefined || typeof v.tmdbId === 'string'));
 
     // Alias for shared utilities
     const fetchWithManagedRequest = (path, options) =>
@@ -23,8 +29,9 @@
      * @param {AbortSignal} [signal]
      */
     async function getPersonInfo(personId, signal) {
-        if (personInfoCache.has(personId)) {
-            return personInfoCache.get(personId);
+        const cache = personInfoCache.scope();
+        if (cache.has(personId)) {
+            return cache.get(personId);
         }
         try {
             if (signal?.aborted) {
@@ -38,7 +45,8 @@
             }
 
             if (response) {
-                personInfoCache.set(personId, response);
+                // Only the name and TMDB id are used here (and kept for the tab).
+                cache.set(personId, { name: response.name, tmdbId: response.tmdbId ?? null });
             }
             return response;
         } catch (error) {
@@ -80,8 +88,9 @@
      */
     async function searchTmdbPerson(personName, signal) {
         const cacheKey = personName.toLowerCase().trim();
-        if (personIdCache.has(cacheKey)) {
-            return personIdCache.get(cacheKey);
+        const cache = personIdCache.scope();
+        if (cache.has(cacheKey)) {
+            return cache.get(cacheKey);
         }
 
         try {
@@ -117,7 +126,7 @@
                     if (scored.length === 0) return null;
                     const personId = scored[0].id;
 
-                    personIdCache.set(cacheKey, personId);
+                    cache.set(cacheKey, personId);
                     return personId;
                 }
             }
