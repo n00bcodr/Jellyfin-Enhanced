@@ -5,13 +5,15 @@ import { resolve } from 'node:path';
 import { createHarness, plain } from '../helpers/harness.mjs';
 import { repositoryRoot } from '../helpers/discovery.mjs';
 
-// Golden (d), the client fallback, and the C#/JS parity checks. The C# side
-// (tests/backend/Core/CoreSettingsDefaultsTests.cs) writes the initializers, the
-// new-user seed and the public-config input these tests feed through config.js.
-// JE_UPDATE_GOLDENS=1 regenerates client-fallback.json after a deliberate change.
+// Golden (d), the client fallback, golden (a) on the client, and the C#/JS parity
+// checks. The C# side (tests/backend/Core/CoreSettingsDefaultsTests.cs) writes the
+// initializers, the legacy served documents, the new-user seed and the public-config
+// input these tests feed through config.js. JE_UPDATE_GOLDENS=1 regenerates
+// client-fallback.json and client-legacy-files.json after a deliberate change.
 const fixtures = resolve(repositoryRoot, 'tests/fixtures/settings');
 const fixture = name => JSON.parse(readFileSync(resolve(fixtures, name), 'utf8'));
-const initializers = fixture('legacy-partial-files.json').Initializers;
+const legacy = fixture('legacy-partial-files.json');
+const initializers = legacy.Initializers;
 const seeds = fixture('new-user-seed.json');
 const publicConfigs = fixture('public-config-user-defaults.json');
 const allowlist = fixture('parity-allowlist.json');
@@ -26,6 +28,13 @@ function loadSettings(t, pluginConfig, userSettings = {}) {
   t.after(() => h.close());
   h.load('enhanced/config.js');
   return { settings: plain(h.JE.loadSettings()), read };
+}
+
+/** Compares with the committed golden, or rewrites it when JE_UPDATE_GOLDENS=1. */
+function matchGolden(name, actual) {
+  const path = resolve(fixtures, name);
+  if (process.env.JE_UPDATE_GOLDENS === '1') writeFileSync(path, JSON.stringify(actual, null, 2) + '\n');
+  assert.deepEqual(actual, JSON.parse(readFileSync(path, 'utf8')), `${name} differs (JE_UPDATE_GOLDENS=1 regenerates it after a deliberate change)`);
 }
 
 /** Keys whose values differ between two flat settings objects (a key missing on one side differs). */
@@ -58,9 +67,27 @@ test('client fallback with no settings document matches the golden for each admi
     const uncovered = [...read].filter(key => /^[A-Z]/.test(key) && !userKeys.has(key) && !Object.hasOwn(config, key));
     assert.deepEqual(uncovered, [], `${name}: config.js reads public-config keys missing from public-config-user-defaults.json`);
   }
-  const path = resolve(fixtures, 'client-fallback.json');
-  if (process.env.JE_UPDATE_GOLDENS === '1') writeFileSync(path, JSON.stringify(actual, null, 2) + '\n');
-  assert.deepEqual(actual, JSON.parse(readFileSync(path, 'utf8')), 'client-fallback.json differs (JE_UPDATE_GOLDENS=1 regenerates it after a deliberate change)');
+  matchGolden('client-fallback.json', actual);
+});
+
+test('legacy partial files resolve through config.js to the golden for each admin config', t => {
+  // The golden holds, per admin config and legacy case, every key config.js resolves to a value other
+  // than the one GET settings.json served (the served document camelCased like plugin.js toCamelCase).
+  const actual = {};
+  const differences = {};
+  for (const [configName, config] of Object.entries(publicConfigs)) {
+    actual[configName] = {};
+    for (const [caseName, { DiffersFromInitializers }] of Object.entries(legacy.Cases)) {
+      // The backend test asserts the served document has exactly the initializer keys.
+      const served = camelKeys({ ...initializers, ...DiffersFromInitializers });
+      const { settings } = loadSettings(t, config, served);
+      const keys = differingKeys(settings, served);
+      actual[configName][caseName] = Object.fromEntries(keys.map(key => [key, Object.hasOwn(settings, key) ? settings[key] : '(dropped)']));
+      differences[`${configName} / ${caseName}`] = keys;
+    }
+  }
+  matchGolden('client-legacy-files.json', actual);
+  assertOnlyAllowlistedDrift('ClientLegacyVsServed', differences);
 });
 
 test('JS hardcoded defaults match the C# initializers apart from the allowlisted drift', t => {

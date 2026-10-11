@@ -36,6 +36,17 @@
     "UseNativePosterTags": "The seed stores null (not chosen); currentSettings resolves it to on and saves null back (config.js saveUserSettings).",
     "DisableAllShortcuts": "Phantom client-only key; not a UserSettings property (decision 6)."
   },
+  "ClientLegacyVsServed": {
+    "LastOpenedTab": "The C# initializer is empty; config.js resolves an empty tab to 'shortcuts'.",
+    "UseNativePosterTags": "A legacy file serves null (not chosen); the client resolves it to on.",
+    "ResolutionTagOrder": "A legacy file serves null (inherit); the client resolves it to the admin order, else the shipped order.",
+    "SourceTagOrder": "A legacy file serves null (inherit); the client resolves it to the admin order, else the shipped order.",
+    "DynamicRangeTagOrder": "A legacy file serves null (inherit); the client resolves it to the admin order, else the shipped order.",
+    "SpecialFormatTagOrder": "A legacy file serves null (inherit); the client resolves it to the admin order, else the shipped order.",
+    "VideoCodecTagOrder": "A legacy file serves null (inherit); the client resolves it to the admin order, else the shipped order.",
+    "AudioInfoTagOrder": "A legacy file serves null (inherit); the client resolves it to the admin order, else the shipped order.",
+    "DisableAllShortcuts": "Phantom client-only key; not a UserSettings property (decision 6)."
+  },
   "NotValueChecked": {
     "ShowRatingInPlayer": "Seeded per user, but js/enhanced/player/osd-rating.js reads only the admin value; no value drift to check (decision 6: leave as is)."
   }

@@ -120,6 +120,9 @@ public class CoreSettingsDefaultsTests
             Assert.True(JToken.DeepEquals(read, served), entry.Name);
             Assert.False(isAdmin);
             Assert.Equal(stored, File.ReadAllText(path));
+            // Same keys as the initializers, so Initializers overlaid with DiffersFromInitializers is
+            // exactly the served document the frontend test feeds through config.js.
+            Assert.Equal(initializers.Properties().Select(p => p.Name), served.Properties().Select(p => p.Name));
             var differs = new JObject();
             foreach (var property in read.Properties())
             {
