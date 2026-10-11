@@ -510,8 +510,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             {
                 var css = plan.Css;
                 var (background, text) = QualityColours(item.Text);
+                var edge = QualityBorder;
+                if (item.Style.Length > 0)
+                {
+                    var o = TagColors.Decode(item.Style);
+                    background = o.Background ?? background;
+                    text = o.Text ?? text;
+                    edge = o.Border ?? edge;
+                }
+
                 using var rrect = new SKRoundRect(local, css.QualityRadius);
-                PaintBox(canvas, rrect, background, QualityBorder, border, QualityShadow);
+                PaintBox(canvas, rrect, background, edge, border, QualityShadow);
 
                 float fontSize = css.QualityFontSize;
                 float lineHeight = PosterTagCss.Lu(1.2f * fontSize);
@@ -524,8 +533,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             private void PaintGenre(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
             {
                 var css = plan.Css;
+                var o = item.Style.Length > 0 ? TagColors.Decode(item.Style) : default;
+                var glyph = o.Text ?? GenreGlyph;
                 using var rrect = new SKRoundRect(local, local.Width / 2f, local.Height / 2f);
-                PaintBox(canvas, rrect, GenreBackground, GenreBorder, border, GenreShadow);
+                PaintBox(canvas, rrect, o.Background ?? GenreBackground, o.Border ?? GenreBorder, border, GenreShadow);
 
                 var icon = Assets.GetIcon(item.Text) ?? Assets.GetIcon("theaters");
                 if (icon is null)
@@ -540,7 +551,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 float boxHeight = PosterTagCss.Lu(size);
                 float x = 1f + PosterTagCss.Lu((content - boxWidth) / 2f);
                 float y = 1f + PosterTagCss.Lu((content - boxHeight) / 2f);
-                DrawIcon(canvas, icon, x, y + icon.Metrics.BaselineOffset(size, boxHeight), size, GenreGlyph, space);
+                DrawIcon(canvas, icon, x, y + icon.Metrics.BaselineOffset(size, boxHeight), size, glyph, space);
             }
 
             private void PaintRating(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, TileSpace space)
@@ -554,6 +565,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     PosterRatingSource.UserReview => UserReviewText,
                     _ => SKColors.White,
                 };
+                var nl = item.Style.IndexOf('\n');
+                if (nl >= 0 && tag.Source != PosterRatingSource.UserReview)
+                {
+                    var o = TagColors.Decode(item.Style[(nl + 1)..]);
+                    background = o.Background ?? background;
+                    textColor = o.Text ?? textColor;
+                }
                 using var rrect = new SKRoundRect(local, 4f);
                 PaintBox(canvas, rrect, background, null, 0f, ChipShadow);
 
@@ -586,7 +604,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                         if (Assets.GetIcon(StarIconKey) is { } star)
                         {
                             float size = css.RatingIconSize;
-                            DrawIcon(canvas, star, x, iconTop + star.Metrics.BaselineOffset(size, item.IconHeight), size, CommunityText, space);
+                            DrawIcon(canvas, star, x, iconTop + star.Metrics.BaselineOffset(size, item.IconHeight), size, textColor, space);
                         }
 
                         break;
@@ -600,7 +618,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             private void PaintAge(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
             {
                 var css = plan.Css;
-                var style = Assets.AgeRatingStyles.TryGetValue(item.Style, out var found) ? found : AgeRatingStyle.Default;
+                var nl = item.Style.IndexOf('\n');
+                var styleKey = nl >= 0 ? item.Style[..nl] : item.Style;
+                var style = Assets.AgeRatingStyles.TryGetValue(styleKey, out var found) ? found : AgeRatingStyle.Default;
+                if (nl >= 0)
+                {
+                    var o = TagColors.Decode(item.Style[(nl + 1)..]);
+                    style = style with { Background = o.Background ?? style.Background, Border = o.Border ?? style.Border, Text = o.Text ?? style.Text };
+                }
+
                 using var rrect = new SKRoundRect(local, 4f);
                 PaintBox(canvas, rrect, style.Background, style.Border, border, ChipShadow);
 
