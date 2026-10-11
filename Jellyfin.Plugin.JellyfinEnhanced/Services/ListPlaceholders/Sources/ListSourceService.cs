@@ -534,6 +534,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
             using (await _store.LockAsync(access.ListIdN, cancellationToken).ConfigureAwait(false))
             {
+                // The list may have been deleted while the source was fetched (its document went with it): writing now
+                // would recreate an orphan document with an active link (as RunLockedAsync checks for other mutations).
+                if (_host.GetList(access.List.Id) == null)
+                {
+                    return ListOutcome.Error(404, "not_found", "List not found.");
+                }
+
                 var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
                 ApplyLink(doc, spec!, access.UserIdN, DateTime.UtcNow);
                 _store.Save(doc);
@@ -874,8 +881,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 {
                     doc = _store.Load(listIdN);
                 }
-                catch (System.IO.InvalidDataException)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
+                    // One unreadable document (corrupt, wrong permissions, deleted mid-read) never stops the others.
+                    _logger.Warning($"[ListPlaceholders] Scheduled sync skipped list {listIdN}: its document couldn't be read ({ex.Message}).");
                     doc = null;
                 }
 
@@ -911,7 +920,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             var running = _running.GetOrAdd(listIdN, mine.Task);
             if (!ReferenceEquals(running, mine.Task))
             {
-                return running;
+                // A joiner's token only stops its own wait; the shared sync goes on for whoever started it.
+                return cancellationToken.CanBeCanceled ? running.WaitAsync(cancellationToken) : running;
             }
 
             _ = RunAsync();
@@ -1092,8 +1102,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 {
                     var now = DateTime.UtcNow;
                     var src = d.Source!;
-                    var occurrences = ListSourceProvenance.Occurrences(_host.GetRawEntries(list.Id));
-                    ListSourceProvenance.DetectUserRemovals(d, occurrences, now);
+                    var raw = _host.GetRawEntries(list.Id);
+                    var occurrences = ListSourceProvenance.Occurrences(raw);
+                    ListSourceProvenance.DetectUserRemovals(d, ListSourceProvenance.Linked(raw), now);
                     var accounted = RecordApplyResult(d, applied, entryKeys, result);
                     stats.ListFull = result.Skipped.Any(s => s.Reason == "listFull");
 

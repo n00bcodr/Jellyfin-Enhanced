@@ -216,3 +216,48 @@ test('F59: a library check answered after Back and a new lookup leaves the new r
   assert.equal(row.querySelector('.je-lp-irow-title').textContent, 'Second Show', 'the old row did not overwrite the new one');
   assert.equal(row.outerHTML, before);
 });
+
+/** A playlist controller mid-drag: published views wait in pendingView (ctrl.view stays as it was). */
+function suspendedController(h, initial) {
+  const ctrl = { listId: LIST, listKind: 'playlist', view: initial, pendingView: null, suspended: true, isAlive: () => true, load: async () => {} };
+  h.document.addEventListener(h.lp.events.VIEW, (e) => {
+    if (e.detail?.listId === ctrl.listId && !h.lp.isOlderView(e.detail.view, ctrl.pendingView || ctrl.view)) ctrl.pendingView = e.detail.view;
+  });
+  return ctrl;
+}
+
+test('R2: a queued option change starts from the previous change even while a drag holds the page view back', async t => {
+  const puts = [];
+  let rev = 1;
+  const h = setupImport(t, {
+    plugin: async (path, options = {}) => {
+      if (path !== `/list-placeholders/${LIST}/source` || options.method !== 'PUT') return {};
+      const body = plainJson(options.body);
+      puts.push(body);
+      return view({ rev: ++rev, source: { ...linked, syncEnabled: body.syncEnabled, removeDropped: body.removeDropped } });
+    }
+  });
+  const ctrl = suspendedController(h, view({ rev: 1, source: linked }));
+  const first = h.lp.sourceUi.setOptions(ctrl, { syncEnabled: false });
+  const second = h.lp.sourceUi.setOptions(ctrl, { removeDropped: true });
+  await first; await second;
+  assert.equal(ctrl.view.rev, 1, 'the page still shows the old view');
+  assert.deepEqual(puts.map(p => [p.syncEnabled, p.removeDropped]), [[false, false], [false, true]]);
+});
+
+test('R2: an option change queued behind Unlink does not re-link while a drag holds the page view back', async t => {
+  const calls = [];
+  let rev = 1;
+  const h = setupImport(t, {
+    plugin: async (path, options = {}) => {
+      if (path === `/list-placeholders/${LIST}/source` && options.method === 'PUT') { calls.push('PUT'); return view({ rev: ++rev, source: linked }); }
+      if (path.startsWith(`/list-placeholders/${LIST}/source?`) && options.method === 'DELETE') { calls.push('DELETE'); return view({ rev: ++rev }); }
+      return {};
+    }
+  });
+  const ctrl = suspendedController(h, view({ rev: 1, source: linked }));
+  const unlink = h.lp.sourceUi.unlink(ctrl);
+  const late = h.lp.sourceUi.setOptions(ctrl, { removeDropped: true });
+  await unlink; await late;
+  assert.deepEqual(calls, ['DELETE']);
+});

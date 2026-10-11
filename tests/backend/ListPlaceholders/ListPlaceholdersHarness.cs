@@ -53,6 +53,9 @@ internal sealed class ListPlaceholdersHarness : IDisposable
     /// <summary>Synthetic Seerr movie details by TMDB id (JSON), served at /api/v1/movie/{id} (before certifications).</summary>
     public Dictionary<int, string> MovieDetails { get; } = new();
 
+    /// <summary>Synthetic TMDB API answers by path (e.g. <c>/3/movie/10</c>), served for api.themoviedb.org.</summary>
+    public Dictionary<string, string> Tmdb { get; } = new(StringComparer.Ordinal);
+
     /// <summary>TMDB certification per movie id for the synthetic Seerr detail endpoint.</summary>
     public Dictionary<int, string> MovieCertifications { get; } = new();
 
@@ -149,6 +152,11 @@ internal sealed class ListPlaceholdersHarness : IDisposable
     private HttpResponseMessage DefaultReply(HttpRequestMessage request)
     {
         var path = request.RequestUri!.AbsolutePath;
+        if (request.RequestUri.Host == "api.themoviedb.org")
+        {
+            return Tmdb.TryGetValue(path, out var body) ? IntegrationTransport.Response(body) : IntegrationTransport.Response("{\"status_code\":34}", 404);
+        }
+
         if (path is "/api/v1/media" or "/api/v1/request")
         {
             return IntegrationTransport.Response("{\"pageInfo\":{\"pages\":1},\"results\":[]}");

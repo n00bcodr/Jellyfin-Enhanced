@@ -1,0 +1,206 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources;
+using static JE.Tests.ListPlaceholdersHarness;
+
+namespace JE.Tests;
+
+// Review round 2: server-side fixes in the core list service.
+[Collection("Plugin singleton")]
+public class ListPlaceholdersReviewR2Tests
+{
+    private static readonly CancellationToken None = CancellationToken.None;
+
+    // R2-1: without Seerr but with a TMDB key the parental filter rates titles from TMDB, so a client's poster must not
+    // be kept: the poster comes from TMDB (the season's for a season placeholder), or none.
+    [Fact]
+    public async Task WithoutSeerrButWithATmdbKeyThePosterComesFromTmdbNotTheClient()
+    {
+        using var h = new ListPlaceholdersHarness();
+        h.Plugin.Plugin.Configuration.TMDB_API_KEY = "tmdb-key";
+        h.Tmdb["/3/movie/10"] = "{\"id\":10,\"poster_path\":\"/real10.jpg\"}";
+        h.Tmdb["/3/tv/20/season/2"] = "{\"id\":200,\"poster_path\":\"/s2.jpg\"}";
+        h.Tmdb["/3/tv/30"] = "{\"id\":30,\"poster_path\":\"/show30.jpg\"}";
+        var editor = h.NewUser("editor");
+        var playlist = h.Host.AddPlaylist(editor);
+        var access = h.AccessFor(playlist, editor);
+        var movie = Ph("{\"kind\":\"movie\",\"tmdbId\":10,\"title\":\"Movie 10\",\"posterPath\":\"/blocked.jpg\"}", access.UserIdN);
+        var unknown = Ph("{\"kind\":\"movie\",\"tmdbId\":11,\"title\":\"Movie 11\",\"posterPath\":\"/blocked.jpg\"}", access.UserIdN);
+        var season = Ph("{\"kind\":\"season\",\"tmdbId\":20,\"seasonNumber\":2,\"title\":\"Show\",\"posterPath\":\"/blocked.jpg\"}", access.UserIdN);
+        var noSeasonPoster = Ph("{\"kind\":\"season\",\"tmdbId\":30,\"seasonNumber\":1,\"title\":\"Show 30\",\"posterPath\":\"/blocked.jpg\"}", access.UserIdN);
+        var custom = Ph("{\"kind\":\"custom\",\"title\":\"Fan edit\",\"posterPath\":\"/mine.jpg\"}", access.UserIdN);
+        Ok<ApplyResultDto>(await h.Service.AddPlaceholdersAsync(access, new[] { movie, unknown, season, noSeasonPoster, custom }, null, null, null, None));
+
+        var stored = h.Store.Load(access.ListIdN)!.Items.ToDictionary(p => p.Id);
+        Assert.Equal("/real10.jpg", stored[movie.Id].PosterPath);
+        Assert.Null(stored[unknown.Id].PosterPath);
+        Assert.Equal("/s2.jpg", stored[season.Id].PosterPath);
+        Assert.Equal("/show30.jpg", stored[noSeasonPoster.Id].PosterPath);
+        Assert.Equal("/mine.jpg", stored[custom.Id].PosterPath);
+        Assert.DoesNotContain(h.SeerrCalls, c => c.Contains("/api/v1/", StringComparison.Ordinal));
+    }
+
+    // R2-3: someone adds the arrived movie by hand between JE's first membership read and the intent save. The saved
+    // intent must lose it before Jellyfin is called, or a crash would let recovery make the user's member sync-owned.
+    [Fact]
+    public async Task AMemberAddedByHandAfterTheIntentWasSavedLeavesTheSavedIntent()
+    {
+        using var h = new ListPlaceholdersHarness();
+        var admin = h.NewUser("admin", admin: true);
+        var collection = h.Host.AddCollection();
+        var access = h.AccessFor(collection, admin);
+        var movie = Movie(821);
+        Ok<ApplyResultDto>(await h.Service.AddPlaceholdersAsync(access, new[] { movie }, null, null, null, None));
+        using (await h.Store.LockAsync(access.ListIdN))
+        {
+            var doc = h.Store.LoadForUpdate(access.ListIdN, ListKinds.Collection);
+            doc.Items.Single(p => p.Id == movie.Id).SourceKey = "movie|821||";
+            doc.Source = new ListSource { Kind = "tmdb", Url = "https://www.themoviedb.org/list/1" };
+            doc.Source.Owned["movie|821||"] = new SourceOwnership { PhId = movie.Id };
+            h.Store.Save(doc);
+        }
+
+        var arrived = h.Host.AddItem(tmdb: 821);
+        var phase = 0;
+        ListDoc? crashDoc = null;
+        List<RawEntry>? crashRaw = null;
+        h.Host.OnRawRead = _ =>
+        {
+            if (phase == 0 && h.Store.Load(access.ListIdN)!.Intents.Count > 0)
+            {
+                collection.Raw.Add(new RawEntry(arrived, true)); // the user's own add, right after JE saved its intent
+                phase = 1;
+            }
+            else if (phase == 1)
+            {
+                // The next read: what a crash here leaves on disk.
+                crashDoc = h.Store.LoadForUpdate(access.ListIdN, ListKinds.Collection);
+                crashRaw = collection.Raw.ToList();
+                phase = 2;
+            }
+        };
+        await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
+        h.Host.OnRawRead = null;
+        Assert.Equal(2, phase);
+        Assert.DoesNotContain(h.Host.Calls, c => c.StartsWith("collection:", StringComparison.Ordinal));
+        Assert.Empty(crashDoc!.Intents);
+
+        // Restart from that crash point: recovery must not make the user's member sync-owned.
+        collection.Raw.Clear();
+        collection.Raw.AddRange(crashRaw!);
+        using (await h.Store.LockAsync(access.ListIdN))
+        {
+            h.Store.Save(crashDoc);
+        }
+
+        await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None);
+        await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
+        var after = h.Store.Load(access.ListIdN)!;
+        Assert.Empty(after.Intents);
+        Assert.DoesNotContain(arrived.ToString("N"), after.Source!.Owned.TryGetValue("movie|821||", out var owned) ? owned.ItemIds : new List<string>());
+    }
+
+    // R2-4: an ended show's season whose TMDB data has an undated episode between aired ones isn't complete until that
+    // episode is in too; only trailing undated episodes (never aired) are excused.
+    [Fact]
+    public void AnEndedShowsUndatedEpisodeBetweenAiredOnesIsStillRequired()
+    {
+        var today = new DateTime(2026, 10, 11, 0, 0, 0, DateTimeKind.Utc);
+        var season = Ph("{\"kind\":\"season\",\"tmdbId\":40,\"seasonNumber\":1,\"title\":\"Old show\"}");
+        season.InProduction = false;
+        season.Expected = Enumerable.Range(1, 10)
+            .Select(e => new PlaceholderEpisode { S = 1, E = e, AirDate = e == 5 ? null : "2001-01-" + e.ToString("00", System.Globalization.CultureInfo.InvariantCulture) })
+            .Append(new PlaceholderEpisode { S = 1, E = 11 })
+            .ToList();
+        season.Filled = Enumerable.Range(1, 10).Where(e => e != 5).Select(e => new FilledEpisode { ItemId = Guid.NewGuid().ToString("N"), S = 1, E = e }).ToList();
+        Assert.False(PlaceholderProgress.IsComplete(season, today)); // E5 is a gap in the data, not unaired
+
+        season.Filled.Add(new FilledEpisode { ItemId = Guid.NewGuid().ToString("N"), S = 1, E = 5 });
+        Assert.True(PlaceholderProgress.IsComplete(season, today)); // E11 (undated, after the last aired) isn't required
+    }
+
+    // R2-8: a list deleted while its source was being fetched for a link gets no document (with an active link) back.
+    [Fact]
+    public async Task LinkingAListDeletedDuringTheFetchRecreatesNoDocument()
+    {
+        using var h = new ListPlaceholdersHarness();
+        h.Plugin.Plugin.Configuration.ListPlaceholdersSyncEnabled = true;
+        var owner = h.NewUser("owner");
+        var playlist = h.Host.AddPlaylist(owner);
+        var access = h.AccessFor(playlist, owner);
+        h.Fetcher.Items = new List<SourceItem> { new("movie", 1, null, null, "Movie 1", 2020, null, null, null) };
+        h.Fetcher.OnFetch = () =>
+        {
+            h.Host.Lists.Remove(playlist.Info.Id);
+            return Task.CompletedTask;
+        };
+
+        var outcome = await h.Sources.LinkAsync(access, new LinkSourceRequest { Url = "https://mdblist.com/lists/me/dc", SyncEnabled = true }, None);
+        Error(outcome, 404, "not_found");
+        Assert.Null(h.Store.Load(access.ListIdN));
+    }
+
+    private static async Task<(ListPlaceholdersHarness H, ListAccess Access)> LinkedPlaylist()
+    {
+        var h = new ListPlaceholdersHarness();
+        h.Plugin.Plugin.Configuration.ListPlaceholdersSyncEnabled = true;
+        h.Lookup.Details[("movie", 1)] = new TitleDetails(FakeImportLookup.Movie(1, "Movie 1", "2020-01-01"), null, null, "Released", null, Array.Empty<SeasonFacts>());
+        var owner = h.NewUser("owner");
+        var playlist = h.Host.AddPlaylist(owner);
+        var access = h.AccessFor(playlist, owner);
+        h.Fetcher.Items = new List<SourceItem> { new("movie", 1, null, null, "Movie 1", 2020, null, null, null) };
+        Assert.Equal(200, (await h.Sources.LinkAsync(access, new LinkSourceRequest { Url = "https://mdblist.com/lists/me/dc", SyncEnabled = true }, None)).StatusCode);
+        return (h, access);
+    }
+
+    // R2-9: a scheduled run that joins a running sync stops waiting when its own token is cancelled.
+    [Fact]
+    public async Task AJoinerStopsWaitingWhenItsOwnTokenIsCancelled()
+    {
+        var (h, access) = await LinkedPlaylist();
+        using var _ = h;
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fetching = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        h.Fetcher.OnFetch = async () =>
+        {
+            fetching.TrySetResult();
+            await release.Task;
+        };
+        var interactive = h.Sources.SyncAsync(access.ListIdN, background: false, None);
+        await fetching.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        using var stop = new CancellationTokenSource();
+        var joiner = h.Sources.SyncAsync(access.ListIdN, background: true, stop.Token);
+        stop.Cancel();
+        var finished = await Task.WhenAny(joiner, Task.Delay(TimeSpan.FromSeconds(5)));
+        Assert.Same(joiner, finished);
+        Assert.True(joiner.IsCanceled);
+        Assert.False(interactive.IsCompleted); // the shared sync goes on
+
+        release.SetResult();
+        Assert.Equal("ok", (await interactive.WaitAsync(TimeSpan.FromSeconds(10))).State);
+    }
+
+    // R2-10: a document that can't be read (here: permissions) skips that list, never the whole scheduled run.
+    [Fact]
+    public async Task AnUnreadableDocumentDoesNotStopTheScheduledRun()
+    {
+        var (h, access) = await LinkedPlaylist();
+        using var _ = h;
+        var bad = Guid.NewGuid().ToString("N");
+        var good = File.ReadAllText(Path.Combine(h.Store.DirectoryPath, access.ListIdN + ".json"));
+        File.WriteAllText(Path.Combine(h.Store.DirectoryPath, bad + ".json"), good.Replace(access.ListIdN, bad, StringComparison.Ordinal));
+        h.Store.AfterColdReadForTest = id =>
+        {
+            if (id == bad)
+            {
+                throw new UnauthorizedAccessException("Access to the path is denied.");
+            }
+        };
+
+        await h.Sources.SyncAllAsync(null, None);
+        Assert.NotNull(h.Store.Load(access.ListIdN)!.Source!.LastSyncAt);
+    }
+}
+

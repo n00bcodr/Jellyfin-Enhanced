@@ -10,6 +10,8 @@
 
     /** Keys requested this session: movie|id, tv|id|<season>, tv|id|* (whole show). */
     const requested = new Set();
+    /** Movies requested in 4K this session (movie|id): the card's "Request in 4K" then reads as requested. */
+    const requested4k = new Set();
     /** Pending user-status promise (Seerr reachable + current user linked); kept only while it may still be positive. */
     let userStatusPromise = null;
     /** Request flows being started (mediaType|tmdbId|4k), so a second click doesn't start another one. */
@@ -42,16 +44,31 @@
     }
 
     /**
+     * Whether this session requested a movie placeholder's title in 4K.
+     * @param {Object} ph
+     * @returns {boolean}
+     */
+    function isRequested4k(ph) {
+        return !!ph && ph.mediaType === 'movie' && requested4k.has(`movie|${ph.tmdbId}`);
+    }
+
+    /**
      * Records a request announced by JE's Seerr API (`jellyseerr-media-requested`).
-     * 4K requests don't change the placeholder (it tracks the regular status).
+     * 4K requests don't change the placeholder's status (it tracks the regular one); a movie's only marks its
+     * "Request in 4K" option as requested.
      * @param {{tmdbId: (string|number), mediaType: string, is4k?: boolean, seasons?: (number[]|string)}} detail
      * @returns {boolean} Whether anything was recorded.
      */
     function markRequested(detail) {
-        if (!detail || detail.is4k) return false;
+        if (!detail) return false;
         const id = Number(detail.tmdbId);
         if (!Number.isInteger(id) || id <= 0) return false;
         const type = String(detail.mediaType || '').toLowerCase();
+        if (detail.is4k) {
+            if (type !== 'movie') return false;
+            requested4k.add(`movie|${id}`);
+            return true;
+        }
         if (type === 'movie') {
             requested.add(`movie|${id}`);
             return true;
@@ -70,6 +87,7 @@
     /** Forgets the session's requested state (user switch). */
     function reset() {
         requested.clear();
+        requested4k.clear();
         userStatusPromise = null;
     }
 
@@ -144,8 +162,38 @@
             await JE.jellyseerrAPI.requestMedia(tmdbId, 'movie', {}, true, item);
             JE.toast(JE.t('listPlaceholders_requested_4k', { title: lp.render.esc(ph.title) }), 3000);
         } catch (error) {
-            JE.toast(lp.errorMessage(error), 4000);
+            if (error?.status === 409) {
+                // Seerr already has a 4K request for it: the option reads as requested from now on.
+                document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail: { tmdbId: String(tmdbId), mediaType: 'movie', is4k: true } }));
+                JE.toast(JE.t('listPlaceholders_already_requested_4k', { title: lp.render.esc(ph.title) }), 3000);
+                return;
+            }
+            await showRequestError(error);
         }
+    }
+
+    /**
+     * Reports a failed Seerr request the way JE's own request buttons do: the quota dialog, else Seerr's reason
+     * (user not linked, no permission, Seerr's message) as a toast.
+     * @param {Object} error - Rejected request (status, responseJSON).
+     * @returns {Promise<void>}
+     */
+    async function showRequestError(error) {
+        const ui = JE.jellyseerrUI;
+        if (ui?.isQuotaError?.(error)) {
+            await ui.showQuotaErrorDialog(error, 'movie');
+            return;
+        }
+        let message = JE.t('jellyseerr_btn_error');
+        if (error?.status === 404) {
+            message = JE.t('jellyseerr_btn_user_not_found');
+        } else if (error?.status === 403) {
+            const code = error.responseJSON?.code;
+            message = JE.t(code ? `jellyseerr_err_${code}` : 'jellyseerr_err_no_request_permission');
+        } else if (error?.responseJSON?.message) {
+            message = error.responseJSON.message;
+        }
+        JE.toast(lp.render.esc(message), 4000);
     }
 
     /**
@@ -174,7 +222,9 @@
         let requested = false;
         try {
             if (ph.mediaType === 'tv') {
-                await ui.showSeasonSelectionModal(tmdbId, 'tv', ph.title, null, is4k, { preselectedSeasons: preselectedSeasons(ph), treatExistingAsRequested: true });
+                await ui.showSeasonSelectionModal(tmdbId, 'tv', ph.title, null, is4k, {
+                    preselectedSeasons: preselectedSeasons(ph), treatExistingAsRequested: true, isCurrent: () => lp.isCurrentEpoch(epoch)
+                });
                 return;
             }
             if (is4k) {
@@ -200,18 +250,7 @@
                 announce(ph);
                 return;
             }
-            if (ui.isQuotaError?.(error)) {
-                await ui.showQuotaErrorDialog(error, 'movie');
-                return;
-            }
-            let message = JE.t('jellyseerr_btn_error');
-            if (error?.status === 403) {
-                const code = error.responseJSON?.code;
-                message = JE.t(code ? `jellyseerr_err_${code}` : 'jellyseerr_err_no_request_permission');
-            } else if (error?.responseJSON?.message) {
-                message = error.responseJSON.message;
-            }
-            JE.toast(lp.render.esc(message), 4000);
+            await showRequestError(error);
         } finally {
             inFlight.delete(key);
             // A successful request re-renders the row/card as requested; otherwise the button is usable again.
@@ -225,6 +264,7 @@
     lp.requests = {
         preselectedSeasons,
         isRequested,
+        isRequested4k,
         markRequested,
         reset,
         canRequest,

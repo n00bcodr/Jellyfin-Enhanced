@@ -40,7 +40,7 @@
      * @returns {string}
      */
     function statusSignature(ph, user) {
-        return `${ph.status ?? ''}|${lp.requests.isRequested(ph) ? 1 : 0}|${lp.render.addingItemId(ph) || ''}|${lp.render.progressParts(ph).join(',')}`
+        return `${ph.status ?? ''}|${lp.requests.isRequested(ph) ? 1 : 0}${lp.requests.isRequested4k(ph) ? 1 : 0}|${lp.render.addingItemId(ph) || ''}|${lp.render.progressParts(ph).join(',')}`
             + `|${user ? `${user.active ? 1 : 0}${user.userFound ? 1 : 0}` : ''}`;
     }
 
@@ -199,7 +199,7 @@
             if (lp.isOlderView(view, previous)) return; // a late answer for an older revision
             ctrl.view = view;
             const sectionGone = !ctrl.section || !ctrl.section.isConnected;
-            if (!previous || previous.rev !== view.rev || sectionGone || previous.placeholders.length !== view.placeholders.length) {
+            if (!previous || previous.rev !== view.rev || sectionGone || !lp.samePlaceholders(previous, view)) {
                 ctrl.render();
             } else {
                 ctrl.updateStatuses();

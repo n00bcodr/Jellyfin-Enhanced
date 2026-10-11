@@ -330,8 +330,32 @@
     }
 
     /**
+     * The newest view of a list the source queue knows (highest revision): what its own last change returned, the
+     * view a playlist page holds back during a drag or reorder save (pendingView), or the page's view. A queued change
+     * must start from the previous change's result even while the page hasn't adopted it yet.
+     * @param {Object} ctrl - Page controller.
+     * @returns {Object|null} ListViewDto.
+     */
+    function latestSourceView(ctrl) {
+        let latest = null;
+        for (const view of [ctrl.sourceView, ctrl.pendingView, ctrl.view]) {
+            if (view && (!latest || (Number.isFinite(view.rev) && view.rev > latest.rev))) latest = view;
+        }
+        return latest;
+    }
+
+    /**
+     * Remembers the view a source change returned, for the next queued change ({@link latestSourceView}).
+     * @param {Object} ctrl
+     * @param {*} result - The mutation's answer (ListViewDto).
+     */
+    function rememberSourceView(ctrl, result) {
+        if (result && typeof result === 'object' && lp.normalizeId(result.listId) === ctrl.listId) ctrl.sourceView = result;
+    }
+
+    /**
      * Changes "Keep in sync" / "Remove entries that leave the list" (PUT /source with the same URL). Queued behind
-     * the list's running source changes; the option not being changed is read from the view current at that point.
+     * the list's running source changes; the option not being changed is read from the newest known view then.
      * @param {Object} ctrl
      * @param {{syncEnabled?: boolean, removeDropped?: boolean}} change
      * @param {HTMLElement} [chip] - The chip (shows a busy state).
@@ -339,14 +363,14 @@
      */
     function setOptions(ctrl, change, chip) {
         return queueSourceChange(ctrl, chip, async () => {
-            const source = ctrl.view?.source;
+            const source = latestSourceView(ctrl)?.source;
             if (!source) return; // unlinked meanwhile
             try {
-                await lp.api.linkSource(ctrl.listId, {
+                rememberSourceView(ctrl, await lp.api.linkSource(ctrl.listId, {
                     url: source.url,
                     syncEnabled: change.syncEnabled ?? source.syncEnabled,
                     removeDropped: change.removeDropped ?? source.removeDropped
-                });
+                }));
             } catch (error) {
                 if (lp.isStaleIdentityError(error)) return;
                 const code = error?.responseJSON?.code;
@@ -364,9 +388,9 @@
      */
     function unlink(ctrl, chip) {
         return queueSourceChange(ctrl, chip, async () => {
-            if (!ctrl.view?.source) return; // already unlinked
+            if (!latestSourceView(ctrl)?.source) return; // already unlinked
             try {
-                await lp.api.unlinkSource(ctrl.listId);
+                rememberSourceView(ctrl, await lp.api.unlinkSource(ctrl.listId));
                 JE.toast(lp.render.esc(JE.t('listPlaceholders_source_unlinked')), 3000);
             } catch (error) {
                 lp.toastError(error);

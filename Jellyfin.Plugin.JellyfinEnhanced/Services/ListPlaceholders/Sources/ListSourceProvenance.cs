@@ -276,10 +276,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
         /// <summary>
         /// Finds sync-owned entries an editor removed since the last sync (the placeholder is gone and none of the owned
-        /// items is in the list any more) and tombstones them. Missing items of a partly present key are forgotten.
+        /// items is in the list any more) and tombstones them. Missing items of a partly present key are forgotten. An item
+        /// whose entry is in the list but doesn't resolve right now (its file is offline) is still there: pass every linked
+        /// entry (<see cref="Linked"/>), not only the resolved ones.
         /// </summary>
         /// <param name="doc">Document.</param>
-        /// <param name="realOccurrences">Real entries of the list: item id ("N") → occurrences.</param>
+        /// <param name="realOccurrences">Real entries of the list, resolved or not: item id ("N") → occurrences.</param>
         /// <param name="nowUtc">Now.</param>
         /// <returns>Number of tombstoned keys.</returns>
         public static int DetectUserRemovals(ListDoc doc, IReadOnlyDictionary<string, int> realOccurrences, DateTime nowUtc)
@@ -693,6 +695,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
             return null;
         }
+
+        /// <summary>Counts every entry of a list that names an item, resolved or not, by item id ("N").</summary>
+        /// <param name="raw">Raw entries.</param>
+        /// <returns>Occurrences per item.</returns>
+        public static Dictionary<string, int> Linked(IEnumerable<RawEntry> raw) => Occurrences(raw.Where(r => r.ItemId.HasValue).Select(r => r with { Resolved = true }));
 
         /// <summary>Counts real entries of a list by item id ("N").</summary>
         /// <param name="raw">Raw entries.</param>

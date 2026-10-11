@@ -165,12 +165,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
             var config = JellyfinEnhanced.Instance!.Configuration;
             var minutes = ListPlaceholderAutoRequestRules.ClampMinutes(config.ListPlaceholdersAutoRequestMinutes);
+            var key = string.Join('|', N(userId), string.IsNullOrEmpty(sessionKey) ? "-" : sessionKey, N(item.Id));
             if (!ListPlaceholderAutoRequestRules.ShouldTrigger(phase, positionTicks, minutes))
             {
+                // Every event keeps a triggered session + item triggered (one below the threshold too, e.g. after a seek
+                // back or a long pause), so the same playback never triggers twice.
+                Touch(_triggered, key, TriggerTtl);
                 return null;
             }
 
-            var key = string.Join('|', N(userId), string.IsNullOrEmpty(sessionKey) ? "-" : sessionKey, N(item.Id));
             if (!TryMark(_triggered, key, TriggerTtl, slide: true))
             {
                 return null;
@@ -700,6 +703,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
 
                 return true;
+            }
+        }
+
+        // Renews a mark that is still current; never creates one.
+        private void Touch(Dictionary<string, DateTime> map, string key, TimeSpan ttl)
+        {
+            var now = UtcNow;
+            lock (_gate)
+            {
+                if (map.TryGetValue(key, out var at) && now - at < ttl)
+                {
+                    map[key] = now;
+                }
             }
         }
 

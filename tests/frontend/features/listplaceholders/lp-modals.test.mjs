@@ -288,3 +288,53 @@ test('picker: retrying a failed "New playlist" create reuses the request id (no 
   assert.ok(posts[0].requestId);
   assert.equal(posts[1].requestId, posts[0].requestId);
 });
+
+test('picker: a "New playlist" retry with another name or visibility gets its own request id', async t => {
+  const posts = [];
+  const h = setupModals(t, { plugin: async (path, options = {}) => {
+    if (path === '/list-placeholders/editable-lists') return { playlists: [], collections: [], canManageCollections: false };
+    posts.push(JSON.parse(JSON.stringify(options.body)));
+    if (posts.length < 3) throw Object.assign(new Error('HTTP 504'), { status: 504 });
+    return { listId: 'a'.repeat(32), listKind: 'playlist', name: 'Bar', result: { added: ['x'], addedAsItems: [], skipped: [], view: view({ listId: 'a'.repeat(32) }) } };
+  } });
+  const modal = await h.lp.picker.openPicker({ item: { id: 862, title: 'Toy Story' }, mediaType: 'movie' });
+  const root = modal.modalElement;
+  const submit = async (n) => {
+    root.querySelector('.jellyseerr-modal-button-primary').click();
+    await until(() => posts.length === n);
+    if (n < 3) await until(() => !root.querySelector('.jellyseerr-modal-button-primary').disabled);
+  };
+  root.querySelector('.je-lp-new-name').value = 'Foo';
+  await submit(1);
+  root.querySelector('.je-lp-new-name').value = 'Bar'; // the first answer was lost; the user renames and retries
+  await submit(2);
+  root.querySelector('.je-lp-new-public').checked = true;
+  await submit(3);
+  assert.equal(new Set(posts.map(p => p.requestId)).size, 3);
+});
+
+test('granularity: the episode checklist stops at 100 ticks (one placeholder) and says so; nothing is cut on save', async t => {
+  const h = setupModals(t);
+  h.JE.jellyseerrAPI.fetchTvShowDetails = async () => ({ ...TV_DETAILS, seasons: [{ seasonNumber: 1, episodeCount: 120, airDate: '2014-10-07' }] });
+  h.JE.jellyseerrAPI.fetchTvSeasonDetails = async () => ({ episodes: Array.from({ length: 120 }, (_, i) => ({ episodeNumber: i + 1, name: `E${i + 1}`, airDate: '2014-10-07' })) });
+  const gran = h.lp.granularity.create({ tmdbId: 60735 });
+  await gran.ready;
+  const radio = gran.element.querySelector('input[value="episodes"]');
+  radio.checked = true;
+  radio.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  const boxes = await until(() => { const b = gran.element.querySelectorAll('.je-lp-gran-episodes input[type=checkbox]'); return b.length === 120 ? [...b] : null; });
+  const status = gran.element.querySelector('.je-lp-gran-status');
+  for (const box of boxes.slice(0, 100)) { box.checked = true; box.dispatchEvent(new h.window.Event('change', { bubbles: true })); }
+  assert.ok(boxes.slice(100).every(box => box.disabled), 'no 101st tick');
+  assert.match(status.textContent, /^listPlaceholders_gran_episode_limit/);
+  const dto = h.lp.granularity.toPlaceholder({ id: 60735, mediaType: 'tv', name: 'The Flash' }, gran.getSelection(), gran.getDetails());
+  assert.equal(dto.episodes.length, 100);
+  // Unticking one frees the rest again and clears the hint.
+  boxes[0].checked = false;
+  boxes[0].dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  assert.ok(boxes.slice(100).every(box => !box.disabled));
+  assert.equal(status.textContent, '');
+  // A longer selection (built by hand) is never cut silently.
+  const long = { kind: 'episodes', seasonNumber: 1, episodes: Array.from({ length: 150 }, (_, i) => ({ e: i + 1 })) };
+  assert.equal(h.lp.granularity.toPlaceholder({ id: 60735, mediaType: 'tv', name: 'The Flash' }, long, gran.getDetails()).episodes.length, 150);
+});

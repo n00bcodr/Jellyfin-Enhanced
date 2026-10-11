@@ -76,6 +76,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
         private const int MaxAlternatives = 4;
         private const int TvVerifyCount = 3;
         private const int EpisodeVerifyCount = 2;
+
+        // An open-ended range ("S1E5–S2E3") expands its first season to at most this many episodes.
+        private const int MaxOpenEndedEpisodes = PlaceholderProgress.MaxExpected;
         private const int ParentalConcurrency = 8;
         private const int MaxFallbackQueries = 4;
 
@@ -540,9 +543,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                 }
                 else if (wanted.OpenEnded)
                 {
-                    // "S1E5–S3E3": season 1 runs from episode 5 to its last episode.
+                    // "S1E5–S3E3": season 1 runs from episode 5 to its last episode. Every episode is returned (the client
+                    // splits them into placeholders of at most PlaceholderRules.MaxEpisodes); a season longer than
+                    // MaxOpenEndedEpisodes is cut there and flagged.
                     var first = wanted.Episodes[0];
-                    candidate.Episodes = byNumber.Keys.Where(e => e >= first).OrderBy(e => e).Take(PlaceholderRules.MaxEpisodes).Select(e => byNumber[e]).ToList();
+                    var rest = byNumber.Keys.Where(e => e >= first).OrderBy(e => e).ToList();
+                    candidate.OpenEndedTruncated = rest.Count > MaxOpenEndedEpisodes;
+                    candidate.Episodes = rest.Take(MaxOpenEndedEpisodes).Select(e => byNumber[e]).ToList();
                 }
 
                 var airYear = YearOf(candidate.Episodes.FirstOrDefault()?.AirDate) ?? YearOf(candidate.Season?.AirDate);
@@ -648,6 +655,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
             CapLow(top.EpisodeMissing, "episodeMissing");
             CapLow(wanted.EpisodeTitle != null, "episodeByTitle");
             CapLow(wanted.OpenEnded && top.Episodes == null, "openEnded"); // the rest of the season couldn't be read
+            CapLow(top.OpenEndedTruncated, "openEndedTruncated"); // the season is longer than one import expands
             return level;
         }
 
@@ -1104,6 +1112,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
             public bool SeasonMissing { get; set; }
 
             public bool EpisodeMissing { get; set; }
+
+            public bool OpenEndedTruncated { get; set; }
         }
 
         private sealed class TransientLookupException : Exception

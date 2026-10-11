@@ -470,10 +470,12 @@
         const yearParen = /^\s*([([]\s*(?:\d{4}(?:-\d{2}-\d{2})?|\d{4}\s*[–—-]\s*(?:\d{2,4})?|TBA|TBD)\s*[)\]])(.*)$/i.exec(meta);
         const year = yearParen ? yearParen[1] : '';
         const after = (yearParen ? yearParen[2] : meta).trim();
-        const head = after.split(/\s+·\s+/)[0];
+        // A dash or colon may separate the selector from the year: "(2022) - S1E1", "(2022) – 1x01".
+        const selector = after.replace(/^[—–:-]\s*/, '');
+        const head = selector.split(/\s+·\s+/)[0];
         const ref = findEpisodeRef(head);
         if (ref && ref.index <= 1) {
-            return { text: head.slice(0, ref.end).trim(), rest: [year, after.slice(ref.end).trim()].filter(Boolean).join(' ') };
+            return { text: head.slice(0, ref.end).trim(), rest: [year, selector.slice(ref.end).trim()].filter(Boolean).join(' ') };
         }
         const season = /^(?:[—–-]\s*)?(seasons?\s+\d{1,3}(?:\s*[-–—]\s*\d{1,3})?)\b(.*)$/i.exec(after);
         if (season) {
@@ -524,9 +526,12 @@
             let head = parts.shift();
             meta = parts.join(' · ');
             const yearParen = /^(.*?\S)\s*[([]\s*(\d{4}(?:-\d{2}-\d{2})?|\d{4}\s*[–—-]\s*(?:\d{2,4})?|TBA|TBD)\s*[)\]](.*)$/i.exec(head);
-            if (yearParen && findEpisodeRef(yearParen[3]) && findEpisodeRef(yearParen[3]).index <= 1) {
+            // A dash or colon may separate it from the year: "Peacemaker (2022) - S1E1", "Peacemaker (2022) – 1x01".
+            const afterYear = yearParen ? yearParen[3].replace(/^\s*[—–:-]\s*/, ' ') : '';
+            const yearRef = yearParen ? findEpisodeRef(afterYear) : null;
+            if (yearRef && yearRef.index <= 1) {
                 // "Doctor Who (2005) S1E11–S3E2": the episode reference after the year belongs to the title.
-                title = `${yearParen[1]} ${yearParen[3].trim()}`;
+                title = `${yearParen[1]} ${afterYear.trim()}`;
                 meta = [`(${yearParen[2]})`, meta].filter(Boolean).join(' · ');
             } else if (yearParen) {
                 // "Peacemaker (2022) - Season 1": a season selector after the year belongs to the title as well.
@@ -602,8 +607,14 @@
         if (!episodeTitle) {
             episodeRef = findEpisodeRef(title);
             if (episodeRef) {
-                const after = title.slice(episodeRef.end).trim();
+                let after = title.slice(episodeRef.end).trim();
                 title = title.slice(0, episodeRef.index);
+                // Bare ids after the reference ("Flash S1E8 tmdb:tv:60735") name the title; they are never the note.
+                const afterIds = after.match(ID_TOKENS);
+                if (afterIds) {
+                    metaIds = [metaIds, ...afterIds].filter(Boolean).join(' ');
+                    after = after.replace(ID_TOKENS, ' ').replace(/\s+/g, ' ').trim();
+                }
                 if (!note && after && !/^[.,;:]?$/.test(after)) note = after.replace(/^[.,;:—–-]\s*/, '');
             }
         }
@@ -721,8 +732,17 @@
         if (!episodic && plain.some(s => s.length > 80)) return null;
         const entries = [];
         segments.forEach((segment, position) => {
-            // "A **or** B" splits on the raw segment: cleaning it removes the bold marker (E2: always alternatives).
-            const options = splitAlternatives(segment, false).flatMap(option => {
+            // "A **or** B" and "A / B" split on the raw segment, before cleaning cuts each option at its first episode
+            // reference (which would drop " / B 3x09") or removes the bold marker (E2: always alternatives). Each
+            // option then keeps its own link targets (ids). A " / " inside parentheses ("(part 1 / 2)") is no split.
+            const options = splitAlternatives(segment, false).flatMap((option) => {
+                const raw = ctx.allowSlash !== false ? option.split(/\s+\/\s+/).map(o => o.trim()).filter(Boolean) : [option];
+                if (raw.length > 1 && raw.every(balancedParens)) {
+                    return raw.map((piece) => {
+                        const cleaned = cleanChainSegment(piece);
+                        return { part: cleaned.part, note: cleaned.note, urls: cleaned.urls };
+                    });
+                }
                 const cleaned = cleanChainSegment(option);
                 const pieces = ctx.allowSlash !== false ? splitAlternatives(cleaned.part, true) : [cleaned.part];
                 // Link targets carry ids (TMDB/IMDb/TVDB URLs): they belong to this option unless " / " splits it further.
@@ -736,7 +756,7 @@
                 idText: [...option.urls, idText].filter(Boolean).join(' ')
             });
             const parsed = options.length > 1
-                ? withAlternatives(options.map(option => parseOption(option)[0]).filter(Boolean), ctx)
+                ? withAlternatives(options.map(option => parseOption(option)), ctx)
                 : parseOption(options[0], ctx.idText);
             for (const entry of parsed) {
                 entry.chain = position;
@@ -748,16 +768,19 @@
 
     /**
      * Folds alternative parses ("Justice League **or** Zack Snyder's Justice League") into ONE entry that lists them.
-     * @param {object[]} parsed Parsed alternative entries.
+     * An alternative whose text gave several entries (a cross-season range, a range over MAX_EPISODES episodes, a
+     * seasons range) keeps the later ones as `more` ({season, episodes?} scopes), added with it when it is chosen.
+     * @param {object[][]} parsedLists The parse of each alternative (parseItem's entries).
      * @param {object} ctx Context (line, raw, section).
      * @returns {object[]} One entry with `alternatives`, or the single parse.
      */
-    function withAlternatives(parsed, ctx) {
-        if (parsed.length <= 1) return parsed;
-        const first = parsed[0];
+    function withAlternatives(parsedLists, ctx) {
+        const lists = parsedLists.filter(list => list && list.length);
+        if (lists.length <= 1) return lists[0] || [];
+        const first = lists[0][0];
         const entry = makeEntry({
             ...first,
-            alternatives: parsed.map(p => {
+            alternatives: lists.map(([p, ...rest]) => {
                 const alt = { title: p.title };
                 if (p.year) alt.year = p.year;
                 if (p.date) alt.date = p.date;
@@ -767,6 +790,12 @@
                 // Each alternative's own episodes ("Flash 1x08 **or** Arrow 3x09"), never the first one's.
                 if (p.episodes?.length) alt.episodes = p.episodes;
                 if (p.openEnded) alt.openEnded = true;
+                const more = rest.filter(m => Number.isInteger(m.season) || m.episodes?.length).map((m) => {
+                    const scope = { season: Number.isInteger(m.season) ? m.season : Number(m.episodes[0].s) };
+                    if (m.episodes?.length) scope.episodes = m.episodes;
+                    return scope;
+                });
+                if (more.length) alt.more = more;
                 return alt;
             }),
             line: ctx.line,
@@ -871,8 +900,8 @@
         if (alternatives.length > 1) {
             const parsed = alternatives.map((alt, i) => {
                 const parsedRelease = parseRelease(releaseParts[i] ?? releaseParts[0] ?? '') || {};
-                return parseItem(alt, { ...rowCtx, year: parsedRelease.year || rowCtx.year, date: parsedRelease.date, status: parsedRelease.status })[0];
-            }).filter(Boolean);
+                return parseItem(alt, { ...rowCtx, year: parsedRelease.year || rowCtx.year, date: parsedRelease.date, status: parsedRelease.status });
+            });
             return withAlternatives(parsed, ctx);
         }
 
@@ -1201,7 +1230,7 @@
 
             const alternatives = splitAlternatives(body, false);
             const entries = alternatives.length > 1
-                ? withAlternatives(alternatives.map(alt => parseItem(alt, { ...ctx, source: listItem ? 'list' : 'plain' })[0]).filter(Boolean), ctx)
+                ? withAlternatives(alternatives.map(alt => parseItem(alt, { ...ctx, source: listItem ? 'list' : 'plain' })), ctx)
                 : parseItem(body, { ...ctx, source: isLinkItem || listItem ? 'list' : 'plain' });
             if (!entries.length) {
                 result.skipped.push({ line: lineNo, raw: ctx.raw, reason: 'prose' });

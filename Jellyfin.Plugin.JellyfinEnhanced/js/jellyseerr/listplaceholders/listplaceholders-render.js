@@ -343,11 +343,13 @@
         if (JE.seerrStatus?.isRequestable(status) && lp.requests?.isRequested?.(ph)) status = JE.seerrStatus.MEDIA.PROCESSING;
         // Part of the show is in this library: never "Available" next to the progress chip.
         if (JE.seerrStatus && status === JE.seerrStatus.MEDIA.AVAILABLE && isPartlyFilled(ph)) status = JE.seerrStatus.MEDIA.PARTIALLY_AVAILABLE;
-        let mediaInfo = status === null || status === undefined ? null : { status, status4k: 1 };
+        // A 4K request made this session: the card's "Request in 4K" reads as requested (Seerr would answer 409).
+        const status4k = JE.seerrStatus && lp.requests?.isRequested4k?.(ph) ? JE.seerrStatus.MEDIA.PROCESSING : 1;
+        let mediaInfo = status === null || status === undefined ? null : { status, status4k };
         const adding = addingItemId(ph);
         if (adding && JE.seerrStatus) {
             // Being swapped in: the card reads as available and its title links to the library item.
-            mediaInfo = { status: JE.seerrStatus.MEDIA.AVAILABLE, status4k: 1, jellyfinMediaId: adding };
+            mediaInfo = { status: JE.seerrStatus.MEDIA.AVAILABLE, status4k, jellyfinMediaId: adding };
         }
         const item = {
             id,

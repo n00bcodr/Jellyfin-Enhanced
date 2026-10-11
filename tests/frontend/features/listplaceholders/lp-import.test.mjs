@@ -533,7 +533,9 @@ test('source chip: last sync, pause reason, Sync now / options / Unlink', async 
   const h = setupImport(t, { plugin: async (path, options = {}) => {
     calls.push([options.method || 'GET', path, plainJson(options.body ?? null)]);
     if (path.includes('/source/sync')) return { state: 'ok', added: 1, removed: 0, kept: 0, unresolved: 0, view: view({ rev: 5, source: linked }) };
-    return view({ rev: 6, source: null });
+    // An option change answers with the list still linked (the next queued change starts from it); Unlink without.
+    if (options.method === 'PUT') return view({ rev: 6, source: { ...linked, syncEnabled: plainJson(options.body).syncEnabled } });
+    return view({ rev: 7, source: null });
   } });
   const ctrl = { listId: LIST, listKind: 'playlist', listName: 'P', view: view({ source: linked }), load: () => {} };
   const bar = h.lp.toolbar.create(ctrl);

@@ -108,6 +108,20 @@
     }
 
     /**
+     * Whether two views show the same placeholders in the same order. A view is the caller's projection (parental
+     * filtering), so the set can change while the revision and the count stay the same.
+     * @param {Object|null|undefined} a - ListViewDto.
+     * @param {Object|null|undefined} b - ListViewDto.
+     * @returns {boolean}
+     */
+    function samePlaceholders(a, b) {
+        if (!a || !b) return false;
+        const ids = v => (v.placeholders || []).map(p => p.id).join(',');
+        const tokens = v => (v.order || []).filter(t => typeof t === 'string' && t.startsWith('p:')).join(',');
+        return ids(a) === ids(b) && tokens(a) === tokens(b);
+    }
+
+    /**
      * Caches a list's view as the most recently used one, forgetting the least recently used lists beyond
      * MAX_CACHED_VIEWS (an imported list's view can be large; a forgotten one is just read again).
      * @param {string} listId
@@ -476,6 +490,7 @@
     lp.toastError = toastError;
     lp.isStaleIdentityError = isStaleIdentityError;
     lp.isOlderView = isOlderView;
+    lp.samePlaceholders = samePlaceholders;
     lp.skipReasonText = skipReasonText;
     lp.freshness = { schedule: scheduleRefetch, checkAdding, ADDING_RECHECK_MS };
     lp.api = {

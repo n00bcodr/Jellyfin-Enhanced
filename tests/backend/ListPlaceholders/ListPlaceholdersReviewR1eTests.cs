@@ -140,6 +140,29 @@ public class ListPlaceholdersReviewR1eTests
         Assert.Null(unasked.SearchFailed);
     }
 
+    // ── Review round 2: the add's budget running out during the search is a failed search, not a failed add ──
+
+    [Fact]
+    public async Task RunningOutOfTimeDuringTheSearchReportsAFailedSearchAndReplaysIt()
+    {
+        using var f = new Fixture();
+        f.Service.AddBudget = TimeSpan.FromMilliseconds(500);
+        f.Arr.SeedSeries(391153, monitored: true, s => s == 1, (s, _) => s == 1);
+        f.Arr.Delay = (_, request, ct) => request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/v3/command"
+            ? Task.Delay(Timeout.Infinite, ct)
+            : Task.CompletedTask;
+
+        var result = Ok(await f.Add(SeasonBody));
+        Assert.Equal("monitoring_added", result.Result);
+        Assert.False(result.Searched);
+        Assert.True(result.SearchFailed);
+
+        f.Arr.Delay = null;
+        var replay = await f.Add(SeasonBody);
+        Assert.Equal(200, replay.StatusCode);
+        Assert.True(JsonNode.Parse(replay.RawJson!)!["searchFailed"]!.GetValue<bool>());
+    }
+
     // ── F33: name resolution is part of the per-call time limit ──
 
     [Fact]

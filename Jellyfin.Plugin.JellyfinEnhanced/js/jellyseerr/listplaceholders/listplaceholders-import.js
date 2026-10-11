@@ -14,6 +14,10 @@
 
     const CHUNK_SIZE = 25;
     const MAX_APPLY = 2000;
+    /** Most episodes one placeholder holds (PlaceholderRules.MaxEpisodes). */
+    const MAX_EPISODES = 100;
+    /** Most episodes an open-ended range expands to (the server's MaxOpenEndedEpisodes). */
+    const MAX_EXPANDED_EPISODES = 1000;
     const MAX_SNAPSHOT_KEYS = 5000;
     const MAX_CHUNK_RETRIES = 5;
     const RETRY_DELAY_MS = 2000;
@@ -41,6 +45,7 @@
         episodeIdUnsupported: 'listPlaceholders_import_reason_episode_id',
         typeMismatch: 'listPlaceholders_import_reason_type',
         openEnded: 'listPlaceholders_import_reason_open_ended',
+        openEndedTruncated: 'listPlaceholders_import_reason_open_ended_truncated',
         yearOff: 'listPlaceholders_import_reason_year_off',
         otherYear: 'listPlaceholders_import_reason_other_year',
         unreleased: 'listPlaceholders_import_reason_unreleased',
@@ -329,7 +334,8 @@
             // stays tracked). Only an open-ended range ("S1E5–") takes the season's episodes the resolver expanded.
             const requested = entryEpisodes(entry, season);
             const numbers = (entry?.openEnded && info.size) || !requested.length ? Array.from(info.keys()) : requested;
-            const unique = Array.from(new Set(numbers)).filter(n => n >= 0 && n <= 9999).sort((a, b) => a - b).slice(0, 100);
+            // Every episode: rowEntries splits more than one placeholder holds into consecutive placeholders.
+            const unique = Array.from(new Set(numbers)).filter(n => n >= 0 && n <= 9999).sort((a, b) => a - b).slice(0, MAX_EXPANDED_EPISODES);
             if (!unique.length) return null;
             dto.seasonNumber = season;
             dto.episodes = unique.map((e) => {
@@ -449,23 +455,74 @@
             if (dto) out = [{ type: 'placeholder', placeholder: dto }];
         } else {
             const cands = row.both ? alternativePicks(row) : [row.cands[row.cand]].filter(Boolean);
+            const overridden = !!(row.override && !row.both);
             out = cands.map((cand) => {
-                if (row.action === 'item' && !(row.override && !row.both)) {
+                // The rest of a chosen alternative's scope (not for a scope the user set by hand).
+                const more = overridden ? [] : alternativeMore(cand, row.entry, placeholderFromCandidate(cand, row.entry, row.result?.kind))
+                    .map(placeholder => ({ type: 'placeholder', placeholder }));
+                if (row.action === 'item' && !overridden) {
                     const itemId = libraryItemFor(cand, listKind);
                     if (itemId) {
                         const entry = { type: 'item', itemId };
                         ENTRY_CANDIDATES.set(entry, cand);
-                        return entry;
+                        return [entry, ...more];
                     }
                 }
-                const dto = row.override && !row.both ? row.override : placeholderFromCandidate(cand, row.entry, row.result?.kind);
-                return dto ? { type: 'placeholder', placeholder: dto } : null;
-            }).filter(Boolean);
+                const dto = overridden ? row.override : placeholderFromCandidate(cand, row.entry, row.result?.kind);
+                return dto ? [...splitEpisodes(dto).map(placeholder => ({ type: 'placeholder', placeholder })), ...more] : null;
+            }).flat().filter(Boolean);
         }
         if (out.length && row.entry?.sourceKey) {
             out[0].sourceKey = row.entry.sourceKey;
             // A grouped entry (a run of episodes of an exact source) stands for every key of the run.
             if (Array.isArray(row.entry.sourceKeys) && row.entry.sourceKeys.length) out[0].sourceKeys = row.entry.sourceKeys.slice();
+        }
+        return out;
+    }
+
+    /**
+     * Splits an episodes placeholder with more episodes than one placeholder holds (PlaceholderRules.MaxEpisodes) into
+     * consecutive placeholders of at most that many (each dated by its first episode when TMDB has a date for it); any
+     * other placeholder comes back alone.
+     * @param {Object} dto - NewPlaceholderDto.
+     * @returns {Array<Object>}
+     */
+    function splitEpisodes(dto) {
+        if (dto?.kind !== 'episodes' || !Array.isArray(dto.episodes) || dto.episodes.length <= MAX_EPISODES) return [dto];
+        const parts = [];
+        for (let i = 0; i < dto.episodes.length; i += MAX_EPISODES) {
+            const part = { ...dto, episodes: dto.episodes.slice(i, i + MAX_EPISODES) };
+            const first = part.episodes[0].airDate;
+            if (i > 0 && first) part.releaseDate = first;
+            parts.push(part);
+        }
+        return parts;
+    }
+
+    /**
+     * The placeholders for the rest of a chosen alternative's scope: an alternative whose text named more than one
+     * season or more than MAX_EPISODES episodes ("Doctor Who S1E5–S2E3 **or** Torchwood") keeps the later parts as
+     * `more`; they go in right after its first part, for the same title (TMDB fills in their dates later).
+     * @param {Object} cand - The chosen candidate (its `alternative` index).
+     * @param {Object} entry - Parsed entry.
+     * @param {Object|null} dto - The placeholder of the alternative's first part.
+     * @returns {Array<Object>} NewPlaceholderDto list (empty when there is nothing more).
+     */
+    function alternativeMore(cand, entry, dto) {
+        const alt = Array.isArray(entry?.alternatives) ? entry.alternatives[Number.isInteger(cand?.alternative) ? cand.alternative : 0] : undefined;
+        if (!dto || cand?.mediaType !== 'tv' || !Array.isArray(alt?.more) || !alt.more.length) return [];
+        const base = { mediaType: 'tv', tmdbId: dto.tmdbId, title: dto.title };
+        for (const key of ['posterPath', 'overview', 'imdbId', 'tvdbId', 'note']) if (dto[key] !== undefined) base[key] = dto[key];
+        const out = [];
+        for (const scope of alt.more) {
+            const season = Number(scope?.season);
+            if (!Number.isInteger(season) || season < 0 || season > 200) continue;
+            const episodes = (scope.episodes || []).filter(e => Number(e.s) === season).map(e => Number(e.e)).filter(n => Number.isInteger(n) && n >= 0 && n <= 9999);
+            if (episodes.length) {
+                out.push(...splitEpisodes({ ...base, kind: 'episodes', seasonNumber: season, episodes: episodes.map(e => ({ s: season, e })) }));
+            } else if (!scope.episodes?.length) {
+                out.push({ ...base, kind: 'season', seasonNumber: season });
+            }
         }
         return out;
     }

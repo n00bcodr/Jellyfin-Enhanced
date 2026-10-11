@@ -329,7 +329,7 @@
                 // difference can't loop.
                 ctrl.nativeRefreshedKey = key;
                 ctrl.refreshNative();
-            } else if (!previous || previous.rev !== view.rev
+            } else if (!previous || previous.rev !== view.rev || !lp.samePlaceholders(previous, view)
                 || container.querySelectorAll(':scope > .je-lp-row').length !== (view.placeholders || []).length) {
                 ctrl.render();
             } else {

@@ -30,10 +30,11 @@
      * @param {string} showTitle - Display title of the show.
      * @param {Object|null} searchResultItem - Original search result data.
      * @param {boolean} [is4k=false] - Request the 4K version.
-     * @param {{preselectedSeasons?: number[], treatExistingAsRequested?: boolean}} [options] - preselectedSeasons: seasons
-     *   to tick when the modal opens (list placeholders: the placeholder's season). treatExistingAsRequested: Seerr's
-     *   202 "No seasons available" and 409 answers mean "already requested" (list placeholders, B5): the seasons are
-     *   announced as requested and the modal closes without a success toast or an error.
+     * @param {{preselectedSeasons?: number[], treatExistingAsRequested?: boolean, isCurrent?: function(): boolean}} [options] -
+     *   preselectedSeasons: seasons to tick when the modal opens (list placeholders: the placeholder's season).
+     *   treatExistingAsRequested: Seerr's 202 "No seasons available" and 409 answers mean "already requested" (list
+     *   placeholders, B5): the seasons are announced as requested and the modal closes without a success toast or an
+     *   error. isCurrent: checked after the loads; false (e.g. the user signed out meanwhile) stops before anything shows.
      */
     ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null, is4k = false, options = {}) {
         if (mediaType !== 'tv') return;
@@ -59,6 +60,8 @@
         }
 
         const tvDetails = await fetchTvShowDetails(tmdbId);
+        const stale = () => typeof options?.isCurrent === 'function' && !options.isCurrent();
+        if (stale()) return;
         if (!tvDetails?.seasons) {
             JE.toast(JE.t('jellyseerr_toast_no_season_info'), 4000);
             return;
@@ -93,6 +96,7 @@
                 }
             } catch (_) {}
         }
+        if (stale()) return;
 
         const normalizedTitle = String(showTitle || '').trim();
         const isGenericFallbackTitle = ['this show', 'this movie', 'this collection'].includes(normalizedTitle.toLowerCase());

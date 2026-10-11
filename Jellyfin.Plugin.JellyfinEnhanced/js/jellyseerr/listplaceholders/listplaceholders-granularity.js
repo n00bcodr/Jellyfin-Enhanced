@@ -9,6 +9,8 @@
     const lp = JE.internals.listPlaceholders = JE.internals.listPlaceholders || {};
 
     const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    /** Most episodes one placeholder holds (PlaceholderRules.MaxEpisodes on the server). */
+    const MAX_EPISODES = 100;
     let instanceCounter = 0;
 
     /**
@@ -81,7 +83,8 @@
             return out;
         }
         if (sel.kind === 'episodes') {
-            const episodes = (sel.episodes || []).slice(0, 100);
+            // Never cut silently: the checklist stops at MAX_EPISODES ticks, and a longer selection fails on the server.
+            const episodes = sel.episodes || [];
             if (!episodes.length) return null;
             const first = episodes[0];
             const out = {
@@ -160,6 +163,20 @@
                     <span class="je-lp-episode-title">${esc(e.name || '')}</span>
                     <span class="je-lp-muted">${esc(cleanDate(e.airDate) ? lp.render.formatDate(cleanDate(e.airDate)) : JE.t('listPlaceholders_tba'))}</span>
                 </label>`).join('');
+            enforceEpisodeLimit();
+        }
+
+        /**
+         * One placeholder holds at most MAX_EPISODES episodes: once that many are ticked, the other boxes are disabled
+         * and a hint says so (nothing is dropped silently on save).
+         */
+        function enforceEpisodeLimit() {
+            const boxes = Array.from(episodesWrap.querySelectorAll('input[type=checkbox]'));
+            const full = boxes.filter(box => box.checked).length >= MAX_EPISODES;
+            boxes.forEach((box) => { if (!box.checked) box.disabled = full; });
+            const limitText = JE.t('listPlaceholders_gran_episode_limit', { count: MAX_EPISODES });
+            if (full) statusEl.textContent = limitText;
+            else if (statusEl.textContent === limitText) statusEl.textContent = '';
         }
 
         /** Shows the controls for the chosen mode. */
@@ -176,6 +193,8 @@
                 sync();
             } else if (e.target.name === uid) {
                 sync();
+            } else if (episodesWrap.contains(e.target)) {
+                enforceEpisodeLimit();
             }
         });
 

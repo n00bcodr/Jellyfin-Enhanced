@@ -523,4 +523,34 @@ public class ListPlaceholdersImportResolverTests
         Assert.Contains(h.Library.Calls, c => c.Scope.TmdbId == 57243 && c.Scope.Episodes != null && c.Scope.Episodes.SequenceEqual(new[] { 5, 6, 7, 8 }));
         Assert.Equal("low", response.Results[1].Confidence);
     }
+
+    // Review round 2: an open-ended range of a long season returns every episode (the client splits them into
+    // placeholders of at most 100), never silently the first 100; past MaxExpected it is cut and flagged.
+    [Fact]
+    public async Task AnOpenEndedRangeOfALongSeasonReturnsEveryEpisode()
+    {
+        using var h = new ListPlaceholdersHarness();
+        var user = h.NewUser("u");
+        var show = Tv(37854, "One Piece", "1999-10-20");
+        h.Lookup.AddSearch("One Piece", show);
+        h.Lookup.AddShow(show, new SeasonFacts(1, 150, "1999-10-20", "Season 1"), new SeasonFacts(2, 1100, "2002-01-01", "Season 2"));
+        h.Lookup.Seasons[(37854, 1)] = Enumerable.Range(1, 150).Select(e => new EpisodeFacts(1, e, "Episode " + e, "2000-01-01")).ToList();
+        h.Lookup.Seasons[(37854, 2)] = Enumerable.Range(1, 1100).Select(e => new EpisodeFacts(2, e, "Episode " + e, "2003-01-01")).ToList();
+        var range = E("One Piece", null, "tv", null, null, (1, 5));
+        range.OpenEnded = true;
+        var huge = E("One Piece", null, "tv", null, null, (2, 1));
+        huge.OpenEnded = true;
+
+        var response = await Resolve(h, user, new[] { range, huge });
+
+        var filled = response.Results[0];
+        Assert.Equal(Enumerable.Range(5, 146), filled.Match!.Episodes!.Select(e => e.E));
+        Assert.DoesNotContain("openEndedTruncated", filled.Reasons);
+        Assert.NotEqual("low", filled.Confidence);
+        var cut = response.Results[1];
+        Assert.Equal(1000, cut.Match!.Episodes!.Count);
+        Assert.Contains("openEndedTruncated", cut.Reasons);
+        Assert.Equal("low", cut.Confidence);
+    }
 }
+

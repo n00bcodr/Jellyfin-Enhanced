@@ -91,6 +91,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         private readonly object _inflightGate = new();
         private readonly Dictionary<string, SharedFetch> _inflight = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, DateTime> _unreachableUntil = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, (string? Poster, DateTime FetchedAtUtc)> _tmdbPosters = new(StringComparer.Ordinal);
 
         /// <summary>Creates the service (singleton).</summary>
         /// <param name="httpClientFactory">HTTP client factory.</param>
@@ -667,6 +668,91 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     _logger.Debug($"[ListPlaceholders] Seerr didn't answer; metadata reads pause for {UnreachableBackoff.TotalSeconds:0} s.");
                 }
 
+                return null;
+            }
+            finally
+            {
+                _concurrency.Release();
+            }
+        }
+
+        /// <summary>True when JE has a TMDB API key (the parental filter then reads ratings from TMDB, Seerr or not).</summary>
+        public static bool TmdbAvailable => !string.IsNullOrWhiteSpace(JellyfinEnhanced.Instance?.Configuration?.TMDB_API_KEY);
+
+        /// <summary>
+        /// Reads a TMDB placeholder's poster straight from TMDB with JE's TMDB key (used when Seerr isn't configured):
+        /// the title's poster, or the season's for season and episodes kinds (the show's when the season has none).
+        /// Cached like Seerr details. Null without a key, for unknown titles and on errors.
+        /// </summary>
+        /// <param name="placeholder">Placeholder.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <returns>The poster path or null.</returns>
+        public async Task<string?> FetchTmdbPosterAsync(Placeholder placeholder, CancellationToken cancellationToken)
+        {
+            var apiKey = JellyfinEnhanced.Instance?.Configuration?.TMDB_API_KEY;
+            if (placeholder.Kind == PlaceholderKinds.Custom || placeholder.TmdbId is not > 0 || string.IsNullOrWhiteSpace(apiKey))
+            {
+                return null;
+            }
+
+            var id = placeholder.TmdbId.Value.ToString(CultureInfo.InvariantCulture);
+            if (placeholder.Kind == PlaceholderKinds.Movie)
+            {
+                return await TmdbPosterAsync("movie/" + id, apiKey, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && placeholder.SeasonNumber is int number)
+            {
+                var season = await TmdbPosterAsync("tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), apiKey, cancellationToken).ConfigureAwait(false);
+                if (season != null)
+                {
+                    return season;
+                }
+            }
+
+            return await TmdbPosterAsync("tv/" + id, apiKey, cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task<string?> TmdbPosterAsync(string apiPath, string apiKey, CancellationToken cancellationToken)
+        {
+            var key = "tmdb|" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)), 0, 8) + "|" + apiPath;
+            if (_tmdbPosters.TryGetValue(key, out var cached) && DateTime.UtcNow - cached.FetchedAtUtc < CacheTtl)
+            {
+                return cached.Poster;
+            }
+
+            await _concurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cts.CancelAfter(Timeout);
+                var client = _httpClientFactory.CreateClient();
+                var url = "https://api.themoviedb.org/3/" + apiPath + "?api_key=" + Uri.EscapeDataString(apiKey);
+                using var response = await client.GetAsync(url, cts.Token).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+
+                var body = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
+                using var document = JsonDocument.Parse(body);
+                var poster = document.RootElement.ValueKind == JsonValueKind.Object ? Str(document.RootElement, "poster_path") : null;
+                poster = poster != null && PosterRegex.IsMatch(poster) ? poster : null;
+                if (_tmdbPosters.Count >= MaxCacheEntries)
+                {
+                    _tmdbPosters.Clear();
+                }
+
+                _tmdbPosters[key] = (poster, DateTime.UtcNow);
+                return poster;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException)
+            {
+                _logger.Debug($"[ListPlaceholders] TMDB poster {apiPath} failed: {ex.Message}");
                 return null;
             }
             finally

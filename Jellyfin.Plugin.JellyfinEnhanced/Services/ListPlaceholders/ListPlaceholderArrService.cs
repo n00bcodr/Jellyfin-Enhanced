@@ -645,9 +645,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }),
             }, ct);
 
+        // The search is the last step, after the monitoring succeeded: running out of the add's budget here is a search
+        // that couldn't be started (reported as searchFailed and replayed), never a failed add.
         private async Task<bool> SearchAsync(Target target, JsonObject command, CancellationToken ct)
         {
-            var response = await SendAsync(target.Instance, HttpMethod.Post, "/api/v3/command", command, ct).ConfigureAwait(false);
+            ArrResponse response;
+            try
+            {
+                response = await SendAsync(target.Instance, HttpMethod.Post, "/api/v3/command", command, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                _logger.Warning($"[ListPlaceholders] {target.Name} didn't start the {Text(command["name"], 40)} before the add ran out of time.");
+                return false;
+            }
+
             if (!response.Ok)
             {
                 _logger.Warning($"[ListPlaceholders] {target.Name} didn't start the {Text(command["name"], 40)}: {response.FailureCode ?? "HTTP " + Num(response.Status)}.");

@@ -428,13 +428,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         // A TMDB placeholder shows the poster Seerr has for that title, never one the client sent: an editor could pair an
         // allowed title with a blocked title's poster, which restricted viewers would then see on the row and in the list's
         // collage. Read within a short budget; a poster not read in time is left empty (fail closed) and the background
-        // metadata pass fills it in. Without Seerr nothing can check it, so the client's stays: the parental filter can't
-        // verify those titles either, so restricted viewers never see them.
+        // metadata pass fills it in. Without Seerr but with a TMDB key the parental filter still rates titles (from TMDB),
+        // so the poster is read from TMDB the same way (no background pass then: one not read in time stays empty). With
+        // neither, nothing can check it and the client's stays: the filter can't rate those titles either, so restricted
+        // viewers never see them.
         private async Task UseServerPostersAsync(IReadOnlyList<Placeholder> placeholders, CancellationToken cancellationToken)
         {
             var titles = placeholders.Where(HasTmdb).ToList();
-            if (_metadata == null || titles.Count == 0 || !ListPlaceholderMetadataService.IsAvailable)
+            var seerr = ListPlaceholderMetadataService.IsAvailable;
+            if (titles.Count == 0 || (!seerr && !ListPlaceholderMetadataService.TmdbAvailable))
             {
+                return;
+            }
+
+            if (_metadata == null)
+            {
+                titles.ForEach(placeholder => placeholder.PosterPath = null);
                 return;
             }
 
@@ -446,7 +455,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 string? poster = null;
                 try
                 {
-                    poster = (await _metadata.FetchAsync(placeholder, ListPlaceholderMetadataService.CacheTtl, today, budget.Token).ConfigureAwait(false))?.PosterPath;
+                    poster = seerr
+                        ? (await _metadata.FetchAsync(placeholder, ListPlaceholderMetadataService.CacheTtl, today, budget.Token).ConfigureAwait(false))?.PosterPath
+                        : await _metadata.FetchTmdbPosterAsync(placeholder, budget.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {

@@ -228,3 +228,60 @@ test('a user switch while the movie details load drops the request', async t => 
   await settle();
   assert.equal(h2.modals.length, 0);
 });
+
+// Review round 2: the TV flow hands the season modal the session check, so a user switch while it loads stops it.
+test('the season modal of a TV placeholder stops when the user changed while it loaded', async t => {
+  const h = await mountPlaylist(t, [ph('s', { tmdbId: 9, mediaType: 'tv', kind: 'season', seasonNumber: 2 })]);
+  h.row('s').querySelector('.je-lp-request').click();
+  await settle();
+  assert.equal(h.modals.length, 1);
+  const isCurrent = h.modals[0][5]?.isCurrent;
+  assert.equal(typeof isCurrent, 'function');
+  assert.equal(isCurrent(), true);
+  h.switchUser();
+  assert.equal(isCurrent(), false);
+});
+
+// Review round 2: "Request in 4K" reports Seerr's errors like JE's request buttons, and reads as requested afterwards.
+test('collection movie placeholder: after a 4K request the popup offers no second one', async t => {
+  const h = await mountCollection(t, [ph('m', { tmdbId: 7, title: 'Cars 4', status: 1 })], { config: { JellyseerrEnable4KRequests: true } });
+  const popupItem = () => h.document.querySelector('body > .jellyseerr-4k-popup .jellyseerr-4k-popup-item');
+  h.card('m').querySelector('.jellyseerr-split-arrow').click();
+  popupItem().click();
+  await settle();
+  assert.equal(h.requests.length, 1);
+  h.card('m').querySelector('.jellyseerr-split-arrow').click();
+  assert.equal(popupItem().disabled, true);
+  assert.notEqual(popupItem().dataset.action, 'request4k');
+});
+
+for (const [label, error, expected] of [
+  ['a 403 without 4K permission', { status: 403, responseJSON: { code: 'no_4k_permission' } }, /^jellyseerr_err_no_4k_permission/],
+  ['a 404 (user not linked)', { status: 404, responseJSON: { message: 'User not found' } }, /^jellyseerr_btn_user_not_found/],
+  ['a 409 (already requested)', { status: 409, responseJSON: { message: 'exists' } }, /^listPlaceholders_already_requested_4k/],
+  ['Seerr\'s own message', { status: 500, responseJSON: { message: 'Radarr <down>' } }, /^Radarr &lt;down&gt;$/]
+]) test(`collection movie placeholder: "Request in 4K" reports ${label} as Seerr's error`, async t => {
+  const h = await mountCollection(t, [ph('m', { tmdbId: 7, title: 'Cars 4', status: 1 })], {
+    config: { JellyseerrEnable4KRequests: true },
+    api: { requestMedia: async () => { throw Object.assign(new Error('HTTP'), error); } }
+  });
+  h.card('m').querySelector('.jellyseerr-split-arrow').click();
+  h.document.querySelector('body > .jellyseerr-4k-popup .jellyseerr-4k-popup-item').click();
+  await settle();
+  assert.match(h.toasts.at(-1), expected);
+  assert.doesNotMatch(h.toasts.at(-1), /listPlaceholders_err_/);
+});
+
+test('collection movie placeholder: a quota error on "Request in 4K" opens the quota dialog', async t => {
+  const quota = [];
+  const h = await mountCollection(t, [ph('m', { tmdbId: 7, title: 'Cars 4', status: 1 })], {
+    config: { JellyseerrEnable4KRequests: true },
+    api: { requestMedia: async () => { throw Object.assign(new Error('HTTP 403'), { status: 403, responseJSON: { code: 'quota' } }); } }
+  });
+  h.JE.jellyseerrUI.isQuotaError = e => e?.responseJSON?.code === 'quota';
+  h.JE.jellyseerrUI.showQuotaErrorDialog = async (...args) => { quota.push(args); };
+  h.card('m').querySelector('.jellyseerr-split-arrow').click();
+  h.document.querySelector('body > .jellyseerr-4k-popup .jellyseerr-4k-popup-item').click();
+  await settle();
+  assert.equal(quota.length, 1);
+});

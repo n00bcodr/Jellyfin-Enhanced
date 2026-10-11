@@ -153,6 +153,32 @@ public class ListPlaceholdersReviewR1d2Tests
         Assert.False(w.Doc.Source!.Owned.ContainsKey("movie|862||"));
     }
 
+    // ── Review round 2: an owned item whose entry doesn't resolve right now stays owned ──────
+
+    [Fact]
+    public async Task R2_AnOwnedItemWhoseEntryIsUnresolvedIsNotTakenForAUserRemoval()
+    {
+        using var w = new World();
+        w.Source(World.M(862), World.M(1));
+        await w.Link();
+        await w.Sync();
+        Assert.Contains(w.InLibrary.ToString("N"), w.Doc.Source!.Owned["movie|862||"].ItemIds);
+
+        // Its file is offline: the entry is still in the playlist but doesn't resolve.
+        var index = w.Raw.IndexOf(new RawEntry(w.InLibrary, true));
+        w.Raw[index] = new RawEntry(w.InLibrary, false);
+        await w.Sync();
+        Assert.Contains(w.InLibrary.ToString("N"), w.Doc.Source!.Owned["movie|862||"].ItemIds);
+        Assert.False(w.Doc.Source!.UserRemovedKeys.ContainsKey("movie|862||"));
+
+        // Back online, then the source drops it: the sync removes what it added.
+        w.Raw[index] = new RawEntry(w.InLibrary, true);
+        w.Source(World.M(1));
+        var later = await w.Sync();
+        Assert.Equal(1, later.Removed);
+        Assert.Equal(new[] { w.InLibrary }, w.Remover.Removed);
+    }
+
     // ── F22: a copy added natively while the sync awaited the parental check ──────
 
     [Fact]

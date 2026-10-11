@@ -26,7 +26,7 @@ A typical use is turning a watch-order guide into one playlist: films, whole ser
 | **Specific episodes** | The Flash 1x08 | S01E08 · Flash vs. Arrow · 2014 |
 | **Custom entry** | A rumoured film with no TMDB page yet | Custom entry · TBA |
 
-- **Specific episodes** always belong to one season. A range such as `S08E01–05` is one entry; a selection that spans two seasons becomes one entry per season.
+- **Specific episodes** always belong to one season. A range such as `S08E01–05` is one entry; a selection that spans two seasons becomes one entry per season. One entry holds up to 100 episodes: the episode checklist stops at 100, and longer imported ranges become several entries.
 - **Progress:** seasons and series count the episodes already in the list against the ones that have aired (**n of m aired**, plus **n upcoming** for announced episodes). Right after adding, until Seerr's episode list is read, they show the episode count instead.
 - **Upcoming and undated titles:** a title with a future date shows **Coming 23 Oct 2026**. One without a date shows its year if known, else **TBA**. The date is the movie's release date, the series' first air date, the season's premiere or, for episodes, the first listed episode's air date (or the season's premiere).
 - **Dates stay current:** they're read from Seerr when a title is added and again by the daily **List Placeholders Maintenance** task, so a TBA entry gets its date once one is announced.
@@ -167,9 +167,9 @@ Headings, blank lines and prose are skipped. The importer understands:
 - **Dates and TBA:** `Clayface (2026-10-23) · Film · Scheduled`, `Swamp Thing (TBA) · TV series · In development`
 - **Markdown tables**, using their title (or "Watch"), year (or "Released"), type (or "Format") and notes columns
 - **Seasons:** `Peacemaker - Season 1`, `Peacemaker — season 1`, `Peacemaker S1`, or a `Season 2` line under a show
-- **Episodes:** `Flash 1x08`, `S01E08`, ranges like `Flash 8x01–05`, `Season 2 Episode 3` (a range of more than 100 episodes becomes several rows)
+- **Episodes:** `Flash 1x08`, `S01E08`, `Peacemaker (2022) - S1E1`, ranges like `Flash 8x01–05`, `Season 2 Episode 3` (a range of more than 100 episodes becomes several rows; an open range such as `S1E5–S2E3` adds the rest of season 1 as entries of up to 100 episodes)
 - **Chains**, split into separate entries in order: `Flash 1x08 → Arrow 3x08`
-- **Either/or:** `Justice League or Zack Snyder's Justice League`, kept as one row with both titles to choose from; each keeps its own season or episodes (`Flash 1x08 or Arrow 3x09`)
+- **Either/or:** `Justice League or Zack Snyder's Justice League`, kept as one row with both titles to choose from; each keeps its own season or episodes (`Flash 1x08 or Arrow 3x09`, also `Flash 1x08 / Arrow 3x09` inside a chain), including ranges that span seasons
 - **Episodes named by title:** `Legends "Crisis on Infinite Earths: Part Five"`; the show is found, and you pick the episode in **Change match**
 - **Links and ids:** TMDB, IMDb and TVDB links or ids, such as `https://www.themoviedb.org/movie/49521`, `tt0770828` or `tvdb:279121`
 - **CSV exports:** IMDb list and watchlist exports, Letterboxd list exports, and simple sheets with title, year, id, type, season and episode columns
@@ -251,7 +251,7 @@ How syncing works:
 When a title on a list reaches your library, the plugin puts the real item in its place:
 
 - **Movies** are inserted into a playlist at the placeholder's spot, or added to the collection, and the placeholder goes away.
-- **Seasons fill in episode by episode.** Each episode that arrives goes in at its place in episode order, next to the ones already there. The placeholder shows **n of m aired** (plus **n upcoming** while episodes are still to air) until the season is complete: every episode has aired and is in the list, or, for a show that has ended, every aired episode is. Then it goes away.
+- **Seasons fill in episode by episode.** Each episode that arrives goes in at its place in episode order, next to the ones already there. The placeholder shows **n of m aired** (plus **n upcoming** while episodes are still to air) until the season is complete: every episode has aired and is in the list, or, for a show that has ended, every aired episode is (an episode TMDB lists without a date between aired ones counts as aired). Then it goes away.
 - **Specific episodes** go in one by one as they arrive. The placeholder goes away once all of them are in.
 - **Whole series:** in a playlist, episodes of every regular season (not specials) fill in the same way, and the placeholder stays until the show has ended and every aired episode is in. In a collection, the series itself is added.
 - **Seasons and episodes in a collection:** a season is added as soon as its first episode arrives, and specific episodes are added one by one. The placeholder stays until it's complete, as above.

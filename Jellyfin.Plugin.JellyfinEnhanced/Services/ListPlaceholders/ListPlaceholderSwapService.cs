@@ -873,9 +873,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 context.Dirty = false;
 
                 // F10: Jellyfin skips members silently, so only ids absent right before the call (read again after the
-                // save) and present after it count as added by JE.
+                // save) and present after it count as added by JE. Ids someone added meanwhile leave the saved intent too
+                // (saved again before the call), or a crash would let recovery take them for JE's and make them sync-owned.
                 var before = OccurrenceCounts(_host.GetRawEntries(context.List.Id));
-                toAdd.RemoveAll(before.ContainsKey);
+                if (toAdd.RemoveAll(before.ContainsKey) > 0)
+                {
+                    var keep = toAdd.Select(N).ToHashSet(StringComparer.Ordinal);
+                    var saved = context.Doc.Intents.FirstOrDefault(i => i.CreatedAt == intent.CreatedAt);
+                    if (saved != null)
+                    {
+                        saved.ItemIds.RemoveAll(id => !keep.Contains(id));
+                        foreach (var id in saved.OccurrenceCountsBefore.Keys.Where(id => !keep.Contains(id)).ToList())
+                        {
+                            saved.OccurrenceCountsBefore.Remove(id);
+                        }
+
+                        if (saved.ItemIds.Count == 0)
+                        {
+                            context.Doc.Intents.Remove(saved);
+                        }
+                    }
+
+                    _store.Save(context.Doc);
+                    context.Doc = _store.LoadForUpdate(context.ListIdN, context.List.Kind);
+                    context.Dirty = false;
+                }
+
                 var failed = false;
                 if (toAdd.Count > 0)
                 {

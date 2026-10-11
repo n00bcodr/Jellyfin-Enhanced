@@ -761,41 +761,94 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
         // The seasons of every active (pending + approved) TV request. Best effort: a failure, or more requests than
         // RequestMaxPages pages, returns what was read with Complete = false (seasons without availability status are
-        // then unknown) rather than failing the whole snapshot.
+        // then unknown) rather than failing the whole snapshot. Offset paging over a filtered list (id DESC) skips a row
+        // when a request leaves the filter between two pages (approved, completed, deleted); Seerr's count for the filter
+        // (pageInfo.results) then shrinks, or ends above the rows read. Such a filter is read once more; a second
+        // inconsistent pass is incomplete too.
         private async Task<(Dictionary<string, Dictionary<int, SeasonStatus>> Requests, bool Complete)> FetchActiveRequestsAsync(string baseUrl, string apiKey)
         {
             var result = new Dictionary<string, Dictionary<int, SeasonStatus>>(StringComparer.Ordinal);
+            void Merge(Dictionary<string, Dictionary<int, SeasonStatus>> read)
+            {
+                foreach (var pair in read)
+                {
+                    if (!result.TryGetValue(pair.Key, out var seasons))
+                    {
+                        seasons = new Dictionary<int, SeasonStatus>();
+                        result[pair.Key] = seasons;
+                    }
+
+                    Combine(seasons, pair.Value);
+                }
+            }
+
             try
             {
                 foreach (var filter in new[] { "pending", "approved" })
                 {
-                    var complete = false;
-                    for (var page = 0; page < RequestMaxPages; page++)
+                    for (var attempt = 1; ; attempt++)
                     {
-                        var rows = await FetchRequestPageAsync(baseUrl, apiKey, $"/api/v1/request?take={RequestPageSize}&skip={page * RequestPageSize}&filter={filter}&mediaType=tv").ConfigureAwait(false)
-                            ?? throw new HttpRequestException("Seerr request page could not be read.");
-                        foreach (var row in rows.Rows)
+                        var read = new Dictionary<string, Dictionary<int, SeasonStatus>>(StringComparer.Ordinal);
+                        var complete = false;
+                        var consistent = true;
+                        int? total = null;
+                        long rawRead = 0;
+                        for (var page = 0; page < RequestMaxPages; page++)
                         {
-                            if (!result.TryGetValue(row.Key, out var seasons))
+                            var rows = await FetchRequestPageAsync(baseUrl, apiKey, $"/api/v1/request?take={RequestPageSize}&skip={page * RequestPageSize}&filter={filter}&mediaType=tv").ConfigureAwait(false)
+                                ?? throw new HttpRequestException("Seerr request page could not be read.");
+                            if (rows.Total.HasValue)
                             {
-                                seasons = new Dictionary<int, SeasonStatus>();
-                                result[row.Key] = seasons;
+                                if (total.HasValue && rows.Total.Value < total.Value)
+                                {
+                                    consistent = false;
+                                    break;
+                                }
+
+                                total = rows.Total;
                             }
 
-                            Combine(seasons, row.Seasons);
+                            rawRead += rows.RawCount;
+                            foreach (var row in rows.Rows)
+                            {
+                                if (!read.TryGetValue(row.Key, out var seasons))
+                                {
+                                    seasons = new Dictionary<int, SeasonStatus>();
+                                    read[row.Key] = seasons;
+                                }
+
+                                Combine(seasons, row.Seasons);
+                            }
+
+                            if (rows.RawCount < RequestPageSize)
+                            {
+                                complete = true;
+                                consistent = !total.HasValue || rawRead >= total.Value;
+                                break;
+                            }
                         }
 
-                        if (rows.RawCount < RequestPageSize)
+                        if (consistent && !complete)
                         {
-                            complete = true;
+                            Merge(read);
+                            _logger.Warning($"[ListPlaceholders] Seerr has more than {RequestMaxPages * RequestPageSize} {filter} TV requests; season badges beyond them stay unknown.");
+                            return (result, false);
+                        }
+
+                        if (consistent)
+                        {
+                            Merge(read);
                             break;
                         }
-                    }
 
-                    if (!complete)
-                    {
-                        _logger.Warning($"[ListPlaceholders] Seerr has more than {RequestMaxPages * RequestPageSize} {filter} TV requests; season badges beyond them stay unknown.");
-                        return (result, false);
+                        if (attempt >= 2)
+                        {
+                            Merge(read);
+                            _logger.Debug($"[ListPlaceholders] Seerr's {filter} TV requests kept changing while they were read; season request badges stay unknown until the next rebuild.");
+                            return (result, false);
+                        }
+
+                        _logger.Debug($"[ListPlaceholders] Seerr's {filter} TV requests changed while they were read; reading them again.");
                     }
                 }
             }
@@ -937,7 +990,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
             }
 
-            return new RequestPage(results.GetArrayLength(), rows);
+            int? total = document.RootElement.TryGetProperty("pageInfo", out var pageInfo) && pageInfo.ValueKind == JsonValueKind.Object
+                && pageInfo.TryGetProperty("results", out var totalElement) && totalElement.ValueKind == JsonValueKind.Number
+                && totalElement.TryGetInt32(out var count) ? count : null;
+            return new RequestPage(results.GetArrayLength(), rows, total);
         }
 
         private async Task<Page?> FetchPageAsync(string baseUrl, string apiKey, string apiPath)
@@ -986,7 +1042,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
         private sealed record RequestRow(string Key, Dictionary<int, SeasonStatus> Seasons, DateTime? UpdatedAtUtc);
 
-        private sealed record RequestPage(int RawCount, List<RequestRow> Rows);
+        // Total: Seerr's count of requests matching the filter (pageInfo.results) when it sent one.
+        private sealed record RequestPage(int RawCount, List<RequestRow> Rows, int? Total);
 
         private sealed record Snapshot(Dictionary<string, MediaStatusEntry> Map, Dictionary<string, Dictionary<int, SeasonStatus>> Requests, bool Complete, bool RequestsComplete, DateTime StartedAtUtc, DateTime BuiltAtUtc, string Fingerprint);
 

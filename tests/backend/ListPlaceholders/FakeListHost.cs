@@ -140,7 +140,14 @@ internal sealed class FakeListHost : IListPlaceholderHost
 
     public ListInfo? GetList(Guid listId) => Lists.TryGetValue(listId, out var list) ? list.Info : null;
 
-    public IReadOnlyList<RawEntry> GetRawEntries(Guid listId) => Lists.TryGetValue(listId, out var list) ? list.Raw.ToList() : Array.Empty<RawEntry>();
+    /// <summary>Runs at the start of every <see cref="GetRawEntries"/> call (to change a list between two reads).</summary>
+    public Action<Guid>? OnRawRead { get; set; }
+
+    public IReadOnlyList<RawEntry> GetRawEntries(Guid listId)
+    {
+        OnRawRead?.Invoke(listId);
+        return Lists.TryGetValue(listId, out var list) ? list.Raw.ToList() : Array.Empty<RawEntry>();
+    }
 
     public bool IsListVisible(Guid listId, User user) =>
         Lists.ContainsKey(listId) && !(ListHiddenFrom.TryGetValue(user.Id, out var set) && set.Contains(listId));

@@ -93,9 +93,10 @@
         let busy = false;
         // Closed (Cancel, Escape, backdrop or Back) while an add was running: its history entry is gone already.
         let closed = false;
-        // One request id for every "New playlist…" attempt of this picker: a retry after a failure (e.g. the entry
-        // didn't apply, or the answer was lost) goes to the playlist the first attempt created (B10).
-        const createRequestId = lp.newRequestId();
+        // One request id per distinct "New playlist…" payload: a retry with the same name, visibility and entry after a
+        // failure (e.g. the entry didn't apply, or the answer was lost) goes to the playlist the first attempt created
+        // (B10); a retry with other choices gets its own id, so the server never answers it with the first one's result.
+        const createRequestIds = new Map();
         const body = `
             <div class="je-lp-add je-lp-picker">
                 <label class="je-lp-field"><span>${esc(JE.t('listPlaceholders_pick_list'))}</span>
@@ -144,11 +145,15 @@
                             button.disabled = false;
                             return;
                         }
+                        const isPublic = modalEl.querySelector('.je-lp-new-public').checked;
+                        const entries = [{ type: 'placeholder', placeholder: dto }];
+                        const fingerprint = JSON.stringify({ name, isPublic, entries });
+                        if (!createRequestIds.has(fingerprint)) createRequestIds.set(fingerprint, lp.newRequestId());
                         const created = await lp.api.createList('playlist', {
-                            requestId: createRequestId,
+                            requestId: createRequestIds.get(fingerprint),
                             name,
-                            isPublic: modalEl.querySelector('.je-lp-new-public').checked,
-                            entries: [{ type: 'placeholder', placeholder: dto }]
+                            isPublic,
+                            entries
                         });
                         reportPicked(created?.result, created?.listId, created?.name || name);
                     } else {

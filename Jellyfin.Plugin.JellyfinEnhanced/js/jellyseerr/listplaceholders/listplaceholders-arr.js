@@ -673,6 +673,8 @@
                         // down): the next dialog must read them again instead of offering the same stale choices.
                         if (STALE_OPTION_CODES.has(error?.responseJSON?.code)) invalidateOptions();
                         messageEl.innerHTML = errorMessage(error, service);
+                        // Closed while adding: the dialog's message line is gone, so the failure shows as a toast.
+                        if (closed) JE.toast(errorMessage(error, service), RESULT_TOAST_MS);
                         button.textContent = label;
                         setAdding(false);
                     }

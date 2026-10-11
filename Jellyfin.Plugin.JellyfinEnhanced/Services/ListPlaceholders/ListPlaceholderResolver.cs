@@ -62,7 +62,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
     /// <item>episodes: complete when every listed episode is filled.</item>
     /// <item>season: the EXPECTED episodes (Seerr season details, incl. an announced next episode) must all be filled
     /// and the season must be finished: every expected episode has aired, or the show has Ended/been Canceled
-    /// (<see cref="Placeholder.InProduction"/> false; then only the aired ones are required).</item>
+    /// (<see cref="Placeholder.InProduction"/> false; then only the aired ones are required, plus undated ones numbered
+    /// before an aired one: a gap in TMDB's data, not an episode that never aired).</item>
     /// <item>series: the show has Ended/been Canceled and every aired expected episode (seasons ≥ 1) is filled.</item>
     /// <item>Unknown metadata (no expected set, unknown production state) never completes: the placeholder stays.</item>
     /// </list>
@@ -166,8 +167,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
                     var allAired = placeholder.Expected.All(e => IsAired(e, todayUtc));
                     var finished = allAired || placeholder.InProduction == false;
+                    var lastAired = placeholder.Expected.Where(e => IsAired(e, todayUtc)).Select(e => e.E).DefaultIfEmpty(0).Max();
                     var required = placeholder.InProduction == false
-                        ? placeholder.Expected.Where(e => IsAired(e, todayUtc)).ToList()
+                        ? placeholder.Expected.Where(e => IsAired(e, todayUtc) || (e.AirDate == null && e.E < lastAired)).ToList()
                         : placeholder.Expected;
                     return finished && required.Count > 0 && required.All(e => filled.Contains(new EpisodeCoord(e.S, e.E)));
                 }

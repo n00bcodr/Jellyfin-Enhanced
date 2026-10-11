@@ -30,6 +30,9 @@ internal sealed class FakeArr : IDisposable
     /// <summary>Return a response to short-circuit a request (or null to let the fake answer).</summary>
     public Func<string, HttpRequestMessage, HttpResponseMessage?>? Override { get; set; }
 
+    /// <summary>Awaited before each request is answered, with the request's token (a slow or hanging arr).</summary>
+    public Func<string, HttpRequestMessage, CancellationToken, Task>? Delay { get; set; }
+
     public List<JsonObject> RadarrCatalog { get; } = new();
     public List<JsonObject> RadarrMovies { get; } = new();
     public List<JsonObject> SonarrCatalog { get; } = new();
@@ -57,7 +60,7 @@ internal sealed class FakeArr : IDisposable
 
     public FakeArr()
     {
-        Transport = new IntegrationTransport(async (request, _) =>
+        Transport = new IntegrationTransport(async (request, ct) =>
         {
             var body = request.Content == null ? null : await request.Content.ReadAsStringAsync();
             var service = request.RequestUri!.Port == 7878 ? "radarr" : request.RequestUri.Port == 8989 ? "sonarr" : "other";
@@ -66,6 +69,11 @@ internal sealed class FakeArr : IDisposable
             lock (Calls)
             {
                 Calls.Add(new Call(service, request.Method.Method, request.RequestUri.PathAndQuery, body, key));
+            }
+
+            if (Delay != null)
+            {
+                await Delay(service, request, ct);
             }
 
             var overridden = Override?.Invoke(service, request);

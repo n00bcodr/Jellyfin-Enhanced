@@ -714,6 +714,37 @@ public class ListPlaceholdersAutoRequestTests
     }
 
     [Fact]
+    public async Task EventsBelowTheThresholdKeepATriggeredPlaybackTriggered()
+    {
+        // Review R2: a seek back below the threshold followed by a 7 h pause (progress reports every 10 s, all below the
+        // threshold) must not let the mark expire, or passing the threshold again starts a second run.
+        var clock = new Clock();
+        using var f = new Fixture(count: 1, minutes: 5, time: clock);
+        var played = f.H.Host.AddItem();
+        f.Seerr.Movies[101] = FakeSeerr.MovieJson(101, Past);
+        f.Seerr.Movies[102] = FakeSeerr.MovieJson(102, Past);
+        f.Playlist(played, Movie(101, Past), Movie(102, Past));
+        var item = f.Played(played);
+        var minute = TimeSpan.FromMinutes(1).Ticks;
+
+        var run = f.Service.OnPlayback(PlaybackPhase.Progress, f.Viewer.Id, "s1", item, 5 * minute);
+        Assert.Equal(new[] { "movie|101" }, (await run!).Requested);
+
+        for (var hour = 1; hour <= 7; hour++)
+        {
+            clock.Now += TimeSpan.FromHours(1);
+            Assert.Null(f.Service.OnPlayback(PlaybackPhase.Progress, f.Viewer.Id, "s1", item, 2 * minute));
+        }
+
+        Assert.Null(f.Service.OnPlayback(PlaybackPhase.Progress, f.Viewer.Id, "s1", item, 6 * minute));
+        Assert.Single(f.Seerr.Posts);
+
+        // Events below the threshold never create a mark of their own.
+        Assert.Null(f.Service.OnPlayback(PlaybackPhase.Progress, f.Viewer.Id, "s2", item, 1 * minute));
+        Assert.NotNull(f.Service.OnPlayback(PlaybackPhase.Progress, f.Viewer.Id, "s2", item, 5 * minute));
+    }
+
+    [Fact]
     public async Task ZeroMinutesTriggersOnPlaybackStart()
     {
         using var f = new Fixture(count: 1, minutes: 0);
