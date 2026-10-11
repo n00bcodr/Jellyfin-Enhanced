@@ -4,156 +4,166 @@ using System.Text.Json.Serialization;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 {
+    /// <summary>
+    /// A user's settings.json. Every property is a registry key declared with [UserSetting]
+    /// (admin default, lock, validation; see <see cref="UserSettingsRegistry"/>) or is listed
+    /// in <see cref="UserSettingsRegistry.NotRegistered"/>.
+    /// </summary>
     public class UserSettings
     {
+        [UserSetting(nameof(PluginConfiguration.AutoPauseEnabled), Lockable = true)]
         public bool AutoPauseEnabled { get; set; }
+        [UserSetting(nameof(PluginConfiguration.AutoResumeEnabled), Lockable = true)]
         public bool AutoResumeEnabled { get; set; }
+        [UserSetting(nameof(PluginConfiguration.AutoPipEnabled), Lockable = true)]
         public bool AutoPipEnabled { get; set; }
+        [UserSetting(nameof(PluginConfiguration.LongPress2xEnabled), Lockable = true)]
         public bool LongPress2xEnabled { get; set; }
+        [UserSetting(nameof(PluginConfiguration.PauseScreenEnabled), Lockable = true)]
         public bool PauseScreenEnabled { get; set; }
+        [UserSetting(nameof(PluginConfiguration.PauseScreenDelaySeconds), Min = 1, Max = 60)] // no admin control yet, so not Lockable
         public int PauseScreenDelaySeconds { get; set; } = 5;
+        [UserSetting(nameof(PluginConfiguration.AutoSkipIntro), Lockable = true)]
         public bool AutoSkipIntro { get; set; }
+        [UserSetting(nameof(PluginConfiguration.AutoSkipOutro), Lockable = true)]
         public bool AutoSkipOutro { get; set; }
+        [UserSetting(nameof(PluginConfiguration.DisableCustomSubtitleStyles), Lockable = true)]
         public bool DisableCustomSubtitleStyles { get; set; }
+        [UserSetting(nameof(PluginConfiguration.DefaultSubtitleStyle), Lockable = true, AdminControlId = nameof(PluginConfiguration.DefaultSubtitleStyle), Min = 0, Max = 5)]
         public int SelectedStylePresetIndex { get; set; }
+        [UserSetting(nameof(PluginConfiguration.DefaultSubtitleSize), Lockable = true, AdminControlId = nameof(PluginConfiguration.DefaultSubtitleSize), Min = 0, Max = 5)]
         public int SelectedFontSizePresetIndex { get; set; }
+        [UserSetting(nameof(PluginConfiguration.DefaultSubtitleFont), Lockable = true, AdminControlId = nameof(PluginConfiguration.DefaultSubtitleFont), Min = 0, Max = 4)]
         public int SelectedFontFamilyPresetIndex { get; set; }
+        [UserSetting(nameof(PluginConfiguration.DefaultSubtitleTextEffect), Lockable = true, AdminControlId = nameof(PluginConfiguration.DefaultSubtitleTextEffect), Min = 0, Max = 4)]
         public int SelectedTextEffectPresetIndex { get; set; }
+        [UserSetting(Inheritable = false, Continuous = true, Pattern = UserSettingsRegistry.ColourPattern)]
         public string CustomSubtitleTextColor { get; set; } = "#FFFFFFFF";
+        [UserSetting(Inheritable = false, Continuous = true, Pattern = UserSettingsRegistry.ColourPattern)]
         public string CustomSubtitleBgColor { get; set; } = "#00000000";
+        [UserSetting(Inheritable = false)]
         public bool UsingCustomColors { get; set; }
+        [UserSetting(Inheritable = false, Continuous = true, Min = 0, Max = 100)]
         public int SubtitleVerticalPosition { get; set; } = 85;
+        [UserSetting(Inheritable = false, Continuous = true, Min = 0, Max = 100)]
         public int SubtitleHorizontalPosition { get; set; } = 50;
+        [UserSetting(nameof(PluginConfiguration.RandomButtonEnabled), Lockable = true)]
         public bool RandomButtonEnabled { get; set; }
+        [UserSetting(nameof(PluginConfiguration.RandomUnwatchedOnly), Lockable = true)]
         public bool RandomUnwatchedOnly { get; set; }
+        [UserSetting(nameof(PluginConfiguration.RandomIncludeMovies), Lockable = true)]
         public bool RandomIncludeMovies { get; set; }
+        [UserSetting(nameof(PluginConfiguration.RandomIncludeShows), Lockable = true)]
         public bool RandomIncludeShows { get; set; }
+        [UserSetting(nameof(PluginConfiguration.RandomScopeCurrentContainer), Lockable = true)]
         public bool RandomScopeCurrentContainer { get; set; }
+        [UserSetting(Inheritable = false, MaxLength = 64)]
         public string RandomSourceId { get; set; } = "";
+        [UserSetting(nameof(PluginConfiguration.ShowWatchProgress), Lockable = true)]
         public bool ShowWatchProgress { get; set; }
+        [UserSetting(nameof(PluginConfiguration.WatchProgressDefaultMode), Lockable = true, Incidental = true, BlankAdminUsesInitializer = true,
+            Choices = new[] { "percentage", "time", "remaining" })]
         public string WatchProgressMode { get; set; } = "percentage";
+        [UserSetting(nameof(PluginConfiguration.WatchProgressTimeFormat), Lockable = true, BlankAdminUsesInitializer = true, Choices = new[] { "hours", "full" })]
         public string WatchProgressTimeFormat { get; set; } = "hours";
+        [UserSetting(nameof(PluginConfiguration.ShowFileSizes), Lockable = true)]
         public bool ShowFileSizes { get; set; }
+        [UserSetting(nameof(PluginConfiguration.ShowAudioLanguages), Lockable = true)]
         public bool ShowAudioLanguages { get; set; }
         /// <summary>Native poster tags preference; null (never chosen) and true are on, false is off.</summary>
+        [UserSetting(Inheritable = false, Reach = SettingReach.Server, GateBy = nameof(PluginConfiguration.NativePosterTagsEnabled))]
         public bool? UseNativePosterTags { get; set; }
+        [UserSetting(nameof(PluginConfiguration.QualityTagsEnabled), Lockable = true, Reach = SettingReach.Both)]
         public bool QualityTagsEnabled { get; set; }
+        [UserSetting(nameof(PluginConfiguration.ShowResolutionTag), Lockable = true, Reach = SettingReach.Both)]
         public bool ShowResolutionTag { get; set; } = true;
+        [UserSetting(nameof(PluginConfiguration.ShowSourceTag), Lockable = true, Reach = SettingReach.Both)]
         public bool ShowSourceTag { get; set; } = true;
+        [UserSetting(nameof(PluginConfiguration.ShowDynamicRangeTag), Lockable = true, Reach = SettingReach.Both)]
         public bool ShowDynamicRangeTag { get; set; } = true;
+        [UserSetting(nameof(PluginConfiguration.ShowSpecialFormatTag), Lockable = true, Reach = SettingReach.Both)]
         public bool ShowSpecialFormatTag { get; set; } = true;
+        [UserSetting(nameof(PluginConfiguration.ShowVideoCodecTag), Lockable = true, Reach = SettingReach.Both)]
         public bool ShowVideoCodecTag { get; set; } = true;
+        [UserSetting(nameof(PluginConfiguration.ShowAudioInfoTag), Lockable = true, Reach = SettingReach.Both)]
         public bool ShowAudioInfoTag { get; set; } = true;
+        [UserSetting(nameof(PluginConfiguration.ResolutionTagOrder), Lockable = true, Reach = SettingReach.Both, NullInheritsAdmin = true,
+            AdminRowKey = nameof(PluginConfiguration.ResolutionTagOrder), Min = 1, Max = 6)]
         public int? ResolutionTagOrder { get; set; }
+        [UserSetting(nameof(PluginConfiguration.SourceTagOrder), Lockable = true, Reach = SettingReach.Both, NullInheritsAdmin = true,
+            AdminRowKey = nameof(PluginConfiguration.SourceTagOrder), Min = 1, Max = 6)]
         public int? SourceTagOrder { get; set; }
+        [UserSetting(nameof(PluginConfiguration.DynamicRangeTagOrder), Lockable = true, Reach = SettingReach.Both, NullInheritsAdmin = true,
+            AdminRowKey = nameof(PluginConfiguration.DynamicRangeTagOrder), Min = 1, Max = 6)]
         public int? DynamicRangeTagOrder { get; set; }
+        [UserSetting(nameof(PluginConfiguration.SpecialFormatTagOrder), Lockable = true, Reach = SettingReach.Both, NullInheritsAdmin = true,
+            AdminRowKey = nameof(PluginConfiguration.SpecialFormatTagOrder), Min = 1, Max = 6)]
         public int? SpecialFormatTagOrder { get; set; }
+        [UserSetting(nameof(PluginConfiguration.VideoCodecTagOrder), Lockable = true, Reach = SettingReach.Both, NullInheritsAdmin = true,
+            AdminRowKey = nameof(PluginConfiguration.VideoCodecTagOrder), Min = 1, Max = 6)]
         public int? VideoCodecTagOrder { get; set; }
+        [UserSetting(nameof(PluginConfiguration.AudioInfoTagOrder), Lockable = true, Reach = SettingReach.Both, NullInheritsAdmin = true,
+            AdminRowKey = nameof(PluginConfiguration.AudioInfoTagOrder), Min = 1, Max = 6)]
         public int? AudioInfoTagOrder { get; set; }
+        [UserSetting(nameof(PluginConfiguration.GenreTagsEnabled), Lockable = true, Reach = SettingReach.Both)]
         public bool GenreTagsEnabled { get; set; }
+        [UserSetting(nameof(PluginConfiguration.LanguageTagsEnabled), Lockable = true, Reach = SettingReach.Both)]
         public bool LanguageTagsEnabled { get; set; }
+        [UserSetting(nameof(PluginConfiguration.RatingTagsEnabled), Lockable = true, Reach = SettingReach.Both)]
         public bool RatingTagsEnabled { get; set; }
+        [UserSetting(nameof(PluginConfiguration.AgeRatingTagsEnabled), Lockable = true, Reach = SettingReach.Both)]
         public bool AgeRatingTagsEnabled { get; set; }
+        [UserSetting(nameof(PluginConfiguration.PeopleTagsEnabled), Lockable = true)]
         public bool PeopleTagsEnabled { get; set; }
+        [UserSetting(nameof(PluginConfiguration.TagsHideOnHover), Lockable = true)]
         public bool TagsHideOnHover { get; set; }
+        [UserSetting(nameof(PluginConfiguration.QualityTagsPosition), Lockable = true, Reach = SettingReach.Both, EmptyInheritsAdmin = true,
+            Choices = new[] { "", "top-left", "top-right", "bottom-left", "bottom-right" })]
         public string QualityTagsPosition { get; set; } = "top-left";
         // Audio language the sound tag is judged by: "" = server default,
         // "auto" = the user's Jellyfin audio language, "none" = no preference,
         // otherwise an ISO 639 code.
+        [UserSetting(nameof(PluginConfiguration.QualityTagsPreferredAudioLanguage), Lockable = true, Reach = SettingReach.Both, EmptyInheritsAdmin = true,
+            DefaultIsSentinel = true, MaxLength = 64)]
         public string QualityTagsPreferredAudioLanguage { get; set; } = string.Empty;
+        [UserSetting(nameof(PluginConfiguration.GenreTagsPosition), Lockable = true, Reach = SettingReach.Both, EmptyInheritsAdmin = true,
+            Choices = new[] { "", "top-left", "top-right", "bottom-left", "bottom-right" })]
         public string GenreTagsPosition { get; set; } = "top-right";
+        [UserSetting(nameof(PluginConfiguration.LanguageTagsPosition), Lockable = true, Reach = SettingReach.Both, EmptyInheritsAdmin = true,
+            Choices = new[] { "", "top-left", "top-right", "bottom-left", "bottom-right" })]
         public string LanguageTagsPosition { get; set; } = "bottom-left";
+        [UserSetting(nameof(PluginConfiguration.RatingTagsPosition), Lockable = true, Reach = SettingReach.Both, EmptyInheritsAdmin = true,
+            Choices = new[] { "", "top-left", "top-right", "bottom-left", "bottom-right" })]
         public string RatingTagsPosition { get; set; } = "bottom-right";
+        [UserSetting(nameof(PluginConfiguration.RatingTagsOnMovies), Lockable = true, Reach = SettingReach.Both)]
         public bool RatingTagsOnMovies { get; set; } = true;
+        [UserSetting(nameof(PluginConfiguration.RatingTagsOnSeries), Lockable = true, Reach = SettingReach.Both)]
         public bool RatingTagsOnSeries { get; set; } = true;
+        [UserSetting(nameof(PluginConfiguration.RatingTagsOnSeasons), Lockable = true, Reach = SettingReach.Both)]
         public bool RatingTagsOnSeasons { get; set; } = true;
+        [UserSetting(nameof(PluginConfiguration.RatingTagsOnEpisodes), Lockable = true, Reach = SettingReach.Both)]
         public bool RatingTagsOnEpisodes { get; set; } = true;
+        [UserSetting(nameof(PluginConfiguration.RatingTagsOnContinueWatching), Lockable = true, Reach = SettingReach.Both)]
         public bool RatingTagsOnContinueWatching { get; set; } = true;
+        [UserSetting(nameof(PluginConfiguration.RatingTagsOnNextUp), Lockable = true, Reach = SettingReach.Both)]
         public bool RatingTagsOnNextUp { get; set; } = true;
+        [UserSetting(nameof(PluginConfiguration.AgeRatingTagsPosition), Lockable = true, Reach = SettingReach.Both, EmptyInheritsAdmin = true,
+            Choices = new[] { "", "top-left", "top-right", "bottom-left", "bottom-right" })]
         public string AgeRatingTagsPosition { get; set; } = "bottom-right";
+        [UserSetting(nameof(PluginConfiguration.ShowRatingInPlayer), Lockable = true)]
         public bool ShowRatingInPlayer { get; set; } = true;
+        [UserSetting(nameof(PluginConfiguration.RemoveContinueWatchingEnabled), Lockable = true)]
         public bool RemoveContinueWatchingEnabled { get; set; }
+        // Device-local panel state, not a registry key (UserSettingsRegistry.NotRegistered).
         public string LastOpenedTab { get; set; } = string.Empty;
+        [UserSetting(nameof(PluginConfiguration.ReviewsExpandedByDefault), Lockable = true, Incidental = true)]
         public bool ReviewsExpandedByDefault { get; set; }
+        [UserSetting(nameof(PluginConfiguration.DefaultLanguage), Lockable = true, AdminControlId = nameof(PluginConfiguration.DefaultLanguage), MaxLength = 64)]
         public string DisplayLanguage { get; set; } = string.Empty;
+        [UserSetting(Inheritable = false, Choices = new[] { "list", "backdrop", "cards" })]
         public string CalendarDisplayMode { get; set; } = "list";
+        [UserSetting(Inheritable = false, Choices = new[] { "agenda", "month", "week", "day" })]
         public string CalendarDefaultViewMode { get; set; } = "agenda";
-
-        /// <summary>
-        /// The settings a user gets from the administrator's current defaults: the
-        /// first-access seed of settings.json and "reset all users" both write this.
-        /// Keys the admin page has no default for keep their initializers.
-        /// </summary>
-        /// <param name="config">The plugin configuration holding the admin defaults.</param>
-        /// <returns>A new settings document built from the admin defaults.</returns>
-        public static UserSettings FromAdminDefaults(PluginConfiguration config)
-        {
-            return new UserSettings
-            {
-                AutoPauseEnabled = config.AutoPauseEnabled,
-                AutoResumeEnabled = config.AutoResumeEnabled,
-                AutoPipEnabled = config.AutoPipEnabled,
-                LongPress2xEnabled = config.LongPress2xEnabled,
-                PauseScreenEnabled = config.PauseScreenEnabled,
-                PauseScreenDelaySeconds = config.PauseScreenDelaySeconds,
-                AutoSkipIntro = config.AutoSkipIntro,
-                AutoSkipOutro = config.AutoSkipOutro,
-                DisableCustomSubtitleStyles = config.DisableCustomSubtitleStyles,
-                SelectedStylePresetIndex = config.DefaultSubtitleStyle,
-                SelectedFontSizePresetIndex = config.DefaultSubtitleSize,
-                SelectedFontFamilyPresetIndex = config.DefaultSubtitleFont,
-                SelectedTextEffectPresetIndex = config.DefaultSubtitleTextEffect,
-                RandomButtonEnabled = config.RandomButtonEnabled,
-                RandomUnwatchedOnly = config.RandomUnwatchedOnly,
-                RandomIncludeMovies = config.RandomIncludeMovies,
-                RandomIncludeShows = config.RandomIncludeShows,
-                RandomScopeCurrentContainer = config.RandomScopeCurrentContainer,
-                ShowWatchProgress = config.ShowWatchProgress,
-                WatchProgressMode = string.IsNullOrWhiteSpace(config.WatchProgressDefaultMode) ? "percentage" : config.WatchProgressDefaultMode,
-                WatchProgressTimeFormat = string.IsNullOrWhiteSpace(config.WatchProgressTimeFormat) ? "hours" : config.WatchProgressTimeFormat,
-                ShowFileSizes = config.ShowFileSizes,
-                ShowAudioLanguages = config.ShowAudioLanguages,
-                UseNativePosterTags = null, // Not chosen: on while the administrator allows native poster tags.
-                QualityTagsEnabled = config.QualityTagsEnabled,
-                ShowResolutionTag = config.ShowResolutionTag,
-                ShowSourceTag = config.ShowSourceTag,
-                ShowDynamicRangeTag = config.ShowDynamicRangeTag,
-                ShowSpecialFormatTag = config.ShowSpecialFormatTag,
-                ShowVideoCodecTag = config.ShowVideoCodecTag,
-                ShowAudioInfoTag = config.ShowAudioInfoTag,
-                ResolutionTagOrder = config.ResolutionTagOrder,
-                SourceTagOrder = config.SourceTagOrder,
-                DynamicRangeTagOrder = config.DynamicRangeTagOrder,
-                SpecialFormatTagOrder = config.SpecialFormatTagOrder,
-                VideoCodecTagOrder = config.VideoCodecTagOrder,
-                AudioInfoTagOrder = config.AudioInfoTagOrder,
-                GenreTagsEnabled = config.GenreTagsEnabled,
-                LanguageTagsEnabled = config.LanguageTagsEnabled,
-                RatingTagsEnabled = config.RatingTagsEnabled,
-                AgeRatingTagsEnabled = config.AgeRatingTagsEnabled,
-                PeopleTagsEnabled = config.PeopleTagsEnabled,
-                TagsHideOnHover = config.TagsHideOnHover,
-                QualityTagsPosition = config.QualityTagsPosition,
-                // QualityTagsPreferredAudioLanguage stays "" (use the server default).
-                GenreTagsPosition = config.GenreTagsPosition,
-                LanguageTagsPosition = config.LanguageTagsPosition,
-                RatingTagsPosition = config.RatingTagsPosition,
-                RatingTagsOnMovies = config.RatingTagsOnMovies,
-                RatingTagsOnSeries = config.RatingTagsOnSeries,
-                RatingTagsOnSeasons = config.RatingTagsOnSeasons,
-                RatingTagsOnEpisodes = config.RatingTagsOnEpisodes,
-                RatingTagsOnContinueWatching = config.RatingTagsOnContinueWatching,
-                RatingTagsOnNextUp = config.RatingTagsOnNextUp,
-                AgeRatingTagsPosition = config.AgeRatingTagsPosition,
-                ShowRatingInPlayer = config.ShowRatingInPlayer,
-                RemoveContinueWatchingEnabled = config.RemoveContinueWatchingEnabled,
-                ReviewsExpandedByDefault = config.ReviewsExpandedByDefault,
-                DisplayLanguage = config.DefaultLanguage,
-                CalendarDisplayMode = "list",
-                CalendarDefaultViewMode = "agenda",
-                LastOpenedTab = "shortcuts"
-            };
-        }
     }
 
     // Per-user Spoiler Guard state. Stored in spoilerblur.json alongside

@@ -217,7 +217,7 @@ public class CoreSettingsLockingTests
         using var endpoints = new Endpoints();
         var path = endpoints.SettingsPath(UserA);
         endpoints.Manager.SaveUserConfiguration(UserA.ToString("N"), "settings.json", Posted(5));
-        var defaults = Typed(UserSettings.FromAdminDefaults(endpoints.Plugin.Plugin.Configuration));
+        var defaults = Typed(UserSettingsRegistry.BuildDefaults(endpoints.Plugin.Plugin.Configuration));
         Assert.False(JToken.DeepEquals(defaults, Typed(Posted(5))));
 
         using var held = new HeldLock(endpoints.Manager.GetUserFileLock(UserA.ToString("N"), "settings.json"));
@@ -282,7 +282,7 @@ public class CoreSettingsLockingTests
     {
         using var endpoints = new Endpoints();
         var path = endpoints.SettingsPath(UserA);
-        var defaults = Typed(UserSettings.FromAdminDefaults(endpoints.Plugin.Plugin.Configuration));
+        var defaults = Typed(UserSettingsRegistry.BuildDefaults(endpoints.Plugin.Plugin.Configuration));
         var poster = endpoints.Controller(UserA);
         var admin = endpoints.Controller(UserA, admin: true);
         for (var i = 0; i < 50; i++)
@@ -434,7 +434,7 @@ public class CoreSettingsLockingTests
         // First GET seeds the admin defaults.
         var reader = Guid.NewGuid();
         AssertOk(endpoints.Controller(reader).GetUserSettingsSettings(reader.ToString()));
-        Assert.True(JToken.DeepEquals(Typed(UserSettings.FromAdminDefaults(endpoints.Plugin.Plugin.Configuration)), OnDisk(endpoints.SettingsPath(reader))));
+        Assert.True(JToken.DeepEquals(Typed(UserSettingsRegistry.BuildDefaults(endpoints.Plugin.Plugin.Configuration)), OnDisk(endpoints.SettingsPath(reader))));
 
         // Background writers that never read first: a plain save and a locked read-modify-write.
         var background = Guid.NewGuid();

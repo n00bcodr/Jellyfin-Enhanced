@@ -217,7 +217,7 @@ public class CoreSettingsDefaultsTests
     [MemberData(nameof(SeedEqualsResetConfigs))]
     public void SeedAndResetWriteTheSameSettings(string configName)
     {
-        // Both go through UserSettings.FromAdminDefaults (design A1), so a new user's first
+        // Both go through UserSettingsRegistry.BuildDefaults (design A1, B2), so a new user's first
         // GET and "reset all users" agree on every key, whatever the admin chose.
         var seed = NewUserSeed(configName);
         var reset = (JObject)ResetAll(configName)["Settings"]!;

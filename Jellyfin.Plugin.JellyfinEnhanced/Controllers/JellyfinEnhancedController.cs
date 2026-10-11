@@ -4959,7 +4959,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
                     else
                     {
-                        userConfig = UserSettings.FromAdminDefaults(defaultConfig);
+                        userConfig = UserSettingsRegistry.BuildDefaults(defaultConfig);
                         try
                         {
                             _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfig);
@@ -7905,7 +7905,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(500, new { success = false, message = "Default plugin configuration not found." });
             }
 
-            var defaultUserSettings = UserSettings.FromAdminDefaults(defaultConfig);
+            var defaultUserSettings = UserSettingsRegistry.BuildDefaults(defaultConfig);
 
             var userCount = 0;
             var skippedSettings = new System.Collections.Generic.List<string>();

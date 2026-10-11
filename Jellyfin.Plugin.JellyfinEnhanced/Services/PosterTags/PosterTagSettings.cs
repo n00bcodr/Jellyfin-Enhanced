@@ -414,44 +414,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         }
 
         /// <summary>
-        /// What the web sees for a user without settings.json: the controller writes the plugin
-        /// defaults (only the keys it copies) and reads the file back (JSON nulls ignored).
+        /// What the web sees for a user without settings.json: the controller writes the registry's
+        /// admin defaults and reads the file back (JSON nulls ignored).
         /// </summary>
         private static UserSettings DefaultsAsWritten(PluginConfiguration config)
         {
-            var defaults = new UserSettings
-            {
-                UseNativePosterTags = null,
-                QualityTagsEnabled = config.QualityTagsEnabled,
-                ShowResolutionTag = config.ShowResolutionTag,
-                ShowSourceTag = config.ShowSourceTag,
-                ShowDynamicRangeTag = config.ShowDynamicRangeTag,
-                ShowSpecialFormatTag = config.ShowSpecialFormatTag,
-                ShowVideoCodecTag = config.ShowVideoCodecTag,
-                ShowAudioInfoTag = config.ShowAudioInfoTag,
-                ResolutionTagOrder = config.ResolutionTagOrder,
-                SourceTagOrder = config.SourceTagOrder,
-                DynamicRangeTagOrder = config.DynamicRangeTagOrder,
-                SpecialFormatTagOrder = config.SpecialFormatTagOrder,
-                VideoCodecTagOrder = config.VideoCodecTagOrder,
-                AudioInfoTagOrder = config.AudioInfoTagOrder,
-                GenreTagsEnabled = config.GenreTagsEnabled,
-                LanguageTagsEnabled = config.LanguageTagsEnabled,
-                RatingTagsEnabled = config.RatingTagsEnabled,
-                AgeRatingTagsEnabled = config.AgeRatingTagsEnabled,
-                PeopleTagsEnabled = config.PeopleTagsEnabled,
-                QualityTagsPosition = config.QualityTagsPosition,
-                GenreTagsPosition = config.GenreTagsPosition,
-                LanguageTagsPosition = config.LanguageTagsPosition,
-                RatingTagsPosition = config.RatingTagsPosition,
-                RatingTagsOnMovies = config.RatingTagsOnMovies,
-                RatingTagsOnSeries = config.RatingTagsOnSeries,
-                RatingTagsOnSeasons = config.RatingTagsOnSeasons,
-                RatingTagsOnEpisodes = config.RatingTagsOnEpisodes,
-                RatingTagsOnContinueWatching = config.RatingTagsOnContinueWatching,
-                RatingTagsOnNextUp = config.RatingTagsOnNextUp,
-                AgeRatingTagsPosition = config.AgeRatingTagsPosition,
-            };
+            var defaults = UserSettingsRegistry.BuildDefaults(config);
 
             // SaveUserConfiguration writes nulls; GetUserConfiguration skips them on the way back,
             // so a null admin string comes back as the UserSettings initializer value.

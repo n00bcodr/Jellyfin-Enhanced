@@ -63,7 +63,7 @@ public class CoreSettingsCorruptionTests
             return (JObject)body["UserSettings"]!;
         }
 
-        public JObject Seed => Served(UserSettings.FromAdminDefaults(Plugin.Plugin.Configuration));
+        public JObject Seed => Served(UserSettingsRegistry.BuildDefaults(Plugin.Plugin.Configuration));
 
         public void Dispose() => Plugin.Dispose();
     }
