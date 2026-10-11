@@ -191,7 +191,9 @@
                 const score = hasNormalizedScore ? r.Score : r.Value;
                 const sourceKey = (r.Source || '').toLowerCase();
                 const label = LABELS[sourceKey] || r.Source;
-                const freshLogo = sourceKey === 'tomatoes' ? TOMATOES_STATUS_LOGOS[r.Fresh] : null;
+                // MDBList's fresh flag can contradict the score; RT rule: >= 60 is Fresh.
+                const freshState = hasNormalizedScore ? (r.Score >= 60 ? 1 : 0) : r.Fresh;
+                const freshLogo = sourceKey === 'tomatoes' ? TOMATOES_STATUS_LOGOS[freshState] : null;
                 const logo = freshLogo || LOGOS[sourceKey];
                 const link = generateLink(sourceKey, entry.Ids || {}, r.Url, mediaType, title);
 

@@ -155,14 +155,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// vote_average of 5.8 comes back as value/score 58), so dividing by 10
         /// converts it back to what TMDB/OMDb providers themselves write into
         /// CommunityRating.</summary>
-        public static double? GetCommunityRating(MdblistCacheEntry entry)
+        public static double? GetCommunityRating(MdblistCacheEntry entry, string? source = null)
         {
-            var score = GetSourceScore(entry, "tmdb");
+            var score = GetSourceScore(entry, string.IsNullOrWhiteSpace(source) ? "tmdb" : source.Trim().ToLowerInvariant());
             return score.HasValue ? score.Value / 10.0 : (double?)null;
         }
 
-        /// <summary>Rotten Tomatoes critic score (0-100) from a ratings entry, or null if MDBList has none.</summary>
-        public static double? GetCriticRating(MdblistCacheEntry entry) => GetSourceScore(entry, "tomatoes");
+        /// <summary>Critic score (0-100) from the given source (default RT), or null.</summary>
+        public static double? GetCriticRating(MdblistCacheEntry entry, string? source = null) =>
+            GetSourceScore(entry, string.IsNullOrWhiteSpace(source) ? "tomatoes" : source.Trim().ToLowerInvariant());
 
         private static double? GetSourceScore(MdblistCacheEntry entry, string source)
         {
@@ -170,7 +171,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var match = entry.Ratings.FirstOrDefault(r => r.Source == source);
             // Prefer Score (what MDBList itself displays, already scaled to
             // the source's native range) and fall back to the raw Value.
-            return match?.Score ?? match?.Value;
+            // Value is on the source's own scale (IMDb /10), so only tmdb/tomatoes may fall back to it.
+            return source is "tmdb" or "tomatoes" ? match?.Score ?? match?.Value : match?.Score;
         }
 
         /// <summary>Cached remaining-quota count (no network call), or null if

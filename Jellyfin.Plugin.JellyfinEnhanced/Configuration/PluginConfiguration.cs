@@ -578,6 +578,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// stay current over time, at the cost of losing any provider- or
         /// admin-set value MDBList disagrees with.</summary>
         public bool MdblistRatingsOverwriteExisting { get; set; }
+        /// <summary>Source the sync task writes to CommunityRating (0-10).</summary>
+        public string MdblistCommunityRatingSource { get; set; } = "tmdb";
+        /// <summary>Source the sync task writes to CriticRating (0-100).</summary>
+        public string MdblistCriticRatingSource { get; set; } = "tomatoes";
+        /// <summary>Used when the main source has no score for a title. Empty = none.</summary>
+        public string MdblistCommunityRatingFallbackSource { get; set; } = string.Empty;
+        public string MdblistCriticRatingFallbackSource { get; set; } = string.Empty;
         /// <summary>MdblistRatingsFetchTask stops for the day once the account's
         /// LIVE remaining quota (from MDBList's own GET /user endpoint, see
         /// MdblistService.GetAccountStatusAsync) drops to this floor, reserving
