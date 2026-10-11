@@ -11315,8 +11315,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// The calling user's own Seerr requests as calendar request keys (the set the calendar
-        /// page builds from arr/requests?userOnly=true). Empty when Seerr is off, the user is not
-        /// linked or Seerr cannot be read, so a forced calendar then shows nothing, as the page does.
+        /// page builds from arr/requests?userOnly=true, parental filter included). Empty when Seerr
+        /// is off, the user is not linked, the parental filter blocks or Seerr cannot be read, so a
+        /// forced calendar then shows nothing, as the page does.
         /// </summary>
         private async Task<HashSet<string>> GetCallerRequestedMediaKeysAsync(PluginConfiguration config, CancellationToken ct)
         {
@@ -11348,34 +11349,62 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     var urlKeys = new HashSet<string>(StringComparer.Ordinal);
                     var complete = false;
-                    for (var page = 0; page < maxPages; page++)
+                    // Per-URL try/catch (as GetRequests): a DNS failure or timeout on one URL
+                    // moves on to the next, and a failure on a later page keeps the earlier pages.
+                    try
                     {
-                        var uri = $"{url}/api/v1/request?take={pageSize}&skip={page * pageSize}&requestedBy={seerrUser.Id}";
-                        using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, uri, config.JellyseerrApiKey);
-                        using var response = await client.SendAsync(request, ct);
-                        var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, uri, ct);
-                        if (error != null || json == null)
+                        for (var page = 0; page < maxPages; page++)
                         {
-                            _logger.Warning($"Calendar requested-only: Seerr requests fetch failed at {url}: {error?.Code} {error?.HttpStatus}");
-                            break;
-                        }
+                            var uri = $"{url}/api/v1/request?take={pageSize}&skip={page * pageSize}&requestedBy={seerrUser.Id}";
+                            using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, uri, config.JellyseerrApiKey);
+                            using var response = await client.SendAsync(request, ct);
+                            var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, uri, ct);
+                            if (error != null || json == null)
+                            {
+                                _logger.Warning($"Calendar requested-only: Seerr requests fetch failed at {url}: {error?.Code} {error?.HttpStatus}");
+                                break;
+                            }
 
-                        var data = JObject.Parse(json);
-                        var results = data["results"] as JArray;
-                        foreach (var req in results ?? new JArray())
-                        {
-                            var type = req["type"]?.Value<string>()?.ToLowerInvariant();
-                            var tmdbId = req["media"]?["tmdbId"]?.Value<int?>();
-                            if (!string.IsNullOrEmpty(type) && tmdbId is int id && id != 0)
-                                urlKeys.Add(type + ":" + id.ToString(System.Globalization.CultureInfo.InvariantCulture));
-                        }
+                            // Paging follows the unfiltered page; membership the filtered one.
+                            var data = JObject.Parse(json);
+                            var results = data["results"] as JArray;
+                            var total = data["pageInfo"]?["results"]?.Value<int?>() ?? 0;
 
-                        var total = data["pageInfo"]?["results"]?.Value<int?>() ?? 0;
-                        if (results == null || results.Count == 0 || (page + 1) * pageSize >= total)
-                        {
-                            complete = true;
-                            break;
+                            // Parental ratings (#581): the page's arr/requests drops rows above the
+                            // caller's limit and refuses the list when the filter cannot finish.
+                            var parental = await _parentalFilter.ApplyAsync(json, "/api/v1/request", jellyfinUserId, ct);
+                            if (parental.Block)
+                            {
+                                _logger.Warning("Calendar requested-only: parental filter could not check the Seerr requests; showing none.");
+                                return keys;
+                            }
+
+                            var kept = ReferenceEquals(parental.Body, json) ? results : JObject.Parse(parental.Body)["results"] as JArray;
+                            foreach (var req in kept ?? new JArray())
+                            {
+                                try
+                                {
+                                    var type = req["type"]?.Value<string>()?.ToLowerInvariant();
+                                    var tmdbId = (req["media"] as JObject)?["tmdbId"]?.Value<int?>();
+                                    if (!string.IsNullOrEmpty(type) && tmdbId is int id && id != 0)
+                                        urlKeys.Add(type + ":" + id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                                }
+                                catch (Exception)
+                                {
+                                    // A malformed row is skipped, like a row without media.
+                                }
+                            }
+
+                            if (results == null || results.Count == 0 || (page + 1) * pageSize >= total)
+                            {
+                                complete = true;
+                                break;
+                            }
                         }
+                    }
+                    catch (Exception ex) when (!ct.IsCancellationRequested)
+                    {
+                        _logger.Warning($"Calendar requested-only: Seerr requests fetch threw at {url}: {ex.Message}");
                     }
 
                     if (complete)
@@ -11387,6 +11416,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         return urlKeys;
                     }
                 }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // The caller went away; nothing will read the answer.
             }
             catch (Exception ex)
             {
