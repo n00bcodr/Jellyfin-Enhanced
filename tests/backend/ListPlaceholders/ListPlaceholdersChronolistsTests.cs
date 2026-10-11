@@ -1303,6 +1303,120 @@ public class ListPlaceholdersChronolistsTests
         Assert.Equal(new[] { R(r120), R(r5), P(season.Id), P(crossed.Items[1].Id) }, crossed.Order);
     }
 
+    // Review round 10: an entry the sync anchored right after a filled episode of the run (its key comes later in the
+    // source) sits between the run's fills and its token; it doesn't end the run's block of fills, so the split still
+    // moves the first half's token before the second half's fill. Real item or placeholder alike.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AnEntryAnchoredAfterAFillOfTheRunDoesNotHideItFromTheSplit(bool yIsReal)
+    {
+        var run = Ph("{\"kind\":\"episodes\",\"tmdbId\":88,\"title\":\"Eighty\",\"seasonNumber\":1,\"episodes\":[{\"s\":1,\"e\":1},{\"s\":1,\"e\":2},{\"s\":1,\"e\":3},{\"s\":1,\"e\":4}]}");
+        var y = Ph("{\"kind\":\"movie\",\"tmdbId\":9,\"title\":\"Y\"}");
+        var (r4, ry, a, b) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        run.Filled.Add(new FilledEpisode { ItemId = r4.ToString("N"), S = 1, E = 4 });
+        string R(Guid id) => ListPlaceholderOrder.RealToken(id, 0);
+        var yEntry = yIsReal ? R(ry) : P(y.Id);
+        var doc = new ListDoc { ListKind = ListKinds.Playlist, Items = new List<Placeholder> { run, y }, Order = new List<string> { R(a), R(r4), yEntry, P(run.Id), R(b) }, Source = new ListSource() };
+        foreach (var e in new[] { 1, 2, 3, 4 })
+        {
+            ListSourceProvenance.RecordAdded(doc.Source, $"tv|88|1|{e}", run.Id, null);
+        }
+
+        doc.Source.Owned["tv|88|1|4"].ItemIds.Add(r4.ToString("N"));
+        ListSourceProvenance.RecordAdded(doc.Source, "movie|9||", yIsReal ? null : y.Id, yIsReal ? ry.ToString("N") : null);
+
+        // Source [A, E1, E2, X, E3, E4, Y, B] (X new): [A, E4, Y, T, B] -> [A, T1, E4, Y, T2, B].
+        var keys = new List<string> { "movie|1||", "tv|88|1|1", "tv|88|1|2", "movie|7||", "tv|88|1|3", "tv|88|1|4", "movie|9||", "movie|2||" };
+        var order = doc.Order.ToList();
+        Assert.True(ListSourceProvenance.SplitRunsAround(doc, order, keys, new[] { 3 }));
+        var second = doc.Items.Single(p => p.Id != run.Id && p.Id != y.Id);
+        Assert.Equal(new[] { R(a), P(run.Id), R(r4), yEntry, P(second.Id), R(b) }, order);
+    }
+
+    // Review round 10, end to end: 1x04 arrives, a library movie is added after it (anchored after the real 1x04), then a
+    // new entry between 1x02 and 1x03 splits the run; 1x01..1x03 arriving afterwards still play in source order.
+    [Fact]
+    public async Task SplittingARunPastAnEntryAnchoredAfterItsFillKeepsTheSourceOrder()
+    {
+        using var w = new World(realLibrary: true);
+        var show = w.H.Host.AddSeries(tmdb: 88, tvdb: 1088);
+        var movie = w.H.Host.AddItem(tmdb: 500);
+        w.H.Fetcher.Items = new List<SourceItem> { Film(5), Eighty(1), Eighty(2), Eighty(3), Eighty(4), Film(6) };
+        Assert.Equal(200, (await w.H.Sources.LinkAsync(w.Access, new LinkSourceRequest { Url = DctvUrl, SyncEnabled = true }, None)).StatusCode);
+        await w.Sync();
+        var e4 = w.H.Host.AddEpisode(show, 1, 4);
+        await w.H.Swap.RunListPassAsync(w.Id, null, MetadataMode.None, None);
+        Assert.Equal(new[] { "5", "REAL", "88:S1", "6" }, w.Order());
+
+        // Upstream: library movie 500 after 1x04 (goes right after the real 1x04, before the run's token).
+        w.H.Fetcher.Items = new List<SourceItem> { Film(5), Eighty(1), Eighty(2), Eighty(3), Eighty(4), Film(500), Film(6) };
+        Assert.Equal(1, (await w.Sync()).Added);
+        Assert.Equal(new[] { e4, movie }, w.H.Host.Resolved(w.List.Info.Id));
+        Assert.Equal(new[] { "5", "REAL", "REAL", "88:S1", "6" }, w.Order());
+
+        // Upstream: movie 7 between 1x02 and 1x03.
+        w.H.Fetcher.Items = new List<SourceItem> { Film(5), Eighty(1), Eighty(2), Film(7), Eighty(3), Eighty(4), Film(500), Film(6) };
+        Assert.Equal(1, (await w.Sync()).Added);
+        Assert.Equal(new[] { "5", "88:S1E1,2", "7", "REAL", "REAL", "88:S1E3,4", "6" }, w.Order());
+
+        var e1 = w.H.Host.AddEpisode(show, 1, 1);
+        await w.H.Swap.RunListPassAsync(w.Id, null, MetadataMode.None, None);
+        var e2 = w.H.Host.AddEpisode(show, 1, 2);
+        var e3 = w.H.Host.AddEpisode(show, 1, 3);
+        await w.H.Swap.RunListPassAsync(w.Id, null, MetadataMode.None, None);
+        Assert.Equal(new[] { e1, e2, e3, e4, movie }, w.H.Host.Resolved(w.List.Info.Id));
+        Assert.Equal(new[] { "5", "REAL", "REAL", "7", "REAL", "REAL", "REAL", "6" }, w.Order());
+    }
+
+    // Review round 10: the same for a season narrowed into chunks: [E120, Y, T] -> [T1, E120, Y, T2] when Y's key comes
+    // after 1x120 in the source; a Y of a key before the season still ends the block.
+    [Fact]
+    public void ANarrowedSeasonOrdersItsChunksPastAnEntryAnchoredAfterAFill()
+    {
+        var season = Ph("{\"kind\":\"season\",\"tmdbId\":5,\"title\":\"Soap\",\"seasonNumber\":1,\"episodeTotal\":150}");
+        var (r120, ry) = (Guid.NewGuid(), Guid.NewGuid());
+        string R(Guid id) => ListPlaceholderOrder.RealToken(id, 0);
+        var episodeKeys = Enumerable.Range(1, 150).Select(e => $"tv|5|1|{e}").ToList();
+        ListDoc Doc(string yKey)
+        {
+            var ph = System.Text.Json.JsonSerializer.Deserialize<Placeholder>(System.Text.Json.JsonSerializer.Serialize(season))!;
+            ph.Filled.Add(new FilledEpisode { ItemId = r120.ToString("N"), S = 1, E = 120 });
+            var doc = new ListDoc { ListKind = ListKinds.Playlist, Items = new List<Placeholder> { ph }, Order = new List<string> { R(r120), R(ry), P(season.Id) }, Source = new ListSource { RemoveDropped = true } };
+            foreach (var key in episodeKeys)
+            {
+                ListSourceProvenance.RecordAdded(doc.Source, key, ph.Id, null);
+            }
+
+            doc.Source.Owned["tv|5|1|120"].ItemIds.Add(r120.ToString("N"));
+            ListSourceProvenance.RecordAdded(doc.Source, yKey, null, ry.ToString("N"));
+            return doc;
+        }
+
+        List<string> Staying(string yKey, bool yFirst)
+        {
+            var staying = episodeKeys.Where(k => k != "tv|5|1|7").ToList();
+            staying.Insert(yFirst ? 0 : staying.IndexOf("tv|5|1|120") + 1, yKey);
+            return staying;
+        }
+
+        void Narrow(ListDoc doc, List<string> staying)
+        {
+            ListSourceProvenance.ApplyDrops(doc, ListSourceProvenance.PlanDrops(doc, staying, new Dictionary<string, int>()), Array.Empty<string>());
+            Assert.Equal(2, doc.Items.Count);
+        }
+
+        // Y between 1x120 and 1x121 in the source.
+        var after = Doc("movie|9||");
+        Narrow(after, Staying("movie|9||", yFirst: false));
+        Assert.Equal(new[] { P(season.Id), R(r120), R(ry), P(after.Items[1].Id) }, after.Order);
+
+        // Y before the season in the source (the user dragged 1x120 above it): the tokens stay after Y.
+        var before = Doc("movie|9||");
+        Narrow(before, Staying("movie|9||", yFirst: true));
+        Assert.Equal(new[] { R(r120), R(ry), P(season.Id), P(before.Items[1].Id) }, before.Order);
+    }
+
     // Review round 9, end to end: 1x120 is in the list, 1x07 leaves a 150-episode season, then 1x01 arrives: it plays
     // before 1x120.
     [Fact]

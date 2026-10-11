@@ -57,9 +57,13 @@
     const ID_TOKENS = /\btmdb[:/]\s*(?:(?:movie|tv)[:/])?\d+\b|\btvdb[:/]\s*\d+\b|\btt\d{7,10}\b|https?:\/\/\S+/gi;
     // A markdown link labelled with a site or id rather than a title ("[TMDB](…)", "[IMDb](…)", "[tt1877830](…)").
     const ID_LINK_LABEL = /^(?:the\s*)?(?:tmdb|imdb|tvdb|movie\s*db|themoviedb|link|url|id|tt\d{7,10}|\d{1,9})$/i;
-    // Where commentary starts after an episode reference or a season selector: a parenthetical other than a year, a
-    // spaced dash or a sentence end.
-    const AFTER_SELECTOR = /\((?!\s*\d{4}\s*\))|\s[—–-]\s+|[.;!?](?:\s|$)/;
+    // Words that make the text after a release year commentary rather than a type/status phrase ("watch before the
+    // Batman movie", "sequel to the film").
+    const LEAD_COMMENTARY = /\b(?:the|this|that|it|its|is|was|are|be|to|of|with|before|after|then|than|from|by|for|in|on|at|as|like|and|or|but|if|when|while|watch|see|read|skip|play|start|sequel|prequel|follows?|set)\b/i;
+    // Where commentary starts after an episode reference or a season selector: a parenthetical other than a release
+    // ("(2022)", "(2022-01-13)", "(2014–2015)", "(TBA)"; captured first, so a dash inside it isn't a separator either),
+    // a spaced dash or a sentence end.
+    const AFTER_SELECTOR = /([([]\s*(?:\d{4}(?:-\d{2}-\d{2})?|\d{4}\s*[–—-]\s*(?:\d{2,4})?|TBA|TBD)\s*[)\]])|\(|\s[—–-]\s+|[.;!?](?:\s|$)/i;
     const SEASON_SELECTOR = /\bseasons?\s+\d{1,3}(?:\s*[-–—]\s*\d{1,3})?\b/i;
     const RELEASE_YEAR = /[([]\s*(?:\d{4}(?:-\d{2}-\d{2})?|\d{4}\s*[–—-]\s*(?:\d{2,4})?)\s*[)\]]/;
     const TVDB_URL = /thetvdb\.com\/(?:\?[^\s]*?\bid=(\d{1,9})|dereferrer\/series\/(\d{1,9})|series\/(\d{1,9})(?:[/?#\s)]|$))/i;
@@ -233,6 +237,25 @@
             text = text.replace(new RegExp(pattern.source, 'gi'), ' ');
         }
         return !/[a-z]/i.test(text);
+    }
+
+    /**
+     * Splits the text after a release year into a leading type/status phrase and the commentary after it. The lead runs
+     * up to the first comma, semicolon, parenthetical, spaced dash or sentence end; it is metadata when it names a type
+     * or status in at most five words and holds no instruction or function words ("Live-action film", "Disney+
+     * miniseries", "Shelved film"; not "watch before the Batman movie").
+     * @param {string} value Text after the year and its separator.
+     * @returns {{lead: string, rest: string}} The metadata lead ('' when there is none) and the commentary.
+     */
+    function splitTypeLead(value) {
+        const text = String(value ?? '').trim();
+        if (onlyTypeWords(text)) return { lead: text, rest: '' }; // "TV series", "TV series, Released"
+        const sep = /[,;(]|\s[—–-]\s|[.!?](?:\s|$)/.exec(text);
+        const lead = (sep ? text.slice(0, sep.index) : text).trim();
+        const rest = (sep ? text.slice(sep.index) : '').replace(/^[\s,;.!?—–-]+/, '').replace(/^\((.*)\)$/, '$1').trim();
+        const metadata = lead && (onlyTypeWords(lead) || ((typeFromWords(lead) || statusFromWords(lead))
+            && lead.split(/\s+/).length <= 5 && !LEAD_COMMENTARY.test(lead)));
+        return metadata ? { lead, rest } : { lead: '', rest: text };
     }
 
     /**
@@ -624,12 +647,15 @@
             metaIds = (structured.match(ID_TOKENS) || []).filter(token => !/^https?:/i.test(token)).join(' ');
             structured = structured.replace(ID_TOKENS, ' ');
             // Commentary right after the release year ("(2014) - watch before the Batman movie", "(2014). Watch …") is
-            // the note, not type or status words; a tail of only such words ("(2014) - TV series") stays metadata.
+            // the note, not type or status words. A tail that starts with a short type/status phrase ("(1966) -
+            // Live-action film", "(2022) - Shelved film (no public release)", "(2016) - Film, DCEU") keeps that phrase
+            // as metadata; only the rest is the note.
             const parts = structured.split(/\s*·\s*/);
             const yearTail = /^(\s*[([][^)\]]*[)\]])\s*(?:[-:]\s+(?=\S)|[.;!?](?:\s+|$))(.*)$/.exec(parts[0]);
-            if (yearTail && yearTail[2].trim() && !onlyTypeWords(yearTail[2])) {
-                note = [yearTail[2].trim(), note].filter(Boolean).join(' — ');
-                parts[0] = yearTail[1];
+            if (yearTail && yearTail[2].trim()) {
+                const tail = splitTypeLead(yearTail[2]);
+                note = [tail.rest, note].filter(Boolean).join(' — ');
+                parts[0] = [yearTail[1], tail.lead].filter(Boolean).join(' ');
                 structured = parts.join(' · ');
             }
             const release = /[([]\s*([^)\]]+?)\s*[)\]]/.exec(structured);
@@ -782,7 +808,7 @@
 
     /**
      * The first separator from an offset on that starts commentary: a match of `pattern` not followed by a URL or an
-     * id link ({@link namesEntryAt}).
+     * id link ({@link namesEntryAt}). A match of the pattern's first capture group (a release parenthetical) is skipped.
      * @param {string} text Stripped text.
      * @param {number} from Offset to search from.
      * @param {RegExp} pattern Separator pattern.
@@ -793,6 +819,7 @@
         const re = new RegExp(pattern.source, 'gi');
         re.lastIndex = from;
         for (let m = re.exec(text); m; m = re.exec(text)) {
+            if (m[1] !== undefined) continue;
             if (!namesEntryAt(text, m.index + m[0].length, links)) return m.index;
             if (!m[0].length) re.lastIndex++;
         }
