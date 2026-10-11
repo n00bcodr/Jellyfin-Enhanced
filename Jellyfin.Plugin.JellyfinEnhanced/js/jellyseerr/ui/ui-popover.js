@@ -200,7 +200,8 @@
     /**
      * Shows the 4K request popup menu below the button group.
      * @param {HTMLElement} buttonGroup - The split button container.
-     * @param {Object} item - Media item data.
+     * @param {Object} item - Media item data. `item.onRequest4k()`, when set, handles "Request in 4K" instead of the
+     *   global request handler (list placeholder cards: the popup lives on document.body, outside their section).
      */
     function show4KPopup(buttonGroup, item) {
         hide4KPopup();
@@ -233,6 +234,14 @@
             request4KBtn.dataset.mediaType = item.mediaType || 'movie';
             request4KBtn.dataset.action = 'request4k';
             request4KBtn.classList.add('chip-requested');
+            if (typeof item.onRequest4k === 'function') {
+                request4KBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    hide4KPopup();
+                    item.onRequest4k();
+                });
+            }
         }
 
         popup.appendChild(request4KBtn);

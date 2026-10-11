@@ -3,6 +3,8 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Linq;
 using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,7 +18,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
     /// administrators always; other users when Seerr knows their Jellyfin account and they aren't on the
     /// <c>JellyseerrImportBlockedUsers</c> list. Seerr's <c>GET /api/v1/user/jellyfin/{id}</c> answers 200 or 404; older
     /// Seerr builds without that route fall back to scanning <c>/api/v1/user?take=1000</c> (the same scan the proxy
-    /// does). Positive answers are cached 30 minutes, negative ones 60 seconds; no account is ever imported here.
+    /// does). Answers are cached per Seerr instance (URL list + API key): positive ones 30 minutes, negative ones 60
+    /// seconds; no account is ever imported here.
     /// </summary>
     public class SeerrUserLink
     {
@@ -60,12 +63,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                 return false;
             }
 
-            if (_cache.TryGetValue(idN, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
+            var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Select(u => u.Trim().TrimEnd('/')).Where(u => u.Length > 0).ToArray();
+            var cacheKey = Fingerprint(urls, config.JellyseerrApiKey) + "|" + idN;
+            if (_cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
                 return cached.Linked;
             }
 
-            var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Select(u => u.Trim().TrimEnd('/')).Where(u => u.Length > 0);
             bool? linked = null;
             foreach (var baseUrl in urls)
             {
@@ -78,11 +82,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
 
             if (linked.HasValue)
             {
-                _cache[idN] = (linked.Value, DateTime.UtcNow + (linked.Value ? PositiveTtl : NegativeTtl));
+                _cache[cacheKey] = (linked.Value, DateTime.UtcNow + (linked.Value ? PositiveTtl : NegativeTtl));
             }
 
             return linked == true;
         }
+
+        // Answers belong to one Seerr configuration (URL list + key hash): another instance is asked again.
+        private static string Fingerprint(string[] urls, string apiKey) =>
+            string.Join('\n', urls) + "|" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)), 0, 8);
 
         private async Task<bool?> LookupAsync(string baseUrl, string apiKey, string idN, CancellationToken cancellationToken)
         {

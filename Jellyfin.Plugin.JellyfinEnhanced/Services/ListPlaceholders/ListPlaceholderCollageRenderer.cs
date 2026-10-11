@@ -32,6 +32,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
         private const int JpegQuality = 90;
         private const long MaxPosterPixels = 4096L * 4096L;
+
+        // Posters are 2:3; anything flatter or taller than 4:1 is not a poster and would only show a smeared strip.
+        private const int MaxAspectRatio = 4;
         private const float BackgroundBlurSigma = 24f;
 
         /// <summary>The output size for a list kind.</summary>
@@ -146,7 +149,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         // SKBitmap.Decode(byte[]) throws (instead of returning null) when no codec recognises the data.
         /// <summary>
         /// True when the bytes are an image the collage can use: a known format that decodes completely (a truncated
-        /// or corrupt file is refused, not drawn half grey) and isn't absurdly large.
+        /// or corrupt file is refused, not drawn half grey), isn't absurdly large and has a poster-like shape (at most
+        /// 4:1 either way).
         /// </summary>
         /// <param name="bytes">Encoded image.</param>
         /// <returns>Whether it decodes.</returns>
@@ -162,7 +166,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         {
             using var data = SKData.CreateCopy(bytes);
             using var codec = SKCodec.Create(data);
-            if (codec == null || codec.Info.Width <= 0 || codec.Info.Height <= 0 || (long)codec.Info.Width * codec.Info.Height > MaxPosterPixels)
+            if (codec == null || codec.Info.Width <= 0 || codec.Info.Height <= 0 || (long)codec.Info.Width * codec.Info.Height > MaxPosterPixels
+                || codec.Info.Width > (long)codec.Info.Height * MaxAspectRatio || codec.Info.Height > (long)codec.Info.Width * MaxAspectRatio)
             {
                 return null;
             }
@@ -205,7 +210,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             DrawCover(canvas, poster, new SKRectI(left, top, left + fitW, top + fitH), null);
         }
 
-        // Scales the poster to cover the cell (keeping its aspect ratio) and draws the centred crop.
+        // Draws the centred part of the poster that has the cell's aspect ratio, scaled into the cell (cover). No scaled
+        // copy is made, so memory stays bounded by the decoded poster and the canvas whatever the poster's shape.
         private static void DrawCover(SKCanvas canvas, SKBitmap poster, SKRectI cell, SKPaint? paint)
         {
             var cellW = cell.Width;
@@ -216,18 +222,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
 
             var scale = Math.Max((float)cellW / poster.Width, (float)cellH / poster.Height);
-            var scaledW = Math.Max(cellW, (int)Math.Ceiling(poster.Width * scale));
-            var scaledH = Math.Max(cellH, (int)Math.Ceiling(poster.Height * scale));
-            using var scaled = new SKBitmap(new SKImageInfo(scaledW, scaledH, SKColorType.Rgba8888, SKAlphaType.Premul));
-            if (!poster.ScalePixels(scaled, new SKSamplingOptions(SKCubicResampler.Mitchell)))
-            {
-                return;
-            }
-
-            canvas.Save();
-            canvas.ClipRect(new SKRect(cell.Left, cell.Top, cell.Right, cell.Bottom));
-            canvas.DrawBitmap(scaled, cell.Left - ((scaledW - cellW) / 2f), cell.Top - ((scaledH - cellH) / 2f), paint);
-            canvas.Restore();
+            var sourceW = Math.Min(poster.Width, cellW / scale);
+            var sourceH = Math.Min(poster.Height, cellH / scale);
+            var source = SKRect.Create((poster.Width - sourceW) / 2f, (poster.Height - sourceH) / 2f, sourceW, sourceH);
+            using var image = SKImage.FromBitmap(poster);
+            canvas.DrawImage(image, source, new SKRect(cell.Left, cell.Top, cell.Right, cell.Bottom), new SKSamplingOptions(SKCubicResampler.Mitchell), paint);
         }
     }
 }

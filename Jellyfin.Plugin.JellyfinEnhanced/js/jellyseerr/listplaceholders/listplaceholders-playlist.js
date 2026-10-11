@@ -191,6 +191,7 @@
             nativeRendered: !!container.querySelector(':scope > .listItem'),
             busy: false,
             suspended: false,
+            pendingView: null,
             pollIndex: 0,
             pollTimer: null,
             refetchTimer: null,
@@ -311,6 +312,13 @@
             if (!view || lp.normalizeId(view.listId) !== ctrl.listId || !ctrl.isAlive()) return;
             const previous = ctrl.view;
             if (lp.isOlderView(view, previous)) return; // a late answer for an older revision
+            if (ctrl.suspended || ctrl.busy) {
+                // A drag or its save is running: re-rendering now would take the row SortableJS holds out of the
+                // list (the drop is then lost) or move rows under the save. The newest view waits for resume().
+                if (!lp.isOlderView(view, ctrl.pendingView)) ctrl.pendingView = view;
+                return;
+            }
+            ctrl.pendingView = null;
             ctrl.view = view;
             const viewReal = (view.order || []).filter(t => t.startsWith('e:'));
             const key = nativeRefreshKey(view);
@@ -373,7 +381,8 @@
             // A page left meanwhile re-fetches when it is shown again (viewshow, B3).
             if (!lp.isCurrentEpoch(epoch) || !ctrl.isShown()) return;
             ctrl.applyView(view);
-            if (!ctrl.user && ctrl.view?.seerrEnabled && JE.pluginConfig?.JellyseerrEnabled === true) {
+            // No status yet, or a negative one (Seerr down / user not linked) that is asked for again.
+            if (!lp.requests.canRequest(ctrl.user) && ctrl.view?.seerrEnabled && JE.pluginConfig?.JellyseerrEnabled === true) {
                 lp.requests.userStatus().then((user) => {
                     if (!lp.isCurrentEpoch(epoch) || !ctrl.isAlive()) return;
                     ctrl.user = user;
@@ -468,6 +477,10 @@
             } catch (error) {
                 if (lp.isStaleIdentityError(error)) return;
                 JE.toast(lp.errorMessage(error), 4000);
+                // The save is over: adopt the view the refusal carried (held back while it ran) before restoring.
+                ctrl.busy = false;
+                ctrl.suspended = false;
+                ctrl.applyPendingView();
                 ctrl.restoreServerOrder(!error?.responseJSON?.view, refreshesBefore);
             } finally {
                 ctrl.busy = false;
@@ -581,9 +594,17 @@
             ctrl.render();
         };
 
-        /** Ends a drag suspension and catches up on a re-render that happened meanwhile. */
+        /** Adopts the newest view that arrived during a drag or a save (see applyView). */
+        ctrl.applyPendingView = () => {
+            const view = ctrl.pendingView;
+            ctrl.pendingView = null;
+            if (view) ctrl.applyView(view);
+        };
+
+        /** Ends a drag suspension and catches up on a view or a re-render that arrived meanwhile. */
         ctrl.resume = () => {
             ctrl.suspended = false;
+            if (!ctrl.busy) ctrl.applyPendingView();
             ctrl.restoreIfLost();
         };
 
@@ -614,11 +635,13 @@
             clearTimeout(ctrl.emptyTimer);
             ctrl.pollTimer = ctrl.refetchTimer = ctrl.emptyTimer = null;
             ctrl.refetchAt = 0;
+            ctrl.pendingView = null;
         };
 
         /** Takes a disposed controller back into use (its page is shown again, e.g. after a user switch). */
         ctrl.reactivate = () => {
             ctrl.view = null;
+            ctrl.pendingView = null;
             ctrl.user = null;
             ctrl.nativeRefreshedKey = undefined;
             ctrl.pollIndex = 0;

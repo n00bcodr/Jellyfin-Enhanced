@@ -447,30 +447,217 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         }
 
         /// <summary>
-        /// Visible-row coordinate system of <c>MoveItemAsync</c> (A5): the index the moved entry must have in the
-        /// mover's visible rows of the desired real order. Rows the mover can't see are skipped.
+        /// Coordinate system of <c>MoveItemAsync</c> (A5): the <c>newIndex</c> values (one move, else two moves of the
+        /// same item) that make Jellyfin produce exactly <paramref name="desiredReal"/>, every real row included (also
+        /// rows the mover can't see). Jellyfin reads newIndex against the mover's visible rows BEFORE the move, finds the
+        /// prior row's index among resolved rows and inserts at that index into the raw array without the moved row, so
+        /// once hidden rows or dangling links are involved no closed formula holds and some spots need a detour: the
+        /// candidates are replayed against Jellyfin's algorithm (<see cref="SimulateMove"/>).
         /// </summary>
-        /// <param name="desiredReal">Desired real order (contains <paramref name="moved"/>).</param>
-        /// <param name="moved">The moved real token.</param>
-        /// <param name="visibleToMover">Whether a real token is visible to the user the move runs as.</param>
-        /// <returns>The new index, or -1 when <paramref name="moved"/> isn't in the order.</returns>
-        public static int VisibleMoveIndex(IReadOnlyList<string> desiredReal, string moved, Func<string, bool> visibleToMover)
+        /// <param name="raw">Fresh raw slots.</param>
+        /// <param name="itemId">The item to move (Jellyfin moves its FIRST copy).</param>
+        /// <param name="desiredReal">Desired real order after the move(s).</param>
+        /// <param name="visibleToMover">Whether an item is visible to the user the move runs as.</param>
+        /// <returns>The indexes to pass, in order (empty when already in order), or null when two moves can't get there.</returns>
+        public static IReadOnlyList<int>? FindMoves(IReadOnlyList<RawEntry> raw, Guid itemId, IReadOnlyList<string> desiredReal, Func<Guid, bool> visibleToMover)
         {
-            var index = 0;
+            var desired = new List<Guid>(desiredReal.Count);
             foreach (var token in desiredReal)
             {
-                if (string.Equals(token, moved, StringComparison.Ordinal))
+                if (!TryParseReal(token, out var id, out _))
                 {
-                    return index;
+                    return null;
                 }
 
-                if (IsReal(token) && visibleToMover(token))
+                desired.Add(id);
+            }
+
+            if (raw.Where(r => r.Resolved && r.ItemId.HasValue).Select(r => r.ItemId!.Value).SequenceEqual(desired))
+            {
+                return Array.Empty<int>();
+            }
+
+            var single = FindSingleMove(raw, itemId, desired, visibleToMover);
+            if (single != null)
+            {
+                return new[] { single.Value };
+            }
+
+            var manageable = raw.Where(r => r.Resolved).ToList();
+            var visible = manageable.Where(r => r.ItemId.HasValue && visibleToMover(r.ItemId.Value)).ToList();
+            for (var first = 0; first <= visible.Count; first++)
+            {
+                var detour = SimulateMove(raw, manageable, visible, itemId, first);
+                if (detour == null || detour.SequenceEqual(raw))
                 {
-                    index++;
+                    continue;
+                }
+
+                var second = FindSingleMove(detour, itemId, desired, visibleToMover);
+                if (second != null)
+                {
+                    return new[] { first, second.Value };
                 }
             }
 
-            return -1;
+            return null;
+        }
+
+        /// <summary>
+        /// Replays Jellyfin's <c>PlaylistManager.MoveItemAsync</c> (identical in 12.2 and 10.11.11) on raw slots.
+        /// Assumes a resolved slot's <c>LinkedChild.ItemId</c> is the resolved item's id.
+        /// </summary>
+        /// <param name="raw">Raw slots before the move.</param>
+        /// <param name="itemId">The item to move.</param>
+        /// <param name="newIndex">The index passed to Jellyfin.</param>
+        /// <param name="visibleToMover">Whether an item is visible to the user the move runs as.</param>
+        /// <returns>The raw slots after the move, or null when Jellyfin would throw or skip it (item not in the list).</returns>
+        public static List<RawEntry>? SimulateMove(IReadOnlyList<RawEntry> raw, Guid itemId, int newIndex, Func<Guid, bool> visibleToMover)
+        {
+            var manageable = raw.Where(r => r.Resolved).ToList();
+            var visible = manageable.Where(r => r.ItemId.HasValue && visibleToMover(r.ItemId.Value)).ToList();
+            return SimulateMove(raw, manageable, visible, itemId, newIndex);
+        }
+
+        private static List<RawEntry>? SimulateMove(IReadOnlyList<RawEntry> raw, List<RawEntry> manageable, List<RawEntry> visible, Guid itemId, int newIndex)
+        {
+            var result = raw.ToList();
+            if (visible.FindIndex(r => r.ItemId == itemId) == newIndex)
+            {
+                return result;
+            }
+
+            var priorSlot = Math.Max(newIndex - 1, 0);
+            if (newIndex < 0 || priorSlot >= visible.Count)
+            {
+                return null;
+            }
+
+            var prior = visible[priorSlot].ItemId;
+            var priorIndex = manageable.FindIndex(r => r.ItemId == prior);
+            var index = newIndex == 0 ? Math.Max(priorIndex - 1, 0) : priorIndex + 1;
+            var first = result.FindIndex(r => r.ItemId == itemId);
+            if (first < 0)
+            {
+                return null;
+            }
+
+            var entry = result[first];
+            result.RemoveAt(first);
+            if (newIndex >= result.Count)
+            {
+                result.Add(entry);
+            }
+            else if (index > result.Count)
+            {
+                return null;
+            }
+            else
+            {
+                result.Insert(index, entry);
+            }
+
+            return result;
+        }
+
+        // One move. Each candidate's outcome is derived in O(1) from Jellyfin's algorithm (as in SimulateMove): the item
+        // lands at a real position q of the other rows, and only some q give the desired order. Linear overall.
+        private static int? FindSingleMove(IReadOnlyList<RawEntry> raw, Guid itemId, IReadOnlyList<Guid> desired, Func<Guid, bool> visibleToMover)
+        {
+            var moved = -1;
+            for (var i = 0; i < raw.Count && moved < 0; i++)
+            {
+                if (raw[i].ItemId == itemId)
+                {
+                    moved = i;
+                }
+            }
+
+            if (moved < 0 || !raw[moved].Resolved)
+            {
+                return null;
+            }
+
+            // The raw array without the moved slot: its real rows, and how many of them precede each slot.
+            var rest = new List<Guid>(raw.Count);
+            var realBefore = new int[raw.Count];
+            var slot = 0;
+            for (var i = 0; i < raw.Count; i++)
+            {
+                if (i == moved)
+                {
+                    continue;
+                }
+
+                realBefore[slot++] = rest.Count;
+                if (raw[i].Resolved && raw[i].ItemId.HasValue)
+                {
+                    rest.Add(raw[i].ItemId!.Value);
+                }
+            }
+
+            realBefore[slot] = rest.Count;
+            if (desired.Count != rest.Count + 1)
+            {
+                return null;
+            }
+
+            // Inserting the item at q gives `desired` iff desired[q] is the item and the other rows agree before and after q.
+            var prefix = 0;
+            while (prefix < rest.Count && rest[prefix] == desired[prefix])
+            {
+                prefix++;
+            }
+
+            var suffixStart = rest.Count;
+            while (suffixStart > 0 && rest[suffixStart - 1] == desired[suffixStart])
+            {
+                suffixStart--;
+            }
+
+            var manageable = raw.Where(r => r.Resolved).ToList();
+            var firstManageable = new Dictionary<Guid, int>();
+            for (var i = 0; i < manageable.Count; i++)
+            {
+                if (manageable[i].ItemId is Guid id)
+                {
+                    firstManageable.TryAdd(id, i);
+                }
+            }
+
+            var visible = manageable.Where(r => r.ItemId.HasValue && visibleToMover(r.ItemId.Value)).ToList();
+            var visibleIndex = visible.FindIndex(r => r.ItemId == itemId);
+            for (var newIndex = 0; newIndex <= visible.Count; newIndex++)
+            {
+                var priorSlot = Math.Max(newIndex - 1, 0);
+                if (newIndex == visibleIndex || priorSlot >= visible.Count)
+                {
+                    continue;
+                }
+
+                var priorIndex = firstManageable[visible[priorSlot].ItemId!.Value];
+                var index = newIndex == 0 ? Math.Max(priorIndex - 1, 0) : priorIndex + 1;
+                int q;
+                if (newIndex >= raw.Count - 1)
+                {
+                    q = rest.Count;
+                }
+                else if (index > raw.Count - 1)
+                {
+                    continue;
+                }
+                else
+                {
+                    q = realBefore[index];
+                }
+
+                if (q >= suffixStart && q <= prefix && desired[q] == itemId)
+                {
+                    return newIndex;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>

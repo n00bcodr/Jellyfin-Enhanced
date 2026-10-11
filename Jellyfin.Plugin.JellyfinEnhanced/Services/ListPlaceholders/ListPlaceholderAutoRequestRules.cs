@@ -137,17 +137,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <summary>
         /// Placeholder ids after the played item in a collection's merged list order (design §3): real children by
         /// premiere date (unknown last, then their collection order) merged with the placeholders in display order
-        /// (release date, TBA last, then title); on equal dates real entries come first. The anchor is the first real
-        /// entry whose id is in <paramref name="anchorIds"/> (the item, or its series/season for an episode). Null when
-        /// no anchor is in the collection. Placeholders hidden from the user take no window slot.
+        /// (release date, TBA last, then title); on equal dates real entries come first. The anchor is the most specific
+        /// of <paramref name="anchorIds"/> that is a real entry (the item itself, else its season, else its series), at
+        /// its first position in list order. Null when no anchor is in the collection. Placeholders hidden from the user
+        /// take no window slot.
         /// </summary>
         /// <param name="real">Real children in collection order, with dates (only those the user can see).</param>
         /// <param name="placeholders">The collection's placeholders.</param>
-        /// <param name="anchorIds">Ids that count as "the played item".</param>
+        /// <param name="anchorIds">Ids that count as "the played item", most specific first (item, season, series).</param>
         /// <param name="window">Entries to scan.</param>
         /// <param name="placeholderVisible">Whether the user can see a placeholder (null = all).</param>
         /// <returns>Placeholder ids in list order, or null.</returns>
-        public static List<string>? CollectionWindow(IReadOnlyList<DatedEntry> real, IReadOnlyList<Placeholder> placeholders, ISet<Guid> anchorIds, int window = ScanWindow, Func<string, bool>? placeholderVisible = null)
+        public static List<string>? CollectionWindow(IReadOnlyList<DatedEntry> real, IReadOnlyList<Placeholder> placeholders, IReadOnlyList<Guid> anchorIds, int window = ScanWindow, Func<string, bool>? placeholderVisible = null)
         {
             var realSorted = real
                 .Select((entry, index) => (entry, index))
@@ -168,7 +169,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 merged.Add(takeReal ? (realSorted[r++].ItemId, null) : (null, placeholderSorted[p++].Id));
             }
 
-            var start = merged.FindIndex(m => m.ItemId is Guid id && anchorIds.Contains(id));
+            var start = -1;
+            foreach (var anchor in anchorIds)
+            {
+                start = merged.FindIndex(m => m.ItemId == anchor);
+                if (start >= 0)
+                {
+                    break;
+                }
+            }
+
             if (start < 0)
             {
                 return null;
@@ -190,26 +200,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         }
 
         /// <summary>
-        /// The season a TV placeholder requests (null for movies, and for a series with nothing left to request):
+        /// The season a TV placeholder requests (null for movies):
         /// <list type="bullet">
         /// <item>season → that season (also when it is partly filled: the rest of it is what's missing);</item>
         /// <item>episodes → the season its episodes are in (C2: one season per placeholder);</item>
-        /// <item>series with nothing of it in the list yet (no filled episode) → the first regular season: 1, or the
-        /// lowest positive season the stored expected set or Seerr lists when there is no season 1;</item>
-        /// <item>series that is partly in the list → the first season (≥ 1, in order) with an expected episode that is
-        /// not filled yet; with <paramref name="onlyAired"/> only aired expected episodes count, so a series whose aired
-        /// episodes are all in the list has nothing to request (null). While the expected set is not known yet
-        /// (metadata pending), Seerr's per-season episode counts stand in for it (with <paramref name="onlyAired"/> only
-        /// seasons that have started, counted up to Seerr's last aired episode); without those either, the highest
-        /// filled season (where the list has got to).</item>
+        /// <item>series → season 1, however much of the show is in the list (later seasons are Auto Season Requests'
+        /// job, G3); when the show has no season 1, the lowest regular season the stored expected set lists, else the
+        /// lowest one <paramref name="tvDetails"/> lists.</item>
         /// </list>
         /// </summary>
         /// <param name="placeholder">Placeholder.</param>
-        /// <param name="todayUtc">Today (UTC), for "aired".</param>
-        /// <param name="onlyAired">Series: only aired missing episodes count (the "only released" setting).</param>
         /// <param name="tvDetails">Seerr <c>/api/v1/tv/{id}</c> details (series kind only; optional).</param>
         /// <returns>Season number or null.</returns>
-        public static int? RequestSeason(Placeholder placeholder, DateTime todayUtc, bool onlyAired = true, JsonElement? tvDetails = null)
+        public static int? RequestSeason(Placeholder placeholder, JsonElement? tvDetails = null)
         {
             switch (placeholder.Kind)
             {
@@ -218,7 +221,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 case PlaceholderKinds.Episodes:
                     return placeholder.SeasonNumber ?? placeholder.Episodes.FirstOrDefault()?.S;
                 case PlaceholderKinds.Series:
-                    return SeriesRequestSeason(placeholder, todayUtc, onlyAired, tvDetails);
+                    return SeriesRequestSeason(placeholder, tvDetails);
                 default:
                     return null;
             }
@@ -226,7 +229,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
         /// <summary>
         /// Whether <see cref="RequestSeason"/> can only pick the season once Seerr's TV details are known: a series whose
-        /// expected set is still empty (metadata pending or failed). Without the details the season is only provisional.
+        /// expected set is still empty (metadata pending or failed), so whether it has a season 1 is unknown. Without the
+        /// details the season (1) is only provisional.
         /// </summary>
         /// <param name="placeholder">Placeholder.</param>
         /// <returns>Whether the season depends on the Seerr details.</returns>
@@ -393,66 +397,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             return best;
         }
 
-        private static int? SeriesRequestSeason(Placeholder placeholder, DateTime todayUtc, bool onlyAired, JsonElement? tvDetails)
+        private static int? SeriesRequestSeason(Placeholder placeholder, JsonElement? tvDetails)
         {
-            var filled = PlaceholderProgress.FilledCoords(placeholder).Where(c => c.S >= 1).ToHashSet();
-            var expected = placeholder.Expected.Where(e => e.S >= 1).OrderBy(e => e.S).ThenBy(e => e.E).ToList();
-            var seerrSeasons = SeasonEpisodeCounts(tvDetails);
-            if (filled.Count == 0)
-            {
-                // Nothing of the show in the list yet: start at the beginning.
-                var known = expected.Count > 0 ? expected.Select(e => e.S).Distinct().ToList() : seerrSeasons.Select(s => s.Season).ToList();
-                return known.Count > 0 && !known.Contains(1) ? known.Min() : 1;
-            }
-
-            if (expected.Count > 0)
-            {
-                return expected.FirstOrDefault(e => !filled.Contains(new EpisodeCoord(e.S, e.E)) && (!onlyAired || PlaceholderProgress.IsAired(e, todayUtc)))?.S;
-            }
-
-            if (seerrSeasons.Any(s => s.EpisodeCount.HasValue))
-            {
-                // With "only released", only what has aired counts: a season that hasn't started (no air date or a
-                // future one, or after Seerr's last aired episode) has nothing to request yet, and the season that is
-                // airing counts up to its last aired episode.
-                var lastAired = onlyAired ? LastEpisodeToAir(tvDetails) : null;
-                foreach (var (season, episodeCount, airDate) in seerrSeasons.OrderBy(s => s.Season))
-                {
-                    if (episodeCount is not int total)
-                    {
-                        continue;
-                    }
-
-                    if (onlyAired)
-                    {
-                        if (airDate == null || !PlaceholderRules.TryParseDate(airDate, out var start) || start.Date > todayUtc.Date
-                            || (lastAired is { } after && season > after.Season))
-                        {
-                            continue;
-                        }
-
-                        if (lastAired is { } current && season == current.Season)
-                        {
-                            total = Math.Min(total, current.Episode);
-                        }
-                    }
-
-                    if (filled.Count(c => c.S == season) < total)
-                    {
-                        return season;
-                    }
-                }
-
-                return null;
-            }
-
-            return filled.Max(c => c.S);
+            var expected = placeholder.Expected.Where(e => e.S >= 1).Select(e => e.S).Distinct().ToList();
+            var known = expected.Count > 0 ? expected : SeerrSeasonNumbers(tvDetails);
+            return known.Count > 0 && !known.Contains(1) ? known.Min() : 1;
         }
 
-        // Seerr TV details: the regular seasons (≥ 1) with their episode counts and first air dates (when Seerr gives them).
-        private static List<(int Season, int? EpisodeCount, string? AirDate)> SeasonEpisodeCounts(JsonElement? tvDetails)
+        // Seerr TV details: the regular season numbers (≥ 1) it lists.
+        private static List<int> SeerrSeasonNumbers(JsonElement? tvDetails)
         {
-            var result = new List<(int Season, int? EpisodeCount, string? AirDate)>();
+            var result = new List<int>();
             if (tvDetails is JsonElement details && details.ValueKind == JsonValueKind.Object
                 && details.TryGetProperty("seasons", out var seasons) && seasons.ValueKind == JsonValueKind.Array)
             {
@@ -460,23 +415,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 {
                     if (ReadInt(row, "seasonNumber") is int number && number > 0)
                     {
-                        var airDate = row.TryGetProperty("airDate", out var date) && date.ValueKind == JsonValueKind.String ? date.GetString() : null;
-                        result.Add((number, ReadInt(row, "episodeCount"), airDate));
+                        result.Add(number);
                     }
                 }
             }
 
             return result;
         }
-
-        // Seerr TV details: the last aired regular episode (season ≥ 1, episode ≥ 1), when Seerr gives one.
-        private static (int Season, int Episode)? LastEpisodeToAir(JsonElement? tvDetails) =>
-            tvDetails is JsonElement details && details.ValueKind == JsonValueKind.Object
-                && details.TryGetProperty("lastEpisodeToAir", out var last)
-                && ReadInt(last, "seasonNumber") is int season && season > 0
-                && ReadInt(last, "episodeNumber") is int episode && episode > 0
-                ? (season, episode)
-                : null;
 
         private static int? ReadInt(JsonElement element, string property) =>
             element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value)

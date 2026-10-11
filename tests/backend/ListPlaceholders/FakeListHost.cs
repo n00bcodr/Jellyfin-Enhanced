@@ -48,6 +48,10 @@ internal sealed class FakeListHost : IListPlaceholderHost
     // Runs right after a playlist add changed the entries (e.g. a native edit landing before JE re-reads them).
     public Action<Guid>? AfterAdd { get; set; }
     public Action<Guid>? AfterCreate { get; set; }
+    // Runs right after a collection add changed the members (e.g. to capture the state a crash would leave).
+    public Action<Guid>? AfterCollectionAdd { get; set; }
+    /// <summary>Throws from the next N MoveInPlaylistAsync calls (before moving).</summary>
+    public int FailMoves { get; set; }
 
     public static User MakeUser(string name, bool admin = false, bool collections = false)
     {
@@ -194,6 +198,12 @@ internal sealed class FakeListHost : IListPlaceholderHost
     public Task MoveInPlaylistAsync(Guid playlistId, Guid itemId, int newIndex, Guid userId)
     {
         Calls.Add($"move:{Short(itemId)}->{newIndex}");
+        if (FailMoves > 0)
+        {
+            FailMoves--;
+            throw new InvalidOperationException("move failed");
+        }
+
         var raw = Lists[playlistId].Raw;
         var user = new User("x", "d", "d") { Id = userId };
         // PlaylistManager.MoveItemAsync (12.2 / 10.11.11), line for line.
@@ -236,6 +246,7 @@ internal sealed class FakeListHost : IListPlaceholderHost
         }
 
         Lists[collectionId].Raw.AddRange(itemIds.Where(id => !CollectionDrops.Contains(id)).Select(id => new RawEntry(id, true)));
+        AfterCollectionAdd?.Invoke(collectionId);
         return FailAdds != null ? Task.FromException(FailAdds) : Task.CompletedTask;
     }
 

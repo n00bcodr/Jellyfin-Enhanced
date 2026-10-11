@@ -288,6 +288,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var skipped = new List<SkippedEntryDto>();
             var accepted = await PrevalidateAsync(access, entries, skipped, cancellationToken).ConfigureAwait(false);
             accepted = await ExpandAsync(access, accepted, cancellationToken).ConfigureAwait(false);
+            await UseServerPostersAsync(accepted.Where(e => e.Placeholder != null).Select(e => e.Placeholder!).ToList(), cancellationToken).ConfigureAwait(false);
             var visibility = await VisibilityAsync(_store.Load(access.ListIdN), access.User, cancellationToken).ConfigureAwait(false);
 
             var outcome = await RunLockedAsync(access.ListIdN, access.ListIdN, requestId, access.UserIdN, cancellationToken, () =>
@@ -422,6 +423,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             })).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             return fresh;
+        }
+
+        // A TMDB placeholder shows the poster Seerr has for that title, never one the client sent: an editor could pair an
+        // allowed title with a blocked title's poster, which restricted viewers would then see on the row and in the list's
+        // collage. Read within a short budget; a poster not read in time is left empty (fail closed) and the background
+        // metadata pass fills it in. Without Seerr nothing can check it, so the client's stays: the parental filter can't
+        // verify those titles either, so restricted viewers never see them.
+        private async Task UseServerPostersAsync(IReadOnlyList<Placeholder> placeholders, CancellationToken cancellationToken)
+        {
+            var titles = placeholders.Where(HasTmdb).ToList();
+            if (_metadata == null || titles.Count == 0 || !ListPlaceholderMetadataService.IsAvailable)
+            {
+                return;
+            }
+
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            budget.CancelAfter(ListPlaceholderSwapService.InteractiveMetadataBudget);
+            var today = DateTime.UtcNow;
+            await Task.WhenAll(titles.Select(async placeholder =>
+            {
+                string? poster = null;
+                try
+                {
+                    poster = (await _metadata.FetchAsync(placeholder, ListPlaceholderMetadataService.CacheTtl, today, budget.Token).ConfigureAwait(false))?.PosterPath;
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // over budget: no poster for now
+                }
+
+                placeholder.PosterPath = poster;
+            })).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
         }
 
         private async Task<List<ApplyEntry>> PrevalidateAsync(ListAccess access, IReadOnlyList<ApplyEntry> entries, List<SkippedEntryDto> skipped, CancellationToken cancellationToken)
@@ -725,13 +759,54 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
 
             result.Skipped = skipped.OrderBy(s => s.Index).ToList();
-            if (hooks?.AfterApplyAsync != null && await hooks.AfterApplyAsync(doc, result, accepted).ConfigureAwait(false))
+            if (hooks?.AfterApplyAsync != null)
             {
-                // Same locked write: provenance and sync removals; re-read Jellyfin if real entries were removed.
-                changed = true;
                 if (isPlaylist)
                 {
-                    order = Canonical(access, new ListDoc { Order = order, Items = doc.Items });
+                    doc.Order = order; // the hook places placeholders it adds (a split season) in the current order
+                }
+
+                bool hookChanged;
+                try
+                {
+                    hookChanged = await hooks.AfterApplyAsync(doc, result, accepted).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    // Jellyfin was already updated: save what landed (and its provenance) before giving up, else the next
+                    // apply finds those entries again as hand-added ones.
+                    _logger.Warning($"[ListPlaceholders] Finishing the update of list {access.ListIdN} failed: {ex.Message}");
+                    if (hooks.AfterFailedApply != null)
+                    {
+                        result.Added.RemoveAll(id => !doc.Items.Any(p => p.Id == id));
+                        RecordPartialApply(access, hooks.AfterFailedApply, doc, result, skipped, accepted);
+                    }
+
+                    if (isPlaylist)
+                    {
+                        order = Canonical(access, new ListDoc { Order = doc.Order, Items = doc.Items });
+                    }
+
+                    try
+                    {
+                        SaveIfChanged(doc, isPlaylist ? order : null, originalOrder, true);
+                    }
+                    catch (Exception saveEx)
+                    {
+                        _logger.Error($"[ListPlaceholders] Saving list {access.ListIdN} after a failed update failed: {saveEx.Message}");
+                    }
+
+                    throw;
+                }
+
+                if (hookChanged)
+                {
+                    // Same locked write: provenance and sync removals; re-read Jellyfin if real entries were removed.
+                    changed = true;
+                    if (isPlaylist)
+                    {
+                        order = Canonical(access, new ListDoc { Order = doc.Order, Items = doc.Items });
+                    }
                 }
             }
 
@@ -846,6 +921,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             if (link != null && HasTmdb(link) && await _access.IsTitleBlockedAsync(link.MediaType, link.TmdbId!.Value, access.User, cancellationToken).ConfigureAwait(false))
             {
                 return ListOutcome.Error(403, "parental_block", "This title isn't available for your account.");
+            }
+
+            if (link != null)
+            {
+                await UseServerPostersAsync(new[] { link }, cancellationToken).ConfigureAwait(false);
             }
 
             // A linked title gets its Seerr metadata now (release date, ids, expected episodes) so it can be swapped in
@@ -985,7 +1065,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <summary>
         /// PUT /{listId}/order (A3/A4): the caller's projected order after a drag. Placeholder moves are spliced into
         /// the canonical order; a moved real row is moved in Jellyfin by the server (as the caller when they can edit
-        /// natively, else as the owner) using the visible-row coordinates of that user, then verified.
+        /// natively, else as the owner) with the index (or two) that replays to the full desired order (refused with 409
+        /// <c>move_unsupported</c> when none does), then verified.
         /// </summary>
         /// <param name="access">Authorised access (CanEdit, playlist).</param>
         /// <param name="rev">Expected revision.</param>
@@ -1034,10 +1115,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     var moverVisible = new Dictionary<Guid, bool>();
                     var desiredReal = merge.Desired.Where(ListPlaceholderOrder.IsReal).ToList();
                     ListPlaceholderOrder.TryParseReal(moved, out var itemId, out _);
-                    var newIndex = ListPlaceholderOrder.VisibleMoveIndex(desiredReal, moved!, t => EntryVisible(t, mover, moverVisible));
+                    // A5/F2: the move(s) that give the full desired order, hidden rows included; none → change nothing.
+                    var moves = ListPlaceholderOrder.FindMoves(
+                        _host.GetRawEntries(access.List.Id),
+                        itemId,
+                        desiredReal,
+                        id => EntryVisible(ListPlaceholderOrder.RealToken(id, 0), mover, moverVisible));
+                    if (moves == null)
+                    {
+                        return Conflict(access, "move_unsupported", "Jellyfin can't move the entry there without also moving entries that are hidden or missing.", visibility, canonical, doc);
+                    }
+
                     try
                     {
-                        await _host.MoveInPlaylistAsync(access.List.Id, itemId, newIndex, mover.Id).ConfigureAwait(false);
+                        foreach (var newIndex in moves)
+                        {
+                            await _host.MoveInPlaylistAsync(access.List.Id, itemId, newIndex, mover.Id).ConfigureAwait(false);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -1048,8 +1142,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     var actual = ListPlaceholderOrder.BuildRealTokens(_host.GetRawEntries(access.List.Id));
                     var relabelled = ListPlaceholderOrder.Relabel(merge.Desired);
                     final = ListPlaceholderOrder.Reconcile(relabelled, actual, doc.Items.Select(p => p.Id).ToList());
-                    success = ListPlaceholderOrder.Project(final, VisibleToCaller)
-                        .SequenceEqual(ListPlaceholderOrder.Project(relabelled, VisibleToCaller), StringComparer.Ordinal);
+                    // Every real row, including rows hidden from the caller, must be where the desired order puts it.
+                    success = actual.SequenceEqual(relabelled.Where(ListPlaceholderOrder.IsReal), StringComparer.Ordinal);
                 }
 
                 ListDoc? saved = _store.Load(access.ListIdN);
@@ -1470,6 +1564,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 if (requestId != null && _store.TryGetReplay(scope, requestId, userIdN, out var replay))
                 {
                     return new ListOutcome { StatusCode = replay.StatusCode, RawJson = replay.Body };
+                }
+
+                // F5: the list may have been deleted (and its document removed) since access was checked; writing now
+                // would recreate an orphan document.
+                if (_host.GetList(Guid.ParseExact(listIdN, "N")) == null)
+                {
+                    return ListOutcome.Error(404, "not_found", "List not found.");
                 }
 
                 var outcome = await body().ConfigureAwait(false);

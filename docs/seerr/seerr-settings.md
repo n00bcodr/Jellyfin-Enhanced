@@ -176,7 +176,7 @@ Display Seerr issues on the Requests page.
 
 Lets users put titles they don't have yet on collections and playlists, as **Not in your library** entries. See [List Placeholders](list-placeholders.md) for how the feature works.
 
-Found in the **Seerr Settings** tab under **List Placeholders**. Everything is off by default, and the other options need the first one.
+Found in the **Seerr Settings** tab under **List Placeholders**. Everything is off by default, and the other options need the first one. The section can be set up without Seerr, except **Keep linked lists in sync**, **Trakt Client ID** and **Allow IMDb list URLs (unofficial)**, which need Seerr like list import does.
 
 ![The List Placeholders settings](../images/list-placeholders-settings.png)
 
@@ -207,7 +207,7 @@ Found in the **Seerr Settings** tab under **Automatic Requests** → **List Plac
 
 | Setting | Default | Description |
 |---|---|---|
-| **Request the next titles of a list while it's being watched** | Off | When someone plays an item of a playlist or collection with **Not in your library** titles, requests the titles that come next in that list from Seerr, as that user. A season requests that season, specific episodes the season they belong to, and a whole series its first season (or, once some of it is in the list, the first season with episodes missing) |
+| **Request the next titles of a list while it's being watched** | Off | When someone plays an item of a playlist or collection with **Not in your library** titles, requests the titles that come next in that list from Seerr, as that user. A season requests that season, specific episodes the season they belong to, and a whole series its season 1 (or its first regular season, for a show without a season 1) |
 | **Titles to request each time** | 1 | How many of the next titles to request (1-10) |
 | **Minutes watched before requesting** | 5 | Request once playback reaches this position (0-600 minutes). 0 requests as soon as playback starts |
 | **Only request released titles** | On | Skip titles that aren't out yet, including ones without a date (TBA) |

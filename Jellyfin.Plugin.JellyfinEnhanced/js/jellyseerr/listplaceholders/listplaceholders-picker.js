@@ -78,16 +78,21 @@
         const media = { ...item, mediaType, id: Number(item.id) };
         const title = media.title || media.name || '';
 
+        const epoch = lp.epochNow();
         let lists;
         try {
             lists = await lp.api.getEditableLists();
         } catch (error) {
-            JE.toast(lp.errorMessage(error), 4000);
+            if (lp.isCurrentEpoch(epoch)) JE.toast(lp.errorMessage(error), 4000);
             return null;
         }
+        // The signed-in user changed while the lists loaded: they are the previous user's.
+        if (!lp.isCurrentEpoch(epoch)) return null;
 
         let granularity = null;
         let busy = false;
+        // Closed (Cancel, Escape, backdrop or Back) while an add was running: its history entry is gone already.
+        let closed = false;
         // One request id for every "New playlist…" attempt of this picker: a retry after a failure (e.g. the entry
         // didn't apply, or the answer was lost) goes to the playlist the first attempt created (B10).
         const createRequestId = lp.newRequestId();
@@ -113,7 +118,10 @@
             bodyHtml: body,
             backdropPath: lp.render.isSafePoster(media.backdropPath) ? media.backdropPath : undefined,
             buttonText: JE.t('listPlaceholders_add_button'),
-            onClose: () => granularity?.destroy(),
+            onClose: () => {
+                closed = true;
+                granularity?.destroy();
+            },
             onSave: async (modalEl, button) => {
                 if (busy) return;
                 const choice = modalEl.querySelector('.je-lp-list-select').value;
@@ -156,7 +164,8 @@
                             lp.forEachController?.((ctrl) => { if (ctrl.listId === id) ctrl.afterRealItemsAdded?.(); });
                         }
                     }
-                    history.back();
+                    // Same exit path as Cancel; a picker the user already closed must not go back again (leaves the page).
+                    if (!closed) history.back();
                 } catch (error) {
                     lp.toastError(error);
                     busy = false;

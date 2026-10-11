@@ -350,7 +350,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <param name="userIdN">Calling user.</param>
         /// <param name="statusCode">HTTP status of the result.</param>
         /// <param name="body">Serialized result.</param>
-        public void RememberReplay(string scope, string requestId, string userIdN, int statusCode, string body)
+        /// <param name="fingerprint">Optional digest of the request, kept on the record (<see cref="ReplayRecord.Fingerprint"/>).</param>
+        public void RememberReplay(string scope, string requestId, string userIdN, int statusCode, string body, string? fingerprint = null)
         {
             var now = DateTime.UtcNow;
             if (_replays.Count >= MaxReplayEntries)
@@ -379,6 +380,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 Body = body,
                 UserId = userIdN,
                 ExpiresAtUtc = now + ReplayTtl,
+                Fingerprint = fingerprint,
             };
             _replays[ReplayKey(scope, requestId, userIdN)] = (record, Interlocked.Increment(ref _replaySequence));
         }

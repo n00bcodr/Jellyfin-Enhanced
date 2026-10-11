@@ -110,7 +110,9 @@ public class ListPlaceholdersImportLookupTests
         await f.Lookup.GetDetailsAsync("tv", 110492, f.Context, CancellationToken.None);
         Assert.Equal(2, f.Calls.Count(c => c.EndsWith("/tv/110492", StringComparison.Ordinal))); // failure not cached, success cached
 
-        Assert.Equal(LookupStatus.NotFound, (await f.Lookup.GetSeasonAsync(110492, 9, f.Context, CancellationToken.None)).Status);
+        // Seerr's season 500 also stands for a TMDB failure: retried, not a missing season (a 404 is).
+        Assert.Equal(LookupStatus.Transient, (await f.Lookup.GetSeasonAsync(110492, 9, f.Context, CancellationToken.None)).Status);
+        Assert.Equal(LookupStatus.NotFound, (await f.Lookup.GetSeasonAsync(110492, 7, f.Context, CancellationToken.None)).Status);
         var season = await f.Lookup.GetSeasonAsync(110492, 1, f.Context, CancellationToken.None);
         Assert.Equal(("A Whole New Whirled", "2022-01-13"), (season.Value![0].Title, season.Value[0].AirDate));
         Assert.Equal(LookupStatus.NotFound, (await f.Lookup.GetDetailsAsync("movie", 5, f.Context, CancellationToken.None)).Status);

@@ -382,17 +382,42 @@
     }
 
     /**
+     * Season/episodes cards: JE's Seerr card applies whole-show TV rules to the synthetic item (a requested
+     * show keeps an enabled "Request"/"Pending" button), so a season that is already requested or available
+     * gets the same disabled button as its playlist row (statusInfo) instead.
+     * @param {HTMLElement} card
+     * @param {Object} item - The card's synthetic Seerr item (status as shown).
+     * @param {Object} ph
+     */
+    function lockSeasonRequestButton(card, item, ph) {
+        const seerr = JE.seerrStatus;
+        const status = item.mediaInfo?.status;
+        if ((ph.kind !== 'season' && ph.kind !== 'episodes') || !seerr || seerr.isRequestable(status)) return;
+        const button = card.querySelector('.jellyseerr-request-button');
+        if (!button || button.disabled) return;
+        const config = seerr.getButtonConfig(seerr.resolveDisplayStatus(status, false));
+        const icon = JE.internals?.jellyseerrUi?.icons?.[config.iconKey] || '';
+        button.disabled = true;
+        button.innerHTML = `${icon}<span>${esc(JE.t(config.labelKey))}</span>`;
+        button.classList.remove('jellyseerr-button-request', 'jellyseerr-button-pending', 'jellyseerr-button-partially-available');
+        button.classList.add(config.cssClass);
+    }
+
+    /**
      * Collection card: JE's Seerr card (same look, hover overview, request button) plus a
      * kind/date chip, or a simple card for custom entries.
      * @param {Object} ph
-     * @param {{canEdit?: boolean, seerrEnabled?: boolean, user?: Object}} ctx
+     * @param {{canEdit?: boolean, seerrEnabled?: boolean, user?: Object, onRequest4k?: function(Object): void}} ctx -
+     *   onRequest4k(ph) handles the card's "Request in 4K" (its popup lives outside the card).
      * @returns {HTMLElement}
      */
     function buildCard(ph, ctx) {
         const item = ctx.seerrEnabled && JE.jellyseerrUI?.createJellyseerrCard ? toSeerrItem(ph) : null;
         let card;
         if (item) {
+            if (typeof ctx.onRequest4k === 'function') item.onRequest4k = () => ctx.onRequest4k(ph);
             card = JE.jellyseerrUI.createJellyseerrCard(item, !!ctx.user?.active, !!ctx.user?.userFound);
+            lockSeasonRequestButton(card, item, ph);
             card.querySelector('.jellyseerr-rating')?.remove();
             const year = card.querySelector('.jellyseerr-meta bdi');
             if (year) year.textContent = dateLabel(ph);

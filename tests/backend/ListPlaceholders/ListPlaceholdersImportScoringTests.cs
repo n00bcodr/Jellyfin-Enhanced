@@ -166,6 +166,174 @@ public class ListPlaceholdersImportScoringTests
     }
 
     [Fact]
+    public async Task TheLimiterAdmitsEveryCallExactlyOneSpacingAfterThePreviousOne()
+    {
+        // On a manual clock the admission instants are exact: a limiter that lets calls through in bursts (two at once,
+        // then a double pause) has the same total spread but fails here.
+        var clock = new ManualClock();
+        var limiter = new SeerrCallLimiter(4, TimeSpan.FromMilliseconds(20), clock);
+        var t0 = clock.GetUtcNow();
+        var admitted = new List<double>();
+        var running = 0;
+        var peak = 0;
+        var released = 0;
+        var tasks = Enumerable.Range(0, 20).Select(async i =>
+        {
+            using (await limiter.AcquireAsync("user-" + (i % 3), false, CancellationToken.None).ConfigureAwait(false))
+            {
+                lock (admitted)
+                {
+                    admitted.Add((clock.GetUtcNow() - t0).TotalMilliseconds);
+                    peak = Math.Max(peak, ++running);
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(30), clock).ConfigureAwait(false); // the call takes 30 ms
+                lock (admitted)
+                {
+                    running--;
+                }
+            }
+
+            Interlocked.Increment(ref released);
+        }).ToList();
+
+        // Settled = every admitted-but-unrecorded call waits on its spacing timer (the rest are 30 ms call timers).
+        bool Settled()
+        {
+            int recorded;
+            lock (admitted)
+            {
+                recorded = admitted.Count;
+            }
+
+            var calls = recorded - Volatile.Read(ref released);
+            return limiter.Stats().Total - recorded == clock.Pending - calls;
+        }
+
+        while (!tasks.All(t => t.IsCompleted))
+        {
+            var wait = Stopwatch.StartNew();
+            while (!Settled())
+            {
+                Assert.True(wait.Elapsed < TimeSpan.FromSeconds(10), "the limiter never settled");
+                await Task.Delay(1);
+            }
+
+            if (clock.NextDue is DateTimeOffset due)
+            {
+                clock.AdvanceTo(due);
+            }
+            else
+            {
+                await Task.WhenAny(Task.WhenAll(tasks), Task.Delay(TimeSpan.FromSeconds(10)));
+            }
+        }
+
+        await Task.WhenAll(tasks);
+        Assert.Equal(Enumerable.Range(0, 20).Select(i => i * 20.0), admitted.OrderBy(ms => ms));
+        Assert.True(peak <= 4, $"peak {peak}");
+    }
+
+    /// <summary>A clock that only moves when told to; due timers fire synchronously inside <see cref="AdvanceTo"/>.</summary>
+    private sealed class ManualClock : TimeProvider
+    {
+        private readonly object _lock = new();
+        private readonly List<ManualTimer> _timers = new();
+        private DateTimeOffset _now = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        public int Pending
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _timers.Count;
+                }
+            }
+        }
+
+        public DateTimeOffset? NextDue
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _timers.Count == 0 ? null : _timers.Min(t => t.Due);
+                }
+            }
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            lock (_lock)
+            {
+                return _now;
+            }
+        }
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = new ManualTimer(this, callback, state);
+            timer.Change(dueTime, period);
+            return timer;
+        }
+
+        public void AdvanceTo(DateTimeOffset when)
+        {
+            List<ManualTimer> due;
+            lock (_lock)
+            {
+                _now = when;
+                due = _timers.Where(t => t.Due <= when).OrderBy(t => t.Due).ToList();
+                _timers.RemoveAll(due.Contains);
+            }
+
+            foreach (var timer in due)
+            {
+                timer.Callback(timer.State);
+            }
+        }
+
+        private sealed class ManualTimer(ManualClock clock, TimerCallback callback, object? state) : ITimer
+        {
+            public TimerCallback Callback { get; } = callback;
+
+            public object? State { get; } = state;
+
+            public DateTimeOffset Due { get; private set; }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                lock (clock._lock)
+                {
+                    clock._timers.Remove(this);
+                    if (dueTime != Timeout.InfiniteTimeSpan)
+                    {
+                        Due = clock._now + dueTime;
+                        clock._timers.Add(this);
+                    }
+                }
+
+                return true;
+            }
+
+            public void Dispose()
+            {
+                lock (clock._lock)
+                {
+                    clock._timers.Remove(this);
+                }
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
+    }
+
+    [Fact]
     public async Task InteractiveCallersGoFirstAndOwnersTakeTurns()
     {
         var limiter = new SeerrCallLimiter(1, TimeSpan.Zero, TimeProvider.System);

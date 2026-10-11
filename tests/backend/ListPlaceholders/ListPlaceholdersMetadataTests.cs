@@ -71,7 +71,8 @@ public class ListPlaceholdersMetadataTests
             Json("{\"id\":1239193,\"title\":\"Other title\",\"releaseDate\":\"2026-10-23\",\"posterPath\":\"/theirs.jpg\",\"overview\":\"Mud.\",\"externalIds\":{\"imdbId\":\"tt31227572\"}}"),
             Today);
         Assert.True(ListPlaceholderMetadataService.Apply(movie, meta));
-        Assert.Equal(("Clayface", "2026-10-23", 2026, "/mine.jpg", "Mud.", "tt31227572"), (movie.Title, movie.ReleaseDate, movie.Year!.Value, movie.PosterPath!, movie.Overview!, movie.ImdbId!));
+        // The poster is Seerr's for that title, not the client's (review r1 F36).
+        Assert.Equal(("Clayface", "2026-10-23", 2026, "/theirs.jpg", "Mud.", "tt31227572"), (movie.Title, movie.ReleaseDate, movie.Year!.Value, movie.PosterPath!, movie.Overview!, movie.ImdbId!));
         Assert.False(ListPlaceholderMetadataService.Apply(movie, meta)); // nothing new
 
         // TBA in Seerr wins over a stale client date; junk values are dropped.
@@ -136,7 +137,7 @@ public class ListPlaceholdersMetadataTests
 
         // Partial data never says "no longer in production" (the stale expected set could then complete the season);
         // "still in production" is taken.
-        var ended = ListPlaceholderMetadataService.FromTv(season, Json(Peacemaker.Replace("\"inProduction\":true", "\"inProduction\":false", StringComparison.Ordinal)), null, Today, Today);
+        var ended = ListPlaceholderMetadataService.FromTv(season, Json(Peacemaker.Replace("\"Returning Series\"", "\"Ended\"", StringComparison.Ordinal)), null, Today, Today);
         Assert.True(ended.Partial);
         Assert.False(ended.InProduction);
         season.InProduction = true;
@@ -235,12 +236,12 @@ public class ListPlaceholdersMetadataTests
         var playlist = h.Host.AddPlaylist(owner);
         var access = h.AccessFor(playlist, owner);
         var tba = Movie(77);
+        h.MovieDetails[77] = "{\"id\":77,\"releaseDate\":\"2027-05-01\"}"; // before the add: it reads the poster from Seerr
         Ok<ApplyResultDto>(await h.Service.AddPlaceholdersAsync(access, new[] { tba, Movie(78) }, null, null, null, CancellationToken.None));
         var orphan = Guid.NewGuid().ToString("N");
         var orphanDoc = h.Store.LoadForUpdate(orphan, ListKinds.Playlist);
         orphanDoc.Items.Add(Movie(79));
         h.Store.Save(orphanDoc);
-        h.MovieDetails[77] = "{\"id\":77,\"releaseDate\":\"2027-05-01\"}";
         var arrived = h.Host.AddItem(tmdb: 78);
 
         var lifecycle = new ListPlaceholderLifecycle(new Mock<ILibraryManager>().Object, h.Store, h.Host, h.Plugin.Core.Logger);

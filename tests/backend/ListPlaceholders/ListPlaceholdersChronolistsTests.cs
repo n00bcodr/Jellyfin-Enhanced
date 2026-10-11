@@ -29,7 +29,25 @@ public class ListPlaceholdersChronolistsTests
 
     private static List<(SourceItem Item, int Position)> Positioned(IReadOnlyList<SourceItem> items) => items.Select((item, i) => (item, i)).ToList();
 
-    private static List<SourceGroup> Group(IReadOnlyList<SourceItem> items) => ListSourceGroups.Group(Positioned(items), ListSourceGroups.Facts(items));
+    private static List<SourceGroup> Group(IReadOnlyList<SourceItem> items) => ListSourceGroups.Group(Positioned(items), ListFacts(items));
+
+    // TMDB's episode count of every season as the list has it (E1 to its highest episode): TMDB agrees with the list.
+    private static Dictionary<(int Show, int Season), int> ListedSeasons(IEnumerable<SourceItem> items) =>
+        items.Where(i => i.MediaType == "tv" && i.TmdbId is > 0 && i.Season is > 0 && i.Episode.HasValue)
+            .GroupBy(i => (i.TmdbId!.Value, i.Season!.Value))
+            .ToDictionary(g => g.Key, g => g.Max(i => i.Episode!.Value));
+
+    // The list's facts with TMDB agreeing with the list's seasons (review r1 F23: whole seasons need TMDB's count).
+    private static SourceListFacts ListFacts(IReadOnlyList<SourceItem> items)
+    {
+        var facts = ListSourceGroups.Facts(items);
+        foreach (var (key, count) in ListedSeasons(items))
+        {
+            facts.SeasonEpisodes[key] = count;
+        }
+
+        return facts;
+    }
 
     // A page with the given list JSON (l, m) in the chronolists shape.
     private static string Page(string list, string page = "/[universe]", string name = "Test Universe") =>
@@ -362,7 +380,7 @@ public class ListPlaceholdersChronolistsTests
     public void PreparedEntriesBuildTheSamePlaceholdersAsTheImportReview()
     {
         var items = Read(Fixture("chronolists-mcu.html")).Items;
-        var facts = ListSourceGroups.Facts(items);
+        var facts = ListFacts(items);
         var groups = ListSourceGroups.Group(Positioned(items), facts);
 
         var season = ListSourceGroups.Placeholder(groups[2], facts)!;
@@ -418,9 +436,30 @@ public class ListPlaceholdersChronolistsTests
 
         public void Page(string fixture) => H.Fetcher.Items = Read(Fixture(fixture)).Items.ToList();
 
-        public async Task<SourceFetchResponse> FetchAsync() => Ok<SourceFetchResponse>(await H.Sources.FetchAsync(Owner, DctvUrl, None));
+        public async Task<SourceFetchResponse> FetchAsync()
+        {
+            TmdbAgrees();
+            return Ok<SourceFetchResponse>(await H.Sources.FetchAsync(Owner, DctvUrl, None));
+        }
 
-        public Task<SourceSyncResultDto> Sync() => H.Sources.SyncAsync(Id, background: true, None);
+        public Task<SourceSyncResultDto> Sync()
+        {
+            TmdbAgrees();
+            return H.Sources.SyncAsync(Id, background: true, None);
+        }
+
+        // Seerr knows every show of the fetched list with the seasons as the list has them (first time only, so a later
+        // upstream episode doesn't grow TMDB's season).
+        public void TmdbAgrees()
+        {
+            foreach (var group in ListedSeasons(H.Fetcher.Items).GroupBy(e => e.Key.Show))
+            {
+                H.Lookup.Details.TryAdd(("tv", group.Key), new TitleDetails(FakeImportLookup.Tv(group.Key, "Show " + group.Key, "2020-01-01"), null, null, null, null, group.Select(e => new SeasonFacts(e.Key.Season, e.Value, null, null)).ToList()));
+            }
+        }
+
+        // What an exact source asks Seerr: only shows' season episode counts.
+        public void AssertOnlySeasonCountLookups() => Assert.All(H.Lookup.Log, call => Assert.StartsWith("details:tv/", call, StringComparison.Ordinal));
 
         // What the import review sends for the fetched entries (prepared → placeholder bodies, every key).
         public async Task<ApplyResultDto> Import(SourceFetchResponse fetched, bool sendGroupKeys, Func<int, bool>? skip = null, bool removeDropped = true)
@@ -442,6 +481,7 @@ public class ListPlaceholdersChronolistsTests
             var entries = dtos.Select((d, i) => d.Type == "item"
                 ? new ApplyEntry(i, Guid.Parse(d.ItemId!), null)
                 : new ApplyEntry(i, null, Placeholder(d))).ToList();
+            TmdbAgrees();
             var (spec, error) = await H.Sources.PrepareLinkAsync(Owner, DctvUrl, true, removeDropped, None);
             Assert.Null(error);
             // The client as built (5i): snapshot = every fetched entry's sourceKey (first keys) unless it sends snapshotKeys.
@@ -494,7 +534,7 @@ public class ListPlaceholdersChronolistsTests
         var tvLookups = w.H.Library.Calls.Where(c => c.Scope.TmdbId is 241388 or 61550 or 1403).ToList();
         Assert.Equal(3, tvLookups.Count);
         Assert.All(tvLookups, c => Assert.Equal(PlaceholderKinds.Series, c.Scope.Kind));
-        Assert.Empty(w.H.Lookup.Log); // no Seerr lookups at all
+        w.AssertOnlySeasonCountLookups(); // no title lookups
 
         // The wire shape: prepared + sourceKeys present on grouped entries, absent (not null) elsewhere.
         var json = JsonSerializer.Serialize(fetched);
@@ -586,7 +626,7 @@ public class ListPlaceholdersChronolistsTests
         var sync = await w.Sync();
         Assert.Equal(("ok", 0, 0, 0), (sync.State, sync.Added, sync.Removed, sync.Unresolved));
         Assert.Equal(16, w.Doc.Items.Count);
-        Assert.Empty(w.H.Lookup.Log); // exact source: never a Seerr lookup
+        w.AssertOnlySeasonCountLookups(); // exact source: never a title lookup
     }
 
     [Fact]
@@ -617,7 +657,8 @@ public class ListPlaceholdersChronolistsTests
         var sync = await w.Sync();
 
         Assert.Equal(("ok", 13), (sync.State, sync.Added));
-        Assert.Equal(new[] { "241388:S1", "1771", "61550:S1", "61550:S2", "299537", "REAL", "10138", "1724", "10195", "24428", "1403:S1E1,2,3,4,5,6,7", "76338", "1403:S1E8,9,10" }, w.Order());
+        // Without Seerr nothing confirms a whole season (review r1 F23): every run is an episodes placeholder.
+        Assert.Equal(new[] { "241388:S1E1,2,3,4", "1771", "61550:S1E1,2,3,4,5,6,7,8", "61550:S2E1,2,3,4,5,6,7,8,9,10", "299537", "REAL", "10138", "1724", "10195", "24428", "1403:S1E1,2,3,4,5,6,7", "76338", "1403:S1E8,9,10" }, w.Order());
         Assert.Equal(new[] { ironMan.ToString("N") }, w.Doc.Source!.Owned["movie|1726||"].ItemIds);
         Assert.Equal(40, w.Doc.Source.Owned.Count);
         Assert.Equal(0, (await w.Sync()).Added);
@@ -672,7 +713,7 @@ public class ListPlaceholdersChronolistsTests
 
         var again = await w.Sync();
         Assert.Equal(("ok", 0, 0, 0), (again.State, again.Added, again.Removed, again.Unresolved));
-        Assert.Empty(w.H.Lookup.Log); // exact source: never a Seerr lookup
+        w.AssertOnlySeasonCountLookups(); // exact source: never a title lookup
 
         // 1x03 leaves the watch order: its own episode goes and it is taken out of the run; 1x02 and the rest stay.
         w.H.Fetcher.Items = Read(Html(episodes.Where((_, i) => i != 3))).Items.ToList();

@@ -10,8 +10,10 @@
 
     /** Keys requested this session: movie|id, tv|id|<season>, tv|id|* (whole show). */
     const requested = new Set();
-    /** Pending user-status promise (Seerr reachable + current user linked). */
+    /** Pending user-status promise (Seerr reachable + current user linked); kept only while it may still be positive. */
     let userStatusPromise = null;
+    /** Request flows being started (mediaType|tmdbId|4k), so a second click doesn't start another one. */
+    const inFlight = new Set();
 
     /**
      * Seerr seasons a placeholder's request covers (B6): season/episodes → its season, series → none.
@@ -72,8 +74,19 @@
     }
 
     /**
-     * Seerr user status for request buttons, fetched once per page load.
-     * @param {boolean} [fresh] - Ask again (after a failure).
+     * Whether a Seerr user status lets the user request (Seerr reachable and the user linked).
+     * @param {{active: boolean, userFound: boolean}|null|undefined} user
+     * @returns {boolean}
+     */
+    function canRequest(user) {
+        return !!user?.active && !!user?.userFound;
+    }
+
+    /**
+     * Seerr user status for request buttons. A working status is kept for the session; a negative one (Seerr down,
+     * user not linked yet) is asked for again on the next call, like JE.jellyseerrAPI.checkUserStatus, which keeps
+     * negative answers for a minute only.
+     * @param {boolean} [fresh] - Ask again even after a working status.
      * @returns {Promise<{active: boolean, userFound: boolean}>}
      */
     function userStatus(fresh) {
@@ -81,9 +94,14 @@
             return Promise.resolve({ active: false, userFound: false });
         }
         if (!userStatusPromise || fresh) {
-            userStatusPromise = JE.jellyseerrAPI.checkUserStatus()
+            const promise = JE.jellyseerrAPI.checkUserStatus()
                 .then(s => ({ active: !!s?.active, userFound: !!s?.userFound }))
-                .catch(() => ({ active: false, userFound: false }));
+                .catch(() => ({ active: false, userFound: false }))
+                .then((status) => {
+                    if (!canRequest(status) && userStatusPromise === promise) userStatusPromise = null;
+                    return status;
+                });
+            userStatusPromise = promise;
         }
         return userStatusPromise;
     }
@@ -111,47 +129,76 @@
     }
 
     /**
-     * Requests the title behind a placeholder.
-     * Movies use JE's movie flow (advanced-options modal when allowed, else a direct request);
-     * TV opens the season modal with the placeholder's season pre-ticked.
-     * @param {Object} ph - Placeholder (tmdb-backed).
-     * @param {HTMLButtonElement} [button] - Button to show progress on.
+     * 4K movie request from a placeholder card's "Request in 4K" (the advanced-options modal when allowed).
+     * @param {Object} ph - Placeholder (tmdb-backed movie).
      * @returns {Promise<void>}
      */
-    async function requestPlaceholder(ph, button) {
-        const api = JE.jellyseerrAPI;
-        const ui = JE.jellyseerrUI;
-        if (!api || !ui || !ph?.tmdbId) return;
+    async function requestMovie4k(ph) {
         const tmdbId = Number(ph.tmdbId);
-        if (ph.mediaType === 'tv') {
-            await ui.showSeasonSelectionModal(tmdbId, 'tv', ph.title, null, false, { preselectedSeasons: preselectedSeasons(ph) });
+        const item = lp.render.toSeerrItem(ph);
+        if (JE.jellyseerrAPI.shouldShowAdvanced()) {
+            await JE.jellyseerrUI.showMovieRequestModal(tmdbId, ph.title, item, true);
             return;
-        }
-        const details = (await api.fetchMovieDetails(tmdbId)) || lp.render.toSeerrItem(ph);
-        if (isAlreadyRequested(details?.mediaInfo?.status)) {
-            // Requested (or added) since the last status refresh: Seerr would answer 409 (B5).
-            announce(ph);
-            return;
-        }
-        if (api.shouldShowAdvanced()) {
-            await ui.showMovieRequestModal(tmdbId, ph.title, details, false);
-            return;
-        }
-        const label = button ? button.innerHTML : '';
-        if (button) {
-            button.disabled = true;
-            button.innerHTML = `<span>${lp.render.esc(JE.t('jellyseerr_btn_requesting'))}</span><span class="je-lp-spinner"></span>`;
         }
         try {
+            await JE.jellyseerrAPI.requestMedia(tmdbId, 'movie', {}, true, item);
+            JE.toast(JE.t('listPlaceholders_requested_4k', { title: lp.render.esc(ph.title) }), 3000);
+        } catch (error) {
+            JE.toast(lp.errorMessage(error), 4000);
+        }
+    }
+
+    /**
+     * Requests the title behind a placeholder.
+     * Movies use JE's movie flow (advanced-options modal when allowed, else a direct request);
+     * TV opens the season modal with the placeholder's season pre-ticked. One flow per title at a time:
+     * clicks while it is starting are ignored (the button is disabled before the first await), and a flow
+     * whose user signed out meanwhile stops before it opens a modal or requests anything.
+     * @param {Object} ph - Placeholder (tmdb-backed).
+     * @param {HTMLButtonElement|null} [button] - Button to show progress on.
+     * @param {{is4k?: boolean}} [options] - is4k: "Request in 4K" (collection cards' split button).
+     * @returns {Promise<void>}
+     */
+    async function requestPlaceholder(ph, button, options = {}) {
+        const api = JE.jellyseerrAPI;
+        const ui = JE.jellyseerrUI;
+        if (!api || !ui || !ph?.tmdbId || button?.disabled) return;
+        const tmdbId = Number(ph.tmdbId);
+        const is4k = options.is4k === true;
+        const key = `${ph.mediaType}|${tmdbId}|${is4k ? '4k' : ''}`;
+        if (inFlight.has(key)) return;
+        inFlight.add(key);
+        const epoch = lp.epochNow();
+        const label = button ? button.innerHTML : '';
+        if (button) button.disabled = true;
+        let requested = false;
+        try {
+            if (ph.mediaType === 'tv') {
+                await ui.showSeasonSelectionModal(tmdbId, 'tv', ph.title, null, is4k, { preselectedSeasons: preselectedSeasons(ph), treatExistingAsRequested: true });
+                return;
+            }
+            if (is4k) {
+                await requestMovie4k(ph);
+                return;
+            }
+            const details = (await api.fetchMovieDetails(tmdbId)) || lp.render.toSeerrItem(ph);
+            if (!lp.isCurrentEpoch(epoch)) return;
+            if (isAlreadyRequested(details?.mediaInfo?.status)) {
+                // Requested (or added) since the last status refresh: Seerr would answer 409 (B5).
+                announce(ph);
+                return;
+            }
+            if (api.shouldShowAdvanced()) {
+                await ui.showMovieRequestModal(tmdbId, ph.title, details, false);
+                return;
+            }
+            if (button) button.innerHTML = `<span>${lp.render.esc(JE.t('jellyseerr_btn_requesting'))}</span><span class="je-lp-spinner"></span>`;
             await api.requestMedia(tmdbId, 'movie', {}, false, details);
+            requested = true;
         } catch (error) {
             if (error?.status === 409) {
                 announce(ph);
                 return;
-            }
-            if (button) {
-                button.disabled = false;
-                button.innerHTML = label;
             }
             if (ui.isQuotaError?.(error)) {
                 await ui.showQuotaErrorDialog(error, 'movie');
@@ -165,6 +212,13 @@
                 message = error.responseJSON.message;
             }
             JE.toast(lp.render.esc(message), 4000);
+        } finally {
+            inFlight.delete(key);
+            // A successful request re-renders the row/card as requested; otherwise the button is usable again.
+            if (button && !requested) {
+                button.disabled = false;
+                button.innerHTML = label;
+            }
         }
     }
 
@@ -173,6 +227,7 @@
         isRequested,
         markRequested,
         reset,
+        canRequest,
         userStatus,
         requestPlaceholder
     };

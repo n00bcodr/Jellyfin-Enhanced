@@ -226,9 +226,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
             {
                 result.Alternatives = true;
                 reasons.Add("alternatives");
+                // The alternatives resolve concurrently: each collects its own reasons, merged once all are done.
+                var perAlternativeReasons = wanted.Alternatives.Select(_ => new SortedSet<string>(StringComparer.Ordinal)).ToList();
                 var perAlternative = await Task.WhenAll(wanted.Alternatives.Select(async (alternative, i) =>
                 {
-                    var (list, _, resolvedAlternative) = await CandidatesAsync(alternative, options, reasons, cancellationToken).ConfigureAwait(false);
+                    var (list, _, resolvedAlternative) = await CandidatesAsync(alternative, options, perAlternativeReasons[i], cancellationToken).ConfigureAwait(false);
                     foreach (var candidate in list)
                     {
                         // Each candidate keeps the alternative it answers (its own kind, season and episodes).
@@ -238,6 +240,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
 
                     return list;
                 })).ConfigureAwait(false);
+                foreach (var alternativeReasons in perAlternativeReasons)
+                {
+                    reasons.UnionWith(alternativeReasons);
+                }
 
                 // Interleave the best of each alternative so both choices are on top.
                 ordered = new List<Scored>();
@@ -336,6 +342,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                     var hits = Require(await _lookup.SearchAsync("imdb:" + wanted.ImdbId, context, cancellationToken).ConfigureAwait(false)) ?? Array.Empty<TitleHit>();
                     var typed = hits.Where(h => MatchesType(h, wanted)).ToList();
                     list.AddRange((typed.Count > 0 ? typed : hits.ToList()).Select(h => new Scored(h, ImportScoring.ExplicitIdScore, true)));
+                    if (typed.Count == 0 && hits.Count > 0 && ExpectedType(wanted) != null)
+                    {
+                        reasons.Add("typeMismatch"); // the id names a title of the other type: offered for review only
+                    }
                 }
             }
             else if (wanted.TvdbId.HasValue)
@@ -582,11 +592,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
             else
             {
                 // A same-named title from another year doesn't make an exact title with the line's exact year doubtful
-                // ("The Flash" 2023 next to a 2022 "The Flash"); another exact title from the same year still does.
+                // when the top one is far better known ("The Flash" 2023 next to an unknown 2022 "The Flash"); another
+                // exact title from the same year, or a well-known one from another year (a guide's "Dune (2020)" for the
+                // 2021 film next to an obscure 2020 "Dune"), still does.
                 var rivals = ordered.Skip(1);
                 if (top.Exact && top.YearDelta == 0)
                 {
-                    rivals = rivals.Where(c => !(c.Exact && c.YearDelta != 0));
+                    rivals = rivals.Where(c => !(c.Exact && c.YearDelta != 0 && ImportScoring.Dominates(top.Hit.VoteCount, c.Hit.VoteCount)));
                 }
 
                 var second = rivals.FirstOrDefault();
@@ -629,6 +641,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                 }
             }
 
+            // An explicit id (or the only titles found) of the other type than the line asks for: never a sure match.
+            CapLow(ExpectedType(wanted) is string expectedType && top.Hit.MediaType != expectedType, "typeMismatch");
             CapLow(wanted.Status == "tba" && !unreleased, "tba");
             CapLow(top.SeasonMissing, "seasonMissing");
             CapLow(top.EpisodeMissing, "episodeMissing");
@@ -730,6 +744,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
             var episodes = wanted.OpenEnded && candidate.Episodes is { Count: > 0 } ? candidate.Episodes.Select(e => e.Episode).ToList() : wanted.Episodes;
             dto.InLibrary = FindInLibrary(new LibraryScope(kind, hit.TmdbId, dto.TvdbId, dto.ImdbId, kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes ? wanted.Season : null, kind == PlaceholderKinds.Episodes ? episodes : null), libraryUsers, dto.EpisodeTotal);
             return dto;
+        }
+
+        /// <summary>
+        /// TMDB's episode count per season of a show (Seerr <c>/api/v1/tv/{id}</c>, cached), e.g. to tell whether a run of
+        /// episodes is a whole season. Null when Seerr isn't set up or doesn't answer.
+        /// </summary>
+        /// <param name="showTmdbId">The show's TMDB id.</param>
+        /// <param name="context">Limiter owner/priority.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <returns>Season number → episode count (seasons without a count left out), or null.</returns>
+        public async Task<IReadOnlyDictionary<int, int>?> GetSeasonEpisodeCountsAsync(int showTmdbId, ImportCallContext context, CancellationToken cancellationToken)
+        {
+            if (!_lookup.IsConfigured)
+            {
+                return null;
+            }
+
+            var details = await _lookup.GetDetailsAsync("tv", showTmdbId, context, cancellationToken).ConfigureAwait(false);
+            if (details.Status != LookupStatus.Ok || details.Value == null)
+            {
+                return null;
+            }
+
+            var counts = new Dictionary<int, int>();
+            foreach (var season in details.Value.Seasons.Where(s => s.EpisodeCount is > 0))
+            {
+                counts.TryAdd(season.SeasonNumber, season.EpisodeCount!.Value);
+            }
+
+            return counts;
         }
 
         /// <summary>The list-source keys a library item stands for (<see cref="IListLibraryLookup.SourceKeysOf"/>).</summary>
@@ -901,16 +945,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                 var alternatives = new List<Wanted>();
                 foreach (var alternative in entry.Alternatives)
                 {
-                    // An alternative names its own season (the parser sends it per alternative): "Show A Season 2 or Show B"
-                    // means Show B as a whole. Listed episodes only carry over to an alternative of the same season.
-                    var sameSeason = alternative?.Season != null && alternative.Season == (entry.Season ?? entry.Episodes?.FirstOrDefault()?.S);
-                    var parsed = alternative == null ? null : ValidateCore(alternative.Title, alternative.Year, alternative.TypeHint ?? entry.TypeHint, alternative.Season, sameSeason ? entry.Episodes : null, null, alternative.Ids, false, entry.Status);
+                    // An alternative names its own season and episodes (the parser sends them per alternative): "Show A
+                    // Season 2 or Show B" means Show B as a whole, "Flash 1x08 or Arrow 3x09" Arrow's episode 9.
+                    var parsed = alternative == null ? null : ValidateCore(alternative.Title, alternative.Year, alternative.TypeHint ?? entry.TypeHint, alternative.Season, alternative.Episodes, null, alternative.Ids, false, entry.Status);
                     if (parsed == null)
                     {
                         return null;
                     }
 
-                    alternatives.Add(parsed);
+                    alternatives.Add(alternative!.OpenEnded == true && parsed.Episodes.Count > 0 ? parsed with { OpenEnded = true } : parsed);
                 }
 
                 main = main with { Alternatives = alternatives };

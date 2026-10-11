@@ -16,8 +16,10 @@
     /** Stands in for a '|' inside a translation value while lp.tn splits the singular|plural forms (private-use char). */
     const PIPE_GUARD = '\uE000';
 
-    /** listId -> { view, at } of the last GET (shared between page modules for a few seconds). */
+    /** listId -> { view, at } of the last GET (shared between page modules for a few seconds), least recent first. */
     const views = new Map();
+    /** Lists whose last view is kept (the pages jellyfin-web caches plus some history). */
+    const MAX_CACHED_VIEWS = 20;
     /** listId -> in-flight GET promise. */
     const inflight = new Map();
 
@@ -106,6 +108,18 @@
     }
 
     /**
+     * Caches a list's view as the most recently used one, forgetting the least recently used lists beyond
+     * MAX_CACHED_VIEWS (an imported list's view can be large; a forgotten one is just read again).
+     * @param {string} listId
+     * @param {Object} view - ListViewDto.
+     */
+    function remember(listId, view) {
+        views.delete(listId);
+        views.set(listId, { view, at: Date.now() });
+        while (views.size > MAX_CACHED_VIEWS) views.delete(views.keys().next().value);
+    }
+
+    /**
      * Caches a view and tells page modules about it (never replacing a newer revision).
      * @param {Object} view - ListViewDto.
      * @returns {Object} The same view.
@@ -113,7 +127,7 @@
     function publish(view) {
         if (!view || !view.listId) return view;
         if (isOlderView(view, views.get(view.listId)?.view)) return view;
-        views.set(view.listId, { view, at: Date.now() });
+        remember(view.listId, view);
         document.dispatchEvent(new CustomEvent(VIEW_EVENT, { detail: { listId: view.listId, view } }));
         return view;
     }
@@ -170,7 +184,7 @@
                 // A GET that read an older revision than a mutation published meanwhile is stale.
                 const known = views.get(view.listId)?.view;
                 if (isOlderView(view, known)) return known;
-                views.set(view.listId, { view, at: Date.now() });
+                remember(view.listId, view);
                 return view;
             })
             .finally(() => {
@@ -376,6 +390,7 @@
             not_permutation: 'listPlaceholders_err_changed',
             move_mismatch: 'listPlaceholders_err_changed',
             duplicate_copy: 'listPlaceholders_err_duplicate_copy',
+            move_unsupported: 'listPlaceholders_err_move_unsupported',
             forbidden: 'listPlaceholders_err_forbidden',
             parental_block: 'listPlaceholders_err_forbidden',
             not_found: 'listPlaceholders_err_not_found',

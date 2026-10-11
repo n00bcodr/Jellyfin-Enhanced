@@ -19,6 +19,8 @@
 
     let initialized = false;
     let unsubscribeLibrary = null;
+    /** The ApiClient the LibraryChanged subscription is on (jellyfin-web binds subscribe per client). */
+    let subscribedClient = null;
 
     /**
      * The item id of a details route, or null.
@@ -123,6 +125,30 @@
     }
 
     /**
+     * Subscribes to LibraryChanged on the current ApiClient, moving the subscription when jellyfin-web replaced
+     * window.ApiClient (server switch): its subscribe is bound to each client's own socket.
+     */
+    function subscribeLibrary() {
+        const client = typeof ApiClient !== 'undefined' ? ApiClient : null;
+        if (client === subscribedClient) return;
+        try {
+            unsubscribeLibrary?.();
+        } catch (error) {
+            console.warn(`${logPrefix} LibraryChanged unsubscribe failed`, error);
+        }
+        unsubscribeLibrary = null;
+        subscribedClient = null;
+        try {
+            if (client && typeof client.subscribe === 'function') {
+                unsubscribeLibrary = client.subscribe(['LibraryChanged'], onLibraryChanged);
+                subscribedClient = client;
+            }
+        } catch (error) {
+            console.warn(`${logPrefix} LibraryChanged subscription failed`, error);
+        }
+    }
+
+    /**
      * Starts the feature. No-op unless ListPlaceholdersEnabled is on; safe to call twice.
      */
     function initialize() {
@@ -136,18 +162,13 @@
         document.addEventListener('jellyseerr-media-requested', (e) => {
             if (lp.requests.markRequested(e.detail)) forEachController(ctrl => ctrl.onRequested());
         });
-        try {
-            if (typeof ApiClient !== 'undefined' && typeof ApiClient.subscribe === 'function') {
-                unsubscribeLibrary = ApiClient.subscribe(['LibraryChanged'], onLibraryChanged);
-            }
-        } catch (error) {
-            console.warn(`${logPrefix} LibraryChanged subscription failed`, error);
-        }
+        subscribeLibrary();
         JE.session?.onUserChange?.('list-placeholders', () => {
             lp.api.resetCaches();
             lp.requests.reset();
             lp.actions.closeMenu();
             Array.from(lp.controllers).forEach(disposeController);
+            subscribeLibrary();
         });
         const onView = JE.core?.navigation?.onViewPage || JE.helpers?.onViewPage;
         if (onView) onView((view, element, hash) => { onViewShow(element, hash); }, { immediate: true });

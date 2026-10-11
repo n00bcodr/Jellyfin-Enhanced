@@ -146,6 +146,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <summary>Clock (tests move it).</summary>
         internal Func<DateTime> UtcNow { get; set; } = () => DateTime.UtcNow;
 
+        /// <summary>Gets the number of remembered "being added" matches (tests).</summary>
+        internal int PendingMatchCount => _pendingMatches.Count;
+
         private static bool Enabled => JellyfinEnhanced.Instance?.Configuration?.ListPlaceholdersEnabled == true;
 
         // ── Scheduling ───────────────────────────────────────────────────────
@@ -307,6 +310,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <returns>A task.</returns>
         internal async Task DrainAsync(CancellationToken cancellationToken)
         {
+            // F11: a match whose placeholder went away (deleted, dropped by a sync, relinked) is never settled by a pass;
+            // it's invisible once its grace has ended, so it goes then.
+            foreach (var pair in _pendingMatches)
+            {
+                if (IsExpired(pair.Value))
+                {
+                    _pendingMatches.TryRemove(pair);
+                }
+            }
+
             if (!Enabled)
             {
                 _changedItems.Clear();
@@ -474,7 +487,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
             }
 
-            RecoverIntents(context);
+            await RecoverIntentsAsync(context).ConfigureAwait(false);
             if (list.Kind == ListKinds.Playlist)
             {
                 var canonical = Canonical(context.Doc, _host.GetRawEntries(list.Id));
@@ -528,7 +541,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 placeholder = context.Doc.Items.FirstOrDefault(p => p.Id == placeholderId);
                 if (placeholder != null && PlaceholderProgress.IsEpisodeFill(placeholder) && PlaceholderProgress.IsComplete(placeholder, context.Today))
                 {
-                    var confirmed = placeholder.Kind == PlaceholderKinds.Episodes || placeholder.InProduction == false || fresh.Contains(placeholderId);
+                    // C3: a stored "ended" can be an older reading (or a show revived since), so seasons and series retire on
+                    // fresh metadata; only without Seerr, where nothing could ever confirm it, does the stored state decide.
+                    var confirmed = placeholder.Kind == PlaceholderKinds.Episodes || fresh.Contains(placeholderId)
+                        || (placeholder.InProduction == false && !ListPlaceholderMetadataService.IsAvailable);
                     if (confirmed)
                     {
                         Retire(context, placeholder);
@@ -738,8 +754,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 PhId = placeholderId,
                 ItemIds = items.Select(N).ToList(),
                 Anchor = anchor,
+                Index = index,
                 OccurrenceCountsBefore = items.Distinct().ToDictionary(N, id => before.TryGetValue(id, out var count) ? count : 0, StringComparer.Ordinal),
-                CreatedAt = UtcNow().ToString("o", CultureInfo.InvariantCulture) + "/" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
+                CreatedAt = IntentStamp(),
             };
             context.Doc.Intents.Add(intent);
             _store.Save(context.Doc);
@@ -760,9 +777,53 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var after = OccurrenceCounts(raw);
             var landed = items.Where(id => after.TryGetValue(id, out var count) && count > intent.OccurrenceCountsBefore[N(id)]).ToHashSet();
             context.Doc.Intents.RemoveAll(i => i.CreatedAt == intent.CreatedAt);
-            context.Doc.Order = placed ?? Canonical(context.Doc, raw);
+            context.Doc.Order = placed
+                ?? (landed.Count > 0 ? await SettleLandedAsync(context, anchor, index, items.Where(landed.Contains).ToList()).ConfigureAwait(false) : Canonical(context.Doc, raw));
             context.Dirty = true;
             return placed == null && landed.Count == 0 ? null : landed;
+        }
+
+        /// <summary>
+        /// F8: the canonical order once new items landed without a finished placement (Jellyfin threw, or a crash left
+        /// an intent): their tokens go where the swap planned them (<paramref name="index"/> while it still follows
+        /// <paramref name="anchor"/>, else right after the anchor), so a placeholder keeps following its own fills. On
+        /// Jellyfin 10.11, where the append and the moves are separate calls, entries left elsewhere are moved after the
+        /// anchor once; anything else keeps Jellyfin's order with placeholders reconciled to their anchors.
+        /// </summary>
+        private async Task<List<string>> SettleLandedAsync(PassContext context, string? anchor, int? index, IReadOnlyList<Guid> landed)
+        {
+            var order = context.Doc.Order;
+            int at;
+            if (index is int planned && planned >= 0 && planned <= order.Count
+                && string.Equals(ListPlaceholderOrder.RealAnchorBefore(order, planned), anchor, StringComparison.Ordinal))
+            {
+                at = planned;
+            }
+            else
+            {
+                var anchorIndex = anchor == null ? -1 : order.IndexOf(anchor);
+                at = anchor == null ? 0 : anchorIndex < 0 ? order.Count : anchorIndex + 1;
+            }
+
+            var (desired, inserted) = ListPlaceholderOrder.InsertRealItems(order, at, landed);
+            var desiredReal = desired.Where(ListPlaceholderOrder.IsReal).ToList();
+            var actual = ListPlaceholderOrder.BuildRealTokens(_host.GetRawEntries(context.List.Id));
+            if (!actual.SequenceEqual(desiredReal, StringComparer.Ordinal) && context.Owner != null)
+            {
+                try
+                {
+                    actual = await ListPlaylistPlacement.MoveAfterAnchorAsync(_host, _logger, context.List.Id, context.Owner, anchor, inserted).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"[ListPlaceholders] Moving new entries of list {context.ListIdN} into place failed; keeping Jellyfin's order: {ex.Message}");
+                    actual = ListPlaceholderOrder.BuildRealTokens(_host.GetRawEntries(context.List.Id));
+                }
+            }
+
+            return actual.SequenceEqual(desiredReal, StringComparer.Ordinal)
+                ? desired
+                : ListPlaceholderOrder.Reconcile(desired, actual, context.Doc.Items.Select(p => p.Id).ToList());
         }
 
         // ── Collections ──────────────────────────────────────────────────────
@@ -793,27 +854,74 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 .Where(id => !members.ContainsKey(id))
                 .Distinct()
                 .ToList();
+            var added = new HashSet<Guid>();
+            var rejected = new HashSet<Guid>();
             if (toAdd.Count > 0)
             {
-                try
+                // F9: persisted before Jellyfin is mutated (it writes the members before its event subscribers run), so a
+                // crash or a throw after that write still makes what JE added sync-owned.
+                var intent = new SwapIntent
                 {
-                    await _host.AddToCollectionAsync(context.List.Id, toAdd).ConfigureAwait(false);
-                    context.Inserted += toAdd.Count;
+                    PhId = placeholderId,
+                    ItemIds = toAdd.Select(N).ToList(),
+                    OccurrenceCountsBefore = toAdd.ToDictionary(N, _ => 0, StringComparer.Ordinal),
+                    CreatedAt = IntentStamp(),
+                };
+                context.Doc.Intents.Add(intent);
+                _store.Save(context.Doc);
+                context.Doc = _store.LoadForUpdate(context.ListIdN, context.List.Kind);
+                context.Dirty = false;
+
+                // F10: Jellyfin skips members silently, so only ids absent right before the call (read again after the
+                // save) and present after it count as added by JE.
+                var before = OccurrenceCounts(_host.GetRawEntries(context.List.Id));
+                toAdd.RemoveAll(before.ContainsKey);
+                var failed = false;
+                if (toAdd.Count > 0)
+                {
+                    try
+                    {
+                        await _host.AddToCollectionAsync(context.List.Id, toAdd).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Warning($"[ListPlaceholders] Adding to collection {context.ListIdN} failed (retried on the next pass): {ex.Message}");
+                        failed = true;
+                    }
                 }
-                catch (Exception ex)
+
+                var after = OccurrenceCounts(_host.GetRawEntries(context.List.Id));
+                added = toAdd.Where(after.ContainsKey).ToHashSet();
+                rejected = toAdd.Where(id => !added.Contains(id)).ToHashSet();
+                context.Doc.Intents.RemoveAll(i => i.CreatedAt == intent.CreatedAt);
+                context.Dirty = true;
+                context.Inserted += added.Count;
+                if (failed && added.Count == 0)
                 {
-                    _logger.Warning($"[ListPlaceholders] Adding to collection {context.ListIdN} failed (retried on the next pass): {ex.Message}");
                     return false;
                 }
+
+                placeholder = context.Doc.Items.First(p => p.Id == placeholderId);
             }
 
-            // F1: only what JE added here becomes sync-owned; members that were already there are presence.
-            var added = toAdd.ToHashSet();
+            RecordCollectionSwap(context, placeholder, resolution, added, rejected);
+            return true;
+        }
+
+        // F1: only what JE added (`added`) becomes sync-owned; members that were already there are presence. F10: what
+        // JE tried to add but Jellyfin didn't take (`rejected`) counts for nothing; a title with nothing else keeps its
+        // placeholder for the next pass.
+        private void RecordCollectionSwap(PassContext context, Placeholder placeholder, ScopeResolution resolution, HashSet<Guid> added, HashSet<Guid> rejected)
+        {
             switch (placeholder.Kind)
             {
                 case PlaceholderKinds.Movie:
                 case PlaceholderKinds.Series:
-                    Retire(context, placeholder, resolution.Items.Where(i => added.Contains(i.ItemId)).Select(i => N(i.ItemId)).ToList());
+                    if (!resolution.Items.All(i => rejected.Contains(i.ItemId)))
+                    {
+                        Retire(context, placeholder, resolution.Items.Where(i => added.Contains(i.ItemId)).Select(i => N(i.ItemId)).ToList());
+                    }
+
                     break;
                 case PlaceholderKinds.Season:
                 case PlaceholderKinds.Episodes:
@@ -823,7 +931,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                         var listItem = placeholder.Kind == PlaceholderKinds.Season
                             ? resolution.Items.FirstOrDefault(i => i.Coords.Contains(episode.Coords[0]))?.ItemId
                             : episode.ItemId;
-                        if (listItem.HasValue)
+                        if (listItem.HasValue && !rejected.Contains(listItem.Value))
                         {
                             Fill(context, placeholder, episode, added.Contains(listItem.Value) ? listItem : null);
                         }
@@ -831,8 +939,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
                     break;
             }
-
-            return true;
         }
 
         // ── Bookkeeping ──────────────────────────────────────────────────────
@@ -951,8 +1057,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         }
 
         // A6: intents left by a crash (or a throw) are completed for the items whose occurrence count went up and
-        // rolled back (dropped) for the rest; the next pass retries those.
-        private void RecoverIntents(PassContext context)
+        // rolled back (dropped) for the rest; the next pass retries those. Completed playlist items take the spot the
+        // intent planned (F8); collection items JE added become sync-owned (F9).
+        private async Task RecoverIntentsAsync(PassContext context)
         {
             if (context.Doc.Intents.Count == 0)
             {
@@ -982,6 +1089,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
 
                 _logger.Info($"[ListPlaceholders] Completed an interrupted swap-in of \"{placeholder.Title}\" in list {context.ListIdN}.");
+                if (context.List.Kind == ListKinds.Collection)
+                {
+                    var resolution = _resolver.Resolve(placeholder, ListKinds.Collection, Array.Empty<User>());
+                    if (resolution.Found)
+                    {
+                        var rejected = intent.ItemIds
+                            .Select(idN => Guid.TryParseExact(idN, "N", out var id) ? id : Guid.Empty)
+                            .Where(id => id != Guid.Empty && !landed.Contains(id))
+                            .ToHashSet();
+                        RecordCollectionSwap(context, placeholder, resolution, landed.ToHashSet(), rejected);
+                    }
+
+                    continue;
+                }
+
+                context.Doc.Order = await SettleLandedAsync(context, intent.Anchor, intent.Index, landed).ConfigureAwait(false);
                 if (placeholder.Kind == PlaceholderKinds.Movie)
                 {
                     Retire(context, placeholder, landed.Select(N).ToList());
@@ -1284,6 +1407,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         }
 
         private static string MatchKey(string listIdN, string placeholderId) => listIdN + "|" + placeholderId;
+
+        // Unique intent id (creation time + random suffix).
+        private string IntentStamp() =>
+            UtcNow().ToString("o", CultureInfo.InvariantCulture) + "/" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
 
         // At most one uncached metadata read per placeholder and hour: a show numbered differently in the library than
         // on TMDB keeps "unexpected" fills forever and must not cost a Seerr call on every pass.

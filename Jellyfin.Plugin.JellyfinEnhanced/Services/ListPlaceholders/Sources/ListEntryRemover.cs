@@ -12,7 +12,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
     /// <summary>Removes real entries from a list (linked-list sync, removeDropped). Seam for tests.</summary>
     public interface IListEntryRemover
     {
-        /// <summary>Removes items from a playlist (every copy of each id — callers only pass single-copy items) or a collection.</summary>
+        /// <summary>
+        /// Removes items from a playlist (every copy of each id — callers only pass single-copy items) or a collection.
+        /// Jellyfin rewrites a playlist from the entries it can resolve, so its unresolved entries go too: callers don't
+        /// remove from a playlist that has any (<see cref="ListSourceProvenance.RecheckItemDrops"/>).
+        /// </summary>
         /// <param name="list">The list.</param>
         /// <param name="itemIds">Items.</param>
         /// <returns>A task.</returns>

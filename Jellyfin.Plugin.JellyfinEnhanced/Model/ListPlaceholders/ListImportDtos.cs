@@ -41,6 +41,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("ids")] public ImportIdsDto? Ids { get; set; }
         /// <summary>Season.</summary>
         [JsonPropertyName("season")] public int? Season { get; set; }
+        /// <summary>This alternative's own listed episodes (one season): "Flash 1x08 or Arrow 3x09".</summary>
+        [JsonPropertyName("episodes")] public List<ImportEpisodeDto>? Episodes { get; set; }
+        /// <summary>This alternative's first episode starts a range to the end of its season.</summary>
+        [JsonPropertyName("openEnded")] public bool? OpenEnded { get; set; }
     }
 
     /// <summary>

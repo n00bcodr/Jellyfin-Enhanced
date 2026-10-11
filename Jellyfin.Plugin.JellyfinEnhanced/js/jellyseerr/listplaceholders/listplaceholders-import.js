@@ -60,6 +60,7 @@
         not_found: 'listPlaceholders_import_err_list_not_found',
         rate_limited: 'listPlaceholders_import_err_rate_limited',
         quota_exhausted: 'listPlaceholders_import_err_rate_limited',
+        fetch_limited: 'listPlaceholders_import_err_fetch_limited',
         upstream_error: 'listPlaceholders_import_err_upstream',
         unreachable: 'listPlaceholders_import_err_upstream',
         too_large: 'listPlaceholders_import_err_upstream',
@@ -142,6 +143,9 @@
                 if (altYear) out.year = altYear;
                 if (alt?.typeHint === 'movie' || alt?.typeHint === 'tv') out.typeHint = alt.typeHint;
                 if (Number.isInteger(alt?.season)) out.season = alt.season;
+                // Its own episodes ("Flash 1x08 or Arrow 3x09"): the server never lends it the first alternative's.
+                if (Array.isArray(alt?.episodes) && alt.episodes.length) out.episodes = alt.episodes.slice(0, 100).map(e => ({ s: Number(e.s), e: Number(e.e) }));
+                if (alt?.openEnded && out.episodes) out.openEnded = true;
                 if (alt?.ids) out.ids = toImportEntry({ ids: alt.ids }, 0).ids;
                 if (!out.ids) delete out.ids;
                 return out;
@@ -234,10 +238,29 @@
         if (cand.mediaType === 'movie') return 'movie';
         if (Array.isArray(cand.episodes) && cand.episodes.length) return 'episodes';
         if (cand.season && Number.isInteger(cand.season.seasonNumber)) return requested === 'episodes' && entryEpisodes(entry, cand.season.seasonNumber).length ? 'episodes' : 'season';
-        if (cand.alternative > 0) return 'series'; // "A S2 or B": B is the whole show unless it carries its own season
+        // "A S2 or B": B is the whole show unless it carries its own season (alternativeScope).
+        if (cand.alternative > 0 && !entry?.alternatives?.[cand.alternative]) return 'series';
         if (requested === 'episodes' && entryEpisodes(entry, seasonOf(entry)).length) return 'episodes';
         if ((requested === 'season' || requested === 'episodes') && Number.isInteger(seasonOf(entry))) return 'season';
         return 'series';
+    }
+
+    /**
+     * The part of a parsed entry a candidate answers: for an "A or B" entry the candidate's own alternative (its year,
+     * season, episodes and kind), so "Flash 1x08 or Arrow 3x09" imports Arrow 3x09, not Arrow 1x08 or all of season 3.
+     * @param {Object} cand - ImportCandidateDto.
+     * @param {Object} entry - Parsed entry.
+     * @param {string|undefined} requested - ResolvedEntryDto.kind (the first alternative's).
+     * @returns {{entry: Object, requested: string|undefined}}
+     */
+    function alternativeScope(cand, entry, requested) {
+        const alt = Number.isInteger(cand?.alternative) && Array.isArray(entry?.alternatives) ? entry.alternatives[cand.alternative] : undefined;
+        if (!alt || typeof alt !== 'object') return { entry, requested };
+        const episodes = Array.isArray(alt.episodes) && alt.episodes.length ? alt.episodes : undefined;
+        return {
+            entry: { ...entry, year: alt.year, date: alt.date, season: alt.season, episodes, openEnded: !!(episodes && alt.openEnded) },
+            requested: episodes ? 'episodes' : Number.isInteger(alt.season) ? 'season' : undefined
+        };
     }
 
     /**
@@ -271,6 +294,7 @@
      */
     function placeholderFromCandidate(cand, entry, requested) {
         if (!cand || !(Number(cand.tmdbId) > 0) || (cand.mediaType !== 'movie' && cand.mediaType !== 'tv')) return null;
+        ({ entry, requested } = alternativeScope(cand, entry, requested));
         const title = clip(cand.title, 200);
         if (!title) return null;
         const kind = kindFor(cand, entry, requested);
@@ -1639,10 +1663,13 @@
             } catch (_) {
                 match = null; // the import still works; the row just doesn't show the library state
             }
-            if (!alive() || row.libraryToken !== token) return;
+            // A row of a review left with Back (a new lookup reuses its index) is gone, not just out of date.
+            if (!alive() || row.libraryToken !== token || state.rows[row.i] !== row) return;
             row.libraryPending = false;
             const current = row.cands[row.cand];
-            if (match && current === cand && sameCandidate(match, cand) && state.step === 'review') {
+            // The probe is a single title, so its match never names an alternative: compare the title only (the
+            // candidate keeps its own alternative below).
+            if (match && current === cand && match.mediaType === cand.mediaType && Number(match.tmdbId) === Number(cand.tmdbId) && state.step === 'review') {
                 // The scope facts of the looked-up scope (season, episodes, episode total) make the chip's "n of m" right.
                 const fresh = {
                     ...cand,

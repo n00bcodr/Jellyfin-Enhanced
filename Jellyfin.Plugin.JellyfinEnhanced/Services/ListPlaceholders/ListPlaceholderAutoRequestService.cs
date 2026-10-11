@@ -36,7 +36,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
     /// (<c>X-Api-User</c>), so Seerr's permissions, quotas and approval rules apply:
     /// <list type="bullet">
     /// <item>Trigger: minutes = 0 → playback start, else once the playback position reaches the configured minutes;
-    /// once per session + item. Settings are read per event (no restart needed).</item>
+    /// once per session + item (until <see cref="TriggerTtl"/> passes without an event for it). Settings are read per
+    /// event (no restart needed).</item>
     /// <item>Lists: documents with placeholders whose entries contain the item (playlist: the entry; collection: the
     /// item, or its series/season for an episode) and that the user can view by JELLYFIN's rules (no JE admin
     /// override: an administrator's playback never requests from another user's private playlist). Public playlists of
@@ -49,8 +50,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
     /// user's parental controls (fail closed), the user is linked to Seerr, not blocklisted by JE and may request that
     /// media type. Ineligible ones are skipped, not counted.</item>
     /// <item>TV requests one season (<see cref="ListPlaceholderAutoRequestRules.RequestSeason"/>): a season placeholder its
-    /// season, an episodes placeholder the season of its episodes, a series placeholder season 1 while nothing of the
-    /// show is in the list, else the first season with a missing (aired, when "only released") expected episode.</item>
+    /// season, an episodes placeholder the season of its episodes, a series placeholder season 1 (or its lowest regular
+    /// season when it has no season 1); Auto Season Requests, when on, continues later seasons.</item>
     /// <item>Dedupe by <c>mediaType|tmdbId|season</c> across lists (a key is only "used" once an outcome holds for the
     /// whole key; a placeholder skipped for its own release date or a transient Seerr failure doesn't block a later
     /// one with the same key), at most N requests per trigger, and per user for
@@ -65,7 +66,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
     /// </summary>
     public sealed class ListPlaceholderAutoRequestService : IDisposable
     {
-        /// <summary>How long a session + item stays "triggered".</summary>
+        /// <summary>How long a session + item stays "triggered" after its last playback event.</summary>
         public static readonly TimeSpan TriggerTtl = TimeSpan.FromHours(6);
 
         private const int MaxConcurrentRuns = 2;
@@ -81,6 +82,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         private readonly SeerrMediaIndex _index;
         private readonly IUserManager _userManager;
         private readonly Logger _logger;
+        private readonly TimeProvider _time;
         private readonly object _gate = new();
         private readonly Dictionary<string, DateTime> _triggered = new(StringComparer.Ordinal);
         private readonly Dictionary<string, DateTime> _handled = new(StringComparer.Ordinal);
@@ -107,7 +109,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             SeerrMediaIndex index,
             IUserManager userManager,
             Logger logger)
+            : this(store, access, host, library, seerr, index, userManager, logger, TimeProvider.System)
         {
+        }
+
+        internal ListPlaceholderAutoRequestService(
+            ListPlaceholderStore store,
+            ListAccessService access,
+            IListPlaceholderHost host,
+            IAutoRequestLibrary library,
+            SeerrRequestGateway seerr,
+            SeerrMediaIndex index,
+            IUserManager userManager,
+            Logger logger,
+            TimeProvider time)
+        {
+            _time = time;
             _store = store;
             _access = access;
             _host = host;
@@ -154,7 +171,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
 
             var key = string.Join('|', N(userId), string.IsNullOrEmpty(sessionKey) ? "-" : sessionKey, N(item.Id));
-            if (!TryMark(_triggered, key, TriggerTtl))
+            if (!TryMark(_triggered, key, TriggerTtl, slide: true))
             {
                 return null;
             }
@@ -245,15 +262,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
         private async Task<List<CandidateList>> FindListsAsync(User user, PlayedItem item, CancellationToken cancellationToken)
         {
-            var anchors = new HashSet<Guid> { item.Id };
-            if (item.SeriesId is Guid series)
-            {
-                anchors.Add(series);
-            }
-
+            // Most specific first: a collection anchors at the item itself, else its season, else its series.
+            var anchors = new List<Guid> { item.Id };
             if (item.SeasonId is Guid season)
             {
                 anchors.Add(season);
+            }
+
+            if (item.SeriesId is Guid series)
+            {
+                anchors.Add(series);
             }
 
             var visible = new Dictionary<Guid, bool>();
@@ -406,10 +424,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var tmdbId = placeholder.TmdbId!.Value;
             var mediaType = placeholder.MediaType;
             var today = DateTime.UtcNow;
-            var season = ListPlaceholderAutoRequestRules.RequestSeason(placeholder, today, onlyReleased);
+            var season = ListPlaceholderAutoRequestRules.RequestSeason(placeholder);
             if (mediaType == "tv" && season == null)
             {
-                return Skip(run, placeholder, onlyReleased ? "every aired episode is already in the list" : "every expected episode is already in the list");
+                return Skip(run, placeholder, "no season to request");
             }
 
             var key = ListPlaceholderAutoRequestRules.RequestKey(mediaType, tmdbId, season);
@@ -495,14 +513,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
             if (provisional)
             {
-                // Seerr's season list fills what the stored metadata doesn't know yet (no season 1; expected set
-                // still pending for a partly filled series). The dedupe skipped above runs on the real season.
-                season = ListPlaceholderAutoRequestRules.RequestSeason(placeholder, today, onlyReleased, root);
-                if (season == null)
-                {
-                    return Skip(run, placeholder, onlyReleased ? "every aired episode Seerr lists is already in the list" : "every episode Seerr lists is already in the list");
-                }
-
+                // Seerr's season list fills what the stored metadata doesn't know yet (whether there is a season 1).
+                // The dedupe skipped above runs on the real season.
+                season = ListPlaceholderAutoRequestRules.RequestSeason(placeholder, root);
                 key = ListPlaceholderAutoRequestRules.RequestKey(mediaType, tmdbId, season);
                 if (seen.Contains(key))
                 {
@@ -639,7 +652,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         {
             lock (_gate)
             {
-                return _handled.TryGetValue(UserKey(user, key), out var at) && DateTime.UtcNow - at < ListPlaceholderAutoRequestRules.UserDedupeWindow;
+                return _handled.TryGetValue(UserKey(user, key), out var at) && UtcNow - at < ListPlaceholderAutoRequestRules.UserDedupeWindow;
             }
         }
 
@@ -647,7 +660,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         {
             lock (_gate)
             {
-                _handled[UserKey(user, key)] = DateTime.UtcNow;
+                _handled[UserKey(user, key)] = UtcNow;
             }
         }
 
@@ -662,13 +675,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         }
 
         // Atomic "first within ttl" marker shared by the trigger and the per-user request dedupe; prunes expired entries.
-        private bool TryMark(Dictionary<string, DateTime> map, string key, TimeSpan ttl)
+        // slide: a repeat within ttl renews the mark (the trigger: "within ttl" of the LAST event, so an ongoing playback
+        // never triggers twice); otherwise ttl runs from the first mark (the request dedupe).
+        private bool TryMark(Dictionary<string, DateTime> map, string key, TimeSpan ttl, bool slide = false)
         {
-            var now = DateTime.UtcNow;
+            var now = UtcNow;
             lock (_gate)
             {
                 if (map.TryGetValue(key, out var at) && now - at < ttl)
                 {
+                    if (slide)
+                    {
+                        map[key] = now;
+                    }
+
                     return false;
                 }
 
@@ -690,6 +710,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 map.Remove(stale);
             }
         }
+
+        private DateTime UtcNow => _time.GetUtcNow().UtcDateTime;
 
         private static bool IsRequestable(Placeholder placeholder) => placeholder.Kind != PlaceholderKinds.Custom && placeholder.TmdbId is > 0;
 

@@ -36,10 +36,12 @@
     /**
      * Identity of what a card shows for status, to rebuild only cards whose state changed.
      * @param {Object} ph
+     * @param {{active: boolean, userFound: boolean}|null} user - Seerr user status the request button was built with.
      * @returns {string}
      */
-    function statusSignature(ph) {
-        return `${ph.status ?? ''}|${lp.requests.isRequested(ph) ? 1 : 0}|${lp.render.addingItemId(ph) || ''}|${lp.render.progressParts(ph).join(',')}`;
+    function statusSignature(ph, user) {
+        return `${ph.status ?? ''}|${lp.requests.isRequested(ph) ? 1 : 0}|${lp.render.addingItemId(ph) || ''}|${lp.render.progressParts(ph).join(',')}`
+            + `|${user ? `${user.active ? 1 : 0}${user.userFound ? 1 : 0}` : ''}`;
     }
 
     /**
@@ -84,7 +86,8 @@
         ctrl.cardContext = () => ({
             canEdit: !!ctrl.view?.canEdit,
             seerrEnabled: !!ctrl.view?.seerrEnabled && JE.pluginConfig?.JellyseerrEnabled === true,
-            user: ctrl.user
+            user: ctrl.user,
+            onRequest4k: ctrl.request4k
         });
 
         /**
@@ -148,7 +151,7 @@
                 for (; index < end; index++) {
                     const ph = placeholders[index];
                     const card = lp.render.buildCard(ph, context);
-                    card.__jeLpSignature = statusSignature(ph);
+                    card.__jeLpSignature = statusSignature(ph, context.user);
                     fragment.appendChild(card);
                 }
                 cards.appendChild(fragment);
@@ -166,7 +169,7 @@
             cards.querySelectorAll(':scope > .je-lp-card').forEach((card) => {
                 const ph = ctrl.byId(card.getAttribute('data-je-lp-id'));
                 if (!ph) return;
-                const signature = statusSignature(ph);
+                const signature = statusSignature(ph, context.user);
                 if (card.__jeLpSignature === signature) return;
                 const next = lp.render.buildCard(ph, context);
                 next.__jeLpSignature = signature;
@@ -246,11 +249,12 @@
         };
 
         /**
-         * Whether request buttons need the Seerr user status (cards built without it show "Offline").
+         * Whether request buttons need the Seerr user status: none yet (cards built without it show "Offline"),
+         * or a negative one (Seerr was down / the user not linked), which each load asks for again.
          * @param {Object|null} view
          * @returns {boolean}
          */
-        ctrl.needsUser = (view) => !ctrl.user && !!view?.seerrEnabled && JE.pluginConfig?.JellyseerrEnabled === true
+        ctrl.needsUser = (view) => !lp.requests.canRequest(ctrl.user) && !!view?.seerrEnabled && JE.pluginConfig?.JellyseerrEnabled === true
             && (view.placeholders || []).length > 0;
 
         /**
@@ -258,7 +262,7 @@
          * and rebuilds the cards with it.
          */
         ctrl.ensureUser = () => {
-            if (ctrl.userPending || !ctrl.needsUser(ctrl.view)) return;
+            if (ctrl.userPending || ctrl.user || !ctrl.needsUser(ctrl.view)) return;
             const epoch = lp.epochNow();
             ctrl.userPending = true;
             lp.requests.userStatus().then((user) => {
@@ -321,7 +325,15 @@
         };
 
         /**
-         * Capture-phase clicks in the section: "…" menus and TV / 4K request buttons of placeholder cards.
+         * "Request in 4K" from a card's split button (the popup is on document.body, outside the section).
+         * @param {Object} ph - The card's placeholder.
+         */
+        ctrl.request4k = (ph) => {
+            lp.requests.requestPlaceholder(ctrl.byId(ph.id) || ph, null, { is4k: true });
+        };
+
+        /**
+         * Capture-phase clicks in the section: "…" menus and request buttons of placeholder cards.
          * @param {MouseEvent} e
          */
         ctrl.onClick = (e) => {
@@ -336,38 +348,15 @@
                 lp.actions.showPlaceholderMenu(ctrl, ph, menuButton);
                 return;
             }
-            const popupItem = e.target.closest('.jellyseerr-4k-popup-item');
             const requestButton = e.target.closest('.jellyseerr-request-button');
-            if (ph.mediaType === 'tv' && (requestButton || popupItem)) {
-                if (requestButton?.disabled) return;
-                e.preventDefault();
-                e.stopPropagation();
-                popupItem?.closest('.jellyseerr-4k-popup')?.remove();
-                JE.jellyseerrUI.showSeasonSelectionModal(Number(ph.tmdbId), 'tv', ph.title, null, !!popupItem,
-                    { preselectedSeasons: lp.requests.preselectedSeasons(ph) });
-                return;
-            }
-            if (ph.mediaType === 'movie' && requestButton && !popupItem) {
-                // JE's placeholder flow instead of the card button's own handler: a 409 (requested
-                // elsewhere since the last status refresh) marks every matching row/card (B5).
+            if (requestButton && (ph.mediaType === 'tv' || ph.mediaType === 'movie')) {
+                // JE's placeholder flow instead of the card button's own handler: TV opens the season modal
+                // pre-ticking the placeholder's season (the global handler only exists while Seerr search
+                // results are on); a 409 (requested elsewhere since the last status refresh) marks every
+                // matching row/card (B5).
                 e.preventDefault();
                 e.stopPropagation();
                 if (!requestButton.disabled) lp.requests.requestPlaceholder(ph, requestButton);
-                return;
-            }
-            if (ph.mediaType === 'movie' && popupItem && popupItem.dataset.action === 'request4k') {
-                // Same as the global handler, which only exists while Seerr search results are on.
-                e.preventDefault();
-                e.stopPropagation();
-                popupItem.closest('.jellyseerr-4k-popup')?.remove();
-                const item = lp.render.toSeerrItem(ph);
-                if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                    JE.jellyseerrUI.showMovieRequestModal(Number(ph.tmdbId), ph.title, item, true);
-                } else {
-                    JE.jellyseerrAPI.requestMedia(Number(ph.tmdbId), 'movie', {}, true, item)
-                        .then(() => JE.toast(JE.t('listPlaceholders_requested_4k', { title: lp.render.esc(ph.title) }), 3000))
-                        .catch(error => JE.toast(lp.errorMessage(error), 4000));
-                }
                 return;
             }
             if (ph.kind === 'custom' && ctrl.view?.canEdit && !e.target.closest('button')) {

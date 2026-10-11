@@ -224,17 +224,17 @@
             {
                 icon: source.syncEnabled ? 'check_box' : 'check_box_outline_blank',
                 label: JE.t('listPlaceholders_sourceKeepInSync'),
-                onClick: () => setOptions(ctrl, { syncEnabled: !source.syncEnabled })
+                onClick: () => setOptions(ctrl, { syncEnabled: !source.syncEnabled }, anchor)
             },
             {
                 icon: source.removeDropped ? 'check_box' : 'check_box_outline_blank',
                 label: JE.t('listPlaceholders_sourceRemoveDropped'),
-                onClick: () => setOptions(ctrl, { removeDropped: !source.removeDropped })
+                onClick: () => setOptions(ctrl, { removeDropped: !source.removeDropped }, anchor)
             }
         ];
         const url = safeUrl(source);
         if (url) items.push({ icon: 'open_in_new', label: JE.t('listPlaceholders_source_open'), onClick: () => window.open(url, '_blank', 'noopener,noreferrer') });
-        items.push({ icon: 'link_off', label: JE.t('listPlaceholders_sourceUnlink'), danger: true, onClick: () => unlink(ctrl) });
+        items.push({ icon: 'link_off', label: JE.t('listPlaceholders_sourceUnlink'), danger: true, onClick: () => unlink(ctrl, anchor) });
         lp.actions.openMenu(anchor, items);
     }
 
@@ -271,11 +271,12 @@
             } else {
                 JE.toast(esc(JE.t('listPlaceholders_sourceSyncStats', { added: result?.added || 0, removed: result?.removed || 0, kept: result?.kept || 0, unresolved: result?.unresolved || 0 })), 5000);
             }
-            if ((result?.added || result?.countsHidden) && ctrl.listKind === 'collection') ctrl.afterRealItemsAdded?.();
+            // Jellyfin doesn't re-render a collection's own cards when items join or leave it (removeDropped).
+            if ((result?.added || result?.removed || result?.countsHidden) && ctrl.listKind === 'collection') ctrl.afterRealItemsAdded?.();
         } catch (error) {
             lp.toastError(error);
         } finally {
-            chip?.classList.remove('je-lp-source-busy');
+            if (!ctrl.sourcePending) chip?.classList.remove('je-lp-source-busy');
         }
     }
 
@@ -299,7 +300,7 @@
             const source = ctrl.view?.source;
             if (!source) return null; // unlinked meanwhile
             if ((source.lastSyncAt || null) !== before) {
-                if ((source.lastSync?.added || source.countsHidden) && ctrl.listKind === 'collection') ctrl.afterRealItemsAdded?.();
+                if ((source.lastSync?.added || source.lastSync?.removed || source.countsHidden) && ctrl.listKind === 'collection') ctrl.afterRealItemsAdded?.();
                 return source;
             }
         }
@@ -307,40 +308,70 @@
     }
 
     /**
-     * Changes "Keep in sync" / "Remove entries that leave the list" (PUT /source with the same URL).
-     * @param {Object} ctrl
-     * @param {{syncEnabled?: boolean, removeDropped?: boolean}} change
+     * Runs a source change of a list after the ones still running (PUT /source re-fetches the list upstream, so it
+     * can take seconds): each change then starts from the view the previous one published, and Unlink can't be
+     * overtaken by an earlier option change that would link the list again. The chip is busy while any is pending.
+     * @param {Object} ctrl - Page controller (sourceQueue/sourcePending are kept on it).
+     * @param {HTMLElement|null|undefined} chip - The chip (shows a busy state).
+     * @param {function(): Promise<void>} task - The change; reads ctrl.view when it starts.
      * @returns {Promise<void>}
      */
-    async function setOptions(ctrl, change) {
-        const source = ctrl.view?.source;
-        if (!source) return;
-        try {
-            await lp.api.linkSource(ctrl.listId, {
-                url: source.url,
-                syncEnabled: change.syncEnabled ?? source.syncEnabled,
-                removeDropped: change.removeDropped ?? source.removeDropped
-            });
-        } catch (error) {
-            if (lp.isStaleIdentityError(error)) return;
-            const code = error?.responseJSON?.code;
-            if (code && lp.importer?.sourceErrorText && code !== 'forbidden' && error.status !== 404) JE.toast(lp.render.esc(lp.importer.sourceErrorText(error)), 5000);
-            else lp.toastError(error);
-        }
+    function queueSourceChange(ctrl, chip, task) {
+        const run = (ctrl.sourceQueue || Promise.resolve()).then(task);
+        const settled = run.catch(() => {});
+        ctrl.sourceQueue = settled;
+        ctrl.sourcePending = (ctrl.sourcePending || 0) + 1;
+        chip?.classList.add('je-lp-source-busy');
+        settled.then(() => {
+            if (ctrl.sourceQueue === settled) ctrl.sourceQueue = null;
+            if (--ctrl.sourcePending === 0) chip?.classList.remove('je-lp-source-busy');
+        });
+        return run;
     }
 
     /**
-     * Unlinks the source (the list keeps its entries).
+     * Changes "Keep in sync" / "Remove entries that leave the list" (PUT /source with the same URL). Queued behind
+     * the list's running source changes; the option not being changed is read from the view current at that point.
      * @param {Object} ctrl
+     * @param {{syncEnabled?: boolean, removeDropped?: boolean}} change
+     * @param {HTMLElement} [chip] - The chip (shows a busy state).
      * @returns {Promise<void>}
      */
-    async function unlink(ctrl) {
-        try {
-            await lp.api.unlinkSource(ctrl.listId);
-            JE.toast(lp.render.esc(JE.t('listPlaceholders_source_unlinked')), 3000);
-        } catch (error) {
-            lp.toastError(error);
-        }
+    function setOptions(ctrl, change, chip) {
+        return queueSourceChange(ctrl, chip, async () => {
+            const source = ctrl.view?.source;
+            if (!source) return; // unlinked meanwhile
+            try {
+                await lp.api.linkSource(ctrl.listId, {
+                    url: source.url,
+                    syncEnabled: change.syncEnabled ?? source.syncEnabled,
+                    removeDropped: change.removeDropped ?? source.removeDropped
+                });
+            } catch (error) {
+                if (lp.isStaleIdentityError(error)) return;
+                const code = error?.responseJSON?.code;
+                if (code && lp.importer?.sourceErrorText && code !== 'forbidden' && error.status !== 404) JE.toast(lp.render.esc(lp.importer.sourceErrorText(error)), 5000);
+                else lp.toastError(error);
+            }
+        });
+    }
+
+    /**
+     * Unlinks the source (the list keeps its entries), after the list's running source changes.
+     * @param {Object} ctrl
+     * @param {HTMLElement} [chip] - The chip (shows a busy state).
+     * @returns {Promise<void>}
+     */
+    function unlink(ctrl, chip) {
+        return queueSourceChange(ctrl, chip, async () => {
+            if (!ctrl.view?.source) return; // already unlinked
+            try {
+                await lp.api.unlinkSource(ctrl.listId);
+                JE.toast(lp.render.esc(JE.t('listPlaceholders_source_unlinked')), 3000);
+            } catch (error) {
+                lp.toastError(error);
+            }
+        });
     }
 
     // ── Playlists library view: global "Import list…" (new playlist) ──

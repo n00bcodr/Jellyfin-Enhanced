@@ -240,6 +240,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         /// <summary>Whether a search was started.</summary>
         [JsonPropertyName("searched")] public bool Searched { get; set; }
 
+        /// <summary>True when a search was asked for but the arr didn't start it (null otherwise).</summary>
+        [JsonPropertyName("searchFailed")] public bool? SearchFailed { get; set; }
+
         /// <summary>Whether the title is monitored afterwards (already_exists: its current state).</summary>
         [JsonPropertyName("monitored")] public bool? Monitored { get; set; }
 

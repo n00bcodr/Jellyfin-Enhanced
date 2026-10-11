@@ -268,10 +268,10 @@ public class ListPlaceholdersServiceTests
     }
 
     [Fact]
-    public async Task JellyfinMisplacingAMoveIsReportedWithItsActualOrder()
+    public async Task AMoveALeadingDanglingLinkWouldShiftTakesTwoMoves()
     {
         // 12.2/10.11 insert the moved row by its index among RESOLVED rows into the RAW array, so a leading dangling
-        // link shifts it. JE must notice and report the real order instead of trusting the request.
+        // link shifts it: no single index puts C between A and B. JE replays Jellyfin's algorithm and moves it twice.
         using var h = new ListPlaceholdersHarness();
         var owner = h.NewUser("owner");
         var a = h.Host.AddItem();
@@ -286,10 +286,11 @@ public class ListPlaceholdersServiceTests
 
         var outcome = await h.Service.ReorderAsync(access, 1, new[] { E(a), E(c), E(b), P(placeholder.Id) }, E(c), null, None);
 
-        var error = Error(outcome, 409, "move_mismatch");
-        Assert.Equal(new[] { c, a, b }, h.Host.Resolved(playlist.Info.Id));
-        Assert.Equal(new[] { E(c), E(a), E(b), P(placeholder.Id) }, error.View!.Order);
-        Assert.Equal(new[] { E(c), E(a), E(b), P(placeholder.Id) }, h.Store.Load(access.ListIdN)!.Order);
+        var view = Ok<ListViewDto>(outcome);
+        Assert.Equal(new[] { $"move:{FakeListHost.Short(c)}->0", $"move:{FakeListHost.Short(c)}->2" }, h.Host.Calls.Where(call => call.StartsWith("move:", StringComparison.Ordinal)));
+        Assert.Equal(new[] { a, c, b }, h.Host.Resolved(playlist.Info.Id));
+        Assert.Equal(new[] { E(a), E(c), E(b), P(placeholder.Id) }, view.Order);
+        Assert.Equal(new[] { E(a), E(c), E(b), P(placeholder.Id) }, h.Store.Load(access.ListIdN)!.Order);
     }
 
     [Fact]
@@ -467,7 +468,7 @@ public class ListPlaceholdersServiceTests
         using var h = new ListPlaceholdersHarness(seerr: true);
         h.Reply = request => request.RequestUri!.AbsolutePath == "/api/v1/media"
             ? IntegrationTransport.Response("{\"results\":[{\"mediaType\":\"movie\",\"tmdbId\":1,\"status\":3},{\"mediaType\":\"tv\",\"tmdbId\":7,\"status\":4,\"seasons\":[{\"seasonNumber\":1,\"status\":5},{\"seasonNumber\":2,\"status\":2}]}]}")
-            : IntegrationTransport.Response("{}", 404);
+            : IntegrationTransport.Response("{\"results\":[]}"); // no active TV requests
         var owner = h.NewUser("owner");
         var playlist = h.Host.AddPlaylist(owner);
         var access = h.AccessFor(playlist, owner);

@@ -61,9 +61,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
     /// <list type="bullet">
     /// <item>episodes: complete when every listed episode is filled.</item>
     /// <item>season: the EXPECTED episodes (Seerr season details, incl. an announced next episode) must all be filled
-    /// and the season must be finished: every expected episode has aired, or the show is no longer in production
-    /// (then only the aired ones are required).</item>
-    /// <item>series: the show is no longer in production and every aired expected episode (seasons ≥ 1) is filled.</item>
+    /// and the season must be finished: every expected episode has aired, or the show has Ended/been Canceled
+    /// (<see cref="Placeholder.InProduction"/> false; then only the aired ones are required).</item>
+    /// <item>series: the show has Ended/been Canceled and every aired expected episode (seasons ≥ 1) is filled.</item>
     /// <item>Unknown metadata (no expected set, unknown production state) never completes: the placeholder stays.</item>
     /// </list>
     /// </summary>

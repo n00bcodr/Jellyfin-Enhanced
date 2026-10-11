@@ -167,6 +167,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
         /// <summary>Skip the short result cache (sync).</summary>
         public bool Fresh { get; init; }
+
+        /// <summary>
+        /// The user an interactive fetch is for ("N"): fetches that miss the result cache are limited per caller
+        /// (<see cref="ListSourceFetcher.MaxFetchesPerCaller"/>). Null for the sync, which runs once per list at a time.
+        /// </summary>
+        public string? Caller { get; init; }
     }
 
     /// <summary>Fetches list URLs (5b). Production: <see cref="ListSourceFetcher"/>.</summary>
@@ -199,7 +205,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
     /// </list>
     /// Requests go only to fixed hosts built from the parsed parts (SSRF guard), without redirects, with a 20 s timeout,
     /// an 8 MiB body cap and a 1000-entry cap; a short Retry-After (≤ 5 s) is honoured once, longer ones are reported.
-    /// Successful fetches are cached for 5 minutes so preview → apply → link doesn't fetch twice.
+    /// An answer without the list array it should have is an error, never an empty list. Successful fetches are cached
+    /// for 5 minutes (bounded, oldest first) so preview → apply → link doesn't fetch twice; TMDB pages are always read
+    /// fresh (never from <see cref="TmdbResponseCache"/>'s longer-lived copy), so every page of a snapshot is current.
+    /// Interactive callers get a few upstream fetches at a time and per window (<see cref="MaxFetchesPerCaller"/>).
     /// </summary>
     public sealed class ListSourceFetcher : IListSourceFetcher
     {
@@ -211,6 +220,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
         /// <summary>Result cache lifetime.</summary>
         public static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
+
+        /// <summary>Fetches one caller may send upstream (result cache misses) within <see cref="CallerWindow"/>.</summary>
+        public const int MaxFetchesPerCaller = 10;
+
+        /// <summary>Upstream fetches one caller may have running at the same time.</summary>
+        public const int MaxConcurrentFetchesPerCaller = 2;
+
+        /// <summary>The window of <see cref="MaxFetchesPerCaller"/>.</summary>
+        public static readonly TimeSpan CallerWindow = TimeSpan.FromMinutes(5);
+
+        /// <summary>Results kept in the result cache (oldest go first).</summary>
+        internal const int MaxCacheEntries = 100;
+
+        /// <summary>List entries kept in the result cache over all results (oldest go first).</summary>
+        internal const int MaxCachedItems = 20_000;
 
         private const int MaxBodyBytes = 8 * 1024 * 1024;
         private const int MaxRetryWaitSeconds = 5;
@@ -234,6 +258,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
         private readonly Logger _logger;
         private readonly SemaphoreSlim _gate = new(3, 3);
         private readonly ConcurrentDictionary<string, (DateTime ExpiresUtc, SourceFetchResult Result)> _cache = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, CallerBudget> _callers = new(StringComparer.Ordinal);
 
         /// <summary>Creates the fetcher (singleton).</summary>
         /// <param name="httpClientFactory">HTTP client factory.</param>
@@ -300,6 +325,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 return cached.Result;
             }
 
+            // F29: a user's fetches that miss the cache go upstream only a few at a time and a bounded number per window.
+            var retryAfter = 0;
+            using var admission = options.Caller == null ? null : TryAdmit(options.Caller, out retryAfter);
+            if (options.Caller != null && admission == null)
+            {
+                return SourceFetchResult.Fail(source, "fetch_limited", "You've read a lot of lists in a short time; try again in a little while.", retryAfter);
+            }
+
             await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -328,7 +361,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
                 if (result.Ok)
                 {
-                    PruneCache();
+                    PruneCache(result.Items.Count);
                     _cache[cacheKey] = (DateTime.UtcNow + CacheTtl, result);
                 }
                 else
@@ -462,12 +495,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             }
             else if (root.ValueKind == JsonValueKind.Object)
             {
+                var found = false;
                 foreach (var name in new[] { "items", "movies", "shows" })
                 {
                     if (root.TryGetProperty(name, out var array) && array.ValueKind == JsonValueKind.Array)
                     {
+                        found = true;
                         elements.AddRange(array.EnumerateArray());
                     }
+                }
+
+                // An error object ({"error": …}) is not an empty list: a sync would remove everything (F16).
+                if (!found)
+                {
+                    throw new InvalidDataException("MDBList JSON without a list");
                 }
             }
             else
@@ -553,7 +594,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                     }
 
                     using var doc = JsonDocument.Parse(json);
-                    var parts = Array(doc.RootElement, "parts").Select(p => TmdbItem(p, "movie", "release_date")).OfType<SourceItem>();
+                    var parts = ListArray(doc.RootElement, "parts").Select(p => TmdbItem(p, "movie", "release_date")).OfType<SourceItem>();
                     var ordered = parts.OrderBy(p => p.Year ?? int.MaxValue).ToList();
                     return Done(source, "tmdb", Str(doc.RootElement, "name"), ordered, ordered.Count, false);
                 }
@@ -575,7 +616,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                         using var doc = JsonDocument.Parse(json);
                         title ??= Str(doc.RootElement, "name");
                         total = Int(doc.RootElement, "item_count") ?? total;
-                        var pageItems = Array(doc.RootElement, "items").Select(p => TmdbItem(p, null, null)).OfType<SourceItem>().ToList();
+                        var pageItems = ListArray(doc.RootElement, "items").Select(p => TmdbItem(p, null, null)).OfType<SourceItem>().ToList();
                         items.AddRange(pageItems);
                         var pages = Int(doc.RootElement, "total_pages") ?? 1;
                         if (items.Count >= MaxItems)
@@ -606,7 +647,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                             ?? throw new SourceHttpException("upstream_error", "TMDB didn't return the chart.");
                         using var doc = JsonDocument.Parse(json);
                         var defaultType = media == "all" ? null : media;
-                        items.AddRange(Array(doc.RootElement, "results").Select(p => TmdbItem(p, defaultType, null)).OfType<SourceItem>());
+                        items.AddRange(ListArray(doc.RootElement, "results").Select(p => TmdbItem(p, defaultType, null)).OfType<SourceItem>());
                         if (page >= (Int(doc.RootElement, "total_pages") ?? 1))
                         {
                             break;
@@ -626,7 +667,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             TmdbResponseCache.TmdbResponse response;
             try
             {
-                response = await _tmdb!.GetAsync(path, query, key, timeout.Token).ConfigureAwait(false);
+                // F17: never the cached copy (6 h for lists and collections): a sync must see the list as it is now,
+                // and the pages of one snapshot must not be of different ages. The fetcher's own short result cache
+                // keeps preview → apply → link to one read.
+                response = await _tmdb!.GetAsync(path, query, key, timeout.Token, refresh: true).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -665,7 +709,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 }
 
                 using var doc = JsonDocument.Parse(json);
-                var parts = Array(doc.RootElement, "parts").Select(p => SeerrItem(p, "movie")).OfType<SourceItem>().ToList();
+                var parts = ListArray(doc.RootElement, "parts").Select(p => SeerrItem(p, "movie")).OfType<SourceItem>().ToList();
                 return Done(source, "seerr", Str(doc.RootElement, "name"), parts, parts.Count, false);
             }
 
@@ -679,7 +723,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                     ?? throw new SourceHttpException("upstream_error", "Seerr didn't return the chart.");
                 using var doc = JsonDocument.Parse(json);
                 var defaultType = source.Part("media") is "movie" or "tv" ? source.Part("media") : null;
-                items.AddRange(Array(doc.RootElement, "results").Select(p => SeerrItem(p, defaultType)).OfType<SourceItem>());
+                items.AddRange(ListArray(doc.RootElement, "results").Select(p => SeerrItem(p, defaultType)).OfType<SourceItem>());
                 if (page >= (Int(doc.RootElement, "totalPages") ?? 1))
                 {
                     break;
@@ -1282,19 +1326,78 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             };
         }
 
-        private void PruneCache()
+        // Makes room for a result of `incoming` entries: expired results go, then the oldest until both the result and
+        // the entry budgets hold (F29: a stream of distinct URLs can't grow the cache without bound).
+        private void PruneCache(int incoming)
         {
-            if (_cache.Count < 200)
+            var now = DateTime.UtcNow;
+            var count = 0;
+            var items = incoming;
+            var live = new List<KeyValuePair<string, (DateTime ExpiresUtc, SourceFetchResult Result)>>();
+            foreach (var entry in _cache)
             {
-                return;
+                if (entry.Value.ExpiresUtc <= now)
+                {
+                    _cache.TryRemove(entry.Key, out _);
+                    continue;
+                }
+
+                live.Add(entry);
+                count++;
+                items += entry.Value.Result.Items.Count;
             }
 
-            var now = DateTime.UtcNow;
-            foreach (var key in _cache.Where(e => e.Value.ExpiresUtc <= now).Select(e => e.Key).ToList())
+            foreach (var entry in live.OrderBy(e => e.Value.ExpiresUtc))
             {
-                _cache.TryRemove(key, out _);
+                if (count < MaxCacheEntries && items <= MaxCachedItems)
+                {
+                    break;
+                }
+
+                if (_cache.TryRemove(entry.Key, out var removed))
+                {
+                    count--;
+                    items -= removed.Result.Items.Count;
+                }
             }
         }
+
+        // Admits one upstream fetch of `caller`, or returns null with the seconds until one is allowed again.
+        private IDisposable? TryAdmit(string caller, out int retryAfter)
+        {
+            var budget = _callers.GetOrAdd(caller, _ => new CallerBudget());
+            lock (budget)
+            {
+                var now = DateTime.UtcNow;
+                while (budget.Recent.Count > 0 && budget.Recent.Peek() <= now - CallerWindow)
+                {
+                    budget.Recent.Dequeue();
+                }
+
+                if (budget.Active >= MaxConcurrentFetchesPerCaller)
+                {
+                    retryAfter = 2;
+                    return null;
+                }
+
+                if (budget.Recent.Count >= MaxFetchesPerCaller)
+                {
+                    retryAfter = Math.Max(1, (int)Math.Ceiling((budget.Recent.Peek() + CallerWindow - now).TotalSeconds));
+                    return null;
+                }
+
+                budget.Active++;
+                budget.Recent.Enqueue(now);
+                retryAfter = 0;
+                return new Admission(budget);
+            }
+        }
+
+        // An array the answer must have: a missing one means an error answer, not an empty list (F16).
+        private static IEnumerable<JsonElement> ListArray(JsonElement element, string name) =>
+            element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var array) && array.ValueKind == JsonValueKind.Array
+                ? array.EnumerateArray()
+                : throw new InvalidDataException("the answer has no \"" + name + "\" list");
 
         private static IEnumerable<JsonElement> Array(JsonElement element, string name) =>
             element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var array) && array.ValueKind == JsonValueKind.Array ? array.EnumerateArray() : Enumerable.Empty<JsonElement>();
@@ -1335,6 +1438,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             date != null && date.Length >= 4 && int.TryParse(date.AsSpan(0, 4), NumberStyles.None, CultureInfo.InvariantCulture, out var year) ? Year(year) : null;
 
         private sealed record HttpResult(int Status, string? Body, int? RetryAfter, IReadOnlyDictionary<string, string> Headers);
+
+        // One caller's running upstream fetches and the start times within the window (guarded by locking the instance).
+        private sealed class CallerBudget
+        {
+            public int Active { get; set; }
+
+            public Queue<DateTime> Recent { get; } = new();
+        }
+
+        private sealed class Admission(CallerBudget budget) : IDisposable
+        {
+            private int _disposed;
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                {
+                    lock (budget)
+                    {
+                        budget.Active--;
+                    }
+                }
+            }
+        }
 
         private sealed class SourceHttpException(string code, string message, int? retryAfter = null) : Exception(message)
         {

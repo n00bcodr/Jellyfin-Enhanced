@@ -180,7 +180,7 @@ Show S1E1-E150`);
   assert.deepEqual(pick(e, 'title', 'season', 'year'), [
     { title: 'The Flash', season: 1 }, { title: 'Flash', season: 8 }, { title: 'Peacemaker', season: 1, year: 2022 },
     { title: 'Arrow', season: 2 }, { title: 'Doctor Who', season: 1 }, { title: 'Doctor Who', season: 2 },
-    { title: 'Legends' }, { title: 'Show', season: 1 }
+    { title: 'Legends' }, { title: 'Show', season: 1 }, { title: 'Show', season: 1 }
   ]);
   assert.deepEqual(e[1].episodes.map(x => x.e), [1, 2, 3, 4, 5]);
   assert.deepEqual(e[3].episodes, [{ s: 2, e: 3 }]);
@@ -188,7 +188,8 @@ Show S1E1-E150`);
   assert.deepEqual(e[5].episodes.map(x => `${x.s}x${x.e}`), ['2x1', '2x2', '2x3']);
   assert.equal(e[6].episodeTitle, 'Crisis on Infinite Earths: Part Five');
   assert.equal(e[6].kind, 'episodes');
-  assert.equal(e[7].episodes.length, 100); // capped
+  // Split into entries of at most 100 episodes, none dropped.
+  assert.deepEqual([e[7], e[8]].map(x => [x.episodes[0].e, x.episodes.length]), [[1, 100], [101, 50]]);
 });
 
 test('lone "Season N" lines attach to the series above them (or the heading)', t => {

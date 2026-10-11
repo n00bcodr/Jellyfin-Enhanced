@@ -26,8 +26,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
     /// <item>Season request state: Seerr keeps a TV request's seasons on the REQUEST (SeasonRequest rows), not on the
     /// media row's seasons (those are availability rows only scanners create). So rebuilds also page the active
     /// (pending/approved) TV requests, advisory refreshes the recently modified ones, and season statuses fall back to
-    /// them (pending → 2, approved → 3) wherever no availability status exists.</item>
-    /// <item>Requests JE itself makes write their result through <see cref="RecordRequestResponse"/>.</item>
+    /// them (pending → 2, approved → 3) wherever no availability status exists. When the request listing could not be
+    /// read completely, such seasons are unknown instead of "not requested".</item>
+    /// <item>A full rebuild checks Seerr's row count (<c>pageInfo.results</c>): when rows were deleted while paging (offset
+    /// paging may then skip a row) it reads once more, and fails rather than publish a missed row as absent.</item>
+    /// <item>Requests JE itself makes write their result through <see cref="RecordRequestResponse"/>; an advisory
+    /// refresh never overwrites a status written after it read its page.</item>
     /// <item>A failed rebuild backs off (<see cref="FailureBackoff"/>, doubling up to 10 minutes) instead of being
     /// retried by every list view during a Seerr outage.</item>
     /// <item>Bounded: at most <see cref="MaxEntries"/> rows; a larger Seerr leaves the snapshot incomplete (unknown, never
@@ -117,8 +121,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         public readonly record struct LookupResult(LookupState State, MediaStatusEntry? Entry)
         {
             /// <summary>
-            /// The status to show for a placeholder: season kinds use their season's status (absent season = 1),
-            /// everything else the media status; null while unknown.
+            /// True when Seerr's active TV requests could not be read completely: a season without an availability
+            /// status may then be requested, so it is unknown rather than "not requested".
+            /// </summary>
+            public bool SeasonRequestsUnknown { get; init; }
+
+            /// <summary>
+            /// The status to show for a placeholder: season kinds use their season's status (absent season = 1, or
+            /// unknown while <see cref="SeasonRequestsUnknown"/>), everything else the media status; null while unknown.
             /// </summary>
             /// <param name="seasonNumber">Season number for season/episodes placeholders, else null.</param>
             /// <returns>Status or null.</returns>
@@ -126,11 +136,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             {
                 return State switch
                 {
-                    LookupState.Absent => 1,
-                    LookupState.Indexed when seasonNumber.HasValue => Entry!.Seasons.TryGetValue(seasonNumber.Value, out var season) ? season.Status : 1,
+                    LookupState.Absent => 1, // no media row: Seerr creates one with every request
+                    LookupState.Indexed when seasonNumber.HasValue => SeasonStatusFor(seasonNumber.Value),
                     LookupState.Indexed => Entry!.Status,
                     _ => null,
                 };
+            }
+
+            private int? SeasonStatusFor(int seasonNumber)
+            {
+                var known = Entry!.Seasons.TryGetValue(seasonNumber, out var season);
+                if (SeasonRequestsUnknown && (!known || season.Status is 1 or 7))
+                {
+                    return null; // only an active request could say more, and those weren't all read
+                }
+
+                return known ? season.Status : 1;
             }
         }
 
@@ -198,14 +219,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 result = new LookupResult(snapshot.Complete ? LookupState.Absent : LookupState.Unknown, null);
             }
 
+            var requestsUnknown = snapshot == null || !snapshot.RequestsComplete;
             var requested = RequestedSeasons(key, snapshot, fingerprint);
             if (requested == null || requested.Count == 0 || result.State == LookupState.Unknown)
             {
-                return result;
+                return result with { SeasonRequestsUnknown = requestsUnknown };
             }
 
             var media = result.Entry ?? new MediaStatusEntry(1, 1, new Dictionary<int, SeasonStatus>(), null);
-            return new LookupResult(LookupState.Indexed, media with { Seasons = MergeRequested(media.Seasons, requested) });
+            return new LookupResult(LookupState.Indexed, media with { Seasons = MergeRequested(media.Seasons, requested) }) { SeasonRequestsUnknown = requestsUnknown };
         }
 
         /// <summary>
@@ -479,11 +501,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             return snapshot != null && snapshot.Requests.TryGetValue(key, out var seasons) ? seasons : null;
         }
 
-        private void RecordRequestedSeasons(string key, IReadOnlyDictionary<int, SeasonStatus> seasons, DateTime writtenAtUtc)
+        // readBeforeNewer: the seasons come from an advisory read started at writtenAtUtc; skip them when this title was
+        // written after that (e.g. by JE's own request), as the read is then older.
+        private void RecordRequestedSeasons(string key, IReadOnlyDictionary<int, SeasonStatus> seasons, DateTime writtenAtUtc, bool readBeforeNewer = false)
         {
             var fingerprint = Fingerprint();
             lock (_gate)
             {
+                if (readBeforeNewer && _requestOverlay.TryGetValue(key, out var existing)
+                    && existing.Fingerprint == fingerprint && existing.WrittenAtUtc > writtenAtUtc)
+                {
+                    return;
+                }
+
                 var snapshot = _snapshot;
                 if (snapshot != null && snapshot.Fingerprint != fingerprint)
                 {
@@ -570,36 +600,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             {
                 try
                 {
-                    var map = new Dictionary<string, MediaStatusEntry>(StringComparer.Ordinal);
-                    var complete = false;
-                    for (var skip = 0; ; skip += PageSize)
+                    var (map, complete) = await ReadMediaTableAsync(baseUrl, apiKey).ConfigureAwait(false);
+                    var (requests, requestsComplete) = await FetchActiveRequestsAsync(baseUrl, apiKey).ConfigureAwait(false);
+                    if (!requestsComplete)
                     {
-                        var rows = await FetchPageAsync(baseUrl, apiKey, $"/api/v1/media?take={PageSize}&skip={skip}").ConfigureAwait(false);
-                        if (rows == null)
-                        {
-                            throw new HttpRequestException("Seerr media page could not be read.");
-                        }
-
-                        foreach (var row in rows.Rows)
-                        {
-                            map[Key(row.MediaType, row.TmdbId)] = row.Entry;
-                        }
-
-                        if (rows.RawCount < PageSize)
-                        {
-                            complete = true;
-                            break;
-                        }
-
-                        if (map.Count >= MaxEntries)
-                        {
-                            _logger.Warning($"[ListPlaceholders] Seerr has more than {MaxEntries} media rows; status badges beyond that stay unknown.");
-                            break;
-                        }
+                        requests = WithKnownRequests(requests, fingerprint);
                     }
 
-                    var requests = await FetchActiveRequestsAsync(baseUrl, apiKey).ConfigureAwait(false);
-                    var snapshot = new Snapshot(map, requests, complete, started, DateTime.UtcNow, fingerprint);
+                    var snapshot = new Snapshot(map, requests, complete, requestsComplete, started, DateTime.UtcNow, fingerprint);
                     lock (_gate)
                     {
                         _snapshot = snapshot;
@@ -644,15 +652,124 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             _logger.Warning($"[ListPlaceholders] Seerr media index unavailable; status badges stay unknown and the next attempt is in {backoff.TotalSeconds:F0} s.");
         }
 
-        // The seasons of every active (pending + approved) TV request. Best effort: a failure leaves season request
-        // state empty (season badges then show availability only) rather than failing the whole snapshot.
-        private async Task<Dictionary<string, Dictionary<int, SeasonStatus>>> FetchActiveRequestsAsync(string baseUrl, string apiKey)
+        // Pages through Seerr's media table (id DESC). Offset paging skips a row when rows above the offset are deleted
+        // between two pages; Seerr's row count (pageInfo.results) then shrinks, or ends above the rows read. Such a pass
+        // is read once more; a second inconsistent pass fails the rebuild (the previous snapshot keeps serving) so a
+        // missed row is never published as absent. New rows (highest ids) only shift rows down, which re-reads one.
+        private async Task<(Dictionary<string, MediaStatusEntry> Map, bool Complete)> ReadMediaTableAsync(string baseUrl, string apiKey)
+        {
+            for (var attempt = 1; ; attempt++)
+            {
+                var map = new Dictionary<string, MediaStatusEntry>(StringComparer.Ordinal);
+                var complete = false;
+                var consistent = true;
+                int? total = null;
+                long rawRead = 0;
+                for (var skip = 0; ; skip += PageSize)
+                {
+                    var rows = await FetchPageAsync(baseUrl, apiKey, $"/api/v1/media?take={PageSize}&skip={skip}").ConfigureAwait(false);
+                    if (rows == null)
+                    {
+                        throw new HttpRequestException("Seerr media page could not be read.");
+                    }
+
+                    if (rows.Total.HasValue)
+                    {
+                        if (total.HasValue && rows.Total.Value < total.Value)
+                        {
+                            consistent = false;
+                            break;
+                        }
+
+                        total = rows.Total;
+                    }
+
+                    rawRead += rows.RawCount;
+                    foreach (var row in rows.Rows)
+                    {
+                        map[Key(row.MediaType, row.TmdbId)] = row.Entry;
+                    }
+
+                    if (rows.RawCount < PageSize)
+                    {
+                        complete = true;
+                        consistent = !total.HasValue || rawRead >= total.Value;
+                        break;
+                    }
+
+                    if (map.Count >= MaxEntries)
+                    {
+                        _logger.Warning($"[ListPlaceholders] Seerr has more than {MaxEntries} media rows; status badges beyond that stay unknown.");
+                        break;
+                    }
+                }
+
+                if (consistent)
+                {
+                    return (map, complete);
+                }
+
+                if (attempt >= 2)
+                {
+                    throw new HttpRequestException("Seerr's media table changed while it was being read.");
+                }
+
+                _logger.Debug("[ListPlaceholders] Seerr's media table changed while it was being read; reading it again.");
+            }
+        }
+
+        // What is known about active TV requests when this rebuild's listing is incomplete: the previous snapshot's
+        // requests, JE's own and advisory writes since, then what this rebuild did read (newest wins per season).
+        private Dictionary<string, Dictionary<int, SeasonStatus>> WithKnownRequests(Dictionary<string, Dictionary<int, SeasonStatus>> read, string fingerprint)
+        {
+            var result = new Dictionary<string, Dictionary<int, SeasonStatus>>(StringComparer.Ordinal);
+            void Add(string key, IReadOnlyDictionary<int, SeasonStatus> seasons)
+            {
+                if (!result.TryGetValue(key, out var target))
+                {
+                    target = new Dictionary<int, SeasonStatus>();
+                    result[key] = target;
+                }
+
+                Combine(target, seasons);
+            }
+
+            var previous = _snapshot;
+            if (previous != null && previous.Fingerprint == fingerprint)
+            {
+                foreach (var pair in previous.Requests)
+                {
+                    Add(pair.Key, pair.Value);
+                }
+            }
+
+            foreach (var pair in _requestOverlay)
+            {
+                if (pair.Value.Fingerprint == fingerprint && (previous == null || pair.Value.WrittenAtUtc >= previous.StartedAtUtc))
+                {
+                    Add(pair.Key, pair.Value.Seasons);
+                }
+            }
+
+            foreach (var pair in read)
+            {
+                Add(pair.Key, pair.Value);
+            }
+
+            return result;
+        }
+
+        // The seasons of every active (pending + approved) TV request. Best effort: a failure, or more requests than
+        // RequestMaxPages pages, returns what was read with Complete = false (seasons without availability status are
+        // then unknown) rather than failing the whole snapshot.
+        private async Task<(Dictionary<string, Dictionary<int, SeasonStatus>> Requests, bool Complete)> FetchActiveRequestsAsync(string baseUrl, string apiKey)
         {
             var result = new Dictionary<string, Dictionary<int, SeasonStatus>>(StringComparer.Ordinal);
             try
             {
                 foreach (var filter in new[] { "pending", "approved" })
                 {
+                    var complete = false;
                     for (var page = 0; page < RequestMaxPages; page++)
                     {
                         var rows = await FetchRequestPageAsync(baseUrl, apiKey, $"/api/v1/request?take={RequestPageSize}&skip={page * RequestPageSize}&filter={filter}&mediaType=tv").ConfigureAwait(false)
@@ -670,18 +787,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
                         if (rows.RawCount < RequestPageSize)
                         {
+                            complete = true;
                             break;
                         }
+                    }
+
+                    if (!complete)
+                    {
+                        _logger.Warning($"[ListPlaceholders] Seerr has more than {RequestMaxPages * RequestPageSize} {filter} TV requests; season badges beyond them stay unknown.");
+                        return (result, false);
                     }
                 }
             }
             catch (Exception ex)
             {
                 _logger.Warning($"[ListPlaceholders] Reading Seerr's TV requests failed; season request badges stay unknown until the next rebuild: {ex.Message}");
-                result.Clear();
+                return (result, false);
             }
 
-            return result;
+            return (result, true);
         }
 
         private async Task AdvisoryRefreshAsync()
@@ -698,6 +822,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             {
                 for (var page = 0; page < AdvisoryMaxPages; page++)
                 {
+                    // Rows are stamped with the time before the read: anything written after it (JE's own request, a
+                    // rebuild that started meanwhile) is newer and wins.
+                    var readAt = DateTime.UtcNow;
                     var rows = await FetchPageAsync(urls[0], apiKey, $"/api/v1/media?take={AdvisoryPageSize}&skip={page * AdvisoryPageSize}&sort=modified").ConfigureAwait(false);
                     if (rows == null)
                     {
@@ -713,7 +840,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                             break;
                         }
 
-                        _overlay[Key(row.MediaType, row.TmdbId)] = new OverlayEntry(row.Entry, DateTime.UtcNow, fingerprint);
+                        var read = new OverlayEntry(row.Entry, readAt, fingerprint);
+                        _overlay.AddOrUpdate(Key(row.MediaType, row.TmdbId), read, (_, existing) => IsNewer(existing, read) ? existing : read);
                     }
 
                     if (reachedWatermark || rows.RawCount < AdvisoryPageSize)
@@ -724,6 +852,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
                 // Recently modified TV requests (any status, newest first): new, approved, declined or completed seasons.
                 var recent = new List<RequestRow>();
+                var requestsReadAt = DateTime.UtcNow;
                 for (var page = 0; page < AdvisoryMaxPages; page++)
                 {
                     var rows = await FetchRequestPageAsync(urls[0], apiKey, $"/api/v1/request?take={AdvisoryPageSize}&skip={page * AdvisoryPageSize}&sort=modified&mediaType=tv").ConfigureAwait(false);
@@ -751,12 +880,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
 
                 // Oldest first, so the newest request for a season wins.
-                var now = DateTime.UtcNow;
                 for (var i = recent.Count - 1; i >= 0; i--)
                 {
                     if (Fingerprint() == fingerprint)
                     {
-                        RecordRequestedSeasons(recent[i].Key, recent[i].Seasons, now);
+                        RecordRequestedSeasons(recent[i].Key, recent[i].Seasons, requestsReadAt, readBeforeNewer: true);
                     }
                 }
             }
@@ -765,6 +893,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 _logger.Debug($"[ListPlaceholders] Seerr advisory refresh failed: {ex.Message}");
             }
         }
+
+        // An overlay row written after an advisory read started, or with a newer Seerr updatedAt, beats that read.
+        private static bool IsNewer(OverlayEntry existing, OverlayEntry read) =>
+            existing.Fingerprint == read.Fingerprint
+            && (existing.WrittenAtUtc > read.WrittenAtUtc || existing.Entry.UpdatedAtUtc > read.Entry.UpdatedAtUtc);
 
         private async Task<RequestPage?> FetchRequestPageAsync(string baseUrl, string apiKey, string apiPath)
         {
@@ -838,19 +971,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
             }
 
+            int? total = document.RootElement.TryGetProperty("pageInfo", out var pageInfo) && pageInfo.ValueKind == JsonValueKind.Object
+                && pageInfo.TryGetProperty("results", out var totalElement) && totalElement.ValueKind == JsonValueKind.Number
+                && totalElement.TryGetInt32(out var count) ? count : null;
+
             // RawCount (not rows.Count) decides "last page": an unparseable row must not end paging early.
-            return new Page(results.GetArrayLength(), rows);
+            return new Page(results.GetArrayLength(), rows, total);
         }
 
         private sealed record Row(string MediaType, int TmdbId, MediaStatusEntry Entry);
 
-        private sealed record Page(int RawCount, List<Row> Rows);
+        // Total: Seerr's row count (pageInfo.results) when it sent one.
+        private sealed record Page(int RawCount, List<Row> Rows, int? Total);
 
         private sealed record RequestRow(string Key, Dictionary<int, SeasonStatus> Seasons, DateTime? UpdatedAtUtc);
 
         private sealed record RequestPage(int RawCount, List<RequestRow> Rows);
 
-        private sealed record Snapshot(Dictionary<string, MediaStatusEntry> Map, Dictionary<string, Dictionary<int, SeasonStatus>> Requests, bool Complete, DateTime StartedAtUtc, DateTime BuiltAtUtc, string Fingerprint);
+        private sealed record Snapshot(Dictionary<string, MediaStatusEntry> Map, Dictionary<string, Dictionary<int, SeasonStatus>> Requests, bool Complete, bool RequestsComplete, DateTime StartedAtUtc, DateTime BuiltAtUtc, string Fingerprint);
 
         private sealed record OverlayEntry(MediaStatusEntry Entry, DateTime WrittenAtUtc, string Fingerprint);
 

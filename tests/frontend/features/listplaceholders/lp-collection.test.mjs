@@ -74,10 +74,7 @@ test('TV request buttons on placeholder cards open the season modal and never re
   assert.equal(h.modals.length, 1);
   assert.deepEqual([h.modals[0][0], h.modals[0][1], h.modals[0][2], h.modals[0][4]], [114502, 'tv', 'Cars on the Road', false]);
   assert.deepEqual([...h.modals[0][5].preselectedSeasons], [1]);
-  // the 4K popup item asks for a 4K season request
-  h.page.querySelector('.je-lp-card .jellyseerr-4k-popup-item').click();
-  assert.equal(h.modals[1][4], true);
-  assert.equal(global, 0);
+  // "Request in 4K" (its popup lives on document.body): lp-requests-r1-g1.test.mjs
 });
 
 test('viewers get read-only cards and no toolbar; an empty list renders nothing for them', async t => {
@@ -114,11 +111,19 @@ test('placeholder TMDB ids for the "Missing from" discovery share one GET', asyn
 test('many placeholders are built in slices', async t => {
   const many = Array.from({ length: 60 }, (_, i) => ph(`m${i}`, { tmdbId: i + 1, releaseDate: `2000-01-${String((i % 28) + 1).padStart(2, '0')}` }));
   const h = await mount(t, many);
+  const slices = [];
+  const observer = new h.document.defaultView.MutationObserver(records => records.forEach(r => { if (r.addedNodes.length) slices.push(r.addedNodes.length); }));
+  observer.observe(h.page.querySelector('.je-lp-cards'), { childList: true });
+  t.after(() => observer.disconnect());
   h.ctrl.render();
   const first = h.page.querySelectorAll('.je-lp-card').length;
   assert.ok(first > 0 && first < 60, `first slice only (${first})`);
-  await new Promise(r => setTimeout(r, 50));
+  // Each later slice is a separate timer task: wait for the last one rather than for a fixed time (slow under load).
+  for (let i = 0; i < 1000 && h.page.querySelectorAll('.je-lp-card').length < 60; i++) await new Promise(r => setTimeout(r, 5));
   assert.equal(h.page.querySelectorAll('.je-lp-card').length, 60);
+  await tick();
+  assert.ok(slices.length > 1 && slices.every(n => n < 60), `appended in slices (${slices})`);
+  assert.equal(slices.reduce((a, b) => a + b, 0), 60);
 });
 
 test('the first placeholder added to an empty collection gets working request buttons (Seerr user loaded)', async t => {

@@ -234,6 +234,8 @@
         let searchTimer = null;
         let searchController = null;
         let busy = false;
+        // Closed (Cancel, Escape, backdrop or Back) while an add was running: its history entry is gone already.
+        let closed = false;
 
         const modal = JE.jellyseerrModal.create({
             title: JE.t(linkMode ? 'listPlaceholders_link_title' : 'listPlaceholders_add_title'),
@@ -241,6 +243,7 @@
             bodyHtml: `<div class="je-lp-add">${tabs}${searchPane}${customPane}${position}</div>`,
             buttonText: JE.t(linkMode ? 'listPlaceholders_link_button' : 'listPlaceholders_add_button'),
             onClose: () => {
+                closed = true;
                 clearTimeout(searchTimer);
                 searchController?.abort();
                 granularity?.destroy();
@@ -289,7 +292,8 @@
                         reportAdd(result, title);
                         if (result?.addedAsItems?.length) ctrl.afterRealItemsAdded?.();
                     }
-                    history.back();
+                    // Same exit path as Cancel; a modal the user already closed must not go back again (leaves the page).
+                    if (!closed) history.back();
                 } catch (error) {
                     lp.toastError(error);
                     busy = false;

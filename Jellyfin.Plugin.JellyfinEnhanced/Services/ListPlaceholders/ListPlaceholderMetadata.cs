@@ -42,7 +42,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <summary>Season/series: the expected episode set (null = not applicable).</summary>
         public List<PlaceholderEpisode>? Expected { get; init; }
 
-        /// <summary>TV: whether the show is still in production (false once Ended/Canceled).</summary>
+        /// <summary>TV: false once the show is Ended/Canceled, true for any other answer (TMDB's own flag never ends a show).</summary>
         public bool? InProduction { get; init; }
 
         /// <summary>Season/series: aired episode count.</summary>
@@ -146,11 +146,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         }
 
         /// <summary>
-        /// Merges fetched metadata into a placeholder: release date, TV ids, expected episodes, production state, aired
-        /// count and the air dates of listed episodes are authoritative; poster, overview, year and episode titles are only
-        /// filled in when missing. Partial metadata (season details unavailable) leaves the expected set, aired count and
-        /// episode air dates alone, only replaces a release date it knows and never marks the show as no longer in
-        /// production. The title is never changed.
+        /// Merges fetched metadata into a placeholder: release date, poster, TV ids, expected episodes, production state,
+        /// aired count and the air dates of listed episodes are authoritative; overview, year and episode titles are only
+        /// filled in when missing. The poster is Seerr's for that title, never one a client sent (it could belong to
+        /// another title, one a viewer's parental controls hide). Partial metadata (season details unavailable) leaves
+        /// the expected set, aired count and episode air dates alone, only fills in a missing poster, only replaces a
+        /// release date it knows and never marks the show as no longer in production. The title is never changed.
         /// </summary>
         /// <param name="placeholder">Placeholder (mutable copy).</param>
         /// <param name="metadata">Fetched metadata.</param>
@@ -169,7 +170,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 placeholder.Year = date.Year;
             }
 
-            if (placeholder.PosterPath == null && metadata.PosterPath != null)
+            if (!metadata.Partial || placeholder.PosterPath == null)
             {
                 placeholder.PosterPath = metadata.PosterPath;
             }
@@ -250,7 +251,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// Parses Seerr TV details (and season details for season/episodes kinds) into the metadata of a TV placeholder:
         /// release date per kind (C4), expected episodes (C3: season details plus an announced next episode of that
         /// season; series: every episode of seasons ≥ 1 from the season episode counts, aired up to the last aired
-        /// episode, with that episode's air date as an "aired by" date), production state and aired count.
+        /// regular episode, with the last aired episode's date as an "aired by" date), production state (only Ended/Canceled
+        /// count as finished) and aired count.
         /// </summary>
         /// <param name="placeholder">Placeholder (kind, season, listed episodes).</param>
         /// <param name="tv">TV details JSON.</param>
@@ -261,10 +263,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         internal static PlaceholderMetadata FromTv(Placeholder placeholder, JsonElement tv, JsonElement? season, DateTime fetchedAtUtc, DateTime todayUtc)
         {
             var status = Str(tv, "status");
-            bool? inProduction = status is "Ended" or "Canceled" or "Cancelled"
+            var ended = status is "Ended" or "Canceled" or "Cancelled";
+
+            // C3: only a terminal status finishes a show. TMDB's inProduction flag is often false between the seasons
+            // of a renewed show ("Returning Series"), so it only tells that the show was answered for, never that it ended.
+            bool? inProduction = ended
                 ? false
-                : tv.TryGetProperty("inProduction", out var production) && production.ValueKind is JsonValueKind.True or JsonValueKind.False
-                    ? production.GetBoolean()
+                : status != null || (tv.TryGetProperty("inProduction", out var production) && production.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                    ? true
                     : null;
             string? imdb = null;
             int? tvdb = null;
@@ -291,7 +297,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             {
                 case PlaceholderKinds.Series:
                     releaseDate = Date(tv, "firstAirDate");
-                    expected = SeriesExpected(seasons, last, next, status is "Ended" or "Canceled" or "Cancelled");
+                    expected = SeriesExpected(seasons, last, next, ended, todayUtc);
                     break;
                 case PlaceholderKinds.Season:
                 case PlaceholderKinds.Episodes:
@@ -327,8 +333,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     }
                     else
                     {
+                        // C4: the season read's date of the first listed episode wins even when TMDB un-dated it (Apply
+                        // clears the stored one alike); the stored date only stands in when the read didn't list it.
                         var first = placeholder.Episodes.OrderBy(e => e.E).FirstOrDefault();
-                        releaseDate = (first == null ? null : seasonEpisodes?.FirstOrDefault(e => e.E == first.E)?.AirDate ?? first.AirDate) ?? seasonAir;
+                        var fresh = first == null ? null : seasonEpisodes?.FirstOrDefault(e => e.E == first.E);
+                        releaseDate = (fresh != null ? fresh.AirDate : first?.AirDate) ?? seasonAir;
                     }
 
                     break;
@@ -361,24 +370,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         }
 
         // Series expected set from the per-season episode counts (no per-season calls): seasons ≥ 1, episodes 1..count.
-        // Aired = up to the last aired episode (with its air date as an "aired by" date); the announced next episode keeps
-        // its own date; later ones are unaired (no date). An ended show with no last-episode info counts as aired.
-        private static List<PlaceholderEpisode> SeriesExpected(List<SeasonInfo> seasons, PlaceholderEpisode? last, PlaceholderEpisode? next, bool ended)
+        // Aired = up to the last aired regular episode (with the last aired episode's date as an "aired by" date); the
+        // announced next episode keeps its own date; later ones are unaired (no date). Specials never set the watermark:
+        // when the last aired episode is one, the regular episodes before the next regular one have aired, or, without
+        // one, every episode of an ended show and of the seasons that have started. An ended show with no last-episode
+        // info counts as aired.
+        private static List<PlaceholderEpisode> SeriesExpected(List<SeasonInfo> seasons, PlaceholderEpisode? last, PlaceholderEpisode? next, bool ended, DateTime todayUtc)
         {
             var result = new List<PlaceholderEpisode>();
+            var lastRegular = last is { S: >= 1 } ? new EpisodeCoord(last.S, last.E) : (EpisodeCoord?)null;
+            var nextRegular = next is { S: >= 1 } ? new EpisodeCoord(next.S, next.E) : (EpisodeCoord?)null;
             foreach (var season in seasons.Where(s => s.Number >= 1).OrderBy(s => s.Number))
             {
+                var started = season.AirDate != null && PlaceholderRules.TryParseDate(season.AirDate, out var premiere) && premiere.Date <= todayUtc.Date;
                 for (var e = 1; e <= season.EpisodeCount && result.Count <= PlaceholderProgress.MaxExpected; e++)
                 {
                     var coord = new EpisodeCoord(season.Number, e);
                     string? airDate = null;
-                    if (last != null && coord.CompareTo(new EpisodeCoord(last.S, last.E)) <= 0)
+                    if (lastRegular is EpisodeCoord watermark ? coord.CompareTo(watermark) <= 0
+                        : last != null && (nextRegular is EpisodeCoord upcoming ? coord.CompareTo(upcoming) < 0 : ended || started))
                     {
-                        airDate = last.AirDate;
+                        airDate = last!.AirDate;
                     }
-                    else if (next != null && next.S == coord.S && next.E == coord.E)
+                    else if (nextRegular == coord)
                     {
-                        airDate = next.AirDate;
+                        airDate = next!.AirDate;
                     }
                     else if (last == null && ended)
                     {

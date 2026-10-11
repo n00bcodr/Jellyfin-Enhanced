@@ -88,6 +88,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <summary>Delay between episode polls.</summary>
         internal TimeSpan EpisodePollInterval { get; set; } = TimeSpan.FromMilliseconds(300);
 
+        /// <summary>Vets an instance URL before each call (DNS included); replaceable in tests.</summary>
+        internal Func<string, CancellationToken, Task<bool>> UrlGuard { get; set; } = (url, ct) => ArrUrlGuard.IsAllowedUrlAsync(url, ct);
+
         /// <summary>Whether the admin arr routes are on (master switch and the arr setting).</summary>
         /// <param name="config">Plugin configuration.</param>
         /// <returns>Whether enabled.</returns>
@@ -213,9 +216,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                var fingerprint = Fingerprint(plan, instance!);
                 if (plan.RequestId != null && _store.TryGetReplay(ReplayScope, plan.RequestId, userIdN, out var replay))
                 {
-                    return new ListOutcome { StatusCode = replay.StatusCode, RawJson = replay.Body };
+                    // Only the add this id was first used for replays: another instance or other choices would
+                    // otherwise get that add's result while nothing was sent.
+                    return replay.Fingerprint == null || string.Equals(replay.Fingerprint, fingerprint, StringComparison.Ordinal)
+                        ? new ListOutcome { StatusCode = replay.StatusCode, RawJson = replay.Body }
+                        : ListOutcome.Error(409, "request_mismatch", "This add was already sent with other choices. Open the dialog again.");
                 }
 
                 using var budget = new CancellationTokenSource(AddBudget);
@@ -235,12 +243,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
                 if (outcome.Value is ArrAddResultDto result)
                 {
-                    _logger.Info($"[ListPlaceholders] {userName} → {target.Name}: {result.Title} ({plan.Scope}{ScopeSuffix(plan)}) → {result.Result}{(result.Searched ? ", search started" : string.Empty)}.");
+                    _logger.Info($"[ListPlaceholders] {userName} → {target.Name}: {result.Title} ({plan.Scope}{ScopeSuffix(plan)}) → {result.Result}{(result.Searched ? ", search started" : result.SearchFailed == true ? ", search not started" : string.Empty)}.");
                 }
 
                 if (plan.RequestId != null && outcome.StatusCode < 300 && outcome.Value != null)
                 {
-                    _store.RememberReplay(ReplayScope, plan.RequestId, userIdN, outcome.StatusCode, JsonSerializer.Serialize(outcome.Value, outcome.Value.GetType(), ReplayJson));
+                    _store.RememberReplay(ReplayScope, plan.RequestId, userIdN, outcome.StatusCode, JsonSerializer.Serialize(outcome.Value, outcome.Value.GetType(), ReplayJson), fingerprint);
                 }
 
                 return outcome;
@@ -434,7 +442,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 searched = plan.Search && await SearchAsync(target, new JsonObject { ["name"] = "EpisodeSearch", ["episodeIds"] = IdArray(found.Select(e => e.Id)) }, ct).ConfigureAwait(false);
             }
 
-            var outcome = Result("added", target, title, seriesId, SeriesPath(slug), searched, monitored: true);
+            var outcome = Result("added", target, title, seriesId, SeriesPath(slug), searched, monitored: true, searchFailed: plan.Search && found.Count > 0 && !searched);
             var dto = (ArrAddResultDto)outcome.Value!;
             dto.MonitoredEpisodes = found.Count;
             dto.MissingEpisodes = missing.Count > 0 ? missing : null;
@@ -515,7 +523,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
 
             var searched = plan.Search && await SearchAsync(target, new JsonObject { ["name"] = "EpisodeSearch", ["episodeIds"] = IdArray(found.Select(e => e.Id)) }, ct).ConfigureAwait(false);
-            var outcome = Result("monitoring_added", target, title, seriesId, path, searched, monitored: true);
+            var outcome = Result("monitoring_added", target, title, seriesId, path, searched, monitored: true, searchFailed: plan.Search && !searched);
             var dto = (ArrAddResultDto)outcome.Value!;
             dto.MonitoredEpisodes = toMonitor.Count;
             dto.MissingEpisodes = missing.Count > 0 ? missing : null;
@@ -561,7 +569,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
 
             var searched = plan.Search && await SearchAsync(target, new JsonObject { ["name"] = "SeasonSearch", ["seriesId"] = seriesId, ["seasonNumber"] = seasonNumber }, ct).ConfigureAwait(false);
-            return Result("monitoring_added", target, title, seriesId, path, searched, monitored: true);
+            return Result("monitoring_added", target, title, seriesId, path, searched, monitored: true, searchFailed: plan.Search && !searched);
         }
 
         private async Task<(JsonObject? Item, ListOutcome? Error)> LookupSeriesAsync(Target target, string term, CancellationToken ct)
@@ -975,15 +983,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
         private async Task<ArrResponse> SendAsync(ArrInstance instance, HttpMethod method, string path, JsonNode? body, CancellationToken ct)
         {
-            if (!await ArrUrlGuard.IsAllowedUrlAsync(instance.Url, ct).ConfigureAwait(false))
-            {
-                return ArrResponse.Fail("arr_url_rejected");
-            }
-
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(CallTimeout);
             try
             {
+                // Inside the per-call limit: the guard resolves the host name, which can hang too.
+                if (!await UrlGuard(instance.Url, timeout.Token).ConfigureAwait(false))
+                {
+                    return ArrResponse.Fail("arr_url_rejected");
+                }
+
                 // Never follow redirects: ArrUrlGuard only vetted the configured URL, the X-Api-Key header would travel
                 // to the redirect target, and a 301/302 turns a POST into a body-less GET that "succeeds".
                 var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
@@ -1076,7 +1085,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
         // ── Results and errors ───────────────────────────────────────────────
 
-        private static ListOutcome Result(string result, Target target, string title, int? arrId, string? arrPath, bool searched, bool? monitored) =>
+        private static ListOutcome Result(string result, Target target, string title, int? arrId, string? arrPath, bool searched, bool? monitored, bool searchFailed = false) =>
             ListOutcome.Ok(new ArrAddResultDto
             {
                 Result = result,
@@ -1085,6 +1094,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 ArrId = arrId,
                 ArrPath = arrPath,
                 Searched = searched,
+                SearchFailed = searchFailed ? true : null,
                 Monitored = monitored,
             });
 
@@ -1206,7 +1216,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             var name = PlaceholderRules.CleanText(instance.Name);
             if (name.Length > 0)
             {
-                return name.Length > 100 ? name[..100] : name;
+                // The dialog sends this name back for ResolveInstance to compare: never end it in half an emoji or in
+                // spaces (CleanText trims what comes back).
+                return name.Length > 100 ? name[..(char.IsHighSurrogate(name[99]) ? 99 : 100)].TrimEnd() : name;
             }
 
             return service == Radarr ? "Radarr" : service == Sonarr ? "Sonarr" : "The arr instance";
@@ -1226,6 +1238,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             plan.Scope == "season" ? " " + Num(plan.SeasonNumber!.Value)
             : plan.Scope == "episodes" ? " S" + Num(plan.SeasonNumber!.Value) + " E" + string.Join(",", plan.Episodes.Select(Num))
             : string.Empty;
+
+        /// <summary>
+        /// Digest of everything an add does (instance by its key, ids, scope and choices), never the request id or the
+        /// display name: a retried request id is only replayed for the same add.
+        /// </summary>
+        private static string Fingerprint(AddPlan plan, ArrInstance instance)
+        {
+            var parts = string.Join(
+                "\n",
+                plan.Service,
+                Num(plan.InstanceId),
+                InstanceKey(plan.Service, instance),
+                plan.TmdbId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                plan.TvdbId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                plan.ImdbId ?? string.Empty,
+                plan.Scope,
+                plan.SeasonNumber?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                string.Join(",", plan.Episodes.Select(Num)),
+                Num(plan.QualityProfileId),
+                plan.RootFolderPath,
+                plan.Search ? "1" : "0",
+                plan.MinimumAvailability,
+                plan.SeriesType ?? string.Empty);
+            return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(parts))).ToLowerInvariant();
+        }
 
         private static string? SeriesPath(string? slug) => slug == null ? null : "/series/" + slug;
 

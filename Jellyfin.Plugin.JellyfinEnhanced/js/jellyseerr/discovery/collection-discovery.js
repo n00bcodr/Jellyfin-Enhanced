@@ -157,6 +157,8 @@
                 const movieStatus = movie.mediaInfo?.status || 1;
                 return movieStatus !== 5;
             });
+        // Counted before the placeholder filter: a title that is only a placeholder is still not available.
+        const availableCount = collectionDetails.parts.length - missingMovies.length;
 
         // List placeholders: titles already in this collection as placeholders show in its
         // "Not in your library" section; don't offer them a second time here.
@@ -174,7 +176,9 @@
         });
 
         if (missingMovies.length === 0) {
-            console.debug(`${logPrefix} All movies in collection ${boxsetInfo.name} are available`);
+            console.debug(availableCount < collectionDetails.parts.length
+                ? `${logPrefix} Every missing movie in collection ${boxsetInfo.name} is already a placeholder`
+                : `${logPrefix} All movies in collection ${boxsetInfo.name} are available`);
             return;
         }
 
@@ -193,7 +197,6 @@
 
         // Build section title
         const totalInCollection = collectionDetails.parts.length;
-        const availableCount = totalInCollection - missingMovies.length;
         const sectionTitle = `Missing from ${boxsetInfo.name} (${availableCount}/${totalInCollection})`;
 
         const section = createSectionContainer(sectionTitle);

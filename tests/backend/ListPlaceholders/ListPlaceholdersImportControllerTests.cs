@@ -349,6 +349,7 @@ public class ListPlaceholdersImportControllerTests
         f.H.Fetcher.Exact = true;
         f.H.Fetcher.Provider = "chronolists";
         SourceItem Ep(int e) => new("tv", 1412, "tt2193021", 257655, "Arrow", 2012, 1, e, null) { Details = new SourceItemDetails("E" + e, "2012-10-1" + e, "/a.jpg", null, "Season 1") };
+        f.H.Lookup.AddShow(FakeImportLookup.Tv(1412, "Arrow", "2012-10-10"), new SeasonFacts(1, 3, "2012-10-10", "Season 1")); // TMDB: S1 has 3 episodes
         f.H.Fetcher.Items = new List<SourceItem> { Ep(1), Ep(2), Ep(3), new("movie", 49521, null, null, "Man of Steel", 2013, null, null, null) { Details = new SourceItemDetails(null, "2013-06-12", null, null, null) } };
         using var owner = f.Client(f.Owner);
         using var viewer = f.Client(f.Viewer);
@@ -399,6 +400,7 @@ public class ListPlaceholdersImportControllerTests
         using var f = new Fixture();
         f.H.Fetcher.Exact = true;
         f.H.Fetcher.Provider = "chronolists";
+        f.H.Lookup.AddShow(FakeImportLookup.Tv(30983, "Long Show", "1999-10-20"), new SeasonFacts(1, 1001, "1999-10-20", "Season 1"));
         f.H.Fetcher.Items = Enumerable.Range(1, 1001).Select(e => new SourceItem("tv", 30983, null, null, "Long Show", 1999, 1, e, null) { Details = new SourceItemDetails(null, "1999-10-20", null, null, "Season 1") }).ToList();
         using var owner = f.Client(f.Owner);
         JsonElement entry;

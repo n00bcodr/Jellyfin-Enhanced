@@ -81,7 +81,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <summary>
         /// Saves a JPEG as the list's primary image in the list's internal metadata folder (where Jellyfin keeps the
         /// collages it generates) and persists the item. Jellyfin removes the previous image when it was in that folder too.
-        /// Nothing is saved unless the list's primary image is, right before the write, still the one the caller checked.
+        /// Nothing is saved unless the list's primary image is, right before the write, still the one the caller checked;
+        /// once that check passed, cancellation no longer interrupts the save and the item update.
         /// </summary>
         /// <param name="listId">Playlist or collection id.</param>
         /// <param name="jpeg">The image.</param>
@@ -199,7 +200,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     return null;
                 }
 
-                await _providerManager.SaveImage(list, source, "image/jpeg", ImageType.Primary, null, false, cancellationToken).ConfigureAwait(false);
+                // Once the check passed the write runs to the end: cancelled halfway it could leave a truncated file, or a
+                // saved file the item doesn't record, neither of which JE could recognise as its own afterwards.
+                await _providerManager.SaveImage(list, source, "image/jpeg", ImageType.Primary, null, false, CancellationToken.None).ConfigureAwait(false);
             }
             finally
             {
@@ -210,7 +213,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 }
             }
 
-            await list.UpdateToRepositoryAsync(ItemUpdateType.ImageUpdate, cancellationToken).ConfigureAwait(false);
+            await list.UpdateToRepositoryAsync(ItemUpdateType.ImageUpdate, CancellationToken.None).ConfigureAwait(false);
             return list.GetImageInfo(ImageType.Primary, 0)?.Path;
         }
 

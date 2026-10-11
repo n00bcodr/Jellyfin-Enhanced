@@ -37,6 +37,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <summary>When the collage was set (UTC ISO-8601).</summary>
         [JsonPropertyName("setAt")]
         public string SetAt { get; set; } = string.Empty;
+
+        /// <summary>
+        /// SHA-256 (lowercase hex) of a collage JE is writing, recorded before the write and cleared once the write is
+        /// recorded. A write that fails or is interrupted after the file was saved leaves it set: the list's image with
+        /// this content (in its internal metadata folder) is then still recognised as JE's.
+        /// </summary>
+        [JsonPropertyName("pendingSha256")]
+        public string? PendingSha256 { get; set; }
+
+        /// <summary>TMDB poster paths of the pending collage, in order.</summary>
+        [JsonPropertyName("pendingPosterKeys")]
+        public List<string>? PendingPosterKeys { get; set; }
     }
 
     /// <summary>
@@ -76,7 +88,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             try
             {
                 var marker = JsonSerializer.Deserialize<ListCollageMarker>(File.ReadAllText(path), JsonOptions);
-                if (marker == null || !string.Equals(marker.ListId, listIdN, StringComparison.Ordinal) || string.IsNullOrEmpty(marker.ImagePath))
+                // A first collage being written has no image yet, only its pending content.
+                if (marker == null || !string.Equals(marker.ListId, listIdN, StringComparison.Ordinal)
+                    || (string.IsNullOrEmpty(marker.ImagePath) && string.IsNullOrEmpty(marker.PendingSha256)))
                 {
                     return null;
                 }

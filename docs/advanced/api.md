@@ -622,7 +622,7 @@ The [List Placeholders](../seerr/list-placeholders.md) routes live in their own 
 | POST | `list-placeholders/{listId}/apply` | Editors: add an ordered mix of library items and placeholders at a position (what an import applies). With `source`, the list is also linked to that URL in the same write |
 | PATCH | `list-placeholders/{listId}/items/{placeholderId}` | Editors: change a placeholder's note, or link a custom entry to a TMDB title |
 | DELETE | `list-placeholders/{listId}/items/{placeholderId}?rev=` | Editors: remove a placeholder |
-| PUT | `list-placeholders/{listId}/order` | Playlist editors: save the order after a drag. A moved real item is moved in the Jellyfin playlist too (as the owner when an administrator isn't a native editor) |
+| PUT | `list-placeholders/{listId}/order` | Playlist editors: save the order after a drag. A moved real item is moved in the Jellyfin playlist too (as the owner when an administrator isn't a native editor). `409 move_unsupported` (nothing changed) when Jellyfin can't put it there without moving entries hidden from that user or dangling links |
 | GET | `list-placeholders/editable-lists` | Playlists and collections the caller can edit. Administrators also get other users' playlists |
 | POST | `list-placeholders/playlists` | Create a playlist owned by the caller, optionally with entries and a linked `source` |
 | POST | `list-placeholders/collections` | Administrators and collection managers: create a collection, optionally with entries and a linked `source` |

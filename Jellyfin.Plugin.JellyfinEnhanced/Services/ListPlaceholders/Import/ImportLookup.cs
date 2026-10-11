@@ -146,7 +146,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
         /// <param name="season">Season number.</param>
         /// <param name="context">Caller context.</param>
         /// <param name="cancellationToken">Stops this caller waiting.</param>
-        /// <returns>Episodes (NotFound for an unknown season).</returns>
+        /// <returns>Episodes (NotFound on 404; Seerr's 500 for any season failure is transient).</returns>
         Task<LookupResult<IReadOnlyList<EpisodeFacts>>> GetSeasonAsync(int tvTmdbId, int season, ImportCallContext context, CancellationToken cancellationToken);
 
         /// <summary>TMDB <c>/find/{tt}?external_source=imdb_id</c> for an IMDb EPISODE id (Seerr drops episode results).</summary>
@@ -271,8 +271,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                 context,
                 json => ParseSeason(json, season),
                 _ => true,
-                cancellationToken,
-                seasonLookup: true).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
             return new LookupResult<IReadOnlyList<EpisodeFacts>>(status, status == LookupStatus.Ok ? (IReadOnlyList<EpisodeFacts>)value! : null);
         }
 
@@ -331,8 +330,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
             ImportCallContext context,
             Func<string, object?> parse,
             Func<object, bool> cacheable,
-            CancellationToken cancellationToken,
-            bool seasonLookup = false)
+            CancellationToken cancellationToken)
         {
             if (!TryGetSeerrConfig(out var urls, out var apiKey))
             {
@@ -356,7 +354,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                     if (ReferenceEquals(shared, mine))
                     {
                         context.CountCall();
-                        _ = RunSharedAsync(key, mine, cacheable, () => FetchAsync(urls, apiKey, apiPath, context, parse, seasonLookup, mine));
+                        _ = RunSharedAsync(key, mine, cacheable, () => FetchAsync(urls, apiKey, apiPath, context, parse, mine));
                     }
 
                     break;
@@ -403,7 +401,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
             shared.Result.TrySetResult(result);
         }
 
-        private async Task<(LookupStatus Status, object? Value)> FetchAsync(string[] urls, string apiKey, string apiPath, ImportCallContext context, Func<string, object?> parse, bool seasonLookup, SharedLookup shared)
+        private async Task<(LookupStatus Status, object? Value)> FetchAsync(string[] urls, string apiKey, string apiPath, ImportCallContext context, Func<string, object?> parse, SharedLookup shared)
         {
             // Queued: cancelled once every waiter is gone (aborted request or /resolve deadline). Admitted: runs to the
             // end regardless (the result serves later joiners and the cache).
@@ -442,9 +440,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                         return value == null ? (LookupStatus.Transient, null) : (LookupStatus.Ok, value);
                     }
 
-                    // Seerr answers an unknown season with 500 "Unable to retrieve season." (deterministic for a
-                    // missing season; a TMDB outage would also fail the series details, which stays transient).
-                    if (status == 404 || (seasonLookup && status == 500))
+                    // Seerr's season route answers EVERY failure with 500 "Unable to retrieve season." (an unknown
+                    // season, but also a TMDB 429 or timeout). Seasons are only looked up when the show's details list
+                    // them, so a 500 there is retried (transient, never cached), not taken as a missing season.
+                    if (status == 404)
                     {
                         notFound = true;
                         continue;

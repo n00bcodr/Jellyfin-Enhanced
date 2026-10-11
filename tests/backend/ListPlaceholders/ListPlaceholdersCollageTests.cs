@@ -16,7 +16,7 @@ namespace JE.Tests;
 // Poster collage of placeholder-only lists: the rule matrix, poster order, the render geometry and the service against
 // an in-memory list host, an in-memory image host and a fake TMDB image server (no network).
 [Collection("Plugin singleton")]
-public class ListPlaceholdersCollageTests
+public partial class ListPlaceholdersCollageTests
 {
     private static readonly SKColor[] Colors =
     {
@@ -67,6 +67,12 @@ public class ListPlaceholdersCollageTests
         /// <summary>Thrown by the next image write (a failing write), then cleared.</summary>
         public Exception? WriteException { get; set; }
 
+        /// <summary>Thrown by the next image write after the image was saved (the item update failed or was cancelled), then cleared.</summary>
+        public Exception? ExceptionAfterWrite { get; set; }
+
+        /// <summary>Awaited at the start of every image delete (holds a removal in flight).</summary>
+        public Func<Task>? BeforeDelete { get; set; }
+
         /// <summary>Runs right before the image is compared and written (simulates an upload landing in that window).</summary>
         public Action<Guid>? BeforeWrite { get; set; }
 
@@ -99,13 +105,24 @@ public class ListPlaceholdersCollageTests
             var path = "/metadata/" + listId.ToString("N") + "/poster.jpg";
             Images[listId] = new FakeImage { Path = path, Generated = true, Bytes = jpeg };
             AfterWrite?.Invoke(listId);
+            if (ExceptionAfterWrite is { } late)
+            {
+                ExceptionAfterWrite = null;
+                throw late;
+            }
+
             return Task.FromResult<string?>(path);
         }
 
-        public Task<bool> DeletePrimaryImageAsync(Guid listId, string expectedPath, string? expectedSha256)
+        public async Task<bool> DeletePrimaryImageAsync(Guid listId, string expectedPath, string? expectedSha256)
         {
             Calls.Add("delete:" + listId.ToString("N"));
-            return Task.FromResult(IsStill(listId, expectedPath, expectedSha256) && Images.Remove(listId));
+            if (BeforeDelete is { } before)
+            {
+                await before();
+            }
+
+            return IsStill(listId, expectedPath, expectedSha256) && Images.Remove(listId);
         }
 
         public void QueueImageRefresh(Guid listId) => Calls.Add("refresh:" + listId.ToString("N"));
@@ -145,6 +162,12 @@ public class ListPlaceholdersCollageTests
 
         /// <summary>Poster names (e.g. "p1") the fake TMDB answers with 502 for now.</summary>
         public HashSet<string> Down { get; } = new();
+
+        /// <summary>
+        /// The poster Seerr has per movie id (what the synthetic Seerr's movie details carry, with the certification of
+        /// <see cref="ListPlaceholdersHarness.MovieCertifications"/>); <see cref="Seed"/> fills it.
+        /// </summary>
+        public Dictionary<int, string> ServerPosters { get; } = new();
         public ListPlaceholderStore Store => H.Store;
         public ListPlaceholderCollageService Service { get; }
         public FakeListHost.FakeList Playlist { get; }
@@ -155,6 +178,21 @@ public class ListPlaceholdersCollageTests
             Plugin.Plugin.Configuration.ListPlaceholdersEnabled = true;
             Plugin.Plugin.Configuration.ListPlaceholdersPosterCollage = true;
             Images = new FakeImageHost(Host);
+            var seerr = H.Reply;
+            H.Reply = request =>
+            {
+                // Movie details with a certification carry the movie's poster too (one Seerr endpoint serves both).
+                var path = request.RequestUri!.AbsolutePath;
+                if (path.StartsWith("/api/v1/movie/", StringComparison.Ordinal)
+                    && int.TryParse(path["/api/v1/movie/".Length..], out var id)
+                    && H.MovieCertifications.TryGetValue(id, out var cert)
+                    && ServerPosters.TryGetValue(id, out var poster))
+                {
+                    return IntegrationTransport.Response("{\"id\":" + id + ",\"posterPath\":\"" + poster + "\",\"releases\":{\"results\":[{\"iso_3166_1\":\"US\",\"release_dates\":[{\"certification\":\"" + cert + "\",\"type\":3}]}]}}");
+                }
+
+                return seerr(request);
+            };
 #if NET9_0
             H.Users.SetupGet(u => u.Users).Returns(() => AllUsers);
 #else
@@ -214,7 +252,7 @@ public class ListPlaceholdersCollageTests
         }
 
         public ListPlaceholderCollageService NewService(IListImageHost images) =>
-            new(Store, Host, images, Tmdb, Library.Object, H.Access, H.Users.Object, Plugin.Core.Logger)
+            new(Store, Host, images, Tmdb, Library.Object, H.Access, H.Users.Object, H.Metadata, Plugin.Core.Logger)
             {
                 Debounce = TimeSpan.FromMilliseconds(50),
                 MaxDelay = TimeSpan.FromMilliseconds(500),
@@ -249,6 +287,11 @@ public class ListPlaceholdersCollageTests
                     ReleaseDate = "2000-01-" + (10 + doc.Items.Count).ToString(System.Globalization.CultureInfo.InvariantCulture),
                 };
                 doc.Items.Add(placeholder);
+                if (posters[i] != null)
+                {
+                    ServerPosters[placeholder.TmdbId.Value] = posters[i]!;
+                }
+
                 if (list.Info.Kind == ListKinds.Playlist)
                 {
                     doc.Order.Add(ListPlaceholderOrder.PlaceholderToken(placeholder.Id));
@@ -704,6 +747,7 @@ public class ListPlaceholdersCollageTests
         var access = f.H.AccessFor(list, owner);
         foreach (var tmdb in new[] { 1, 2 })
         {
+            f.H.MovieDetails[tmdb] = "{\"id\":" + tmdb + ",\"posterPath\":\"/p" + tmdb + ".jpg\"}"; // the poster Seerr has
             f.H.Lookup.Details[("movie", tmdb)] = new TitleDetails(
                 new TitleHit("movie", tmdb, "Movie " + tmdb, null, "2020-01-01", "/p" + tmdb + ".jpg", null, 10, 1000),
                 null, null, "Released", null, Array.Empty<SeasonFacts>());

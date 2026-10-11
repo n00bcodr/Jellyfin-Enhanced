@@ -39,22 +39,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
     /// <summary>Facts about a whole fetched list that grouping and entry building need.</summary>
     public sealed class SourceListFacts
     {
-        /// <summary>Highest episode number per (show, season) in the list.</summary>
-        public Dictionary<(int Show, int Season), int> MaxEpisode { get; } = new();
-
         /// <summary>Earliest dated entry per show in the list (stands in for the show's first air date).</summary>
         public Dictionary<int, string> FirstDate { get; } = new();
+
+        /// <summary>
+        /// TMDB's episode count per (show, season), where known (filled from Seerr by the caller). Only a run that this
+        /// count confirms is a whole season: the list alone can't tell a whole season from its first episodes.
+        /// </summary>
+        public Dictionary<(int Show, int Season), int> SeasonEpisodes { get; } = new();
     }
 
     /// <summary>
     /// Groups the entries of exact sources (chronolists) into list entries and builds their prepared resolutions, so an
-    /// 800-episode watch order becomes a few hundred placeholders without a single Seerr lookup:
+    /// 800-episode watch order becomes a few hundred placeholders without a title lookup (Seerr is only asked for the
+    /// season episode counts of the shows, see <see cref="SourceListFacts.SeasonEpisodes"/>):
     /// <list type="bullet">
     /// <item>Movies: one entry each.</item>
     /// <item>Episodes: a run of consecutive entries of the same show and season with consecutive episode numbers is one
-    /// entry. A run that is the whole season as the list has it (E1 to the highest episode of that season in the list;
-    /// never specials) is a <c>season</c> placeholder, otherwise an <c>episodes</c> placeholder, split at
-    /// <see cref="PlaceholderRules.MaxEpisodes"/>.</item>
+    /// entry. A run that is the whole season (E1 to the last episode by TMDB's episode count,
+    /// <see cref="SourceListFacts.SeasonEpisodes"/>; never specials) is a <c>season</c> placeholder, otherwise (also when
+    /// the count is unknown) an <c>episodes</c> placeholder, split at <see cref="PlaceholderRules.MaxEpisodes"/>.</item>
     /// </list>
     /// Provenance stays per episode: every episode keeps its own source key (<c>tv|show|season|episode</c>) and the
     /// group's keys all own the one placeholder, so a sync can tell which episode was added, removed or swapped in
@@ -76,12 +80,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 }
 
                 var show = item.TmdbId.Value;
-                if (item.Season.HasValue && item.Episode.HasValue)
-                {
-                    var key = (show, item.Season.Value);
-                    facts.MaxEpisode[key] = Math.Max(facts.MaxEpisode.GetValueOrDefault(key), item.Episode.Value);
-                }
-
                 var date = item.Details?.Date;
                 if (date != null && (!facts.FirstDate.TryGetValue(show, out var first) || string.CompareOrdinal(date, first) < 0))
                 {
@@ -147,8 +145,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
         {
             var first = run[0];
             var season = first.Season!.Value;
+            // A season placeholder stands for every episode of the season (swap-in fills it with any of them), so the run
+            // must be all of it by TMDB's count; the highest episode the list happens to have isn't enough.
             var whole = season > 0 && first.Episode == 1
-                && facts.MaxEpisode.TryGetValue((first.TmdbId!.Value, season), out var max) && run[^1].Episode == max && run.Count == max;
+                && facts.SeasonEpisodes.TryGetValue((first.TmdbId!.Value, season), out var total) && run[^1].Episode == total && run.Count == total;
             if (whole)
             {
                 yield return new SourceGroup(PlaceholderKinds.Season, run);

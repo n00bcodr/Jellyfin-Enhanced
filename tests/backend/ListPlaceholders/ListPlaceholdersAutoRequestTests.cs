@@ -130,7 +130,7 @@ public class ListPlaceholdersAutoRequestTests
         public User Owner { get; }
         public User Viewer { get; }
 
-        public Fixture(int count = 3, int minutes = 5, bool onlyReleased = true)
+        public Fixture(int count = 3, int minutes = 5, bool onlyReleased = true, TimeProvider? time = null)
         {
             var config = H.Plugin.Plugin.Configuration;
             config.ListPlaceholdersAutoRequestEnabled = true;
@@ -139,7 +139,7 @@ public class ListPlaceholdersAutoRequestTests
             config.ListPlaceholdersAutoRequestOnlyReleased = onlyReleased;
             H.Reply = Seerr.Handle;
             Gateway = new SeerrRequestGateway(H.Transport, H.Plugin.Core.Logger);
-            Service = new ListPlaceholderAutoRequestService(H.Store, H.Access, H.Host, Library, Gateway, H.Index, H.Users.Object, H.Plugin.Core.Logger);
+            Service = new ListPlaceholderAutoRequestService(H.Store, H.Access, H.Host, Library, Gateway, H.Index, H.Users.Object, H.Plugin.Core.Logger, time ?? TimeProvider.System);
             Owner = H.NewUser("owner");
             Viewer = H.NewUser("viewer");
             Seerr.Users[Owner.Id] = (1, 2);   // ADMIN
@@ -205,6 +205,13 @@ public class ListPlaceholdersAutoRequestTests
             + (releaseDate == null ? string.Empty : ",\"releaseDate\":\"" + releaseDate + "\"")
             + (episodes.Length == 0 ? string.Empty : ",\"episodes\":[" + episodes + "]") + "}";
         return Ph(json);
+    }
+
+    private sealed class Clock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = DateTimeOffset.UtcNow;
+
+        public override DateTimeOffset GetUtcNow() => Now;
     }
 
     private static PlaceholderEpisode Ep(int s, int e, string? airDate) => new() { S = s, E = e, AirDate = airDate };
@@ -318,73 +325,60 @@ public class ListPlaceholdersAutoRequestTests
     }
 
     [Fact]
-    public async Task APartlyFilledSeriesRequestsTheFirstSeasonWithAMissingAiredEpisode()
+    public async Task ASeriesPlaceholderRequestsSeasonOneHoweverMuchOfItIsInTheList()
     {
-        using var f = new Fixture(count: 3);
+        // Review F15 (user request: series placeholder → season 1; Auto Season Requests continues later seasons).
+        using var f = new Fixture(count: 5);
         var played = f.H.Host.AddItem(BaseItemKind.Episode);
         var s1e1 = f.H.Host.AddItem(BaseItemKind.Episode);
         var s1e2 = f.H.Host.AddItem(BaseItemKind.Episode);
-        // 501: S1 is in the list, S2 has aired → season 2 (not season 1).
-        var partly = Tv("series", 501, releaseDate: Past);
-        partly.Expected = new List<PlaceholderEpisode> { Ep(1, 1, Past), Ep(1, 2, Past), Ep(2, 1, Past), Ep(2, 2, Future) };
+        // 701: S1 is in the list and S2 has aired episodes missing → still season 1.
+        var partly = Tv("series", 701, releaseDate: Past);
+        partly.Expected = new List<PlaceholderEpisode> { Ep(1, 1, Past), Ep(1, 2, Past), Ep(2, 1, Past) };
         partly.Filled = new List<FilledEpisode> { Filled(s1e1, 1, 1), Filled(s1e2, 1, 2) };
-        // 502: every aired episode is in the list, the rest is upcoming → nothing to request, no Seerr call.
-        var caughtUp = Tv("series", 502, releaseDate: Past);
+        // 702: every aired episode is in the list → still season 1 (Seerr's status check decides).
+        var caughtUp = Tv("series", 702, releaseDate: Past);
         caughtUp.Expected = new List<PlaceholderEpisode> { Ep(1, 1, Past), Ep(2, 1, Future) };
         caughtUp.Filled = new List<FilledEpisode> { Filled(s1e1, 1, 1) };
-        // 503: nothing of it in the list yet → season 1.
-        var fresh = Tv("series", 503, releaseDate: Past);
-        fresh.Expected = new List<PlaceholderEpisode> { Ep(1, 1, Past), Ep(2, 1, Past) };
-        f.Seerr.Tv[501] = FakeSeerr.TvJson(501, Past, "{\"seasonNumber\":1},{\"seasonNumber\":2}");
-        f.Seerr.Tv[502] = FakeSeerr.TvJson(502, Past, "{\"seasonNumber\":1},{\"seasonNumber\":2}");
-        f.Seerr.Tv[503] = FakeSeerr.TvJson(503, Past, "{\"seasonNumber\":1},{\"seasonNumber\":2}");
-        f.Playlist(played, s1e1, s1e2, partly, caughtUp, fresh);
+        // 703: expected set not known yet, S1 in the list, Seerr lists S2 → still season 1.
+        var pending = Tv("series", 703, releaseDate: Past);
+        pending.Filled = new List<FilledEpisode> { Filled(s1e1, 1, 1), Filled(s1e2, 1, 2) };
+        // 704: no season 1 (year-numbered seasons, known only from Seerr) → the lowest regular season.
+        var yearly = Tv("series", 704, releaseDate: Past);
+        f.Seerr.Tv[701] = FakeSeerr.TvJson(701, Past, "{\"seasonNumber\":1},{\"seasonNumber\":2}");
+        f.Seerr.Tv[702] = FakeSeerr.TvJson(702, Past, "{\"seasonNumber\":1},{\"seasonNumber\":2}");
+        f.Seerr.Tv[703] = FakeSeerr.TvJson(703, Past, "{\"seasonNumber\":1,\"episodeCount\":2,\"airDate\":\"2001-01-01\"},{\"seasonNumber\":2,\"episodeCount\":8,\"airDate\":\"2002-01-01\"}");
+        f.Seerr.Tv[704] = FakeSeerr.TvJson(704, Past, "{\"seasonNumber\":0},{\"seasonNumber\":2020},{\"seasonNumber\":2019}");
+        f.Playlist(played, s1e1, s1e2, partly, caughtUp, pending, yearly);
 
         var run = await f.Service.RunAsync(f.Viewer.Id, f.Played(played, BaseItemKind.Episode), CancellationToken.None);
 
-        Assert.Equal(new[] { "tv|501|2", "tv|503|1" }, run.Requested);
-        Assert.Contains(run.Skipped, s => s.PlaceholderId == caughtUp.Id && s.Reason == "every aired episode is already in the list");
-        Assert.DoesNotContain(f.Seerr.Gets, g => g == "/api/v1/tv/502");
+        Assert.Equal(new[] { "tv|701|1", "tv|702|1", "tv|703|1", "tv|704|2019" }, run.Requested);
     }
 
-    [Fact]
-    public async Task ASeriesWhoseExpectedEpisodesArentKnownYetUsesSeerrsSeasonCounts()
-    {
-        using var f = new Fixture(count: 1);
-        var played = f.H.Host.AddItem(BaseItemKind.Episode);
-        var series = Tv("series", 601, releaseDate: Past); // metadata pass not run yet: no expected set
-        series.Filled = new List<FilledEpisode> { Filled(played, 1, 1), Filled(Guid.NewGuid(), 1, 2) };
-        f.Seerr.Tv[601] = FakeSeerr.TvJson(601, Past, Seasons601);
-        f.Playlist(played, series);
-
-        var run = await f.Service.RunAsync(f.Viewer.Id, f.Played(played, BaseItemKind.Episode), CancellationToken.None);
-
-        Assert.Equal(new[] { "tv|601|2" }, run.Requested);
-    }
-
+    // A show without a season 1 (year-numbered seasons): a series placeholder requests its lowest regular season.
     private const string Seasons601 =
-        "{\"seasonNumber\":0,\"episodeCount\":4,\"airDate\":\"2001-01-01\"},{\"seasonNumber\":1,\"episodeCount\":2,\"airDate\":\"2001-01-01\"},{\"seasonNumber\":2,\"episodeCount\":10,\"airDate\":\"2002-01-01\"}";
+        "{\"seasonNumber\":0,\"episodeCount\":4,\"airDate\":\"2001-01-01\"},{\"seasonNumber\":2020,\"episodeCount\":2,\"airDate\":\"2020-01-01\"},{\"seasonNumber\":2019,\"episodeCount\":10,\"airDate\":\"2019-01-01\"}";
 
     [Fact]
     public async Task ASeriesWhoseSeasonComesFromSeerrIsDedupedOnThatSeasonNotTheProvisionalOne()
     {
-        // S1 of the show is handled (Seerr: available) by an S1 placeholder earlier in the same run. Without an
-        // expected set the series placeholder's provisional season is also S1 (the highest filled one); its real
-        // season, S2, only comes from the Seerr details and must still be requested.
+        // The key "season 1" of the show is handled (Seerr: available) by an S1 placeholder earlier in the same run.
+        // Without an expected set the series placeholder's provisional season is S1; its real season, 2019 (the show
+        // has no season 1), only comes from the Seerr details and must still be requested.
         using var f = new Fixture(count: 1);
         var played = f.H.Host.AddItem(BaseItemKind.Episode);
         var s1 = Tv("season", 601, 1, Past);
         var series = Tv("series", 601, releaseDate: Past);
-        series.Filled = new List<FilledEpisode> { Filled(played, 1, 1), Filled(Guid.NewGuid(), 1, 2) };
         f.Seerr.Tv[601] = FakeSeerr.TvJson(601, Past, Seasons601, "{\"mediaType\":\"tv\",\"tmdbId\":601,\"status\":4,\"seasons\":[{\"seasonNumber\":1,\"status\":5}]}");
         f.Playlist(played, s1, series);
 
         var run = await f.Service.RunAsync(f.Viewer.Id, f.Played(played, BaseItemKind.Episode), CancellationToken.None);
 
-        Assert.Equal(new[] { "tv|601|2" }, run.Requested);
+        Assert.Equal(new[] { "tv|601|2019" }, run.Requested);
         Assert.Contains(run.Skipped, s => s.PlaceholderId == s1.Id && s.Reason.StartsWith("Seerr status 5", StringComparison.Ordinal));
 
-        // Next playback within 6 h: S1 is handled for this user and S2 was requested — the series is skipped on S2.
+        // Next playback within 6 h: S1 is handled for this user and 2019 was requested — the series is skipped on 2019.
         var again = await f.Service.RunAsync(f.Viewer.Id, f.Played(played, BaseItemKind.Episode), CancellationToken.None);
         Assert.Empty(again.Requested);
         Assert.Contains(again.Skipped, s => s.PlaceholderId == series.Id && s.Reason == "already handled for this user in the last 6 h");
@@ -394,7 +388,7 @@ public class ListPlaceholdersAutoRequestTests
     [Fact]
     public async Task ASeriesWhoseSeasonComesFromSeerrIsSkippedOnTheUsersHandledSeasonAfterTheDetails()
     {
-        // The user's 6 h window holds S1 only: the series (provisional S1, real S2) is still requested.
+        // The user's 6 h window holds S1 only: the series (provisional S1, real 2019) is still requested.
         using var f = new Fixture(count: 1);
         var played = f.H.Host.AddItem(BaseItemKind.Episode);
         var s1 = Tv("season", 601, 1, Past);
@@ -404,31 +398,13 @@ public class ListPlaceholdersAutoRequestTests
         Assert.Equal(new[] { "tv|601|1" }, first.Requested);
 
         var series = Tv("series", 601, releaseDate: Past);
-        series.Filled = new List<FilledEpisode> { Filled(played, 1, 1), Filled(Guid.NewGuid(), 1, 2) };
         list.Raw.Clear();
         f.Fill(list, played, series);
 
         var run = await f.Service.RunAsync(f.Viewer.Id, f.Played(played, BaseItemKind.Episode), CancellationToken.None);
 
-        Assert.Equal(new[] { "tv|601|2" }, run.Requested);
-        Assert.Equal(new[] { "tv|601|1", "tv|601|2" }, f.PostKeys().Select(p => p.Key));
-    }
-
-    [Fact]
-    public async Task ASeriesWhoseSeasonComesFromSeerrNeverRequestsAnUnairedSeasonWhenOnlyReleasedIsOn()
-    {
-        using var f = new Fixture(count: 1);
-        var played = f.H.Host.AddItem(BaseItemKind.Episode);
-        var series = Tv("series", 602, releaseDate: Past); // released show, expected set still empty
-        series.Filled = new List<FilledEpisode> { Filled(played, 1, 1), Filled(Guid.NewGuid(), 1, 2) };
-        f.Seerr.Tv[602] = FakeSeerr.TvJson(602, Past, "{\"seasonNumber\":1,\"episodeCount\":2,\"airDate\":\"2001-01-01\"},{\"seasonNumber\":2,\"episodeCount\":8,\"airDate\":\"" + Future + "\"}");
-        f.Playlist(played, series);
-
-        var run = await f.Service.RunAsync(f.Viewer.Id, f.Played(played, BaseItemKind.Episode), CancellationToken.None);
-
-        Assert.Empty(run.Requested);
-        Assert.Empty(f.Seerr.Posts);
-        Assert.Contains(run.Skipped, s => s.PlaceholderId == series.Id && s.Reason == "every aired episode Seerr lists is already in the list");
+        Assert.Equal(new[] { "tv|601|2019" }, run.Requested);
+        Assert.Equal(new[] { "tv|601|1", "tv|601|2019" }, f.PostKeys().Select(p => p.Key));
     }
 
     [Theory]
@@ -644,6 +620,27 @@ public class ListPlaceholdersAutoRequestTests
     }
 
     [Fact]
+    public async Task ACollectionAnchorsAtThePlayedEpisodeBeforeItsSeries()
+    {
+        // Review F13: the collection holds both the series (2012) and the played episode (2014). The episode itself is
+        // the anchor, so the 2013 movie (before the episode) is not "next"; the 2015 one is.
+        using var f = new Fixture(count: 1);
+        var series = f.H.Host.AddItem(BaseItemKind.Series);
+        var episode = f.H.Host.AddItem(BaseItemKind.Episode);
+        var season = Guid.NewGuid(); // not in the collection
+        f.Library.Dates[series] = new DateTime(2012, 10, 10);
+        f.Library.Dates[episode] = new DateTime(2014, 12, 3);
+        f.Seerr.Movies[101] = FakeSeerr.MovieJson(101, "2013-06-01");
+        f.Seerr.Movies[102] = FakeSeerr.MovieJson(102, "2015-01-01");
+        var collection = f.H.Host.AddCollection("DC");
+        f.Fill(collection, series, episode, Movie(101, "2013-06-01"), Movie(102, "2015-01-01"));
+
+        var run = await f.Service.RunAsync(f.Viewer.Id, f.Played(episode, BaseItemKind.Episode, series: series, season: season), CancellationToken.None);
+
+        Assert.Equal(new[] { "movie|102" }, run.Requested);
+    }
+
+    [Fact]
     public async Task OnlyFiftyEntriesAfterTheItemAreScanned()
     {
         using var f = new Fixture(count: 1);
@@ -686,6 +683,34 @@ public class ListPlaceholdersAutoRequestTests
         Assert.NotNull(other);
         Assert.Empty((await other!).Requested);
         Assert.Single(f.Seerr.Posts);
+    }
+
+    [Fact]
+    public async Task AnOngoingPlaybackNeverTriggersTwiceEvenAfterTheTriggerTtl()
+    {
+        // Review F14: every event of a triggered session + item renews it, so a playback that goes on (or sits
+        // paused) past the 6 h TTL doesn't fire again and request the NEXT N titles; only 6 h without any event do.
+        var clock = new Clock();
+        using var f = new Fixture(count: 1, minutes: 5, time: clock);
+        var played = f.H.Host.AddItem();
+        f.Seerr.Movies[101] = FakeSeerr.MovieJson(101, Past);
+        f.Seerr.Movies[102] = FakeSeerr.MovieJson(102, Past);
+        f.Playlist(played, Movie(101, Past), Movie(102, Past));
+        var item = f.Played(played);
+        var minute = TimeSpan.FromMinutes(1).Ticks;
+
+        var run = f.Service.OnPlayback(PlaybackPhase.Progress, f.Viewer.Id, "s1", item, 5 * minute);
+        Assert.Equal(new[] { "movie|101" }, (await run!).Requested);
+
+        clock.Now += TimeSpan.FromHours(5);
+        Assert.Null(f.Service.OnPlayback(PlaybackPhase.Progress, f.Viewer.Id, "s1", item, 6 * minute));
+        clock.Now += TimeSpan.FromHours(2); // 7 h after the trigger, 2 h after the last event
+        Assert.Null(f.Service.OnPlayback(PlaybackPhase.Stop, f.Viewer.Id, "s1", item, 7 * minute));
+        Assert.Single(f.Seerr.Posts);
+
+        // 6 h without any event of that session + item: a new viewing triggers again.
+        clock.Now += ListPlaceholderAutoRequestService.TriggerTtl;
+        Assert.NotNull(f.Service.OnPlayback(PlaybackPhase.Progress, f.Viewer.Id, "s1", item, 5 * minute));
     }
 
     [Fact]

@@ -699,14 +699,20 @@ public class ListPlaceholdersArrTests
     [Fact]
     public async Task ASlowArrTimesOutWithA504()
     {
-        using var f = new Fixture();
-        f.Service.CallTimeout = TimeSpan.FromMilliseconds(50);
-        f.Arr.Override = (_, _) =>
+        // The arr never answers and only stops when the call's token is cancelled: the 504 must come from the 50 ms
+        // per-call limit, well before the whole-add budget would end it ("took too long").
+        using var f = new Fixture(factory: _ => new IntegrationTransport(async (_, ct) =>
         {
-            Thread.Sleep(10);
-            throw new TaskCanceledException("timeout");
-        };
-        Error(await f.Add(MovieBody), 504, "arr_timeout");
+            await Task.Delay(Timeout.Infinite, ct);
+            return IntegrationTransport.Response();
+        }));
+        f.Service.CallTimeout = TimeSpan.FromMilliseconds(50);
+        f.Service.AddBudget = TimeSpan.FromSeconds(5);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var error = Error(await f.Add(MovieBody), 504, "arr_timeout");
+        clock.Stop();
+        Assert.Contains("didn't answer in time", error.Message, StringComparison.Ordinal);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), $"took {clock.Elapsed}");
     }
 
     [Fact]

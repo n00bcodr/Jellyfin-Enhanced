@@ -17,9 +17,12 @@
 
     const MAX_ENTRIES = 2000;
     const MAX_LINES = 20000;
+    const MAX_CSV_CHARS = 2_000_000;
     const MAX_TITLE = 200;
     const MAX_NOTE = 300;
     const MAX_EPISODES = 100;
+    const MAX_EPISODE_NUMBER = 9999;
+    const MAX_SEASON = 200;
     const MAX_PROSE_TITLE_WORDS = 15;
     const MIN_YEAR = 1870;
     const MAX_YEAR = 2100;
@@ -48,6 +51,8 @@
     const TMDB_PREFIX = /\btmdb[:/]\s*(?:(movie|tv)[:/])?(\d{1,9})\b/i;
     const IMDB_ID = /\b(tt\d{7,10})\b/;
     const TVDB_PREFIX = /\btvdb[:/]\s*(\d{1,9})\b/i;
+    // Inline id tokens and URLs (read by extractIds, then removed from titles and metadata).
+    const ID_TOKENS = /\btmdb[:/]\s*(?:(?:movie|tv)[:/])?\d+\b|\btvdb[:/]\s*\d+\b|\btt\d{7,10}\b|https?:\/\/\S+/gi;
     const TVDB_URL = /thetvdb\.com\/(?:\?[^\s]*?\bid=(\d{1,9})|dereferrer\/series\/(\d{1,9})|series\/(\d{1,9})(?:[/?#\s)]|$))/i;
     const LIST_URLS = [
         [/\bmdblist\.com\/lists\//i, 'mdblist'],
@@ -241,17 +246,42 @@
     }
 
     /**
-     * Expands an episode range into coordinates of ONE season (capped at {@link MAX_EPISODES}).
+     * Expands an episode range into coordinates of ONE season (episode numbers up to the server's 9999; split long
+     * ranges with {@link episodeChunks}).
      * @param {number} season Season.
      * @param {number} from First episode.
      * @param {number} [to] Last episode.
      * @returns {{s: number, e: number}[]} Episodes.
      */
     function episodeRange(season, from, to) {
-        const last = to !== undefined && to >= from ? Math.min(to, from + MAX_EPISODES - 1) : from;
+        const last = to !== undefined && to >= from ? Math.min(to, Math.max(from, MAX_EPISODE_NUMBER)) : from;
         const episodes = [];
         for (let e = from; e <= last; e++) episodes.push({ s: season, e });
         return episodes;
+    }
+
+    /**
+     * Splits episodes into consecutive runs of at most {@link MAX_EPISODES} (one entry each), so a long range
+     * ("One Piece 1x01-150") keeps every episode.
+     * @param {{s: number, e: number}[]} episodes Episodes of one season.
+     * @returns {{s: number, e: number}[][]} Runs (at least one).
+     */
+    function episodeChunks(episodes) {
+        const chunks = [];
+        for (let i = 0; i < episodes.length; i += MAX_EPISODES) chunks.push(episodes.slice(i, i + MAX_EPISODES));
+        return chunks.length ? chunks : [episodes];
+    }
+
+    /**
+     * The seasons of a "Seasons N–M" range, up to the server's season bound (200).
+     * @param {number} from First season.
+     * @param {number} to Last season (below `from`: none).
+     * @returns {number[]} Seasons.
+     */
+    function seasonRange(from, to) {
+        const seasons = [];
+        for (let s = from; s <= Math.min(to, Math.max(from, MAX_SEASON)); s++) seasons.push(s);
+        return seasons;
     }
 
     /**
@@ -260,7 +290,8 @@
      * @returns {{index: number, end: number, season: number, episodes: {s: number, e: number}[], openEnded?: boolean, more?: {season: number, episodes?: {s: number, e: number}[]}[]}|null}
      *   Where it is and what it names. A cross-season range (S1E5–S3E3) names the first season from its episode to the
      *   end (`openEnded`; a range starting at episode 1 is the whole season, no `episodes`), and `more` carries every
-     *   later season: whole seasons in between, then the last season's episodes 1–N.
+     *   later season: whole seasons in between, then the last season's episodes 1–N. A range of more than 100 episodes
+     *   continues in `more` as further runs of the same season.
      */
     function findEpisodeRef(text) {
         const candidates = [];
@@ -278,15 +309,23 @@
         const toSeason = best.s2 !== undefined ? Number(best.s2) : best.s;
         if (toSeason !== best.s && toSeason > best.s) {
             // Cross-season range: one entry per season (C2) so nothing in between goes missing.
-            const lastSeason = Math.min(toSeason, best.s + 30);
+            const lastSeason = seasonRange(best.s, toSeason).at(-1);
             const more = [];
             for (let season = best.s + 1; season < lastSeason; season++) more.push({ season });
-            more.push({ season: lastSeason, episodes: lastSeason === toSeason ? episodeRange(lastSeason, 1, best.e2 !== undefined ? Number(best.e2) : 1) : undefined });
+            if (lastSeason === toSeason) {
+                for (const episodes of episodeChunks(episodeRange(lastSeason, 1, best.e2 !== undefined ? Number(best.e2) : 1))) more.push({ season: lastSeason, episodes });
+            } else {
+                more.push({ season: lastSeason });
+            }
             return best.e <= 1
                 ? { index: best.index, end: best.end, season: best.s, episodes: [], more }
                 : { index: best.index, end: best.end, season: best.s, episodes: episodeRange(best.s, best.e), openEnded: true, more };
         }
-        return { index: best.index, end: best.end, season: best.s, episodes: episodeRange(best.s, best.e, best.e2 !== undefined ? Number(best.e2) : undefined) };
+        // A long range becomes consecutive entries of at most MAX_EPISODES episodes (`more`).
+        const [episodes, ...rest] = episodeChunks(episodeRange(best.s, best.e, best.e2 !== undefined ? Number(best.e2) : undefined));
+        const ref = { index: best.index, end: best.end, season: best.s, episodes };
+        if (rest.length) ref.more = rest.map(run => ({ season: best.s, episodes: run }));
+        return ref;
     }
 
     /**
@@ -300,9 +339,7 @@
         if (!match) return { title };
         const from = Number(match[1]);
         const to = match[2] !== undefined ? Number(match[2]) : from;
-        const seasons = [];
-        for (let s = from; s <= Math.min(to, from + 30); s++) seasons.push(s);
-        return { title: title.slice(0, match.index).trim(), seasons };
+        return { title: title.slice(0, match.index).trim(), seasons: seasonRange(from, to) };
     }
 
     /**
@@ -479,6 +516,7 @@
         let typeHint = ctx.typeHint;
         let note = ctx.note;
         let qualifier;
+        let metaIds = '';
 
         if (title === undefined) {
             // "Title (2019) · Kind · Status — note" / "Title — note" / "Title"
@@ -491,8 +529,11 @@
                 title = `${yearParen[1]} ${yearParen[3].trim()}`;
                 meta = [`(${yearParen[2]})`, meta].filter(Boolean).join(' · ');
             } else if (yearParen) {
-                title = yearParen[1];
-                meta = [yearParen[3].trim() ? `(${yearParen[2]})${yearParen[3]}` : `(${yearParen[2]})`, meta].filter(Boolean).join(' · ');
+                // "Peacemaker (2022) - Season 1": a season selector after the year belongs to the title as well.
+                const selector = leadingSelector(yearParen[3]);
+                title = selector ? `${yearParen[1]} ${selector.text}` : yearParen[1];
+                const after = selector ? (selector.rest ? ` ${selector.rest}` : '') : yearParen[3];
+                meta = [after.trim() ? `(${yearParen[2]})${after}` : `(${yearParen[2]})`, meta].filter(Boolean).join(' · ');
             } else {
                 // Season suffixes use dashes too ("Peacemaker — season 1"): keep them on the title.
                 const seasonDash = /^(.*?\S)\s+[—–-]\s+(seasons?\s+\d{1,3}(?:\s*[-–—]\s*\d{1,3})?)\b(.*)$/i.exec(head);
@@ -523,6 +564,10 @@
                 note = meta.replace(/^[—–]\s*/, '');
                 structured = '';
             }
+            // Bare ids after the year ("Batman (1989) tt0096895", "… · tmdb:movie:268 · Film") name this title; they
+            // are not type words ("movie" in tmdb:movie:268).
+            metaIds = (structured.match(ID_TOKENS) || []).join(' ');
+            structured = structured.replace(ID_TOKENS, ' ');
             const release = /[([]\s*([^)\]]+?)\s*[)\]]/.exec(structured);
             if (release) {
                 const parsed = parseRelease(release[1]);
@@ -583,8 +628,8 @@
             }
         }
 
-        const { ids, season: urlSeason, episode: urlEpisode } = extractIds(title + ' ' + (ctx.idText || ''), urls);
-        title = cleanTitle(title.replace(/\btmdb[:/]\s*(?:(?:movie|tv)[:/])?\d+\b|\btvdb[:/]\s*\d+\b|\btt\d{7,10}\b|https?:\/\/\S+/gi, ' '));
+        const { ids, season: urlSeason, episode: urlEpisode } = extractIds([title, metaIds, ctx.idText].filter(Boolean).join(' '), urls);
+        title = cleanTitle(title.replace(ID_TOKENS, ' '));
         if (!title && !ids) return [];
         if (title && !ids && title.split(/\s+/).length > MAX_PROSE_TITLE_WORDS) return [];
         if (!title && ids) title = '';
@@ -630,6 +675,36 @@
     }
 
     /**
+     * Cleans one option of a `→` chain segment: drops a plain label ("Optional setup:") and the commentary after the
+     * episode reference or first sentence; a trailing instruction parenthetical becomes a note.
+     * @param {string} raw Raw markdown text of the option.
+     * @returns {{part: string, urls: string[], note?: string}} The title text, its link targets and the instruction.
+     */
+    function cleanChainSegment(raw) {
+        const urls = [];
+        const instruction = splitInstruction(stripMarkdown(raw, urls));
+        const plainPart = instruction.text;
+        let part;
+        const ref = findEpisodeRef(plainPart);
+        // A plain label before an episode reference ("Optional setup: Supergirl 2x08").
+        const label = /^([^:"]{2,40}):\s+(.+)$/.exec(plainPart);
+        if (label && (ref || /"[^"]+"/.test(label[2])) && (/\s/.test(label[1]) || /^(setup|optional|then|finally|start|bonus|extra|part \d+)$/i.test(label[1]))) {
+            part = label[2];
+        } else {
+            part = plainPart;
+        }
+        if (ref || /"[^"]+"/.test(part)) {
+            // Keep the title + reference, drop the commentary after it.
+            const inner = findEpisodeRef(part);
+            if (inner) part = part.slice(0, inner.end);
+            else part = part.replace(/^(.*?"[^"]+")[\s\S]*$/, '$1');
+        } else {
+            part = part.split(/(?<=[a-z0-9!?)])[.;]\s+/i)[0];
+        }
+        return { part, urls, note: instruction.note };
+    }
+
+    /**
      * Parses a `→` chain into its entries, in order. Episode segments keep only the first reference; label prefixes
      * ("Optional setup:", "**1918:**") and trailing prose are dropped.
      * @param {string} raw Raw markdown text containing arrows.
@@ -646,33 +721,23 @@
         if (!episodic && plain.some(s => s.length > 80)) return null;
         const entries = [];
         segments.forEach((segment, position) => {
-            let part = segment;
-            // Link targets carry ids (TMDB/IMDb/TVDB URLs): keep them for this segment.
-            const urls = [];
-            const instruction = splitInstruction(stripMarkdown(part, urls));
-            const plainPart = instruction.text;
-            const ref = findEpisodeRef(plainPart);
-            // A plain label before an episode reference ("Optional setup: Supergirl 2x08").
-            const label = /^([^:"]{2,40}):\s+(.+)$/.exec(plainPart);
-            if (label && (ref || /"[^"]+"/.test(label[2])) && (/\s/.test(label[1]) || /^(setup|optional|then|finally|start|bonus|extra|part \d+)$/i.test(label[1]))) {
-                part = label[2];
-            } else {
-                part = plainPart;
-            }
-            if (ref || /"[^"]+"/.test(part)) {
-                // Keep the title + reference, drop the commentary after it.
-                const inner = findEpisodeRef(part);
-                if (inner) part = part.slice(0, inner.end);
-                else part = part.replace(/^(.*?"[^"]+")[\s\S]*$/, '$1');
-            } else {
-                part = part.split(/(?<=[a-z0-9!?)])[.;]\s+/i)[0];
-            }
-            const alternatives = ctx.allowSlash !== false ? splitAlternatives(part, true) : [part];
+            // "A **or** B" splits on the raw segment: cleaning it removes the bold marker (E2: always alternatives).
+            const options = splitAlternatives(segment, false).flatMap(option => {
+                const cleaned = cleanChainSegment(option);
+                const pieces = ctx.allowSlash !== false ? splitAlternatives(cleaned.part, true) : [cleaned.part];
+                // Link targets carry ids (TMDB/IMDb/TVDB URLs): they belong to this option unless " / " splits it further.
+                return pieces.map(part => ({ part, note: cleaned.note, urls: pieces.length === 1 ? cleaned.urls : [] }));
+            });
+            if (!options.length) return;
             const segmentCtx = { ...ctx, source: 'chain' };
-            if (instruction.note) segmentCtx.note = [instruction.note, ctx.note].filter(Boolean).join('; ');
-            const parsed = alternatives.length > 1
-                ? withAlternatives(alternatives.map(alt => parseItem(alt, segmentCtx)[0]).filter(Boolean), ctx)
-                : parseItem(part, { ...segmentCtx, idText: [...urls, ctx.idText].filter(Boolean).join(' ') });
+            const parseOption = (option, idText) => parseItem(option.part, {
+                ...segmentCtx,
+                note: [option.note, ctx.note].filter(Boolean).join('; ') || undefined,
+                idText: [...option.urls, idText].filter(Boolean).join(' ')
+            });
+            const parsed = options.length > 1
+                ? withAlternatives(options.map(option => parseOption(option)[0]).filter(Boolean), ctx)
+                : parseOption(options[0], ctx.idText);
             for (const entry of parsed) {
                 entry.chain = position;
                 entries.push(entry);
@@ -699,6 +764,9 @@
                 if (p.typeHint) alt.typeHint = p.typeHint;
                 if (p.ids) alt.ids = p.ids;
                 if (p.season !== undefined) alt.season = p.season;
+                // Each alternative's own episodes ("Flash 1x08 **or** Arrow 3x09"), never the first one's.
+                if (p.episodes?.length) alt.episodes = p.episodes;
+                if (p.openEnded) alt.openEnded = true;
                 return alt;
             }),
             line: ctx.line,
@@ -785,7 +853,7 @@
                 if (!match || looksLikeProse(match[1]) || /\b(episodes?|and|the block)\b/i.test(match[1]) && match[1].split(' ').length > 3) continue;
                 const from = Number(match[2]);
                 const to = match[3] !== undefined ? Number(match[3]) : from;
-                for (let season = from; season <= Math.min(to, from + 30); season++) {
+                for (const season of seasonRange(from, to)) {
                     entries.push(makeEntry({ line: ctx.line, raw: ctx.raw, section: ctx.section, source: 'table', title: cleanTitle(match[1]), season, year: rowCtx.year, note: rowCtx.note }));
                 }
             }
@@ -817,7 +885,8 @@
     /**
      * Parses RFC 4180 CSV (quoted fields, doubled quotes, newlines inside quotes).
      * @param {string} text CSV text.
-     * @returns {{cells: string[], line: number}[]} Rows with their 1-based starting line.
+     * @returns {{cells: string[], line: number, open?: boolean}[]} Rows with their 1-based starting line; `open` marks a
+     *   last row whose quoted field never closes (an incomplete record).
      */
     function parseCsv(text) {
         const rows = [];
@@ -850,9 +919,9 @@
                 field += c;
             }
         }
-        if (field !== '' || row.length) {
+        if (field !== '' || row.length || quoted) {
             row.push(field);
-            rows.push({ cells: row, line: rowLine });
+            rows.push(quoted ? { cells: row, line: rowLine, open: true } : { cells: row, line: rowLine });
         }
         return rows;
     }
@@ -976,7 +1045,7 @@
      * ParsedEntry: `{ index, line, raw, section?, source, title, year?, date?, typeHint?: 'movie'|'tv',
      * kind?: 'movie'|'series'|'season'|'episodes', season?, episodes?: [{s,e}], episodeTitle?, openEnded?,
      * ids?: {tmdb?, tmdbType?, imdb?, tvdb?}, imdbEpisode?, note?, status?: 'released'|'scheduled'|'tba',
-     * qualifier?, alternatives?: [{title, year?, date?, typeHint?, ids?, season?}], chain?, dupOf? }`.
+     * qualifier?, alternatives?: [{title, year?, date?, typeHint?, ids?, season?, episodes?, openEnded?}], chain?, dupOf? }`.
      *
      * @param {string} text Pasted text (markdown, plain lines or a CSV export).
      * @param {{maxEntries?: number}} [options] Options.
@@ -988,10 +1057,19 @@
         const source = normalizeTypography(text).replace(/\r\n?/g, '\n');
         const result = { format: 'text', entries: [], skipped: [], sections: [], truncated: false, currentSection: undefined };
 
-        const csvRows = /,/.test(source.slice(0, 4000)) ? parseCsv(source.slice(0, 2_000_000)) : [];
+        const csvCut = source.length > MAX_CSV_CHARS;
+        const csvText = csvCut ? source.slice(0, MAX_CSV_CHARS) : source;
+        const csvRows = /,/.test(source.slice(0, 4000)) ? parseCsv(csvText) : [];
         const csv = csvRows.length > 1 ? detectCsv(csvRows) : null;
         if (csv) {
             result.format = csv.format;
+            // The text ends inside a record (cut at the size cap, or a quoted field that never closes): not a row.
+            const last = csvRows[csvRows.length - 1];
+            if (csvRows.length - 1 > csv.headerIndex && (last.open || (csvCut && !csvText.endsWith('\n')))) {
+                csvRows.pop();
+                if (!csvCut) result.skipped.push({ line: last.line, raw: clip(last.cells.join(','), 500), reason: 'unterminated' });
+            }
+            if (csvCut) result.truncated = true;
             parseCsvEntries(csvRows, csv, result, maxEntries);
         } else {
             parseText(source, result, maxEntries);
@@ -1096,7 +1174,7 @@
                 }
                 const from = Number(loneSeason[1]);
                 const to = loneSeason[2] !== undefined ? Number(loneSeason[2]) : from;
-                for (let season = from; season <= Math.min(to, from + 30); season++) {
+                for (const season of seasonRange(from, to)) {
                     result.entries.push(makeEntry({ ...ctx, source: 'season', title: seriesContext, season, note: loneSeason[3] ? stripMarkdown(loneSeason[3]) : undefined }));
                 }
                 continue;

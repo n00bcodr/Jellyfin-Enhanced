@@ -95,8 +95,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
     /// playlist/collection edit, a pass after startup, the daily maintenance task and turning the setting on or off.</item>
     /// <item>At most <see cref="MaxConcurrency"/> lists are processed at once; a list is never processed twice at once.</item>
     /// <item>The collage is one image every viewer of the list sees, so when users with parental controls can see the
-    /// list it only uses placeholders that pass every such user's filter (fail closed, like the list's rows); a
-    /// parental-control change re-checks every list.</item>
+    /// list it only uses placeholders that pass every such user's filter (fail closed, like the list's rows), and draws
+    /// for each the poster Seerr has for that title rather than the stored one (which a client sent and could belong to
+    /// another title); a title whose poster can't be read from Seerr is left out. A parental-control change re-checks
+    /// every list.</item>
     /// <item>Posters that can't be downloaded for a while (timeouts, 5xx, 429) are retried with a growing delay
     /// (<see cref="RetryBase"/> doubling up to <see cref="RetryMax"/>) and left out until then, so a flaky poster never
     /// makes JE rewrite the same image over and over (each write fires Jellyfin's ItemUpdated, which re-triggers JE).
@@ -134,6 +136,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         private readonly ILibraryManager _libraryManager;
         private readonly ListAccessService _access;
         private readonly IUserManager _userManager;
+        private readonly ListPlaceholderMetadataService _metadata;
         private readonly ListCollageMarkerStore _markers;
 
         // Jellyfin's own collages JE saw on lists while they had real items (path + content): the only unmarked
@@ -151,6 +154,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         // Posters that failed temporarily, per list (in memory: the startup pass re-checks every list anyway).
         private readonly ConcurrentDictionary<string, PosterRetry> _retries = new(StringComparer.Ordinal);
 
+        // Evaluations the worker started that haven't finished (StopAsync waits for them).
+        private readonly HashSet<Task> _inFlight = new();
+
         private CancellationTokenSource? _stopping;
         private Task? _worker;
         private Task? _startupPass;
@@ -166,6 +172,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <param name="libraryManager">Library manager (native list edits).</param>
         /// <param name="access">List access (restricted viewers and their parental filter).</param>
         /// <param name="userManager">User manager (parental-control changes).</param>
+        /// <param name="metadata">Seerr title metadata (the server's own poster of each title).</param>
         /// <param name="logger">JE logger.</param>
         public ListPlaceholderCollageService(
             ListPlaceholderStore store,
@@ -175,6 +182,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             ILibraryManager libraryManager,
             ListAccessService access,
             IUserManager userManager,
+            ListPlaceholderMetadataService metadata,
             Logger logger)
         {
             _store = store;
@@ -184,6 +192,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             _libraryManager = libraryManager;
             _access = access;
             _userManager = userManager;
+            _metadata = metadata;
             _logger = logger;
             _markers = new ListCollageMarkerStore(store, logger);
             _nativeCollages = new ListCollageMarkerStore(store, logger, Path.Combine("collages", "native"));
@@ -289,7 +298,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             return Task.CompletedTask;
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Stops the worker and waits (until <paramref name="cancellationToken"/> fires) for the evaluations it started:
+        /// parts of an evaluation don't observe cancellation (an image delete and what follows it) and must not run on
+        /// against services that are being disposed.
+        /// </summary>
+        /// <param name="cancellationToken">The host's shutdown timeout.</param>
+        /// <returns>A task.</returns>
         public async Task StopAsync(CancellationToken cancellationToken)
         {
             Unsubscribe();
@@ -310,6 +325,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     // shutting down
                 }
             }
+
+            Task[] inFlight;
+            lock (_gate)
+            {
+                inFlight = _inFlight.ToArray();
+            }
+
+            try
+            {
+                await Task.WhenAll(inFlight).WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // shutting down: the host stopped waiting
+            }
         }
 
         /// <inheritdoc />
@@ -318,7 +348,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             Unsubscribe();
             var stopping = Interlocked.Exchange(ref _stopping, null);
             stopping?.Cancel();
-            stopping?.Dispose();
+            bool idle;
+            lock (_gate)
+            {
+                idle = _inFlight.Count == 0;
+            }
+
+            // Evaluations still running (the host stopped waiting for them) keep using its token: left to the GC then.
+            if (idle)
+            {
+                stopping?.Dispose();
+            }
         }
 
         /// <summary>
@@ -486,7 +526,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         /// <summary>
         /// The poster candidates every restricted viewer of the list may see (<see cref="PosterCandidates"/> when nobody
         /// with parental controls can see it). Each viewer's filter is applied as on the list's rows: blocked titles,
-        /// custom and unverifiable entries (unless that viewer added them) and lookups over budget are left out. At most
+        /// custom and unverifiable entries (unless that viewer added them) and lookups over budget are left out. Each
+        /// title that passes contributes the poster Seerr has for it, not the stored one (a client sent that, and it
+        /// could be another title's); titles without a TMDB id or whose poster can't be read are left out. At most
         /// <see cref="MaxParentalChecks"/> placeholders are checked.
         /// </summary>
         /// <returns>The posters, and whether a restricted viewer's filter was applied.</returns>
@@ -526,16 +568,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     batch.RemoveAll(p => hidden.Contains(p.Id));
                 }
 
-                foreach (var placeholder in batch)
+                var posters = await ServerPostersAsync(batch, cancellationToken).ConfigureAwait(false);
+                foreach (var poster in posters)
                 {
-                    if (result.Count < MaxCandidates && !result.Contains(placeholder.PosterPath!, StringComparer.Ordinal))
+                    if (result.Count < MaxCandidates && poster != null && !result.Contains(poster, StringComparer.Ordinal)
+                        && (exclude == null || !exclude.Contains(poster)))
                     {
-                        result.Add(placeholder.PosterPath!);
+                        result.Add(poster);
                     }
                 }
             }
 
             return (result, true);
+        }
+
+        // The poster Seerr has for each placeholder's title (cached metadata), in order; null for a custom entry, a title
+        // Seerr doesn't know or can't answer for now, or one without a valid poster.
+        private async Task<string?[]> ServerPostersAsync(IReadOnlyList<Placeholder> placeholders, CancellationToken cancellationToken)
+        {
+            var today = DateTime.UtcNow;
+            return await Task.WhenAll(placeholders.Select(async placeholder =>
+            {
+                if (placeholder.Kind == PlaceholderKinds.Custom || placeholder.TmdbId is not > 0)
+                {
+                    return null;
+                }
+
+                var metadata = await _metadata.FetchAsync(placeholder, ListPlaceholderMetadataService.CacheTtl, today, cancellationToken).ConfigureAwait(false);
+                return metadata?.PosterPath is { } poster && PlaceholderRules.IsValidPosterPath(poster) ? poster : null;
+            })).ConfigureAwait(false);
         }
 
         private async Task<CollageDecision> EvaluateLockedAsync(string listIdN, CancellationToken cancellationToken)
@@ -584,6 +645,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
 
             var sha = new Lazy<string?>(() => image.IsLocalFile ? _images.HashFile(image.Path!) : null);
+            marker = AdoptPendingWrite(listIdN, marker, image, sha);
             var isOurs = marker != null && IsSameImage(image, marker, sha);
             var hasReal = enabled && _host.GetRawEntries(listId).Any(e => e.Resolved);
             var isJellyfinCollage = false;
@@ -671,6 +733,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
         private async Task<CollageDecision> RemoveAsync(string listIdN, Guid listId, ListImageState image, Lazy<string?> sha, string reason)
         {
             var deleted = await _images.DeletePrimaryImageAsync(listId, image.Path!, sha.Value).ConfigureAwait(false);
+            if (!deleted)
+            {
+                // The image changed meanwhile. It may be JE's own collage whose write was interrupted after the file was
+                // saved: then it is recorded and checked again. Anything else is left alone.
+                var current = _images.GetPrimaryImage(listId);
+                var currentSha = new Lazy<string?>(() => current.IsLocalFile ? _images.HashFile(current.Path!) : null);
+                var adopted = AdoptPendingWrite(listIdN, _markers.Load(listIdN), current, currentSha);
+                if (adopted != null && IsSameImage(current, adopted, currentSha))
+                {
+                    Notify(listIdN);
+                    return CollageDecision.None;
+                }
+            }
+
             _markers.Delete(listIdN);
             if (!deleted)
             {
@@ -726,6 +802,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
 
             return delay < RetryMax ? delay : RetryMax;
+        }
+
+        // JE's last write saved the file but failed or was interrupted before it was recorded: when the list's image is that
+        // very file (the pending content, in the internal metadata folder where JE saves), it is recorded as JE's now.
+        private ListCollageMarker? AdoptPendingWrite(string listIdN, ListCollageMarker? marker, ListImageState image, Lazy<string?> sha)
+        {
+            if (marker?.PendingSha256 == null || !image.IsGenerated || sha.Value == null
+                || !string.Equals(sha.Value, marker.PendingSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                return marker;
+            }
+
+            marker.ImagePath = image.Path!;
+            marker.Sha256 = marker.PendingSha256;
+            marker.PosterKeys = marker.PendingPosterKeys ?? new List<string>();
+            marker.PendingSha256 = null;
+            marker.PendingPosterKeys = null;
+            marker.SetAt = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
+            _markers.Save(marker);
+            _nativeCollages.Delete(listIdN);
+            _logger.Debug($"[ListPlaceholders] Recorded the poster collage of list {listIdN} whose write was interrupted.");
+            return marker;
         }
 
         // The list's primary image is the recorded one: same path and same content.
@@ -831,7 +929,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             // may have arrived during the downloads. The image host checks the image once more right before saving.
             var before = _images.GetPrimaryImage(listId);
             var beforeSha = new Lazy<string?>(() => before.IsLocalFile ? _images.HashFile(before.Path!) : null);
-            var marker = _markers.Load(listIdN);
+            var marker = AdoptPendingWrite(listIdN, _markers.Load(listIdN), before, beforeSha);
             var native = before.IsGenerated ? _nativeCollages.Load(listIdN) : null;
             var replaceable = !before.HasImage
                 || (marker != null && IsSameImage(before, marker, beforeSha))
@@ -843,9 +941,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                 return new SetResult(SetOutcome.Superseded, transient);
             }
 
+            // Recorded before the write: if it fails or is interrupted after the file was saved (the item update), the image
+            // is still known as JE's (AdoptPendingWrite) instead of looking like someone else's from then on. An exception
+            // keeps the record, since the file may have been saved.
+            var sha256 = Convert.ToHexString(SHA256.HashData(jpeg)).ToLowerInvariant();
+            var pending = marker ?? new ListCollageMarker { ListId = listIdN };
+            pending.PendingSha256 = sha256;
+            pending.PendingPosterKeys = used;
+            _markers.Save(pending);
             var path = await _images.SetPrimaryImageAsync(listId, jpeg, before.HasImage ? before.Path : null, before.HasImage ? beforeSha.Value : null, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrEmpty(path))
             {
+                // Nothing was written: the record goes back to what it was.
+                if (marker != null)
+                {
+                    marker.PendingSha256 = null;
+                    marker.PendingPosterKeys = null;
+                    _markers.Save(marker);
+                }
+                else
+                {
+                    _markers.Delete(listIdN);
+                }
+
                 Notify(listIdN);
                 return new SetResult(SetOutcome.Superseded, transient);
             }
@@ -854,7 +972,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             {
                 ListId = listIdN,
                 ImagePath = path,
-                Sha256 = Convert.ToHexString(SHA256.HashData(jpeg)).ToLowerInvariant(),
+                Sha256 = sha256,
                 PosterKeys = used,
                 FailedKeys = failed,
                 SetAt = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
@@ -1033,7 +1151,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
                     foreach (var id in due)
                     {
-                        _ = RunOneAsync(id, cancellationToken);
+                        var run = RunOneAsync(id, cancellationToken);
+                        lock (_gate)
+                        {
+                            if (!run.IsCompleted)
+                            {
+                                _inFlight.Add(run);
+                            }
+                        }
+
+                        _ = run.ContinueWith(
+                            finished =>
+                            {
+                                lock (_gate)
+                                {
+                                    _inFlight.Remove(finished);
+                                }
+                            },
+                            CancellationToken.None,
+                            TaskContinuationOptions.ExecuteSynchronously,
+                            TaskScheduler.Default);
                     }
 
                     if (due.Count == 0)

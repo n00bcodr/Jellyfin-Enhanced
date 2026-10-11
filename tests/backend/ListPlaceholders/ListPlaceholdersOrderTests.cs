@@ -208,15 +208,6 @@ public class ListPlaceholdersOrderTests
     }
 
     [Fact]
-    public void VisibleMoveIndexSkipsRowsTheMoverCannotSee()
-    {
-        // desired [A B(hidden) C D], moved D: index among the mover's visible rows (A, C) = 2.
-        Assert.Equal(2, O.VisibleMoveIndex(new[] { A0, B0, C0, D0 }, D0, t => t != B0));
-        Assert.Equal(0, O.VisibleMoveIndex(new[] { D0, A0 }, D0, _ => true));
-        Assert.Equal(-1, O.VisibleMoveIndex(new[] { A0 }, D0, _ => true));
-    }
-
-    [Fact]
     public void CollectionsSortByReleaseDateWithTbaLast()
     {
         var items = new[]

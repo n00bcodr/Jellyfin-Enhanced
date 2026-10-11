@@ -83,6 +83,7 @@ test('409 from Seerr counts as already requested; other errors restore the butto
 test('TV rows open the season modal pre-ticking the placeholder season (series: none)', async t => {
   const h = await mount(t, got);
   h.page.querySelector('.je-lp-row[data-je-lp-id="e1"] .je-lp-request').click();
+  await tick(); // one flow per show at a time
   h.page.querySelector('.je-lp-row[data-je-lp-id="series"] .je-lp-request').click();
   await tick();
   assert.equal(h.modals.length, 2);

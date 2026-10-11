@@ -1993,7 +1993,9 @@
                         </div>
                     </fieldset>
 
-                    <fieldset>
+                    <!-- Not gated on Seerr as a whole: custom entries and *arr adds work without it; the
+                         Seerr-only options (list import and sync) are in INDIVIDUAL_DEPS. -->
+                    <fieldset data-dep-setup>
                         <legend class="sectionTitle">List Placeholders</legend>
                         <div class="configSection">
                             <div class="checkboxContainer"><label><input id="listPlaceholdersEnabled" is="emby-checkbox" type="checkbox"/><span>Show titles you don't have on collections and playlists</span></label></div>
@@ -2009,7 +2011,7 @@
                                 <div class="fieldDescription je-field-desc-xl">Playlists and collections imported from an MDBList, TMDB, Trakt, IMDb or Chronolists list can stay linked to it. When this is on, the "Sync linked lists (list placeholders)" scheduled task (every 12 hours by default) adds titles that were added to the source list, and removes the ones that left it if the link asks for that. Only entries the import or sync added are ever removed. Editors can always press "Sync now".</div>
                             </div>
                             <div class="inputContainer">
-                                <label class="inputLabel" for="traktClientId">Trakt Client ID</label>
+                                <label class="inputLabel" for="traktClientId"><span>Trakt Client ID</span></label>
                                 <div class="je-api-row">
                                     <input id="traktClientId" is="emby-input" type="text" autocomplete="off" class="je-api-input"/>
                                 </div>
@@ -2156,7 +2158,7 @@
                                     <div class="checkboxContainer"><label><input id="listPlaceholdersAutoRequestEnabled" is="emby-checkbox" type="checkbox"/><span>Request the next titles of a list while it's being watched</span></label></div>
                                     <div class="je-setting-description" data-desc-for="listPlaceholdersAutoRequestEnabled">
                                         <div class="fieldDescription je-field-desc-xl">
-                                            When someone plays an item of a playlist or collection that has "Not in your library" titles, request the titles that come next in that list from Seerr, as that user. A season requests that season, specific episodes request the season they belong to, and a whole series requests its first season (or, once part of it is in the list, the first season that still has episodes missing). Each user's Seerr permissions, approval rules and quotas apply.
+                                            When someone plays an item of a playlist or collection that has "Not in your library" titles, request the titles that come next in that list from Seerr, as that user. A season requests that season, specific episodes request the season they belong to, and a whole series requests season 1 (or its first regular season, for a show without a season 1); later seasons come from Auto Season Requests, if it's on. Each user's Seerr permissions, approval rules and quotas apply.
                                             <br/><br/>
                                             Skipped (and not counted): titles that are already requested or available, custom entries without a TMDB match, titles the user's parental controls hide, and users who aren't linked to Seerr, are excluded from Seerr, or may not request that kind of title.
                                             <br/><br/>
@@ -7989,7 +7991,9 @@
         // `data-dep-setup` directly in the HTML — `updateSectionDep` walks
         // every fieldset and gates only the ones WITHOUT that marker, so
         // admins can always edit Sonarr/Radarr/Bazarr/Seerr setup boxes
-        // regardless of what else is configured.
+        // regardless of what else is configured. List Placeholders carries it
+        // too, as it works without Seerr (its Seerr-only options are in
+        // INDIVIDUAL_DEPS).
         var SECTION_DEPS = [
             {
                 tabSelector: '#seerr',
@@ -8014,6 +8018,9 @@
             { id: 'showReviews',              checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'showElsewhereOnJellyseerr', checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
             { id: 'autoMovieRequestEnabled',   checkFn: hasTmdbKey, hint: 'Add a TMDB API Key to enable', icon: 'key' },
+            { id: 'listPlaceholdersSyncEnabled', checkFn: hasJellyseerrConfigured, hint: 'Set up Seerr to enable (list import needs it)', icon: 'link_off' },
+            { id: 'traktClientId',               checkFn: hasJellyseerrConfigured, hint: 'Set up Seerr to enable (list import needs it)', icon: 'link_off' },
+            { id: 'listPlaceholdersImdbEnabled', checkFn: hasJellyseerrConfigured, hint: 'Set up Seerr to enable (list import needs it)', icon: 'link_off' },
             { id: 'autoSkipIntro',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
             { id: 'autoSkipOutro',                 checkFn: function() { return hasIntroSkipper !== false; }, hint: 'Install Intro Skipper plugin to enable', icon: 'extension' },
             { id: 'bookmarksUsePluginPages',       checkFn: function() { return hasPluginPages !== false; }, hint: 'Install Plugin Pages plugin to enable', icon: 'extension' },
@@ -8190,12 +8197,13 @@
 
         /**
          * Evaluates one individual setting dependency, disabling checkbox and showing hint when unmet.
+         * A text input's hint goes on its `<label for>`.
          * @param {Object} dep - Individual dependency rule with id, checkFn, hint, and icon
          */
         function updateIndividualDep(dep) {
             var checkbox = document.getElementById(dep.id);
             if (!checkbox) return;
-            var label = checkbox.closest('label');
+            var label = checkbox.closest('label') || document.querySelector('label[for="' + dep.id + '"]');
             if (!label) return;
             var isMet = dep.checkFn();
             var tag = 'ind-' + dep.id;
@@ -9054,7 +9062,7 @@
                 tagsSyncWarn ? 'Enabled but no *arr instance is configured' : 'Enabled',
                 tagsSyncWarn);
             var lpArrOn = bool('listPlaceholdersEnabled') && bool('listPlaceholdersArrEnabled');
-            var lpArrWarn = lpArrOn && !anyArrConfigured();
+            var lpArrWarn = lpArrOn && !hasAnyArrService();
             feat('Add placeholders to *arr', lpArrOn, 'seerr',
                 lpArrWarn ? 'Enabled but no *arr instance is configured' : 'Enabled',
                 lpArrWarn);

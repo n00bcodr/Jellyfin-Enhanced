@@ -68,7 +68,7 @@ A playlist or collection that only holds placeholders shows Jellyfin's generic i
 
 - The collage is only used while the list has no real items. Once one arrives, the collage is removed and Jellyfin makes its own image again (for collections Jellyfin 12 makes none, so the generic icon comes back).
 - It never replaces an image you set. To keep a list without a collage, give it your own image; deleting the collage alone doesn't help, it comes back.
-- When users with parental controls can see the list, only posters every one of them may see are used, so the collage can have fewer posters, or none.
+- When users with parental controls can see the list, only posters every one of them may see are used, each the one Seerr has for that title, so the collage can have fewer posters, or none.
 - It appears about 15 seconds after the list changes. Turning the setting off removes every collage the plugin made.
 
 ## Requesting
@@ -77,11 +77,12 @@ The **Request** button uses your own Seerr account, permissions and quotas, like
 
 - **Movies** follow the usual flow, including the advanced options for users allowed to use them.
 - **TV** opens the season selection with the placeholder's season already ticked: for episodes, the season they belong to; for a whole series, nothing. If Seerr has partial requests turned off, the modal says every season will be requested.
-- A season or episodes placeholder shows the status of its season.
-- With 4K requests enabled, collection cards have **Request in 4K** in the request button's dropdown, like other Seerr cards. The placeholder's badge keeps showing the regular status.
+- A season or episodes placeholder shows the status of its season. Once that season is requested or available, its button can't be clicked again.
+- If Seerr says the title or season was already requested (for example by someone else since the page loaded), the entry just turns to requested, without an error.
+- With 4K requests enabled, collection cards have **Request in 4K** in the request button's dropdown, like other Seerr cards (for TV, with the placeholder's season ticked). The placeholder's badge keeps showing the regular status.
 - The badges are the usual [request status indicators](seerr-features.md#request-status-indicators).
 
-Statuses come from one shared index of Seerr's media and requests that the server keeps up to date in the background, so a list of hundreds of entries makes no per-card Seerr calls. Until the index is ready, playlist rows show a spinner and collection cards no badge.
+Statuses come from one shared index of Seerr's media and requests that the server keeps up to date in the background, so a list of hundreds of entries makes no per-card Seerr calls. Until the index is ready, playlist rows show a spinner and collection cards no badge. If Seerr's request list couldn't be read completely, season and episodes entries with nothing available yet show no badge (rather than **Not Requested**) until the next refresh.
 
 ## Adding titles
 
@@ -166,9 +167,9 @@ Headings, blank lines and prose are skipped. The importer understands:
 - **Dates and TBA:** `Clayface (2026-10-23) · Film · Scheduled`, `Swamp Thing (TBA) · TV series · In development`
 - **Markdown tables**, using their title (or "Watch"), year (or "Released"), type (or "Format") and notes columns
 - **Seasons:** `Peacemaker - Season 1`, `Peacemaker — season 1`, `Peacemaker S1`, or a `Season 2` line under a show
-- **Episodes:** `Flash 1x08`, `S01E08`, ranges like `Flash 8x01–05`, `Season 2 Episode 3`
+- **Episodes:** `Flash 1x08`, `S01E08`, ranges like `Flash 8x01–05`, `Season 2 Episode 3` (a range of more than 100 episodes becomes several rows)
 - **Chains**, split into separate entries in order: `Flash 1x08 → Arrow 3x08`
-- **Either/or:** `Justice League or Zack Snyder's Justice League`, kept as one row with both titles to choose from
+- **Either/or:** `Justice League or Zack Snyder's Justice League`, kept as one row with both titles to choose from; each keeps its own season or episodes (`Flash 1x08 or Arrow 3x09`)
 - **Episodes named by title:** `Legends "Crisis on Infinite Earths: Part Five"`; the show is found, and you pick the episode in **Change match**
 - **Links and ids:** TMDB, IMDb and TVDB links or ids, such as `https://www.themoviedb.org/movie/49521`, `tt0770828` or `tvdb:279121`
 - **CSV exports:** IMDb list and watchlist exports, Letterboxd list exports, and simple sheets with title, year, id, type, season and episode columns
@@ -202,7 +203,7 @@ In **Import list**, switch to **From URL** and give the address of a list on one
 | **Chronolists** | watch orders `chronolists.com/dctv`, `chronolists.com/mcu`, … | Nothing. See [below](#chronolists-watch-orders) |
 | **Letterboxd** | Not fetched | See below |
 
-Only these sites' own addresses are accepted. Up to 1000 entries are read from a list (5000 from a Chronolists watch order), and the first 100 from a TMDB or Trakt chart.
+Only these sites' own addresses are accepted. Up to 1000 entries are read from a list (5000 from a Chronolists watch order), and the first 100 from a TMDB or Trakt chart. A list that was read in the last 5 minutes is reused. Otherwise each user can read up to 10 lists every 5 minutes, at most 2 at a time.
 
 !!! note "IMDb and Letterboxd"
 
@@ -217,8 +218,8 @@ Only these sites' own addresses are accepted. Up to 1000 entries are read from a
 
 ![Importing the Arrowverse watch order from Chronolists](../images/list-placeholders-chronolists.png)
 
-- **No lookups:** the page already names every title exactly, so all rows arrive as sure matches at once, without Seerr searches.
-- **Grouped episodes:** episodes that follow each other in the watch order become one entry, a whole season when the run covers it, so the Arrowverse's 800-odd episodes become about 700 entries. The review header says so.
+- **No lookups:** the page already names every title exactly, so all rows arrive as sure matches at once, without Seerr searches. With Seerr set up, the plugin only asks it how many episodes each season has.
+- **Grouped episodes:** episodes that follow each other in the watch order become one entry, so the Arrowverse's 800-odd episodes become about 700 entries. The review header says so. An entry is a whole season only when it has every episode of that season by TMDB's count; a watch order that lists just a season's first episode adds just that episode. Without Seerr the count is unknown, so these entries are always lists of episodes.
 - **Kept in order:** with **Keep in sync with this list**, episodes and films added to the watch order later are inserted at their place in it, not at the end. Entries that move on the site keep their place in your list.
 - **Episodes you have** go in as real items, the rest as placeholders, as with any import.
 - If Chronolists changes how its pages are built, the import or sync stops with a message and nothing in your list changes until the plugin is updated. If only a few entries can't be read, the rest is imported or synced and nothing is removed.
@@ -228,7 +229,7 @@ Only these sites' own addresses are accepted. Up to 1000 entries are read from a
 A list imported from a URL stays linked to its source. Two options in the review decide what later syncs do:
 
 - **Keep in sync with this list** (on by default): the list takes part in the scheduled sync.
-- **Remove entries that leave the list** (off by default): a sync also removes entries that dropped off the source, but **only entries the import or a sync added**, including the real items they turned into. Entries you added yourself are never removed. A real item is only removed if it's in the playlist once.
+- **Remove entries that leave the list** (off by default): a sync also removes entries that dropped off the source, but **only entries the import or a sync added**, including the real items they turned into. Entries you added yourself are never removed. A real item is only removed if it's in the playlist once, and nothing real is removed from a playlist while one of its entries can't be found in the library (for example a file on a drive that's offline), because Jellyfin would drop that entry too. Those items stay, counted as kept, and a later sync removes them.
 
 ![The import options for a list URL](../images/list-placeholders-import-url.png)
 
@@ -238,12 +239,12 @@ Editors see the link in the list's toolbar as **Linked:** *name*, with the time 
 
 How syncing works:
 
-- **When:** once an administrator turns on **Keep linked lists in sync**, the **Sync linked lists (list placeholders)** scheduled task syncs every list with **Keep in sync with this list**, every 12 hours. **Sync now** works either way.
+- **When:** once an administrator turns on **Keep linked lists in sync**, the **Sync linked lists (list placeholders)** scheduled task syncs every list with **Keep in sync with this list**, every 12 hours. **Sync now** works either way and always reads the list as it is right now. If you click it again within 30 seconds, the list isn't read again.
 - **Where new entries go:** at their place in the source's order, right after the nearest earlier entry that's in your playlist. Collections have no order.
 - **Only sure matches** are added, because nobody reviews them. The rest is tried again next time. Chronolists entries need no lookup; other sources need Seerr.
 - Entries you skipped in the review or removed later aren't added back (they're remembered for 90 days), and a title the list already has (for example a new episode of a season that's a placeholder) gets no second entry.
 - **As whom:** a sync runs with the rights of the user who linked the list. If that user is deleted, can no longer edit the list, or can't see an entry that should be removed, syncing pauses and the link says why. When an editor changes an option in the link's menu, the list is linked again as them and syncing resumes.
-- When a list site answers only partly, or the list is longer than the limit, nothing is removed. Once a list holds 2000 placeholders, syncing adds no new placeholders (titles you have still go in) and says the list is full.
+- When a list site answers only partly, answers with no entries at all after earlier syncs found some, or the list is longer than the limit, nothing is removed. If a site sends an error page in place of the list, the sync fails and nothing changes. Once a list holds 2000 placeholders, syncing adds no new placeholders (titles you have still go in) and says the list is full.
 
 ## When a title arrives
 
@@ -274,7 +275,7 @@ When someone plays an item of a playlist or collection that has placeholders, th
 | Movie | The movie |
 | One season | That season |
 | Specific episodes | The season they belong to |
-| Whole series | Season 1 (or the first regular season), or once some of it is in the list, the first season with episodes missing (aired ones, with **Only request released titles**) |
+| Whole series | Season 1 (or the first regular season, for a show without a season 1), however much of it is in the list. Later seasons come from Auto Season Requests, if it's on |
 | Custom entry | Never |
 
 - **Next** means playlist order, or release date order in a collection. In a collection, playing an episode counts for its series or season.
@@ -310,6 +311,7 @@ The dialog asks for the **Instance** (the enabled instances on the [*arr Setting
 - If Sonarr already has the series, a season or episodes placeholder **adds monitoring** for that part only. Whatever is already monitored is left alone.
 - A movie or whole series that's already there is reported as already in Radarr or Sonarr, and nothing changes (an unmonitored movie stays unmonitored).
 - Episodes Sonarr doesn't list yet are named in the result, and the toast links to the title in Radarr or Sonarr.
+- If Sonarr couldn't start the search, the toast says so, so you can start it in Sonarr yourself.
 - Custom entries can't be added.
 
 !!! note "Sonarr v3"
@@ -336,6 +338,7 @@ The server checks every action, including direct API calls.
 ## Limits
 
 - **Duplicate items in a playlist:** only the first copy of an item that appears twice can be moved, because Jellyfin always moves the first copy. Adding an item that's already in the list is refused with **That item is already in this list**.
+- **Entries the playlist owner can't see, or whose media was deleted:** Jellyfin places moved items relative to the entries the owner can see. The plugin works out the move (sometimes two) that puts an item exactly where you dropped it without moving those entries. If no move can do that, which is rare (for example, dropping an item at the end behind two such entries), the drag is undone with a message and the playlist stays as it was.
 - **Other users' playlists:** administrators who aren't editors of a playlist can move its placeholders but not its real items.
 - A list holds up to **2000** placeholders; beyond that, titles you have still go in as real items. An import takes up to 2000 entries, and up to 1000 entries are read from a list URL (5000 from Chronolists, 100 from a TMDB or Trakt chart).
 - Status badges come from a background index of Seerr, so a request deleted in Seerr usually keeps its badge for up to 20 minutes.

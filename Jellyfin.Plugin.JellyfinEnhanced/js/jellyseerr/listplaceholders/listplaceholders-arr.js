@@ -449,6 +449,9 @@
         if (Array.isArray(result?.missingEpisodes) && result.missingEpisodes.length > 0) {
             html += `<br>${JE.t('listPlaceholders_arr_result_missing_episodes', { instance: params.instance, episodes: esc(formatEpisodes(result.missingEpisodes)) })}`;
         }
+        if (result?.searchFailed === true) {
+            html += `<br>${JE.t('listPlaceholders_arr_result_search_failed', { instance: params.instance })}`;
+        }
         const link = arrLink(result);
         if (link) {
             html += `<br><a class="je-lp-arr-open" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${JE.t('listPlaceholders_arr_open', params)}</a>`;
@@ -618,9 +621,10 @@
             };
             const title = String(item.title || '');
             const subtitle = item.year ? `${title} (${item.year})` : title;
-            // One id per dialog: if a response got lost, retrying replays the server's first result instead of
-            // adding twice (failures aren't replayed, so a corrected retry runs again).
-            const requestId = newRequestId();
+            // One id per distinct add: if a response got lost, retrying the same choices replays the server's first
+            // result instead of adding twice (failures aren't replayed, so a corrected retry runs again). Other
+            // choices (instance, profile, folder...) get their own id, so they never get another add's result.
+            const requestIds = new Map();
             const backdropPath = typeof item.backdropPath === 'string' && /^\/[A-Za-z0-9_-]+\.(jpg|png)$/.test(item.backdropPath) ? item.backdropPath : undefined;
 
             const { modalElement, show } = JE.jellyseerrModal.create({
@@ -641,8 +645,13 @@
                         messageEl.textContent = JE.t('listPlaceholders_arr_error_choose');
                         return;
                     }
-                    const body = buildAddBody(item, choices, requestId);
+                    const body = buildAddBody(item, choices);
                     if (!body) return;
+                    const asked = { ...body };
+                    delete asked.requestId;
+                    const fingerprint = JSON.stringify(asked);
+                    if (!requestIds.has(fingerprint)) requestIds.set(fingerprint, body.requestId);
+                    body.requestId = requestIds.get(fingerprint);
                     const label = button.textContent;
                     setAdding(true);
                     button.textContent = JE.t('listPlaceholders_arr_adding');
@@ -749,7 +758,7 @@
                     label: f.freeSpace ? `${f.path} (${formatBytes(f.freeSpace)})` : f.path
                 })), remembered.rootFolderPath);
                 const availability = modalElement.querySelector('#je-lp-arr-availability');
-                if (availability && AVAILABILITIES.includes(remembered.minimumAvailability)) availability.value = remembered.minimumAvailability;
+                if (availability) availability.value = AVAILABILITIES.includes(remembered.minimumAvailability) ? remembered.minimumAvailability : 'released';
                 const seriesType = modalElement.querySelector('#je-lp-arr-series-type');
                 if (seriesType) seriesType.value = SERIES_TYPES.includes(remembered.seriesType) ? remembered.seriesType : '';
                 searchBox.checked = remembered.search === true;

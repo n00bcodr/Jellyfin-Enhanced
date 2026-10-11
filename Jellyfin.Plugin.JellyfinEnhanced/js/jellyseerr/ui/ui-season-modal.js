@@ -13,14 +13,27 @@
     let refreshModalInterval = null;
 
     /**
+     * Whether a request answer is Seerr's 202 "No seasons available to request": every submitted season is already
+     * requested or available and nothing was created. JE's proxy passes it on as a plain JSON body without a request id.
+     * @param {*} response - Body returned by requestTvSeasons/requestMedia.
+     * @returns {boolean}
+     */
+    function isNoSeasonsAvailable(response) {
+        return !!response && typeof response === 'object' && !Number.isInteger(response.id)
+            && /no seasons available/i.test(String(response.message || ''));
+    }
+
+    /**
      * Shows the enhanced season selection modal for TV shows.
      * @param {number} tmdbId - TMDB ID of the TV show.
      * @param {string} mediaType - Should be 'tv'.
      * @param {string} showTitle - Display title of the show.
      * @param {Object|null} searchResultItem - Original search result data.
      * @param {boolean} [is4k=false] - Request the 4K version.
-     * @param {{preselectedSeasons?: number[]}} [options] - Seasons to tick when the modal opens
-     *   (list placeholders: the placeholder's season).
+     * @param {{preselectedSeasons?: number[], treatExistingAsRequested?: boolean}} [options] - preselectedSeasons: seasons
+     *   to tick when the modal opens (list placeholders: the placeholder's season). treatExistingAsRequested: Seerr's
+     *   202 "No seasons available" and 409 answers mean "already requested" (list placeholders, B5): the seasons are
+     *   announced as requested and the modal closes without a success toast or an error.
      */
     ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null, is4k = false, options = {}) {
         if (mediaType !== 'tv') return;
@@ -94,6 +107,7 @@
             || 'Unknown Show';
 
         const showAdvanced = JE.jellyseerrAPI.shouldShowAdvanced();
+        const existingCountsAsRequested = options?.treatExistingAsRequested === true;
 
         // No TVDB id on TMDB (common for anime): Seerr can't hand the show to
         // Sonarr, and its own web UI asks the user to pick a match (#653).
@@ -170,23 +184,28 @@
                             requestBtn.textContent = is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : JE.t('jellyseerr_modal_request_selected');
                             return;
                         }
-                        await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k, manualTvdbId);
                         requestedSeasons = selectedSeasons;
-                        JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: resolvedShowTitle }), 4000);
+                        const response = await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k, manualTvdbId);
+                        if (!(existingCountsAsRequested && isNoSeasonsAvailable(response))) {
+                            JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: resolvedShowTitle }), 4000);
+                        }
                     } else {
                         // Partial requests disabled: request all non-special seasons to avoid locking specials
                         const allSeasons = (tvDetails?.seasons || [])
                             .map(season => season.seasonNumber)
                             .filter(seasonNumber => Number.isFinite(seasonNumber) && seasonNumber > 0);
 
+                        let response;
                         if (allSeasons.length > 0) {
-                            await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem, is4k, manualTvdbId);
                             requestedSeasons = allSeasons; // specials (season 0) were not requested
+                            response = await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem, is4k, manualTvdbId);
                         } else {
-                            await requestMedia(tmdbId, 'tv', settings, is4k, searchResultItem, manualTvdbId);
+                            response = await requestMedia(tmdbId, 'tv', settings, is4k, searchResultItem, manualTvdbId);
                         }
 
-                        JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: resolvedShowTitle }), 4000);
+                        if (!(existingCountsAsRequested && isNoSeasonsAvailable(response))) {
+                            JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: resolvedShowTitle }), 4000);
+                        }
                     }
                     // Notify any listening modals that TV was requested
                     document.dispatchEvent(new CustomEvent('jellyseerr-tv-requested', { detail: { tmdbId, mediaType: 'tv', is4k } }));
@@ -206,6 +225,12 @@
                         }
                     }, 1000);
                 } catch (error) {
+                    if (existingCountsAsRequested && error?.status === 409) {
+                        // Already requested (B5): announce the submitted seasons, no error and no success toast.
+                        document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail: { tmdbId, mediaType: 'tv', is4k, seasons: requestedSeasons } }));
+                        closeFn();
+                        return;
+                    }
                     const resetLabel = is4k
                         ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K')
                         : (partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request'));

@@ -339,7 +339,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
 
     /// <summary>
     /// A swap-in that is about to mutate Jellyfin (A6). Persisted first so a crash between the Jellyfin
-    /// mutation and the placeholder retirement can be completed or rolled back on the next pass.
+    /// mutation and the placeholder retirement can be completed or rolled back on the next pass (playlist inserts and
+    /// collection adds).
     /// </summary>
     public sealed class SwapIntent
     {
@@ -354,6 +355,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         /// <summary>The real token the items go after (null = list start).</summary>
         [JsonPropertyName("anchor")]
         public string? Anchor { get; set; }
+
+        /// <summary>
+        /// Playlists: the index in the document's order the items go to (null in older documents; recovery then puts
+        /// them right after <see cref="Anchor"/>).
+        /// </summary>
+        [JsonPropertyName("index")]
+        public int? Index { get; set; }
 
         /// <summary>Occurrence count per item id before the mutation (to tell done from not-done).</summary>
         [JsonPropertyName("occurrenceCountsBefore")]
@@ -381,5 +389,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
 
         /// <summary>When the record stops being replayed.</summary>
         public DateTime ExpiresAtUtc { get; init; }
+
+        /// <summary>Optional digest of what the original request asked for; a retry asking for something else isn't replayed.</summary>
+        public string? Fingerprint { get; init; }
     }
 }

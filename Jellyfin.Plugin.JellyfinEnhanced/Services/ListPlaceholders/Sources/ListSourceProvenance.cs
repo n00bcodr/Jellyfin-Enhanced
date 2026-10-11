@@ -15,7 +15,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
         /// <summary>Sync-owned real items that occur exactly once and whose source entry left the list.</summary>
         public List<Guid> ItemIds { get; } = new();
 
-        /// <summary>Entries that left the source but stay: not added by sync, or a sync-owned item that occurs more than once.</summary>
+        /// <summary>
+        /// Entries that left the source but stay: not added by sync, a sync-owned item that occurs more than once, or one
+        /// held back while its playlist has an unresolved entry (<see cref="ListSourceProvenance.RecheckItemDrops"/>).
+        /// </summary>
         public int Kept { get; set; }
 
         /// <summary>
@@ -416,10 +419,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
             if (doc.ListKind == ListKinds.Playlist)
             {
+                // A split season adds placeholders: never past the cap (the save would fail after Jellyfin was changed).
+                // Without room the season stays whole and what left it is kept (reported).
+                var room = ListPlaceholderStore.MaxPlaceholders - doc.Items.Count + plan.PlaceholderIds.Count;
                 foreach (var (phId, left) in leftShared)
                 {
                     if (Narrow(source, placeholders[phId], current, left, items) is { } narrowing)
                     {
+                        var extra = (narrowing.Episodes.Count - 1) / PlaceholderRules.MaxEpisodes;
+                        if (extra > room)
+                        {
+                            plan.Kept += left;
+                            continue;
+                        }
+
+                        room -= extra;
                         plan.Narrowings.Add(narrowing);
                     }
                 }
@@ -693,6 +707,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             }
 
             return counts;
+        }
+
+        /// <summary>
+        /// Re-checks a drop plan's real items against the list as Jellyfin has it right before they are removed (native
+        /// edits don't take JE's list lock). Jellyfin removes every copy of an item, so an item that no longer occurs
+        /// exactly once is kept. And Jellyfin rebuilds a playlist from the entries it can resolve when it removes from it,
+        /// so while a playlist has an unresolved entry (e.g. its file is on a drive that isn't mounted) nothing is removed:
+        /// that entry would be lost. Kept items count in <see cref="DropPlan.Kept"/> and stay owned (a later sync retries);
+        /// an item that is already gone is left out silently.
+        /// </summary>
+        /// <param name="plan">The plan; its <see cref="DropPlan.ItemIds"/> shrink to what is safe to remove.</param>
+        /// <param name="raw">The list's raw entries, read just now.</param>
+        /// <param name="isPlaylist">Whether the list is a playlist (a collection removes only the given ids).</param>
+        public static void RecheckItemDrops(DropPlan plan, IReadOnlyList<RawEntry> raw, bool isPlaylist)
+        {
+            if (plan.ItemIds.Count == 0)
+            {
+                return;
+            }
+
+            var occurrences = Occurrences(raw);
+            var unresolved = isPlaylist && raw.Any(r => !r.Resolved);
+            plan.ItemIds.RemoveAll(id =>
+            {
+                var count = occurrences.GetValueOrDefault(id.ToString("N", CultureInfo.InvariantCulture));
+                if (count == 1 && !unresolved)
+                {
+                    return false;
+                }
+
+                if (count > 0)
+                {
+                    plan.Kept++;
+                }
+
+                return true;
+            });
         }
     }
 }

@@ -246,7 +246,7 @@ public class ListPlaceholdersSwapTests
         Assert.Empty(h.Host.Calls);
 
         await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
-        Assert.Equal(new[] { a, pending, landed }, h.Host.Resolved(playlist.Info.Id));
+        Assert.Equal(new[] { a, landed, pending }, h.Host.Resolved(playlist.Info.Id)); // the list order [a, done, notDone]
         Assert.Empty(h.Store.Load(access.ListIdN)!.Items);
     }
 
@@ -1273,19 +1273,10 @@ public class ListPlaceholdersSwapTests
         await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
 
         var m = FakeListHost.Short(arrived);
-        if (positional)
-        {
-            // jf12: a raw position, which counts the hidden row: exactly at the placeholder's spot.
-            Assert.Equal(new[] { $"add:{m}@2" }, h.Host.Calls);
-            Assert.Equal(new[] { a, hidden, arrived, b }, h.Host.Resolved(playlist.Info.Id));
-        }
-        else
-        {
-            // jf10: Move counts only rows the owner sees (index 1 = after A); Jellyfin can't place it relative to the
-            // hidden row, so its order is adopted (identical from the owner's point of view).
-            Assert.Equal(new[] { $"add:{m}@end", $"move:{m}->1", $"move:{m}->1" }, h.Host.Calls);
-            Assert.Equal(new[] { a, arrived, hidden, b }, h.Host.Resolved(playlist.Info.Id));
-        }
+        // jf12: a raw position, which counts the hidden row. jf10: Move counts only rows the owner sees and no single
+        // index lands after the hidden row, so it goes there in two moves (via the top). Both: exactly at the spot.
+        Assert.Equal(positional ? new[] { $"add:{m}@2" } : new[] { $"add:{m}@end", $"move:{m}->0", $"move:{m}->2" }, h.Host.Calls);
+        Assert.Equal(new[] { a, hidden, arrived, b }, h.Host.Resolved(playlist.Info.Id));
 
         var doc = h.Store.Load(access.ListIdN)!;
         Assert.Empty(doc.Items);
@@ -1315,10 +1306,9 @@ public class ListPlaceholdersSwapTests
         await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
 
         var m = FakeListHost.Short(arrived);
-        // jf10's Move finds the prior row by item id, so the first move lands after the FIRST copy; the verification
-        // fixes it with one more move.
+        // jf10's Move finds the prior row by item id, so no single move lands after the SECOND copy; two moves do.
         Assert.Equal(
-            positional ? new[] { $"add:{m}@3" } : new[] { $"add:{m}@end", $"move:{m}->3", $"move:{m}->3" },
+            positional ? new[] { $"add:{m}@3" } : new[] { $"add:{m}@end", $"move:{m}->0", $"move:{m}->3" },
             h.Host.Calls);
         Assert.Equal(new[] { a, b, a, arrived, c }, h.Host.Resolved(playlist.Info.Id));
         Assert.Equal(new[] { E(a), E(b), E(a, 1), E(arrived), E(c) }, h.Store.Load(access.ListIdN)!.Order);
