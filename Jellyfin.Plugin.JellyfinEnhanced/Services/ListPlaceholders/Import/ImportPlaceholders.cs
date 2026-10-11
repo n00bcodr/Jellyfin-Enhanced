@@ -18,8 +18,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
         /// <param name="season">Season (season/episodes).</param>
         /// <param name="episodes">Episode numbers (episodes).</param>
         /// <param name="note">Note.</param>
+        /// <param name="lineYear">The entry's own year: kept when TMDB has no date for the title yet (an announced title).</param>
         /// <returns>The placeholder body, or null when the kind doesn't fit the candidate (a movie can't be a season).</returns>
-        public static NewPlaceholderDto? FromCandidate(ImportCandidateDto candidate, string? kind, int? season, IReadOnlyList<int>? episodes, string? note)
+        public static NewPlaceholderDto? FromCandidate(ImportCandidateDto candidate, string? kind, int? season, IReadOnlyList<int>? episodes, string? note, int? lineYear = null)
         {
             kind ??= candidate.MediaType == "movie" ? PlaceholderKinds.Movie : PlaceholderKinds.Series;
             if ((candidate.MediaType == "movie") != (kind == PlaceholderKinds.Movie))
@@ -35,7 +36,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                 TvdbId = candidate.MediaType == "tv" ? candidate.TvdbId : null,
                 ImdbId = candidate.ImdbId,
                 Title = candidate.Title,
-                Year = candidate.Year,
+                Year = candidate.Year ?? (candidate.ReleaseDate == null && lineYear is >= 1870 and <= 2100 ? lineYear : null),
                 ReleaseDate = candidate.ReleaseDate,
                 PosterPath = candidate.PosterPath,
                 Overview = candidate.Overview,

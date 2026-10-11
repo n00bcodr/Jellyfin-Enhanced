@@ -8,9 +8,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
     /// <summary>
     /// Pure scoring rules of the import resolver (research/seerr-api.md §9, design E1–E2). Scale:
     /// <list type="bullet">
-    /// <item>title: normalized exact +100 (+5 when the leading article matches too), prefix +60 ("Birds of Prey" →
-    /// "Birds of Prey (and the Fantabulous …)"), substring +30, query contains the candidate +20;</item>
-    /// <item>year: Δ0 +50, Δ1 +25, otherwise −40; an undated candidate when a year was given −30;</item>
+    /// <item>title: normalized exact +100 (+5 when the leading article matches too); spacing, hashtags and roman
+    /// numerals don't count ("Star Crossed" = "Starcrossed", "#TheLateBatsby", "Special 2" = "Special II"); +60 for a
+    /// title that is the other one with something added: a prefix ("Birds of Prey" → "Birds of Prey (and the Fantabulous
+    /// …)"), a leading franchise segment ("DC Showcase - …", "Watchmen: …"), a subtitle only the line has ("Blackhawk:
+    /// Fearless Champion of Freedom" → "Blackhawk") or one extra word in a title of five or more words ("LEGO DC
+    /// [Comics] Super Heroes: …"); substring +30, query contains the candidate +20;</item>
+    /// <item>year: Δ0 +50, Δ1 +25, otherwise −40; an undated candidate when a year was given −30 (0 when the line says
+    /// the title isn't out yet: an announced title has no date on TMDB either);</item>
     /// <item>tie-breakers: up to +10 from TMDB votes and up to +5 from popularity;</item>
     /// <item>explicit ids (TMDB/IMDb/TVDB) score <see cref="ExplicitIdScore"/>.</item>
     /// </list>
@@ -35,11 +40,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
         /// <summary>Medium-confidence margin.</summary>
         public const double MediumMargin = 20;
 
+        /// <summary>Title score of a title that is the other one with something added (see the class remarks).</summary>
+        public const double PartialTitleScore = 60;
+
         private static readonly System.Collections.Generic.Dictionary<string, string> NumberWords = new(StringComparer.Ordinal)
         {
             ["one"] = "1", ["two"] = "2", ["three"] = "3", ["four"] = "4", ["five"] = "5", ["six"] = "6",
             ["seven"] = "7", ["eight"] = "8", ["nine"] = "9", ["ten"] = "10", ["eleven"] = "11", ["twelve"] = "12",
+
+            // Roman numerals as whole words ("Special II", "Part IV", "Chapter I"): both sides fold the same way.
+            ["i"] = "1", ["ii"] = "2", ["iii"] = "3", ["iv"] = "4", ["v"] = "5", ["vi"] = "6", ["vii"] = "7", ["viii"] = "8",
+            ["ix"] = "9", ["x"] = "10", ["xi"] = "11", ["xii"] = "12",
         };
+
+        // Where a title splits into segments: "Franchise: Title", "Series - Title" (not the hyphen inside "Spider-Man").
+        private static readonly System.Text.RegularExpressions.Regex SegmentSeparator = new(
+            @"\s*:\s*|\s+[-–—]+\s+|\s*[–—]\s*",
+            System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
         /// <summary>Confidence names.</summary>
         public static class Levels
@@ -58,8 +75,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
         }
 
         /// <summary>
-        /// Lowercase ASCII title without punctuation, "&amp;" as "and", single spaces and (optionally) without a leading
-        /// article.
+        /// Lowercase ASCII title without punctuation, "&amp;" as "and", number words and roman numerals as digits, single
+        /// spaces and (optionally) without a leading article.
         /// </summary>
         /// <param name="title">Title.</param>
         /// <param name="dropArticle">Drop a leading "the", "a" or "an".</param>
@@ -147,9 +164,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                     return (Normalize(name, false) == Normalize(wanted, false) ? 105 : 100, true);
                 }
 
-                if (n.StartsWith(q + " ", StringComparison.Ordinal))
+                if (Compact(n) == Compact(q) || Compact(Normalize(name, false)) == Compact(Normalize(wanted, false)))
                 {
-                    return (60, false);
+                    // Only the spacing differs: "Star Crossed"/"Starcrossed", "#TheLateBatsby"/"The Late Batsby".
+                    return (100, true);
+                }
+
+                if (StartsWithWords(n, q) || IsPartOf(name, wanted) || OneWordApart(n, q))
+                {
+                    return (PartialTitleScore, false);
                 }
 
                 if ((" " + n + " ").Contains(" " + q + " ", StringComparison.Ordinal))
@@ -166,11 +189,127 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
             }
         }
 
+        /// <summary>
+        /// The search texts worth trying when a title found nothing that resembles it, best first: the title with
+        /// hashtags/CamelCase split ("#TheLateBatsby" → "The Late Batsby"), its main title when it has a subtitle
+        /// ("Blackhawk: Fearless Champion of Freedom" → "Blackhawk"), the title without its last word (TMDB matches the
+        /// last word as a prefix, so "Justice League: Star" finds "Starcrossed") and without its longest word (a word the
+        /// title spells as one: "Superpower" for "Super Power").
+        /// </summary>
+        /// <param name="title">Line title.</param>
+        /// <returns>Distinct queries other than the title itself.</returns>
+        public static System.Collections.Generic.IReadOnlyList<string> FallbackQueries(string title)
+        {
+            var result = new System.Collections.Generic.List<string>();
+            void Add(string? query)
+            {
+                query = string.Join(' ', (query ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries)).Trim();
+                if (Normalize(query).Length >= 2 && !string.Equals(query, title.Trim(), StringComparison.OrdinalIgnoreCase)
+                    && !result.Contains(query, StringComparer.OrdinalIgnoreCase))
+                {
+                    result.Add(query);
+                }
+            }
+
+            Add(System.Text.RegularExpressions.Regex.Replace(title.Replace("#", " ", StringComparison.Ordinal), "(?<=\\p{Ll})(?=\\p{Lu})", " "));
+            var segments = Segments(title);
+            if (segments.Count > 1 && LooksLikeSubtitle(string.Join(' ', segments.Skip(1))))
+            {
+                Add(segments[0]);
+            }
+
+            var words = title.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length >= 3)
+            {
+                Add(string.Join(' ', words.Take(words.Length - 1)));
+                var longest = words.Select((w, i) => (Length: Normalize(w, false).Length, Index: i)).OrderByDescending(w => w.Length).ThenBy(w => w.Index).First();
+                Add(string.Join(' ', words.Where((_, i) => i != longest.Index)));
+            }
+
+            return result;
+        }
+
+        // The title without its spaces (normalized).
+        private static string Compact(string normalized) => normalized.Replace(" ", string.Empty, StringComparison.Ordinal);
+
+        // `title` begins with all of `prefix`'s words (spacing aside): "birds of prey and the …" / "birds of prey".
+        private static bool StartsWithWords(string title, string prefix)
+        {
+            var target = Compact(prefix);
+            var built = new StringBuilder();
+            var words = title.Split(' ');
+            for (var i = 0; i < words.Length - 1; i++)
+            {
+                built.Append(words[i]);
+                if (built.Length >= target.Length)
+                {
+                    return built.ToString() == target;
+                }
+            }
+
+            return false;
+        }
+
+        // One title is the other with a leading segment ("DC Showcase - Batman: Death in the Family", "Watchmen: Under
+        // the Hood"; the rest has ≥ 2 words) or with a subtitle ("Blackhawk: Fearless Champion of Freedom" → "Blackhawk").
+        private static bool IsPartOf(string name, string wanted)
+        {
+            return Tails(name).Contains(Normalize(wanted)) || Tails(wanted).Contains(Normalize(name)) || MainTitle(wanted) == Normalize(name);
+
+            static System.Collections.Generic.List<string> Tails(string title)
+            {
+                var segments = Segments(title);
+                return Enumerable.Range(1, Math.Max(0, segments.Count - 1))
+                    .Select(k => Normalize(string.Join(' ', segments.Skip(k))))
+                    .Where(t => t.Contains(' ', StringComparison.Ordinal))
+                    .ToList();
+            }
+
+            static string? MainTitle(string title)
+            {
+                var segments = Segments(title);
+                return segments.Count > 1 && LooksLikeSubtitle(string.Join(' ', segments.Skip(1))) ? Normalize(segments[0]) : null;
+            }
+        }
+
+        // A subtitle is part of the title: its longer words are capitalised and it has no "/" lists ("Fearless Champion
+        // of Freedom", not "Fleischer / Famous Studios cartoons").
+        private static bool LooksLikeSubtitle(string text) =>
+            !text.Contains('/', StringComparison.Ordinal)
+            && text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(w => w.Count(char.IsLetter) >= 4).All(w => !char.IsLetter(w.First(char.IsLetterOrDigit)) || char.IsUpper(w.First(char.IsLetterOrDigit)) || char.IsDigit(w.First(char.IsLetterOrDigit)));
+
+        // The longer title is the shorter one (≥ 4 words, so one word is a small part of it) with one extra word:
+        // "lego dc comics super heroes the flash". Not "new batman superman adventures" vs "new batman adventures".
+        private static bool OneWordApart(string a, string b)
+        {
+            var x = a.Split(' ');
+            var y = b.Split(' ');
+            var (longer, shorter) = x.Length > y.Length ? (x, y) : (y, x);
+            if (longer.Length != shorter.Length + 1 || shorter.Length < 4)
+            {
+                return false;
+            }
+
+            for (var skip = 0; skip < longer.Length; skip++)
+            {
+                if (longer.Where((_, i) => i != skip).SequenceEqual(shorter, StringComparer.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static System.Collections.Generic.List<string> Segments(string title) =>
+            SegmentSeparator.Split(title ?? string.Empty).Where(p => p.Trim().Length > 0).ToList();
+
         /// <summary>Year agreement.</summary>
         /// <param name="candidateYear">Candidate year (null = undated).</param>
         /// <param name="wantedYear">Entry year (null = no evidence, scores 0).</param>
+        /// <param name="unreleased">The line says the title isn't out yet: an undated candidate is no evidence either way.</param>
         /// <returns>Score.</returns>
-        public static double YearScore(int? candidateYear, int? wantedYear)
+        public static double YearScore(int? candidateYear, int? wantedYear, bool unreleased = false)
         {
             if (!wantedYear.HasValue)
             {
@@ -179,7 +318,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
 
             if (!candidateYear.HasValue)
             {
-                return -30;
+                return unreleased ? 0 : -30;
             }
 
             var delta = Math.Abs(candidateYear.Value - wantedYear.Value);

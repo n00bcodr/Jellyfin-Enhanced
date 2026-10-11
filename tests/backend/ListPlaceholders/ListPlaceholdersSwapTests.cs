@@ -463,6 +463,67 @@ public class ListPlaceholdersSwapTests
     }
 
     [Fact]
+    public async Task APlaceholderForMissingEarlyEpisodesGoesBeforeTheEpisodesTheLibraryHas()
+    {
+        // The DC guide's "My Adventures with Superman": S1E8+ in the library, S1E1–E7 missing. A watch order must start
+        // with the missing episodes (the placeholder), not with episode 8.
+        using var h = new ListPlaceholdersHarness();
+        var owner = h.NewUser("owner");
+        var x = h.Host.AddItem();
+        var playlist = h.Host.AddPlaylist(owner);
+        playlist.Raw.Add(new RawEntry(x, true));
+        var access = h.AccessFor(playlist, owner);
+        var series = h.Host.AddSeries(tmdb: 80);
+        var s1e8 = h.Host.AddEpisode(series, 1, 8);
+        var s1e9 = h.Host.AddEpisode(series, 1, 9);
+        var s2e1 = h.Host.AddEpisode(series, 2, 1);
+
+        var show = SeriesPh(80);
+        show.EpisodeTotal = 20;
+        var season = Season(80, 1);
+        season.EpisodeTotal = 10;
+        var gap = Season(80, 2);
+        gap.EpisodeTotal = 3; // S2E1 present, E2–E3 missing: after E1
+        var listed = EpisodesOf(80, 1, 9, 10); // E9 present, E10 missing: after E9
+        var result = await Add(h, access, null, show);
+
+        Assert.Equal(new[] { E(x), P(show.Id), E(s1e8), E(s1e9), E(s2e1) }, result.View!.Order);
+
+        foreach (var (ph, expected) in new (Placeholder, string[])[]
+        {
+            (season, new[] { P(season.Id), E(s1e8), E(s1e9) }),
+            (gap, new[] { E(s2e1), P(gap.Id) }),
+            (listed, new[] { E(s1e9), P(listed.Id) }),
+        })
+        {
+            var list = h.Host.AddPlaylist(owner);
+            var listAccess = h.AccessFor(list, owner);
+            var added = await Add(h, listAccess, null, ph);
+            Assert.Equal(expected, added.View!.Order);
+        }
+    }
+
+    [Fact]
+    public void TheFirstMissingEpisodeComesFromTheListedOrExpectedEpisodesElseFromGapsBelowTheFilledOnes()
+    {
+        var series = SeriesPh(1);
+        series.Expected = new[] { (1, 1), (1, 2), (2, 1) }.Select(c => new PlaceholderEpisode { S = c.Item1, E = c.Item2 }).ToList();
+        series.Filled = new[] { (1, 1), (2, 1) }.Select(c => new FilledEpisode { ItemId = "x", S = c.Item1, E = c.Item2 }).ToList();
+        Assert.Equal(new EpisodeCoord(1, 2), PlaceholderProgress.FirstMissing(series));
+
+        // No expected set yet: a season starts at episode 1, a series at season 1.
+        var noExpected = SeriesPh(2);
+        noExpected.Filled = new[] { (2, 3) }.Select(c => new FilledEpisode { ItemId = "x", S = c.Item1, E = c.Item2 }).ToList();
+        Assert.Equal(new EpisodeCoord(1, 1), PlaceholderProgress.FirstMissing(noExpected));
+        var season = Season(3, 4);
+        season.Filled = new[] { (4, 1), (4, 2) }.Select(c => new FilledEpisode { ItemId = "x", S = c.Item1, E = c.Item2 }).ToList();
+        Assert.Null(PlaceholderProgress.FirstMissing(season)); // nothing missing before or between: the rest comes after
+        season.EpisodeTotal = 5;
+        Assert.Equal(new EpisodeCoord(4, 3), PlaceholderProgress.FirstMissing(season));
+        Assert.Null(PlaceholderProgress.FirstMissing(Movie(4)));
+    }
+
+    [Fact]
     public async Task AddingACompleteEndedSeasonAddsOnlyTheRealEpisodesAndACollectionGetsTheSeasonItem()
     {
         using var h = new ListPlaceholdersHarness(seerr: true);

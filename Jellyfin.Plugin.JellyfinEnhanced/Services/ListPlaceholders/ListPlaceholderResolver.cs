@@ -188,6 +188,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             }
         }
 
+        /// <summary>
+        /// The first episode, in episode order, that a TV placeholder still stands for: a listed (episodes) or expected
+        /// (season; series: seasons ≥ 1) episode that isn't filled. Without an expected set, the season's episode count
+        /// (1..<see cref="Placeholder.EpisodeTotal"/>) or, failing that, the gaps below the filled episodes count (episode
+        /// and season numbers start at 1). Null when nothing is missing before or between the filled episodes.
+        /// </summary>
+        /// <param name="placeholder">Placeholder (series, season or episodes).</param>
+        /// <returns>The coordinate, or null.</returns>
+        public static EpisodeCoord? FirstMissing(Placeholder placeholder)
+        {
+            var filled = FilledCoords(placeholder).Where(c => InScope(placeholder, c)).ToHashSet();
+            IEnumerable<EpisodeCoord> wanted;
+            switch (placeholder.Kind)
+            {
+                case PlaceholderKinds.Episodes:
+                    wanted = placeholder.Episodes.Select(e => new EpisodeCoord(e.S, e.E));
+                    break;
+                case PlaceholderKinds.Season when placeholder.SeasonNumber is int season:
+                    var lastFilled = filled.Select(c => c.E).DefaultIfEmpty(0).Max();
+                    var count = placeholder.EpisodeTotal is > 0 and <= MaxExpected ? placeholder.EpisodeTotal.Value : lastFilled;
+                    wanted = placeholder.Expected.Count > 0
+                        ? placeholder.Expected.Where(e => e.S == season).Select(e => new EpisodeCoord(e.S, e.E))
+                        : Enumerable.Range(1, Math.Max(0, count)).Select(e => new EpisodeCoord(season, e));
+                    break;
+                case PlaceholderKinds.Series:
+                    wanted = placeholder.Expected.Count > 0
+                        ? placeholder.Expected.Where(e => e.S >= 1).Select(e => new EpisodeCoord(e.S, e.E))
+                        : filled.Select(c => c.S).DefaultIfEmpty(0).Max() is var lastSeason and > 0
+                            ? Enumerable.Range(1, lastSeason).SelectMany(s => Enumerable.Range(1, Math.Max(1, filled.Where(c => c.S == s).Select(c => c.E).DefaultIfEmpty(0).Max())).Select(e => new EpisodeCoord(s, e)))
+                            : Enumerable.Empty<EpisodeCoord>();
+                    break;
+                default:
+                    return null;
+            }
+
+            return wanted.Where(c => !filled.Contains(c)).OrderBy(c => c).Select(c => (EpisodeCoord?)c).FirstOrDefault();
+        }
+
         /// <summary>The coordinates of an episode file inside a placeholder's scope.</summary>
         /// <param name="placeholder">Placeholder.</param>
         /// <param name="season">Season.</param>

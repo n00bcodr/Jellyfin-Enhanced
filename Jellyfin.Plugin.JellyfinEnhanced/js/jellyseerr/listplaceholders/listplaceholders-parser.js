@@ -32,7 +32,10 @@
 
     // Type words (catalogue "· Kind ·" parts, table Format/Type cells, trailing qualifiers) → typeHint.
     const TV_TYPE = /\b(tv series|tv season|tv show|tv mini-?series|mini-?series|limited series|web series|short series|animated series|live[- ]action series|docu-?series|series|season|show|anime)\b/i;
-    const MOVIE_TYPE = /\b(film|movie|feature|short|alternate edition|compilation|tv movie|tv special|special|documentary|mockumentary|video|ova)\b/i;
+    const MOVIE_TYPE = /\b(film|movie|feature|short|tv movie|documentary|mockumentary|video|ova)\b/i;
+    // Formats that exist as films and as TV ("Compilation", "TV special", "Alternate edition", "Short collection"): no
+    // hint of their own, so the matcher looks at both types; other words in the same text still decide ("compilation film").
+    const NEUTRAL_TYPE = /\b(compilation|tv special|special|alternate edition|edition|short collection|collection)\b/gi;
 
     // Release statuses → released | scheduled | tba (anything without a firm release is "tba": review it).
     const STATUS_RULES = [
@@ -174,7 +177,7 @@
             return undefined;
         }
         if (TV_TYPE.test(text)) return 'tv';
-        if (MOVIE_TYPE.test(text)) return 'movie';
+        if (MOVIE_TYPE.test(text.replace(NEUTRAL_TYPE, ' '))) return 'movie';
         return undefined;
     }
 

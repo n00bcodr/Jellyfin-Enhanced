@@ -22,6 +22,8 @@
     const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
     const IMDB_RE = /^tt\d{5,10}$/;
     const NO_SECTION = '';
+    /** The candidate each library-item apply entry came from (its title identity; never serialised). */
+    const ENTRY_CANDIDATES = new WeakMap();
 
     /** Review reasons the server sends → en.json keys (unknown reasons show nothing). */
     const REASON_KEYS = {
@@ -39,6 +41,9 @@
         episodeIdUnsupported: 'listPlaceholders_import_reason_episode_id',
         typeMismatch: 'listPlaceholders_import_reason_type',
         openEnded: 'listPlaceholders_import_reason_open_ended',
+        yearOff: 'listPlaceholders_import_reason_year_off',
+        otherYear: 'listPlaceholders_import_reason_other_year',
+        unreleased: 'listPlaceholders_import_reason_unreleased',
         invalid: 'listPlaceholders_import_reason_invalid'
     };
 
@@ -93,6 +98,15 @@
     function cleanYear(value) {
         const year = Number(value);
         return Number.isInteger(year) && year >= 1870 && year <= 2100 ? year : undefined;
+    }
+
+    /**
+     * The year a pasted line gives (its year, or its date's year), or undefined.
+     * @param {Object|undefined} entry - Parsed entry.
+     * @returns {number|undefined}
+     */
+    function lineYear(entry) {
+        return cleanYear(entry?.year ?? cleanDate(entry?.date)?.slice(0, 4));
     }
 
     /**
@@ -205,8 +219,8 @@
         if (cand.mediaType !== 'tv' || lib.complete || !count) return JE.t('listPlaceholders_in_library');
         const total = lib.kind === 'episodes' ? (cand.episodes || []).length : Number(lib.kind === 'season' ? cand.season?.episodeCount : cand.episodeTotal);
         return Number.isInteger(total) && total > count
-            ? JE.t('listPlaceholders_import_in_library_part', { count, total })
-            : JE.t('listPlaceholders_import_in_library_episodes', { count });
+            ? lp.tn('listPlaceholders_import_in_library_part', { count, total }, 'total')
+            : lp.tn('listPlaceholders_import_in_library_episodes', { count });
     }
 
     /**
@@ -261,9 +275,10 @@
         if (!title) return null;
         const kind = kindFor(cand, entry, requested);
         const dto = { kind, mediaType: cand.mediaType, tmdbId: Number(cand.tmdbId), title };
-        const year = cleanYear(cand.year);
-        if (year) dto.year = year;
         const release = cleanDate(cand.releaseDate);
+        // TMDB has no date for the title yet (an announced title): keep the year the line gives until it has one.
+        const year = cleanYear(cand.year) || (release ? undefined : lineYear(entry));
+        if (year) dto.year = year;
         if (release) dto.releaseDate = release;
         if (lp.render.isSafePoster(cand.posterPath)) dto.posterPath = cand.posterPath;
         if (cand.overview) dto.overview = clip(cand.overview, 1000);
@@ -309,14 +324,29 @@
     }
 
     /**
-     * Builds a custom entry from the parsed line (no TMDB match).
+     * The title a custom entry shows: the line's title with its qualifier ("Wonder Woman (DCU film)"), which the matcher
+     * leaves out when it searches but tells same-named titles apart in the list.
      * @param {Object} entry - Parsed entry.
+     * @returns {string}
+     */
+    function customTitle(entry) {
+        const title = clip(entry?.title, 200);
+        const qualifier = clip(entry?.qualifier, 100);
+        return title && qualifier ? clip(`${title} (${qualifier})`, 200) : title;
+    }
+
+    /**
+     * Builds a custom entry from the parsed line (no TMDB match). Its media type is the line's (type words, a season or
+     * episodes), else the type of the closest match found for it, else movie.
+     * @param {Object} entry - Parsed entry.
+     * @param {Object} [cand] - The closest candidate, if any.
      * @returns {Object|null} NewPlaceholderDto, or null without a title.
      */
-    function customFromEntry(entry) {
-        const title = clip(entry?.title, 200);
+    function customFromEntry(entry, cand) {
+        const title = customTitle(entry);
         if (!title) return null;
-        const tv = entry.typeHint === 'tv' || Number.isInteger(entry.season) || (entry.episodes || []).length > 0 || !!entry.episodeTitle;
+        const tv = entry.typeHint === 'tv' || Number.isInteger(entry.season) || (entry.episodes || []).length > 0 || !!entry.episodeTitle
+            || (entry.typeHint !== 'movie' && cand?.mediaType === 'tv');
         const dto = { kind: 'custom', mediaType: tv ? 'tv' : 'movie', title };
         const date = cleanDate(entry.date);
         if (date) dto.releaseDate = date;
@@ -361,9 +391,10 @@
      * @returns {boolean}
      */
     function needsReview(row) {
-        if (row.confirmed) return false;
+        // Settled by the user: a match confirmed with Change match, or an action picked for the row.
+        if (row.confirmed || row.decided) return false;
         if (row.failed || !row.result) return true;
-        return row.result.confidence !== 'high' || !!row.result.alternatives || row.dupOf !== undefined;
+        return row.result.confidence !== 'high' || !!row.result.alternatives || row.dupOf !== undefined || row.sameAs !== undefined;
     }
 
     /**
@@ -390,14 +421,18 @@
         let out = [];
         if (row.action === 'skip') return out;
         if (row.action === 'custom') {
-            const dto = customFromEntry(row.entry);
+            const dto = customFromEntry(row.entry, row.cands[row.cand]);
             if (dto) out = [{ type: 'placeholder', placeholder: dto }];
         } else {
             const cands = row.both ? alternativePicks(row) : [row.cands[row.cand]].filter(Boolean);
             out = cands.map((cand) => {
                 if (row.action === 'item' && !(row.override && !row.both)) {
                     const itemId = libraryItemFor(cand, listKind);
-                    if (itemId) return { type: 'item', itemId };
+                    if (itemId) {
+                        const entry = { type: 'item', itemId };
+                        ENTRY_CANDIDATES.set(entry, cand);
+                        return entry;
+                    }
                 }
                 const dto = row.override && !row.both ? row.override : placeholderFromCandidate(cand, row.entry, row.result?.kind);
                 return dto ? { type: 'placeholder', placeholder: dto } : null;
@@ -415,28 +450,106 @@
      * Every apply entry of the review, in list order.
      * @param {Array<Object>} rows
      * @param {'playlist'|'collection'} listKind
+     * @param {Array<Object>} [owners] - Filled with the row of each entry (same index), for the result report.
      * @returns {Array<Object>}
      */
-    function buildEntries(rows, listKind) {
+    function buildEntries(rows, listKind, owners) {
         const entries = [];
-        for (const row of rows) entries.push(...rowEntries(row, listKind));
+        for (const row of rows) {
+            for (const entry of rowEntries(row, listKind)) {
+                entries.push(entry);
+                owners?.push(row);
+            }
+        }
         return entries;
     }
 
     /**
-     * Counts for the review summary.
+     * A title's identity the way the server tells duplicates apart (PlaceholderRules.IdentityKey / NormalizeTitle).
+     * @param {Object} ph - NewPlaceholderDto.
+     * @returns {string}
+     */
+    function placeholderKey(ph) {
+        if (ph.kind === 'custom') {
+            const title = String(ph.title || '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+            return ['custom', ph.mediaType, title, ph.year ?? ''].join('|');
+        }
+        const episodes = (ph.episodes || []).map(e => Number(e.e)).sort((a, b) => a - b).join(',');
+        return [ph.kind, ph.mediaType, ph.tmdbId ?? '', ph.seasonNumber ?? '', episodes].join('|');
+    }
+
+    /**
+     * The identities an apply entry stands for: its placeholder, or its library item plus the title it is.
+     * @param {Object} entry - ApplyEntryDto.
+     * @param {Object} row - Its review row.
+     * @returns {string[]}
+     */
+    function entryKeys(entry, row) {
+        if (entry.placeholder) return [placeholderKey(entry.placeholder)];
+        const keys = [`item|${entry.itemId}`];
+        // The title this item is: its own candidate (each alternative of "Add both" is a different title).
+        const cand = ENTRY_CANDIDATES.get(entry) || row.cands[row.cand];
+        const dto = cand ? placeholderFromCandidate(cand, row.entry, row.result?.kind) : null;
+        if (dto) keys.push(placeholderKey(dto));
+        return keys;
+    }
+
+    /**
+     * The identities a row resolves to, whether or not it is skipped: what it imports, or (skipped) what its match
+     * would import.
+     * @param {Object} row
+     * @param {'playlist'|'collection'} listKind
+     * @returns {string[]}
+     */
+    function rowKeys(row, listKind) {
+        if (row.action !== 'skip') return rowEntries(row, listKind).flatMap(entry => entryKeys(entry, row));
+        const cand = row.cands[row.cand];
+        const dto = cand ? placeholderFromCandidate(cand, row.entry, row.result?.kind) : null;
+        return dto ? [placeholderKey(dto)] : [];
+    }
+
+    /**
+     * Flags rows that resolve to the same title as an earlier row that is imported ("Same title as row N"): the server
+     * would drop them as duplicates. Sets row.sameAs (row index) or clears it.
+     * @param {Array<Object>} rows
+     * @param {'playlist'|'collection'} listKind
+     * @returns {Array<Object>} The rows whose flag changed.
+     */
+    function markSameTitles(rows, listKind) {
+        const first = new Map();
+        const changed = [];
+        for (const row of rows) {
+            const keys = row.result ? rowKeys(row, listKind) : [];
+            // A line the parser already flagged as a repeat says so itself ("Same as line N").
+            const hit = row.dupOf === undefined ? keys.map(k => first.get(k)).find(i => i !== undefined) : undefined;
+            if (hit !== row.sameAs) changed.push(row);
+            if (hit === undefined) delete row.sameAs; else row.sameAs = hit;
+            if (row.action !== 'skip') keys.forEach((k) => { if (!first.has(k)) first.set(k, row.i); });
+        }
+        return changed;
+    }
+
+    /**
+     * Counts for the review summary. "entries" is what the import really adds: entries that repeat an earlier entry's
+     * title are left out (the server skips them).
      * @param {Array<Object>} rows
      * @param {'playlist'|'collection'} listKind
      * @returns {{total: number, matched: number, library: number, review: number, failed: number, entries: number}}
      */
     function summarize(rows, listKind) {
         const counts = { total: rows.length, matched: 0, library: 0, review: 0, failed: 0, entries: 0 };
+        const seen = new Set();
         for (const row of rows) {
             if (row.failed) counts.failed++;
             if (needsReview(row)) counts.review++;
             if (row.action === 'item') counts.library++;
             if (row.action === 'item' || row.action === 'placeholder') counts.matched++;
-            counts.entries += rowEntries(row, listKind).length;
+            for (const entry of rowEntries(row, listKind)) {
+                const keys = entryKeys(entry, row);
+                if (keys.some(k => seen.has(k))) continue;
+                keys.forEach(k => seen.add(k));
+                counts.entries++;
+            }
         }
         return counts;
     }
@@ -612,7 +725,7 @@
      * @returns {Object|null} A placeholder-like object (kind, title, dates) or null.
      */
     function previewOf(row, listKind) {
-        if (row.action === 'custom') return customFromEntry(row.entry);
+        if (row.action === 'custom') return customFromEntry(row.entry, row.cands[row.cand]);
         const cand = row.cands[row.cand];
         if (!cand) return null;
         if (row.override) return row.override;
@@ -628,17 +741,25 @@
     function rowHtml(row, ctx) {
         const esc = lp.render.esc;
         const cand = row.cands[row.cand] || null;
-        const preview = previewOf(row, ctx.listKind);
         const pending = !row.result && !row.failed;
-        const title = row.action === 'custom' || !cand ? (row.entry.title || row.entry.raw || '') : (cand.title || '');
-        const poster = row.action !== 'custom' && cand && lp.render.isSafePoster(cand.posterPath) ? lp.render.posterUrl(cand.posterPath, 'w92') : '';
+        const custom = row.action === 'custom';
+        // The match is only the row's title when it is what gets imported; otherwise (skipped, custom) the line's
+        // title is, and the match is offered as the closest one found.
+        const chosen = !!cand && (row.action === 'placeholder' || row.action === 'item');
+        const preview = chosen || custom ? previewOf(row, ctx.listKind) : null;
+        const title = chosen ? (cand.title || '') : (customTitle(row.entry) || row.entry.raw || '');
+        const poster = chosen && lp.render.isSafePoster(cand.posterPath) ? lp.render.posterUrl(cand.posterPath, 'w92') : '';
         const meta = [];
         if (preview) meta.push(esc(lp.render.kindLabel(preview)));
         // A season or episodes row shows when that part aired, not when the show started.
-        const scopedYear = preview?.kind === 'season' || preview?.kind === 'episodes' ? (cleanDate(preview.releaseDate) || '').slice(0, 4) : '';
-        const year = row.action === 'custom' ? cleanYear(row.entry.year) : (cand ? (scopedYear || cleanYear(cand.year) || (cleanDate(preview?.releaseDate) || '').slice(0, 4)) : '');
+        const scopedYear = (cleanDate(preview?.releaseDate) || '').slice(0, 4);
+        const scoped = preview?.kind === 'season' || preview?.kind === 'episodes';
+        const year = custom ? cleanYear(row.entry.year)
+            : !chosen ? ''
+                : scoped ? scopedYear // an undated season (announced) has no year: never the show's
+                    : (cleanYear(preview?.year) || cleanYear(cand.year) || (cleanDate(preview?.releaseDate) || '').slice(0, 4));
         if (year) meta.push(esc(String(year)));
-        if (row.both && cand) meta.push(esc(JE.t('listPlaceholders_import_both_short')));
+        if (row.both && chosen) meta.push(esc(JE.t('listPlaceholders_import_both_short')));
         let chips = '';
         if (pending) {
             chips += `<span class="je-lp-chip">${esc(JE.t('listPlaceholders_import_looking_up_short'))}</span>`;
@@ -646,14 +767,18 @@
             chips += `<span class="je-lp-chip je-lp-conf-none">${esc(JE.t('listPlaceholders_import_failed_row'))}</span>`;
         } else if (row.confirmed) {
             chips += `<span class="je-lp-chip je-lp-conf-high">${esc(JE.t('listPlaceholders_import_confirmed'))}</span>`;
-        } else {
+        } else if (!custom) {
+            // A custom entry doesn't use the match: its confidence and hints would describe something not imported.
             const conf = ['high', 'medium', 'low', 'none'].includes(row.result.confidence) ? row.result.confidence : 'none';
             chips += `<span class="je-lp-chip je-lp-conf-${conf}">${esc(JE.t(`listPlaceholders_import_conf_${conf}`))}</span>`;
         }
-        const libraryText = row.action !== 'custom' ? libraryChipText(cand, ctx.listKind) : '';
+        const libraryText = chosen ? libraryChipText(cand, ctx.listKind) : '';
         if (libraryText) chips += ` <span class="je-lp-chip je-lp-chip-lib">${esc(libraryText)}</span>`;
-        const reasons = row.confirmed ? [] : (row.result?.reasons || []).map(r => REASON_KEYS[r]).filter(Boolean);
+        if (row.libraryPending) chips += ` <span class="je-lp-chip">${esc(JE.t('listPlaceholders_import_checking_library'))}</span>`;
+        const reasons = row.confirmed || custom ? [] : (row.result?.reasons || []).map(r => REASON_KEYS[r]).filter(Boolean);
         const hints = Array.from(new Set(reasons)).map(key => JE.t(key));
+        if (cand && !chosen && !custom && !pending) hints.unshift(JE.t('listPlaceholders_import_closest', { title: candidateLabel(cand) }));
+        if (row.sameAs !== undefined) hints.unshift(JE.t('listPlaceholders_import_same_title', { row: row.sameAs + 1 }));
         if (row.dupOf !== undefined) hints.unshift(JE.t('listPlaceholders_import_dup', { line: row.dupOfLine ?? row.dupOf + 1 }));
         const lineText = plainLine(row.entry.raw || row.entry.title || '');
         const source = row.entry.line ? JE.t('listPlaceholders_import_line', { line: row.entry.line, text: lineText }) : lineText;
@@ -719,6 +844,7 @@
             providers: null,
             closed: false,
             editor: null,
+            owners: [], // the review row of each entry of the last import request
             epoch: lp.epochNow()
         };
 
@@ -834,8 +960,8 @@
             state.parse = parser.parse(text);
             const parse = state.parse;
             const parts = [];
-            parts.push(`<div>${esc(parse.entries.length ? JE.t('listPlaceholders_import_parse_summary', { count: parse.entries.length }) : JE.t('listPlaceholders_import_parse_empty'))}`
-                + (parse.skipped.length ? ` · <span class="je-lp-muted">${esc(JE.t('listPlaceholders_import_parse_skipped', { count: parse.skipped.length }))}</span>` : '') + '</div>');
+            parts.push(`<div>${esc(parse.entries.length ? lp.tn('listPlaceholders_import_parse_summary', { count: parse.entries.length }) : JE.t('listPlaceholders_import_parse_empty'))}`
+                + (parse.skipped.length ? ` · <span class="je-lp-muted">${esc(lp.tn('listPlaceholders_import_parse_skipped', { count: parse.skipped.length }))}</span>` : '') + '</div>');
             if (parse.truncated) parts.push(`<div class="je-lp-warn">${esc(JE.t('listPlaceholders_import_parse_truncated', { max: parser.MAX_ENTRIES || MAX_APPLY }))}</div>`);
             const listUrl = parse.skipped.find(s => s.reason === 'listUrl');
             if (listUrl) {
@@ -925,7 +1051,7 @@
         function makeRows(entries) {
             const byParseIndex = new Map();
             return entries.map((entry, i) => {
-                const row = { i, entry, result: null, failed: false, cands: [], cand: -1, both: false, action: 'skip', override: null, confirmed: false };
+                const row = { i, entry, result: null, failed: false, cands: [], cand: -1, both: false, action: 'skip', override: null, confirmed: false, decided: false };
                 if (entry.dupOf !== undefined && byParseIndex.has(entry.dupOf)) {
                     row.dupOf = byParseIndex.get(entry.dupOf);
                     row.dupOfLine = entries[row.dupOf]?.line ?? row.dupOf + 1;
@@ -1022,8 +1148,8 @@
             const fetchedTitle = fetched ? (fetched.title || providerName(fetched.kind)) : '';
             source.textContent = !fetched ? ''
                 : fetched.grouped && Number(fetched.total) > fetchedCount
-                    ? JE.t('listPlaceholders_import_fetched_grouped', { title: fetchedTitle, count: fetchedCount, total: Number(fetched.total) })
-                    : JE.t('listPlaceholders_import_fetched', { title: fetchedTitle, count: fetchedCount });
+                    ? lp.tn('listPlaceholders_import_fetched_grouped', { title: fetchedTitle, count: fetchedCount, total: Number(fetched.total) })
+                    : lp.tn('listPlaceholders_import_fetched', { title: fetchedTitle, count: fetchedCount });
             const syncBox = $('.je-lp-import-sync');
             syncBox.hidden = !fetched;
             if (fetched) {
@@ -1040,8 +1166,9 @@
             }
             const nameInput = $('.je-lp-new-name');
             if (nameInput && !nameInput.value.trim()) {
-                const sections = state.tab === 'paste' ? Array.from(root.querySelectorAll('.je-lp-import-sections input[data-section]:checked')) : [];
-                const sectionTitle = sections.length === 1 && sections[0].dataset.section !== NO_SECTION ? sections[0].dataset.section : '';
+                // A paste of one section (or one section picked) is named after its heading.
+                const sections = state.tab === 'paste' ? sectionsOf(state.rows.map(r => r.entry)) : [];
+                const sectionTitle = sections.length === 1 ? sections[0].title : '';
                 nameInput.value = clip(fetched?.title || (fetched ? nameFromUrl(fetched.url, providerName(fetched.kind)) : '') || sectionTitle || options.name || '', 200);
             }
             updateProgress(0);
@@ -1162,8 +1289,32 @@
                 row.cands = candidateList(result);
                 // No match (confidence none): the candidates stay pickable in "Change match", but the row shows the line.
                 row.cand = result.match ? Math.max(0, row.cands.findIndex(c => sameCandidate(c, result.match))) : -1;
+                row.decided = false;
+                delete row.sameAs;
                 row.action = defaultAction(row, listKind);
             }
+            // A pasted row that resolves to the same title as an earlier imported row would be dropped by the server: it
+            // waits for review as "Skip" (the earlier row keeps its own slot and note). A list source's entry is only
+            // flagged: sent as it is, the server counts it as present instead of the sync declining it for good.
+            const inChunk = new Set(chunk);
+            const changed = new Set(markSameTitles(state.rows, listKind));
+            for (const row of chunk) {
+                if (row.sameAs !== undefined && row.result && !row.entry?.sourceKey) row.action = 'skip';
+            }
+            // A late answer (a retried lookup) can flag a row after it that is already shown: it waits for review the
+            // same way unless the user settled it.
+            for (const row of changed) {
+                if (inChunk.has(row) || row.sameAs === undefined || !row.result || row.entry?.sourceKey || row.decided || row.confirmed) continue;
+                row.action = 'skip';
+            }
+            // Rows now skipped no longer claim their titles: flag again, then re-render the shown rows that changed.
+            markSameTitles(state.rows, listKind).forEach(row => changed.add(row));
+            refreshRows(Array.from(changed).filter(row => !inChunk.has(row)));
+        }
+
+        /** Re-flags same-title rows after a change and re-renders the rows whose flag changed. */
+        function refreshSameTitles() {
+            refreshRows(markSameTitles(state.rows, listKind));
         }
 
         /**
@@ -1217,7 +1368,7 @@
         /** Updates the summary line, the retry button and the primary button's count. */
         function updateSummary() {
             const counts = summarize(state.rows, listKind);
-            $('.je-lp-import-summary').textContent = JE.t('listPlaceholders_import_review_summary', counts);
+            $('.je-lp-import-summary').textContent = lp.tn('listPlaceholders_import_review_summary', counts, 'total');
             const retry = $('.je-lp-import-retry');
             retry.hidden = counts.failed === 0 || state.step !== 'review';
             retry.textContent = JE.t('listPlaceholders_import_retry_failed', { count: counts.failed });
@@ -1301,13 +1452,16 @@
             editor.element.innerHTML = `
                 <div class="je-lp-ieditor-cands" role="radiogroup" aria-label="${esc(JE.t('listPlaceholders_import_candidates'))}"></div>
                 ${showBoth ? `<label class="je-lp-check"><input type="checkbox" class="je-lp-ieditor-both"${row.both ? ' checked' : ''}> ${esc(JE.t('listPlaceholders_import_both'))}</label>` : ''}
-                ${JE.jellyseerrAPI?.search ? `<input type="search" class="je-lp-input je-lp-ieditor-query" autocomplete="off" placeholder="${esc(JE.t('listPlaceholders_import_search_other'))}" aria-label="${esc(JE.t('listPlaceholders_import_search_other'))}">` : ''}
+                ${JE.jellyseerrAPI?.search ? `<input type="search" class="je-lp-input je-lp-ieditor-query" autocomplete="off" placeholder="${esc(JE.t('listPlaceholders_import_search_other'))}" aria-label="${esc(JE.t('listPlaceholders_import_search_other'))}">
+                <div class="je-lp-muted je-lp-ieditor-status" aria-live="polite"></div>` : ''}
                 <div class="je-lp-ieditor-gran"></div>
                 <div class="je-lp-ieditor-actions">
                     <button type="button" class="jellyseerr-modal-button jellyseerr-modal-button-secondary je-lp-ieditor-cancel">${esc(JE.t('jellyseerr_modal_cancel'))}</button>
                     <button type="button" class="jellyseerr-modal-button jellyseerr-modal-button-primary je-lp-ieditor-done">${esc(JE.t('listPlaceholders_import_done'))}</button>
                 </div>`;
             const candsEl = editor.element.querySelector('.je-lp-ieditor-cands');
+            const statusEl = editor.element.querySelector('.je-lp-ieditor-status');
+            const doneButton = editor.element.querySelector('.je-lp-ieditor-done');
 
             /** Renders the candidate radios. */
             const renderCands = () => {
@@ -1330,6 +1484,7 @@
             const renderGranularity = () => {
                 editor.granularity?.destroy();
                 editor.granularity = null;
+                doneButton.disabled = false;
                 const mount = editor.element.querySelector('.je-lp-ieditor-gran');
                 mount.textContent = '';
                 const cand = editor.cands[editor.chosen];
@@ -1337,8 +1492,14 @@
                 if (!cand || cand.mediaType !== 'tv' || both || !lp.granularity?.create || !JE.jellyseerrAPI?.fetchTvShowDetails) return;
                 const current = (editor.chosen === row.cand && row.override) || placeholderFromCandidate(cand, row.entry, row.result?.kind);
                 const initial = current ? { kind: current.kind, seasonNumber: current.seasonNumber, episodes: (current.episodes || []).map(e => e.e) } : undefined;
-                editor.granularity = lp.granularity.create({ tmdbId: Number(cand.tmdbId), initial });
-                mount.appendChild(editor.granularity.element);
+                const picker = lp.granularity.create({ tmdbId: Number(cand.tmdbId), initial });
+                editor.granularity = picker;
+                mount.appendChild(picker.element);
+                // A season/episode choice can only be read once the seasons are loaded: Done waits for them.
+                doneButton.disabled = true;
+                Promise.resolve(picker.ready).catch(() => {}).then(() => {
+                    if (state.editor === editor && editor.granularity === picker) doneButton.disabled = false;
+                });
             };
 
             /** Runs the Seerr search for another title. */
@@ -1346,9 +1507,13 @@
                 const input = editor.element.querySelector('.je-lp-ieditor-query');
                 const query = input?.value.trim() || '';
                 editor.searchController?.abort();
-                if (query.length < 2) return;
+                if (query.length < 2) {
+                    statusEl.textContent = '';
+                    return;
+                }
                 const controller = new AbortController();
                 editor.searchController = controller;
+                statusEl.textContent = JE.t('listPlaceholders_import_searching');
                 try {
                     const data = await JE.jellyseerrAPI.search(query, 1, { signal: controller.signal, throwOnError: true });
                     if (controller.signal.aborted || state.editor !== editor) return;
@@ -1366,12 +1531,15 @@
                         }));
                     const keep = editor.cands.filter(c => !c.searched || c === editor.cands[editor.chosen]);
                     const chosen = editor.cands[editor.chosen];
-                    editor.cands = keep.concat(found.filter(f => !keep.some(k => sameCandidate(k, f))));
+                    const added = found.filter(f => !keep.some(k => sameCandidate(k, f)));
+                    editor.cands = keep.concat(added);
                     editor.chosen = chosen ? editor.cands.indexOf(chosen) : -1;
                     renderCands();
+                    // Say so when the search found nothing, or only titles that are already listed.
+                    statusEl.textContent = added.length ? '' : JE.t(found.length ? 'listPlaceholders_import_search_no_new' : 'listPlaceholders_import_search_none', { query });
                 } catch (error) {
                     if (error?.name === 'AbortError' || controller.signal.aborted) return;
-                    candsEl.insertAdjacentHTML('beforeend', `<div class="je-lp-muted">${esc(JE.t('listPlaceholders_search_failed'))}</div>`);
+                    statusEl.textContent = JE.t('listPlaceholders_search_failed');
                 }
             };
 
@@ -1399,7 +1567,8 @@
                 }
             });
             editor.element.querySelector('.je-lp-ieditor-cancel').addEventListener('click', () => closeEditor());
-            editor.element.querySelector('.je-lp-ieditor-done').addEventListener('click', () => {
+            doneButton.addEventListener('click', () => {
+                if (doneButton.disabled) return;
                 const cand = editor.cands[editor.chosen];
                 if (!cand) {
                     closeEditor();
@@ -1413,13 +1582,16 @@
                         JE.toast(esc(JE.t('listPlaceholders_pick_episode')), 3000);
                         return;
                     }
-                    override = lp.granularity.toPlaceholder({ id: cand.tmdbId, mediaType: 'tv', name: cand.title, firstAirDate: cand.releaseDate, posterPath: cand.posterPath, overview: cand.overview, tvdbId: cand.tvdbId }, selection, editor.granularity.getDetails());
+                    // A dateless (announced) show keeps the line's year, as placeholderFromCandidate does.
+                    const year = cleanYear(cand.year) || (cleanDate(cand.releaseDate) ? undefined : lineYear(row.entry));
+                    override = lp.granularity.toPlaceholder({ id: cand.tmdbId, mediaType: 'tv', name: cand.title, firstAirDate: cand.releaseDate, year, posterPath: cand.posterPath, overview: cand.overview, tvdbId: cand.tvdbId }, selection, editor.granularity.getDetails());
                     if (override) {
                         const note = clip(row.entry.note, 300);
                         if (note) override.note = note;
                         if (IMDB_RE.test(cand.imdbId || '')) override.imdbId = cand.imdbId;
                     }
                 }
+                const scopeChanged = !!override || !!cand.searched;
                 row.cands = editor.cands.filter(c => !c.searched || c === cand);
                 row.cand = row.cands.indexOf(cand);
                 row.both = both;
@@ -1428,7 +1600,11 @@
                 row.action = fromLibrary(cand, listKind) && !override ? 'item' : 'placeholder';
                 closeEditor();
                 refreshRow(row);
+                refreshSameTitles();
                 updateSummary();
+                // A searched title or another season/episodes: what the library has of it isn't known yet. The server puts
+                // that in anyway; look it up so the row says so ("From your library", "n of m episodes in your library").
+                if (scopeChanged && !both) checkLibrary(row, cand, override);
             });
 
             renderCands();
@@ -1439,6 +1615,51 @@
             (editor.element.querySelector(`input[name="${uid}"]:checked`) || editor.element.querySelector('input'))?.focus();
         }
 
+        /**
+         * Looks up what the library has of a changed match (its TMDB id and chosen scope, through /resolve) and shows it
+         * on the row: the candidate gets the fresh inLibrary and the row becomes "From your library" when the import
+         * would bring in library items.
+         * @param {Object} row
+         * @param {Object} cand - The chosen candidate.
+         * @param {Object|null} override - The chosen season/episodes placeholder, if any.
+         */
+        async function checkLibrary(row, cand, override) {
+            const scope = override || placeholderFromCandidate(cand, row.entry, row.result?.kind);
+            if (!scope) return;
+            const probe = { index: 0, title: clip(cand.title, 200), ids: { tmdb: Number(cand.tmdbId), tmdbType: cand.mediaType } };
+            if (Number.isInteger(scope.seasonNumber)) probe.season = scope.seasonNumber;
+            if (scope.kind === 'episodes') probe.episodes = (scope.episodes || []).slice(0, 100).map(e => ({ s: scope.seasonNumber, e: Number(e.e) }));
+            const token = row.libraryToken = (row.libraryToken || 0) + 1;
+            row.libraryPending = true;
+            refreshRow(row);
+            let match = null;
+            try {
+                const response = await lp.api.resolveEntries([probe], { listId });
+                match = response?.results?.[0]?.match || null;
+            } catch (_) {
+                match = null; // the import still works; the row just doesn't show the library state
+            }
+            if (!alive() || row.libraryToken !== token) return;
+            row.libraryPending = false;
+            const current = row.cands[row.cand];
+            if (match && current === cand && sameCandidate(match, cand) && state.step === 'review') {
+                // The scope facts of the looked-up scope (season, episodes, episode total) make the chip's "n of m" right.
+                const fresh = {
+                    ...cand,
+                    inLibrary: match.inLibrary || null,
+                    tvdbId: cand.tvdbId ?? match.tvdbId,
+                    imdbId: cand.imdbId ?? match.imdbId,
+                    season: match.season ?? cand.season,
+                    episodes: match.episodes ?? cand.episodes,
+                    episodeTotal: match.episodeTotal ?? cand.episodeTotal
+                };
+                row.cands[row.cand] = fresh;
+                if (row.action === 'placeholder' && fromLibrary(fresh, listKind)) row.action = 'item';
+            }
+            refreshRow(row);
+            updateSummary();
+        }
+
         // ── Apply ──
 
         /**
@@ -1446,7 +1667,8 @@
          * @returns {Object|null} Body of POST /playlists (new) or POST /{listId}/apply.
          */
         function buildRequest() {
-            const entries = buildEntries(state.rows, listKind);
+            state.owners = [];
+            const entries = buildEntries(state.rows, listKind, state.owners);
             if (!entries.length) {
                 JE.toast(esc(JE.t('listPlaceholders_import_nothing')), 3000);
                 return null;
@@ -1504,7 +1726,7 @@
                     const created = await lp.api.createList('playlist', request);
                     if (!lp.isCurrentEpoch(state.epoch)) return;
                     // The import happened even when the modal was closed meanwhile: always report it.
-                    reportApplied(created?.result, created?.listId, created?.name || request.name);
+                    reportApplied(created?.result, created?.listId, created?.name || request.name, state.owners);
                     if (state.closed) return;
                     history.back();
                     const id = lp.normalizeId(created?.listId);
@@ -1512,7 +1734,7 @@
                 } else {
                     const result = await lp.api.applyEntries(listId, request);
                     if (!lp.isCurrentEpoch(state.epoch)) return;
-                    reportApplied(result, listId, ctrl.listName || '');
+                    reportApplied(result, listId, ctrl.listName || '', state.owners);
                     if (result?.addedAsItems?.length) ctrl.afterRealItemsAdded?.();
                     if (!state.closed) history.back();
                 }
@@ -1544,15 +1766,39 @@
          * @param {string} id - List id.
          * @param {string} name - List name.
          */
-        function reportApplied(result, id, name) {
+        function reportApplied(result, id, name, owners) {
             const link = `<a href="#/details?id=${esc(lp.normalizeId(id) || '')}" class="je-lp-toast-link">${esc(name)}</a>`;
             const text = JE.t('listPlaceholders_import_done_toast', {
                 list: link,
                 placeholders: result?.added?.length || 0,
                 items: result?.addedAsItems?.length || 0
             });
-            const skipped = result?.skipped?.length ? ' ' + esc(JE.t('listPlaceholders_import_done_skipped', { count: result.skipped.length })) : '';
-            JE.toast(text + skipped, 6000);
+            JE.toast(text + skippedText(result?.skipped, owners), 8000);
+        }
+
+        /**
+         * What the server skipped, by reason, naming the review rows: a repeat of another entry ("row 16 = row 15"),
+         * already in the list, or not allowed. Never silent: every skipped row is listed.
+         * @param {Array<Object>} skipped - SkippedEntryDto list.
+         * @param {Array<Object>} [owners] - The review row of each sent entry.
+         * @returns {string} Escaped text with a leading space, or ''.
+         */
+        function skippedText(skipped, owners) {
+            if (!Array.isArray(skipped) || !skipped.length) return '';
+            const rowOf = index => owners?.[index]?.i;
+            const label = index => (rowOf(index) === undefined ? String(index + 1) : String(rowOf(index) + 1));
+            const groups = { same: [], present: [], other: [] };
+            for (const skip of skipped) {
+                if (Number.isInteger(skip?.sameAs) && skip.sameAs !== skip.index) groups.same.push(`${label(skip.index)} (= ${label(skip.sameAs)})`);
+                else if (skip?.reason === 'duplicate' || skip?.reason === 'alreadyInList') groups.present.push(label(skip.index));
+                else groups.other.push(label(skip.index));
+            }
+            const parts = [];
+            const unique = list => Array.from(new Set(list));
+            if (groups.same.length) parts.push(lp.tn('listPlaceholders_import_done_same', { count: unique(groups.same).length, rows: unique(groups.same).join(', ') }));
+            if (groups.present.length) parts.push(lp.tn('listPlaceholders_import_done_present', { count: unique(groups.present).length, rows: unique(groups.present).join(', ') }));
+            if (groups.other.length) parts.push(lp.tn('listPlaceholders_import_done_other', { count: unique(groups.other).length, rows: unique(groups.other).join(', ') }));
+            return ' ' + esc(parts.join(' '));
         }
 
         // ── Wiring ──
@@ -1600,19 +1846,27 @@
         $('.je-lp-import-accept').addEventListener('click', () => {
             if (state.step !== 'review') return;
             closeEditor();
+            // Sure matches are already in by default, so on a fresh review the work is the likely (medium) ones: their
+            // pre-selected match is accepted and they leave "to review"; sure or likely rows set to something else go
+            // back to their match. Matches changed with "Change match" stay; repeats of another row and "A or B" lines
+            // still need a look.
             const changed = [];
             for (const row of state.rows) {
-                // Rows the user settled with "Change match" keep their choice.
-                if (row.confirmed || row.result?.confidence !== 'high' || !row.result.match || row.result.alternatives || row.dupOf !== undefined) continue;
+                const conf = row.result?.confidence;
+                if (row.confirmed || (conf !== 'high' && conf !== 'medium') || !row.result.match || row.result.alternatives
+                    || row.dupOf !== undefined || row.sameAs !== undefined) continue;
                 const cands = candidateList(row.result);
                 const cand = Math.max(0, cands.findIndex(c => sameCandidate(c, row.result.match)));
                 const action = fromLibrary(cands[cand], listKind) ? 'item' : 'placeholder';
-                if (row.action === action && row.cand === cand && !row.both && !row.override && row.cands.length === cands.length) continue;
-                Object.assign(row, { cands, cand, both: false, override: null, action });
+                const same = row.action === action && row.cand === cand && !row.both && !row.override && row.cands.length === cands.length;
+                if (same && conf === 'high') continue;
+                Object.assign(row, { cands, cand, both: false, override: null, action, confirmed: conf === 'medium', decided: false });
                 changed.push(row);
             }
             refreshRows(changed);
+            refreshSameTitles();
             updateSummary();
+            JE.toast(esc(changed.length ? lp.tn('listPlaceholders_import_accepted', { count: changed.length }) : JE.t('listPlaceholders_import_accepted_none')), 3000);
         });
         $('.je-lp-import-retry').addEventListener('click', retryFailed);
         $('.je-lp-import-only-review').addEventListener('change', (e) => {
@@ -1624,7 +1878,9 @@
             const row = state.rows[Number(select.closest('.je-lp-irow')?.dataset.i)];
             if (!row) return;
             row.action = select.value;
+            row.decided = true; // the user settled it: no longer "to review"
             refreshRow(row);
+            refreshSameTitles();
             updateSummary();
         });
         rowsEl.addEventListener('click', (e) => {

@@ -258,6 +258,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("index")] public int Index { get; set; }
         /// <summary>Machine reason: duplicate, alreadyInList, notVisible, blocked, unsupportedType, invalid, notFound.</summary>
         [JsonPropertyName("reason")] public string Reason { get; set; } = string.Empty;
+        /// <summary>Duplicates: the index of the earlier entry of the same request it repeats (null: it was already in the list).</summary>
+        [JsonPropertyName("sameAs")] public int? SameAs { get; set; }
     }
 
     /// <summary>Result of POST /{listId}/items and POST /{listId}/apply.</summary>

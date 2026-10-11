@@ -13,6 +13,8 @@
     /** Document event fired with {listId, view} whenever a mutation returns a fresh view. */
     const VIEW_EVENT = 'je-lp-view';
     const ID_RE = /^[0-9a-f]{32}$/;
+    /** Stands in for a '|' inside a translation value while lp.tn splits the singular|plural forms (private-use char). */
+    const PIPE_GUARD = '\uE000';
 
     /** listId -> { view, at } of the last GET (shared between page modules for a few seconds). */
     const views = new Map();
@@ -35,6 +37,21 @@
     function normalizeId(id) {
         const value = String(id || '').replace(/-/g, '').toLowerCase();
         return ID_RE.test(value) ? value : null;
+    }
+
+    /**
+     * A count-dependent translation. en.json keeps "singular|plural" in one string (JE's pattern, see
+     * active_streams_count): a count of 1 picks the first form, any other count the last. A '|' inside a value (a
+     * list titled "Movies | TV") stays part of the value.
+     * @param {string} key - en.json key.
+     * @param {Object} params - Values for the placeholders.
+     * @param {string} [countKey='count'] - The param that decides the form.
+     * @returns {string}
+     */
+    function tn(key, params, countKey = 'count') {
+        const guarded = params && Object.fromEntries(Object.entries(params).map(([name, value]) => [name, typeof value === 'string' ? value.replaceAll('|', PIPE_GUARD) : value]));
+        const forms = String(JE.t(key, guarded)).split('|');
+        return (Number(params?.[countKey]) === 1 ? forms[0] : forms[forms.length - 1]).trim().replaceAll(PIPE_GUARD, '|');
     }
 
     /**
@@ -437,6 +454,7 @@
     lp.isEnabled = isEnabled;
     lp.normalizeId = normalizeId;
     lp.newRequestId = newRequestId;
+    lp.tn = tn;
     lp.epochNow = epochNow;
     lp.isCurrentEpoch = isCurrentEpoch;
     lp.errorMessage = errorMessage;

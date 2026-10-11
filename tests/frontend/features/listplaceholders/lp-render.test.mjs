@@ -115,3 +115,31 @@ test('collection cards use JE Seerr cards for TMDB placeholders and an own card 
   assert.equal(custom.querySelector('.je-lp-menu-btn'), null);
   void document;
 });
+
+test('QA: a show partly in the library reads "Partly in library" and shows its progress instead of Seerr\'s "Available"', t => {
+  const h = setup(t);
+  const r = h.lp.render;
+  const ctx = { seerrEnabled: true, statusReady: true, user: { active: true, userFound: true } };
+  // My Adventures with Superman: 23 of 30 episodes in the list, Seerr (watching another server) says available.
+  const series = ph('s', { kind: 'series', mediaType: 'tv', filledCount: 23, expectedCount: 30, airedCount: 30, status: 5 });
+  assert.match(r.rowSubtitle(series), /listPlaceholders_partly_in_library_short/);
+  assert.doesNotMatch(r.rowSubtitle(series), /not_in_library/);
+  const html = r.statusHtml(series, ctx);
+  assert.doesNotMatch(html, /status-available/);
+  assert.match(html, /status-partially-available/);
+  assert.match(html, /listPlaceholders_progress_aired\{&quot;filled&quot;:23,&quot;aired&quot;:30\}/);
+  assert.equal(r.toSeerrItem(series).mediaInfo.status, 4, 'the collection card reads "partially available"');
+
+  // Nothing in the list yet: unchanged.
+  const none = ph('n', { kind: 'series', mediaType: 'tv', filledCount: 0, status: 5 });
+  assert.match(r.rowSubtitle(none), /listPlaceholders_not_in_library_short/);
+  assert.match(r.statusHtml(none, ctx), /status-available/);
+  assert.equal(r.toSeerrItem(none).mediaInfo.status, 5);
+});
+
+test('QA: an announced season without a date reads TBA, not the show\'s first year', t => {
+  const h = setup(t);
+  const r = h.lp.render;
+  assert.equal(r.dateLabel(ph('s2', { kind: 'season', mediaType: 'tv', seasonNumber: 2, year: 2024, releaseDate: null, released: false })), 'listPlaceholders_tba');
+  assert.equal(r.dateLabel(ph('m', { kind: 'movie', year: 2027, releaseDate: null, released: false })), '2027', 'a movie keeps the line\'s year');
+});

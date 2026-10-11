@@ -1233,7 +1233,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                         continue;
                     }
 
-                    var dto = ImportPlaceholders.FromCandidate(match, kind, item.Season, item.Episode.HasValue ? new[] { item.Episode.Value } : null, item.Note);
+                    var dto = ImportPlaceholders.FromCandidate(match, kind, item.Season, item.Episode.HasValue ? new[] { item.Episode.Value } : null, item.Note, item.Year);
                     if (dto == null || !PlaceholderRules.TryCreate(dto, access.UserIdN, DateTime.UtcNow, out var placeholder, out _))
                     {
                         unaccounted.Add(key);

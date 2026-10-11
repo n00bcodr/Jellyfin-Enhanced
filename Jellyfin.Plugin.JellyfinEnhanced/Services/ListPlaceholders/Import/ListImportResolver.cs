@@ -77,6 +77,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
         private const int TvVerifyCount = 3;
         private const int EpisodeVerifyCount = 2;
         private const int ParentalConcurrency = 8;
+        private const int MaxFallbackQueries = 4;
 
         private static readonly Regex ImdbRegex = new("^tt[0-9]{5,10}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
@@ -365,8 +366,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                 var lastYear = DateTime.UtcNow.Year - 1;
                 foreach (var candidate in list.Where(c => !c.Explicit))
                 {
-                    // In development / TBA: an old release is most likely a different title with the same name.
-                    candidate.Score += candidate.Hit.Year is int year ? (year < lastYear ? -40 : 10) : 10;
+                    // In development / TBA: an old release is most likely a different title with the same name. A season
+                    // or episodes line is about the season, not when the show started ("Creature Commandos - Season 2").
+                    candidate.Score += ReleaseYear(candidate, effective) is int year ? (year < lastYear ? -40 : 10) : 10;
                 }
             }
 
@@ -379,7 +381,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
             // The year of a season/episode line is the season's air year: never a search filter (E1).
             var useYear = wanted.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes ? null : wanted.Year;
             var hits = await SearchWithRetryAsync(wanted.Title, options, cancellationToken).ConfigureAwait(false);
-            var scored = hits.Where(h => MatchesType(h, wanted)).Select(h => Score(h, wanted.Title, useYear)).ToList();
+            var scored = hits.Where(h => MatchesType(h, wanted)).Select(h => Score(h, wanted, useYear)).ToList();
 
             // Second pass only when the plain search didn't already settle it (no typed hit, weak top or small margin).
             if (useYear.HasValue && (scored.Count == 0 || scored.Max(c => c.Score) < ImportScoring.HighScore || Margin(scored) < ImportScoring.HighMargin))
@@ -389,11 +391,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                 {
                     if (!scored.Any(c => c.Hit.MediaType == hit.MediaType && c.Hit.TmdbId == hit.TmdbId))
                     {
-                        scored.Add(Score(hit, wanted.Title, useYear));
+                        scored.Add(Score(hit, wanted, useYear));
                     }
                 }
 
                 hits = hits.Concat(more).ToList();
+            }
+
+            // Nothing that resembles the title: TMDB's search wants every word, so retry with the variants that tolerate a
+            // different spelling (split hashtags, the main title, a dropped last or longest word) until one finds a likely
+            // match. Their hits only count when their title resembles the line's (a shorter query finds unrelated titles).
+            var fallbacks = scored.Any(c => c.TitleScore >= ImportScoring.PartialTitleScore) ? Array.Empty<string>() : ImportScoring.FallbackQueries(wanted.Title).Take(MaxFallbackQueries);
+            foreach (var query in fallbacks)
+            {
+                var more = (Require(await _lookup.SearchAsync(query, context, cancellationToken).ConfigureAwait(false)) ?? Array.Empty<TitleHit>())
+                    .Select(h => (Hit: h, Scored: Score(h, wanted, useYear)))
+                    .Where(h => h.Scored.TitleScore > 0)
+                    .ToList();
+                foreach (var (hit, candidate) in more.Where(h => MatchesType(h.Hit, wanted)))
+                {
+                    if (!scored.Any(c => c.Hit.MediaType == hit.MediaType && c.Hit.TmdbId == hit.TmdbId))
+                    {
+                        scored.Add(candidate);
+                    }
+                }
+
+                hits = hits.Concat(more.Select(h => h.Hit)).ToList();
+                if (scored.Any(c => c.Score >= ImportScoring.MediumScore))
+                {
+                    break;
+                }
             }
 
             if (scored.Count == 0 && hits.Count > 0 && ExpectedType(wanted) != null)
@@ -402,7 +429,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                 reasons.Add("typeMismatch");
                 scored = hits.Where(h => h.MediaType is "movie" or "tv")
                     .GroupBy(h => h.MediaType + "|" + h.TmdbId.ToString(CultureInfo.InvariantCulture)).Select(g => g.First())
-                    .Select(h => { var s = Score(h, wanted.Title, useYear); s.Score -= 30; return s; })
+                    .Select(h => { var s = Score(h, wanted, useYear); s.Score -= 30; return s; })
                     .ToList();
             }
 
@@ -462,7 +489,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                 candidate.Season = facts;
                 if (wanted.Kind == PlaceholderKinds.Season)
                 {
-                    candidate.Score += ImportScoring.YearScore(YearOf(facts.AirDate), wanted.Year);
+                    candidate.Score += ImportScoring.YearScore(YearOf(facts.AirDate), wanted.Year, wanted.Unreleased);
+                    candidate.YearDelta = YearDelta(YearOf(facts.AirDate), wanted.Year);
                 }
             }
 
@@ -508,7 +536,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                 }
 
                 var airYear = YearOf(candidate.Episodes.FirstOrDefault()?.AirDate) ?? YearOf(candidate.Season?.AirDate);
-                candidate.Score += ImportScoring.YearScore(airYear, wanted.Year);
+                candidate.Score += ImportScoring.YearScore(airYear, wanted.Year, wanted.Unreleased);
+                candidate.YearDelta = YearDelta(airYear, wanted.Year);
             }
         }
 
@@ -539,10 +568,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                 return ImportScoring.Levels.None;
             }
 
-            var second = ordered.Skip(1).FirstOrDefault();
             string level;
+            var unreleased = false;
             if (explicitId)
             {
+                var second = ordered.Skip(1).FirstOrDefault();
                 level = second == null || top.Score - second.Score >= 1 ? ImportScoring.Levels.High : ImportScoring.Levels.Low;
                 if (level == ImportScoring.Levels.Low)
                 {
@@ -551,19 +581,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
             }
             else
             {
+                // A same-named title from another year doesn't make an exact title with the line's exact year doubtful
+                // ("The Flash" 2023 next to a 2022 "The Flash"); another exact title from the same year still does.
+                var rivals = ordered.Skip(1);
+                if (top.Exact && top.YearDelta == 0)
+                {
+                    rivals = rivals.Where(c => !(c.Exact && c.YearDelta != 0));
+                }
+
+                var second = rivals.FirstOrDefault();
                 var exactTie = second != null && top.Exact && second.Exact && top.Score - second.Score < 10;
                 level = ImportScoring.Confidence(top.Score, second?.Score, exactTie, wanted.Year.HasValue);
+
+                // An announced title: TMDB has the exact title but no date yet, and the line says it isn't out either.
+                // Worth pre-selecting (it tracks dates and can be requested), but only as a likely match.
+                unreleased = wanted.Unreleased && top.Exact && IsUndated(top, wanted) && !reasons.Contains("typeMismatch")
+                    && !ordered.Skip(1).Any(c => c.Exact && IsUndated(c, wanted));
                 if (exactTie)
                 {
                     reasons.Add("tie");
                 }
-                else if (!wanted.Year.HasValue && ImportScoring.Confidence(top.Score, second?.Score, false, true) == ImportScoring.Levels.High)
+                else if (unreleased)
                 {
-                    reasons.Add("noYear");
+                    reasons.Add("unreleased");
+                    level = ImportScoring.Levels.Medium;
                 }
-                else if (level == ImportScoring.Levels.Low)
+                else if (level != ImportScoring.Levels.High)
                 {
-                    reasons.Add(top.Score < ImportScoring.MediumScore ? "lowScore" : "closeMatch");
+                    Explain(wanted, top, second, level, reasons);
                 }
 
                 // Same-name titles nobody means (an obscure namesake) only cost one click, not a full review.
@@ -584,13 +629,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
                 }
             }
 
-            CapLow(wanted.Status == "tba", "tba");
+            CapLow(wanted.Status == "tba" && !unreleased, "tba");
             CapLow(top.SeasonMissing, "seasonMissing");
             CapLow(top.EpisodeMissing, "episodeMissing");
             CapLow(wanted.EpisodeTitle != null, "episodeByTitle");
             CapLow(wanted.OpenEnded && top.Episodes == null, "openEnded"); // the rest of the season couldn't be read
             return level;
         }
+
+        // Why the best candidate isn't a sure match: its title only partly matches, its year differs or can't be compared,
+        // or another candidate scores close to it.
+        private static void Explain(Wanted wanted, Scored top, Scored? second, string level, ISet<string> reasons)
+        {
+            if (!top.Exact)
+            {
+                reasons.Add("lowScore");
+            }
+            else if (top.YearDelta == 1)
+            {
+                reasons.Add("yearOff");
+            }
+            else if (top.YearDelta > 1)
+            {
+                reasons.Add("otherYear");
+            }
+            else if (top.YearDelta == null && wanted.Status != "tba")
+            {
+                reasons.Add("noYear"); // (a TBA line has no year by nature: its "tba" reason says so)
+            }
+
+            // Without the runner-up the best candidate would have done better: the margin is what's missing.
+            var alone = ImportScoring.Confidence(top.Score, null, false, wanted.Year.HasValue);
+            if (second != null && alone != level && ImportScoring.Cap(alone, level) == level)
+            {
+                reasons.Add("closeMatch");
+            }
+        }
+
+        // Whether a candidate has no release date (a season line: the season has none).
+        private static bool IsUndated(Scored candidate, Wanted wanted) =>
+            wanted.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && candidate.Season != null
+                ? candidate.Season.AirDate == null && (candidate.Episodes == null || candidate.Episodes.All(e => e.AirDate == null))
+                : candidate.Hit.ReleaseDate == null;
+
+        // The year a candidate came out for this line (a season line: the season's air year).
+        private static int? ReleaseYear(Scored candidate, Wanted wanted) =>
+            wanted.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && candidate.Season != null
+                ? YearOf(candidate.Episodes?.FirstOrDefault()?.AirDate) ?? YearOf(candidate.Season.AirDate)
+                : candidate.Hit.Year;
+
+        private static int? YearDelta(int? candidateYear, int? wantedYear) =>
+            candidateYear.HasValue && wantedYear.HasValue ? Math.Abs(candidateYear.Value - wantedYear.Value) : null;
 
         // ── Output ──────────────────────────────────────────────────────────
 
@@ -751,11 +840,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
         private static T? Require<T>(LookupResult<T> result) =>
             result.Status == LookupStatus.Transient ? throw new TransientLookupException() : result.Value;
 
-        private static Scored Score(TitleHit hit, string title, int? year)
+        private static Scored Score(TitleHit hit, Wanted wanted, int? year)
         {
-            var (titleScore, exact) = ImportScoring.TitleScore(hit.Title, hit.OriginalTitle, title);
-            var score = titleScore + ImportScoring.YearScore(hit.Year, year) + ImportScoring.Tiebreak(hit.VoteCount, hit.Popularity);
-            return new Scored(hit, score, false) { Exact = exact };
+            var (titleScore, exact) = ImportScoring.TitleScore(hit.Title, hit.OriginalTitle, wanted.Title);
+            var score = titleScore + ImportScoring.YearScore(hit.Year, year, wanted.Unreleased) + ImportScoring.Tiebreak(hit.VoteCount, hit.Popularity);
+            return new Scored(hit, score, false) { Exact = exact, TitleScore = titleScore, YearDelta = YearDelta(hit.Year, year) };
         }
 
         private static double Margin(List<Scored> scored)
@@ -929,6 +1018,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
             IReadOnlyList<Wanted> Alternatives,
             bool OpenEnded = false)
         {
+            /// <summary>
+            /// The line says the title isn't out yet (TBA, scheduled, or a later year than this one): an undated TMDB entry
+            /// is then no evidence against it.
+            /// </summary>
+            public bool Unreleased => Status is "tba" or "scheduled" || (Status == null && Year > DateTime.UtcNow.Year);
+
             /// <summary>The granularity the entry asks for (null = unknown: decided by the match).</summary>
             public string? Kind => Episodes.Count > 0 || EpisodeTitle != null || ImdbEpisode ? PlaceholderKinds.Episodes
                 : Season.HasValue ? PlaceholderKinds.Season
@@ -946,6 +1041,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Import
             public bool Explicit { get; } = isExplicit;
 
             public bool Exact { get; init; }
+
+            public double TitleScore { get; init; }
+
+            // |candidate year − line year| (season lines: the season's); null when either is unknown.
+            public int? YearDelta { get; set; }
 
             public int? Alternative { get; set; }
 

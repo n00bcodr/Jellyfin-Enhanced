@@ -200,7 +200,7 @@
             }
             seasonSelect.innerHTML = seasons.map(s => {
                 const name = s.seasonNumber === 0 ? JE.t('jellyseerr_season_specials') : JE.t('jellyseerr_season_name', { number: s.seasonNumber });
-                const meta = [cleanDate(s.airDate)?.slice(0, 4), JE.t('listPlaceholders_episode_count', { count: s.episodeCount })].filter(Boolean).join(' · ');
+                const meta = [cleanDate(s.airDate)?.slice(0, 4), lp.tn('listPlaceholders_episode_count', { count: s.episodeCount })].filter(Boolean).join(' · ');
                 return `<option value="${esc(s.seasonNumber)}">${esc(name)} (${esc(meta)})</option>`;
             }).join('');
             seasonModes().forEach((input) => { input.disabled = false; });

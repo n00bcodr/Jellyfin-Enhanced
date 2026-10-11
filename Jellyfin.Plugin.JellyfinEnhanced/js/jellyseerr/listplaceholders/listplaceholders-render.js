@@ -80,7 +80,7 @@
         const contiguous = numbers.every((n, i) => i === 0 || n === numbers[i - 1] + 1);
         if (contiguous) return `S${pad2(season)}E${pad2(numbers[0])}–E${pad2(numbers[numbers.length - 1])}`;
         if (numbers.length <= 3) return `S${pad2(season)}` + numbers.map((n, i) => (i === 0 ? '' : ', ') + 'E' + pad2(n)).join('');
-        return `S${pad2(season)} · ${JE.t('listPlaceholders_episode_count', { count: numbers.length })}`;
+        return `S${pad2(season)} · ${lp.tn('listPlaceholders_episode_count', { count: numbers.length })}`;
     }
 
     /**
@@ -101,7 +101,8 @@
     }
 
     /**
-     * Release text: the year once released, "Coming <date>" before, "TBA" without a date.
+     * Release text: the year once released, "Coming <date>" before, "TBA" without a date. A season or episodes
+     * placeholder without a date is TBA: its year is the show's, not the season's.
      * @param {Object} ph
      * @returns {string}
      */
@@ -111,7 +112,7 @@
             if (ph.released) return m[1];
             return JE.t('listPlaceholders_coming', { date: formatDate(ph.releaseDate) });
         }
-        if (ph.year) return String(ph.year);
+        if (ph.year && ph.kind !== 'season' && ph.kind !== 'episodes') return String(ph.year);
         return JE.t('listPlaceholders_tba');
     }
 
@@ -149,17 +150,26 @@
             const total = count(ph.episodeTotal);
             if (filled > 0) {
                 return [total > 0
-                    ? JE.t('listPlaceholders_episodes_of', { filled, total })
+                    ? lp.tn('listPlaceholders_episodes_of', { filled, total }, 'total')
                     : JE.t('listPlaceholders_progress_in_list', { count: filled })];
             }
-            return total > 0 ? [JE.t('listPlaceholders_episode_count', { count: total })] : [];
+            return total > 0 ? [lp.tn('listPlaceholders_episode_count', { count: total })] : [];
         }
         if (ph.kind === 'episodes' && filled > 0) {
             return [expected > 0
-                ? JE.t('listPlaceholders_episodes_of', { filled, total: expected })
+                ? lp.tn('listPlaceholders_episodes_of', { filled, total: expected }, 'total')
                 : JE.t('listPlaceholders_progress_in_list', { count: filled })];
         }
         return [];
+    }
+
+    /**
+     * Whether a TV placeholder already has some of its episodes in the list (the library has part of it).
+     * @param {Object} ph
+     * @returns {boolean}
+     */
+    function isPartlyFilled(ph) {
+        return (ph.kind === 'series' || ph.kind === 'season' || ph.kind === 'episodes') && count(ph.filledCount) > 0;
     }
 
     /**
@@ -213,9 +223,13 @@
         if (status === null || status === undefined) {
             return { show: true, loading: !ctx.statusReady, requestable: true, badge: null };
         }
-        const display = seerr.resolveDisplayStatus(status, false);
+        // Part of a show is in this library: Seerr's "Available" (it may watch another server) would contradict the
+        // row, so the badge shows the progress instead.
+        const partly = isPartlyFilled(ph) && status === seerr.MEDIA.AVAILABLE;
+        const display = seerr.resolveDisplayStatus(partly ? seerr.MEDIA.PARTIALLY_AVAILABLE : status, false);
         const config = seerr.getBadgeConfig(display);
-        const badge = config ? { icon: config.icon, cssClass: config.cssClass, label: JE.t(seerr.getChipConfig(display).labelKey) } : null;
+        const label = partly ? (progressParts(ph)[0] || JE.t('listPlaceholders_partly_in_library_short')) : JE.t(seerr.getChipConfig(display)?.labelKey);
+        const badge = config ? { icon: config.icon, cssClass: config.cssClass, label } : null;
         return { show: true, loading: false, requestable: seerr.isRequestable(status), badge };
     }
 
@@ -251,12 +265,14 @@
     }
 
     /**
-     * The secondary line of a playlist row as text (subtitle parts + "not in library").
+     * The secondary line of a playlist row as text (subtitle parts + "Not in library", or "Partly in library" once
+     * some of a show's episodes are in the list).
      * @param {Object} ph
      * @returns {string}
      */
     function rowSubtitle(ph) {
-        return subtitleParts(ph).concat(JE.t('listPlaceholders_not_in_library_short')).join(' · ');
+        const state = isPartlyFilled(ph) ? 'listPlaceholders_partly_in_library_short' : 'listPlaceholders_not_in_library_short';
+        return subtitleParts(ph).concat(JE.t(state)).join(' · ');
     }
 
     /**
@@ -325,6 +341,8 @@
         if (!Number.isInteger(id) || id <= 0 || !mediaType) return null;
         let status = ph.status;
         if (JE.seerrStatus?.isRequestable(status) && lp.requests?.isRequested?.(ph)) status = JE.seerrStatus.MEDIA.PROCESSING;
+        // Part of the show is in this library: never "Available" next to the progress chip.
+        if (JE.seerrStatus && status === JE.seerrStatus.MEDIA.AVAILABLE && isPartlyFilled(ph)) status = JE.seerrStatus.MEDIA.PARTIALLY_AVAILABLE;
         let mediaInfo = status === null || status === undefined ? null : { status, status4k: 1 };
         const adding = addingItemId(ph);
         if (adding && JE.seerrStatus) {
@@ -430,6 +448,7 @@
         kindLabel,
         dateLabel,
         progressParts,
+        isPartlyFilled,
         subtitleParts,
         rowSubtitle,
         addingItemId,

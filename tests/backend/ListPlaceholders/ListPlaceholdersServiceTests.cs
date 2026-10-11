@@ -133,8 +133,37 @@ public class ListPlaceholdersServiceTests
         var result = Ok<ApplyResultDto>(await h.Service.AddPlaceholdersAsync(access, new[] { Movie(10001), Movie(5), Movie(5), Movie(6) }, null, null, null, None));
 
         Assert.Equal(new[] { (0, "duplicate"), (2, "duplicate"), (3, "listFull") }, result.Skipped.Select(s => (s.Index, s.Reason)));
+        // A repeat of an earlier entry of the same request says which; one already in the list doesn't.
+        Assert.Equal(new int?[] { null, 1, null }, result.Skipped.Select(s => s.SameAs));
         Assert.Single(result.Added);
         Assert.Equal(ListPlaceholderStore.MaxPlaceholders, h.Store.Load(access.ListIdN)!.Items.Count);
+    }
+
+    [Fact]
+    public async Task TwoImportRowsWithTheSameTitleKeepTheFirstRowsSlotAndNoteAndNameTheRepeat()
+    {
+        // The DC guide's Deathstroke: Knights & Dragons series line and its movie line, both resolved to the movie.
+        using var h = new ListPlaceholdersHarness();
+        var owner = h.NewUser("owner");
+        var a = h.Host.AddItem();
+        var playlist = h.Host.AddPlaylist(owner);
+        playlist.Raw.Add(new RawEntry(a, true));
+        var access = h.AccessFor(playlist, owner);
+        var first = Movie(703771);
+        first.Note = "Short-series release; the film expands it.";
+        var repeat = Movie(703771);
+        repeat.Note = "The movie.";
+        var after = Movie(5);
+
+        var result = Ok<ApplyResultDto>(await h.Service.ApplyAsync(access, new[]
+        {
+            new ApplyEntry(0, null, first), new ApplyEntry(1, null, repeat), new ApplyEntry(2, null, after), new ApplyEntry(3, a, null),
+        }, null, null, null, None));
+
+        Assert.Equal(new[] { (1, "duplicate", (int?)0), (3, "alreadyInList", (int?)null) }, result.Skipped.Select(s => (s.Index, s.Reason, s.SameAs)));
+        var doc = h.Store.Load(access.ListIdN)!;
+        Assert.Equal(new[] { E(a), P(first.Id), P(after.Id) }, doc.Order);
+        Assert.Equal("Short-series release; the film expands it.", doc.Items.Single(p => p.TmdbId == 703771).Note);
     }
 
     [Fact]

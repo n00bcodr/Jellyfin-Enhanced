@@ -457,7 +457,7 @@ test('Change match: pick another candidate, add both versions of an "A or B" lin
   assert.deepEqual(entries[2].placeholder.episodes, [{ s: 2, e: 7, title: 'Seven', airDate: '2016-12-01' }]);
 });
 
-test('"Accept all high-confidence matches" restores skipped high rows; "Show only entries to review" filters', async t => {
+test('"Accept all sure and likely matches" restores skipped rows and settles likely ones; "Show only entries to review" filters', async t => {
   const h = setupImport(t, { plugin: async (path, options = {}) => {
     if (path === '/list-placeholders/resolve') return { results: [ok(0, movie(1, 'A')), ok(1, movie(2, 'B'), { confidence: 'medium', reasons: ['closeMatch'] })] };
     return {};
@@ -471,15 +471,45 @@ test('"Accept all high-confidence matches" restores skipped high rows; "Show onl
   set(1, 'skip');
   assert.match(root.querySelector('.jellyseerr-modal-button-primary').textContent, /"count":0/);
   assert.equal(root.querySelector('.jellyseerr-modal-button-primary').disabled, true);
+  // Picking an action settles a row: "to review" goes down even for Skip.
+  assert.match(root.querySelector('.je-lp-import-summary').textContent, /"review":0/);
   root.querySelector('.je-lp-import-accept').click();
   assert.equal(root.querySelector('.je-lp-irow[data-i="0"] .je-lp-irow-action').value, 'placeholder');
-  assert.equal(root.querySelector('.je-lp-irow[data-i="1"] .je-lp-irow-action').value, 'skip', 'medium rows are left alone');
+  assert.equal(root.querySelector('.je-lp-irow[data-i="1"] .je-lp-irow-action').value, 'placeholder', 'likely matches are accepted too');
+  assert.match(root.querySelector('.je-lp-irow[data-i="1"]').textContent, /listPlaceholders_import_confirmed/);
+  assert.match(h.toasts.at(-1), /listPlaceholders_import_accepted\{&quot;count&quot;:2\}/);
+  root.querySelector('.je-lp-import-accept').click();
+  assert.match(h.toasts.at(-1), /listPlaceholders_import_accepted_none/, 'nothing left to accept is said, not silent');
   const only = root.querySelector('.je-lp-import-only-review');
   only.checked = true;
   only.dispatchEvent(new h.window.Event('change'));
   assert.ok(root.querySelector('.je-lp-import-rows').classList.contains('je-lp-only-review'));
-  assert.ok(root.querySelector('.je-lp-irow[data-i="1"]').classList.contains('je-lp-irow-review'));
+  assert.ok(!root.querySelector('.je-lp-irow[data-i="1"]').classList.contains('je-lp-irow-review'));
   assert.ok(!root.querySelector('.je-lp-irow[data-i="0"]').classList.contains('je-lp-irow-review'));
+});
+
+test('"Accept all sure and likely matches" acts on a fresh review: likely rows leave "to review"; low, repeats and changed rows stay', async t => {
+  const h = setupImport(t, { plugin: async (path, options = {}) => {
+    if (path === '/list-placeholders/resolve') {
+      return { results: [
+        ok(0, movie(1, 'A')),
+        ok(1, movie(2, 'B'), { confidence: 'medium', reasons: ['yearOff'] }),
+        ok(2, movie(3, 'C'), { confidence: 'low', reasons: ['lowScore'] }),
+        ok(3, movie(1, 'A'), { confidence: 'medium', reasons: ['lowScore'] })
+      ] };
+    }
+    return {};
+  } });
+  const root = h.lp.importer.open({ mode: 'new' }).modalElement;
+  root.querySelector('.je-lp-import-text').value = 'A (2001)\nB (2002)\nC (2003)\nA two (2001)';
+  root.querySelector('.jellyseerr-modal-button-primary').click();
+  await until(() => root.querySelector('.je-lp-import-progress').hidden);
+  assert.match(root.querySelector('.je-lp-import-summary').textContent, /"review":3/);
+  root.querySelector('.je-lp-import-accept').click();
+  const action = i => root.querySelector(`.je-lp-irow[data-i="${i}"] .je-lp-irow-action`).value;
+  assert.deepEqual([action(0), action(1), action(2), action(3)], ['placeholder', 'placeholder', 'skip', 'skip']);
+  assert.match(root.querySelector('.je-lp-import-summary').textContent, /"review":2/);
+  assert.match(h.toasts.at(-1), /listPlaceholders_import_accepted\{&quot;count&quot;:1\}/);
 });
 
 test('closing the modal aborts the running lookup', async t => {
@@ -854,4 +884,290 @@ test('snapshotKeys: a grouped fetch with every row decided sends its own keys; o
   rows[0].failed = false;
   assert.deepEqual(plainJson(imp.snapshotKeys([...rows, { entry: { sourceKey: 'movie|3||' }, result: { state: 'ok' } }])), ['tv|1|1|1', 'tv|1|1|2', 'movie|2||', 'movie|3||']);
   assert.equal(imp.sourceErrorKey('source_format_changed'), 'listPlaceholders_sourceFormatChanged');
+});
+
+// ── QA round (the DC watch guide import, .notes/dcimport-report.md) ──────────────────────────
+
+test('QA: a row resolving to the same title as an earlier row is flagged, waits as Skip, is left out of the count and named in the result', async t => {
+  const calls = [];
+  const movieEdition = movie(703771, 'Deathstroke: Knights & Dragons - The Movie', { year: 2020, releaseDate: '2020-08-04' });
+  const h = setupImport(t, { plugin: async (path, options = {}) => {
+    calls.push([path, plainJson(options.body ?? null)]);
+    if (path === '/list-placeholders/resolve') {
+      return { results: [
+        ok(0, movieEdition, { confidence: 'medium', reasons: ['lowScore'] }),
+        ok(1, movieEdition),
+        ok(2, movie(5, 'Other', { year: 2020 }))
+      ] };
+    }
+    return { listId: 'f'.repeat(32), name: 'x', result: { added: ['a', 'b'], addedAsItems: [], skipped: [{ index: 1, reason: 'duplicate', sameAs: 0 }] } };
+  } });
+  const root = h.lp.importer.open({ mode: 'new' }).modalElement;
+  root.querySelector('.je-lp-import-text').value = '### Deathstroke animation\n\n'
+    + '1. Deathstroke: Knights & Dragons (2020) · Alternate edition · Released — Short-series release; the film expands it.\n'
+    + '2. Deathstroke: Knights & Dragons: The Movie (2020) · Film · Released\n'
+    + '3. Other (2020) · Film · Released';
+  root.querySelector('.jellyseerr-modal-button-primary').click();
+  await until(() => root.querySelector('.je-lp-import-progress').hidden);
+
+  // One section pasted: the playlist is named after its heading.
+  assert.equal(root.querySelector('.je-lp-new-name').value, 'Deathstroke animation');
+  const row1 = () => root.querySelector('.je-lp-irow[data-i="1"]');
+  assert.match(row1().querySelector('.je-lp-irow-hint').textContent, /listPlaceholders_import_same_title\{"row":1\}/);
+  assert.equal(row1().querySelector('.je-lp-irow-action').value, 'skip');
+  assert.ok(row1().classList.contains('je-lp-irow-review'));
+  const primary = root.querySelector('.jellyseerr-modal-button-primary');
+  assert.match(primary.textContent, /"count":2/);
+
+  // Kept anyway: still flagged and still not counted (the server drops it), but no longer "to review".
+  const select = row1().querySelector('.je-lp-irow-action');
+  select.value = 'placeholder';
+  select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  assert.match(primary.textContent, /"count":2/);
+  assert.match(row1().querySelector('.je-lp-irow-hint').textContent, /same_title/);
+  assert.ok(!row1().classList.contains('je-lp-irow-review'));
+
+  primary.click();
+  await until(() => h.toasts.some(m => m.includes('listPlaceholders_import_done_toast')));
+  const sent = calls.find(c => c[0] === '/list-placeholders/playlists')[1];
+  assert.equal(sent.entries.length, 3, 'a row the user kept is sent; the server reports it');
+  const toast = h.toasts.find(m => m.includes('listPlaceholders_import_done_toast'));
+  assert.match(toast, /listPlaceholders_import_done_same\{&quot;count&quot;:1,&quot;rows&quot;:&quot;2 \(= 1\)&quot;\}/);
+});
+
+test('QA: custom entries keep the qualifier and the line\'s type; dateless matches keep the line\'s year', t => {
+  const h = setupImport(t);
+  const imp = h.lp.importer;
+  assert.deepEqual(plainJson(imp.customFromEntry({ title: 'Wonder Woman', qualifier: 'DCU film', typeHint: 'movie', status: 'tba', note: 'New screenplay.' })),
+    { kind: 'custom', mediaType: 'movie', title: 'Wonder Woman (DCU film)', note: 'New screenplay.' });
+  assert.equal(imp.customFromEntry({ title: 'Blue Beetle', qualifier: 'animated series', typeHint: 'tv' }).mediaType, 'tv');
+  // "Compilation" / "TV special" lines carry no type: the closest match's type decides, else movie.
+  assert.equal(imp.customFromEntry({ title: 'The Batman/Superman Hour', year: 1968 }, { mediaType: 'tv' }).mediaType, 'tv');
+  assert.equal(imp.customFromEntry({ title: 'Some Special', year: 1968 }).mediaType, 'movie');
+  assert.equal(imp.customFromEntry({ title: 'A film', typeHint: 'movie' }, { mediaType: 'tv' }).mediaType, 'movie');
+
+  const knightsEnd = { mediaType: 'movie', tmdbId: 1389764, title: 'Batman: Knightfall Part 3: KnightsEnd' };
+  assert.equal(imp.placeholderFromCandidate(knightsEnd, { year: 2027 }, 'movie').year, 2027);
+  assert.equal(imp.placeholderFromCandidate(knightsEnd, { date: '2027-05-01' }, 'movie').year, 2027);
+  assert.equal(imp.placeholderFromCandidate(movie(1, 'Dated', { year: 2013 }), { year: 2027 }, 'movie').year, 2013);
+});
+
+test('QA: the review shows the line, not an unchosen match: custom rows drop the match\'s chip and hints; low rows offer the closest match', t => {
+  const h = setupImport(t);
+  const imp = h.lp.importer;
+  const tas = { mediaType: 'tv', tmdbId: 4303, title: 'Superman: The Animated Series', year: 1996, posterPath: '/tas.jpg' };
+  const result = ok(0, tas, { confidence: 'low', reasons: ['lowScore', 'typeMismatch'] });
+  const base = { i: 5, entry: { title: 'The New Batman/Superman Adventures', year: 1997, raw: 'x', line: 8 }, result, cands: imp.candidateList(result), cand: 0 };
+  const box = h.document.createElement('div');
+
+  box.innerHTML = imp.rowHtml({ ...base, action: 'skip' }, { listKind: 'playlist' });
+  assert.equal(box.querySelector('.je-lp-irow-title').textContent, 'The New Batman/Superman Adventures');
+  assert.equal(box.querySelector('.je-lp-irow-poster img'), null, 'no poster of a title that is not imported');
+  assert.match(box.querySelector('.je-lp-irow-hint').textContent, /listPlaceholders_import_closest/);
+  assert.match(box.querySelector('.je-lp-irow-meta').textContent, /listPlaceholders_import_conf_low/);
+
+  box.innerHTML = imp.rowHtml({ ...base, action: 'custom', entry: { ...base.entry, qualifier: 'broadcast package' } }, { listKind: 'playlist' });
+  assert.equal(box.querySelector('.je-lp-irow-title').textContent, 'The New Batman/Superman Adventures (broadcast package)');
+  assert.equal(box.querySelector('.je-lp-chip'), null, 'no "Unsure" for a match that is not used');
+  assert.equal(box.querySelector('.je-lp-irow-hint'), null);
+  assert.match(box.querySelector('.je-lp-irow-meta').textContent, /listPlaceholders_kind_custom/);
+
+  box.innerHTML = imp.rowHtml({ ...base, action: 'placeholder' }, { listKind: 'playlist' });
+  assert.equal(box.querySelector('.je-lp-irow-title').textContent, 'Superman: The Animated Series');
+  assert.ok(box.querySelector('.je-lp-irow-poster img'));
+});
+
+test('QA: Change match says when a search finds nothing new, waits for the seasons before Done, and shows the library state of the new match', async t => {
+  const calls = [];
+  let releaseDetails;
+  const detailsGate = new Promise((resolve) => { releaseDetails = resolve; });
+  const show = { mediaType: 'tv', tmdbId: 4303, title: 'Superman: The Animated Series', year: 1996 };
+  const h = setupImport(t, {
+    search: async (query) => (query.includes('nothing') ? { results: [] } : query.includes('same')
+      ? { results: [{ id: 4303, mediaType: 'tv', name: 'Superman: The Animated Series', firstAirDate: '1996-09-06' }] }
+      : { results: [{ id: 78081, mediaType: 'tv', name: 'Constantine: City of Demons', firstAirDate: '2018-03-24' }] }),
+    plugin: async (path, options = {}) => {
+      calls.push([path, plainJson(options.body ?? null)]);
+      if (path !== '/list-placeholders/resolve') return {};
+      if (options.body.entries[0].ids) {
+        return { results: [ok(0, { mediaType: 'tv', tmdbId: 78081, title: 'Constantine: City of Demons', episodeTotal: 5, inLibrary: { itemId: 'e'.repeat(32), kind: 'series', episodeItemIds: ['a'.repeat(32), 'b'.repeat(32)], complete: false } })] };
+      }
+      return { results: [ok(0, show, { confidence: 'low', reasons: ['lowScore'] })] };
+    }
+  });
+  h.JE.jellyseerrAPI.fetchTvShowDetails = async () => { await detailsGate; return { id: 1, name: 'Show', seasons: [{ seasonNumber: 1, episodeCount: 5, airDate: '2018-03-24' }] }; };
+  const root = h.lp.importer.open({ mode: 'new' }).modalElement;
+  root.querySelector('.je-lp-import-text').value = 'Constantine: City of Demons (2018)';
+  root.querySelector('.jellyseerr-modal-button-primary').click();
+  await until(() => root.querySelector('.je-lp-import-progress').hidden);
+  root.querySelector('.je-lp-irow[data-i="0"] .je-lp-irow-edit').click();
+  const ed = root.querySelector('.je-lp-ieditor');
+  const done = ed.querySelector('.je-lp-ieditor-done');
+  assert.equal(done.disabled, true, 'the season picker of the TV match is still loading');
+  const query = ed.querySelector('.je-lp-ieditor-query');
+  const search = async (text) => {
+    query.value = text;
+    query.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await until(() => !/searching/.test(ed.querySelector('.je-lp-ieditor-status').textContent));
+  };
+  await search('nothing at all');
+  assert.match(ed.querySelector('.je-lp-ieditor-status').textContent, /listPlaceholders_import_search_none/);
+  await search('same show');
+  assert.match(ed.querySelector('.je-lp-ieditor-status').textContent, /listPlaceholders_import_search_no_new/);
+  await search('constantine');
+  assert.equal(ed.querySelector('.je-lp-ieditor-status').textContent, '');
+  const radio = ed.querySelectorAll('.je-lp-ieditor-cand input')[1];
+  radio.checked = true;
+  radio.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  assert.equal(done.disabled, true);
+  releaseDetails();
+  await until(() => !done.disabled);
+  done.click();
+
+  // The library state of the new match is looked up and shown: the server would put those episodes in anyway.
+  await until(() => calls.some(c => c[1]?.entries?.[0]?.ids));
+  assert.deepEqual(calls.find(c => c[1]?.entries?.[0]?.ids)[1].entries[0], { index: 0, title: 'Constantine: City of Demons', ids: { tmdb: 78081, tmdbType: 'tv' } });
+  await until(() => root.querySelector('.je-lp-irow[data-i="0"] .je-lp-chip-lib'));
+  const row = root.querySelector('.je-lp-irow[data-i="0"]');
+  assert.equal(row.querySelector('.je-lp-irow-action').value, 'item');
+  assert.match(row.querySelector('.je-lp-chip-lib').textContent, /listPlaceholders_import_in_library_part\{"count":2,"total":5\}/);
+});
+
+test('QA: counts read "1 title" / "2 titles" through the singular|plural strings', t => {
+  const h = setupImport(t);
+  const strings = { 'listPlaceholders_import_parse_summary': '{count} title found|{count} titles found', listPlaceholders_episodes_of: '{filled} of {total} episode|{filled} of {total} episodes' };
+  h.JE.t = (key, params = {}) => Object.entries(params).reduce((text, [k, v]) => text.replaceAll(`{${k}}`, v), strings[key] || key);
+  assert.equal(h.lp.tn('listPlaceholders_import_parse_summary', { count: 1 }), '1 title found');
+  assert.equal(h.lp.tn('listPlaceholders_import_parse_summary', { count: 2 }), '2 titles found');
+  assert.equal(h.lp.tn('listPlaceholders_import_parse_summary', { count: 0 }), '0 titles found');
+  assert.equal(h.lp.tn('listPlaceholders_episodes_of', { filled: 1, total: 1 }, 'total'), '1 of 1 episode');
+  assert.equal(h.lp.tn('listPlaceholders_other', { count: 1 }), 'listPlaceholders_other', 'a string without forms is used as is');
+});
+
+test('QA: a list source entry with the same title as an earlier one is flagged but still sent (the sync counts it as present)', async t => {
+  const calls = [];
+  const fetched = {
+    kind: 'mdblist', provider: 'mdblist', url: 'https://mdblist.com/lists/a/b', title: 'Twice', total: 2, truncated: false,
+    entries: [
+      { title: 'One', year: 2020, typeHint: 'movie', ids: { tmdb: 1, tmdbType: 'movie' }, sourceKey: 'movie|1||' },
+      { title: 'One again', year: 2020, typeHint: 'movie', ids: { imdb: 'tt0000001' }, sourceKey: 'imdb|tt0000001||' }
+    ]
+  };
+  const h = setupImport(t, { plugin: async (path, options = {}) => {
+    calls.push([path, plainJson(options.body ?? null)]);
+    if (path === '/list-placeholders/source/providers') return { mdblist: true, syncEnabled: true };
+    if (path === '/list-placeholders/source/fetch') return fetched;
+    if (path === '/list-placeholders/resolve') return { results: options.body.entries.map(e => ok(e.index, movie(1, 'One'))) };
+    return { listId: 'f'.repeat(32), name: 'Twice', result: { added: ['a'], addedAsItems: [], skipped: [{ index: 1, reason: 'duplicate', sameAs: 0 }] } };
+  } });
+  const root = h.lp.importer.open({ mode: 'new' }).modalElement;
+  root.querySelector('.je-lp-tab[data-tab="url"]').click();
+  root.querySelector('.je-lp-import-url').value = 'https://mdblist.com/lists/a/b';
+  root.querySelector('.jellyseerr-modal-button-primary').click();
+  await until(() => root.querySelector('.je-lp-import-progress').hidden && root.querySelectorAll('.je-lp-irow').length === 2);
+  const row = root.querySelector('.je-lp-irow[data-i="1"]');
+  assert.match(row.querySelector('.je-lp-irow-hint').textContent, /listPlaceholders_import_same_title/);
+  assert.equal(row.querySelector('.je-lp-irow-action').value, 'placeholder');
+  assert.match(root.querySelector('.jellyseerr-modal-button-primary').textContent, /"count":1/);
+  root.querySelector('.jellyseerr-modal-button-primary').click();
+  await until(() => calls.some(c => c[0] === '/list-placeholders/playlists'));
+  assert.deepEqual(calls.find(c => c[0] === '/list-placeholders/playlists')[1].entries.map(e => e.sourceKey), ['movie|1||', 'imdb|tt0000001||']);
+});
+
+// ── QA review round ──────────────────────────────────────────────────────────────────────────
+
+test('QA review: "Add both" with both versions in the library counts both items (each item is its own title)', t => {
+  const h = setupImport(t);
+  const imp = h.lp.importer;
+  const jl = movie(141052, 'Justice League', { alternative: 0, inLibrary: { itemId: 'a'.repeat(32), kind: 'movie', title: 'JL' } });
+  const zs = movie(791373, "Zack Snyder's Justice League", { alternative: 1, inLibrary: { itemId: 'b'.repeat(32), kind: 'movie', title: 'ZSJL' } });
+  const result = ok(0, jl, { confidence: 'low', alternatives: true, candidates: [jl, zs] });
+  const row = { i: 0, entry: { title: 'Justice League' }, result, cands: imp.candidateList(result), cand: 0, both: true, action: 'item' };
+  assert.deepEqual(plainJson(imp.rowEntries(row, 'playlist')), [{ type: 'item', itemId: 'a'.repeat(32) }, { type: 'item', itemId: 'b'.repeat(32) }]);
+  assert.equal(imp.summarize([row], 'playlist').entries, 2);
+  // A later row of the first version still repeats it (its item and its title).
+  const again = { ...row, i: 1, both: false };
+  assert.equal(imp.summarize([row, again], 'playlist').entries, 2);
+});
+
+test('QA review: a retried lookup that resolves to the title of a later, shown row flags that row and moves it to Skip', async t => {
+  let n = 0;
+  const x = movie(77, 'Movie X', { year: 2020 });
+  const h = setupImport(t, { plugin: async (path, options = {}) => {
+    if (path !== '/list-placeholders/resolve') return {};
+    n++;
+    // Row 0 is transient on the first pass and resolves to the same movie as row 1 on the resubmit.
+    return { results: options.body.entries.map(e => (e.index === 0 && n === 1) ? { index: 0, state: 'transient', confidence: 'none', candidates: [], reasons: [] } : ok(e.index, x)) };
+  } });
+  const root = h.lp.importer.open({ mode: 'new' }).modalElement;
+  root.querySelector('.je-lp-import-text').value = 'Movie X (2020)\nMovie X again (2020)\nOther (2001)';
+  root.querySelector('.jellyseerr-modal-button-primary').click();
+  await until(() => root.querySelector('.je-lp-import-progress').hidden, 2000);
+  assert.equal(n, 2);
+  const row = i => root.querySelector(`.je-lp-irow[data-i="${i}"]`);
+  assert.equal(row(0).querySelector('.je-lp-irow-action').value, 'placeholder');
+  assert.equal(row(1).querySelector('.je-lp-irow-action').value, 'skip');
+  assert.match(row(1).querySelector('.je-lp-irow-hint').textContent, /listPlaceholders_import_same_title\{"row":1\}/);
+  assert.ok(row(1).classList.contains('je-lp-irow-review'));
+});
+
+test('QA review: a row the user settled keeps its action when a retried lookup flags it', async t => {
+  let fail = true;
+  const x = movie(77, 'Movie X', { year: 2020 });
+  const h = setupImport(t, { plugin: async (path, options = {}) => {
+    if (path !== '/list-placeholders/resolve') return {};
+    return { results: options.body.entries.map(e => (e.index === 0 && fail) ? { index: 0, state: 'transient', confidence: 'none', candidates: [], reasons: [] } : ok(e.index, x)) };
+  } });
+  const root = h.lp.importer.open({ mode: 'new' }).modalElement;
+  root.querySelector('.je-lp-import-text').value = 'Movie X (2020)\nMovie X again (2020)';
+  root.querySelector('.jellyseerr-modal-button-primary').click();
+  await until(() => root.querySelector('.je-lp-import-progress').hidden, 2000);
+  const row = i => root.querySelector(`.je-lp-irow[data-i="${i}"]`);
+  assert.equal(row(0).querySelector('.je-lp-irow-action').value, 'skip', 'row 0 failed twice');
+  const select = row(1).querySelector('.je-lp-irow-action');
+  select.value = 'placeholder';
+  select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  fail = false;
+  root.querySelector('.je-lp-import-retry').click();
+  await until(() => row(0).querySelector('.je-lp-irow-action').value === 'placeholder', 2000);
+  assert.equal(row(1).querySelector('.je-lp-irow-action').value, 'placeholder', 'the user kept it');
+  assert.match(row(1).querySelector('.je-lp-irow-hint').textContent, /listPlaceholders_import_same_title/);
+});
+
+test('QA review: Change match on a dateless show keeps the line\'s year', async t => {
+  const calls = [];
+  const announced = { mediaType: 'tv', tmdbId: 300001, title: 'Announced Show', year: undefined };
+  const h = setupImport(t, {
+    tvDetails: { id: 300001, name: 'Announced Show', seasons: [{ seasonNumber: 1, episodeCount: 8 }] },
+    plugin: async (path, options = {}) => {
+      calls.push([path, plainJson(options.body ?? null)]);
+      if (path === '/list-placeholders/resolve') return { results: [ok(0, announced)] };
+      return { listId: 'f'.repeat(32), name: 'x', result: { added: [], addedAsItems: [], skipped: [] } };
+    }
+  });
+  const root = h.lp.importer.open({ mode: 'new' }).modalElement;
+  root.querySelector('.je-lp-import-text').value = 'Announced Show (2027)';
+  root.querySelector('.jellyseerr-modal-button-primary').click();
+  await until(() => root.querySelector('.je-lp-import-progress').hidden);
+  root.querySelector('.je-lp-irow[data-i="0"] .je-lp-irow-edit').click();
+  const done = root.querySelector('.je-lp-ieditor .je-lp-ieditor-done');
+  await until(() => !done.disabled);
+  done.click();
+  assert.match(root.querySelector('.je-lp-irow[data-i="0"] .je-lp-irow-meta').textContent, /2027/);
+  root.querySelector('.je-lp-new-name').value = 'A';
+  root.querySelector('.jellyseerr-modal-button-primary').click();
+  await until(() => calls.some(c => c[0] === '/list-placeholders/playlists'));
+  const ph = calls.find(c => c[0] === '/list-placeholders/playlists')[1].entries[0].placeholder;
+  assert.equal(ph.kind, 'series');
+  assert.equal(ph.year, 2027);
+  assert.ok(!ph.releaseDate);
+});
+
+test('QA review: lp.tn keeps a "|" inside a value (a list titled "Movies | TV")', t => {
+  const h = setupImport(t);
+  const strings = { listPlaceholders_import_fetched: '{title}: {count} entry|{title}: {count} entries' };
+  h.JE.t = (key, params = {}) => Object.entries(params).reduce((text, [k, v]) => text.replaceAll(`{${k}}`, v), strings[key] || key);
+  assert.equal(h.lp.tn('listPlaceholders_import_fetched', { title: 'Movies | TV', count: 2 }), 'Movies | TV: 2 entries');
+  assert.equal(h.lp.tn('listPlaceholders_import_fetched', { title: 'Movies | TV', count: 1 }), 'Movies | TV: 1 entry');
+  assert.equal(h.lp.tn('listPlaceholders_import_fetched', { title: 'A|B|C', count: 3 }), 'A|B|C: 3 entries');
 });

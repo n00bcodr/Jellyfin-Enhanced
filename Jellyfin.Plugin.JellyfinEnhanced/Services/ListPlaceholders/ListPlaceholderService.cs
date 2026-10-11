@@ -358,14 +358,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     placeholder.Filled.AddRange(episode.Coords.Select(c => new FilledEpisode { ItemId = episode.ItemId.ToString("N", CultureInfo.InvariantCulture), S = c.S, E = c.E }));
                 }
 
+                var complete = PlaceholderProgress.IsComplete(placeholder, today)
+                    && (placeholder.Kind == PlaceholderKinds.Episodes || placeholder.InProduction == false || fresh.Contains(placeholder.Id));
+
+                // Playlists: the placeholder goes where its first missing episode belongs in episode order, so a watch
+                // order that starts with episodes the library lacks starts with the placeholder (S1E1–E7 missing, S1E8+
+                // present: placeholder first). Nothing missing before or between them: after the present ones.
+                var firstMissing = isPlaylist && !complete ? PlaceholderProgress.FirstMissing(placeholder) : null;
+                var placed = false;
                 foreach (var item in resolution.Items)
                 {
+                    if (!placed && firstMissing is EpisodeCoord missing && item.Coords.Count > 0 && item.Coords.Min().CompareTo(missing) > 0)
+                    {
+                        result.Add(entry);
+                        placed = true;
+                    }
+
                     result.Add(new ApplyEntry(entry.Index, item.ItemId, null, placeholder, Covers: item.Coords));
                 }
 
-                var complete = PlaceholderProgress.IsComplete(placeholder, today)
-                    && (placeholder.Kind == PlaceholderKinds.Episodes || placeholder.InProduction == false || fresh.Contains(placeholder.Id));
-                result.Add(complete ? entry with { CompleteIfLanded = true } : entry);
+                if (!placed)
+                {
+                    result.Add(complete ? entry with { CompleteIfLanded = true } : entry);
+                }
             }
 
             return result;
@@ -524,19 +539,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             // Expanded TV scopes (C1): a placeholder that is a duplicate takes its expanded items with it, and expanded
             // items already in the list are skipped quietly (they count as filled). An entry that ends up doing nothing
             // at all is reported once with the reason it was skipped for.
+            // A duplicate of an earlier entry of this request names that entry (sameAs), so the caller can say which.
             var orderedEntries = accepted.OrderBy(e => e.Index).ToList();
-            var duplicateGroups = new HashSet<Placeholder>(ReferenceEqualityComparer.Instance);
+            var duplicateGroups = new Dictionary<Placeholder, int?>(ReferenceEqualityComparer.Instance);
             var seenGroups = new HashSet<Placeholder>(ReferenceEqualityComparer.Instance);
-            var probe = new HashSet<string>(keys, StringComparer.Ordinal);
-            foreach (var group in orderedEntries.Select(e => e.ExpandedFrom ?? e.Placeholder).OfType<Placeholder>())
+            var firstWithKey = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var entry in orderedEntries.Where(e => (e.ExpandedFrom ?? e.Placeholder) != null))
             {
-                if (seenGroups.Add(group) && !probe.Add(PlaceholderRules.IdentityKey(group)))
+                var group = (entry.ExpandedFrom ?? entry.Placeholder)!;
+                var key = PlaceholderRules.IdentityKey(group);
+                if (!seenGroups.Add(group))
                 {
-                    duplicateGroups.Add(group);
+                    continue;
+                }
+
+                if (keys.Contains(key))
+                {
+                    duplicateGroups[group] = null;
+                }
+                else if (firstWithKey.TryGetValue(key, out var first))
+                {
+                    duplicateGroups[group] = first;
+                }
+                else
+                {
+                    firstWithKey[key] = entry.Index;
                 }
             }
 
-            var quietSkips = new Dictionary<int, string>();
+            var quietSkips = new Dictionary<int, (string Reason, int? SameAs)>();
+            var firstWithItem = new Dictionary<Guid, int>();
 
             try
             {
@@ -555,25 +587,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
                     if (entry.ItemId.HasValue)
                     {
-                        if (entry.ExpandedFrom != null && duplicateGroups.Contains(entry.ExpandedFrom))
+                        if (entry.ExpandedFrom != null && duplicateGroups.TryGetValue(entry.ExpandedFrom, out var groupSameAs))
                         {
-                            quietSkips.TryAdd(entry.Index, "duplicate");
+                            quietSkips.TryAdd(entry.Index, ("duplicate", groupSameAs));
                             continue;
                         }
 
                         if (!present.Add(entry.ItemId.Value))
                         {
+                            int? sameAs = firstWithItem.TryGetValue(entry.ItemId.Value, out var firstItem) && firstItem != entry.Index ? firstItem : null;
                             if (entry.ExpandedFrom != null)
                             {
-                                quietSkips.TryAdd(entry.Index, "alreadyInList");
+                                quietSkips.TryAdd(entry.Index, ("alreadyInList", sameAs));
                             }
                             else
                             {
-                                skipped.Add(Skip(entry, "alreadyInList"));
+                                skipped.Add(Skip(entry, "alreadyInList", sameAs));
                             }
 
                             continue;
                         }
+
+                        firstWithItem.TryAdd(entry.ItemId.Value, entry.Index);
 
                         if (isPlaylist)
                         {
@@ -590,9 +625,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
                     }
 
                     var placeholder = entry.Placeholder!;
-                    if (duplicateGroups.Contains(placeholder) || !keys.Add(PlaceholderRules.IdentityKey(placeholder)))
+                    if (duplicateGroups.TryGetValue(placeholder, out var duplicateOf) || !keys.Add(PlaceholderRules.IdentityKey(placeholder)))
                     {
-                        skipped.Add(Skip(entry, "duplicate"));
+                        skipped.Add(Skip(entry, "duplicate", duplicateOf));
                         continue;
                     }
 
@@ -678,14 +713,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
             // An entry that did nothing visible (all its expanded items already there, or a duplicate scope) is reported once.
             var addedIds = new HashSet<string>(result.Added, StringComparer.Ordinal);
             var addedItems = new HashSet<string>(result.AddedAsItems, StringComparer.Ordinal);
-            foreach (var (index, reason) in quietSkips)
+            foreach (var (index, (reason, sameAs)) in quietSkips)
             {
                 var acted = accepted.Any(e => e.Index == index
                     && ((e.Placeholder != null && addedIds.Contains(e.Placeholder.Id))
                         || (e.ItemId.HasValue && addedItems.Contains(e.ItemId.Value.ToString("N", CultureInfo.InvariantCulture)))));
                 if (!acted && !skipped.Any(x => x.Index == index))
                 {
-                    skipped.Add(new SkippedEntryDto { Index = index, Reason = reason });
+                    skipped.Add(new SkippedEntryDto { Index = index, Reason = reason, SameAs = sameAs });
                 }
             }
 
@@ -1502,6 +1537,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders
 
         private static bool SeerrEnabled() => JellyfinEnhanced.Instance?.Configuration?.JellyseerrEnabled == true;
 
-        private static SkippedEntryDto Skip(ApplyEntry entry, string reason) => new() { Index = entry.Index, Reason = reason };
+        private static SkippedEntryDto Skip(ApplyEntry entry, string reason, int? sameAs = null) => new() { Index = entry.Index, Reason = reason, SameAs = sameAs };
     }
 }

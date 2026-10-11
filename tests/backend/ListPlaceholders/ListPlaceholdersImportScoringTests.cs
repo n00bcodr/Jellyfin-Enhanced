@@ -33,6 +33,50 @@ public class ListPlaceholdersImportScoringTests
         Assert.Equal((105, true), TitleScore("Parasite", "기생충", "기생충"));
     }
 
+    // The DC guide import (QA round): titles that are the same apart from spacing, hashtags or numerals are exact.
+    [Theory]
+    [InlineData("The Kid Super Power Hour with Shazam!", "The Kid Superpower Hour With Shazam!", 100)]
+    [InlineData("The Late Batsby", "#TheLateBatsby", 100)]
+    [InlineData("Robot Chicken DC Comics Special II: Villains in Paradise", "Robot Chicken DC Comics Special 2: Villains in Paradise", 105)]
+    [InlineData("Watchmen: Chapter I", "Watchmen Chapter 1", 105)]
+    public void SpacingHashtagsAndRomanNumeralsDontCount(string candidate, string line, double expected)
+    {
+        Assert.Equal((expected, true), TitleScore(candidate, null, line));
+    }
+
+    // A title that is the other one with something added scores like a prefix: a likely match with the year, never exact.
+    [Theory]
+    [InlineData("DC Showcase - Batman: Death in the Family", "Batman: Death in the Family")] // franchise segment on TMDB
+    [InlineData("Under the Hood", "Watchmen: Under the Hood")] // franchise segment on the line
+    [InlineData("Blackhawk", "Blackhawk: Fearless Champion of Freedom")] // subtitle only on the line
+    [InlineData("LEGO DC Comics Super Heroes: The Flash", "LEGO DC Super Heroes: The Flash")] // one extra word
+    [InlineData("Justice League: Starcrossed - The Movie", "Justice League: Star Crossed")] // prefix, spacing aside
+    public void PartlyMatchingTitlesScoreAsPartial(string candidate, string line)
+    {
+        Assert.Equal((PartialTitleScore, false), TitleScore(candidate, null, line));
+    }
+
+    [Theory]
+    [InlineData("Superman", "Superman: Fleischer / Famous Studios cartoons")] // a description, not a subtitle
+    [InlineData("The New Batman Adventures", "The New Batman/Superman Adventures")] // a meaningful extra word in a short title
+    [InlineData("Shazam!", "DC Spotlight: Shazam!")] // a one-word rest is too little to go on
+    public void DescriptionsAndShortTitlesAreNotPartialMatches(string candidate, string line)
+    {
+        Assert.True(TitleScore(candidate, null, line).Score < PartialTitleScore);
+    }
+
+    [Fact]
+    public void FallbackQueriesTolerateASpellingTMDBsSearchWontFind()
+    {
+        Assert.Equal(new[] { "Justice League", "Justice League: Star", "League: Star Crossed" }, FallbackQueries("Justice League: Star Crossed"));
+        Assert.Equal(new[] { "Blackhawk", "Blackhawk: Fearless Champion of", "Fearless Champion of Freedom" }, FallbackQueries("Blackhawk: Fearless Champion of Freedom"));
+        Assert.Equal(new[] { "The Kid Superpower Hour With", "The Kid Hour With Shazam!" }, FallbackQueries("The Kid Superpower Hour With Shazam!"));
+        Assert.Equal(new[] { "The Late Batsby" }, FallbackQueries("#TheLateBatsby"));
+        // No main-title query for a description after the colon; nothing for two words.
+        Assert.DoesNotContain("Superman", FallbackQueries("Superman: Fleischer / Famous Studios cartoons"));
+        Assert.Empty(FallbackQueries("Booster Gold"));
+    }
+
     [Theory]
     [InlineData(2016, 2016, 50)]
     [InlineData(2017, 2016, 25)]
@@ -43,6 +87,14 @@ public class ListPlaceholdersImportScoringTests
     public void YearScoreAllowsOneYearOfDriftAndPenalisesUndatedStubs(int? candidate, int? wanted, double expected)
     {
         Assert.Equal(expected, YearScore(candidate, wanted));
+    }
+
+    [Fact]
+    public void AnUndatedTitleIsNoEvidenceAgainstALineThatIsntOutYet()
+    {
+        Assert.Equal(0, YearScore(null, 2027, unreleased: true)); // "KnightsEnd (2027) · Scheduled": TMDB has no date yet
+        Assert.Equal(-30, YearScore(null, 2020, unreleased: false));
+        Assert.Equal(50, YearScore(2027, 2027, unreleased: true));
     }
 
     [Fact]

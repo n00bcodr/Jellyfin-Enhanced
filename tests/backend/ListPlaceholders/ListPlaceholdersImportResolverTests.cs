@@ -189,19 +189,113 @@ public class ListPlaceholdersImportResolverTests
     }
 
     [Fact]
-    public async Task TbaLinesPreferUndatedOrFutureTitlesAndAreNeverAccepted()
+    public async Task TbaLinesPreferUndatedTitlesAndOnlyAnExactUndatedOneIsALikelyMatch()
     {
         using var h = new ListPlaceholdersHarness();
         var user = h.NewUser("u");
         h.Lookup.AddSearch("Swamp Thing", Movie(17918, "Swamp Thing", "1982-02-19", 600), Movie(999001, "Swamp Thing", null, 0));
         h.Lookup.AddSearch("Mister Miracle", Tv(293696, "Mister Miracle", null, 0));
+        h.Lookup.AddSearch("Wonder Woman", Movie(297762, "Wonder Woman", "2017-05-30", 20000), Movie(1495964, "Untitled Wonder Woman Film", null, 0));
+        h.Lookup.AddSearch("Paradise Lost", Tv(96195, "Paradise Lost", null, 5), Tv(21950, "Paradise Lost", null, 5));
 
-        var response = await Resolve(h, user, new[] { E("Swamp Thing", null, "movie", status: "tba"), E("Mister Miracle", null, "tv", status: "tba") });
+        var response = await Resolve(h, user, new[]
+        {
+            E("Swamp Thing", null, "movie", status: "tba"), E("Mister Miracle", null, "tv", status: "tba"),
+            E("Wonder Woman", null, "movie", status: "tba"), E("Paradise Lost", null, "tv", status: "tba"),
+        });
 
-        Assert.Equal(999001, response.Results[0].Match!.TmdbId);
-        Assert.Equal("low", response.Results[0].Confidence);
-        Assert.Contains("tba", response.Results[0].Reasons);
-        Assert.Equal((293696, "low"), (response.Results[1].Match!.TmdbId, response.Results[1].Confidence));
+        // An announced title: TMDB's exact, undated entry is pre-selected as a likely match ("unreleased"), not "tba".
+        Assert.Equal((999001, "medium"), (response.Results[0].Match!.TmdbId, response.Results[0].Confidence));
+        Assert.Equal(new[] { "unreleased" }, response.Results[0].Reasons);
+        Assert.Equal((293696, "medium"), (response.Results[1].Match!.TmdbId, response.Results[1].Confidence));
+        // Only an old release with that title (and an inexact undated one): never more than low, and the client keeps the line.
+        Assert.Equal((297762, "low"), (response.Results[2].Match!.TmdbId, response.Results[2].Confidence));
+        Assert.Contains("tba", response.Results[2].Reasons);
+        // Two exact undated titles: a tie to review.
+        Assert.Equal("low", response.Results[3].Confidence);
+        Assert.Contains("tie", response.Results[3].Reasons);
+    }
+
+    [Fact]
+    public async Task AnExactTitleWithTheLinesYearStaysSureNextToANamesakeAYearOff()
+    {
+        using var h = new ListPlaceholdersHarness();
+        var user = h.NewUser("u");
+        // The DC guide's "The Flash (2023)": TMDB also has a 2022 "The Flash" (s 130 vs 166 = margin 36 < 40).
+        h.Lookup.AddSearch("The Flash", Movie(298618, "The Flash", "2023-06-13", 5000, 40), Movie(1401184, "The Flash", "2022-01-01", 0, 0), Movie(1155289, "The Flash: Saga of the Scarlet Speedster", "2023-05-01", 0, 1));
+        h.Lookup.AddSearch("Joker", Movie(475557, "Joker", "2019-10-01", 26000, 50), Movie(999002, "Joker", "2019-03-01", 3, 1));
+
+        var response = await Resolve(h, user, new[] { E("The Flash", 2023, "movie"), E("Joker", 2019, "movie") });
+
+        Assert.Equal((298618, "high"), (response.Results[0].Match!.TmdbId, response.Results[0].Confidence));
+        // Another exact title from the same year still counts: not sure (only an obscure one, so one click: medium).
+        Assert.Equal("medium", response.Results[1].Confidence);
+        Assert.Contains("closeMatch", response.Results[1].Reasons);
+    }
+
+    [Fact]
+    public async Task EveryLikelyOrUnsureMatchSaysWhy()
+    {
+        using var h = new ListPlaceholdersHarness();
+        var user = h.NewUser("u");
+        h.Lookup.AddSearch("The Death of Superman", Movie(487670, "The Death of Superman", "2019-07-23", 700, 10));
+        h.Lookup.AddSearch("Super Friends", Tv(936, "Super Friends", "1973-09-08", 164, 30));
+        h.Lookup.AddSearch("Birds of Prey", Movie(495764, "Birds of Prey (and the Fantabulous Emancipation of One Harley Quinn)", "2020-02-05", 10000, 30));
+        h.Lookup.AddSearch("Batman: Knightfall Part 3: KnightsEnd", Movie(1389764, "Batman: Knightfall Part 3: KnightsEnd", null, 0, 0));
+        h.Lookup.AddSearch("Clayface", Movie(1400940, "Clayface", "2026-10-21", 10, 5));
+
+        var response = await Resolve(h, user, new[]
+        {
+            E("The Death of Superman", 2018, "movie"), E("Super Friends", 1980, "tv"), E("Birds of Prey", 2020, "movie"),
+            E("Batman: Knightfall Part 3: KnightsEnd", 2027, "movie", status: "scheduled"), E("Clayface", null, "movie"),
+        });
+
+        var why = response.Results.Select(r => r.Confidence + ":" + string.Join('+', r.Reasons)).ToList();
+        // Exact title, TMDB has no date yet and the line says it isn't out (KnightsEnd): a likely match, not "Weak title match".
+        Assert.Equal(new[] { "medium:yearOff", "low:otherYear", "medium:lowScore", "medium:unreleased", "medium:noYear" }, why);
+    }
+
+    [Fact]
+    public async Task AnAnnouncedSeasonOfAKnownShowIsALikelyMatch()
+    {
+        using var h = new ListPlaceholdersHarness();
+        var user = h.NewUser("u");
+        var show = Tv(219543, "Creature Commandos", "2024-12-05", 396, 22);
+        h.Lookup.AddSearch("Creature Commandos", show);
+        h.Lookup.AddShow(show, new SeasonFacts(1, 7, "2024-12-05", "Season 1"), new SeasonFacts(2, 1, null, "Season 2"));
+
+        var response = await Resolve(h, user, new[] { E("Creature Commandos", null, "tv", season: 2, status: "tba") });
+
+        // The show started in 2024, but the TBA line is about season 2, which has no date: not an "old release".
+        var result = response.Results[0];
+        Assert.Equal(("medium", 2), (result.Confidence, result.Match!.Season!.SeasonNumber));
+        Assert.Equal(new[] { "unreleased" }, result.Reasons);
+    }
+
+    [Fact]
+    public async Task ATitleTheSearchCantFindIsRetriedWithVariantsThatKeepOnlyResemblingTitles()
+    {
+        using var h = new ListPlaceholdersHarness();
+        var user = h.NewUser("u");
+        // TMDB wants every word: "Star Crossed" never finds "Starcrossed", but the last word is matched as a prefix.
+        h.Lookup.AddSearch("Justice League", Tv(1618, "Justice League", "2001-11-17", 600, 20), Movie(141052, "Justice League", "2017-11-15", 14000, 30));
+        h.Lookup.AddSearch("Justice League: Star", Movie(268899, "Justice League: Starcrossed - The Movie", "2004-07-13", 125, 3));
+        h.Lookup.AddSearch("The Kid Hour With Shazam!", Tv(11093, "The Kid Super Power Hour with Shazam!", "1981-09-12", 7, 2));
+        h.Lookup.AddSearch("The New", Tv(1424, "Orange Is the New Black", "2013-07-11", 4000, 40));
+
+        var response = await Resolve(h, user, new[]
+        {
+            E("Justice League: Star Crossed", 2004), E("The Kid Superpower Hour With Shazam!", 1981), E("The New Shazam!", 1981, "tv"),
+        });
+
+        Assert.Equal((268899, "medium"), (response.Results[0].Match!.TmdbId, response.Results[0].Confidence));
+        Assert.Equal((11093, "high"), (response.Results[1].Match!.TmdbId, response.Results[1].Confidence));
+        // Shorter queries find unrelated titles: those are never offered.
+        Assert.Equal("none", response.Results[2].Confidence);
+        Assert.Empty(response.Results[2].Candidates);
+        var searches = Searches(h);
+        Assert.True(searches.IndexOf("search:Justice League") < searches.IndexOf("search:Justice League: Star"));
+        Assert.DoesNotContain("search:League: Star Crossed", searches); // stops once a likely match is found
     }
 
     [Fact]

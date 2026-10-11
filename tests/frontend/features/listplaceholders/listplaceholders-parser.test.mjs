@@ -42,7 +42,8 @@ test('numbered catalogue lines: link titles, dates, kinds, statuses, notes, seas
   assert.deepEqual(pick(result.entries, 'title', 'year', 'date', 'typeHint', 'kind', 'season', 'status'), [
     { title: 'Man of Steel', year: 2013, typeHint: 'movie', kind: 'movie', status: 'released' },
     { title: "Etta's Mission", year: 2017, typeHint: 'movie', kind: 'movie', status: 'released' },
-    { title: "Zack Snyder's Justice League", year: 2021, typeHint: 'movie', kind: 'movie', status: 'released' },
+    // "Alternate edition" exists as films and as TV (the DC guide's short-series cuts): no type hint of its own.
+    { title: "Zack Snyder's Justice League", year: 2021, status: 'released' },
     { title: 'Wonder Woman 1984', year: 2020, typeHint: 'movie', kind: 'movie', status: 'released' },
     { title: 'Peacemaker', year: 2022, typeHint: 'tv', kind: 'season', season: 1, status: 'released' },
     { title: 'Creature Commandos', year: 2024, date: '2024-12-05', typeHint: 'tv', kind: 'season', season: 1, status: 'released' },
@@ -356,7 +357,13 @@ test('internals: release values, type and status words, episode refs, markdown s
   assert.equal(i.parseRelease('1700'), null);
   assert.equal(i.parseRelease('soon'), null);
   assert.equal(i.typeFromWords('TV season'), 'tv');
-  assert.equal(i.typeFromWords('Compilation'), 'movie');
+  // Formats that are films or TV (the DC guide: compilations and specials of TV shows, short-series alternate editions)
+  // give no hint, unless other words say which.
+  for (const neutral of ['Compilation', 'TV special', 'Special', 'Alternate edition', 'Short collection']) assert.equal(i.typeFromWords(neutral), undefined, neutral);
+  assert.equal(i.typeFromWords('Compilation film'), 'movie');
+  assert.equal(i.typeFromWords('Compilation series'), 'tv');
+  assert.equal(i.typeFromWords('Short'), 'movie');
+  assert.equal(i.typeFromWords('Short series'), 'tv');
   assert.equal(i.typeFromWords('Pilot'), undefined);
   assert.equal(i.statusFromWords('Reported / uncertain'), 'tba');
   assert.equal(i.statusFromWords('Post production'), 'scheduled');

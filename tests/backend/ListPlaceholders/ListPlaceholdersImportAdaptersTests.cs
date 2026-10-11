@@ -15,6 +15,18 @@ namespace JE.Tests;
 public class ListPlaceholdersImportAdaptersTests
 {
     [Fact]
+    public void AMatchTMDBHasNoDateForKeepsTheLinesYear()
+    {
+        // "Batman: Knightfall Part 3: KnightsEnd (2027)" accepted while TMDB's entry has no date yet.
+        var undated = new ImportCandidateDto { MediaType = "movie", TmdbId = 1389764, Title = "Batman: Knightfall Part 3: KnightsEnd" };
+        var dated = new ImportCandidateDto { MediaType = "movie", TmdbId = 1, Title = "Dated", Year = 2020, ReleaseDate = "2020-05-01" };
+
+        Assert.Equal(2027, ImportPlaceholders.FromCandidate(undated, null, null, null, null, lineYear: 2027)!.Year);
+        Assert.Null(ImportPlaceholders.FromCandidate(undated, null, null, null, null)!.Year);
+        Assert.Equal(2020, ImportPlaceholders.FromCandidate(dated, null, null, null, null, lineYear: 2027)!.Year); // TMDB's date wins
+    }
+
+    [Fact]
     public void TheLibraryLookupUsesTheGranularityResolverForEveryScopeVisibleToEveryUser()
     {
         using var plugin = new ApiPluginFixture();
