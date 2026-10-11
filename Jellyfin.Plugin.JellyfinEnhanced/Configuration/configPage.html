@@ -854,10 +854,89 @@
                             <div class="je-setting-description" data-desc-for="mdblistRatingsAutoSyncEnabled">
                                 <div class="fieldDescription">Enables the <strong>Sync Ratings from MDBList to Jellyfin</strong> scheduled task:
                                     <ul style="margin:4px 0 0 20px; padding:0;">
-                                        <li>Sets Community (TMDB) / Critic (Rotten Tomatoes) Ratings from whatever's already cached (see Fetch above) into Jellyfin's own fields</li>
+                                        <li>Sets Community / Critic Ratings (source selectable below, default TMDB / Rotten Tomatoes) from whatever's already cached (see Fetch above) into Jellyfin's own fields</li>
                                         <li>Requires the <strong>Fetch Ratings from MDBList</strong> task to be enabled and run first</li>
                                     </ul>
                                 </div>
+                            </div>
+
+                            <div class="selectContainer">
+                                <label class="selectLabel" for="mdblistCommunityRatingSource">Star Rating Source (Community Rating)</label>
+                                <select id="mdblistCommunityRatingSource" is="emby-select" class="emby-select-withcolor emby-select">
+                                    <option value="tmdb">TMDB</option>
+                                    <option value="tomatoes">RT Critic</option>
+                                    <option value="popcorn">RT Audience</option>
+                                    <option value="imdb">IMDb</option>
+                                    <option value="trakt">Trakt</option>
+                                    <option value="metacritic">Metascore</option>
+                                    <option value="metacriticuser">Metacritic User</option>
+                                    <option value="letterboxd">Letterboxd</option>
+                                    <option value="myanimelist">MAL</option>
+                                    <option value="anilist">AniList</option>
+                                    <option value="master">Master</option>
+                                </select>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="mdblistCommunityRatingSource">
+                                <div class="fieldDescription">The star rating shown by Jellyfin, on a 0-10 scale (e.g. 7.2). Choose which MDBList source fills it. Default TMDB.</div>
+                            </div>
+                            <div class="selectContainer">
+                                <label class="selectLabel" for="mdblistCommunityRatingFallbackSource">Star Rating Fallback Source</label>
+                                <select id="mdblistCommunityRatingFallbackSource" is="emby-select" class="emby-select-withcolor emby-select">
+                                    <option value="">None</option>
+                                    <option value="tmdb">TMDB</option>
+                                    <option value="tomatoes">RT Critic</option>
+                                    <option value="popcorn">RT Audience</option>
+                                    <option value="imdb">IMDb</option>
+                                    <option value="trakt">Trakt</option>
+                                    <option value="metacritic">Metascore</option>
+                                    <option value="metacriticuser">Metacritic User</option>
+                                    <option value="letterboxd">Letterboxd</option>
+                                    <option value="myanimelist">MAL</option>
+                                    <option value="anilist">AniList</option>
+                                    <option value="master">Master</option>
+                                </select>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="mdblistCommunityRatingFallbackSource">
+                                <div class="fieldDescription">Used when the source above has no score for a title. Default none.</div>
+                            </div>
+                            <div class="selectContainer">
+                                <label class="selectLabel" for="mdblistCriticRatingSource">Tomato Rating Source (Critic Rating)</label>
+                                <select id="mdblistCriticRatingSource" is="emby-select" class="emby-select-withcolor emby-select">
+                                    <option value="tmdb">TMDB</option>
+                                    <option value="tomatoes">RT Critic</option>
+                                    <option value="popcorn">RT Audience</option>
+                                    <option value="imdb">IMDb</option>
+                                    <option value="trakt">Trakt</option>
+                                    <option value="metacritic">Metascore</option>
+                                    <option value="metacriticuser">Metacritic User</option>
+                                    <option value="letterboxd">Letterboxd</option>
+                                    <option value="myanimelist">MAL</option>
+                                    <option value="anilist">AniList</option>
+                                    <option value="master">Master</option>
+                                </select>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="mdblistCriticRatingSource">
+                                <div class="fieldDescription">The tomato rating shown by Jellyfin, on a 0-100% scale (e.g. 85%). Choose which MDBList source fills it. Default RT Critic.</div>
+                            </div>
+                            <div class="selectContainer">
+                                <label class="selectLabel" for="mdblistCriticRatingFallbackSource">Tomato Rating Fallback Source</label>
+                                <select id="mdblistCriticRatingFallbackSource" is="emby-select" class="emby-select-withcolor emby-select">
+                                    <option value="">None</option>
+                                    <option value="tmdb">TMDB</option>
+                                    <option value="tomatoes">RT Critic</option>
+                                    <option value="popcorn">RT Audience</option>
+                                    <option value="imdb">IMDb</option>
+                                    <option value="trakt">Trakt</option>
+                                    <option value="metacritic">Metascore</option>
+                                    <option value="metacriticuser">Metacritic User</option>
+                                    <option value="letterboxd">Letterboxd</option>
+                                    <option value="myanimelist">MAL</option>
+                                    <option value="anilist">AniList</option>
+                                    <option value="master">Master</option>
+                                </select>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="mdblistCriticRatingFallbackSource">
+                                <div class="fieldDescription">Used when the source above has no score for a title. Default none.</div>
                             </div>
 
                             <div class="checkboxContainer"><label><input id="mdblistRatingsOverwriteExisting" is="emby-checkbox" type="checkbox"/><span>Overwrite Existing Jellyfin Ratings</span></label></div>
@@ -6445,6 +6524,10 @@
                 document.querySelector('#mdblistFetchReserve').value = config.MdblistFetchReserve || 400;
                 document.querySelector('#mdblistRatingsAutoSyncEnabled').checked = !!config.MdblistRatingsAutoSyncEnabled;
                 document.querySelector('#mdblistRatingsOverwriteExisting').checked = !!config.MdblistRatingsOverwriteExisting;
+                document.querySelector('#mdblistCommunityRatingSource').value = config.MdblistCommunityRatingSource || 'tmdb';
+                document.querySelector('#mdblistCriticRatingSource').value = config.MdblistCriticRatingSource || 'tomatoes';
+                document.querySelector('#mdblistCommunityRatingFallbackSource').value = config.MdblistCommunityRatingFallbackSource || '';
+                document.querySelector('#mdblistCriticRatingFallbackSource').value = config.MdblistCriticRatingFallbackSource || '';
                 if (typeof renderMdblistSourcesAdmin === 'function') renderMdblistSourcesAdmin(config);
                 document.querySelector('#mdblistRatingsShowPercentSymbol').checked = !!config.MdblistRatingsShowPercentSymbol;
                 if (config.MdblistApiKey && typeof checkMdblistStatus === 'function') checkMdblistStatus();
@@ -7010,6 +7093,10 @@
             config.MdblistFetchReserve = parseInt(document.querySelector('#mdblistFetchReserve').value, 10) || 400;
             config.MdblistRatingsAutoSyncEnabled = document.querySelector('#mdblistRatingsAutoSyncEnabled').checked;
             config.MdblistRatingsOverwriteExisting = document.querySelector('#mdblistRatingsOverwriteExisting').checked;
+            config.MdblistCommunityRatingSource = document.querySelector('#mdblistCommunityRatingSource').value;
+            config.MdblistCriticRatingSource = document.querySelector('#mdblistCriticRatingSource').value;
+            config.MdblistCommunityRatingFallbackSource = document.querySelector('#mdblistCommunityRatingFallbackSource').value;
+            config.MdblistCriticRatingFallbackSource = document.querySelector('#mdblistCriticRatingFallbackSource').value;
             config.MdblistRatingsSources = (typeof computeMdblistRatingsSources === 'function') ? computeMdblistRatingsSources() : '';
             config.MdblistRatingsShowPercentSymbol = document.querySelector('#mdblistRatingsShowPercentSymbol').checked;
             config.ShowUserReviews = document.querySelector('#showUserReviews').checked;
@@ -8531,7 +8618,7 @@
         var PARENT_DEPS = [
             { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['nativePosterTagsWebClientNames'] },
             { parent: 'elsewhereEnabled', label: 'Enable Elsewhere', children: ['DEFAULT_REGION', 'DEFAULT_PROVIDERS', 'IGNORE_PROVIDERS', 'ElsewhereSeasonProviders', 'ElsewhereCustomBrandingText', 'ElsewhereCustomBrandingImageUrl', 'showReviews', 'reviewsExpandedByDefault'] },
-            { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
+            { parent: 'mdblistRatingsEnabled', label: 'Enable MDBList Ratings', children: ['mdblistApiKey', 'mdblistRatingsShowOnItemDetails', 'mdblistRatingsFetchEnabled', 'mdblistFetchReserve', 'mdblistRatingsAutoSyncEnabled', 'mdblistCommunityRatingSource', 'mdblistCommunityRatingFallbackSource', 'mdblistCriticRatingSource', 'mdblistCriticRatingFallbackSource', 'mdblistRatingsOverwriteExisting', 'mdblistRatingsShowPercentSymbol'] },
             { parent: 'showReviews', label: 'Show Reviews', children: ['reviewsExpandedByDefault'] },
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'mirrorReviewRatingsToJellyfin', 'showUserRatingDash', 'showUserRatingOnPosters'] },
             { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows', 'randomScopeCurrentContainer'] },

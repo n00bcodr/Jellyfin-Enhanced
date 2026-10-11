@@ -137,7 +137,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                     if (candidate.NeedCommunity)
                     {
-                        var communityRating = MdblistService.GetCommunityRating(entry);
+                        var communityRating = MdblistService.GetCommunityRating(entry, config.MdblistCommunityRatingSource);
+                        if (!communityRating.HasValue && !string.IsNullOrWhiteSpace(config.MdblistCommunityRatingFallbackSource))
+                            communityRating = MdblistService.GetCommunityRating(entry, config.MdblistCommunityRatingFallbackSource);
                         if (communityRating.HasValue && (float)communityRating.Value != candidate.Item.CommunityRating)
                         {
                             candidate.Item.CommunityRating = (float)communityRating.Value;
@@ -147,7 +149,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                     if (candidate.NeedCritic)
                     {
-                        var criticRating = MdblistService.GetCriticRating(entry);
+                        var criticRating = MdblistService.GetCriticRating(entry, config.MdblistCriticRatingSource);
+                        if (!criticRating.HasValue && !string.IsNullOrWhiteSpace(config.MdblistCriticRatingFallbackSource))
+                            criticRating = MdblistService.GetCriticRating(entry, config.MdblistCriticRatingFallbackSource);
                         if (criticRating.HasValue && (float)criticRating.Value != candidate.Item.CriticRating)
                         {
                             candidate.Item.CriticRating = (float)criticRating.Value;
