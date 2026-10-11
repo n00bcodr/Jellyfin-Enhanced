@@ -3805,6 +3805,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ShowArrLinksAsText,
                 config.ArrLinksShowStatusSingle,
 
+                // Requests & downloads, phase 1 (status on pages): one derived switch (master and
+                // phase on) and the poster-badge toggle; nothing about the instances themselves.
+                ArrStatusEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled,
+                ArrStatusPosterBadges = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrStatusPosterBadges,
+
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,
                 config.ArrTagsPrefix,

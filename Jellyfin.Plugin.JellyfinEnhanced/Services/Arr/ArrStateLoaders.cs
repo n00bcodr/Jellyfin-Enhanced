@@ -69,6 +69,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             return ArrResult<ArrLibrarySnapshot>.Success(new ArrLibrarySnapshot(Array.Empty<ArrMovieEntry>(), series.Value!.Select(ToSeries).ToList(), tags));
         }
 
+        /// <summary>Every episode of one Sonarr series.</summary>
+        internal static async Task<ArrResult<ArrEpisodesSnapshot>> LoadEpisodesAsync(ArrClient client, int seriesId, CancellationToken ct)
+        {
+            if (await CheckAppAsync(client, ct).ConfigureAwait(false) is { } wrong) return ArrResult<ArrEpisodesSnapshot>.Failure(wrong);
+            var episodes = await client.GetAsync<List<ArrWireEpisode>>("episode",
+                Query(("seriesId", seriesId.ToString(CultureInfo.InvariantCulture))), ArrCallClass.List, ct).ConfigureAwait(false);
+            if (!episodes.Ok) return ArrResult<ArrEpisodesSnapshot>.Failure(episodes.Error!);
+            var list = episodes.Value!
+                .Where(e => e.SeasonNumber.HasValue && e.EpisodeNumber.HasValue)
+                .Select(e => new ArrEpisodeEntry
+                {
+                    Id = e.Id,
+                    SeasonNumber = e.SeasonNumber!.Value,
+                    EpisodeNumber = e.EpisodeNumber!.Value,
+                    AirDateUtc = ArrDates.Parse(e.AirDateUtc ?? e.AirDate),
+                    HasFile = e.HasFile ?? false,
+                    Monitored = e.Monitored ?? false,
+                    LastSearchTime = ArrDates.Parse(e.LastSearchTime),
+                })
+                .ToList();
+            return ArrResult<ArrEpisodesSnapshot>.Success(new ArrEpisodesSnapshot(seriesId, list));
+        }
+
         /// <summary>The whole queue, every page (the old routes stopped at 1000 rows).</summary>
         internal static async Task<ArrResult<ArrQueueSnapshot>> LoadQueueAsync(ArrClient client, CancellationToken ct)
         {
@@ -224,6 +247,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             Path = m.Path,
             QualityProfileId = m.QualityProfileId ?? 0,
             Tags = m.Tags?.ToArray() ?? Array.Empty<int>(),
+            Status = Intern(m.Status),
+            IsAvailable = m.IsAvailable ?? true,
+            MinimumAvailability = Intern(m.MinimumAvailability),
+            InCinemas = ArrDates.Parse(m.InCinemas),
+            DigitalRelease = ArrDates.Parse(m.DigitalRelease),
+            PhysicalRelease = ArrDates.Parse(m.PhysicalRelease),
+            Added = ArrDates.Parse(m.Added),
+            LastSearchTime = ArrDates.Parse(m.LastSearchTime),
         };
 
         internal static ArrSeriesEntry ToSeries(ArrWireSeries s) => new()
@@ -242,6 +273,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             EpisodeCount = s.Statistics?.EpisodeCount ?? 0,
             PercentOfEpisodes = s.Statistics?.PercentOfEpisodes ?? 0,
             SizeOnDisk = s.Statistics?.SizeOnDisk ?? 0,
+            Status = Intern(s.Status),
+            NextAiring = ArrDates.Parse(s.NextAiring),
+            Added = ArrDates.Parse(s.Added),
+            Seasons = (s.Seasons ?? new List<ArrWireSeason>()).Select(season => new ArrSeasonEntry
+            {
+                SeasonNumber = season.SeasonNumber,
+                Monitored = season.Monitored ?? false,
+                EpisodeFileCount = season.Statistics?.EpisodeFileCount ?? 0,
+                EpisodeCount = season.Statistics?.EpisodeCount ?? 0,
+                TotalEpisodeCount = season.Statistics?.TotalEpisodeCount ?? 0,
+                NextAiring = ArrDates.Parse(season.Statistics?.NextAiring),
+            }).ToArray(),
         };
 
         internal static ArrQueueEntry ToQueueEntry(ArrWireQueueRecord r)
@@ -278,9 +321,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 TmdbId = r.Series?.TmdbId ?? r.Movie?.TmdbId,
                 TvdbId = r.Series?.TvdbId,
                 PosterUrl = ArrWireImage.Poster(r.Series?.Images ?? r.Movie?.Images),
-                SeasonNumber = r.Episode?.SeasonNumber,
+                SeasonNumber = r.Episode?.SeasonNumber ?? r.SeasonNumber,
                 EpisodeNumber = r.Episode?.EpisodeNumber,
                 EpisodeTitle = r.Episode?.Title,
+                DownloadClient = Clip(r.DownloadClient),
+                Quality = Intern(r.Quality?.Quality?.Name),
+                CustomFormatScore = r.CustomFormatScore,
+                Added = ArrDates.Parse(r.Added),
             };
         }
 

@@ -36,6 +36,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         public const string CacheFolderName = "arr-state";
 
         private const int RangeCacheSize = 8;
+        private const int EpisodeSeriesPerInstance = 64;
+        private const int CacheFileVersion = 2;
+        private static readonly TimeSpan DepartureMemory = TimeSpan.FromMinutes(10);
         private const int RangeLoadsPerInstance = 2;
         private static readonly TimeSpan RangeTtl = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan RangeFailureRetry = TimeSpan.FromSeconds(30);
@@ -108,6 +111,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             => ReadAsync(instance, s => s.System, cancellationToken);
 
         /// <summary>
+        /// The episodes of one Sonarr series. Read on demand (the first read of a series waits for the
+        /// background load, like any cold snapshot), kept fresh while pages read it, and refreshed soon
+        /// after a download of the series leaves the queue. At most
+        /// <see cref="EpisodeSeriesPerInstance"/> series are kept per instance (least recently read go first).
+        /// </summary>
+        public Task<ArrSnapshotRead<ArrEpisodesSnapshot>> GetEpisodesAsync(ArrConnection instance, int seriesId, CancellationToken cancellationToken)
+        {
+            if (instance.Kind != ArrKind.Sonarr)
+                return Task.FromResult(new ArrSnapshotRead<ArrEpisodesSnapshot> { Error = new ArrError(ArrErrorKind.Internal, "Episodes are read from Sonarr only.") });
+            var state = StateFor(instance, out var notUsable);
+            if (state == null) return Task.FromResult(new ArrSnapshotRead<ArrEpisodesSnapshot> { Error = notUsable });
+            var slot = state.EpisodesFor(seriesId, _now());
+            EpisodeSlotPicked?.Invoke(seriesId);
+            if (slot == null)
+                return Task.FromResult(new ArrSnapshotRead<ArrEpisodesSnapshot> { Error = new ArrError(ArrErrorKind.Timeout, "Still loading other series from the instance; try again in a moment.") });
+            return ReadSlotAsync(state, slot, cancellationToken);
+        }
+
+        /// <summary>Test seam: called after a read picked (or failed to pick) a series' episodes slot, before reading it.</summary>
+        internal Action<int>? EpisodeSlotPicked { get; set; }
+
+        /// <summary>
+        /// The episodes of one Sonarr series if they are already in memory, without loading or
+        /// waiting (null otherwise). Counts as a read, so a held series stays fresh.
+        /// </summary>
+        public ArrSnapshotRead<ArrEpisodesSnapshot>? PeekEpisodes(ArrConnection instance, int seriesId)
+        {
+            if (instance.Kind != ArrKind.Sonarr) return null;
+            var state = StateFor(instance, out _);
+            var slot = state?.ExistingEpisodes(seriesId);
+            if (slot == null) return null;
+            slot.Touch(_now());
+            var peek = slot.Peek();
+            return peek.Value == null ? null : new ArrSnapshotRead<ArrEpisodesSnapshot> { Value = peek.Value, LoadedAt = peek.LoadedAt, Error = peek.Error };
+        }
+
+        /// <summary>
         /// Calendar entries for [<paramref name="start"/>, <paramref name="end"/>]. Ranges inside the
         /// window kept in memory (the previous month to today + 100 d) are served from it; other ranges
         /// are read in the background by whole months (at most two at a time per instance, waited for
@@ -165,6 +205,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             if (connection == null) return false;
             var state = StateFor(connection, out _);
             if (state == null) return false;
+            if (kind == ArrSnapshotKind.Episodes)
+            {
+                // Every series held for this instance.
+                foreach (var episodes in state.EpisodeSlots()) episodes.Request(_now() + DebounceDelay);
+                return true;
+            }
             var slot = state.Slot(kind);
             slot.Request(_now() + DebounceDelay);
             return true;
@@ -189,9 +235,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 }
                 if (StateFor(usable[id], out _) is not { } current || !ReferenceEquals(current, state)) continue;
 
-                foreach (var slot in state.Slots)
+                foreach (var slot in state.Slots.Concat(state.EpisodeSlots()))
                 {
-                    if (slot.Inflight != null) continue;
+                    if (slot.Inflight != null || slot.Retired) continue;
                     var requested = slot.RequestDue(now);
                     if (!requested)
                     {
@@ -256,6 +302,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                             state.System.Report(now, state.System.Peek().Value?.Health.Count),
                         },
                     CachedCalendarRanges = state?.Ranges.Count ?? 0,
+                    CachedEpisodeSeries = state?.EpisodeSlots().Count ?? 0,
                 });
             }
             return new ArrStateReport
@@ -373,6 +420,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             var state = new InstanceState(client, this);
             LoadLibraryCache(state);
             state.Library.Refreshed += (_, value) => { if (value != null) SaveLibraryCache(state, value); };
+            state.Queue.Refreshed += (_, value) => { if (value != null) OnQueueRefreshed(state, value); };
             var name = client.Connection.Name;
             void Log(ArrSnapshotKind kind, ArrError? error)
             {
@@ -390,6 +438,75 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         }
 
         private TimeSpan ColdWait(ArrSnapshotKind kind) => PolicyFor(kind, null, _now()).ColdWait;
+
+        private static string? DepartureKey(ArrQueueEntry row)
+            => row.MovieId is int movie ? "m" + movie.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                : row.EpisodeId is int episode ? "e" + episode.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
+
+        /// <summary>
+        /// When a download of this movie (Radarr movie id) or episode (Sonarr episode id) left the
+        /// queue within the last few minutes, or null. Until the library (or episodes) snapshot has
+        /// been read again after that moment, the download is most likely being imported: callers
+        /// show "almost ready" instead of falling back to "looking".
+        /// </summary>
+        public DateTimeOffset? LeftQueueAt(ArrConnection instance, int? movieId, int? episodeId)
+        {
+            if (!_states.TryGetValue(instance.Id, out var state)) return null;
+            var key = movieId is int m ? "m" + m.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                : episodeId is int e ? "e" + e.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
+            return key != null && state.Departures.TryGetValue(key, out var at) && _now() - at <= DepartureMemory ? at : null;
+        }
+
+        /// <summary>
+        /// A download that left the queue was most likely imported (or removed, or failed): the
+        /// library entry (<c>hasFile</c>, a series' file counts), the history (the import or failure
+        /// event) and the episodes of its series are asked for again soon (debounced), instead of
+        /// waiting for their own, slower interval — per departed row, so one episode importing while
+        /// another of the same series still downloads counts too. A download that joined the queue
+        /// (a grab) refreshes the history for the journey's "grabbed" date. Only while "Requests &amp;
+        /// downloads" phase 1 is on (checked when the queue is read, so switching it takes effect at
+        /// once); with it off the snapshots keep their own intervals, as before.
+        /// </summary>
+        private void OnQueueRefreshed(InstanceState state, ArrQueueSnapshot queue)
+        {
+            var titles = new HashSet<int>();
+            var rows = new Dictionary<string, int?>(StringComparer.Ordinal);
+            foreach (var row in queue.Records)
+            {
+                var title = row.MovieId ?? row.SeriesId;
+                if (title is int t) titles.Add(t);
+                if (DepartureKey(row) is { } key) rows[key] = title;
+            }
+            var previous = state.QueueTitles;
+            var previousRows = state.QueueRows;
+            state.QueueTitles = titles;
+            state.QueueRows = rows;
+            var now = _now();
+            foreach (var (key, at) in state.Departures)
+            {
+                if (now - at > DepartureMemory) state.Departures.TryRemove(key, out _);
+            }
+            if (previous == null) return;
+            var affected = new HashSet<int>(previous.Where(t => !titles.Contains(t)));
+            foreach (var (key, title) in previousRows ?? new Dictionary<string, int?>(StringComparer.Ordinal))
+            {
+                if (rows.ContainsKey(key)) continue;
+                state.Departures[key] = now;
+                if (title is int t) affected.Add(t);
+            }
+            var joined = titles.Any(t => !previous.Contains(t)) || (previousRows != null && rows.Keys.Any(k => !previousRows.ContainsKey(k)));
+            if (_config() is not { ArrIntegrationEnabled: true, ArrPhase1Enabled: true }) return;
+            var due = now + DebounceDelay;
+            if (affected.Count > 0)
+            {
+                state.Library.Request(due);
+                if (state.Client.Connection.Kind == ArrKind.Sonarr)
+                {
+                    foreach (var seriesId in affected) state.ExistingEpisodes(seriesId)?.Request(due);
+                }
+            }
+            if (affected.Count > 0 || joined) state.History.Request(due);
+        }
 
         /// <summary>Freshness and refresh policy per snapshot kind.</summary>
         private Policy PolicyFor(ArrSnapshotKind kind, InstanceState? state, DateTimeOffset now)
@@ -415,6 +532,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     return new Policy(TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(15), TimeSpan.FromHours(6), TimeSpan.FromHours(1), TimeSpan.FromSeconds(15));
                 case ArrSnapshotKind.System:
                     return new Policy(TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5), TimeSpan.FromHours(1), TimeSpan.FromMinutes(15), TimeSpan.FromSeconds(10));
+                case ArrSnapshotKind.Episodes:
+                    return new Policy(TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5), TimeSpan.FromHours(6), TimeSpan.FromMinutes(15), TimeSpan.FromSeconds(15));
                 default:
                     return new Policy(TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(15), TimeSpan.FromDays(7), TimeSpan.FromHours(2), TimeSpan.FromSeconds(20));
             }
@@ -434,9 +553,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 if (new FileInfo(file).Length > 128L * 1024 * 1024) return;
                 using var stream = File.OpenRead(file);
                 var cache = JsonSerializer.Deserialize<LibraryCacheFile>(stream, CacheJson);
-                if (cache == null || cache.Version != 1 || cache.Fingerprint != Fingerprint(state.Client.Connection)) return;
+                if (cache == null || cache.Version != CacheFileVersion || cache.Fingerprint != Fingerprint(state.Client.Connection)) return;
                 state.Library.Seed(new ArrLibrarySnapshot(cache.Movies ?? new List<ArrMovieEntry>(), cache.Series ?? new List<ArrSeriesEntry>(), cache.Tags ?? new Dictionary<int, string>()), cache.SavedAt);
                 state.LastCacheWrite = cache.SavedAt;
+                // Served at once, but (with "Requests & downloads" phase 1 on, whose statuses depend on
+                // it) read again right away: titles added while Jellyfin was down (or since the file was
+                // written) would otherwise be missing for up to 15 minutes. With it off, as before.
+                if (_config() is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true }) state.Library.Request(_now());
             }
             catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
             {
@@ -461,7 +584,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 {
                     JsonSerializer.Serialize(stream, new LibraryCacheFile
                     {
-                        Version = 1,
+                        Version = CacheFileVersion,
                         Fingerprint = Fingerprint(state.Client.Connection),
                         SavedAt = state.Library.LoadedAt,
                         Movies = value.Movies.ToList(),
@@ -541,6 +664,67 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             public CalendarRangeCache Ranges { get; }
 
             public DateTimeOffset LastCacheWrite { get; set; } = DateTimeOffset.MinValue;
+
+            /// <summary>Movie/series ids in the queue at the last refresh (null before the first).</summary>
+            public HashSet<int>? QueueTitles { get; set; }
+
+            /// <summary>Movie ("m…") and episode ("e…") keys in the queue at the last refresh, with their movie/series id.</summary>
+            public Dictionary<string, int?>? QueueRows { get; set; }
+
+            /// <summary>When each recently departed movie/episode left the queue.</summary>
+            public ConcurrentDictionary<string, DateTimeOffset> Departures { get; } = new(StringComparer.Ordinal);
+
+            private readonly object _episodesLock = new();
+            private readonly Dictionary<int, ArrSnapshotSlot<ArrEpisodesSnapshot>> _episodes = new();
+
+            /// <summary>
+            /// The episodes slot of a series, created on first use (evicting the least recently read
+            /// idle one when full) and marked read under the same lock. Null when every slot is still
+            /// loading: a slot being loaded is never dropped (its load would carry on unowned and a
+            /// later read would start a second one), and a dropped slot is retired in the same step
+            /// (<see cref="ArrSnapshotSlot{T}.TryRetire"/>), so a reader still holding it can't start
+            /// a load either: the number of loads per instance stays bounded.
+            /// </summary>
+            public ArrSnapshotSlot<ArrEpisodesSnapshot>? EpisodesFor(int seriesId, DateTimeOffset now)
+            {
+                lock (_episodesLock)
+                {
+                    if (_episodes.TryGetValue(seriesId, out var slot))
+                    {
+                        slot.Touch(now);
+                        return slot;
+                    }
+                    while (_episodes.Count >= EpisodeSeriesPerInstance)
+                    {
+                        var evicted = false;
+                        foreach (var (id, candidate) in _episodes.Where(e => e.Value.Inflight == null).OrderBy(e => e.Value.LastRead).ToList())
+                        {
+                            if (!candidate.TryRetire()) continue; // started loading meanwhile
+                            _episodes.Remove(id);
+                            evicted = true;
+                            break;
+                        }
+                        if (!evicted) return null;
+                    }
+                    var client = Client;
+                    slot = new ArrSnapshotSlot<ArrEpisodesSnapshot>(ArrSnapshotKind.Episodes, (_, ct) => ArrStateLoaders.LoadEpisodesAsync(client, seriesId, ct));
+                    slot.Touch(now);
+                    _episodes[seriesId] = slot;
+                    return slot;
+                }
+            }
+
+            /// <summary>The episodes slot of a series if one exists.</summary>
+            public ArrSnapshotSlot<ArrEpisodesSnapshot>? ExistingEpisodes(int seriesId)
+            {
+                lock (_episodesLock) return _episodes.TryGetValue(seriesId, out var slot) ? slot : null;
+            }
+
+            /// <summary>Every episodes slot held.</summary>
+            public IReadOnlyList<ArrSnapshotSlot<ArrEpisodesSnapshot>> EpisodeSlots()
+            {
+                lock (_episodesLock) return _episodes.Values.ToList();
+            }
 
             public IArrSnapshotSlot Slot(ArrSnapshotKind kind) => kind switch
             {
@@ -862,5 +1046,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>Calendar ranges outside the window held in the LRU.</summary>
         public int CachedCalendarRanges { get; init; }
+
+        /// <summary>Series whose episodes are held in memory.</summary>
+        public int CachedEpisodeSeries { get; init; }
     }
 }

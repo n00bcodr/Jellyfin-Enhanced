@@ -71,6 +71,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrStatusController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs",
       "category": "Controllers"
     },
@@ -313,6 +317,34 @@
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/SpoilerApplyExistingTitlesTask.cs",
       "category": "ScheduledTasks"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ArrJellyfinView.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ArrStatusCache.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ArrStatusService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/JellyfinFacts.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/StatusComposer.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/TitleKey.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/TitleStatus.cs",
+      "category": "Services"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ActivityFavoriteMonitor.cs",
@@ -788,6 +820,26 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/requests/requests-page-styles.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/status/status-cards.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/status/status-core.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/status/status-details.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/status/status-episodes.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/status/status-styles.js",
       "category": "js"
     },
     {
@@ -1587,6 +1639,24 @@
       "path": "/JellyfinEnhanced/arr/admin/state/refresh",
       "method": "RequestRefresh",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrStateController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/status",
+      "method": "GetStatuses",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrStatusController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/status/item/{itemId}",
+      "method": "GetItemStatus",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrStatusController.cs",
       "following_attributes": [
         "Authorize"
       ]
@@ -4639,6 +4709,38 @@
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase1Enabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrStatusPosterBadges",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrStatusLookingHours",
+      "type": "int",
+      "initializer": "24",
+      "constructor_assignment": "24",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrHouseholdContactName",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": "\"\"",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -7919,9 +8021,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 378,
-    "routes": 183,
-    "configuration_properties": 526,
+    "files": 391,
+    "routes": 185,
+    "configuration_properties": 530,
     "storage_references": 79,
     "scheduled_tasks": 14,
     "locales": 33

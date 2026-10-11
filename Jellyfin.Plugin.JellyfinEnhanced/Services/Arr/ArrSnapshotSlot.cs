@@ -27,6 +27,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         private DateTimeOffset _lastRead = DateTimeOffset.MinValue;
         private DateTimeOffset? _requestedFor;
         private Task? _inflight;
+        private bool _retired;
         private long _refreshes;
         private long _failedRefreshes;
 
@@ -75,6 +76,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         public Task? Inflight
         {
             get { lock (_lock) return _inflight; }
+        }
+
+        /// <summary>True once the slot was dropped (<see cref="TryRetire"/>): it never loads again.</summary>
+        public bool Retired
+        {
+            get { lock (_lock) return _retired; }
+        }
+
+        /// <summary>
+        /// Retires the slot unless a refresh is running, in one step: a slot is either loading (and
+        /// kept) or retired (and never starts a load), so whoever still holds it can't start an
+        /// unowned load after it was dropped.
+        /// </summary>
+        public bool TryRetire()
+        {
+            lock (_lock)
+            {
+                if (_inflight != null) return false;
+                _retired = true;
+                return true;
+            }
         }
 
         /// <summary>Marks the snapshot as read now (keeps the reconciler refreshing it).</summary>
@@ -126,13 +148,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>
         /// Starts a refresh unless one is running (single flight) and returns it. The refresh runs on
         /// the thread pool outside the caller's execution context, with <paramref name="background"/>
-        /// as its call counter, and stops when <paramref name="shutdown"/> fires.
+        /// as its call counter, and stops when <paramref name="shutdown"/> fires. A retired slot
+        /// starts nothing.
         /// </summary>
         public Task StartRefresh(ArrCallCounter background, Func<DateTimeOffset> now, CancellationToken shutdown)
         {
             lock (_lock)
             {
                 if (_inflight != null) return _inflight;
+                if (_retired) return Task.CompletedTask;
                 _requestedFor = null;
                 Task<Task> outer;
                 using (ExecutionContext.SuppressFlow())
@@ -234,6 +258,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         DateTimeOffset LastRead { get; }
 
         Task? Inflight { get; }
+
+        bool Retired { get; }
 
         bool InBackoff(DateTimeOffset now);
 

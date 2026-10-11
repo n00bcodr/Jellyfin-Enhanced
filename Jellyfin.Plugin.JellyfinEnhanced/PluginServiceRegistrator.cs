@@ -11,6 +11,7 @@ using MediaBrowser.Controller.Plugins;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using MediaBrowser.Controller;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced
@@ -62,6 +63,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Downloads/Calendar/link routes, and the loop that keeps the ones in use fresh.
             serviceCollection.AddSingleton<Services.Arr.ArrStateStore>();
             serviceCollection.AddHostedService<Services.Arr.ArrStateReconciler>();
+            // Phase 1 status on pages: the Jellyfin side of the status composer, the request facts
+            // (none until a request read model registers its own) and the per-user status service.
+            serviceCollection.AddSingleton<Services.Acquire.IArrJellyfinView, Services.Acquire.ArrJellyfinView>();
+            serviceCollection.TryAddSingleton<Services.Acquire.IArrRequestFacts, Services.Acquire.NoRequestFacts>();
+            serviceCollection.AddSingleton<Services.Acquire.ArrStatusService>();
             // JE backup/export/restore (Jellyfin's own backups don't include plugin data).
             serviceCollection.AddSingleton<Services.Backup.JeBackupService>();
             serviceCollection.AddTransient<JeBackupTask>();

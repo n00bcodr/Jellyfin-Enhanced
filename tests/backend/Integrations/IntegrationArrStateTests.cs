@@ -487,6 +487,27 @@ public class IntegrationArrStateTests
     }
 
     [Fact]
+    public async Task AWarmStartedLibraryIsReadAgainRightAwayEvenWhenTheFileIsRecent()
+    {
+        using var arr = Rig(out var radarr, out _);
+        arr.Plugin.Plugin.Configuration.ArrIntegrationEnabled = true;
+        arr.Plugin.Plugin.Configuration.ArrPhase1Enabled = true;
+        radarr.Movies.Add(FakeArr.Movie(1, 45745, "Sintel"));
+        var dir = Path.Combine(arr.Plugin.Core.Root, "arr-state");
+        await arr.Store(dir).GetLibraryAsync(arr.Instance("Movies"), default);
+
+        // Restarted a minute later; a movie was added in the meantime.
+        radarr.Movies.Add(FakeArr.Movie(2, 693134, "Dune Part Two", hasFile: false));
+        arr.Now = arr.Now.AddMinutes(1);
+        var store = arr.Store(dir);
+        var read = await store.GetLibraryAsync(arr.Instance("Movies"), default);
+        Assert.False(read.Stale);
+        Assert.Null(read.Value!.MovieByTmdb(693134));
+        await Task.WhenAll(store.Tick());
+        Assert.NotNull((await store.GetLibraryAsync(arr.Instance("Movies"), default)).Value!.MovieByTmdb(693134));
+    }
+
+    [Fact]
     public void QueueRowsKeepTheOldShapeAndStatusMapping()
     {
         var radarr = new ArrConnection { Id = "r", Kind = ArrKind.Radarr, Name = "Movies" };
@@ -505,5 +526,169 @@ public class IntegrationArrStateTests
             Assert.Contains(field, json);
         Assert.Equal(0, ArrLegacyViews.CalculateProgress(0, 0));
         Assert.Equal(100, ArrLegacyViews.CalculateProgress(10, null));
+    }
+
+    [Fact]
+    public async Task WithRequestsAndDownloadsOffAWarmStartAndAQueueDepartureKeepTheOldIntervals()
+    {
+        using var arr = Rig(out var radarr, out _);
+        var config = arr.Plugin.Plugin.Configuration;
+        Assert.False(config.ArrIntegrationEnabled || config.ArrPhase1Enabled);
+        radarr.Movies.Add(FakeArr.Movie(1, 45745, "Sintel", hasFile: false));
+        radarr.Queue.Add(FakeArr.RadarrQueueRow(1, 45745, "Sintel"));
+        var dir = Path.Combine(arr.Plugin.Core.Root, "arr-state");
+        var movies = arr.Instance("Movies");
+        await arr.Store(dir).GetLibraryAsync(movies, default);
+
+        // Restarted: the warm-start file is served and not read again at once.
+        arr.Now = arr.Now.AddMinutes(1);
+        var store = arr.Store(dir);
+        await store.GetLibraryAsync(movies, default);
+        await store.GetQueueAsync(movies, default);
+        var library = arr.CallCount("radarr.lan", "/api/v3/movie");
+        var history = arr.CallCount("radarr.lan", "/api/v3/history");
+
+        // The download leaves the queue (the Downloads page polls it): nothing else is read early.
+        radarr.Queue.Clear();
+        store.RequestRefresh(movies.Id, ArrSnapshotKind.Queue);
+        for (var i = 0; i < 3; i++)
+        {
+            arr.Now += TimeSpan.FromSeconds(3);
+            await Task.WhenAll(store.Tick());
+        }
+        Assert.Equal((library, history), (arr.CallCount("radarr.lan", "/api/v3/movie"), arr.CallCount("radarr.lan", "/api/v3/history")));
+
+        // Switched on at runtime: the next departure asks for the library and history again.
+        config.ArrIntegrationEnabled = true;
+        config.ArrPhase1Enabled = true;
+        radarr.Queue.Add(FakeArr.RadarrQueueRow(1, 45745, "Sintel"));
+        store.RequestRefresh(movies.Id, ArrSnapshotKind.Queue);
+        arr.Now += TimeSpan.FromSeconds(3);
+        await Task.WhenAll(store.Tick());
+        radarr.Queue.Clear();
+        store.RequestRefresh(movies.Id, ArrSnapshotKind.Queue);
+        for (var i = 0; i < 3; i++)
+        {
+            arr.Now += TimeSpan.FromSeconds(3);
+            await Task.WhenAll(store.Tick());
+        }
+        Assert.True(arr.CallCount("radarr.lan", "/api/v3/movie") > library);
+        Assert.True(arr.CallCount("radarr.lan", "/api/v3/history") > history);
+    }
+
+    [Fact]
+    public async Task OneEpisodeLeavingTheQueueWhileAnotherOfTheSeriesDownloadsRefreshesItsEpisodes()
+    {
+        using var arr = Rig(out _, out var sonarr);
+        arr.Plugin.Plugin.Configuration.ArrIntegrationEnabled = true;
+        arr.Plugin.Plugin.Configuration.ArrPhase1Enabled = true;
+        sonarr.Series.Add(FakeArr.SeriesRow(1, 100, "Show"));
+        sonarr.Episodes.Add(FakeArr.Episode(11, "2026-01-01T00:00:00Z", season: 1, episode: 1));
+        sonarr.Episodes.Add(FakeArr.Episode(12, "2026-01-08T00:00:00Z", season: 1, episode: 2));
+        sonarr.Queue.Add(FakeArr.SonarrQueueRow(11, "dl11", 1, 1));
+        sonarr.Queue.Add(FakeArr.SonarrQueueRow(12, "dl12", 1, 2));
+        var store = arr.Store();
+        var tv = arr.Instance("TV");
+        await store.GetLibraryAsync(tv, default);
+        await store.GetQueueAsync(tv, default);
+        await store.GetEpisodesAsync(tv, 1, default);
+        var episodes = arr.CallCount("sonarr.lan", "/api/v3/episode");
+        var library = arr.CallCount("sonarr.lan", "/api/v3/series");
+
+        // E1 imports; E2 is still downloading, so the series never leaves the queue.
+        sonarr.Queue.RemoveAt(0);
+        store.RequestRefresh(tv.Id, ArrSnapshotKind.Queue);
+        arr.Now += TimeSpan.FromSeconds(3);
+        await Task.WhenAll(store.Tick());
+        var history = arr.CallCount("sonarr.lan", "/api/v3/history");
+        Assert.NotNull(store.LeftQueueAt(tv, null, 11));
+        arr.Now += TimeSpan.FromSeconds(3);
+        await Task.WhenAll(store.Tick());
+        Assert.True(arr.CallCount("sonarr.lan", "/api/v3/episode") > episodes, "episodes re-read");
+        Assert.True(arr.CallCount("sonarr.lan", "/api/v3/series") > library, "library re-read");
+        Assert.True(arr.CallCount("sonarr.lan", "/api/v3/history") > history, "history re-read");
+    }
+
+    [Fact]
+    public async Task EpisodeSlotsBeingLoadedAreNeverEvictedSoLoadsStayBounded()
+    {
+        using var arr = Rig(out _, out var sonarr);
+        var release = new TaskCompletionSource();
+        sonarr.Before = async (path, ct) =>
+        {
+            if (path == "/api/v3/episode") await release.Task.WaitAsync(ct);
+        };
+        var store = arr.Store();
+        var tv = arr.Instance("TV");
+        var pending = Enumerable.Range(1, 64).Select(id => store.GetEpisodesAsync(tv, id, default)).ToList();
+
+        // Every slot is loading: another series is refused at once instead of evicting one of them.
+        var started = DateTime.UtcNow;
+        var extra = await store.GetEpisodesAsync(tv, 65, default);
+        Assert.Equal(ArrErrorKind.Timeout, extra.Error!.Kind);
+        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(5));
+        Assert.Equal(64, store.Describe().Instances.Single(i => i.Name == "TV").CachedEpisodeSeries);
+
+        release.SetResult();
+        await Task.WhenAll(pending);
+        // 64 loads, each read once: none was orphaned and started again.
+        await store.GetEpisodesAsync(tv, 1, default);
+        Assert.Equal(64, arr.CallCount("sonarr.lan", "/api/v3/episode"));
+        // Once idle, the least recently read slot makes room.
+        Assert.Null((await store.GetEpisodesAsync(tv, 65, default)).Error);
+    }
+    [Fact]
+    public async Task AnEpisodeSlotPickedByOneReadIsNeverLoadedAfterAnotherReadEvictedIt()
+    {
+        using var arr = Rig(out _, out var sonarr);
+        var release = new TaskCompletionSource();
+        sonarr.Before = async (path, ct) =>
+        {
+            if (path == "/api/v3/episode") await release.Task.WaitAsync(ct);
+        };
+        var store = arr.Store();
+        var tv = arr.Instance("TV");
+        var others = new List<Task<ArrSnapshotRead<ArrEpisodesSnapshot>>>();
+        // Read 1 picks series 1's new (idle) slot; before it starts the load, 63 other series start
+        // loading and a 65th series needs room: the only idle slot is series 1's.
+        store.EpisodeSlotPicked = id =>
+        {
+            if (id != 1) return;
+            store.EpisodeSlotPicked = null;
+            others.AddRange(Enumerable.Range(2, 63).Select(n => store.GetEpisodesAsync(tv, n, default)));
+            others.Add(store.GetEpisodesAsync(tv, 99, default));
+        };
+        var first = store.GetEpisodesAsync(tv, 1, default);
+
+        // Never more loads than slots: series 1's slot was dropped before read 1 started its load, so
+        // read 1 doesn't load it (an unowned 65th load) but answers "still loading".
+        release.SetResult();
+        await Task.WhenAll(others);
+        var read = await first;
+        Assert.Equal(ArrErrorKind.Timeout, read.Error!.Kind);
+        Assert.Equal(64, arr.CallCount("sonarr.lan", "/api/v3/episode"));
+        Assert.Equal(64, store.Describe().Instances.Single(i => i.Name == "TV").CachedEpisodeSeries);
+    }
+    [Fact]
+    public async Task ASeriesPickedForReadingCountsAsJustReadSoItIsNotTheOneEvicted()
+    {
+        using var arr = Rig(out _, out _);
+        var store = arr.Store();
+        var tv = arr.Instance("TV");
+        await Task.WhenAll(Enumerable.Range(1, 64).Select(n => store.GetEpisodesAsync(tv, n, default)));
+        arr.Now += TimeSpan.FromSeconds(1);
+        // While a read of series 1 (the oldest) is between picking its slot and reading it, a new
+        // series needs room: the least recently read is now series 2, not series 1.
+        store.EpisodeSlotPicked = id =>
+        {
+            if (id != 1) return;
+            store.EpisodeSlotPicked = null;
+            store.GetEpisodesAsync(tv, 99, default).GetAwaiter().GetResult();
+        };
+        var read = await store.GetEpisodesAsync(tv, 1, default);
+        Assert.Null(read.Error);
+        Assert.NotNull(store.PeekEpisodes(tv, 1));
+        Assert.Null(store.PeekEpisodes(tv, 2));
+        Assert.Equal(65, arr.CallCount("sonarr.lan", "/api/v3/episode"));
     }
 }

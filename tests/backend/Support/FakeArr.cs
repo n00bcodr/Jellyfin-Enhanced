@@ -24,6 +24,8 @@ internal sealed class FakeArr : IDisposable
         public List<JsonObject> Queue { get; } = new();
         public List<JsonObject> History { get; } = new();
         public List<JsonObject> Calendar { get; } = new();
+        /// <summary>Episodes answered by <c>/episode?seriesId=</c> (filtered by their <c>seriesId</c>).</summary>
+        public List<JsonObject> Episodes { get; } = new();
         public Dictionary<int, string> Tags { get; } = new();
         /// <summary>Non-zero: every call answers with this HTTP status.</summary>
         public int FailWith { get; set; }
@@ -182,6 +184,12 @@ internal sealed class FakeArr : IDisposable
                 {
                     var since = DateTime.Parse(query["date"]!, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
                     var rows = host.History.Where(h => DateTime.Parse((string)h["date"]!, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal) >= since);
+                    return IntegrationTransport.Response(new JsonArray(rows.Select(r => r.DeepClone()).ToArray()).ToJsonString());
+                }
+                case "/api/v3/episode":
+                {
+                    var seriesId = int.Parse(query["seriesId"] ?? "0", CultureInfo.InvariantCulture);
+                    var rows = host.Episodes.Where(e => (int?)e["seriesId"] == seriesId);
                     return IntegrationTransport.Response(new JsonArray(rows.Select(r => r.DeepClone()).ToArray()).ToJsonString());
                 }
                 case "/api/v3/calendar":

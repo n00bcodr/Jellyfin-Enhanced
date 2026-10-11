@@ -709,7 +709,9 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 | POST | `arr/admin/test` | Admin, Requests & downloads (new): test unsaved values |
 | GET | `arr/admin/audit` | Admin, Requests & downloads (new): recent audited arr actions |
 | GET | `arr/admin/state` | Admin: the in-memory Sonarr/Radarr snapshots behind the routes below (age, size, last refresh error per instance) and per-route counters of upstream calls made by requests themselves |
-| POST | `arr/admin/state/refresh?instanceId=&kind=` | Admin: ask for a refresh of one snapshot (`library`, `queue`, `history`, `calendar`, `system`; debounced two seconds) |
+| POST | `arr/admin/state/refresh?instanceId=&kind=` | Admin: ask for a refresh of one snapshot (`library`, `queue`, `history`, `calendar`, `system`, `episodes`; debounced two seconds) |
+| GET | `acquire/status?ids=&keys=` | Any user, Requests & downloads + status on pages on: where each title has got to, for up to 100 Jellyfin item ids (items the caller can't open are left out) and up to 50 title keys (`movie:tmdb:603`, `series:tvdb:78874`) |
+| GET | `acquire/status/item/{itemId}` | Same, for one item's details page: the journey (movies, episodes), per-season state (series) or per-episode state (seasons). An empty `items` list when the caller can't see the item or it has no status (other item types, no provider id) |
 | POST | `admin/secrets/rollback` | Admin: write stored credentials back into the plugin configuration before a downgrade (body `{"confirm":"write-credentials-to-plugin-config"}`; `409` if `secrets.json` can't be read) |
 | GET | `arr/identify-url` | Resolve which configured instance owns a given item |
 | GET | `arr/series-slug`, `arr/series-slugs` | Admin, Arr Links on: Sonarr URL slug lookup, single/batch |
@@ -731,6 +733,14 @@ be read, the error is reported and that month is tried again 30 seconds later. T
 instance's latest read error even while they still answer from the list read before. Each per-instance entry in
 `errors` has `instanceName`, `source` and a short `reason`; admins also get `detail`. A route whose page
 is switched off answers `403` with `code: "feature_disabled"`.
+
+The `acquire/status` routes answer with a stage (`asked`, `approved`, `notOut`, `looking`, `downloading`,
+`almostReady`, `ready`, `notHere`, `none`), a reason code with parameters (dates, percent, ETA) and, for
+series and seasons, counts. Non-admins never get instance names, URLs, paths, download clients, release names or
+the arr's own messages; admins also get an `admin` block with one entry per instance. Responses are
+per user with a private `ETag` (`Cache-Control: private, no-cache`; `If-None-Match` answers `304`), are
+served from the snapshots without calling Sonarr or Radarr, and answer `403` with `code: "feature_disabled"`
+while the feature is off.
 
 ### Backup & restore
 

@@ -40,7 +40,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// Asks for a refresh of one snapshot of one instance (debounced by two seconds; the
-        /// reconciler runs it). <paramref name="kind"/> is library, queue, history, calendar or system.
+        /// reconciler runs it). <paramref name="kind"/> is library, queue, history, calendar, system or episodes (every series held).
         /// </summary>
         [HttpPost("arr/admin/state/refresh")]
         [Authorize]
@@ -48,7 +48,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             if (!IsAdmin()) return Forbid();
             if (string.IsNullOrWhiteSpace(instanceId) || !Enum.TryParse<ArrSnapshotKind>(kind, ignoreCase: true, out var parsed) || !Enum.IsDefined(parsed))
-                return BadRequest(new { error = "instanceId and kind (library, queue, history, calendar, system) are required" });
+                return BadRequest(new { error = "instanceId and kind (library, queue, history, calendar, system, episodes) are required" });
             if (!_store.RequestRefresh(instanceId, parsed))
                 return NotFound(new { error = "No usable instance with this id." });
             return Accepted(new { requested = true });

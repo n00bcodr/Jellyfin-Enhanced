@@ -21,6 +21,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         Calendar,
         /// <summary>System status, health, disk space, root folders and quality profiles.</summary>
         System,
+        /// <summary>The episodes of one Sonarr series (read on demand, a few series kept).</summary>
+        Episodes,
     }
 
     /// <summary>One movie in a Radarr library snapshot (slim: only what JE reads).</summary>
@@ -58,6 +60,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>Tag ids.</summary>
         public int[] Tags { get; init; } = Array.Empty<int>();
+
+        /// <summary>Radarr's release status (tba, announced, inCinemas, released, deleted).</summary>
+        public string? Status { get; init; }
+
+        /// <summary>Radarr considers the movie available (its minimum availability has been reached).</summary>
+        public bool IsAvailable { get; init; } = true;
+
+        /// <summary>Minimum availability (announced, inCinemas, released).</summary>
+        public string? MinimumAvailability { get; init; }
+
+        /// <summary>Cinema release (UTC).</summary>
+        public DateTime? InCinemas { get; init; }
+
+        /// <summary>Digital release (UTC).</summary>
+        public DateTime? DigitalRelease { get; init; }
+
+        /// <summary>Physical release (UTC).</summary>
+        public DateTime? PhysicalRelease { get; init; }
+
+        /// <summary>When the movie was added to Radarr (UTC).</summary>
+        public DateTime? Added { get; init; }
+
+        /// <summary>When Radarr last searched for it (UTC), if it says.</summary>
+        public DateTime? LastSearchTime { get; init; }
+    }
+
+    /// <summary>One season of a Sonarr series (statistics as Sonarr reports them).</summary>
+    public sealed class ArrSeasonEntry
+    {
+        /// <summary>Season number (0 = specials).</summary>
+        public int SeasonNumber { get; init; }
+
+        /// <summary>Monitored in Sonarr.</summary>
+        public bool Monitored { get; init; }
+
+        /// <summary>Episode files on disk.</summary>
+        public int EpisodeFileCount { get; init; }
+
+        /// <summary>Monitored episodes that have aired (or have a file).</summary>
+        public int EpisodeCount { get; init; }
+
+        /// <summary>Every episode Sonarr knows in the season.</summary>
+        public int TotalEpisodeCount { get; init; }
+
+        /// <summary>Next episode air time (UTC).</summary>
+        public DateTime? NextAiring { get; init; }
     }
 
     /// <summary>One series in a Sonarr library snapshot (slim).</summary>
@@ -104,6 +152,66 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>Bytes on disk.</summary>
         public long SizeOnDisk { get; init; }
+
+        /// <summary>Sonarr's series status (continuing, ended, upcoming, deleted).</summary>
+        public string? Status { get; init; }
+
+        /// <summary>Next episode air time (UTC).</summary>
+        public DateTime? NextAiring { get; init; }
+
+        /// <summary>When the series was added to Sonarr (UTC).</summary>
+        public DateTime? Added { get; init; }
+
+        /// <summary>Seasons with their statistics.</summary>
+        public IReadOnlyList<ArrSeasonEntry> Seasons { get; init; } = Array.Empty<ArrSeasonEntry>();
+    }
+
+    /// <summary>One episode of a Sonarr series (slim).</summary>
+    public sealed class ArrEpisodeEntry
+    {
+        /// <summary>Sonarr episode id.</summary>
+        public int Id { get; init; }
+
+        /// <summary>Season number.</summary>
+        public int SeasonNumber { get; init; }
+
+        /// <summary>Episode number.</summary>
+        public int EpisodeNumber { get; init; }
+
+        /// <summary>Air time (UTC), if known.</summary>
+        public DateTime? AirDateUtc { get; init; }
+
+        /// <summary>Has a file.</summary>
+        public bool HasFile { get; init; }
+
+        /// <summary>Monitored.</summary>
+        public bool Monitored { get; init; }
+
+        /// <summary>When Sonarr last searched for it (UTC), if it says.</summary>
+        public DateTime? LastSearchTime { get; init; }
+    }
+
+    /// <summary>The episodes of one Sonarr series.</summary>
+    public sealed class ArrEpisodesSnapshot
+    {
+        private readonly Dictionary<(int, int), ArrEpisodeEntry> _byNumber = new();
+
+        /// <summary>Builds the snapshot and its (season, episode) index (first wins on duplicates).</summary>
+        public ArrEpisodesSnapshot(int seriesId, IReadOnlyList<ArrEpisodeEntry> episodes)
+        {
+            SeriesId = seriesId;
+            Episodes = episodes;
+            foreach (var e in episodes) _byNumber.TryAdd((e.SeasonNumber, e.EpisodeNumber), e);
+        }
+
+        /// <summary>Sonarr series id.</summary>
+        public int SeriesId { get; }
+
+        /// <summary>Every episode.</summary>
+        public IReadOnlyList<ArrEpisodeEntry> Episodes { get; }
+
+        /// <summary>The episode with this season and episode number, or null.</summary>
+        public ArrEpisodeEntry? Find(int season, int episode) => _byNumber.TryGetValue((season, episode), out var e) ? e : null;
     }
 
     /// <summary>
@@ -116,6 +224,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         private readonly Dictionary<int, ArrSeriesEntry> _seriesByTvdb = new();
         private readonly Dictionary<int, ArrSeriesEntry> _seriesByTmdb = new();
         private readonly Dictionary<string, ArrSeriesEntry> _seriesByImdb = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, ArrMovieEntry> _moviesByImdb = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<int, ArrMovieEntry> _moviesById = new();
+        private readonly Dictionary<int, ArrSeriesEntry> _seriesById = new();
 
         /// <summary>Builds the snapshot and its indexes. The first title wins on a duplicate id.</summary>
         public ArrLibrarySnapshot(IReadOnlyList<ArrMovieEntry> movies, IReadOnlyList<ArrSeriesEntry> series, IReadOnlyDictionary<int, string> tags)
@@ -126,12 +237,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             foreach (var m in movies)
             {
                 if (m.TmdbId is > 0 and var tmdb) _moviesByTmdb.TryAdd(tmdb, m);
+                if (!string.IsNullOrWhiteSpace(m.ImdbId)) _moviesByImdb.TryAdd(m.ImdbId.Trim(), m);
+                _moviesById.TryAdd(m.Id, m);
             }
             foreach (var s in series)
             {
                 if (s.TvdbId is > 0 and var tvdb) _seriesByTvdb.TryAdd(tvdb, s);
                 if (s.TmdbId is > 0 and var tmdb) _seriesByTmdb.TryAdd(tmdb, s);
                 if (!string.IsNullOrWhiteSpace(s.ImdbId)) _seriesByImdb.TryAdd(s.ImdbId.Trim(), s);
+                _seriesById.TryAdd(s.Id, s);
             }
         }
 
@@ -146,6 +260,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>The movie with this TMDB id, or null.</summary>
         public ArrMovieEntry? MovieByTmdb(int tmdbId) => _moviesByTmdb.TryGetValue(tmdbId, out var m) ? m : null;
+
+        /// <summary>The movie with this IMDb id, or null.</summary>
+        public ArrMovieEntry? MovieByImdb(string? imdbId)
+            => !string.IsNullOrWhiteSpace(imdbId) && _moviesByImdb.TryGetValue(imdbId.Trim(), out var m) ? m : null;
+
+        /// <summary>The movie with this Radarr id, or null.</summary>
+        public ArrMovieEntry? MovieById(int id) => _moviesById.TryGetValue(id, out var m) ? m : null;
+
+        /// <summary>The series with this Sonarr id, or null.</summary>
+        public ArrSeriesEntry? SeriesById(int id) => _seriesById.TryGetValue(id, out var s) ? s : null;
 
         /// <summary>The series with this TVDB id, or null.</summary>
         public ArrSeriesEntry? SeriesByTvdb(int tvdbId) => _seriesByTvdb.TryGetValue(tvdbId, out var s) ? s : null;
@@ -243,6 +367,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>Episode title.</summary>
         public string? EpisodeTitle { get; init; }
+
+        /// <summary>Download client name (admin only).</summary>
+        public string? DownloadClient { get; init; }
+
+        /// <summary>Quality name, e.g. "Bluray-1080p" (admin only).</summary>
+        public string? Quality { get; init; }
+
+        /// <summary>Custom format score (admin only).</summary>
+        public int? CustomFormatScore { get; init; }
+
+        /// <summary>When the arr added the row (the grab), UTC.</summary>
+        public DateTime? Added { get; init; }
     }
 
     /// <summary>The whole queue of one instance.</summary>
@@ -547,6 +683,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         public string? DigitalRelease { get; set; }
 
+        public string? Status { get; set; }
+
+        public bool? IsAvailable { get; set; }
+
+        public string? MinimumAvailability { get; set; }
+
+        public string? Added { get; set; }
+
+        public string? LastSearchTime { get; set; }
+
         public JsonElement Releases { get; set; }
 
         public List<ArrWireImage>? Images { get; set; }
@@ -557,6 +703,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         public int? EpisodeFileCount { get; set; }
 
         public int? EpisodeCount { get; set; }
+
+        public int? TotalEpisodeCount { get; set; }
+
+        public string? NextAiring { get; set; }
 
         public double? PercentOfEpisodes { get; set; }
 
@@ -588,6 +738,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         public ArrWireStatistics? Statistics { get; set; }
 
         public List<ArrWireImage>? Images { get; set; }
+
+        public string? Status { get; set; }
+
+        public string? NextAiring { get; set; }
+
+        public string? Added { get; set; }
+
+        public List<ArrWireSeason>? Seasons { get; set; }
+    }
+
+    internal sealed class ArrWireSeason
+    {
+        public int SeasonNumber { get; set; }
+
+        public bool? Monitored { get; set; }
+
+        public ArrWireStatistics? Statistics { get; set; }
     }
 
     internal sealed class ArrWireEpisode
@@ -615,6 +782,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         public bool? HasFile { get; set; }
 
         public bool? Monitored { get; set; }
+
+        public string? LastSearchTime { get; set; }
 
         public ArrWireSeries? Series { get; set; }
     }
@@ -665,6 +834,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         public ArrWireSeries? Series { get; set; }
 
         public ArrWireEpisode? Episode { get; set; }
+
+        public string? DownloadClient { get; set; }
+
+        public ArrWireQualityModel? Quality { get; set; }
+
+        public int? CustomFormatScore { get; set; }
+
+        public int? SeasonNumber { get; set; }
+
+        public string? Added { get; set; }
+    }
+
+    internal sealed class ArrWireQualityModel
+    {
+        public ArrWireQuality? Quality { get; set; }
+    }
+
+    internal sealed class ArrWireQuality
+    {
+        public string? Name { get; set; }
     }
 
     internal sealed class ArrWireHistoryRecord

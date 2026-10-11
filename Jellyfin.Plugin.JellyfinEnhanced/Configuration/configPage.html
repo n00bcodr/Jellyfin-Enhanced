@@ -2518,13 +2518,38 @@
                         <div class="configSection">
                             <div class="checkboxContainer je-main-feature"><label><input id="arrIntegrationEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Requests &amp; downloads (new)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrIntegrationEnabled">
-                                <div class="fieldDescription je-field-desc-xl">A reworked Sonarr/Radarr integration that is being built in stages. <strong>Experimental, off by default.</strong> For now, turning it on adds per-instance settings to each Sonarr/Radarr box above (role, default instance, linked libraries, path mappings) and the connection check below. Everything else on this tab works the same whether it is on or off.<br/>API keys for every service are stored outside the plugin configuration either way and only ever shown masked.</div>
+                                <div class="fieldDescription je-field-desc-xl">A reworked Sonarr/Radarr integration that is being built in stages. <strong>Experimental, off by default.</strong> For now, turning it on adds per-instance settings to each Sonarr/Radarr box above (role, default instance, linked libraries, path mappings) and the connection check below, and lets you turn on the stages below (each one stays off until you tick it). Everything else on this tab works the same whether it is on or off.<br/>API keys for every service are stored outside the plugin configuration either way and only ever shown masked.</div>
                             </div>
                             <div class="inputContainer">
                                 <button is="emby-button" type="button" id="arrIntegrationCheckBtn" class="raised emby-button">Check connections</button>
                                 <div class="fieldDescription">Tests every saved Sonarr/Radarr instance: checks the URL really is that app, the API key works and the version is supported, and lists the instance's own health warnings. Save first if you changed anything.</div>
                                 <div id="arrIntegrationCheckResult" class="je-arr-check-result" aria-live="polite"></div>
                             </div>
+
+                            <!-- Requests & downloads, phase 1: status on pages -->
+                            <div class="checkboxContainer"><label><input id="arrPhase1Enabled" is="emby-checkbox" type="checkbox"/><span>Show where things have got to (status on pages)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrPhase1Enabled">
+                                <div class="fieldDescription je-field-desc-xl">Adds a status pill to movie, series, season and episode pages ("Downloading · 42% · about 12 min", "Almost ready", "Not out yet, expected 14 Nov"), with a tap-to-open journey, badges on posters, chips on episodes and a "Not in the library yet" line on season pages. Everyone sees plain words; administrators also see the instance, the arr's own message and what would fix it. Status is read from Sonarr/Radarr in the background, never while a page loads.</div>
+                            </div>
+                            <div class="checkboxContainer"><label><input id="arrStatusPosterBadges" is="emby-checkbox" type="checkbox"/><span>Show status badges on posters</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrStatusPosterBadges">
+                                <div class="fieldDescription">A small corner badge on poster cards while something is downloading, almost ready or taking longer than usual, and seasons' "4/10" progress on series pages.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="arrStatusLookingHours">"Still looking" after (hours)</label>
+                                <input id="arrStatusLookingHours" is="emby-input" type="number" min="1" max="720"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="arrStatusLookingHours">
+                                <div class="fieldDescription">How long a wanted title reads "Looking for it" before it reads "Still looking, we'll keep trying". 1-720, default 24.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="arrHouseholdContactName">What the family calls you</label>
+                                <input id="arrHouseholdContactName" is="emby-input" type="text" maxlength="40" placeholder="Dad"/>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="arrHouseholdContactName">
+                                <div class="fieldDescription">Used in family status texts, e.g. "Waiting for Dad to OK it". Leave empty for a neutral wording.</div>
+                            </div>
+                            <!-- /Requests & downloads, phase 1 -->
                         </div>
                     </fieldset>
 
@@ -7145,6 +7170,10 @@
                 document.querySelector('#iconStyle').value = config.IconStyle || 'emoji';
                 document.querySelector('#arrLinksEnabled').checked = config.ArrLinksEnabled;
                 document.querySelector('#arrIntegrationEnabled').checked = config.ArrIntegrationEnabled === true;
+                document.querySelector('#arrPhase1Enabled').checked = config.ArrPhase1Enabled === true;
+                document.querySelector('#arrStatusPosterBadges').checked = config.ArrStatusPosterBadges !== false;
+                document.querySelector('#arrStatusLookingHours').value = (config.ArrStatusLookingHours !== undefined && config.ArrStatusLookingHours !== null) ? config.ArrStatusLookingHours : 24;
+                document.querySelector('#arrHouseholdContactName').value = config.ArrHouseholdContactName || '';
                 jeApplyArrIntegrationVisibility();
                 document.querySelector('#bazarrUrlMappings').value = config.BazarrUrlMappings || '';
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
@@ -7765,6 +7794,11 @@
 
             config.ArrLinksEnabled = document.querySelector('#arrLinksEnabled').checked;
             config.ArrIntegrationEnabled = document.querySelector('#arrIntegrationEnabled').checked;
+            config.ArrPhase1Enabled = document.querySelector('#arrPhase1Enabled').checked;
+            config.ArrStatusPosterBadges = document.querySelector('#arrStatusPosterBadges').checked;
+            var __lookingHours = parseInt(document.querySelector('#arrStatusLookingHours').value, 10);
+            config.ArrStatusLookingHours = isNaN(__lookingHours) ? 24 : Math.min(720, Math.max(1, __lookingHours));
+            config.ArrHouseholdContactName = (document.querySelector('#arrHouseholdContactName').value || '').trim().slice(0, 40);
             config.BazarrUrlMappings = document.querySelector('#bazarrUrlMappings').value || '';
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShokoUrlMappings = document.querySelector('#shokoUrlMappings').value || '';
@@ -9191,7 +9225,8 @@
             { parent: 'showDownloadsInRequests', label: 'Show Downloads in Requests Page', children: ['downloadsFilterByUserRequests'] },
             { parent: 'downloadsShowHistory', label: 'Show Download History Section', children: ['downloadsHistoryAdminOnly'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
-            { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn'] },
+            { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn', 'arrPhase1Enabled'] },
+            { parent: 'arrPhase1Enabled', label: 'Show where things have got to (status on pages)', children: ['arrStatusPosterBadges', 'arrStatusLookingHours', 'arrHouseholdContactName'] },
             { parent: 'backupIncludeSecrets', label: 'Include API keys and passwords, encrypted', children: ['backupPassphrase'] },
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },

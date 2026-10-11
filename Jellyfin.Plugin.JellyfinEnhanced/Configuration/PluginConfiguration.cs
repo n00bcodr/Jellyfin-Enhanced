@@ -221,6 +221,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
             // Requests & downloads (new): master switch for the arr integration, off by default.
             ArrIntegrationEnabled = false;
+            // Requests & downloads, phase 1 status UI (status pill, poster badges, episode chips): off by default.
+            ArrPhase1Enabled = false;
+            ArrStatusPosterBadges = true;
+            ArrStatusLookingHours = 24;
+            ArrHouseholdContactName = "";
 
             // Shoko Settings (single-instance, like Jellyseerr — Shoko is one server per household)
             ShokoUrl = "";
@@ -788,6 +793,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// later phase adds its own switch under this one.
         /// </summary>
         public bool ArrIntegrationEnabled { get; set; }
+
+        // ---- Requests & downloads, phase 1: status on pages ----
+
+        /// <summary>
+        /// Phase 1 of "Requests &amp; downloads (new)": where each title has got to (status pill and
+        /// journey on details pages, poster badges, episode chips and the missing-episodes banner).
+        /// Only takes effect while <see cref="ArrIntegrationEnabled"/> is on. Off by default.
+        /// </summary>
+        public bool ArrPhase1Enabled { get; set; }
+
+        /// <summary>Show status badges (download ring, "almost ready", "taking longer") on poster cards. On by default (when phase 1 is on).</summary>
+        public bool ArrStatusPosterBadges { get; set; } = true;
+
+        /// <summary>Hours a monitored title may be "Looking for it" before it reads "Still looking". 1-720, default 24.</summary>
+        public int ArrStatusLookingHours { get; set; } = 24;
+
+        /// <summary>What the household calls the person who runs the server ("Dad"); empty uses a neutral word. Shown in family status texts.</summary>
+        public string ArrHouseholdContactName { get; set; } = string.Empty;
 
         /// <summary>
         /// Folder the scheduled "Back up Jellyfin Enhanced data" task writes to. Empty: the

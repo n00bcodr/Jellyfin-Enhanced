@@ -1393,6 +1393,9 @@
             if (JE.pluginConfig?.CalendarPageEnabled && typeof JE.initializeCalendarPage === 'function') {
                 JE.initializeCalendarPage();
             }
+            if (JE.pluginConfig?.ArrStatusEnabled && typeof JE.initializeArrStatus === 'function') {
+                JE.initializeArrStatus();
+            }
             if (JE.pluginConfig?.HiddenContentEnabled && typeof JE.initializeHiddenContentPage === 'function') {
                 JE.initializeHiddenContentPage();
             }

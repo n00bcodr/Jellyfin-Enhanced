@@ -208,6 +208,13 @@
     "arr/calendar/calendar-page-init.js",
     "arr/requests/requests-custom-tab.js",
     "arr/calendar/calendar-custom-tab.js",
+    "// arr status (Requests & downloads, phase 1) — status-core.js first",
+    "// (JE.arrStatus), status-styles.js last (JE.initializeArrStatus).",
+    "arr/status/status-core.js",
+    "arr/status/status-episodes.js",
+    "arr/status/status-details.js",
+    "arr/status/status-cards.js",
+    "arr/status/status-styles.js",
 
     "// extras",
     "extras/colored-activity-icons.js",
