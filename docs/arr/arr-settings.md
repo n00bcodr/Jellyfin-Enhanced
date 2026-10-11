@@ -88,10 +88,55 @@ When more than one instance contains the item, the link becomes a dropdown. Each
 
 ## Legacy Single-Instance Fields
 
-The original `SonarrUrl`, `SonarrApiKey`, `RadarrUrl`, and `RadarrApiKey` fields are preserved for downgrade safety. If the multi-instance list is empty, the plugin falls back to these fields automatically.
+The original `SonarrUrl`, `SonarrApiKey`, `RadarrUrl`, and `RadarrApiKey` fields come from before multi-instance support. When the plugin starts and finds them set while no instance in the list has both a URL and an API key, it uses them exactly like the old fallback: the instance at that address gets the legacy key, or a new instance (named `Sonarr` / `Radarr`) is added. The URL fields are still kept in step with the first instance; once an instance holds a key, the legacy API key fields are no longer stored (see [Stored credentials](#stored-credentials) for downgrading).
 
-!!! note
-    Once you add instances via the new UI, the legacy fields are no longer used for arr links. They are not deleted, so downgrading to an older plugin version restores single-instance behaviour.
+---
+
+## Stored credentials
+
+Every API key Jellyfin Enhanced stores (Sonarr and Radarr instances, Seerr, TMDB, MDBList, Shoko, and the usage-statistics install secret) is kept in a separate file, `secrets.json`, in the plugin's data folder (`<config>/plugins/configurations/Jellyfin.Plugin.JellyfinEnhanced/`). The file is readable by the Jellyfin user only and is never served by Jellyfin or by the plugin. The plugin's settings file (`Jellyfin.Plugin.JellyfinEnhanced.xml`) and the dashboard only ever see a placeholder such as `••••••••3f9a` (the last four characters, so you can tell keys apart).
+
+- **On upgrade** the plugin moves existing keys out of the settings file on its first start. Nothing needs re-entering.
+- **On the settings page** a saved key shows as that placeholder with **Replace** and **Clear** buttons. Saving without touching it keeps the key. **Test** buttons check the saved key on the server.
+- **A saved key stays with its server.** It is only tested against, and only kept for, the address (scheme, host and port) it was saved for. When you change an instance's URL, the Seerr URLs or the Shoko URL to another server, the key field asks for the key again; saving without it removes the old key from that connection.
+- **Import from Seerr** reads the Sonarr/Radarr keys on the server; the browser never receives them. An imported key is only saved for the address Seerr reported and only within 30 minutes; otherwise the page tells you after saving which instances need their key entered.
+- **Backups:** keep `secrets.json` together with the settings file. Without it, the keys have to be entered again (the plugin logs which ones are missing).
+- **If `secrets.json` can't be read** (for example it was edited by hand and is no longer valid JSON), the plugin leaves it exactly as it is, logs an error and treats the stored keys as unavailable; it never removes or overwrites them meanwhile, and reads the file again every 30 seconds. Fix the file (or restore it from a backup) and the keys work again. Keys you type while it is unreadable, or while the folder can't be written, are kept in the settings file as before and move into `secrets.json` on a later start.
+- **An unreadable Sonarr/Radarr instance list** (invalid JSON in the settings file) is moved into `secrets.json` as `SonarrInstances.corrupt` / `RadarrInstances.corrupt`, since it may contain keys; the settings page shows it as corrupt and offers a reset.
+
+### Downgrading to a version without the secrets file
+
+Older versions expect the keys in the settings file. Before installing an older version, write them back with this request as an administrator, then install the older version and restart:
+
+```bash
+curl -X POST "http://<jellyfin>/JellyfinEnhanced/admin/secrets/rollback" \
+  -H 'Authorization: MediaBrowser Token="<API key from Dashboard > API Keys>"' \
+  -H "Content-Type: application/json" \
+  -d '{"confirm":"write-credentials-to-plugin-config"}'
+```
+
+`secrets.json` keeps its copy. If this version starts again instead, it simply moves the keys back out. Without the request, you can also copy the values from `secrets.json` into the settings file by hand while Jellyfin is stopped (`arr:<instance id>` entries belong to the `ApiKey` of the instance with that `Id`).
+
+---
+
+## Requests & downloads (new)
+
+**Experimental, off by default.** A reworked Sonarr/Radarr integration that is being delivered in stages. With it off, everything on the *arr tab works exactly as described above.
+
+Turning it on currently adds:
+
+- **Per-instance settings** in each Sonarr/Radarr box:
+
+    | Field | Description |
+    |---|---|
+    | **Role** | Standard, 4K (UHD), Anime or Other. Later stages use it to pick the instance for each request: the default instance of the matching role. A 4K request is never sent to a standard instance; anime falls back to the standard instance when there is no anime one. |
+    | **Default for this role** | Which instance to use when several share a role. |
+    | **Linked libraries** | The Jellyfin libraries whose files this instance manages. |
+    | **Path mappings** | Only when the arr and Jellyfin see the same folders under different paths: one `arr_path|jellyfin_path` per line. |
+
+- **Check connections**: tests every saved instance. It confirms the URL really is Sonarr or Radarr (a Radarr address in a Sonarr box fails), that the key works and the version is supported (Sonarr v4+, Radarr v4+), and lists the instance's own health warnings.
+
+Each instance also gets a permanent id the first time the plugin starts with this version, whether or not the switch is on.
 
 ---
 

@@ -46,6 +46,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 {
                     AllowAutoRedirect = false
                 });
+            // Sonarr/Radarr transport: no redirects, no proxy, target address checked and pinned
+            // at connect time (see ArrHttp). Per-call budgets live in ArrClient, so no HttpClient timeout.
+            serviceCollection.AddHttpClient(Services.Arr.ArrHttp.ClientName)
+                .ConfigureHttpClient(c => c.Timeout = System.Threading.Timeout.InfiniteTimeSpan)
+                .ConfigurePrimaryHttpMessageHandler(Services.Arr.ArrHttp.CreateHandler);
+            // "Requests & downloads (new)" foundations: the instance registry (v2), one client per
+            // instance, and the audited action runner for direct arr writes.
+            serviceCollection.AddSingleton<Services.Arr.ArrInstanceRegistry>();
+            serviceCollection.AddSingleton<Services.Arr.ArrClientFactory>();
+            serviceCollection.AddSingleton<Services.Arr.ArrAuditLog>();
+            serviceCollection.AddSingleton<Services.Arr.ArrConfirmationTokens>();
+            serviceCollection.AddSingleton<Services.Arr.ArrActionRunner>();
             serviceCollection.AddSingleton<Logger>();
             serviceCollection.AddSingleton<UserConfigurationManager>();
             // Auto-detects newly added config-page settings by diffing the

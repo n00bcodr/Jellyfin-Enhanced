@@ -2513,6 +2513,21 @@
                         </div>
                     </fieldset>
 
+                    <fieldset id="arrIntegrationSection">
+                        <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">download_for_offline</i>Requests &amp; downloads (new)</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer je-main-feature"><label><input id="arrIntegrationEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Requests &amp; downloads (new)</span></label></div>
+                            <div class="je-setting-description" data-desc-for="arrIntegrationEnabled">
+                                <div class="fieldDescription je-field-desc-xl">A reworked Sonarr/Radarr integration that is being built in stages. <strong>Experimental, off by default.</strong> For now, turning it on adds per-instance settings to each Sonarr/Radarr box above (role, default instance, linked libraries, path mappings) and the connection check below. Everything else on this tab works the same whether it is on or off.<br/>API keys for every service are stored outside the plugin configuration either way and only ever shown masked.</div>
+                            </div>
+                            <div class="inputContainer">
+                                <button is="emby-button" type="button" id="arrIntegrationCheckBtn" class="raised emby-button">Check connections</button>
+                                <div class="fieldDescription">Tests every saved Sonarr/Radarr instance: checks the URL really is that app, the API key works and the version is supported, and lists the instance's own health warnings. Save first if you changed anything.</div>
+                                <div id="arrIntegrationCheckResult" class="je-arr-check-result" aria-live="polite"></div>
+                            </div>
+                        </div>
+                    </fieldset>
+
                     <fieldset>
                         <legend class="sectionTitle"><i class="material-icons je-legend-icon" aria-hidden="true">link</i>*arr UI Links</legend>
                         <div class="configSection">
@@ -4225,7 +4240,7 @@
 
         async function testJellyseerrConnection() {
             const urls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean);
-            const apiKey = (document.querySelector('#JellyseerrApiKey').value || '').trim();
+            const apiKey = jeSecretWireValue(document.querySelector('#JellyseerrApiKey'));
 
             if (!urls.length || !apiKey) {
                 Dashboard.alert({ title: 'Missing Information', message: 'Please provide at least one Seerr URL and an API key to test the connection.' });
@@ -4282,7 +4297,7 @@
         }
 
         async function testTmdbConnection(event) {
-            const apiKey = (document.querySelector('#TMDB_API_KEY').value || '').trim();
+            const apiKey = jeSecretWireValue(document.querySelector('#TMDB_API_KEY'));
 
             if (!apiKey) {
                 Dashboard.alert({ title: 'Missing Information', message: 'Please provide a TMDB API key to test the connection.' });
@@ -4896,6 +4911,377 @@
             return el;
         }
 
+        // ==================== Stored credentials (masked) ====================
+        // Saved API keys never reach this page: the server sends a placeholder instead
+        // ("••••••••" + the key's last four characters, or "••••••••seerr-…" for a key
+        // imported from Seerr that is not saved yet). A field holding one is read-only with
+        // Replace / Clear buttons. Posting the placeholder back (or leaving it blank) keeps
+        // the saved key, Clear posts JE_SECRET_CLEAR, a typed value replaces the key. Test
+        // buttons send an ASCII stand-in for the placeholder (header values must be Latin-1) and
+        // the server tests the saved key. A saved key belongs to the server it was saved for: when
+        // the address changes, the field asks for the key again (the server would not keep it).
+        var JE_SECRET_PREFIX = '••••••••';
+        var JE_SECRET_CLEAR = '__je_clear_secret__';
+        var JE_SECRET_SAVED_WIRE = '__je_saved_secret__';
+        var JE_SECRET_HANDLE_WIRE = '__je_handle__:';
+        var JE_SECRET_HANDLE_MARKER = 'seerr-';
+
+        /**
+         * True for a server placeholder (a saved key or an unsaved import handle).
+         * @param {*} v - Any value
+         * @returns {boolean}
+         */
+        function jeIsSecretPlaceholder(v) {
+            return typeof v === 'string' && v.indexOf(JE_SECRET_PREFIX) === 0;
+        }
+
+        /**
+         * Puts a credential input into its masked (saved) or plain (empty) state and adds the
+         * Replace / Clear buttons once. Inputs in `peers` mirror the same credential (the two
+         * TMDB fields) and always share its state.
+         * @param {HTMLInputElement} input - The credential input
+         * @param {string} value - The value from the server configuration
+         * @param {HTMLInputElement[]} [peers] - Other inputs bound to the same credential
+         */
+        function jeSecretInit(input, value, peers) {
+            if (!input) return;
+            var group = [input].concat((peers || []).filter(Boolean));
+            group.forEach(function(el) {
+                el._jeSecretGroup = group;
+                if (!el._jeSecretActions) {
+                    var replaceBtn = createEl('button', { type: 'button', className: 'emby-button raised je-secret-replace', textContent: 'Replace' });
+                    var clearBtn = createEl('button', { type: 'button', className: 'emby-button raised je-secret-clear', textContent: 'Clear' });
+                    var actions = createEl('span', { className: 'je-secret-actions' }, [replaceBtn, clearBtn]);
+                    el.insertAdjacentElement('afterend', actions);
+                    el._jeSecretActions = { wrap: actions, replace: replaceBtn, clear: clearBtn };
+                    replaceBtn.addEventListener('click', function() {
+                        var state = el.dataset.jeSecretState;
+                        jeSecretSetState(el, state === 'set' ? 'editing' : 'set');
+                        if (el.dataset.jeSecretState === 'editing') el.focus();
+                    });
+                    clearBtn.addEventListener('click', function() {
+                        jeSecretSetState(el, el.dataset.jeSecretState === 'cleared' ? 'set' : 'cleared');
+                    });
+                }
+                el.dataset.jeSecretToken = jeIsSecretPlaceholder(value) ? value : '';
+                delete el.dataset.jeSecretMoved;
+            });
+            if (jeIsSecretPlaceholder(value)) {
+                jeSecretSetState(input, 'set', true);
+            } else {
+                // Nothing saved (or a value from a server without the secrets store): a normal input.
+                group.forEach(function(el) { el.value = value || ''; });
+                jeSecretSetState(input, 'empty', true);
+            }
+        }
+
+        /**
+         * Switches a credential input (and its peers) between 'set', 'editing', 'cleared' and 'empty'.
+         * @param {HTMLInputElement} input - Any input of the group
+         * @param {string} state - The new state
+         * @param {boolean} [silent] - Skip the input event (initial load)
+         */
+        function jeSecretSetState(input, state, silent) {
+            var group = input._jeSecretGroup || [input];
+            group.forEach(function(el) {
+                var token = el.dataset.jeSecretToken || '';
+                if (!token && state !== 'empty') state = 'empty';
+                el.dataset.jeSecretState = state;
+                var actions = el._jeSecretActions;
+                if (state === 'set') {
+                    el.value = token;
+                    el.readOnly = true;
+                    el.placeholder = '';
+                    el.title = 'Saved. Click Replace to enter a new key.';
+                } else if (state === 'editing') {
+                    el.value = '';
+                    el.readOnly = false;
+                    el.placeholder = el.dataset.jeSecretMoved === '1'
+                        ? 'Re-enter the API key for this address'
+                        : 'New key (leave empty to keep the saved one)';
+                    el.title = el.dataset.jeSecretMoved === '1' ? 'The saved key is only used with the address it was saved for.' : '';
+                } else if (state === 'cleared') {
+                    el.value = '';
+                    el.readOnly = true;
+                    el.placeholder = 'Removed when you save';
+                    el.title = '';
+                } else {
+                    el.readOnly = false;
+                    el.title = '';
+                }
+                if (actions) {
+                    actions.wrap.style.display = token ? '' : 'none';
+                    actions.replace.textContent = state === 'editing' ? 'Keep saved' : 'Replace';
+                    actions.replace.disabled = state === 'cleared' || el.dataset.jeSecretMoved === '1';
+                    actions.clear.textContent = state === 'cleared' ? 'Undo' : 'Clear';
+                }
+            });
+            if (!silent) {
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+
+        /**
+         * The value to save for a credential input: the placeholder (keep), JE_SECRET_CLEAR
+         * (remove) or the newly typed key with whitespace removed.
+         * @param {HTMLInputElement} input - The credential input
+         * @returns {string}
+         */
+        function jeSecretRead(input) {
+            if (!input) return '';
+            var state = input.dataset.jeSecretState;
+            if (state === 'cleared') return JE_SECRET_CLEAR;
+            var typed = (input.value || '').replace(/\s/g, '');
+            if (input.dataset.jeSecretMoved === '1') return jeIsSecretPlaceholder(typed) ? '' : typed;
+            if (state === 'editing' && !typed) return input.dataset.jeSecretToken || '';
+            return typed;
+        }
+
+        /**
+         * The value a Test button sends for a credential input: a typed key as is, otherwise an
+         * ASCII stand-in for the saved key or import handle ('' when there is none, the field is
+         * cleared, or the address moved). Never the bullet placeholder, which fetch refuses in a header.
+         * @param {HTMLInputElement} input - The credential input
+         * @returns {string}
+         */
+        function jeSecretWireValue(input) {
+            var v = jeSecretRead(input);
+            if (v === JE_SECRET_CLEAR || !jeIsSecretPlaceholder(v)) return v === JE_SECRET_CLEAR ? '' : v;
+            var rest = v.slice(JE_SECRET_PREFIX.length);
+            return rest.indexOf(JE_SECRET_HANDLE_MARKER) === 0
+                ? JE_SECRET_HANDLE_WIRE + rest.slice(JE_SECRET_HANDLE_MARKER.length)
+                : JE_SECRET_SAVED_WIRE;
+        }
+
+        /**
+         * Scheme, host and port of a URL, the unit a saved key is bound to ('' when not a URL).
+         * @param {string} url - Any URL text
+         * @returns {string}
+         */
+        function jeServerOf(url) {
+            try {
+                var u = new URL(String(url || '').trim());
+                if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
+                return u.protocol + '//' + u.hostname.toLowerCase() + ':' + (u.port || (u.protocol === 'https:' ? '443' : '80'));
+            } catch (e) {
+                return '';
+            }
+        }
+
+        /**
+         * Records the address(es) a credential input's saved key (or import handle) belongs to.
+         * @param {HTMLInputElement} input - The credential input
+         * @param {string[]} urls - Saved address(es)
+         */
+        function jeSecretBindServers(input, urls) {
+            if (!input) return;
+            input._jeSecretServers = (urls || []).map(function(u) { return String(u || '').trim(); }).filter(Boolean);
+        }
+
+        /**
+         * Asks for the key again when an address field no longer matches the server the saved key
+         * belongs to (the server would not keep it there); going back to that server restores it.
+         * @param {HTMLInputElement} input - The credential input
+         * @param {string[]} urls - The address(es) now in the form
+         */
+        function jeSecretCheckServers(input, urls) {
+            if (!input || !input.dataset.jeSecretToken) return;
+            var saved = (input._jeSecretServers || []).map(jeServerOf);
+            var savedRaw = (input._jeSecretServers || []).map(function(u) { return u.replace(/\/+$/, '').toLowerCase(); });
+            var moved = (urls || []).map(function(u) { return String(u || '').trim(); }).filter(Boolean).some(function(u) {
+                var server = jeServerOf(u);
+                return savedRaw.indexOf(u.replace(/\/+$/, '').toLowerCase()) < 0 && (!server || saved.indexOf(server) < 0);
+            });
+            var was = input.dataset.jeSecretMoved === '1';
+            if (moved === was) return;
+            if (moved) {
+                input.dataset.jeSecretMoved = '1';
+                if (input.dataset.jeSecretState !== 'cleared') jeSecretSetState(input, 'editing');
+                else jeSecretSetState(input, 'cleared');
+            } else {
+                delete input.dataset.jeSecretMoved;
+                jeSecretSetState(input, input.dataset.jeSecretState === 'editing' && !input.value ? 'set' : input.dataset.jeSecretState);
+            }
+        }
+
+        /**
+         * Names of instances that were saved with an import handle but came back without a key
+         * (the import expired or did not match the address), so the admin can enter it.
+         * @param {Object<string, string>} sentHandles - Instance id -> name, for rows saved with a handle
+         * @param {Object} fresh - The configuration read back after the save
+         * @returns {string[]}
+         */
+        function jeImportedKeysLost(sentHandles, fresh) {
+            var lost = [];
+            ['SonarrInstances', 'RadarrInstances'].forEach(function(prop) {
+                var rows;
+                try { rows = JSON.parse((fresh && fresh[prop]) || '[]'); } catch (e) { return; }
+                (Array.isArray(rows) ? rows : []).forEach(function(row) {
+                    if (row && sentHandles[row.Id] && !jeIsSecretPlaceholder(row.ApiKey)) lost.push(sentHandles[row.Id]);
+                });
+            });
+            return lost;
+        }
+
+        /**
+         * A random RFC 4122 v4 id for a new arr instance (crypto.randomUUID needs a secure
+         * context; getRandomValues works on plain-http dashboards too).
+         * @returns {string}
+         */
+        function jeNewGuid() {
+            var b = new Uint8Array(16);
+            crypto.getRandomValues(b);
+            b[6] = (b[6] & 0x0f) | 0x40;
+            b[8] = (b[8] & 0x3f) | 0x80;
+            var h = Array.prototype.map.call(b, function(x) { return (x + 0x100).toString(16).slice(1); }).join('');
+            return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+        }
+
+        /**
+         * Re-reads the saved configuration after a save so credential fields show their new
+         * placeholders (a just-typed key is never left on screen) and new instances get their ids.
+         * @returns {Promise<void>}
+         */
+        async function jeRefreshSecretFields() {
+            var fresh = await ApiClient.getPluginConfiguration(pluginId);
+            jeSecretInit(document.querySelector('#TMDB_API_KEY'), fresh.TMDB_API_KEY, [document.querySelector('#jellyseerr_TMDB_API_KEY')]);
+            jeSecretInit(document.querySelector('#JellyseerrApiKey'), fresh.JellyseerrApiKey);
+            jeSecretBindServers(document.querySelector('#JellyseerrApiKey'), (fresh.JellyseerrUrls || '').split(/[\r\n,]+/));
+            jeSecretInit(document.querySelector('#mdblistApiKey'), fresh.MdblistApiKey || '');
+            jeSecretInit(document.querySelector('#shokoApiKey'), fresh.ShokoApiKey || '');
+            jeSecretBindServers(document.querySelector('#shokoApiKey'), [fresh.ShokoUrl || '']);
+            loadArrInstances(fresh);
+            updateAllDependencies();
+            var lost = jeImportedKeysLost(_jeSentImportHandles, fresh);
+            _jeSentImportHandles = {};
+            if (lost.length) {
+                Dashboard.alert({
+                    title: 'API key not saved',
+                    message: 'The key imported from Seerr could not be used for: ' + lost.join(', ') + '. The import expired or the address no longer matches the server it was imported for. Enter the API key and save again.'
+                });
+            }
+        }
+
+        // Instance id -> name of rows the last save sent with an import handle (see jeImportedKeysLost).
+        var _jeSentImportHandles = {};
+
+        // ==================== Arr instance registry fields (Requests & downloads) ====================
+
+        var _jeLibrariesPromise = null;
+
+        /**
+         * The server's libraries (name + id) for the "Linked libraries" checkboxes, fetched once.
+         * @returns {Promise<Array<{Name: string, ItemId: string}>>}
+         */
+        function jeGetLibraries() {
+            if (!_jeLibrariesPromise) {
+                _jeLibrariesPromise = ApiClient.getVirtualFolders()
+                    .then(function(folders) { return Array.isArray(folders) ? folders : []; })
+                    .catch(function() { _jeLibrariesPromise = null; return []; });
+            }
+            return _jeLibrariesPromise;
+        }
+
+        /**
+         * Builds the registry fields of an instance card (role, default, linked libraries, path
+         * mappings). Shown only while "Requests & downloads (new)" is on; always round-tripped.
+         * @param {string} type - 'sonarr' or 'radarr'
+         * @param {Object} instance - The stored row
+         * @returns {HTMLElement}
+         */
+        function jeBuildInstanceRegistryFields(type, instance) {
+            var label = type === 'sonarr' ? 'Sonarr' : 'Radarr';
+            var roleSelect = createEl('select', { className: 'arr-instance-role emby-select-withcolor emby-select' });
+            [['standard', 'Standard'], ['4k', '4K (UHD)'], ['anime', 'Anime'], ['custom', 'Other']].forEach(function(r) {
+                var opt = createEl('option', { value: r[0], textContent: r[1] });
+                roleSelect.appendChild(opt);
+            });
+            roleSelect.value = ['standard', '4k', 'anime', 'custom'].indexOf(String(instance.Role || '').toLowerCase()) !== -1 ? String(instance.Role).toLowerCase() : 'standard';
+            var roleContainer = createEl('div', { className: 'selectContainer', style: 'margin-top: 0.5em;' }, [
+                createEl('label', { className: 'selectLabel', textContent: 'Role' }),
+                roleSelect,
+                createEl('div', { className: 'fieldDescription', textContent: 'What this ' + label + ' is for. Later features send each request to the default instance of the matching role: 4K requests only ever go to a 4K instance, never to the standard one.' })
+            ]);
+
+            var defaultCb = createEl('input', { type: 'checkbox', className: 'arr-instance-default' });
+            defaultCb.checked = instance.IsDefault === true;
+            var defaultRow = createEl('label', { className: 'je-arr-v2-check', style: 'display:flex;align-items:center;gap:0.5em;margin-top:0.5em;' }, [
+                defaultCb, createEl('span', { textContent: 'Default ' + label + ' for this role' })
+            ]);
+
+            var libsWrap = createEl('div', { className: 'arr-instance-libraries', style: 'display:flex;flex-wrap:wrap;gap:0.25em 1em;margin-top:0.25em;' });
+            var linked = (instance.LinkedLibraryIds || []).map(function(x) { return String(x).toLowerCase().replace(/-/g, ''); });
+            libsWrap.appendChild(createEl('span', { className: 'fieldDescription', textContent: 'Loading libraries...' }));
+            jeGetLibraries().then(function(folders) {
+                libsWrap.textContent = '';
+                if (!folders.length) {
+                    libsWrap.appendChild(createEl('span', { className: 'fieldDescription', textContent: 'No libraries found.' }));
+                }
+                folders.forEach(function(f) {
+                    if (!f || !f.ItemId) return;
+                    var id = String(f.ItemId).toLowerCase().replace(/-/g, '');
+                    var cb = createEl('input', { type: 'checkbox', className: 'arr-instance-library', 'data-library-id': id });
+                    cb.checked = linked.indexOf(id) !== -1;
+                    if (libsWrap.closest('.arr-instance-card') && libsWrap.closest('.arr-instance-card').classList.contains('arr-instance-disabled')) cb.disabled = true;
+                    libsWrap.appendChild(createEl('label', { style: 'display:flex;align-items:center;gap:0.35em;' }, [cb, createEl('span', { textContent: f.Name || id })]));
+                });
+                // Keep links to libraries that no longer exist (or were not listed) instead of dropping them silently.
+                libsWrap.dataset.unlisted = JSON.stringify(linked.filter(function(l) {
+                    return !folders.some(function(f) { return f && String(f.ItemId).toLowerCase().replace(/-/g, '') === l; });
+                }));
+            });
+            var libsContainer = createEl('div', { className: 'inputContainer', style: 'margin-top: 0.75em;' }, [
+                createEl('label', { className: 'inputLabel inputLabelUnfocused', textContent: 'Linked libraries' }),
+                libsWrap,
+                createEl('div', { className: 'fieldDescription', textContent: 'The Jellyfin libraries whose files this ' + label + ' manages. Used to tell which copy of a title (for example the 4K one) came from this instance.' })
+            ]);
+
+            var pathsArea = createEl('textarea', { className: 'arr-instance-pathmappings emby-textarea emby-input', style: 'display:block; height: 6vh !important; margin-top: 0.25em;', placeholder: '/movies|/media/movies' });
+            pathsArea.value = (instance.PathMappings || []).map(function(m) { return (m.ArrPath || '') + '|' + (m.JellyfinPath || ''); }).join('\n');
+            var pathsContainer = createEl('div', { className: 'inputContainer', style: 'margin-top: 0.75em;' }, [
+                createEl('label', { className: 'inputLabel inputLabelUnfocused', textContent: 'Path mappings (optional)' }),
+                pathsArea,
+                createEl('div', { className: 'fieldDescription', textContent: 'Only needed when ' + label + ' and Jellyfin see the same folders under different paths. One per line: ' + label.toLowerCase() + '_path|jellyfin_path, for example /movies|/media/movies.' })
+            ]);
+
+            return createEl('div', { className: 'je-arr-v2' }, [
+                createEl('div', { className: 'je-arr-v2-heading', textContent: 'Requests & downloads' }),
+                roleContainer, defaultRow, libsContainer, pathsContainer
+            ]);
+        }
+
+        /**
+         * Reads an instance card's registry fields back into the stored row shape.
+         * @param {HTMLElement} card - The instance card
+         * @returns {Object}
+         */
+        function jeReadInstanceRegistryFields(card) {
+            var base = card._jeRow || {};
+            var out = {};
+            var role = card.querySelector('.arr-instance-role');
+            out.Role = role ? role.value : (base.Role || 'standard');
+            var def = card.querySelector('.arr-instance-default');
+            out.IsDefault = def ? def.checked : base.IsDefault === true;
+            var libsWrap = card.querySelector('.arr-instance-libraries');
+            var boxes = libsWrap ? libsWrap.querySelectorAll('.arr-instance-library') : [];
+            if (libsWrap && (boxes.length || libsWrap.dataset.unlisted)) {
+                var ids = [];
+                boxes.forEach(function(cb) { if (cb.checked) ids.push(cb.getAttribute('data-library-id')); });
+                try { ids = ids.concat(JSON.parse(libsWrap.dataset.unlisted || '[]')); } catch (e) { /* keep checked ones */ }
+                out.LinkedLibraryIds = ids;
+            } else {
+                // Libraries not loaded yet: keep what was stored.
+                out.LinkedLibraryIds = base.LinkedLibraryIds || [];
+            }
+            var paths = card.querySelector('.arr-instance-pathmappings');
+            out.PathMappings = paths ? paths.value.split(/\r?\n/).map(function(line) {
+                var i = line.indexOf('|');
+                return i > 0 ? { ArrPath: line.slice(0, i).trim(), JellyfinPath: line.slice(i + 1).trim() } : null;
+            }).filter(function(m) { return m && m.ArrPath && m.JellyfinPath; }) : (base.PathMappings || []);
+            return out;
+        }
+
         function createInstanceCard(type, instance, startOpen) {
             var defaultName = type === 'sonarr' ? 'Sonarr' : 'Radarr';
             var namePlaceholder = type === 'sonarr' ? 'e.g., TV Shows, Anime' : 'e.g., Movies, 4K Movies';
@@ -4952,11 +5338,13 @@
             var urlContainer = createEl('div', { className: 'inputContainer', style: 'margin-top: 0.5em;' }, [urlLabel, urlInput, urlDesc]);
 
             var apiLabel = createEl('label', { className: 'inputLabel inputLabelUnfocused', textContent: 'API Key' });
-            var apiInput = createEl('input', { className: 'arr-instance-apikey emby-input', type: 'text', autocomplete: 'off', placeholder: 'API key (find in Settings > General > Security)', value: instance.ApiKey || '' });
+            var apiInput = createEl('input', { className: 'arr-instance-apikey emby-input', type: 'text', autocomplete: 'off', placeholder: 'API key (find in Settings > General > Security)' });
             var statusIcon = createEl('span', { className: 'material-icons arr-instance-status', style: 'transition: color 0.3s ease;' });
             var testBtn = createEl('button', { className: 'emby-button raised arr-instance-test', type: 'button' });
             testBtn.appendChild(createEl('span', { textContent: 'Test' }));
             var apiRow = createEl('div', { style: 'display: flex; align-items: center; gap: 1em;' }, [apiInput, statusIcon, testBtn]);
+            jeSecretInit(apiInput, instance.ApiKey || '');
+            jeSecretBindServers(apiInput, [instance.Url || '']);
             var apiDesc = createEl('div', { className: 'fieldDescription', textContent: 'Find this in ' + (type === 'sonarr' ? 'Sonarr' : 'Radarr') + ' under Settings > General > Security > API Key' });
             var apiContainer = createEl('div', { className: 'inputContainer', style: 'margin-top: 0.5em;' }, [apiLabel, apiRow, apiDesc]);
 
@@ -4969,13 +5357,19 @@
             var mappingsDesc = createEl('div', { className: 'fieldDescription', textContent: 'Map Jellyfin access URLs to this instance\'s URL. Format: jellyfin_url|arr_url (one per line). Useful for reverse-proxy setups.' });
             var mappingsContainer = createEl('div', { className: 'inputContainer', style: 'margin-top: 0.5em;' }, [mappingsLabel, mappingsTextarea, mappingsDesc]);
 
-            var body = createEl('div', { className: 'arr-instance-card-body' }, [header, urlContainer, apiContainer, mappingsContainer]);
+            var registryFields = jeBuildInstanceRegistryFields(type, instance);
+            var body = createEl('div', { className: 'arr-instance-card-body' }, [header, urlContainer, apiContainer, mappingsContainer, registryFields]);
 
             // The card is a <details> element
             var card = document.createElement('details');
             card.className = 'arr-instance-card';
             if (!initiallyEnabled) card.classList.add('arr-instance-disabled');
             card.dataset.type = type;
+            // Stable instance id (registry v2): kept for existing rows, minted here for new ones so a
+            // second save before a reload doesn't create another id. The whole stored row is kept so
+            // fields this page doesn't edit survive the round trip.
+            card.dataset.instanceId = instance.Id || jeNewGuid();
+            card._jeRow = instance;
             if (startOpen) card.open = true;
             card.appendChild(summaryEl);
             card.appendChild(body);
@@ -4988,6 +5382,7 @@
             });
             urlInput.addEventListener('input', function() {
                 summaryUrlSpan.textContent = urlInput.value.trim();
+                jeSecretCheckServers(apiInput, [urlInput.value]);
             });
 
             // Toggle visual dim state + summary "(disabled)" chip when the Enabled checkbox
@@ -5191,10 +5586,17 @@
             var incomplete = [];
             document.querySelectorAll(selector).forEach(function(card) {
                 var url = card.querySelector('.arr-instance-url').value.trim();
-                var apiKey = card.querySelector('.arr-instance-apikey').value.trim();
+                var apiKey = jeSecretRead(card.querySelector('.arr-instance-apikey'));
+                if (apiKey === JE_SECRET_CLEAR) apiKey = '';
                 if (url && apiKey) {
+                    if (apiKey.indexOf(JE_SECRET_PREFIX + JE_SECRET_HANDLE_MARKER) === 0) {
+                        _jeSentImportHandles[card.dataset.instanceId] = card.querySelector('.arr-instance-name').value.trim() || defaultName;
+                    }
                     var enabledCb = card.querySelector('.arr-instance-enabled');
-                    out.push({
+                    // Start from the stored row so every field survives (registry v2 adds several
+                    // this page doesn't show), then apply what the card edits.
+                    out.push(Object.assign({}, card._jeRow || {}, {
+                        Id: card.dataset.instanceId,
                         Name: card.querySelector('.arr-instance-name').value.trim() || defaultName,
                         Url: url,
                         ApiKey: apiKey,
@@ -5202,7 +5604,7 @@
                         // Default to true when the checkbox is missing (shouldn't happen, but
                         // guards against DOM surgery from another script).
                         Enabled: enabledCb ? enabledCb.checked : true
-                    });
+                    }, jeReadInstanceRegistryFields(card)));
                 } else if (url && !apiKey) {
                     // Card has a URL but no API key — it would be silently dropped. Collect the
                     // name so we can warn the admin before the save commits.
@@ -5269,6 +5671,82 @@
             );
             updateAllDependencies();
         });
+
+
+        /**
+         * Shows the per-instance "Requests & downloads" fields while the master switch is ticked.
+         */
+        function jeApplyArrIntegrationVisibility() {
+            var on = !!(document.querySelector('#arrIntegrationEnabled') || {}).checked;
+            var tab = document.getElementById('arr');
+            if (tab) tab.classList.toggle('je-arr-v2-on', on);
+        }
+
+        /**
+         * "Check connections": tests every saved Sonarr/Radarr instance through the admin
+         * diagnostics route and lists app, version, support and the instance's health warnings.
+         * @returns {Promise<void>}
+         */
+        async function jeCheckArrConnections() {
+            var out = document.getElementById('arrIntegrationCheckResult');
+            var btn = document.getElementById('arrIntegrationCheckBtn');
+            if (!out) return;
+            out.textContent = 'Checking...';
+            if (btn) btn.disabled = true;
+            try {
+                var list;
+                try {
+                    list = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/instances'), dataType: 'json' });
+                } catch (e) {
+                    out.textContent = e && e.status === 404
+                        ? 'Save with "Requests & downloads (new)" turned on, then check again.'
+                        : 'Could not load the saved instances.';
+                    return;
+                }
+                var instances = (list && list.instances) || [];
+                out.textContent = '';
+                if (!instances.length) {
+                    out.textContent = 'No Sonarr or Radarr instances are saved yet.';
+                    return;
+                }
+                for (var i = 0; i < instances.length; i++) {
+                    var inst = instances[i];
+                    var row = createEl('div', { className: 'je-arr-check-row' });
+                    var title = createEl('div', { className: 'je-arr-check-title', textContent: (inst.name || inst.kind) + ' (' + inst.kind + (inst.role && inst.role !== 'standard' ? ', ' + inst.role : '') + (inst.enabled === false ? ', disabled' : '') + ')' });
+                    var detail = createEl('div', { className: 'fieldDescription', textContent: 'Checking...' });
+                    row.appendChild(title);
+                    row.appendChild(detail);
+                    out.appendChild(row);
+                    var r;
+                    try {
+                        r = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/arr/admin/instances/' + encodeURIComponent(inst.id) + '/test'), dataType: 'json' });
+                    } catch (e) {
+                        detail.textContent = 'Check failed (error ' + (e && e.status ? e.status : '?') + ').';
+                        row.classList.add('je-arr-check-bad');
+                        continue;
+                    }
+                    if (r && r.ok) {
+                        row.classList.add('je-arr-check-ok');
+                        detail.textContent = '✓ ' + r.appName + ' ' + r.version + (r.instanceName ? ' · "' + r.instanceName + '"' : '') + ' · ' + r.latencyMs + ' ms';
+                    } else {
+                        row.classList.add('je-arr-check-bad');
+                        detail.textContent = '✗ ' + ((r && r.error && r.error.message) || 'Not working.');
+                    }
+                    var notes = [].concat((r && r.warnings) || []);
+                    ((r && r.health) || []).forEach(function(h) {
+                        if (h && h.type && h.type !== 'ok') notes.push(inst.kind + ' health (' + h.type + '): ' + h.message);
+                    });
+                    notes.forEach(function(n) {
+                        row.appendChild(createEl('div', { className: 'fieldDescription je-arr-check-note', textContent: n }));
+                    });
+                }
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        document.querySelector('#arrIntegrationEnabled').addEventListener('change', jeApplyArrIntegrationVisibility);
+        document.querySelector('#arrIntegrationCheckBtn').addEventListener('click', jeCheckArrConnections);
 
         /** Reconstructs a Sonarr/Radarr instance's own URL from Seerr's settings shape. */
         function buildArrUrlFromSeerrInstance(inst) {
@@ -5431,8 +5909,12 @@
                             list.appendChild(createInstanceCard(type, {
                                 Name: row.inst.name || label,
                                 Url: row.url,
+                                // A server-side handle, not the key: the save (or Test) resolves it.
                                 ApiKey: row.inst.apiKey || '',
-                                UrlMappings: urlMappings
+                                UrlMappings: urlMappings,
+                                Role: row.inst.is4k ? '4k' : 'standard',
+                                IsDefault: row.inst.isDefault === true,
+                                SeerrServerId: typeof row.inst.id === 'number' ? row.inst.id : null
                             }, false));
                             imported++;
                         });
@@ -6407,14 +6889,13 @@
                 document.querySelector('#ToastDuration').value = config.ToastDuration;
                 document.querySelector('#HelpPanelAutocloseDelay').value = config.HelpPanelAutocloseDelay;
                 document.querySelector('#elsewhereEnabled').checked = config.ElsewhereEnabled;
-                document.querySelector('#TMDB_API_KEY').value = config.TMDB_API_KEY;
+                jeSecretInit(document.querySelector('#TMDB_API_KEY'), config.TMDB_API_KEY, [document.querySelector('#jellyseerr_TMDB_API_KEY')]);
                 populateRegionSelect(config.DEFAULT_REGION);
                 document.querySelector('#DEFAULT_PROVIDERS').value = config.DEFAULT_PROVIDERS;
                 document.querySelector('#IGNORE_PROVIDERS').value = config.IGNORE_PROVIDERS;
                 document.querySelector('#ElsewhereSeasonProviders').checked = config.ElsewhereSeasonProviders !== false;
                 document.querySelector('#ElsewhereCustomBrandingText').value = config.ElsewhereCustomBrandingText || '';
                 document.querySelector('#ElsewhereCustomBrandingImageUrl').value = config.ElsewhereCustomBrandingImageUrl || '';
-                document.querySelector('#jellyseerr_TMDB_API_KEY').value = config.TMDB_API_KEY;
 
                 // Set up bidirectional sync between TMDB API key fields
                 const tmdbKeyField = document.querySelector('#TMDB_API_KEY');
@@ -6518,7 +6999,7 @@
                 document.querySelector('#showReviews').checked = config.ShowReviews;
                 document.querySelector('#showAwards').checked = !!config.ShowAwards;
                 document.querySelector('#mdblistRatingsEnabled').checked = !!config.MdblistRatingsEnabled;
-                document.querySelector('#mdblistApiKey').value = config.MdblistApiKey || '';
+                jeSecretInit(document.querySelector('#mdblistApiKey'), config.MdblistApiKey || '');
                 document.querySelector('#mdblistRatingsShowOnItemDetails').checked = config.MdblistRatingsShowOnItemDetails !== false;
                 document.querySelector('#mdblistRatingsFetchEnabled').checked = !!config.MdblistRatingsFetchEnabled;
                 document.querySelector('#mdblistFetchReserve').value = config.MdblistFetchReserve || 400;
@@ -6568,9 +7049,9 @@
                 document.querySelector('#jellyseerrUserIdCacheTtlMinutes').value = config.JellyseerrUserIdCacheTtlMinutes || 30;
                 document.querySelector('#showElsewhereOnJellyseerr').checked = config.ShowElsewhereOnJellyseerr;
                 document.querySelector('#jellyseerrUrls').value = config.JellyseerrUrls;
-                document.querySelector('#JellyseerrApiKey').value = config.JellyseerrApiKey;
+                jeSecretInit(document.querySelector('#JellyseerrApiKey'), config.JellyseerrApiKey);
+                jeSecretBindServers(document.querySelector('#JellyseerrApiKey'), (config.JellyseerrUrls || '').split(/[\r\n,]+/));
                 document.querySelector('#jellyseerrUrlMappings').value = config.JellyseerrUrlMappings || '';
-                document.querySelector('#jellyseerr_TMDB_API_KEY').value = config.TMDB_API_KEY;
                 document.querySelector('#autoSeasonRequestEnabled').checked = config.AutoSeasonRequestEnabled || false;
                 document.querySelector('#autoSeasonRequestRequireAllWatched').checked = config.AutoSeasonRequestRequireAllWatched || false;
                 document.querySelector('#autoSeasonRequestThresholdValue').value = config.AutoSeasonRequestThresholdValue || 2;
@@ -6605,11 +7086,14 @@
                 document.querySelector('#useIcons').checked = config.UseIcons !== false;
                 document.querySelector('#iconStyle').value = config.IconStyle || 'emoji';
                 document.querySelector('#arrLinksEnabled').checked = config.ArrLinksEnabled;
+                document.querySelector('#arrIntegrationEnabled').checked = config.ArrIntegrationEnabled === true;
+                jeApplyArrIntegrationVisibility();
                 document.querySelector('#bazarrUrlMappings').value = config.BazarrUrlMappings || '';
                 document.querySelector('#bazarrUrl').value = config.BazarrUrl;
                 document.querySelector('#shokoUrlMappings').value = config.ShokoUrlMappings || '';
                 document.querySelector('#shokoUrl').value = config.ShokoUrl;
-                document.querySelector('#shokoApiKey').value = config.ShokoApiKey;
+                jeSecretInit(document.querySelector('#shokoApiKey'), config.ShokoApiKey);
+                jeSecretBindServers(document.querySelector('#shokoApiKey'), [config.ShokoUrl || '']);
                 document.querySelector('#shokoShowEpisodes').checked = config.ShokoShowEpisodes !== false;
                 document.querySelector('#shokoShowSpecials').checked = config.ShokoShowSpecials === true;
                 document.querySelector('#shokoShowCredits').checked = config.ShokoShowCredits === true;
@@ -7003,7 +7487,7 @@
             config.ToastDuration = parseInt(document.querySelector('#ToastDuration').value, 10);
             config.HelpPanelAutocloseDelay = parseInt(document.querySelector('#HelpPanelAutocloseDelay').value, 10);
             config.ElsewhereEnabled = document.querySelector('#elsewhereEnabled').checked;
-            config.TMDB_API_KEY = document.querySelector('#TMDB_API_KEY').value;
+            config.TMDB_API_KEY = jeSecretRead(document.querySelector('#TMDB_API_KEY'));
             config.DEFAULT_REGION = document.querySelector('#DEFAULT_REGION').value;
             config.DEFAULT_PROVIDERS = document.querySelector('#DEFAULT_PROVIDERS').value;
             config.IGNORE_PROVIDERS = document.querySelector('#IGNORE_PROVIDERS').value;
@@ -7087,7 +7571,7 @@
             config.ShowReviews = document.querySelector('#showReviews').checked;
             config.ShowAwards = document.querySelector('#showAwards').checked;
             config.MdblistRatingsEnabled = document.querySelector('#mdblistRatingsEnabled').checked;
-            config.MdblistApiKey = document.querySelector('#mdblistApiKey').value.trim();
+            config.MdblistApiKey = jeSecretRead(document.querySelector('#mdblistApiKey'));
             config.MdblistRatingsShowOnItemDetails = document.querySelector('#mdblistRatingsShowOnItemDetails').checked;
             config.MdblistRatingsFetchEnabled = document.querySelector('#mdblistRatingsFetchEnabled').checked;
             config.MdblistFetchReserve = parseInt(document.querySelector('#mdblistFetchReserve').value, 10) || 400;
@@ -7167,9 +7651,9 @@
                 }
                 config.JellyseerrUrls = valid.join('\n');
             })();
-            config.JellyseerrApiKey = (document.querySelector('#JellyseerrApiKey').value || '').replace(/\s/g, '');
+            config.JellyseerrApiKey = jeSecretRead(document.querySelector('#JellyseerrApiKey'));
             config.JellyseerrUrlMappings = (document.querySelector('#jellyseerrUrlMappings').value || '').split('\n').map(u => u.trim()).filter(Boolean).join('\n');
-            config.TMDB_API_KEY = document.querySelector('#jellyseerr_TMDB_API_KEY').value;
+            config.TMDB_API_KEY = jeSecretRead(document.querySelector('#jellyseerr_TMDB_API_KEY'));
             config.AutoSeasonRequestEnabled = document.querySelector('#autoSeasonRequestEnabled').checked;
             config.AutoSeasonRequestRequireAllWatched = document.querySelector('#autoSeasonRequestRequireAllWatched').checked;
             config.AutoSeasonRequestThresholdValue = parseInt(document.querySelector('#autoSeasonRequestThresholdValue').value, 10) || 2;
@@ -7218,11 +7702,12 @@
             config.IconStyle = document.querySelector('#iconStyle').value;
 
             config.ArrLinksEnabled = document.querySelector('#arrLinksEnabled').checked;
+            config.ArrIntegrationEnabled = document.querySelector('#arrIntegrationEnabled').checked;
             config.BazarrUrlMappings = document.querySelector('#bazarrUrlMappings').value || '';
             config.BazarrUrl = document.querySelector('#bazarrUrl').value;
             config.ShokoUrlMappings = document.querySelector('#shokoUrlMappings').value || '';
             config.ShokoUrl = document.querySelector('#shokoUrl').value;
-            config.ShokoApiKey = (document.querySelector('#shokoApiKey').value || '').replace(/\s/g, '');
+            config.ShokoApiKey = jeSecretRead(document.querySelector('#shokoApiKey'));
             config.ShokoShowEpisodes = document.querySelector('#shokoShowEpisodes').checked;
             config.ShokoShowSpecials = document.querySelector('#shokoShowSpecials').checked;
             config.ShokoShowCredits = document.querySelector('#shokoShowCredits').checked;
@@ -7601,6 +8086,8 @@
                 }
 
                 Dashboard.processPluginConfigurationUpdateResult(result);
+                // Show the saved credentials as placeholders again (never leave a typed key on screen).
+                try { await jeRefreshSecretFields(); } catch (refreshErr) { console.warn('[JE] Could not refresh saved credentials:', refreshErr); }
                 // The form now is the just-saved state, so re-snapshot immediately.
                 jeMarkSaved();
                 if (syncResult && syncResult.ok === false) {
@@ -8638,6 +9125,7 @@
             { parent: 'showDownloadsInRequests', label: 'Show Downloads in Requests Page', children: ['downloadsFilterByUserRequests'] },
             { parent: 'downloadsShowHistory', label: 'Show Download History Section', children: ['downloadsHistoryAdminOnly'] },
             { parent: 'downloadsPagePollingEnabled', label: 'Enable Auto-Refresh', children: ['downloadsPollIntervalSeconds'] },
+            { parent: 'arrIntegrationEnabled', label: 'Enable Requests & downloads (new)', children: ['arrIntegrationCheckBtn'] },
             { parent: 'arrLinksEnabled', label: 'Enable *arr Links', children: ['showArrLinksAsText', 'arrLinksShowStatusSingle'] },
             { parent: 'arrTagsSyncEnabled', label: 'Enable *arr Tags Sync', children: ['arrTagsPrefix', 'arrTagsClearOldTags', 'arrTagsShowAsLinks', 'arrTagsSyncFilter'] },
             { parent: 'arrTagsShowAsLinks', label: 'Show synced tags as links', children: ['arrTagsLinksFilter', 'arrTagsLinksHideFilter'] },
@@ -9989,7 +10477,7 @@
         async function testInstanceConnection(card) {
             var type = card.dataset.type;
             var urlVal = (card.querySelector('.arr-instance-url').value || '').trim();
-            var apiKeyVal = (card.querySelector('.arr-instance-apikey').value || '').trim();
+            var apiKeyVal = jeSecretWireValue(card.querySelector('.arr-instance-apikey'));
             var nameVal = card.querySelector('.arr-instance-name').value.trim() || (type === 'sonarr' ? 'Sonarr' : 'Radarr');
             var btn = card.querySelector('.arr-instance-test');
             var indicator = card.querySelector('.arr-instance-status');
@@ -10012,7 +10500,7 @@
             var arrCacheKey = type + ':' + _jeNormalizeArrUrl(urlVal);
             try {
                 var endpoint = type === 'sonarr' ? 'sonarr' : 'radarr';
-                var validationUrl = ApiClient.getUrl('/JellyfinEnhanced/arr/validate/' + endpoint, { url: urlVal });
+                var validationUrl = ApiClient.getUrl('/JellyfinEnhanced/arr/validate/' + endpoint, { url: urlVal, instanceId: card.dataset.instanceId || '' });
                 await ApiClient.ajax({ type: 'GET', url: validationUrl, dataType: 'json', headers: { 'X-Arr-ApiKey': apiKeyVal } });
 
                 indicator.textContent = 'check_circle';
@@ -10025,6 +10513,9 @@
                 indicator.textContent = 'error';
                 indicator.style.color = '#dc3545';
 
+                if (e && typeof e.json === 'function') {
+                    try { e.responseJSON = await e.clone().json(); } catch (_) { /* not JSON */ }
+                }
                 var msg = connectionErrorMessage(e, nameVal, urlVal);
                 try {
                     var shortArrDetail = e && e.status === 401 ? 'API key rejected'
@@ -10393,10 +10884,17 @@
         }
 
         testJellyseerrBtn.addEventListener('click', testJellyseerrConnection);
+        // A saved key only goes to the server it was saved for: re-check when an address changes.
+        document.querySelector('#jellyseerrUrls').addEventListener('input', function(e) {
+            jeSecretCheckServers(document.querySelector('#JellyseerrApiKey'), e.target.value.split(/[\r\n,]+/));
+        });
+        document.querySelector('#shokoUrl').addEventListener('input', function(e) {
+            jeSecretCheckServers(document.querySelector('#shokoApiKey'), [e.target.value]);
+        });
 
         async function triggerSeerrScanNow() {
             const urls = (document.querySelector('#jellyseerrUrls').value || '').split('\n').map(u => u.trim()).filter(Boolean);
-            const apiKey = (document.querySelector('#JellyseerrApiKey').value || '').trim();
+            const apiKey = jeSecretWireValue(document.querySelector('#JellyseerrApiKey'));
             const btn = document.querySelector('#triggerSeerrScanNowBtn');
             const status = document.querySelector('#triggerSeerrScanNowStatus');
 
@@ -11404,7 +11902,7 @@
         async function checkMdblistStatus() {
             const statusLine = document.getElementById('mdblistStatusLine');
             const statusIndicator = document.getElementById('mdblistStatusIndicator');
-            const apiKey = (document.querySelector('#mdblistApiKey')?.value || '').trim();
+            const apiKey = jeSecretWireValue(document.querySelector('#mdblistApiKey'));
 
             if (statusIndicator) {
                 statusIndicator.textContent = 'sync';

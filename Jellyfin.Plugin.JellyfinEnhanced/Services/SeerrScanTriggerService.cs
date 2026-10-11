@@ -127,7 +127,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return results;
                 }
 
-                var apiKey = config.JellyseerrApiKey;
+                var apiKey = config.GetJellyseerrApiKey();
                 var urls = ParseUrls(config.JellyseerrUrls);
                 if (urls.Count == 0 || string.IsNullOrEmpty(apiKey))
                 {

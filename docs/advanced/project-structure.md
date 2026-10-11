@@ -24,7 +24,9 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │                                     # configPage.html + configPage.css — the admin
 │                                     # settings page
 ├── Controllers/                      # JellyfinEnhancedController.cs — every
-│                                     # /JellyfinEnhanced/* endpoint the client calls
+│                                     # /JellyfinEnhanced/* endpoint the client calls;
+│                                     # ArrAdminController.cs — arr registry/diagnostics
+│                                     # and the credential rollback (admin only)
 ├── PluginPages/                      # HTML wrappers for the sidebar/plugin pages
 ├── Assets/
 │   └── PosterTags/                   # Embedded fonts, icon paths, flags, age-rating
@@ -326,6 +328,17 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
     * **`SpoilerExistingTitlesApplier.cs`**: Applies the saved auto-enable scope to titles already in the library on demand (dry-run preview for the config page, skips titles a user already has or has fully watched). Run by `ScheduledTasks/SpoilerApplyExistingTitlesTask.cs` ("Spoiler Guard: apply to existing titles", no default triggers).
     * **`SpoilerSeerrPendingPromoter.cs`**: Promotes pending pre-acquisition entries (registered from the Seerr More Info modal or auto-enable on request) into real per-item protection when the content lands in the library.
     * **`SpoilerUserResolver.cs`**: Loads per-user Spoiler Guard state for the requesting user identified by `RequestIdentityService`.
+
+* **`/Services/Secrets/`**: Credentials kept out of the plugin configuration.
+    * **`SecretsStore.cs`**: The owner-only `secrets.json` sidecar holding every stored API key and secret, plus short-lived server-side handles for keys imported from Seerr.
+    * **`SecretValue.cs`**: The placeholders the configuration, the dashboard and every response carry instead of a credential (mask, import handle, clear request).
+    * **`SecretsMigration.cs`**: Moves plain-text credentials into the store at start-up (idempotent), merges dashboard saves (a placeholder or blank keeps the stored value) and writes them back for a downgrade. `Configuration/PluginConfigurationSecrets.cs` holds the accessors features use to read the real values.
+
+* **`/Services/Arr/`**: Foundations of "Requests & downloads (new)".
+    * **`ArrInstanceRegistry.cs`** / **`ArrConnection.cs`** / **`ArrRegistryMigration.cs`**: Instance registry v2 — typed, id-addressed Sonarr/Radarr instances (role, default, linked libraries, path mappings) over the existing `SonarrInstances` / `RadarrInstances` settings, with role-based default selection.
+    * **`ArrClient.cs`** / **`ArrClientFactory.cs`** / **`ArrHttp.cs`**: One client per instance on a named HttpClient that never follows redirects and checks the address it connects to; per-call timeouts and size caps, typed `ArrError`s, GET backoff, paging, `appName` and version detection (`ArrSystemStatus.cs`).
+    * **`ArrActionRunner.cs`** / **`ArrAuditLog.cs`** / **`ArrConfirmationTokens.cs`**: Direct arr writes with an idempotency key, read-back, an append-only `arr-audit.jsonl` and confirmation tokens for destructive actions.
+    * **`ArrDiagnostics.cs`**: The connection check used by the admin test routes.
 
 * **`/Services/ClientScriptBundle.cs`**: Builds and caches the component bundle (`/JellyfinEnhanced/bundle.js`) and its index source map from the embedded `js/component-scripts.json` manifest; also the source of the ordered list returned by `/bootstrap`.
 

@@ -96,7 +96,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 return null;
             }
 
-            if (string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("[Seerr→Jellyfin Watchlist Sync] Jellyseerr URL or API key not configured.");
                 progress?.Report(100);
@@ -129,7 +129,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             foreach (var url in urls)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                jellyseerrUserMap = await GetJellyseerrUserMap(httpClient, url, config.JellyseerrApiKey);
+                jellyseerrUserMap = await GetJellyseerrUserMap(httpClient, url, config.GetJellyseerrApiKey());
                 if (jellyseerrUserMap != null)
                 {
                     jellyseerrUrl = url;
@@ -193,12 +193,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     }
 
                     // Get watchlist from Jellyseerr
-                    var watchlistItems = await GetJellyseerrWatchlist(httpClient, jellyseerrUrl, jellyseerrUserId, config.JellyseerrApiKey) ?? new List<WatchlistItem>();
+                    var watchlistItems = await GetJellyseerrWatchlist(httpClient, jellyseerrUrl, jellyseerrUserId, config.GetJellyseerrApiKey()) ?? new List<WatchlistItem>();
 
                     var requestItems = new List<WatchlistItem>();
                     if (config.AddRequestedMediaToWatchlist)
                     {
-                        requestItems = await GetJellyseerrRequests(httpClient, jellyseerrUrl, jellyseerrUserId, config.JellyseerrApiKey) ?? new List<WatchlistItem>();
+                        requestItems = await GetJellyseerrRequests(httpClient, jellyseerrUrl, jellyseerrUserId, config.GetJellyseerrApiKey()) ?? new List<WatchlistItem>();
                     }
 
                     // Log consolidated summary

@@ -703,7 +703,12 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `arr/validate/sonarr`, `arr/validate/radarr` | Validate an instance's URL/API key |
+| GET | `arr/validate/sonarr`, `arr/validate/radarr` | Admin: validate an instance's URL/API key (checks the app name; a masked key plus `instanceId` tests the saved key against that instance's saved URL) |
+| GET | `arr/admin/instances` | Admin, Requests & downloads (new): the instance registry; keys reported as set/hint only |
+| POST | `arr/admin/instances/{id}/test` | Admin, Requests & downloads (new): test a saved instance (app, version, feature gates, health) |
+| POST | `arr/admin/test` | Admin, Requests & downloads (new): test unsaved values |
+| GET | `arr/admin/audit` | Admin, Requests & downloads (new): recent audited arr actions |
+| POST | `admin/secrets/rollback` | Admin: write stored credentials back into the plugin configuration before a downgrade (body `{"confirm":"write-credentials-to-plugin-config"}`; `409` if `secrets.json` can't be read) |
 | GET | `arr/identify-url` | Resolve which configured instance owns a given item |
 | GET | `arr/series-slug`, `arr/series-slugs` | Sonarr URL slug lookup, single/batch |
 | GET | `arr/movie-instances` | Which Radarr instance(s) a movie belongs to |

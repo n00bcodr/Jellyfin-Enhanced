@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string Label { get; set; } = string.Empty;
         public string Category { get; set; } = string.Empty;
     }
-    public class PluginConfiguration : BasePluginConfiguration
+    public partial class PluginConfiguration : BasePluginConfiguration
     {
         public PluginConfiguration()
         {
@@ -218,6 +218,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Multi-Instance Sonarr/Radarr Support
             SonarrInstances = "[]";
             RadarrInstances = "[]";
+
+            // Requests & downloads (new): master switch for the arr integration, off by default.
+            ArrIntegrationEnabled = false;
 
             // Shoko Settings (single-instance, like Jellyseerr — Shoko is one server per household)
             ShokoUrl = "";
@@ -779,6 +782,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string SonarrInstances { get; set; } = "[]";
         public string RadarrInstances { get; set; } = "[]";
 
+        /// <summary>
+        /// Master switch for "Requests &amp; downloads (new)", the reworked Sonarr/Radarr integration.
+        /// Off by default; while off, every existing *arr feature behaves exactly as before. Each
+        /// later phase adds its own switch under this one.
+        /// </summary>
+        public bool ArrIntegrationEnabled { get; set; }
+
         // Shoko Settings — single-instance (URL + API key), like Jellyseerr, not the
         // Sonarr/Radarr instance-list pattern: Shoko is one server per household.
         public string ShokoUrl { get; set; }
@@ -1208,9 +1218,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             if (parsed.Count > 0)
                 return parsed;
 
+            var legacyKey = GetSecret(nameof(SonarrApiKey));
             if (parseResult == InstanceParseResult.ExplicitlyEmpty
                 && !string.IsNullOrWhiteSpace(SonarrUrl)
-                && !string.IsNullOrWhiteSpace(SonarrApiKey))
+                && !string.IsNullOrWhiteSpace(legacyKey))
             {
                 return new List<ArrInstance>
                 {
@@ -1218,7 +1229,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     {
                         Name = "Sonarr",
                         Url = SonarrUrl,
-                        ApiKey = SonarrApiKey,
+                        ApiKey = legacyKey,
                         UrlMappings = SonarrUrlMappings ?? ""
                     }
                 };
@@ -1237,9 +1248,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             if (parsed.Count > 0)
                 return parsed;
 
+            var legacyKey = GetSecret(nameof(RadarrApiKey));
             if (parseResult == InstanceParseResult.ExplicitlyEmpty
                 && !string.IsNullOrWhiteSpace(RadarrUrl)
-                && !string.IsNullOrWhiteSpace(RadarrApiKey))
+                && !string.IsNullOrWhiteSpace(legacyKey))
             {
                 return new List<ArrInstance>
                 {
@@ -1247,7 +1259,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     {
                         Name = "Radarr",
                         Url = RadarrUrl,
-                        ApiKey = RadarrApiKey,
+                        ApiKey = legacyKey,
                         UrlMappings = RadarrUrlMappings ?? ""
                     }
                 };
@@ -1287,9 +1299,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// Sonarr/Radarr, there is no JSON instance list to corrupt — Shoko is two flat fields.
         /// </summary>
         public bool IsShokoConfigured()
-            => !string.IsNullOrWhiteSpace(ShokoUrl) && !string.IsNullOrWhiteSpace(ShokoApiKey);
+            => !string.IsNullOrWhiteSpace(ShokoUrl) && !string.IsNullOrWhiteSpace(GetShokoApiKey());
 
-        private enum InstanceParseResult { ExplicitlyEmpty, Parsed, Corrupt }
+        internal enum InstanceParseResult { ExplicitlyEmpty, Parsed, Corrupt }
 
         private static List<ArrInstance> TryDeserializeInstances(string? json, out InstanceParseResult result)
         {
@@ -1314,10 +1326,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 // array was itself empty OR every entry got dropped, treat as ExplicitlyEmpty so
                 // the legacy SonarrUrl/SonarrApiKey fallback still runs — otherwise an admin with
                 // only an invalid row would silently lose the migration path.
+                // Keys are stored as placeholders; resolve each row's real key from the secrets
+                // store (a raw key in a not-yet-migrated row passes through unchanged) BEFORE the
+                // empty-key filter, so a row whose stored key went missing counts as incomplete.
                 var filtered = instances
-                    .Where(i => i != null
-                        && !string.IsNullOrWhiteSpace(i.Url)
-                        && !string.IsNullOrWhiteSpace(i.ApiKey))
+                    .Where(i => i != null && !string.IsNullOrWhiteSpace(i.Url))
+                    .Select(i =>
+                    {
+                        i.ApiKey = ResolveStoredValue(i.ApiKey, string.IsNullOrEmpty(i.Id) ? null : Services.Secrets.SecretsStore.ArrKeyName(i.Id));
+                        return i;
+                    })
+                    .Where(i => !string.IsNullOrWhiteSpace(i.ApiKey))
                     .ToList();
                 result = filtered.Count == 0 ? InstanceParseResult.ExplicitlyEmpty : InstanceParseResult.Parsed;
                 return filtered;

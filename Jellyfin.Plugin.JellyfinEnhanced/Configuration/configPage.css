@@ -2378,3 +2378,19 @@ div#bazarrMappingsValidationResult {
 .je-ts-pick-controls { display: flex; align-items: center; gap: 8px; }
 .je-ts-pick-controls input:disabled { opacity: 0.4; }
 #tagStylePresets .je-ts-presets-row:last-child { align-items: stretch; }
+
+/* Stored credentials: saved keys arrive as a masked placeholder in a read-only field with
+   Replace / Clear buttons. The placeholder is already masked, so show it as text. */
+.je-api-input[readonly], .arr-instance-apikey[readonly] { -webkit-text-security: none; text-security: none; opacity: 0.85; }
+.je-secret-actions { display: inline-flex; gap: 0.5em; flex-shrink: 0; }
+.je-secret-actions .emby-button { margin: 0; padding: 0.35em 0.8em; }
+
+/* "Requests & downloads (new)": per-instance registry fields, shown while the switch is on. */
+.je-arr-v2 { display: none; margin-top: 1em; padding-top: 0.75em; border-top: 1px solid rgba(128, 128, 128, 0.25); }
+#arr.je-arr-v2-on .je-arr-v2 { display: block; }
+.je-arr-v2-heading { font-weight: 600; opacity: 0.85; }
+.je-arr-check-result { margin-top: 0.75em; display: flex; flex-direction: column; gap: 0.5em; }
+.je-arr-check-row { padding: 0.5em 0.75em; border-left: 3px solid rgba(128, 128, 128, 0.5); }
+.je-arr-check-row.je-arr-check-ok { border-left-color: #52b54b; }
+.je-arr-check-row.je-arr-check-bad { border-left-color: #dc3545; }
+.je-arr-check-title { font-weight: 600; }

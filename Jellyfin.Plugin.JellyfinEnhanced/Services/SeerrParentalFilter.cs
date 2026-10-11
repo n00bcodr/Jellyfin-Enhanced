@@ -1036,9 +1036,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return (null, false);
             }
 
-            if (!needTags && !string.IsNullOrEmpty(config.TMDB_API_KEY))
+            if (!needTags && !string.IsNullOrEmpty(config.GetTmdbApiKey()))
             {
-                var fromTmdb = await FetchCertFromTmdbAsync(mediaType, tmdbId, config.TMDB_API_KEY, ct).ConfigureAwait(false);
+                var fromTmdb = await FetchCertFromTmdbAsync(mediaType, tmdbId, config.GetTmdbApiKey(), ct).ConfigureAwait(false);
                 if (fromTmdb != null)
                 {
                     return (fromTmdb, false);
@@ -1088,7 +1088,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task<JsonElement?> FetchDetailFromSeerrAsync(string mediaType, int tmdbId, Configuration.PluginConfiguration config, CancellationToken ct)
         {
-            if (!config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (!config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 return null;
             }
@@ -1102,7 +1102,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var requestUri = $"{url.Trim().TrimEnd('/')}{relative}";
                 try
                 {
-                    using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                    using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.GetJellyseerrApiKey());
                     using var response = await httpClient.SendAsync(request, ct).ConfigureAwait(false);
                     var (body, error) = await SeerrHttpHelper.ReadResponseAsync(response, requestUri, ct).ConfigureAwait(false);
                     if (error != null || string.IsNullOrEmpty(body))

@@ -163,7 +163,9 @@ public class IntegrationAnalyticsTests
         await service.EnsureRegisteredAsync(f.Plugin.Configuration, default);
         await service.EnsureRegisteredAsync(f.Plugin.Configuration, default);
         Assert.Equal("server-id", f.Plugin.Configuration.AnalyticsInstallId);
-        Assert.Equal("server-secret", f.Plugin.Configuration.AnalyticsInstallSecret);
+        // The secret lives in the secrets store; the configuration only keeps a placeholder.
+        Assert.Equal("server-secret", f.Plugin.Configuration.GetAnalyticsInstallSecret());
+        Assert.NotEqual("server-secret", f.Plugin.Configuration.AnalyticsInstallSecret);
         Assert.Equal(1, transport.Calls);
         Assert.DoesNotContain("server-secret", JsonSerializer.Serialize(service.BuildPayload(f.Plugin.Configuration, false, false, false)));
     }
