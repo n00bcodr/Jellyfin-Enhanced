@@ -55,6 +55,13 @@
     // Marks a markdown link's place while stripMarkdown runs (a private-use character, never in real text).
     const LINK_MARK = '\uE000';
     const ID_TOKENS = /\btmdb[:/]\s*(?:(?:movie|tv)[:/])?\d+\b|\btvdb[:/]\s*\d+\b|\btt\d{7,10}\b|https?:\/\/\S+/gi;
+    // A markdown link labelled with a site or id rather than a title ("[TMDB](…)", "[IMDb](…)", "[tt1877830](…)").
+    const ID_LINK_LABEL = /^(?:the\s*)?(?:tmdb|imdb|tvdb|movie\s*db|themoviedb|link|url|id|tt\d{7,10}|\d{1,9})$/i;
+    // Where commentary starts after an episode reference or a season selector: a parenthetical other than a year, a
+    // spaced dash or a sentence end.
+    const AFTER_SELECTOR = /\((?!\s*\d{4}\s*\))|\s[—–-]\s+|[.;!?](?:\s|$)/;
+    const SEASON_SELECTOR = /\bseasons?\s+\d{1,3}(?:\s*[-–—]\s*\d{1,3})?\b/i;
+    const RELEASE_YEAR = /[([]\s*(?:\d{4}(?:-\d{2}-\d{2})?|\d{4}\s*[–—-]\s*(?:\d{2,4})?)\s*[)\]]/;
     const TVDB_URL = /thetvdb\.com\/(?:\?[^\s]*?\bid=(\d{1,9})|dereferrer\/series\/(\d{1,9})|series\/(\d{1,9})(?:[/?#\s)]|$))/i;
     const LIST_URLS = [
         [/\bmdblist\.com\/lists\//i, 'mdblist'],
@@ -109,8 +116,9 @@
      * Removes markdown/HTML formatting and collects link targets (ids are read from them later).
      * @param {string} value Markdown text.
      * @param {string[]} [urls] Receives every link target and bare URL found.
-     * @param {{url: string, at: number}[]} [links] Receives each markdown link's target with the offset of its label in
-     *     the returned text (its real place, not a search for the label, so the same words earlier don't count).
+     * @param {{url: string, label: string, at: number}[]} [links] Receives each markdown link's target and label with
+     *     the offset of its label in the returned text (its real place, not a search for the label, so the same words
+     *     earlier don't count).
      * @returns {string} Plain text.
      */
     function stripMarkdown(value, urls, links) {
@@ -121,7 +129,7 @@
             if (urls && url) urls.push(url);
             if (!links) return label;
             // A private-use marker keeps the link's place through the rest of the stripping; removed below.
-            targets.push(url);
+            targets.push({ url, label });
             return LINK_MARK + label;
         });
         // Autolinks (<https://…>) are links, not HTML tags.
@@ -142,7 +150,7 @@
         let k = 0;
         for (let at = text.indexOf(LINK_MARK); at >= 0; at = text.indexOf(LINK_MARK, from)) {
             plainText += text.slice(from, at);
-            if (targets[k]) links.push({ url: targets[k], at: plainText.length });
+            if (targets[k] && targets[k].url) links.push({ url: targets[k].url, label: targets[k].label, at: plainText.length });
             k++;
             from = at + 1;
         }
@@ -212,6 +220,19 @@
         if (TV_TYPE.test(text)) return 'tv';
         if (MOVIE_TYPE.test(text.replace(NEUTRAL_TYPE, ' '))) return 'movie';
         return undefined;
+    }
+
+    /**
+     * Whether free text holds nothing but type and status words ("TV series", "Released", "a TV movie").
+     * @param {string} value Text.
+     * @returns {boolean} Only type/status words.
+     */
+    function onlyTypeWords(value) {
+        let text = String(value ?? '');
+        for (const pattern of [TV_TYPE, MOVIE_TYPE, NEUTRAL_TYPE, ...STATUS_RULES.map(rule => rule[0]), /\b(?:a|an|the)\b/i]) {
+            text = text.replace(new RegExp(pattern.source, 'gi'), ' ');
+        }
+        return !/[a-z]/i.test(text);
     }
 
     /**
@@ -602,6 +623,15 @@
             // Bare URLs are left to the link targets kept above (none from the commentary).
             metaIds = (structured.match(ID_TOKENS) || []).filter(token => !/^https?:/i.test(token)).join(' ');
             structured = structured.replace(ID_TOKENS, ' ');
+            // Commentary right after the release year ("(2014) - watch before the Batman movie", "(2014). Watch …") is
+            // the note, not type or status words; a tail of only such words ("(2014) - TV series") stays metadata.
+            const parts = structured.split(/\s*·\s*/);
+            const yearTail = /^(\s*[([][^)\]]*[)\]])\s*(?:[-:]\s+(?=\S)|[.;!?](?:\s+|$))(.*)$/.exec(parts[0]);
+            if (yearTail && yearTail[2].trim() && !onlyTypeWords(yearTail[2])) {
+                note = [yearTail[2].trim(), note].filter(Boolean).join(' — ');
+                parts[0] = yearTail[1];
+                structured = parts.join(' · ');
+            }
             const release = /[([]\s*([^)\]]+?)\s*[)\]]/.exec(structured);
             if (release) {
                 const parsed = parseRelease(release[1]);
@@ -686,7 +716,8 @@
             date,
             typeHint,
             ids,
-            note: note ? stripMarkdown(note) : undefined,
+            // A note that is only an id link's site label ("— [IMDb](…)") says nothing.
+            note: note && !/^(?:tmdb|imdb|tvdb|link)$/i.test(stripMarkdown(note)) ? stripMarkdown(note) : undefined,
             status,
             qualifier
         };
@@ -727,49 +758,93 @@
         const found = [];
         const links = [];
         const stripped = stripMarkdown(value, found, links);
-        const cut = commentaryStart(stripped);
-        for (const link of locateLinks(stripped, found, links).sort((a, b) => a.at - b.at)) {
+        const located = locateLinks(stripped, found, links).sort((a, b) => a.at - b.at);
+        const cut = commentaryStart(stripped, located);
+        for (const link of located) {
             if (link.at < cut) urls.push(link.url);
         }
         return stripped;
     }
 
     /**
+     * Whether the text at an offset (after spaces or "<") is a URL or a markdown link labelled with a site or id
+     * ("[TMDB](…)", "[IMDb](…)"): after a separator it still names the entry, not another title.
+     * @param {string} text Stripped text.
+     * @param {number} at Offset.
+     * @param {{url: string, label?: string, at: number}[]} links Located link targets of the text.
+     * @returns {boolean} It names the entry.
+     */
+    function namesEntryAt(text, at, links) {
+        const from = at + /^[\s<]*/.exec(text.slice(at))[0].length;
+        return /^https?:/i.test(text.slice(from))
+            || links.some(link => link.at === from && link.label !== undefined && ID_LINK_LABEL.test(stripMarkdown(link.label)));
+    }
+
+    /**
+     * The first separator from an offset on that starts commentary: a match of `pattern` not followed by a URL or an
+     * id link ({@link namesEntryAt}).
+     * @param {string} text Stripped text.
+     * @param {number} from Offset to search from.
+     * @param {RegExp} pattern Separator pattern.
+     * @param {{url: string, label?: string, at: number}[]} links Located link targets of the text.
+     * @returns {number} Offset of the separator, or -1.
+     */
+    function separatorFrom(text, from, pattern, links) {
+        const re = new RegExp(pattern.source, 'gi');
+        re.lastIndex = from;
+        for (let m = re.exec(text); m; m = re.exec(text)) {
+            if (!namesEntryAt(text, m.index + m[0].length, links)) return m.index;
+            if (!m[0].length) re.lastIndex++;
+        }
+        return -1;
+    }
+
+    /**
      * Where the commentary of a plain line starts (its length when there is none): an em/en dash note (not one that
-     * introduces a season, episode reference or year: "Peacemaker — Season 1"); after an episode reference a
+     * introduces a season, episode reference or year: "Peacemaker — Season 1", nor one inside a title before its
+     * release year: "Mission: Impossible – Fallout (2018)"); after an episode reference or a season selector a
      * parenthetical other than a year, a spaced dash or a sentence end; after the release year a dash or colon
-     * followed by words, a parenthetical or a sentence end. A URL or parenthetical URL right after one of these
+     * followed by words, a parenthetical or a sentence end. A URL or an id link ("[TMDB](…)") right after one of these
      * separators still belongs to the title ("Superman (2025) - https://…").
      * @param {string} text Stripped text.
+     * @param {{url: string, label?: string, at: number}[]} [links] Located link targets of the text.
      * @returns {number} Offset of the commentary.
      */
-    function commentaryStart(text) {
+    function commentaryStart(text, links = []) {
         let cut = text.length;
-        const notUrl = '(?!\\s*<?https?:)';
+        const year = RELEASE_YEAR.exec(text);
         for (const dash of text.matchAll(/\s[—–]\s*/g)) {
             const before = text.slice(0, dash.index);
             if ((before.match(/[([]/g) || []).length > (before.match(/[)\]]/g) || []).length) continue; // "(2012 – 2020)"
-            const rest = text.slice(dash.index + dash[0].length);
+            const restAt = dash.index + dash[0].length;
+            // A dash before the release year is part of the title (as parseItem reads it), unless a link sits between
+            // them ("The Batman — sequel to [Joker](…) (2019)").
+            if (year && dash.index < year.index && !links.some(link => link.at >= restAt && link.at < year.index)) continue;
+            const rest = text.slice(restAt);
             const ref = findEpisodeRef(rest);
-            if (/^(?:seasons?\s+\d|[([]\s*\d{4}|<?https?:)/i.test(rest) || (ref && ref.index === 0)) continue;
+            if (/^(?:seasons?\s+\d|[([]\s*\d{4})/i.test(rest) || (ref && ref.index === 0) || namesEntryAt(text, restAt, links)) continue;
             cut = dash.index;
             break;
         }
         const ref = findEpisodeRef(text);
         if (ref && ref.end < cut) {
-            const tail = text.slice(ref.end);
-            const at = tail.search(new RegExp(`\\((?!\\s*\\d{4}\\s*\\))${notUrl}|\\s[—–-]\\s+${notUrl}|[.;!?](?:\\s|$)`));
-            if (at >= 0) cut = Math.min(cut, ref.end + at);
+            const at = separatorFrom(text, ref.end, AFTER_SELECTOR, links);
+            if (at >= 0) cut = Math.min(cut, at);
         }
-        const year = /[([]\s*(?:\d{4}(?:-\d{2}-\d{2})?|\d{4}\s*[–—-]\s*(?:\d{2,4})?)\s*[)\]]/.exec(text);
+        const season = SEASON_SELECTOR.exec(text);
+        if (season && season.index < cut) {
+            // "Peacemaker (2022) - Season 1 (see [Arrow](…))", "Peacemaker - Season 1 - watch after […](…)".
+            const at = separatorFrom(text, season.index + season[0].length, AFTER_SELECTOR, links);
+            if (at >= 0) cut = Math.min(cut, at);
+        }
         if (year && year.index < cut) {
             const end = year.index + year[0].length;
             const tail = text.slice(end);
             const selector = tail.replace(/^\s*[—–:-]?\s*/, '');
             const ref = findEpisodeRef(selector);
             if (!/^seasons?\s+\d/i.test(selector) && !(ref && ref.index === 0)) {
-                const at = new RegExp(`^\\s*(?:[-:]\\s+${notUrl}(?=\\S)|\\(${notUrl}|[.;!?](?:\\s|$))`).exec(tail);
-                if (at) cut = Math.min(cut, end + at[0].search(/[-:(.;!?]/));
+                const at = /^\s*(?:[-:]\s+(?=\S)|\(|[.;!?](?:\s|$))/.exec(tail);
+                if (at && !namesEntryAt(text, end + at[0].length, links)) cut = Math.min(cut, end + at[0].search(/[-:(.;!?]/));
             }
         }
         return cut;
@@ -809,32 +884,35 @@
         part = labelled ? label[2] : plainPart;
         // `part` is a suffix of `plainPart`, itself a prefix of the stripped text: offsets map back by this shift.
         const shift = plainPart.length - part.length;
+        const located = locateLinks(stripped, found, links);
         const extra = [];
+        let keptEnd;
         if (ref || /"[^"]+"/.test(part)) {
             // Keep the title + reference, drop the commentary after it (but not the bare ids in it).
             const inner = findEpisodeRef(part);
             const kept = inner ? part.slice(0, inner.end) : part.replace(/^(.*?"[^"]+")[\s\S]*$/, '$1');
             const tail = part.slice(kept.length);
-            // Bare ids anywhere in the tail name the title ("Flash S1E8 tmdb:tv:60735"); a bare URL only before the
-            // commentary starts ("Flash 1x08 https://…"), not one inside "(see https://…)" or after a dash.
-            const commentary = tail.search(/\(|\s[—–-]\s|[.;!?](?:\s|$)/);
-            const head = commentary < 0 ? tail : tail.slice(0, commentary);
+            // Bare ids anywhere in the tail name the title ("Flash S1E8 tmdb:tv:60735"); a link target (bare URL or
+            // markdown link) only before the commentary starts ("Flash 1x08 https://…", "Flash 1x08 [TMDB](…)"), not
+            // one inside "(see https://…)" or after a dash (unless it is the URL or id link right after it).
+            const partEnd = shift + part.length;
+            const commentary = separatorFrom(stripped.slice(0, partEnd), shift + kept.length, /\(|\s[—–-]\s|[.;!?](?:\s|$)/, located);
+            keptEnd = commentary < 0 ? partEnd : commentary;
             for (const token of tail.match(ID_TOKENS) || []) {
                 if (!/^https?:/i.test(token)) extra.push(token);
             }
-            for (const token of head.match(ID_TOKENS) || []) {
-                if (/^https?:/i.test(token)) extra.push(token);
-            }
             part = kept;
         } else {
-            // The first sentence, but a period after a title abbreviation ("Dr. No", "Vol. 2", "Mr. & Mrs. Smith") is
-            // part of the title. (A single letter isn't treated as an initial: "Movie B. See also …" ends there.)
-            part = part.split(/(?<=[a-z0-9!?)])(?:(?<!\b(?:Dr|Mrs?|Ms|St|Vol|Pts?|Jr|Sr|No|vs|Ep|Mt|Ft|Ch|Bk))\.|;)\s+/i)[0];
+            // The first sentence, but a period after a title abbreviation ("Dr. No", "Vol. 2", "Mr. & Mrs. Smith",
+            // "Monsters, Inc.") or ending a dotted initialism ("L.A. Confidential", "Agents of S.H.I.E.L.D.") is part of
+            // the title. (A single letter isn't treated as an initial: "Movie B. See also …" ends there.)
+            part = part.split(/(?<=[a-z0-9!?)])(?:(?<!\b(?:Dr|Mrs?|Ms|St|Vol|Pts?|Jr|Sr|No|vs|Ep|Mt|Ft|Ch|Bk|Inc|Co|Ltd|Bros))(?<!\b(?:[a-z]\.)+[a-z])\.|;)\s+/i)[0];
         }
-        // Only link targets that start in the kept text name the title; links in dropped commentary ("(see also
-        // [Legends](…))", "— then read [Crisis](…)", a second sentence) are about other titles.
-        const keptEnd = shift + part.length;
-        const urls = locateLinks(stripped, found, links).filter(link => link.at < keptEnd).map(link => link.url);
+        // Only link targets that start in the kept text (or, after an episode reference, before its commentary) name
+        // the title; links in dropped commentary ("(see also [Legends](…))", "— then read [Crisis](…)", a second
+        // sentence) are about other titles.
+        keptEnd = keptEnd ?? shift + part.length;
+        const urls = located.filter(link => link.at < keptEnd).map(link => link.url);
         for (const token of extra) {
             if (!urls.includes(token)) urls.push(token);
         }
@@ -857,7 +935,7 @@
      * stripMarkdown placed it), a bare URL (or autolink) at the URL itself.
      * @param {string} stripped The stripped text.
      * @param {string[]} found Every link target stripMarkdown collected from it.
-     * @param {{url: string, at: number}[]} links The markdown links with their label offsets, from stripMarkdown.
+     * @param {{url: string, label: string, at: number}[]} links The markdown links with their label offsets, from stripMarkdown.
      * @returns {{url: string, at: number}[]} Each target with its offset in the stripped text.
      */
     function locateLinks(stripped, found, links) {
@@ -1114,7 +1192,10 @@
         if (!stripMarkdown(titleRaw)) return [];
         const context = stripMarkdown(cell(roles.context));
         const contextYear = /\((\d{4})(?:\s*[–—-]\s*\d{2,4})?\)|^(\d{4})/.exec(context);
-        const rowCtx = { ...ctx, source: 'table', idText: stripMarkdown(cell(roles.ids)) };
+        // An id column's markdown links count by their targets ("[TMDB](https://www.themoviedb.org/movie/414906)").
+        const idUrls = [];
+        const idLabel = stripMarkdown(cell(roles.ids), idUrls);
+        const rowCtx = { ...ctx, source: 'table', idText: [idLabel, ...idUrls].filter(Boolean).join(' ') };
         const note = [context, stripMarkdown(cell(roles.note))].filter(Boolean).join(' — ');
         if (note) rowCtx.note = note;
         const typeHint = typeFromWords(stripMarkdown(cell(roles.type)));

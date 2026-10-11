@@ -620,6 +620,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
 
         // Turns a season placeholder into episodes placeholders over the episodes that stay (split at the per-placeholder
         // limit; the extra ones go right after it in the order and their keys move to them), carrying their fills over.
+        // Several chunks are ordered around the season's fills (see OrderChunksAroundFills).
         private static int ApplyNarrowing(ListDoc doc, ListSource source, SeasonNarrowing narrowing)
         {
             var placeholder = doc.Items.FirstOrDefault(p => p.Id == narrowing.PhId);
@@ -632,6 +633,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
             var token = ListPlaceholderOrder.PlaceholderToken(placeholder.Id);
             var at = doc.Order.IndexOf(token);
             var target = placeholder;
+            var targets = new List<Placeholder>();
             for (var start = 0; start < narrowing.Episodes.Count; start += PlaceholderRules.MaxEpisodes)
             {
                 var chunk = narrowing.Episodes.Skip(start).Take(PlaceholderRules.MaxEpisodes).ToList();
@@ -645,6 +647,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                     }
                 }
 
+                targets.Add(target);
                 var coords = chunk.Select(e => (e.S, e.E)).ToHashSet();
                 target.Kind = PlaceholderKinds.Episodes;
                 target.Episodes = chunk;
@@ -664,7 +667,80 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 }
             }
 
+            if (at >= 0 && targets.Count > 1)
+            {
+                OrderChunksAroundFills(doc.Order, at, filled, targets);
+            }
+
             return narrowing.Left;
+        }
+
+        // The start of the contiguous block of real items right before index `at` that are among `filled` (swap-in puts a
+        // placeholder's arrived episodes there); `at` when there are none.
+        private static int FillBlockStart(List<string> order, int at, IEnumerable<FilledEpisode> filled)
+        {
+            var fills = filled.Select(f => f.ItemId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var start = at;
+            while (start > 0 && ListPlaceholderOrder.TryParseReal(order[start - 1], out var itemId, out _)
+                && fills.Contains(itemId.ToString("N", CultureInfo.InvariantCulture)))
+            {
+                start--;
+            }
+
+            return start;
+        }
+
+        // A season narrowed into several chunks: the chunks' tokens sit at `at`.. in chunk order, after every fill of the
+        // season. Each chunk's token moves to just before the season's first fill (in its block right before `at`) that
+        // belongs to a later chunk, so swap-in (which places an arrival relative to its own placeholder's fills, else
+        // right before its token) keeps the source order. Real items never move; when the block's fills aren't in chunk
+        // order the tokens stay where they are.
+        private static void OrderChunksAroundFills(List<string> order, int at, List<FilledEpisode> seasonFills, List<Placeholder> chunks)
+        {
+            var count = chunks.Count;
+            if (at + count > order.Count)
+            {
+                return;
+            }
+
+            var start = FillBlockStart(order, at, seasonFills);
+            var chunkOf = new Dictionary<string, (int Lo, int Hi)>(StringComparer.OrdinalIgnoreCase);
+            for (var c = 0; c < count; c++)
+            {
+                foreach (var fill in chunks[c].Filled)
+                {
+                    chunkOf[fill.ItemId] = chunkOf.TryGetValue(fill.ItemId, out var range) ? (Math.Min(range.Lo, c), Math.Max(range.Hi, c)) : (c, c);
+                }
+            }
+
+            var segment = new List<string>();
+            var emitted = 0;
+            var highest = 0;
+            for (var i = start; i < at; i++)
+            {
+                ListPlaceholderOrder.TryParseReal(order[i], out var itemId, out _);
+                var (lo, hi) = chunkOf.GetValueOrDefault(itemId.ToString("N", CultureInfo.InvariantCulture), (highest, highest));
+                if (lo < highest)
+                {
+                    return;
+                }
+
+                for (; emitted < lo; emitted++)
+                {
+                    segment.Add(ListPlaceholderOrder.PlaceholderToken(chunks[emitted].Id));
+                }
+
+                segment.Add(order[i]);
+                highest = hi;
+            }
+
+            for (; emitted < count; emitted++)
+            {
+                segment.Add(ListPlaceholderOrder.PlaceholderToken(chunks[emitted].Id));
+            }
+
+            order.RemoveRange(start, at - start + count);
+            order.InsertRange(start, segment);
         }
 
         /// <summary>
@@ -674,7 +750,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
         /// run. The run is split at that boundary into two <c>episodes</c> placeholders (fills, keys and the source key
         /// follow each episode; the second half's token goes right after the first's in <paramref name="order"/>), so the
         /// entry can be anchored after the first half instead of after the whole run. A filled episode of the second half
-        /// that sits before the run's token (swap-in puts fills there) moves the first half's token to just before it.
+        /// in the run's block of fills right before its token (swap-in puts fills there) moves the first half's token to
+        /// just before it; fills elsewhere in the list (dragged away, or presence fills) don't.
         /// Nothing is split when the list has no room for another placeholder, or when a filled episode of the first half
         /// would come after the first half's token: the entry then goes after the whole run, as before.
         /// </summary>
@@ -753,22 +830,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.ListPlaceholders.Sources
                 var firstFills = placeholder.Filled.Where(f => firstCoords.Contains((f.S, f.E))).Select(f => f.ItemId).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 var secondCoords = episodes.Skip(cut + 1).Select(e => (e.S, e.E)).ToHashSet();
                 var secondFills = placeholder.Filled.Where(f => secondCoords.Contains((f.S, f.E))).Select(f => f.ItemId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                // Only the run's own block of fills right before its token counts: a fill elsewhere in the list (one the
+                // user dragged away, or a presence fill already in the list) doesn't pull the first half's token along.
                 var firstAt = at;
+                for (var i = FillBlockStart(order, at, placeholder.Filled); i < at; i++)
+                {
+                    if (ListPlaceholderOrder.TryParseReal(order[i], out var itemId, out _) && secondFills.Contains(itemId.ToString("N", CultureInfo.InvariantCulture)))
+                    {
+                        firstAt = i;
+                        break;
+                    }
+                }
+
                 var lastFirstFill = -1;
                 for (var i = 0; i < order.Count; i++)
                 {
-                    if (!ListPlaceholderOrder.TryParseReal(order[i], out var itemId, out _))
-                    {
-                        continue;
-                    }
-
-                    var n = itemId.ToString("N", CultureInfo.InvariantCulture);
-                    if (i < at && secondFills.Contains(n))
-                    {
-                        firstAt = Math.Min(firstAt, i);
-                    }
-
-                    if (firstFills.Contains(n))
+                    if (ListPlaceholderOrder.TryParseReal(order[i], out var itemId, out _) && firstFills.Contains(itemId.ToString("N", CultureInfo.InvariantCulture)))
                     {
                         lastFirstFill = i;
                     }

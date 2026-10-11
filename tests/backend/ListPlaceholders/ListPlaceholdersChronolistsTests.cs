@@ -1215,6 +1215,124 @@ public class ListPlaceholdersChronolistsTests
         static Placeholder Copy(Placeholder p) => System.Text.Json.JsonSerializer.Deserialize<Placeholder>(System.Text.Json.JsonSerializer.Serialize(p))!;
     }
 
+    // Review round 9: only the run's own block of fills right before its token moves the first half's token. A second-half
+    // fill elsewhere in the list (dragged to the top, or a presence fill) leaves the first half at the run's spot.
+    [Fact]
+    public void AFarAwayFillOfTheSecondHalfDoesNotMoveTheFirstHalf()
+    {
+        var run = Ph("{\"kind\":\"episodes\",\"tmdbId\":88,\"title\":\"Eighty\",\"seasonNumber\":1,\"episodes\":[{\"s\":1,\"e\":1},{\"s\":1,\"e\":2},{\"s\":1,\"e\":3},{\"s\":1,\"e\":4}]}");
+        var (r3, r4, a, b) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        run.Filled.Add(new FilledEpisode { ItemId = r3.ToString("N"), S = 1, E = 3 });
+        run.Filled.Add(new FilledEpisode { ItemId = r4.ToString("N"), S = 1, E = 4 });
+        string R(Guid id) => ListPlaceholderOrder.RealToken(id, 0);
+        ListDoc Doc(params string[] order)
+        {
+            var doc = new ListDoc { ListKind = ListKinds.Playlist, Items = new List<Placeholder> { Copy(run) }, Order = order.ToList(), Source = new ListSource() };
+            foreach (var e in new[] { 1, 2, 3, 4 })
+            {
+                ListSourceProvenance.RecordAdded(doc.Source, $"tv|88|1|{e}", run.Id, null);
+            }
+
+            doc.Source.Owned["tv|88|1|3"].ItemIds.Add(r3.ToString("N"));
+            doc.Source.Owned["tv|88|1|4"].ItemIds.Add(r4.ToString("N"));
+            return doc;
+        }
+
+        // Source [A, E1, X, E2, E3, E4, B] (X new); the user dragged 1x03 to the top: [E3, A, E4, T, B].
+        var keys = new List<string> { "movie|1||", "tv|88|1|1", "movie|7||", "tv|88|1|2", "tv|88|1|3", "tv|88|1|4", "movie|2||" };
+        var dragged = Doc(R(r3), R(a), R(r4), P(run.Id), R(b));
+        var order = dragged.Order.ToList();
+        Assert.True(ListSourceProvenance.SplitRunsAround(dragged, order, keys, new[] { 2 }));
+        Assert.Equal(new[] { R(r3), R(a), P(run.Id), R(r4), P(dragged.Items[1].Id), R(b) }, order);
+
+        // A fill away from the token with nothing of the run's right before it: the halves stay at the run's spot.
+        var away = Doc(R(r4), R(a), P(run.Id), R(b));
+        order = away.Order.ToList();
+        Assert.True(ListSourceProvenance.SplitRunsAround(away, order, keys, new[] { 2 }));
+        Assert.Equal(new[] { R(r4), R(a), P(run.Id), P(away.Items[1].Id), R(b) }, order);
+
+        static Placeholder Copy(Placeholder p) => System.Text.Json.JsonSerializer.Deserialize<Placeholder>(System.Text.Json.JsonSerializer.Serialize(p))!;
+    }
+
+    // Review round 9: a season narrowed into several chunks orders the chunks' tokens around the season's fills, so an
+    // arrival of an earlier chunk goes before the fills of later chunks.
+    [Fact]
+    public void ANarrowedLongSeasonOrdersItsChunksAroundItsFills()
+    {
+        var season = Ph("{\"kind\":\"season\",\"tmdbId\":5,\"title\":\"Soap\",\"seasonNumber\":1,\"episodeTotal\":150}");
+        var (r5, r120, x) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        string R(Guid id) => ListPlaceholderOrder.RealToken(id, 0);
+        var episodeKeys = Enumerable.Range(1, 150).Select(e => $"tv|5|1|{e}").ToList();
+        var staying = episodeKeys.Where(k => k != "tv|5|1|7").ToList();
+        ListDoc Doc(int[] filledEpisodes, params string[] order)
+        {
+            var ph = System.Text.Json.JsonSerializer.Deserialize<Placeholder>(System.Text.Json.JsonSerializer.Serialize(season))!;
+            foreach (var e in filledEpisodes)
+            {
+                ph.Filled.Add(new FilledEpisode { ItemId = (e == 5 ? r5 : r120).ToString("N"), S = 1, E = e });
+            }
+
+            var doc = new ListDoc { ListKind = ListKinds.Playlist, Items = new List<Placeholder> { ph }, Order = order.ToList(), Source = new ListSource { RemoveDropped = true } };
+            foreach (var key in episodeKeys)
+            {
+                ListSourceProvenance.RecordAdded(doc.Source, key, ph.Id, null);
+            }
+
+            return doc;
+        }
+
+        void Narrow(ListDoc doc)
+        {
+            ListSourceProvenance.ApplyDrops(doc, ListSourceProvenance.PlanDrops(doc, staying, new Dictionary<string, int>()), Array.Empty<string>());
+            Assert.Equal(2, doc.Items.Count);
+        }
+
+        // [E120, T] -> [T1, E120, T2].
+        var one = Doc(new[] { 120 }, R(x), R(r120), P(season.Id));
+        Narrow(one);
+        Assert.Equal(new[] { R(x), P(season.Id), R(r120), P(one.Items[1].Id) }, one.Order);
+
+        // [E5, E120, T] -> [E5, T1, E120, T2].
+        var both = Doc(new[] { 5, 120 }, R(r5), R(r120), P(season.Id));
+        Narrow(both);
+        Assert.Equal(new[] { R(r5), P(season.Id), R(r120), P(both.Items[1].Id) }, both.Order);
+
+        // Crossed fills (E120 before E5) can't be ordered without moving real items: the tokens stay after them.
+        var crossed = Doc(new[] { 5, 120 }, R(r120), R(r5), P(season.Id));
+        Narrow(crossed);
+        Assert.Equal(new[] { R(r120), R(r5), P(season.Id), P(crossed.Items[1].Id) }, crossed.Order);
+    }
+
+    // Review round 9, end to end: 1x120 is in the list, 1x07 leaves a 150-episode season, then 1x01 arrives: it plays
+    // before 1x120.
+    [Fact]
+    public async Task AnEarlyEpisodeArrivingAfterALongSeasonIsNarrowedPlaysBeforeLaterOnes()
+    {
+        using var w = new World(realLibrary: true);
+        var show = w.H.Host.AddSeries(tmdb: 5, tvdb: 1005);
+        static SourceItem Soap(int e) => new("tv", 5, null, 1005, "Soap", 2020, 1, e, null) { Details = new SourceItemDetails("Ep " + e, "2020-01-01", null, null, "Season 1") };
+        var all = Enumerable.Range(1, 150).Select(Soap).ToList();
+        w.H.Fetcher.Items = all.Append(Film(6)).ToList();
+        Assert.Equal(200, (await w.H.Sources.LinkAsync(w.Access, new LinkSourceRequest { Url = DctvUrl, SyncEnabled = true, RemoveDropped = true }, None)).StatusCode);
+        await w.Sync();
+        Assert.Equal(new[] { "5:S1", "6" }, w.Order());
+        var e120 = w.H.Host.AddEpisode(show, 1, 120);
+        await w.H.Swap.RunListPassAsync(w.Id, null, MetadataMode.None, None);
+        Assert.Equal(new[] { "REAL", "5:S1", "6" }, w.Order());
+
+        w.H.Fetcher.Items = all.Where(i => i.Episode != 7).Append(Film(6)).ToList();
+        Assert.Equal(1, (await w.Sync()).Removed);
+        var order = w.Order();
+        Assert.Equal(4, order.Count);
+        Assert.StartsWith("5:S1E1,2,3,4,5,6,8,", order[0], StringComparison.Ordinal);
+        Assert.Equal("REAL", order[1]);
+        Assert.StartsWith("5:S1E102,", order[2], StringComparison.Ordinal);
+
+        var e1 = w.H.Host.AddEpisode(show, 1, 1);
+        await w.H.Swap.RunListPassAsync(w.Id, null, MetadataMode.None, None);
+        Assert.Equal(new[] { e1, e120 }, w.H.Host.Resolved(w.List.Info.Id));
+    }
+
     // Review round: with removeDropped, an episode that left a whole-season run must not come back through the season
     // placeholder once it arrives in the library: the placeholder is narrowed to the episodes still listed.
     [Fact]
