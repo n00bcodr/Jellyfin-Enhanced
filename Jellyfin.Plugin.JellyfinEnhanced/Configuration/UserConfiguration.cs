@@ -328,6 +328,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // empty Prefs object (all nullable bools = null), so unmigrated
         // spoilerblur.json files continue to honor admin policy unchanged.
         public SpoilerBlurUserPrefs Prefs { get; set; } = new SpoilerBlurUserPrefs();
+
+        /// <summary>
+        /// The "Apply defaults to users" run that last replaced <see cref="Prefs"/> (the undo stamp);
+        /// cleared when the preferences are changed by anyone else. Stored only: never sent to
+        /// clients, and a client's value is ignored.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("_jePrefsOp", NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [JsonIgnore]
+        public string? PrefsOp { get; set; }
     }
 
     public class UserShortcuts
@@ -435,6 +444,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     {
         public Dictionary<string, HiddenContentItem> Items { get; set; } = new Dictionary<string, HiddenContentItem>();
         public HiddenContentSettings Settings { get; set; } = new HiddenContentSettings();
+
+        /// <summary>
+        /// The "Apply defaults to users" run that last replaced <see cref="Settings"/> (the undo stamp);
+        /// cleared when the settings are changed by anyone else. Stored only: never sent to clients,
+        /// and a client's value is ignored.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty("_jeSettingsOp", NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [JsonIgnore]
+        public string? SettingsOp { get; set; }
     }
 
     /// <summary>

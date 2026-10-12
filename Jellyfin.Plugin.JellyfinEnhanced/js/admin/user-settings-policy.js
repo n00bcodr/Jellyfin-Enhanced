@@ -822,7 +822,8 @@
 
     /**
      * "Make follow default" for one user and one setting (FollowAll for that pair), with undo.
-     * Refused while the page has unsaved changes.
+     * Refused while the page has unsaved changes. Success is read from the answer for this user:
+     * a user skipped or failed by the run, or one whose setting needed no change, is reported as such.
      * @param {Element} page The admin page.
      * @param {Element} cell The list cell.
      * @param {object} item The policy row's state.
@@ -851,8 +852,22 @@
             note.textContent = 'That did not work. Check the server log.';
             return;
         }
+        const result = answer.body;
+        const sameUser = entry => entry && String(entry.Id || '').toLowerCase() === String(user.UserId || '').toLowerCase();
+        const mine = (result.PerUser || []).find(sameUser);
+        if (!mine || (mine.Changed || []).indexOf(item.entry.Key) < 0) {
+            button.disabled = false;
+            const skipped = (result.Skipped || []).find(sameUser);
+            const failed = (result.Failed || []).find(sameUser);
+            note.textContent = skipped ? userLabel(user) + ': not changed, ' + (SKIP_TEXT[skipped.Reason] || String(skipped.Reason)) + '.'
+                : failed ? userLabel(user) + ': not changed (' + (FAIL_TEXT[failed.Reason] || String(failed.Reason)) + ').'
+                    : 'Nothing changed for ' + userLabel(user) + ': this setting changed since the list was loaded. Close the list and open it again.';
+            overviewChanged();
+            return;
+        }
         note.textContent = userLabel(user) + ' now follows your default for ' + item.name + '. ';
-        if (answer.body.UndoId) note.appendChild(undoButton(answer.body.UndoId, note));
+        if (result.UndoId) note.appendChild(undoButton(result.UndoId, note));
+        else if (result.UndoUnavailable) note.appendChild(document.createTextNode('This cannot be undone: the undo record could not be saved. Check the server log.'));
         button.closest('tr').querySelector('td:nth-of-type(2)').textContent = STATE_TEXT.Following;
         button.remove();
         overviewChanged();
@@ -878,8 +893,11 @@
                 const kept = Number(answer.body.Kept) || 0;
                 line.textContent = 'Undone: ' + (Number(answer.body.Restored) || 0) + ' restored'
                     + (kept ? ', ' + kept + ' changed since and kept as they are' : '')
-                    + (answer.body.FailedUsers ? ', ' + plural(Number(answer.body.FailedUsers), 'user') + ' could not be restored (see the server log)' : '') + '.';
-                button.remove();
+                    + (answer.body.FailedUsers ? ', ' + plural(Number(answer.body.FailedUsers), 'user') + ' could not be restored (see the server log)' : '') + '.'
+                    + (answer.body.Pending ? ' Press Undo again to retry them.' : '');
+                // Files that could not be read or written stay in the record: the button retries them.
+                if (answer.body.Pending) button.disabled = false;
+                else button.remove();
                 overviewChanged();
             } else {
                 line.textContent = answer.status === 409 ? 'This was already undone.'
@@ -894,19 +912,20 @@
 
     /**
      * Shows the one-time upgrade card on the Overview and Admin tabs while it is not dismissed and
-     * some users still have copies of the defaults that could follow them.
+     * some users still have copies of the defaults that could follow them (counted by the card route).
      * @param {Element} page The admin page.
      */
     async function showUpgradeCard(page) {
         const cards = Array.from(page.querySelectorAll('.je-upgrade-card'));
         if (!cards.length) return;
+        // The card route counts on the server and keeps the count until a settings file or the
+        // configuration changes, so a visit does not read every user's settings.
         const card = await request('GET', CARD_PATH);
         if (card.status !== 200 || !card.body || card.body.Dismissed !== false) {
             cards.forEach((element) => { element.hidden = true; });
             return;
         }
-        const data = await loadOverview();
-        const count = data && data.Adoptable ? Number(data.Adoptable.Users) || 0 : 0;
+        const count = card.body.Adoptable ? Number(card.body.Adoptable.Users) || 0 : 0;
         cards.forEach((element) => {
             element.textContent = '';
             element.hidden = count === 0;
@@ -1185,7 +1204,7 @@
         });
         dialogState.timer = setInterval(updateButtons, 1000);
 
-        /** Runs the dry run for the current selection and shows what it would do. */
+        /** Runs the dry run for the current selection and shows what it would do (dropped if the selection changes meanwhile). */
         async function runPreview() {
             if (pageIsDirty(page)) return updateButtons();
             const current = selection();
@@ -1196,6 +1215,11 @@
             const answer = await request('POST', APPLY_PATH, Object.assign({ DryRun: true }, current));
             dialogState.busy = false;
             if (state.dialog !== dialogState) return;
+            // The selection can change while the preview runs: its answer is then for another selection.
+            if (JSON.stringify(selection()) !== JSON.stringify(current)) {
+                summary.textContent = 'The selection changed: preview again.';
+                return updateButtons();
+            }
             if (answer.status !== 200 || !answer.body) {
                 summary.textContent = (answer.body && answer.body.message) || 'The preview did not work. Check the server log.';
                 return updateButtons();
@@ -1206,10 +1230,15 @@
             updateButtons();
         }
 
-        /** Applies the previewed selection with the preview's ConfigEpoch, then offers Undo. */
+        /** Applies the previewed selection (only while it is still the one shown) with the preview's ConfigEpoch, then offers Undo. */
         async function runApply() {
             const preview = dialogState.preview;
             if (!preview || pageIsDirty(page)) return updateButtons();
+            if (JSON.stringify(selection()) !== dialogState.signature) {
+                dialogState.preview = null;
+                summary.textContent = 'The selection changed: preview again.';
+                return updateButtons();
+            }
             dialogState.busy = true;
             summary.textContent = 'Applying…';
             updateButtons();
@@ -1282,6 +1311,12 @@
         if (isPreview && !updated) text = 'Nothing to change: ' + text + '.';
         head.textContent = text;
         target.appendChild(head);
+        if (!isPreview && result.UndoUnavailable) {
+            const warning = document.createElement('div');
+            warning.className = 'je-policy-status je-policy-status-error';
+            warning.textContent = 'These changes cannot be undone: the undo record could not be saved. Check the server log.';
+            target.appendChild(warning);
+        }
 
         const notes = [];
         const fresh = (result.Skipped || []).filter(item => item.Reason === 'no-settings').length;

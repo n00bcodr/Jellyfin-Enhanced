@@ -389,6 +389,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
+        /// <summary>
+        /// A cheap change marker for a per-user file, without reading it: its length and last write
+        /// time (every save replaces the file); null when there is no such file.
+        /// </summary>
+        public string? GetUserFileStamp(string userId, string fileName)
+        {
+            try
+            {
+                var info = new FileInfo(ResolveUserFile(userId, fileName));
+                return info.Exists ? info.Length.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + info.LastWriteTimeUtc.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                return "unavailable";
+            }
+        }
+
         // File.ReadAllText's decoding (byte-order mark detection, UTF-8 otherwise) for bytes already read.
         private static string DecodeText(byte[] bytes)
         {

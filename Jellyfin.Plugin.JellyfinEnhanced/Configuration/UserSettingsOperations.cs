@@ -36,6 +36,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Gets or sets the section before.</summary>
         public JToken? Before { get; set; }
 
+        /// <summary>Gets or sets the operation that had replaced the section before this one, if any.</summary>
+        public string? BeforeOp { get; set; }
+
         /// <summary>Gets or sets the section the operation wrote.</summary>
         public JToken? After { get; set; }
     }
@@ -166,6 +169,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         private static readonly object RunGate = new();
 
+        private static readonly DocumentSection<UserHiddenContent, HiddenContentSettings> HiddenContentSection = new(
+            HiddenContentDocument, HiddenContentFile, true, hc => hc.Settings ?? new HiddenContentSettings(), (hc, value) => hc.Settings = value, hc => hc.SettingsOp, (hc, op) => hc.SettingsOp = op);
+
+        private static readonly DocumentSection<UserSpoilerBlur, SpoilerBlurUserPrefs> SpoilerSection = new(
+            SpoilerGuardDocument, SpoilerFile, false, sb => sb.Prefs ?? new SpoilerBlurUserPrefs(), (sb, value) => sb.Prefs = value, sb => sb.PrefsOp, (sb, op) => sb.PrefsOp = op);
+
         private readonly UserConfigurationManager _manager;
         private readonly Logger _logger;
         private readonly Func<IReadOnlyDictionary<string, string>?> _liveUsers;
@@ -221,7 +230,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// nothing to change (reported as no settings: they get the current defaults when they first use
         /// Jellyfin Enhanced). Overwrite also replaces hidden-content Settings and existing Spoiler Guard
         /// Prefs, as the old reset did; items, lists and bookmarks are never touched. A real run that
-        /// changed anything writes an undo record under <paramref name="operationId"/>.
+        /// changed anything writes an undo record under <paramref name="operationId"/>; when that record
+        /// cannot be saved the changes stay and <c>UndoUnavailable</c> says they cannot be undone.
         /// </summary>
         /// <param name="config">The saved plugin configuration.</param>
         /// <param name="keys">The selected registry keys.</param>
@@ -230,24 +240,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <param name="dryRun">True to preview: nothing is written, moved or quarantined.</param>
         /// <param name="operationId">The operation id stamped on every change.</param>
         /// <param name="utcNow">The time of the run.</param>
-        /// <returns>One outcome per user, in the order given, and whether an undo record was written.</returns>
-        public (List<UserSettingsOutcome> Outcomes, bool Recorded) Run(PluginConfiguration config, IReadOnlyList<UserSettingDescriptor> keys, UserSettingsApplyMode mode, IEnumerable<UserSettingsTarget> users, bool dryRun, string operationId, DateTime utcNow)
+        /// <param name="resetPanelTab">Also reset the panel tab, as the old reset did (legacy reset-all only).</param>
+        /// <returns>One outcome per user, in the order given; whether an undo record was written; and
+        /// whether a real run changed something but its undo record could not be saved.</returns>
+        public (List<UserSettingsOutcome> Outcomes, bool Recorded, bool UndoUnavailable) Run(PluginConfiguration config, IReadOnlyList<UserSettingDescriptor> keys, UserSettingsApplyMode mode, IEnumerable<UserSettingsTarget> users, bool dryRun, string operationId, DateTime utcNow, bool resetPanelTab = false)
         {
             ArgumentNullException.ThrowIfNull(config);
             var outcomes = new List<UserSettingsOutcome>();
             if (dryRun)
             {
-                foreach (var user in users) outcomes.Add(RunForUser(config, keys, mode, user, dryRun: true, operationId, utcNow));
-                return (outcomes, false);
+                foreach (var user in users) outcomes.Add(RunForUser(config, keys, mode, user, dryRun: true, operationId, utcNow, resetPanelTab));
+                return (outcomes, false, false);
             }
 
             lock (RunGate)
             {
-                foreach (var user in users) outcomes.Add(RunForUser(config, keys, mode, user, dryRun: false, operationId, utcNow));
+                foreach (var user in users) outcomes.Add(RunForUser(config, keys, mode, user, dryRun: false, operationId, utcNow, resetPanelTab));
                 var changed = outcomes.Where(o => o.Changes.Count > 0 || o.DocumentChanges.Count > 0).ToList();
                 if (changed.Count == 0)
                 {
-                    return (outcomes, false);
+                    return (outcomes, false, false);
                 }
 
                 var record = new UserSettingsOperationRecord
@@ -261,17 +273,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 try
                 {
                     _manager.SaveOperationRecord(operationId, record, KeepRecords);
-                    return (outcomes, true);
+                    return (outcomes, true, false);
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error($"Could not save the undo record for user settings operation {operationId}: {ex.Message}");
-                    return (outcomes, false);
+                    _logger.Error($"Could not save the undo record for user settings operation {operationId}; its changes to {changed.Count} users cannot be undone: {ex.Message}");
+                    return (outcomes, false, true);
                 }
             }
         }
 
-        private UserSettingsOutcome RunForUser(PluginConfiguration config, IReadOnlyList<UserSettingDescriptor> keys, UserSettingsApplyMode mode, UserSettingsTarget user, bool dryRun, string operationId, DateTime utcNow)
+        private UserSettingsOutcome RunForUser(PluginConfiguration config, IReadOnlyList<UserSettingDescriptor> keys, UserSettingsApplyMode mode, UserSettingsTarget user, bool dryRun, string operationId, DateTime utcNow, bool resetPanelTab)
         {
             var outcome = new UserSettingsOutcome(user);
             if (!user.HasDirectory)
@@ -283,13 +295,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 if (dryRun)
                 {
-                    PlanSettings(outcome, config, keys, mode, operationId, utcNow);
+                    PlanSettings(outcome, config, keys, mode, operationId, utcNow, resetPanelTab);
                 }
                 else
                 {
                     lock (_manager.GetUserFileLock(user.Id, SettingsFile))
                     {
-                        var document = PlanSettings(outcome, config, keys, mode, operationId, utcNow);
+                        var document = PlanSettings(outcome, config, keys, mode, operationId, utcNow, resetPanelTab);
                         if (document != null)
                         {
                             _manager.SaveUserConfiguration(user.Id, SettingsFile, document);
@@ -307,10 +319,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
             if (mode == UserSettingsApplyMode.Overwrite)
             {
-                ResetDocument<UserHiddenContent, HiddenContentSettings>(outcome, HiddenContentDocument, HiddenContentFile, createIfMissing: true,
-                    hc => hc.Settings ?? new HiddenContentSettings(), (hc, value) => hc.Settings = value, _hiddenContentDefaults(config), dryRun, operationId);
-                ResetDocument<UserSpoilerBlur, SpoilerBlurUserPrefs>(outcome, SpoilerGuardDocument, SpoilerFile, createIfMissing: false,
-                    sb => sb.Prefs ?? new SpoilerBlurUserPrefs(), (sb, value) => sb.Prefs = value, new SpoilerBlurUserPrefs(), dryRun, operationId);
+                ResetDocument(outcome, HiddenContentSection, _hiddenContentDefaults(config), dryRun, operationId);
+                ResetDocument(outcome, SpoilerSection, new SpoilerBlurUserPrefs(), dryRun, operationId);
             }
 
             return outcome;
@@ -321,7 +331,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// applies the operation to it. Returns the document to save, or null when nothing changed or
         /// it could not be read (the outcome says why).
         /// </summary>
-        private UserSettings? PlanSettings(UserSettingsOutcome outcome, PluginConfiguration config, IReadOnlyList<UserSettingDescriptor> keys, UserSettingsApplyMode mode, string operationId, DateTime utcNow)
+        private UserSettings? PlanSettings(UserSettingsOutcome outcome, PluginConfiguration config, IReadOnlyList<UserSettingDescriptor> keys, UserSettingsApplyMode mode, string operationId, DateTime utcNow, bool resetPanelTab)
         {
             var status = _manager.PeekUserConfiguration<UserSettings>(outcome.User.Id, SettingsFile, SettingsSizeLimit, out var document, out _);
             outcome.Settings = status switch
@@ -337,7 +347,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 return null;
             }
 
-            var plan = UserSettingsBulk.Apply(document!, config, keys, mode, operationId, utcNow);
+            var plan = UserSettingsBulk.Apply(document!, config, keys, mode, operationId, utcNow, resetPanelTab);
             outcome.Changes.AddRange(plan.Changes);
             outcome.Kept.AddRange(plan.Kept);
             if (plan.Changes.Count > 0) outcome.Settings = UserSettingsOutcome.Changed;
@@ -347,65 +357,88 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>
         /// Overwrite's reset of one settings section in another per-user document (hidden-content
         /// Settings, Spoiler Guard Prefs). A preview reads without quarantine; a real run uses the
-        /// locked strict read-modify-write the old reset used (a malformed file is moved aside, as before).
+        /// locked strict read-modify-write the old reset used (a malformed file is moved aside, as before)
+        /// and stamps the replaced section with the operation id, which undo requires.
         /// </summary>
-        private void ResetDocument<TDocument, TSection>(UserSettingsOutcome outcome, string document, string file, bool createIfMissing, Func<TDocument, TSection> read, Action<TDocument, TSection> write, TSection target, bool dryRun, string operationId)
+        private void ResetDocument<TDocument, TSection>(UserSettingsOutcome outcome, DocumentSection<TDocument, TSection> section, TSection target, bool dryRun, string operationId)
             where TDocument : class, new()
             where TSection : class
         {
             var targetToken = JToken.FromObject(target);
             if (dryRun)
             {
-                var status = _manager.PeekUserConfiguration<TDocument>(outcome.User.Id, file, 0, out var current, out _);
-                outcome.Documents[document] = status switch
+                var status = _manager.PeekUserConfiguration<TDocument>(outcome.User.Id, section.File, 0, out var current, out _);
+                outcome.Documents[section.Name] = status switch
                 {
-                    UserDocumentPeekStatus.Missing when !createIfMissing => UserSettingsOutcome.None,
-                    UserDocumentPeekStatus.Missing => JToken.DeepEquals(JToken.FromObject(read(new TDocument())), targetToken) ? UserSettingsOutcome.Unchanged : UserSettingsOutcome.Changed,
-                    UserDocumentPeekStatus.Loaded => JToken.DeepEquals(JToken.FromObject(read(current!)), targetToken) ? UserSettingsOutcome.Unchanged : UserSettingsOutcome.Changed,
+                    UserDocumentPeekStatus.Missing when !section.CreateIfMissing => UserSettingsOutcome.None,
+                    UserDocumentPeekStatus.Missing => JToken.DeepEquals(JToken.FromObject(section.Read(new TDocument())), targetToken) ? UserSettingsOutcome.Unchanged : UserSettingsOutcome.Changed,
+                    UserDocumentPeekStatus.Loaded => JToken.DeepEquals(JToken.FromObject(section.Read(current!)), targetToken) ? UserSettingsOutcome.Unchanged : UserSettingsOutcome.Changed,
                     UserDocumentPeekStatus.Corrupt => UserSettingsOutcome.Corrupt,
                     _ => UserSettingsOutcome.Unavailable,
                 };
                 return;
             }
 
-            if (!createIfMissing && !_manager.UserConfigurationExists(outcome.User.Id, file))
+            if (!section.CreateIfMissing && !_manager.UserConfigurationExists(outcome.User.Id, section.File))
             {
-                outcome.Documents[document] = UserSettingsOutcome.None;
+                outcome.Documents[section.Name] = UserSettingsOutcome.None;
                 return;
             }
 
             try
             {
                 JToken? before = null;
-                var changed = _manager.RmwUserConfiguration<TDocument>(outcome.User.Id, file, current =>
+                string? beforeOp = null;
+                var changed = _manager.RmwUserConfiguration<TDocument>(outcome.User.Id, section.File, current =>
                 {
-                    before = JToken.FromObject(read(current));
+                    before = JToken.FromObject(section.Read(current));
+                    beforeOp = section.GetStamp(current);
                     if (JToken.DeepEquals(before, targetToken))
                     {
                         return 0;
                     }
 
-                    write(current, targetToken.ToObject<TSection>()!);
+                    section.Write(current, targetToken.ToObject<TSection>()!);
+                    section.SetStamp(current, operationId);
                     return 1;
                 });
-                outcome.Documents[document] = changed > 0 ? UserSettingsOutcome.Changed : UserSettingsOutcome.Unchanged;
+                outcome.Documents[section.Name] = changed > 0 ? UserSettingsOutcome.Changed : UserSettingsOutcome.Unchanged;
                 if (changed > 0)
                 {
-                    outcome.DocumentChanges.Add(new UserDocumentChange { File = file, Before = before, After = targetToken });
+                    outcome.DocumentChanges.Add(new UserDocumentChange { File = section.File, Before = before, BeforeOp = beforeOp, After = targetToken });
                 }
             }
             catch (Exception ex)
             {
-                _logger.Warning($"User settings operation {operationId}: {file} for {Describe(outcome.User)} was not reset: {ex.Message}");
-                outcome.Documents[document] = Reason(ex);
+                _logger.Warning($"User settings operation {operationId}: {section.File} for {Describe(outcome.User)} was not reset: {ex.Message}");
+                outcome.Documents[section.Name] = Reason(ex);
             }
         }
 
         /// <summary>
+        /// The undo stamp a whole-document save of hidden-content.json or spoilerblur.json keeps: the
+        /// stored stamp while the incoming section is the stored one (the save changed something
+        /// else, such as hidden items), none once the section changes. A client's own value never counts.
+        /// </summary>
+        /// <typeparam name="TSection">The section type.</typeparam>
+        /// <param name="stored">The stored section.</param>
+        /// <param name="storedStamp">The stored stamp.</param>
+        /// <param name="incoming">The section being saved.</param>
+        /// <returns>The stamp to save.</returns>
+        public static string? CarryStamp<TSection>(TSection? stored, string? storedStamp, TSection? incoming)
+            where TSection : class, new()
+        {
+            if (storedStamp == null) return null;
+            return JToken.DeepEquals(JToken.FromObject(stored ?? new TSection()), JToken.FromObject(incoming ?? new TSection())) ? storedStamp : null;
+        }
+
+        /// <summary>
         /// Undoes an operation (compare-and-swap, see <see cref="UserSettingsBulk.Undo"/>; a replaced
-        /// document section is restored only while it still holds what the operation wrote) and marks
-        /// its record undone. The record is read inside the run gate, so two undo requests for one
-        /// operation cannot both run.
+        /// document section is restored only while it still holds what the operation wrote and carries
+        /// its stamp) and marks its record undone. When a file could not be read or written for a
+        /// passing reason (<see cref="CanRetry"/>), the record keeps just those parts and stays open, so
+        /// the undo can be run again for them. The record is read inside the run gate, so two undo
+        /// requests for one operation cannot both run.
         /// </summary>
         /// <param name="operationId">A valid operation id.</param>
         /// <param name="config">The plugin configuration, or null when it is not loaded.</param>
@@ -418,6 +451,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             outcomes = new List<UserSettingsUndoOutcome>();
             lock (RunGate)
             {
+                var pending = new List<UserSettingsOperationUser>();
                 var record = ReadRecord(operationId);
                 if (record == null)
                 {
@@ -448,16 +482,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     {
                         if (change?.File == HiddenContentFile)
                         {
-                            UndoDocument<UserHiddenContent, HiddenContentSettings>(outcome, change, HiddenContentDocument, hc => hc.Settings ?? new HiddenContentSettings(), (hc, value) => hc.Settings = value, record.Id);
+                            UndoDocument(outcome, change, HiddenContentSection, record.Id);
                         }
                         else if (change?.File == SpoilerFile)
                         {
-                            UndoDocument<UserSpoilerBlur, SpoilerBlurUserPrefs>(outcome, change, SpoilerGuardDocument, sb => sb.Prefs ?? new SpoilerBlurUserPrefs(), (sb, value) => sb.Prefs = value, record.Id);
+                            UndoDocument(outcome, change, SpoilerSection, record.Id);
                         }
+                    }
+
+                    // What could not be read or written for a passing reason stays to be undone on a retry
+                    // (safe: undo is compare-and-swap); a corrupt or missing file is final.
+                    var retry = new UserSettingsOperationUser { UserId = user.UserId };
+                    if (outcome.Failed.TryGetValue(SettingsFile, out var settingsFailure) && CanRetry(settingsFailure))
+                    {
+                        retry.Settings = user.Settings ?? new List<UserSettingsKeyChange>();
+                    }
+
+                    retry.Documents = (user.Documents ?? new List<UserDocumentChange>())
+                        .Where(change => change?.File != null && outcome.Failed.TryGetValue(change.File, out var failure) && CanRetry(failure))
+                        .ToList();
+                    if (retry.Settings.Count > 0 || retry.Documents.Count > 0)
+                    {
+                        pending.Add(retry);
                     }
                 }
 
-                record.Undone = utcNow;
+                if (pending.Count > 0)
+                {
+                    record.Users = pending;
+                }
+                else
+                {
+                    record.Undone = utcNow;
+                }
+
                 _manager.SaveOperationRecord(record.Id, record, 0);
             }
 
@@ -499,13 +557,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
-        private void UndoDocument<TDocument, TSection>(UserSettingsUndoOutcome outcome, UserDocumentChange change, string document, Func<TDocument, TSection> read, Action<TDocument, TSection> write, string operationId)
+        /// <summary>
+        /// Restores a replaced section only while it still carries the operation's stamp and holds what
+        /// the operation wrote; the stamp it had before comes back with it.
+        /// </summary>
+        private void UndoDocument<TDocument, TSection>(UserSettingsUndoOutcome outcome, UserDocumentChange change, DocumentSection<TDocument, TSection> section, string operationId)
             where TDocument : class, new()
             where TSection : class
         {
             if (!_manager.UserConfigurationExists(outcome.User.Id, change.File))
             {
-                outcome.Kept.Add(document);
+                outcome.Kept.Add(section.Name);
                 return;
             }
 
@@ -513,15 +575,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 var restored = _manager.RmwUserConfiguration<TDocument>(outcome.User.Id, change.File, current =>
                 {
-                    if (change.After == null || change.Before == null || !JToken.DeepEquals(JToken.FromObject(read(current)), change.After))
+                    if (change.After == null || change.Before == null
+                        || !string.Equals(section.GetStamp(current), operationId, StringComparison.Ordinal)
+                        || !JToken.DeepEquals(JToken.FromObject(section.Read(current)), change.After))
                     {
                         return 0;
                     }
 
-                    write(current, change.Before.ToObject<TSection>()!);
+                    section.Write(current, change.Before.ToObject<TSection>()!);
+                    section.SetStamp(current, change.BeforeOp);
                     return 1;
                 });
-                (restored > 0 ? outcome.Restored : outcome.Kept).Add(document);
+                (restored > 0 ? outcome.Restored : outcome.Kept).Add(section.Name);
             }
             catch (Exception ex)
             {
@@ -556,6 +621,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ? UserSettingsOutcome.Corrupt
             : ex is IOException || ex is UnauthorizedAccessException ? UserSettingsOutcome.Unavailable : UserSettingsOutcome.Error;
 
+        /// <summary>Whether an undo failure may pass on a retry (the file could not be read or written now).</summary>
+        /// <param name="reason">The failure reason.</param>
+        /// <returns>True for unavailable or an unexpected error.</returns>
+        public static bool CanRetry(string reason) => reason == UserSettingsOutcome.Unavailable || reason == UserSettingsOutcome.Error;
+
         private static string Describe(UserSettingsTarget user) => user.Name == null ? user.Id : $"{user.Name} ({user.Id})";
+
+        /// <summary>A settings section an Overwrite replaces in another per-user document, with its undo stamp.</summary>
+        /// <param name="Name">The document name in outcomes.</param>
+        /// <param name="File">The per-user file.</param>
+        /// <param name="CreateIfMissing">Whether a reset creates the file.</param>
+        /// <param name="Read">Reads the section.</param>
+        /// <param name="Write">Replaces the section.</param>
+        /// <param name="GetStamp">Reads the operation stamp.</param>
+        /// <param name="SetStamp">Writes the operation stamp.</param>
+        private sealed record DocumentSection<TDocument, TSection>(string Name, string File, bool CreateIfMissing, Func<TDocument, TSection> Read, Action<TDocument, TSection> Write, Func<TDocument, string?> GetStamp, Action<TDocument, string?> SetStamp);
     }
 }

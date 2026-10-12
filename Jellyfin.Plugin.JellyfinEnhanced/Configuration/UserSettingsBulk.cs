@@ -57,7 +57,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Gets the selected keys that keep the user's own value (FollowIfUnchanged: Chosen, or a value unlike the default).</summary>
         public List<string> Kept { get; } = new();
 
-        /// <summary>Gets or sets a value indicating whether the document must be saved (key changes, or Overwrite's panel-tab reset).</summary>
+        /// <summary>Gets or sets a value indicating whether the document must be saved (key changes, or the legacy reset's panel-tab reset).</summary>
         public bool Changed { get; set; }
     }
 
@@ -83,7 +83,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Uses the current admin default.</summary>
         public const string StateFollowing = "Following";
 
-        /// <summary>The value the old reset wrote for the device-local panel tab (not a registry key, never undone).</summary>
+        /// <summary>The value the legacy reset-all writes for the device-local panel tab (not a registry key, never undone).</summary>
         private const string SeededPanelTab = "shortcuts";
 
         /// <summary>The state of a key in a normalised provenance block.</summary>
@@ -123,9 +123,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// Applies one bulk operation to a stored settings.json document, in place. FollowIfUnchanged
         /// and FollowAll make keys Following (their stored value becomes the default's cached value);
         /// Overwrite writes the default value (the initializer for a key without an admin default) and
-        /// makes the key Existing again, and resets the panel tab as the old reset did. Keys already
-        /// in the target state with the target value are left alone. Every changed key is stamped
-        /// with <paramref name="operationId"/>.
+        /// makes the key Existing again. Keys already in the target state with the target value are
+        /// left alone, and nothing outside the selected keys changes (except the legacy reset-all's
+        /// panel tab, see <paramref name="resetPanelTab"/>). Every changed key is stamped with
+        /// <paramref name="operationId"/>.
         /// </summary>
         /// <param name="document">The stored document; changed in place.</param>
         /// <param name="config">The plugin configuration holding the admin defaults.</param>
@@ -133,8 +134,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <param name="mode">The operation mode.</param>
         /// <param name="operationId">The operation id stamped on every changed key.</param>
         /// <param name="utcNow">The time recorded in the provenance block.</param>
+        /// <param name="resetPanelTab">Also write the seed's panel tab, as the old reset did (only the legacy
+        /// reset-all route, whose output is unchanged; the panel keeps its tab on the device now).</param>
         /// <returns>The changes, the keys that kept the user's value, and whether to save.</returns>
-        public static UserSettingsBulkPlan Apply(UserSettings document, PluginConfiguration config, IEnumerable<UserSettingDescriptor> keys, UserSettingsApplyMode mode, string operationId, DateTime utcNow)
+        public static UserSettingsBulkPlan Apply(UserSettings document, PluginConfiguration config, IEnumerable<UserSettingDescriptor> keys, UserSettingsApplyMode mode, string operationId, DateTime utcNow, bool resetPanelTab = false)
         {
             ArgumentNullException.ThrowIfNull(document);
             ArgumentNullException.ThrowIfNull(config);
@@ -190,7 +193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 meta.Ops[key] = operationId;
             }
 
-            if (mode == UserSettingsApplyMode.Overwrite && !string.Equals(document.LastOpenedTab, SeededPanelTab, StringComparison.Ordinal))
+            if (resetPanelTab && mode == UserSettingsApplyMode.Overwrite && !string.Equals(document.LastOpenedTab, SeededPanelTab, StringComparison.Ordinal))
             {
                 // The old reset wrote the seed's panel tab too (device-local state, not a setting).
                 document.LastOpenedTab = SeededPanelTab;

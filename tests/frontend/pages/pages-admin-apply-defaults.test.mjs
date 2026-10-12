@@ -61,7 +61,7 @@ function setup(t, { dismissed = false, overview = overviewFor(), apply, undo, pe
         const body = request.data ? JSON.parse(request.data) : undefined;
         requests.push({ type: request.type, path, body });
         if (path.endsWith('/registry')) return structuredClone(registryDefault);
-        if (path.endsWith('/upgrade-card')) return { Dismissed: dismissed };
+        if (path.endsWith('/upgrade-card')) return dismissed ? { Dismissed: true } : { Dismissed: false, Adoptable: structuredClone(overview.Adoptable) };
         if (path.endsWith('/upgrade-card/dismiss')) return { Dismissed: true };
         if (path.endsWith('/overview')) return structuredClone(overview);
         if (path.includes('/overview/')) return perUser ? perUser(path) : { Key: 'AutoPipEnabled', Default: false, Locked: false, Users: [] };
@@ -141,6 +141,7 @@ test('counts are read only when the policy table is opened; Changed opens the pe
 test('"Make follow default" follows one key for one user with the overview epoch, and offers undo', async t => {
   const h = setup(t, {
     dismissed: true,
+    apply: body => applyAnswer(body, { Skipped: [], Failed: [], PerUser: [{ Id: 'b'.repeat(32), Name: 'bob', Changed: ['AutoPipEnabled'], Visible: ['AutoPipEnabled'], Kept: [], Documents: [] }] }),
     perUser: () => ({ Key: 'AutoPipEnabled', Default: false, Locked: false, Users: [{ UserId: 'b'.repeat(32), Name: 'bob', Live: true, Orphan: false, Value: true, State: 'Chosen', SameAsDefault: false }] })
   });
   await h.policy.decorate(h.page);
@@ -167,6 +168,45 @@ test('"Make follow default" follows one key for one user with the overview epoch
   await h.settle();
   assert.ok(h.requests.some(r => r.type === 'POST' && r.path === '/JellyfinEnhanced/admin/user-settings/undo/20261012000000000-abcdef12'));
   assert.match(note.textContent, /Undone: 40 restored, 2 changed since and kept as they are\./);
+});
+
+test('"Make follow default" reports a user the run skipped, failed or did not need to change, and keeps the button', async t => {
+  const bob = 'b'.repeat(32);
+  const answers = [
+    { Skipped: [{ Id: bob, Name: 'bob', Reason: 'corrupt' }], Failed: [], PerUser: [] },
+    { Skipped: [], Failed: [{ Id: bob, Name: 'bob', Document: 'Settings', Reason: 'unavailable' }], PerUser: [] },
+    { Skipped: [], Failed: [], PerUser: [], UndoId: null }, // already following: nothing to change
+    // Another user's change is not this user's success.
+    { Skipped: [], Failed: [], PerUser: [{ Id: 'a'.repeat(32), Name: 'alice', Changed: ['AutoPipEnabled'], Visible: [], Kept: [], Documents: [] }] }
+  ];
+  const h = setup(t, {
+    dismissed: true,
+    apply: body => applyAnswer(body, answers.shift()),
+    perUser: () => ({ Key: 'AutoPipEnabled', Default: false, Locked: false, Users: [{ UserId: bob, Name: 'bob', Live: true, Orphan: false, Value: true, State: 'Chosen', SameAsDefault: false }] })
+  });
+  await h.policy.decorate(h.page);
+  await h.openDetails();
+  const row = h.document.querySelector('#jePolicyRow-AutoPipEnabled');
+  row.querySelector('.je-policy-users-toggle').click();
+  await h.settle();
+  const list = row.nextElementSibling;
+  const note = list.querySelector('.je-policy-users-note');
+  const expected = [
+    /^bob: not changed, settings file is corrupt, left untouched\.$/,
+    /^bob: not changed \(the file could not be read or written\)\.$/,
+    /^Nothing changed for bob: this setting changed since the list was loaded/,
+    /^Nothing changed for bob/
+  ];
+  for (const message of expected) {
+    const button = list.querySelector('.je-policy-follow-btn');
+    assert.ok(button, 'the button stays');
+    button.click();
+    await h.settle();
+    assert.match(note.textContent, message);
+    assert.equal(button.disabled, false);
+    assert.equal(list.querySelector('tbody tr td:nth-of-type(2)').textContent, 'Their own choice', 'the state is not shown as following');
+    assert.equal(note.querySelector('.je-apply-undo'), null);
+  }
 });
 
 test('the dialog previews the saved settings, applies with the preview\'s epoch, and undoes', async t => {
@@ -264,6 +304,7 @@ test('the upgrade card shows while some users still have copies, previews Follow
   const h = setup(t);
   await h.policy.decorate(h.page);
   await h.settle();
+  assert.deepEqual(h.paths(), ['/registry', '/upgrade-card'], 'the card route counts; the page reads no overview for it');
   const cards = [...h.page.querySelectorAll('.je-upgrade-card')];
   assert.equal(cards.length, 2, 'one on Overview, one on Admin');
   assert.ok(cards[0].closest('#overview') && cards[1].closest('#admin'));
@@ -290,6 +331,90 @@ test('the upgrade card shows while some users still have copies, previews Follow
   await none.policy.decorate(none.page);
   await none.settle();
   assert.ok([...none.page.querySelectorAll('.je-upgrade-card')].every(card => card.hidden));
+});
+
+test('a preview answered after the selection changed is dropped, and Apply sends only the selection shown', async t => {
+  const gate = deferred();
+  let held = true;
+  const h = setup(t, {
+    dismissed: true,
+    apply: async (body) => {
+      if (body.DryRun && held) { held = false; await gate.promise; }
+      return applyAnswer(body);
+    }
+  });
+  await h.policy.decorate(h.page);
+  h.policy.openApplyDialog({ mode: 'FollowIfUnchanged' });
+  await h.settle();
+  h.button('Preview').click();
+  await h.settle();
+  // While the preview is in flight the admin picks Overwrite.
+  h.dialog().querySelector('.je-apply-mode input[value="Overwrite"]').click();
+  gate.resolve();
+  await h.settle();
+  const summary = h.dialog().querySelector('.je-apply-summary');
+  assert.match(summary.textContent, /The selection changed: preview again/);
+  assert.equal(h.button('Apply').disabled, true);
+  h.button('Apply').click();
+  await h.settle();
+  assert.equal(h.requests.filter(r => r.path.endsWith('/apply') && !r.body.DryRun).length, 0);
+
+  // A preview for what is shown can be applied; Apply re-checks the selection as well.
+  h.button('Preview').click();
+  await h.settle();
+  assert.equal(h.button('Apply').disabled, false);
+  const radio = h.dialog().querySelector('.je-apply-mode input[value="FollowAll"]');
+  radio.checked = true; // changed without an event reaching the dialog
+  h.button('Apply').click();
+  await h.settle();
+  assert.equal(h.requests.filter(r => r.path.endsWith('/apply') && !r.body.DryRun).length, 0);
+  assert.match(summary.textContent, /The selection changed: preview again/);
+  h.button('Preview').click();
+  await h.settle();
+  h.button('Apply').click();
+  await h.settle();
+  const run = h.requests.filter(r => r.path.endsWith('/apply') && !r.body.DryRun);
+  assert.equal(run.length, 1);
+  assert.equal(run[0].body.Mode, 'FollowAll');
+});
+
+test('a run whose undo record could not be saved says so, and an undo that left files pending can be retried', async t => {
+  let undos = 0;
+  let runs = 0;
+  const h = setup(t, {
+    dismissed: true,
+    apply: body => applyAnswer(body, body.DryRun ? {} : ++runs === 1 ? { UndoId: null, UndoUnavailable: true } : {}),
+    undo: () => (++undos === 1
+      ? { success: true, Restored: 3, Kept: 0, FailedUsers: 1, Pending: true, PerUser: [] }
+      : { success: true, Restored: 1, Kept: 0, FailedUsers: 0, Pending: false, PerUser: [] })
+  });
+  await h.policy.decorate(h.page);
+  h.policy.openApplyDialog();
+  await h.settle();
+  h.button('Preview').click();
+  await h.settle();
+  const summary = h.dialog().querySelector('.je-apply-summary');
+  assert.doesNotMatch(summary.textContent, /cannot be undone/);
+  h.button('Apply').click();
+  await h.settle();
+  assert.match(summary.textContent, /These changes cannot be undone: the undo record could not be saved/);
+  assert.equal(summary.querySelector('.je-apply-undo'), null);
+
+  h.button('Preview').click();
+  await h.settle();
+  h.button('Apply').click();
+  await h.settle();
+  assert.doesNotMatch(summary.textContent, /cannot be undone/);
+  const button = summary.querySelector('.je-apply-undo');
+  button.click();
+  await h.settle();
+  assert.match(summary.textContent, /1 user could not be restored \(see the server log\)\. Press Undo again to retry them\./);
+  assert.equal(button.isConnected, true);
+  assert.equal(button.disabled, false);
+  button.click();
+  await h.settle();
+  assert.equal(undos, 2);
+  assert.equal(button.isConnected, false);
 });
 
 test('the Quick Actions button opens the dialog; without the policy script it says so', async t => {

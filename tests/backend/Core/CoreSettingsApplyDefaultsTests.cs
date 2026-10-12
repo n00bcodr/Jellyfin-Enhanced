@@ -687,4 +687,236 @@ public class CoreSettingsApplyDefaultsTests : IDisposable
         Assert.True(Body(server.Controller().GetUserSettingsUpgradeCard()).Value<bool>("Dismissed"));
         Assert.Empty(server.Manager.GetAllUserIds());
     }
+
+    // ---- review round 1
+
+    [Fact]
+    public void AReplacedSectionIsUndoneOnlyWhileItCarriesTheRunsStamp()
+    {
+        using var server = new Server();
+        var casey = Person("casey");
+        server.Live(casey);
+        server.Write(casey.Id, new UserSettings());
+        var id = casey.Id.ToString("N");
+        HiddenContentSettings Hc() => server.Manager.GetUserConfigurationStrict<UserHiddenContent>(id, "hidden-content.json").Settings;
+        server.Manager.SaveUserConfiguration(id, "hidden-content.json", new UserHiddenContent { Settings = new HiddenContentSettings { FilterSearch = true, FilterCalendar = true } });
+
+        // Overlapping runs that land on the same section again: op1 X→D1, op2 D1→D2, op3 D2→D1.
+        var op1 = server.Apply("Overwrite", ["AutoPipEnabled"], dryRun: false).Value<string>("UndoId")!;
+        Assert.False(Hc().FilterSearch);
+        server.Save(c => c.HiddenContentDefaultFilterSearch = true);
+        var op2 = server.Apply("Overwrite", ["AutoPipEnabled"], dryRun: false).Value<string>("UndoId")!;
+        Assert.True(Hc().FilterSearch);
+        server.Save(c => c.HiddenContentDefaultFilterSearch = false);
+        var op3 = server.Apply("Overwrite", ["AutoPipEnabled"], dryRun: false).Value<string>("UndoId")!;
+        Assert.False(Hc().FilterSearch);
+
+        // op1's undo sees its own content again, but not its stamp: two later runs are not undone.
+        var first = (JObject)Assert.Single((JArray)server.Undo(op1)["PerUser"]!);
+        Assert.Equal(["HiddenContent"], Strings(first["Kept"]));
+        Assert.False(Hc().FilterSearch);
+        // Undone newest first, each run hands the section back to the one before it.
+        Assert.Equal(["HiddenContent"], Strings(((JObject)Assert.Single((JArray)server.Undo(op3)["PerUser"]!))["Restored"]));
+        Assert.True(Hc().FilterSearch);
+        Assert.Equal(["HiddenContent"], Strings(((JObject)Assert.Single((JArray)server.Undo(op2)["PerUser"]!))["Restored"]));
+        Assert.False(Hc().FilterSearch);
+        Assert.Equal(op1, server.Manager.GetUserConfigurationStrict<UserHiddenContent>(id, "hidden-content.json").SettingsOp);
+    }
+
+    [Fact]
+    public void AUserEditOfASectionClearsTheStampEvenWhenItReturnsToTheResetValues()
+    {
+        using var server = new Server();
+        var casey = Person("casey");
+        server.Live(casey);
+        server.Write(casey.Id, new UserSettings { AutoPipEnabled = !server.Config.AutoPipEnabled });
+        var id = casey.Id.ToString("N");
+        server.Manager.SaveUserConfiguration(id, "hidden-content.json", new UserHiddenContent { Settings = new HiddenContentSettings { FilterSearch = true } });
+        server.Manager.SaveUserConfiguration(id, SpoilerFile, new UserSpoilerBlur { Prefs = new SpoilerBlurUserPrefs { HideCast = false } });
+        var user = server.Controller(casey.Id, admin: false);
+        UserHiddenContent Hidden() => server.Manager.GetUserConfigurationStrict<UserHiddenContent>(id, "hidden-content.json");
+        UserHiddenContent Posted(UserHiddenContent document) => StjSerializer.Deserialize<UserHiddenContent>(StjSerializer.Serialize(document))!;
+
+        // The stamp is stored only: the routes neither send it nor take it from a client.
+        var op = server.Apply("Overwrite", ["AutoPipEnabled"], dryRun: false).Value<string>("UndoId")!;
+        Assert.Equal(op, Hidden().SettingsOp);
+        Assert.DoesNotContain("SettingsOp", StjSerializer.Serialize(Assert.IsType<OkObjectResult>(user.GetUserHiddenContent(id)).Value));
+        var forged = Posted(Hidden());
+        forged.SettingsOp = "20991231235959999-abcdef12";
+        Assert.IsType<OkObjectResult>(user.SaveUserHiddenContent(id, forged));
+        Assert.Equal(op, Hidden().SettingsOp);
+
+        // Hiding an item (a whole-document save with the settings as they were) keeps the stamp.
+        var withItem = Posted(Hidden());
+        withItem.Items["x"] = new HiddenContentItem { ItemId = "x" };
+        Assert.IsType<OkObjectResult>(user.SaveUserHiddenContent(id, withItem));
+        Assert.Equal(op, Hidden().SettingsOp);
+
+        // The user changes a setting and then changes it back to exactly what the reset wrote.
+        var reset = JToken.FromObject(Hidden().Settings);
+        var edited = Posted(Hidden());
+        edited.Settings.FilterCalendar = !edited.Settings.FilterCalendar;
+        Assert.IsType<OkObjectResult>(user.SaveUserHiddenContent(id, edited));
+        edited.Settings.FilterCalendar = !edited.Settings.FilterCalendar;
+        Assert.IsType<OkObjectResult>(user.SaveUserHiddenContent(id, Posted(edited)));
+        Assert.True(JToken.DeepEquals(reset, JToken.FromObject(Hidden().Settings)));
+        Assert.Null(Hidden().SettingsOp);
+
+        // Spoiler Guard: the user saves their preferences, unchanged from the reset.
+        Assert.Equal(op, server.Manager.GetUserConfigurationStrict<UserSpoilerBlur>(id, SpoilerFile).PrefsOp);
+        Assert.IsType<OkObjectResult>(user.SetSpoilerBlurUserPrefs(new SpoilerBlurUserPrefs()));
+        Assert.Null(server.Manager.GetUserConfigurationStrict<UserSpoilerBlur>(id, SpoilerFile).PrefsOp);
+
+        var undo = (JObject)Assert.Single((JArray)server.Undo(op)["PerUser"]!);
+        Assert.Equal(["AutoPipEnabled"], Strings(undo["Restored"]));
+        Assert.Equal(["HiddenContent", "SpoilerGuard"], Strings(undo["Kept"]).Order().ToArray());
+        Assert.False(Hidden().Settings.FilterSearch);
+        Assert.Null(server.Manager.GetUserConfigurationStrict<UserSpoilerBlur>(id, SpoilerFile).Prefs.HideCast);
+        Assert.Equal("x", Assert.Single(Hidden().Items).Key);
+    }
+
+    [Fact]
+    public void ARunWhoseUndoRecordCannotBeSavedSaysSo()
+    {
+        using var server = new Server();
+        var casey = Person("casey");
+        server.Live(casey);
+        server.Write(casey.Id, new UserSettings { AutoPipEnabled = !server.Config.AutoPipEnabled });
+        // A file where the operations directory belongs: no record can be written.
+        System.IO.File.WriteAllText(Path.Combine(server.Plugin.Core.ConfigRoot, "_operations"), "not a directory");
+
+        var preview = server.Apply("FollowAll", ["AutoPipEnabled"], dryRun: true);
+        Assert.False(preview.Value<bool>("UndoUnavailable"));
+        var run = server.Apply("FollowAll", ["AutoPipEnabled"], dryRun: false);
+        Assert.Equal(200, Status(run));
+        Assert.Equal(1, run.Value<int>("Updated"));
+        Assert.Equal(JTokenType.Null, run["UndoId"]!.Type);
+        Assert.True(run.Value<bool>("UndoUnavailable"));
+        Assert.Contains("AutoPipEnabled", server.Stored(casey.Id).Meta!.Following);
+
+        // Nothing changed: nothing to undo, nothing unavailable.
+        var again = server.Apply("FollowAll", ["AutoPipEnabled"], dryRun: false);
+        Assert.Equal(JTokenType.Null, again["UndoId"]!.Type);
+        Assert.False(again.Value<bool>("UndoUnavailable"));
+    }
+
+    [Fact]
+    public void AnUndoThatCouldNotWriteAFileCanBeRetried()
+    {
+        using var server = new Server();
+        var casey = Person("casey");
+        var dana = Person("dana");
+        server.Live(casey, dana);
+        server.Write(casey.Id, new UserSettings { AutoPipEnabled = !server.Config.AutoPipEnabled });
+        server.Write(dana.Id, new UserSettings { AutoPipEnabled = !server.Config.AutoPipEnabled });
+        var undoId = server.Apply("FollowAll", ["AutoPipEnabled"], dryRun: false).Value<string>("UndoId")!;
+
+        // casey's file cannot be read right now (a directory stands in its place).
+        var path = server.SettingsPath(casey.Id);
+        var bytes = System.IO.File.ReadAllBytes(path);
+        System.IO.File.Delete(path);
+        Directory.CreateDirectory(path);
+        var first = server.Undo(undoId);
+        Assert.Equal(200, Status(first));
+        Assert.Equal(1, first.Value<int>("FailedUsers"));
+        Assert.True(first.Value<bool>("Pending"));
+        Assert.Equal(1, first.Value<int>("Restored"));
+        Assert.DoesNotContain("AutoPipEnabled", server.Stored(dana.Id).Meta!.Following);
+
+        // Once the file is back, the same undo restores what is left, then it is done.
+        Directory.Delete(path);
+        System.IO.File.WriteAllBytes(path, bytes);
+        var retry = server.Undo(undoId);
+        Assert.Equal(200, Status(retry));
+        Assert.Equal(0, retry.Value<int>("FailedUsers"));
+        Assert.False(retry.Value<bool>("Pending"));
+        var user = (JObject)Assert.Single((JArray)retry["PerUser"]!);
+        Assert.Equal(casey.Id.ToString("N"), user.Value<string>("Id"));
+        Assert.Equal(["AutoPipEnabled"], Strings(user["Restored"]));
+        Assert.DoesNotContain("AutoPipEnabled", server.Stored(casey.Id).Meta!.Following);
+        Assert.Equal(409, Status(server.Undo(undoId)));
+    }
+
+    [Fact]
+    public void OverwriteChangesNothingOutsideTheSelectedKeys()
+    {
+        using var server = new Server();
+        var casey = Person("casey");
+        server.Live(casey);
+        server.Write(casey.Id, new UserSettings { AutoPipEnabled = server.Config.AutoPipEnabled, AutoPauseEnabled = !server.Config.AutoPauseEnabled, LastOpenedTab = "settings" });
+        var before = System.IO.File.ReadAllBytes(server.SettingsPath(casey.Id));
+
+        // The one selected key already has the default: settings.json is not rewritten (only the
+        // hidden-content settings are created, as Overwrite does).
+        var first = server.Apply("Overwrite", ["AutoPipEnabled"], dryRun: false);
+        Assert.Equal(0, first.Value<int>("KeysChanged"));
+        Assert.Equal(before, System.IO.File.ReadAllBytes(server.SettingsPath(casey.Id)));
+        var second = server.Apply("Overwrite", ["AutoPipEnabled"], dryRun: false);
+        Assert.Equal(0, second.Value<int>("Updated"));
+        Assert.Equal(1, second.Value<int>("Unchanged"));
+        Assert.Equal(JTokenType.Null, second["UndoId"]!.Type);
+        Assert.Equal(before, System.IO.File.ReadAllBytes(server.SettingsPath(casey.Id)));
+
+        // A key that changes leaves the panel tab alone too; only the legacy reset-all still resets it.
+        server.Apply("Overwrite", ["AutoPauseEnabled"], dryRun: false);
+        Assert.Equal("settings", server.Stored(casey.Id).LastOpenedTab);
+        Assert.Equal(server.Config.AutoPauseEnabled, server.Stored(casey.Id).AutoPauseEnabled);
+        server.Controller().ResetAllUsersSettings();
+        Assert.Equal("shortcuts", server.Stored(casey.Id).LastOpenedTab);
+    }
+
+    [Fact]
+    public void TheConfigurationAndItsEpochAreReadTogether()
+    {
+        using var server = new Server();
+        var before = server.Plugin.Plugin.CurrentConfiguration;
+        Assert.Same(server.Config, before.Configuration);
+        Assert.Equal(server.Epoch, before.Epoch);
+        server.Save(c => c.AutoPipEnabled = !c.AutoPipEnabled);
+        var after = server.Plugin.Plugin.CurrentConfiguration;
+        Assert.Same(server.Config, after.Configuration);
+        Assert.NotSame(before.Configuration, after.Configuration);
+        Assert.NotEqual(before.Epoch, after.Epoch);
+        Assert.Equal(server.Epoch, after.Epoch);
+        Assert.Equal(after.Epoch, server.Overview().Value<string>("ConfigEpoch"));
+        Assert.Equal(after.Epoch, server.Apply("FollowAll", ["AutoPipEnabled"], dryRun: true).Value<string>("ConfigEpoch"));
+    }
+
+    [Fact]
+    public void TheUpgradeCardCountsOnTheServerAndRecountsOnlyWhenSomethingChanged()
+    {
+        using var server = new Server();
+        var casey = Person("casey");
+        var dana = Person("dana");
+        server.Live(casey, dana);
+        server.Write(casey.Id, UserSettingsRegistry.BuildDefaults(server.Config));
+        // dana follows everything except Auto PiP, where she has something else: nothing to adopt.
+        server.Write(dana.Id, new UserSettings { AutoPipEnabled = !server.Config.AutoPipEnabled });
+        server.Apply("FollowAll", AdminKeys().Where(key => key != "AutoPipEnabled").ToArray(), dryRun: false, userIds: [dana.Id.ToString("N")]);
+        JObject Card() => Body(server.Controller().GetUserSettingsUpgradeCard());
+
+        var card = Card();
+        Assert.False(card.Value<bool>("Dismissed"));
+        Assert.Equal(1, card["Adoptable"]!.Value<int>("Users"));
+        Assert.Equal(server.Overview()["Adoptable"]!.Value<int>("Keys"), card["Adoptable"]!.Value<int>("Keys"));
+
+        // Same size and time: the files are not read again (garbage of the same length goes unseen).
+        var path = server.SettingsPath(casey.Id);
+        var written = System.IO.File.GetLastWriteTimeUtc(path);
+        var bytes = System.IO.File.ReadAllBytes(path);
+        System.IO.File.WriteAllBytes(path, Enumerable.Repeat((byte)'x', bytes.Length).ToArray());
+        System.IO.File.SetLastWriteTimeUtc(path, written);
+        Assert.Equal(1, Card()["Adoptable"]!.Value<int>("Users"));
+        System.IO.File.WriteAllBytes(path, bytes);
+        System.IO.File.SetLastWriteTimeUtc(path, written);
+
+        // A changed file is read again; so is everything after a configuration save.
+        server.Apply("FollowIfUnchanged", AdminKeys(), dryRun: false, userIds: [casey.Id.ToString("N")]);
+        Assert.Equal(0, Card()["Adoptable"]!.Value<int>("Users"));
+        server.Save(c => c.AutoPipEnabled = !c.AutoPipEnabled);
+        Assert.Equal(1, Card()["Adoptable"]!.Value<int>("Users")); // dana's Auto PiP is now a copy of the new default
+
+        server.Controller().DismissUserSettingsUpgradeCard();
+        Assert.Null(Card()["Adoptable"]);
+    }
 }

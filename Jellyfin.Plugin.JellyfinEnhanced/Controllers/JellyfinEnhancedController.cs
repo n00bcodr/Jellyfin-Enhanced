@@ -5314,7 +5314,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return Forbid();
             }
 
-            var config = JellyfinEnhanced.Instance?.Configuration;
+            // One snapshot: the counts and the epoch they are echoed with come from the same save.
+            var snapshot = JellyfinEnhanced.Instance?.CurrentConfiguration;
+            var config = snapshot?.Configuration;
             if (config == null)
             {
                 return StatusCode(503);
@@ -5325,21 +5327,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var documents = ReadSettingsForOverview(population);
             var defaults = UserSettingsRegistry.BuildDefaults(config);
             var keys = UserSettingsRegistry.All.Where(descriptor => descriptor.AdminProperty != null).ToList();
-            var adoptableUsers = 0;
-            var adoptableKeys = 0;
-            var metas = new List<(UserSettings Document, UserSettingsMeta Meta)>();
-            foreach (var (_, status, document) in documents)
-            {
-                if (status != UserDocumentPeekStatus.Loaded) continue;
-                var meta = UserSettingsResolver.Normalize(document!.Meta);
-                metas.Add((document, meta));
-                var adoptable = UserSettingsRegistry.All.Count(descriptor => UserSettingsBulk.IsAdoptable(descriptor, document, meta, defaults));
-                if (adoptable > 0)
-                {
-                    adoptableUsers++;
-                    adoptableKeys += adoptable;
-                }
-            }
+            var metas = LoadedWithMeta(documents);
+            var (adoptableUsers, adoptableKeys) = CountAdoptable(metas, defaults);
 
             var settings = new System.Text.Json.Nodes.JsonArray();
             foreach (var descriptor in keys)
@@ -5401,7 +5390,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             return Ok(new System.Text.Json.Nodes.JsonObject
             {
-                ["ConfigEpoch"] = JellyfinEnhanced.Instance?.ConfigEpoch ?? string.Empty,
+                ["ConfigEpoch"] = snapshot!.Epoch,
                 ["Users"] = new System.Text.Json.Nodes.JsonObject
                 {
                     ["Total"] = population.Users.Count,
@@ -5522,7 +5511,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return Forbid();
             }
 
-            var config = JellyfinEnhanced.Instance?.Configuration;
+            // One snapshot: the run (or preview) uses the configuration the epoch belongs to.
+            var snapshot = JellyfinEnhanced.Instance?.CurrentConfiguration;
+            var config = snapshot?.Configuration;
             if (config == null)
             {
                 return StatusCode(503);
@@ -5533,7 +5524,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { success = false, message = error });
             }
 
-            var currentEpoch = JellyfinEnhanced.Instance?.ConfigEpoch ?? string.Empty;
+            var currentEpoch = snapshot!.Epoch;
             if (!dryRun && !string.Equals(configEpoch, currentEpoch, StringComparison.Ordinal))
             {
                 return StatusCode(409, new System.Text.Json.Nodes.JsonObject
@@ -5569,7 +5560,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var operationId = UserConfigurationManager.NewOperationId();
-            var (outcomes, recorded) = operations.Run(config, keys, mode, targets, dryRun, operationId, DateTime.UtcNow);
+            var (outcomes, recorded, undoUnavailable) = operations.Run(config, keys, mode, targets, dryRun, operationId, DateTime.UtcNow);
             if (!dryRun)
             {
                 var changedUsers = outcomes.Count(o => o.Changes.Count > 0 || o.DocumentChanges.Count > 0);
@@ -5578,6 +5569,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var body = ApplyResultNode(outcomes, unknown, keys, mode, dryRun, currentEpoch);
             body["UndoId"] = recorded ? operationId : null;
+            // The run changed users but its undo record could not be saved: say so instead of quietly offering no Undo.
+            body["UndoUnavailable"] = undoUnavailable;
             return Ok(body);
         }
 
@@ -5648,14 +5641,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ["Restored"] = outcomes.Sum(o => o.Restored.Count),
                 ["Kept"] = outcomes.Sum(o => o.Kept.Count),
                 ["FailedUsers"] = outcomes.Count(o => o.Failed.Count > 0),
+                // Files that could not be read or written now stay in the record: undo again to retry them.
+                ["Pending"] = outcomes.Any(o => o.Failed.Values.Any(UserSettingsOperations.CanRetry)),
                 ["PerUser"] = perUser,
             });
         }
 
         private const string UpgradeCardMarker = "upgrade-card-dismissed";
 
-        /// <summary>Whether the admin dismissed the one-time "users still have copies of your defaults" card for good.</summary>
-        /// <returns><c>{ "Dismissed": bool }</c>.</returns>
+        private static readonly object UpgradeCardCacheLock = new();
+        private static (string Key, int Users, int Keys)? _upgradeCardCache;
+
+        /// <summary>
+        /// The one-time "users still have copies of your defaults" card: whether the admin dismissed it
+        /// for good and, while not, how many users "Follow where nothing changes" would adopt keys for.
+        /// The admin page asks on every visit, so the count is kept until the configuration or a
+        /// settings.json changes (seen from file sizes and times, without reading the files).
+        /// </summary>
+        /// <returns><c>{ "Dismissed": bool, "Adoptable": { "Users", "Keys" } }</c> (no Adoptable once dismissed).</returns>
         [HttpGet("admin/user-settings/upgrade-card")]
         [Authorize]
         [Produces("application/json")]
@@ -5667,7 +5670,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return Forbid();
             }
 
-            return Ok(new { Dismissed = _userConfigurationManager.OperationMarkerExists(UpgradeCardMarker) });
+            if (_userConfigurationManager.OperationMarkerExists(UpgradeCardMarker))
+            {
+                return Ok(new { Dismissed = true });
+            }
+
+            var snapshot = JellyfinEnhanced.Instance?.CurrentConfiguration;
+            if (snapshot == null)
+            {
+                return StatusCode(503);
+            }
+
+            var population = SettingsOperations().ListUsers();
+            var fingerprint = new System.Text.StringBuilder(snapshot.Epoch);
+            foreach (var user in population.Users)
+            {
+                fingerprint.Append('|').Append(user.Id).Append(':')
+                    .Append(user.HasDirectory ? _userConfigurationManager.GetUserFileStamp(user.Id, "settings.json") ?? "-" : "-");
+            }
+
+            var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(fingerprint.ToString())));
+            lock (UpgradeCardCacheLock)
+            {
+                if (_upgradeCardCache is { } cached && cached.Key == key)
+                {
+                    return Ok(new { Dismissed = false, Adoptable = new { cached.Users, cached.Keys } });
+                }
+            }
+
+            var (users, keys) = CountAdoptable(LoadedWithMeta(ReadSettingsForOverview(population)), UserSettingsRegistry.BuildDefaults(snapshot.Configuration));
+            lock (UpgradeCardCacheLock)
+            {
+                _upgradeCardCache = (key, users, keys);
+            }
+
+            return Ok(new { Dismissed = false, Adoptable = new { Users = users, Keys = keys } });
         }
 
         /// <summary>Dismisses the one-time upgrade card for every admin, for good.</summary>
@@ -5712,6 +5749,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return result;
+        }
+
+        /// <summary>The documents that could be read, with their normalised provenance.</summary>
+        private static List<(UserSettings Document, UserSettingsMeta Meta)> LoadedWithMeta(IEnumerable<(UserSettingsTarget User, UserDocumentPeekStatus Status, UserSettings? Document)> documents)
+            => documents.Where(entry => entry.Status == UserDocumentPeekStatus.Loaded)
+                .Select(entry => (entry.Document!, UserSettingsResolver.Normalize(entry.Document!.Meta)))
+                .ToList();
+
+        /// <summary>How many users "Follow where nothing changes" would adopt keys for, and how many keys in all.</summary>
+        private static (int Users, int Keys) CountAdoptable(IEnumerable<(UserSettings Document, UserSettingsMeta Meta)> documents, UserSettings defaults)
+        {
+            int users = 0, keys = 0;
+            foreach (var (document, meta) in documents)
+            {
+                var adoptable = UserSettingsRegistry.All.Count(descriptor => UserSettingsBulk.IsAdoptable(descriptor, document, meta, defaults));
+                if (adoptable > 0)
+                {
+                    users++;
+                    keys += adoptable;
+                }
+            }
+
+            return (users, keys);
         }
 
         private static string OverviewStatus(UserDocumentPeekStatus status) => status switch
@@ -6260,9 +6320,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "hidden-content.json"))
                 {
                     // Pre-write strict read so a corrupt existing file 503s + backs up instead of being overwritten.
+                    UserHiddenContent stored;
                     try
                     {
-                        _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(
+                        stored = _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(
                             authorizedUserId, "hidden-content.json");
                     }
                     catch (Exception strictEx) when (strictEx is InvalidDataException
@@ -6277,6 +6338,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         return StatusCode(500, new { success = false, message = "Hidden-content store is temporarily unavailable. Please retry." });
                     }
 
+                    // An "Apply defaults to users" undo stamp survives only while the settings stay as it left them.
+                    userConfiguration.SettingsOp = UserSettingsOperations.CarryStamp(stored.Settings, stored.SettingsOp, userConfiguration.Settings);
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration);
                 }
                 _logger.Info($"Saved hidden content for {ResolveUserDisplay(authorizedUserId)} to hidden-content.json");
@@ -6372,9 +6435,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     // Pre-write strict read so a corrupt existing file 503s + backs up
                     // instead of being silently overwritten (same as hidden-content).
+                    UserSpoilerBlur stored;
                     try
                     {
-                        _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(
+                        stored = _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(
                             authorizedUserId, fileName);
                     }
                     catch (Exception strictEx) when (strictEx is InvalidDataException
@@ -6389,6 +6453,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         return StatusCode(500, new { success = false, message = "Spoiler Guard store is temporarily unavailable. Please retry." });
                     }
 
+                    // An "Apply defaults to users" undo stamp survives only while the preferences stay as it left them.
+                    userConfiguration.PrefsOp = UserSettingsOperations.CarryStamp(stored.Prefs, stored.PrefsOp, userConfiguration.Prefs);
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, fileName, userConfiguration);
                 }
 
@@ -6994,6 +7060,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         UseAdvancedCategories = body.UseAdvancedCategories,
                         SkipDisableConfirm = body.SkipDisableConfirm,
                     };
+                    // The user chose these preferences: an "Apply defaults to users" undo leaves them alone.
+                    state.PrefsOp = null;
                     return 1;
                 });
                 return Ok(new { success = true, prefs = body });
@@ -8819,7 +8887,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var liveNames = LiveUserNamesById();
             var targets = userIds.Select(id => new UserSettingsTarget(id, liveNames.TryGetValue(id, out var name) ? name : null, liveNames.ContainsKey(id), true)).ToList();
             var operationId = UserConfigurationManager.NewOperationId();
-            var (outcomes, recorded) = SettingsOperations().Run(defaultConfig, UserSettingsRegistry.All, UserSettingsApplyMode.Overwrite, targets, dryRun: false, operationId, DateTime.UtcNow);
+            var (outcomes, recorded, _) = SettingsOperations().Run(defaultConfig, UserSettingsRegistry.All, UserSettingsApplyMode.Overwrite, targets, dryRun: false, operationId, DateTime.UtcNow, resetPanelTab: true);
             foreach (var outcome in outcomes)
             {
                 var userId = outcome.User.Id;

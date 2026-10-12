@@ -147,11 +147,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         public override Guid Id => Guid.Parse("f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b");
         public static JellyfinEnhanced? Instance { get; private set; }
 
+        /// <summary>A saved configuration and the <see cref="ConfigEpoch"/> that belongs to it.</summary>
+        /// <param name="Configuration">The configuration object.</param>
+        /// <param name="Epoch">The epoch issued when it became the configuration.</param>
+        public sealed record ConfigurationSnapshot(PluginConfiguration Configuration, string Epoch);
+
+        private volatile ConfigurationSnapshot? _configurationSnapshot;
+
+        /// <summary>
+        /// Gets the configuration together with its epoch, read as one: a caller that computes from
+        /// the configuration and echoes or checks the epoch uses this, so a save in between cannot
+        /// pair one configuration with the other's epoch. Replaced (under the configuration lock)
+        /// after every admin save.
+        /// </summary>
+        public ConfigurationSnapshot CurrentConfiguration
+        {
+            get
+            {
+                var snapshot = _configurationSnapshot;
+                if (snapshot != null) return snapshot;
+                lock (AnalyticsCredentialLock)
+                {
+                    return _configurationSnapshot ??= new ConfigurationSnapshot(Configuration, NewConfigEpoch());
+                }
+            }
+        }
+
         /// <summary>
         /// Gets a random token that changes on plugin load and on every admin config save, so a client
         /// can tell that the configuration (defaults, master switches, gates) may have changed.
         /// </summary>
-        public string ConfigEpoch { get; private set; } = NewConfigEpoch();
+        public string ConfigEpoch => CurrentConfiguration.Epoch;
 
         /// <summary>
         /// Remembers the keys an admin save unlocked (for the legacy POST's stale-tab guard) and logs
@@ -315,10 +341,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 }
 
                 var previous = Configuration;
-                base.UpdateConfiguration(configuration);
-                RecordLockChanges(previous, Configuration);
+                try
+                {
+                    base.UpdateConfiguration(configuration);
+                    RecordLockChanges(previous, Configuration);
+                }
+                finally
+                {
+                    // The new epoch is issued with the configuration it belongs to, in one step.
+                    _configurationSnapshot = new ConfigurationSnapshot(Configuration!, NewConfigEpoch());
+                }
             }
-            ConfigEpoch = NewConfigEpoch();
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);
 
             try
