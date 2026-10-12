@@ -15,12 +15,12 @@ const panelHtml = `<div class="panel-header"></div><div class="je-panel-body">
     <section class="je-pane" data-pane="hidden-content"><h3 class="je-pane-title">Hidden</h3><div class="rows"><input type="checkbox" id="hiddenFilterNextUp"></div></section>
   </div></div><button id="closeSettingsPanel" type="button"></button>`;
 
-function setup(t, { settingsStatus, respond }) {
+function setup(t, { settingsStatus, respond, translate = key => key }) {
   const gets = [], posts = [];
   const h = createHarness({
     globals: { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) },
     JE: { pluginConfig: {}, userConfig: { settings: {}, shortcuts: { Shortcuts: [] }, settingsStatus }, currentSettings: {},
-      state: { activeShortcuts: { OpenSearch: '/' } }, t: key => key, keyListener() {},
+      state: { activeShortcuts: { OpenSearch: '/' } }, t: translate, keyListener() {},
       toCamelCase: value => Object.fromEntries(Object.entries(value).map(([k, v]) => [k[0].toLowerCase() + k.slice(1), v])),
       themer: { getThemeVariables: () => ({}) } },
     apiClient: { ajax: async request => {
@@ -52,7 +52,9 @@ test('a panel opened while settings cannot load is read-only with Retry, saves n
   const notice = playback.querySelector('.je-settings-unavailable');
   assert.ok(notice, 'the settings pane explains why it is read-only');
   assert.equal(notice.getAttribute('role'), 'status');
-  assert.ok(notice.textContent.includes('panel_settings_unavailable'));
+  // JE.t has no 'panel_settings_unavailable' here (a locale file without the new keys): English, not the key.
+  assert.equal(notice.querySelector('span').textContent, "Your settings couldn't be loaded, so they can't be changed right now. Your saved settings are untouched.");
+  assert.equal(notice.querySelector('button').textContent, 'Retry');
   assert.equal(playback.querySelector('.rows').hasAttribute('inert'), true);
   assert.equal(playback.querySelector('.je-pane-title').hasAttribute('inert'), false);
   // The display language is stored in settings.json; the translation cache is local only.
@@ -83,6 +85,15 @@ test('a panel opened while settings cannot load is read-only with Retry, saves n
 
   await h.JE.saveUserSettings('settings.json', h.JE.currentSettings, { throwOnError: true });
   assert.deepEqual(h.posts, ['/JellyfinEnhanced/user-settings/user-a/settings.json']);
+});
+
+test('the read-only notice uses the locale\'s text when it has the keys', async t => {
+  const translated = { panel_settings_unavailable: 'Einstellungen nicht geladen', panel_settings_unavailable_retry: 'Erneut versuchen' };
+  const h = setup(t, { settingsStatus: 'unavailable', respond: () => { throw new Error('offline'); }, translate: key => translated[key] || key });
+  await h.JE.showEnhancedPanel();
+  const notice = h.pane('playback').querySelector('.je-settings-unavailable');
+  assert.equal(notice.querySelector('span').textContent, 'Einstellungen nicht geladen');
+  assert.equal(notice.querySelector('button').textContent, 'Erneut versuchen');
 });
 
 test('a refresh failure on open keeps a panel whose settings did load editable', async t => {
@@ -169,7 +180,7 @@ for (const settingsStatus of ['unavailable', 'loading']) {
     assert.deepEqual(h.posts, []);
     assert.equal(h.window.localStorage.getItem('user-a-language'), null);
     assert.notEqual(h.window.localStorage.getItem('JE_lockedLanguage_user-a'), null, 'a refused change keeps the lock record');
-    assert.deepEqual(h.toasts, ['panel_settings_unavailable']);
+    assert.deepEqual(h.toasts, ["Your settings couldn't be loaded, so they can't be changed right now. Your saved settings are untouched."], 'English, not the raw key, for a locale without it');
     assert.deepEqual(h.reloads, []);
     assert.equal(h.select.value, '', 'the selector goes back to the language in use');
     assert.equal(h.JE.currentSettings.displayLanguage, '');

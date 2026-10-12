@@ -39,6 +39,11 @@
     const SAVE_FAILED_TOAST_INTERVAL_MS = 3000;
     // English text for a locale file that does not have the key yet (JE.t returns the key on a miss).
     const SAVE_FAILED_FALLBACK = "Couldn't save your settings. Check your connection, then try again.";
+    // The same for the "settings couldn't be loaded" notice and its Retry button.
+    const UNAVAILABLE_FALLBACKS = {
+        panel_settings_unavailable: "Your settings couldn't be loaded, so they can't be changed right now. Your saved settings are untouched.",
+        panel_settings_unavailable_retry: 'Retry'
+    };
 
     /**
      * Shows the translated "couldn't save" message, at most once per SAVE_FAILED_TOAST_INTERVAL_MS:
@@ -62,6 +67,16 @@
     });
 
     JE.settings = JE.settings || {};
+    /**
+     * The translated "settings couldn't be loaded" text or its Retry label, in English when the
+     * loaded locale does not have the key yet.
+     * @param {'panel_settings_unavailable'|'panel_settings_unavailable_retry'} key
+     * @returns {string}
+     */
+    JE.settings.unavailableText = (key) => {
+        const translated = typeof JE.t === 'function' ? JE.t(key) : '';
+        return translated && translated !== key ? translated : UNAVAILABLE_FALLBACKS[key];
+    };
     /**
      * Whether an administrator locks the setting for the signed-in user (Meta.Locked): the server
      * serves the admin value and refuses writes, so callers show the value read-only and do not save.

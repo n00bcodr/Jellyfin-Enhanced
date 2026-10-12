@@ -51,7 +51,7 @@
             });
             const text = document.createElement('span');
             text.style.flex = '1';
-            text.textContent = JE.t('panel_settings_unavailable');
+            text.textContent = JE.settings.unavailableText('panel_settings_unavailable');
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'je-settings-unavailable-retry';
@@ -59,7 +59,7 @@
                 padding: '6px 14px', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '6px',
                 background: 'rgba(255,255,255,0.1)', color: '#fff', fontFamily: 'inherit', cursor: 'pointer'
             });
-            button.textContent = JE.t('panel_settings_unavailable_retry');
+            button.textContent = JE.settings.unavailableText('panel_settings_unavailable_retry');
             button.addEventListener('click', retry);
             notice.append(text, button);
             if (title) title.after(notice); else pane.prepend(notice);

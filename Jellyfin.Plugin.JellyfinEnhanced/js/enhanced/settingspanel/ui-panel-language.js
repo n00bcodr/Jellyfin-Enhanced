@@ -155,7 +155,7 @@
                     if (status === 'unavailable' || status === 'loading') {
                         JE.currentSettings.displayLanguage = previousLang;
                         displayLanguageSelect.value = appliedLanguage;
-                        JE.toast(JE.t('panel_settings_unavailable'));
+                        JE.toast(JE.settings.unavailableText('panel_settings_unavailable'));
                         return;
                     }
                     console.error('🪼 Jellyfin Enhanced: Failed to save settings.json:', err);
