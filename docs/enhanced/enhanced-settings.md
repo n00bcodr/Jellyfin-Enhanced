@@ -64,7 +64,7 @@ Your administrator sets the server default for most settings. Under a setting, t
 
 An administrator can lock a setting so that every user gets the server default. A locked setting is shown greyed out with the value in effect and the note **Set by your administrator.** If your own value was different, the note adds **Your choice (On) comes back if this is unlocked.** Settings that also change poster images in native TV and phone apps say so on a second line. Locks apply to administrators' own panels too.
 
-The lock also reaches outside the panel: the watch-progress chip on item pages shows the locked mode and can't be switched, and opening the reviews section is not remembered. A locked display language (or one that follows the server default) becomes the language of this browser from the next page load. A locked subtitle style (or one that follows the server default) uses that style's colours, unless you picked your own text and background colours.
+The lock also reaches outside the panel: the watch-progress chip on item pages shows the locked mode and can't be switched, and opening the reviews section is not remembered. A locked display language other than **System Default** becomes the language of this browser from the next page load. One that follows the server default does the same unless you picked the language in Jellyfin's own display settings: that choice stays. A lock or server default of **System Default** leaves a language you picked in this browser as it is. A locked subtitle style (or one that follows the server default) uses that style's colours, unless you picked your own text and background colours.
 
 ### When settings can't be loaded
 
@@ -137,7 +137,7 @@ If the plugin settings are saved between the preview and **Apply**, you are aske
 ### Unsaved changes
 
 - The **Save** bar only appears when there are unsaved changes.
-- Leaving the plugin page through a link while changes are unsaved asks for confirmation first. The browser's back button can't be stopped, but the changes are not lost: they are kept for that browser tab, and the next time you open the page a banner offers to **Restore** or **Discard** them. API keys, other credentials and *arr instances are never kept this way.
+- Leaving the plugin page through a link while changes are unsaved asks for confirmation first. The browser's back button can't be stopped, but the changes are not lost: they are kept for that browser tab, and the next time you open the page a banner offers to **Restore** or **Discard** them. API keys, other credentials, *arr instances and unsaved lock changes in **User settings policy** are never kept this way.
 
 ### Downgrading
 

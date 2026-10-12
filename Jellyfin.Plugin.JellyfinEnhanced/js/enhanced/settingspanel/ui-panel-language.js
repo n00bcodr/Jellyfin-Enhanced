@@ -169,6 +169,9 @@
                     // Set empty value instead of removing key
                     localStorage.setItem(languageKey, '');
                 }
+                // The language is the settings' one: a server default it follows later may replace it
+                // (a language picked in jellyfin-web may not; see seedDisplayLanguage in plugin.js).
+                localStorage.setItem(`JE_seededLanguage_${userId}`, fullCultureCode || '');
 
                 if (saveFailed) {
                     // The "couldn't save" message is already up; leave time to read it.

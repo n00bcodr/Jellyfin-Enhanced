@@ -102,8 +102,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>
         /// Whether FollowIfUnchanged adopts a key: it can follow a default, is Existing (never Chosen,
         /// not already Following), and its stored value is the default after the adapter, a sentinel
-        /// that already means "the admin value" counting as equal. The stored value is compared, so a
-        /// value that only looks equal because of a lock does not qualify.
+        /// that already means "the admin value" counting as equal (the subtitle style also needs
+        /// the colours its preset would show, see <see cref="UserSettingsResolver.FollowingChangesNothing"/>).
+        /// The stored value is compared, so a value that only looks equal because of a lock does not qualify.
         /// </summary>
         /// <param name="descriptor">The registry entry.</param>
         /// <param name="stored">The stored document.</param>
@@ -116,7 +117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ArgumentNullException.ThrowIfNull(stored);
             return UserSettingsRegistry.CanFollow(descriptor)
                 && StateOf(meta, descriptor.Key) == StateExisting
-                && UserSettingsResolver.EqualsDefault(descriptor, descriptor.Property.GetValue(stored), defaults);
+                && UserSettingsResolver.FollowingChangesNothing(descriptor, stored, defaults);
         }
 
         /// <summary>
@@ -223,7 +224,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             foreach (var change in plan.Changes)
             {
                 UserSettingsRegistry.TryGet(change.Key, out var descriptor);
-                change.Visible = !SameEffectiveValue(descriptor!, descriptor!.Property.GetValue(before.Values), descriptor.Property.GetValue(after.Values), defaults);
+                change.Visible = !SameEffectiveValue(descriptor!, descriptor!.Property.GetValue(before.Values), descriptor.Property.GetValue(after.Values), defaults)
+                    || StyleColoursChange(change, before, document, defaults);
             }
 
             return plan;
@@ -305,6 +307,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <param name="value">The value.</param>
         /// <returns>The JSON token.</returns>
         public static JToken Token(object? value) => value == null ? JValue.CreateNull() : JToken.FromObject(value);
+
+        /// <summary>
+        /// Whether making the subtitle style follow the default changes the colours the user sees
+        /// even where the style itself stays: the client then shows the preset's colours instead of
+        /// the saved ones (not while a lock already did).
+        /// </summary>
+        private static bool StyleColoursChange(UserSettingsKeyChange change, ResolvedUserSettings before, UserSettings document, UserSettings defaults)
+            => change.Key == nameof(UserSettings.SelectedStylePresetIndex)
+                && change.AfterState == StateFollowing
+                && !before.IsLocked(change.Key)
+                && !UserSettingsResolver.ShowsStyleColours(document, defaults.SelectedStylePresetIndex);
 
         /// <summary>
         /// Whether two effective values look the same to the user: equal, or one is a sentinel that

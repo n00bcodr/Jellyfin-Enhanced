@@ -208,6 +208,24 @@ test('"Use server default" on a preset row redraws it from the default (je:setti
   assert.ok(synced.length >= 1 && synced.every(value => value === 2), 'the row redraws with the default it now follows');
 });
 
+test('a style that starts following with the same index still redraws (its preset\'s colours now apply)', async t => {
+  const h = buildPanel(t, { values: { SelectedStylePresetIndex: 2 }, defaults: { SelectedStylePresetIndex: 2 } });
+  const row = [...h.root.querySelectorAll('[data-setting-key]')].find(el => el.dataset.settingKey === 'selectedStylePresetIndex');
+  let synced = 0;
+  row.addEventListener('je:setting-sync', () => { synced++; });
+  const block = h.root.querySelector('.je-provenance-follow-all');
+  block.querySelector('[data-follow-all="start"]').click();
+  block.querySelector('[data-follow-all="apply"]').click();
+  await h.flush();
+  assert.ok(h.JE.settingsMeta.following.includes('selectedStylePresetIndex'));
+  assert.equal(h.JE.currentSettings.selectedStylePresetIndex, 2);
+  assert.ok(synced >= 1, 'the row redraws although its value did not change');
+  // A pass that changes nothing about it does not redraw it again.
+  synced = 0;
+  h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: [], rejected: [], meta: true } }));
+  assert.equal(synced, 0);
+});
+
 test('a failed "Use server default" leaves the row as it was and says so', async t => {
   const h = buildPanel(t, { values: { AutoPipEnabled: true }, defaults: { AutoPipEnabled: false }, chosen: ['AutoPipEnabled'] }, { failPatch: true });
   t.mock.method(h.window.console, 'warn', () => {});

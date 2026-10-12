@@ -4227,7 +4227,8 @@
 
             /**
              * The controls a draft cannot keep (Sonarr/Radarr instance cards, credentials, anything
-             * without a unique id) with their values; MDBList toggles are kept through their sources.
+             * without a unique id) with their values, and the unsaved User settings lock edits;
+             * MDBList toggles are kept through their sources.
              */
             function jeUndraftableState(locks) {
                 const draftable = jeDraftableValues();
@@ -4494,8 +4495,8 @@
                 const fate = !lost
                     ? 'They are kept for this browser tab and offered again when you come back.'
                     : keepable
-                    ? 'Some of them (Sonarr/Radarr instances, API keys or other credentials) cannot be kept and will be lost. The rest are kept for this browser tab and offered again when you come back.'
-                    : 'They cannot be kept (Sonarr/Radarr instances, API keys or other credentials) and will be lost.';
+                    ? 'Some of them (Sonarr/Radarr instances, API keys or other credentials, lock changes under User settings policy) cannot be kept and will be lost. The rest are kept for this browser tab and offered again when you come back.'
+                    : 'They cannot be kept (Sonarr/Radarr instances, API keys or other credentials, lock changes under User settings policy) and will be lost.';
                 if (window.confirm('You have unsaved Jellyfin Enhanced changes. Leave this page anyway?\n\n' + fate)) {
                     jeStashDraft();
                     return;

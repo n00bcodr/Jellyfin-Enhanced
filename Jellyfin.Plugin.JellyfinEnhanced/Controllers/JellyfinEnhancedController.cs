@@ -6116,6 +6116,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>
         /// Reads a /patch body: an object with an optional "Set" object, an optional "Follow" array of
         /// strings and an optional "IfRevision" string (names matched ignoring case; others ignored).
+        /// Each of the three is absent or of its type; a null is malformed.
         /// </summary>
         private static bool TryReadSettingsPatch(JsonElement patch, out List<KeyValuePair<string, JsonElement>> set, out List<string> follow, out string? ifRevision, out string error)
         {
@@ -6129,13 +6130,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return false;
             }
 
+            // A JSON null for one of the three fails its type check like any other wrong type: an
+            // "IfRevision": null must not turn a conditional write into an unconditional one.
             foreach (var part in patch.EnumerateObject())
             {
-                if (part.Value.ValueKind == JsonValueKind.Null)
-                {
-                    continue;
-                }
-
                 if (string.Equals(part.Name, "Set", StringComparison.OrdinalIgnoreCase))
                 {
                     if (part.Value.ValueKind != JsonValueKind.Object)

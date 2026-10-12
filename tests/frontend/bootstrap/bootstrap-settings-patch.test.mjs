@@ -175,6 +175,41 @@ test('a value changed elsewhere arrives with the patch answer and is announced',
   assert.deepEqual(h.requests[1].body, { Set: { AutoPauseEnabled: false } });
 });
 
+test('a value changed elsewhere does not replace an edit on the page that is not queued yet', async t => {
+  // Another device saved a red subtitle colour; on this page the user has just dragged the picker
+  // to green, and the colour's own save is still in its delay when an unrelated save is answered.
+  const h = setup(t, {
+    document: served({ CustomSubtitleTextColor: '#FFFFFFFF' }),
+    respond: (entry, server) => {
+      Object.assign(server, entry.body.Set, { CustomSubtitleTextColor: '#FF0000FF', WatchProgressMode: 'time' });
+      return { success: true, Rejected: [], Settings: { ...server } };
+    }
+  });
+  h.JE.currentSettings.autoPipEnabled = true;
+  const saved = h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  h.JE.currentSettings.customSubtitleTextColor = '#00FF00FF'; // not saved yet
+  h.timers.runAll(); await saved;
+  assert.equal(h.JE.currentSettings.customSubtitleTextColor, '#00FF00FF', 'the unsaved edit stays');
+  assert.equal(h.JE.currentSettings.watchProgressMode, 'time', 'other keys changed elsewhere land');
+  assert.deepEqual(h.events, [{ keys: ['watchProgressMode'], rejected: [] }]);
+  // The edit's own save then sends it over the new baseline.
+  const colour = h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  h.timers.runAll(); await colour;
+  assert.deepEqual(h.requests[1].body, { Set: { CustomSubtitleTextColor: '#00FF00FF' } });
+});
+
+test('a keepalive answer whose body is cut off by the unload is not reported as failed', async t => {
+  const h = setup(t, {
+    apiClient: { setRequestHeaders: () => {} },
+    fetch: async () => ({ ok: true, status: 200, json: async () => { throw new TypeError('network error'); } })
+  });
+  h.JE.currentSettings.autoPipEnabled = true;
+  const saved = h.JE.saveUserSettings('settings.json', h.JE.currentSettings, { notifyOnError: true });
+  h.window.dispatchEvent(new h.window.Event('pagehide'));
+  await saved; // resolves: no console error (the harness fails on one), no toast
+  assert.deepEqual(h.toasts, []);
+});
+
 test('a lock or closed gate that arrives (or goes) with a patch answer is announced even when no value changed', async t => {
   let meta = { Locked: [], Unavailable: {} };
   const h = setup(t, { respond: (entry, server) => {

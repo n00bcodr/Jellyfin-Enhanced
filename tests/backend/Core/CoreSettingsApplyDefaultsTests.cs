@@ -321,6 +321,40 @@ public class CoreSettingsApplyDefaultsTests : IDisposable
         Assert.Equal(5, provider.Get(users[2].Id).ResolutionTagOrder);
     }
 
+    [Fact]
+    public void TheSubtitleStyleFollowsWhereNothingChangesOnlyWhenItsColoursStayTheSame()
+    {
+        // The old seed wrote the admin's style (here Cinema Yellow) but left the colours white on
+        // nothing. A followed style shows its preset's colours (JE.getSubtitleColors), so following
+        // it would turn that user's subtitles yellow on a dark box: it is not "nothing changes".
+        using var server = new Server();
+        server.Save(c => c.DefaultSubtitleStyle = 3);
+        var seeded = Person("seeded");
+        var copied = Person("copied");
+        var custom = Person("custom");
+        server.Live(seeded, copied, custom);
+        server.Write(seeded.Id, new UserSettings { SelectedStylePresetIndex = 3 });
+        server.Write(copied.Id, new UserSettings { SelectedStylePresetIndex = 3, CustomSubtitleTextColor = "#ffff00ff", CustomSubtitleBgColor = "#000000B2" });
+        server.Write(custom.Id, new UserSettings { SelectedStylePresetIndex = 3, CustomSubtitleTextColor = "#FF0000FF", CustomSubtitleBgColor = "#0000FFFF", UsingCustomColors = true });
+        const string key = nameof(UserSettings.SelectedStylePresetIndex);
+
+        // The panel's "Use server defaults for everything" counts it as a change for the seeded user only.
+        string[] Differs(Guid user) => Strings(Body(server.Controller(user, admin: false).GetUserSettingsSettings(user.ToString(), meta: true))["Meta"]!["Differs"]);
+        Assert.Contains(key, Differs(seeded.Id));
+        Assert.DoesNotContain(key, Differs(copied.Id));
+        Assert.DoesNotContain(key, Differs(custom.Id));
+
+        // Following it anyway is a visible change in the preview.
+        var everyone = server.Apply("FollowAll", [key], dryRun: true, userIds: [seeded.Id.ToString("N")]);
+        Assert.Equal(1, everyone.Value<int>("VisibleChanges"));
+
+        var run = server.Apply("FollowIfUnchanged", [key], dryRun: false);
+        Assert.Equal(0, run.Value<int>("VisibleChanges"));
+        Assert.DoesNotContain(key, server.Stored(seeded.Id).Meta?.Following ?? []);
+        Assert.Contains(key, server.Stored(copied.Id).Meta!.Following);
+        Assert.Contains(key, server.Stored(custom.Id).Meta!.Following);
+    }
+
     /// <summary>
     /// The values a user's clients act on: the served document with each "use the admin value"
     /// sentinel (a null order, an empty position) replaced by the admin value it stands for.

@@ -114,7 +114,7 @@ The answer is `200` even when some keys are refused:
 | `invalid` | The value fails the setting's rules, or `Follow` names a key without a server default |
 | `locked` | The administrator locked it |
 
-Other answers: `409` when `IfRevision` is stale (with the current `Revision`, `Settings` and `Meta`; nothing changed), `400` for a malformed body (not an object, `Set` not an object, `Follow` not an array of strings, `IfRevision` not a string), `413` for a body over 64 KB, `503` when the stored file cannot be read.
+Other answers: `409` when `IfRevision` is stale (with the current `Revision`, `Settings` and `Meta`; nothing changed), `400` for a malformed body (not an object, `Set` not an object, `Follow` not an array of strings, `IfRevision` not a string; a `null` for any of them counts as malformed, so `"IfRevision": null` is refused, not taken as "no check"), `413` for a body over 64 KB, `503` when the stored file cannot be read.
 
 === "cURL"
 
@@ -191,7 +191,7 @@ Locks are part of the plugin configuration: `LockedUserSettings` is an array of 
 |---|---|
 | `Keys` | Required. Setting keys; in the two follow modes each must have a server default (`400` otherwise) |
 | `UserIds` | `null` or absent for everyone (Jellyfin users and existing settings folders), or up to 10,000 ids. Ids that are neither are skipped as `unknown` and never created |
-| `Mode` | Required. `FollowIfUnchanged`: a setting starts following the default only where it is still an untouched copy of it, so nobody sees a change. `FollowAll`: every selected setting follows, so values change for users who picked something else. `Overwrite`: the old reset; writes your current values (users stop following) and also resets the selected users' hidden-content settings and Spoiler Guard preferences. Hidden items, spoiler lists and bookmarks are never touched |
+| `Mode` | Required. `FollowIfUnchanged`: a setting starts following the default only where it is still an untouched copy of it, so nobody sees a change (the subtitle style also needs the colours of that style, or custom colours, since a followed style shows its own colours). `FollowAll`: every selected setting follows, so values change for users who picked something else. `Overwrite`: the old reset; writes your current values (users stop following) and also resets the selected users' hidden-content settings and Spoiler Guard preferences. Hidden items, spoiler lists and bookmarks are never touched |
 | `DryRun` | Default `true`: a preview that changes nothing on disk |
 | `ConfigEpoch` | Required for a real run: the `ConfigEpoch` the preview returned. `409` if the plugin settings were saved since |
 

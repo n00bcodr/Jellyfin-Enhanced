@@ -19,6 +19,8 @@
     const CONTROL_SELECTOR = 'input, select, textarea, button';
     // Set on the controls this module disabled, so a later pass re-enables only those.
     const DISABLED_MARK = 'data-je-provenance-disabled';
+    // The keys each panel's previous pass saw following the server default (panel root → Set).
+    const previousFollowing = new WeakMap();
 
     // English text for a locale that does not have a key yet (JE.t returns the key on a miss).
     const FALLBACKS = {
@@ -208,6 +210,15 @@
             .map(element => element.dataset.settingGroup));
         const noted = new Set();
         const changed = new Set(Array.isArray(changedKeys) ? changedKeys : []);
+        // A key that starts or stops following can show something else with the same value (a
+        // followed subtitle style shows its preset's colours), so its row is synced too.
+        const following = new Set(Array.isArray(meta.following) ? meta.following : []);
+        const followedBefore = previousFollowing.get(help);
+        if (followedBefore) {
+            following.forEach(key => { if (!followedBefore.has(key)) changed.add(key); });
+            followedBefore.forEach(key => { if (!following.has(key)) changed.add(key); });
+        }
+        previousFollowing.set(help, following);
         // Synced once the pass is done, so a listener that redraws controls sees this pass's state.
         const toSync = [];
 

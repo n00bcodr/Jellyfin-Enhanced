@@ -284,16 +284,23 @@
         if (keepalive && typeof fetch === 'function' && typeof ApiClient.setRequestHeaders === 'function') {
             const headers = { 'Content-Type': 'application/json', accept: 'application/json' };
             ApiClient.setRequestHeaders(headers);
+            // Unloaded before the answer (or its body) arrived: the browser still delivers the
+            // request, so nothing to report.
+            const cutOff = (e) => _pageUnloading
+                ? Object.assign(new Error('The page was unloaded before the settings save was answered'), { unanswered: true })
+                : e;
             let answer;
             try {
                 answer = await fetch(url, { method: 'POST', headers, body, keepalive: true, credentials: 'same-origin' });
             } catch (e) {
-                // Unloaded before the answer: the browser still delivers the request, so nothing to report.
-                if (_pageUnloading) throw Object.assign(new Error('The page was unloaded before the settings save was answered'), { unanswered: true });
-                throw e;
+                throw cutOff(e);
             }
             if (!answer.ok) throw Object.assign(new Error(`Settings save failed: ${answer.status}`), { status: answer.status });
-            return answer.json();
+            try {
+                return await answer.json();
+            } catch (e) {
+                throw cutOff(e);
+            }
         }
         return ApiClient.ajax({ type: 'POST', url, data: body, contentType: 'application/json', dataType: 'json' });
     }
@@ -404,7 +411,8 @@
 
     /**
      * Takes a /patch answer as the new baseline: keys another device or the admin changed land in
-     * JE.currentSettings (beneath edits still pending), rejected keys go back to the server's value,
+     * JE.currentSettings (beneath edits still pending, and edits made on the page and not saved
+     * yet), rejected keys go back to the server's value,
      * and both are announced with a `je:settings-changed` event ({ keys, rejected }). A new Meta
      * whose locks or closed gates differ from the previous one is announced the same way (with
      * `meta: true`), even when no value changed, so open views can disable or re-enable rows.
@@ -459,12 +467,20 @@
             } else {
                 const previous = state.baseline;
                 const shown = mergeSettings(settings, JE.pluginConfig || {});
+                const shownBefore = mergeSettings(previous, JE.pluginConfig || {});
                 // A followed key shows the answer's value even when the baseline already had it
                 // (a Set of it earlier in the same window showed another value).
                 const followed = new Set(batch.follow || []);
                 for (const key of Object.keys(settings)) {
                     if (NEVER_PATCHED.has(key) || has(state.pending, key)) continue;
                     const serverChanged = !has(batch.set, key) && !sameValue(previous[key], settings[key]);
+                    // An edit made on the page and not queued yet (a colour still in its save delay)
+                    // stays on top, as in applyRefresh; its own save sends it. A value a failed
+                    // save left on the page is not such an edit.
+                    const unsavedEdit = serverChanged && !followed.has(key) && !rejectedKeys.has(key) && JE.currentSettings
+                        && !sameValue(JE.currentSettings[key], shownBefore[key])
+                        && !(has(state.failed, key) && sameValue(JE.currentSettings[key], state.failed[key]));
+                    if (unsavedEdit) continue;
                     if ((serverChanged || followed.has(key) || rejectedKeys.has(key)) && JE.currentSettings && !sameValue(JE.currentSettings[key], shown[key])) {
                         JE.currentSettings[key] = shown[key];
                         changed.push(key);

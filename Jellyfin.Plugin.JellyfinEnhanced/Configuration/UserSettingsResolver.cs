@@ -51,6 +51,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     /// </summary>
     public static class UserSettingsResolver
     {
+        /// <summary>The colours (text, background) of the subtitle style presets, as JE.subtitlePresets in js/enhanced/player/subtitles.js.</summary>
+        private static readonly (string Text, string Background)[] SubtitleStyleColours =
+        {
+            ("#FFFFFFFF", "transparent"),
+            ("#FFFFFFFF", "#000000FF"),
+            ("#FFFFFFFF", "#000000B2"),
+            ("#FFFF00FF", "#000000B2"),
+            ("#FFFFFFFF", "#444444B2"),
+            ("#000000FF", "#FFFFFFFF"),
+        };
+
         /// <summary>Resolves a stored document against the current plugin configuration.</summary>
         /// <param name="stored">The document as read from disk.</param>
         /// <param name="config">The plugin configuration, or null when it is not loaded (Following keys then keep their cached values).</param>
@@ -106,7 +117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 var type = descriptor.Property.PropertyType;
                 if (resolved.Defaults != null && UserSettingsRegistry.CanFollow(descriptor)
                     && !resolved.IsLocked(descriptor.Key) && !resolved.IsFollowing(descriptor.Key)
-                    && !EqualsDefault(descriptor, descriptor.Property.GetValue(resolved.Values), resolved.Defaults))
+                    && !FollowingChangesNothing(descriptor, resolved.Values, resolved.Defaults))
                 {
                     differs.Add(descriptor.Key);
                 }
@@ -171,6 +182,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return Equals(value, descriptor.Property.GetValue(defaults))
                 || (descriptor.Setting.NullInheritsAdmin && value == null)
                 || (descriptor.Setting.EmptyInheritsAdmin && value is string text && text.Length == 0);
+        }
+
+        /// <summary>
+        /// Whether a key of a stored document would look the same to the user if it followed the
+        /// admin default: <see cref="EqualsDefault"/>, and for the subtitle style also its colours
+        /// (see <see cref="ShowsStyleColours"/>).
+        /// </summary>
+        /// <param name="descriptor">The registry entry.</param>
+        /// <param name="stored">The stored document (its own values, not resolved).</param>
+        /// <param name="defaults">What every key resolves to while it follows the admin default.</param>
+        /// <returns>True when following the default would change nothing the user sees.</returns>
+        public static bool FollowingChangesNothing(UserSettingDescriptor descriptor, UserSettings stored, UserSettings defaults)
+        {
+            ArgumentNullException.ThrowIfNull(descriptor);
+            ArgumentNullException.ThrowIfNull(stored);
+            ArgumentNullException.ThrowIfNull(defaults);
+            return EqualsDefault(descriptor, descriptor.Property.GetValue(stored), defaults)
+                && (descriptor.Key != nameof(UserSettings.SelectedStylePresetIndex) || ShowsStyleColours(stored, defaults.SelectedStylePresetIndex));
+        }
+
+        /// <summary>
+        /// Whether a document's subtitle colours look like those of a style preset. The client
+        /// (JE.getSubtitleColors in js/enhanced/player/subtitles.js) shows the saved colours, but
+        /// the preset's colours while the style is locked or follows the default, unless the user
+        /// picked custom colours. The saved colours can be other than the style's preset's: the
+        /// old seed wrote the admin's style without its colours.
+        /// </summary>
+        /// <param name="stored">The stored document.</param>
+        /// <param name="presetIndex">The style preset.</param>
+        /// <returns>True when a locked or followed style shows the colours the user sees now.</returns>
+        public static bool ShowsStyleColours(UserSettings stored, int presetIndex)
+        {
+            ArgumentNullException.ThrowIfNull(stored);
+            if (stored.UsingCustomColors || presetIndex < 0 || presetIndex >= SubtitleStyleColours.Length)
+            {
+                return true;
+            }
+
+            var (text, background) = SubtitleStyleColours[presetIndex];
+            return CanonicalColour(stored.CustomSubtitleTextColor, "#FFFFFFFF") == CanonicalColour(text, text)
+                && CanonicalColour(stored.CustomSubtitleBgColor, "#00000000") == CanonicalColour(background, background);
+        }
+
+        /// <summary>A stored colour as #RRGGBBAA in upper case ("transparent" is #00000000, #RRGGBB opaque); empty uses the client's fallback.</summary>
+        private static string CanonicalColour(string? colour, string fallback)
+        {
+            var text = string.IsNullOrWhiteSpace(colour) ? fallback : colour.Trim();
+            if (string.Equals(text, "transparent", StringComparison.OrdinalIgnoreCase))
+            {
+                return "#00000000";
+            }
+
+            text = text.ToUpperInvariant();
+            return text.Length == 7 && text[0] == '#' ? text + "FF" : text;
         }
 
         /// <summary>

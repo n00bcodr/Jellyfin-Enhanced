@@ -1249,11 +1249,14 @@
 
     /**
      * Puts the display language into the per-user `${userId}-language` key the
-     * translations read. The admin's default is seeded only when the user has no
-     * language set yet, so a user's own choice is never overwritten; but while an
-     * administrator locks the language, or the user follows the server default
-     * (settings Meta), the resolved setting is the user's language and replaces
-     * the stored one. "Auto" (empty) never replaces a stored language.
+     * translations read. That key is also jellyfin-web's own language setting.
+     * The admin's default is seeded only when the user has no language set yet,
+     * so a user's own choice is never overwritten; but while an administrator
+     * locks the language the resolved setting replaces the stored one. A language
+     * that follows the server default replaces it only while the stored language
+     * is the last one the settings put there (recorded in `JE_seededLanguage_${userId}`
+     * here and by the panel's language menu): a language picked in jellyfin-web
+     * stays. "Auto" (empty) never replaces a stored language.
      * @param {string} userId
      * @returns {boolean} True when a locked or followed language replaced the
      *   stored one (the translations already loaded are then in another language).
@@ -1261,6 +1264,7 @@
     function seedDisplayLanguage(userId) {
         if (!userId) return false;
         const languageKey = `${userId}-language`;
+        const seededKey = `JE_seededLanguage_${userId}`;
         const normalizeLangCode = (code) => {
             if (!code) return '';
             const parts = code.split('-');
@@ -1271,14 +1275,29 @@
         const desiredLanguage = normalizeLangCode((JE.currentSettings?.displayLanguage || '').trim());
         if (!desiredLanguage) return false;
         const stored = localStorage.getItem(languageKey);
-        if (stored === null) {
+        const write = () => {
             localStorage.setItem(languageKey, desiredLanguage);
+            localStorage.setItem(seededKey, desiredLanguage);
+        };
+        if (stored === null) {
+            write();
             return false;
         }
+        const storedLanguage = normalizeLangCode(stored.trim());
+        if (storedLanguage === desiredLanguage) {
+            // The language in use is the settings' one: a later followed default may replace it.
+            localStorage.setItem(seededKey, desiredLanguage);
+            return false;
+        }
+        if (JE.settings?.isLocked?.('displayLanguage') === true) {
+            write();
+            return true;
+        }
         const following = JE.settingsMeta?.following;
-        const fromServer = JE.settings?.isLocked?.('displayLanguage') === true || (Array.isArray(following) && following.includes('displayLanguage'));
-        if (!fromServer || normalizeLangCode(stored) === desiredLanguage) return false;
-        localStorage.setItem(languageKey, desiredLanguage);
+        if (!Array.isArray(following) || !following.includes('displayLanguage')) return false;
+        const seeded = localStorage.getItem(seededKey);
+        if (seeded === null || normalizeLangCode(seeded.trim()) !== storedLanguage) return false;
+        write();
         return true;
     }
 

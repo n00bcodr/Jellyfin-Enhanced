@@ -136,21 +136,30 @@ for (const saved of [null, 'fr']) test(`default display language respects existi
   const h = setup(t, { data: payload({ PublicConfig: { DefaultLanguage: 'pt-br' } }), storage: saved ? { 'user-a-language': saved } : {} });
   await until(() => h.plugin.initialized);
   assert.equal(h.window.localStorage.getItem('user-a-language'), saved || 'pt-BR');
+  // A seeded language is recorded as the settings' one; a language set elsewhere is not.
+  assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), saved ? null : 'pt-BR');
 });
 
-// A locked or followed display language is the user's language: it replaces the stored one and the
-// translations are loaded again in it; a language the user chose (or "Auto") never replaces it.
-for (const [label, meta, settings, expected, loads] of [
-  ['locked', { Locked: ['DisplayLanguage'] }, { DisplayLanguage: 'de' }, 'de', 2],
-  ['following', { Following: ['DisplayLanguage'] }, { DisplayLanguage: 'de-de' }, 'de-DE', 2],
-  ['chosen', { Chosen: ['DisplayLanguage'] }, { DisplayLanguage: 'de' }, 'fr', 1],
-  ['locked to Auto', { Locked: ['DisplayLanguage'] }, { DisplayLanguage: '' }, 'fr', 1]
+// A locked display language is the user's language: it replaces the stored one and the
+// translations are loaded again in it. A followed one replaces only a stored language the settings
+// put there (JE_seededLanguage_*), never one picked in jellyfin-web, which shares the key. A
+// language the user chose (or "Auto") never replaces it.
+for (const [label, meta, settings, seeded, expected, loads] of [
+  ['locked', { Locked: ['DisplayLanguage'] }, { DisplayLanguage: 'de' }, null, 'de', 2],
+  ['following', { Following: ['DisplayLanguage'] }, { DisplayLanguage: 'de-de' }, 'fr', 'de-DE', 2],
+  ['following (language from jellyfin-web)', { Following: ['DisplayLanguage'] }, { DisplayLanguage: 'de' }, null, 'fr', 1],
+  ['following (language from jellyfin-web, seeded earlier)', { Following: ['DisplayLanguage'] }, { DisplayLanguage: 'de' }, 'de', 'fr', 1],
+  ['chosen', { Chosen: ['DisplayLanguage'] }, { DisplayLanguage: 'de' }, 'fr', 'fr', 1],
+  ['locked to Auto', { Locked: ['DisplayLanguage'] }, { DisplayLanguage: '' }, null, 'fr', 1]
 ]) test(`a ${label} display language ${expected === 'fr' ? 'keeps' : 'replaces'} the stored language`, async t => {
   const data = payload({ UserSettings: { Settings: settings, SettingsMeta: { Schema: 2, ...meta }, SettingsStatus: 'ok' } });
-  const h = setup(t, { data, storage: { 'user-a-language': 'fr' } });
+  const storage = { 'user-a-language': 'fr' };
+  if (seeded !== null) storage['JE_seededLanguage_user-a'] = seeded;
+  const h = setup(t, { data, storage });
   await until(() => h.plugin.initialized);
   assert.equal(h.window.localStorage.getItem('user-a-language'), expected);
   assert.equal(h.translationLoads, loads);
+  if (expected !== 'fr') assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), expected);
 
   // A lock arriving later (focus check, save answer) applies from the next page load.
   if (label !== 'chosen') return;
@@ -158,6 +167,26 @@ for (const [label, meta, settings, expected, loads] of [
   h.plugin.currentSettings.displayLanguage = 'it';
   h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: [], rejected: [], meta: true } }));
   assert.equal(h.window.localStorage.getItem('user-a-language'), 'it');
+});
+
+test('a followed display language replaces the stored one only while it is the settings\' language', async t => {
+  // "Follow my defaults where nothing changes" made an old seed's value follow: the stored
+  // language equals it, so it is recorded as the settings' one, and a new default replaces it.
+  const data = payload({ UserSettings: { Settings: { DisplayLanguage: 'de' }, SettingsMeta: { Schema: 2, Following: ['DisplayLanguage'] }, SettingsStatus: 'ok' } });
+  const h = setup(t, { data, storage: { 'user-a-language': 'de' } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), 'de');
+  const changeDefault = (language) => {
+    h.plugin.currentSettings.displayLanguage = language;
+    h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: ['displayLanguage'], rejected: [] } }));
+  };
+  changeDefault('es');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'es');
+  // The user then picks French in jellyfin-web's own display settings: the next default keeps it.
+  h.window.localStorage.setItem('user-a-language', 'fr');
+  changeDefault('it');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr');
+  assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), 'es');
 });
 
 test('translation cache clear removes stale locales but preserves newer entries and unrelated storage', async t => {

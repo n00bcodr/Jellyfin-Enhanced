@@ -298,6 +298,9 @@ public class CoreSettingsPatchTests
     [InlineData("{\"Follow\":\"AutoPipEnabled\"}")]
     [InlineData("{\"Follow\":[1]}")]
     [InlineData("{\"IfRevision\":12}")]
+    [InlineData("{\"Set\":null}")]
+    [InlineData("{\"Follow\":null}")]
+    [InlineData("{\"Set\":{\"AutoPipEnabled\":true},\"IfRevision\":null}")]
     public void AMalformedPatchIsABadRequest(string patch)
     {
         using var endpoints = new Endpoints();
