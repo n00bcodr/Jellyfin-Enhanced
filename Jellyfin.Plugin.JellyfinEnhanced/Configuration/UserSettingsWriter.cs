@@ -152,13 +152,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         /// <param name="document">The stored document; changed in place.</param>
         /// <param name="config">The plugin configuration, or null when it is not loaded.</param>
+        /// <param name="unlocked">The recently unlocked keys taken with <paramref name="config"/> (the same admin save).</param>
         /// <param name="body">The posted JSON object.</param>
         /// <param name="byOwner">False when an administrator writes another user's settings.</param>
         /// <param name="utcNow">The time recorded in the provenance block.</param>
         /// <returns>What was applied and rejected.</returns>
-        public static UserSettingsWriteResult ApplyDocument(UserSettings document, PluginConfiguration? config, JsonElement body, bool byOwner, DateTime utcNow)
+        public static UserSettingsWriteResult ApplyDocument(UserSettings document, PluginConfiguration? config, RecentlyUnlockedSettings.Snapshot unlocked, JsonElement body, bool byOwner, DateTime utcNow)
         {
             ArgumentNullException.ThrowIfNull(document);
+            ArgumentNullException.ThrowIfNull(unlocked);
             if (body.ValueKind != JsonValueKind.Object)
             {
                 throw new ArgumentException("The settings document must be a JSON object.", nameof(body));
@@ -184,7 +186,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
                 var reason = resolved.IsLocked(descriptor.Key) ? ReasonLocked
                     : resolved.IsFollowing(descriptor.Key) ? ReasonFollowing
-                    : IsStaleUnlockedValue(descriptor, coerced, document) ? ReasonStale
+                    : IsStaleUnlockedValue(unlocked, descriptor, coerced, document) ? ReasonStale
                     : !valid ? ReasonInvalid
                     : null;
                 if (reason != null)
@@ -236,8 +238,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// Whether a whole-document post carries a value a lock enforced until an admin lifted it in
         /// this process (a tab that loaded while the key was locked) over a different stored choice.
         /// </summary>
-        private static bool IsStaleUnlockedValue(UserSettingDescriptor descriptor, object? posted, UserSettings stored)
-            => RecentlyUnlockedSettings.WasEnforced(descriptor.Key, posted)
+        private static bool IsStaleUnlockedValue(RecentlyUnlockedSettings.Snapshot unlocked, UserSettingDescriptor descriptor, object? posted, UserSettings stored)
+            => unlocked.WasEnforced(descriptor.Key, posted)
                 && !Equals(posted, descriptor.Property.GetValue(stored));
 
         /// <summary>

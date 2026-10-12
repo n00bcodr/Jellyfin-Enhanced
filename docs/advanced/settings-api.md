@@ -177,7 +177,7 @@ Locks are part of the plugin configuration: `LockedUserSettings` is an array of 
 | `Corrupt`, `Oversized`, `Unavailable` | Users (`Id`, `Name`) whose file could not be read. They are not counted |
 | `UserList` | `Id`, `Name`, `Live`, `Orphan`, `Settings`: `settings`, `none`, `corrupt`, `oversized` or `unavailable` |
 
-`GET admin/user-settings/overview/{key}` lists one setting across users: `Key`, `Default`, `Locked` and `Users`. Each user has `UserId`, `Name`, `Live`, `Orphan`, `Value` (the stored value; for a following user, the current default they get), `State` (`Following`, `Existing`, `Chosen`, `ChangedByAdmin`, `NoSettings`, `Corrupt`, `Oversized` or `Unavailable`), `SameAsDefault`, and `Invalid: true` when a stored text value breaks the setting's rules (its value is then left out). `404` for a key without a server default.
+`GET admin/user-settings/overview/{key}` lists one setting across users: `Key`, `Default`, `Locked` and `Users`. Each user has `UserId`, `Name`, `Live`, `Orphan`, `Value` (the stored value; for a following user, the current default they get), `State` (`Following`, `Existing`, `Chosen`, `ChangedByAdmin`, `NoSettings`, `Corrupt`, `Oversized` or `Unavailable`), `SameAsDefault`, and `Invalid: true` when a stored text value breaks the setting's rules. `Value` is always present: it is `null` when `Invalid` is true and for the `NoSettings`, `Corrupt`, `Oversized` and `Unavailable` states. `404` for a key without a server default.
 
 ### Apply defaults to users
 

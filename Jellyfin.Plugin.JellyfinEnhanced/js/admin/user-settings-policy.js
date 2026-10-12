@@ -288,7 +288,9 @@
                 line.textContent = 'Locking ' + item.name + ' to ' + value + ': users who chose something else will see ' + value
                     + '. Their choice is kept and comes back if you unlock. ' + where;
             } else {
-                line.textContent = 'Unlocking ' + item.name + ': each user\'s own choice comes back; users who never changed it keep your default (' + value + ').';
+                // Only a Following key resolves to the default once unlocked; any other user gets the
+                // stored value back, which for someone who never changed it can be an older default.
+                line.textContent = 'Unlocking ' + item.name + ': each user\'s saved value comes back (for users who never changed it, this can be a value copied from an earlier default); users who follow your default keep it (' + value + ').';
             }
             box.appendChild(line);
         });

@@ -162,6 +162,14 @@
                     saveFailed = true;
                 }
 
+                // The menu is usable only while the language is unlocked, so a lock is over: drop
+                // what it replaced, or the next load would put that back over this pick.
+                try {
+                    localStorage.removeItem(`JE_lockedLanguage_${userId}`);
+                } catch (e) {
+                    console.warn('🪼 Jellyfin Enhanced: Could not clear the display language lock record:', e);
+                }
+
                 // Save to localStorage (use the same code)
                 if (fullCultureCode) {
                     localStorage.setItem(languageKey, fullCultureCode);

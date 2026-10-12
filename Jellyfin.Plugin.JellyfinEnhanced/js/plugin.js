@@ -1260,7 +1260,7 @@
      * (the stored language and the settings' record) is kept in
      * `JE_lockedLanguage_${userId}`: once the lock is gone, while the lock's language
      * is still the stored one, both are put back and the language is decided as if
-     * there had been no lock.
+     * there had been no lock (a pick in the panel's language menu drops the record).
      * Storage errors (e.g. a full localStorage) are logged and never stop the boot.
      * @param {string} userId
      * @returns {boolean} True when the stored language was replaced (the
@@ -1346,7 +1346,9 @@
         }
         if (storedLanguage === desiredLanguage) {
             // The language in use is the settings' one: a later followed default may replace it.
-            trySetItem(seededKey, desiredLanguage);
+            // Not while locked: the lock did not put it there (the user picked the lock's
+            // language), so after the unlock it stays as without the lock.
+            if (!locked) trySetItem(seededKey, desiredLanguage);
             return false;
         }
         const following = JE.settingsMeta?.following;

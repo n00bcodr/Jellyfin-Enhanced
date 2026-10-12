@@ -165,6 +165,19 @@ test('the impact text follows the admin value when the control (or the tag order
   assert.equal(impact.textContent, before);
 });
 
+test('unticking a lock says each user\'s saved value comes back and only followers keep the default', async t => {
+  // An unlocked key resolves to the default only for users who follow it; anyone else gets the
+  // stored value back, even one who never changed it (a copy of an older default).
+  const locked = registryDefault.map(e => e.Key === 'AutoPipEnabled' ? { ...e, Locked: true } : e);
+  const h = setup(t, { registry: locked });
+  await h.policy.decorate(h.page);
+  h.page.querySelector('#autoPipEnabled').checked = false;
+  h.tick('AutoPipEnabled', false);
+  const impact = h.document.querySelector('#jeUserSettingsPolicyImpact').textContent;
+  assert.match(impact, /Unlocking Auto Picture-in-Picture on tab switch: each user's saved value comes back \(for users who never changed it, this can be a value copied from an earlier default\); users who follow your default keep it \(Off\)\./);
+  assert.doesNotMatch(impact, /never changed it keep your default/);
+});
+
 test('saving locks: fetched minus unticked rendered rows plus ticked ones; unknown keys keep their lock', async t => {
   const locked = registryDefault.map(e => e.Key === 'AutoPipEnabled' || e.Key === 'ShowFileSizes' ? { ...e, Locked: true } : e);
   const h = setup(t, { registry: locked });
@@ -436,4 +449,31 @@ test('"New users follow my defaults" sits in the policy header, is loaded and sa
   const keys = tracked().map(control => control.key);
   assert.ok(keys.includes('newUsersFollowDefaults'));
   assert.equal(tracked().filter(control => control.el.closest('#jeUserSettingsPolicyTable')).length, 0);
+});
+
+// Round 4 made an edit inside loadConfig's 500 ms settling window stay unsaved: the baseline is taken
+// with the edited controls showing their loaded values, then their current values are put back.
+test('an early click on the other maintenance-users radio stays the selection and stays unsaved', async t => {
+  const captureSource = /function jeCaptureSavedStateAsLoaded\(loaded, edited\) \{[\s\S]*?\n            \}/.exec(pageSource)?.[0];
+  assert.ok(captureSource, 'jeCaptureSavedStateAsLoaded is in configPage.html');
+  const h = setup(t);
+  const form = h.document.querySelector('#JellyfinEnhancedForm');
+  const all = h.document.getElementById('mmUsers_all');
+  const select = h.document.getElementById('mmUsers_select');
+  const snapshot = () => ({ all: all.checked, select: select.checked });
+  const capture = h.window.eval(`(function (jeCaptureSavedState) { return ${captureSource}; })`)(snapshot);
+  const loadedPair = () => new Map(Array.from(form.querySelectorAll('input[name="maintenanceModeUsers"]')).map(el => [el, el.checked]));
+
+  // Loaded with "All users"; the admin clicks "Select users" before the baseline.
+  all.checked = true;
+  let loaded = loadedPair();
+  select.checked = true;
+  assert.deepEqual(capture(loaded, new Set([select])), { all: true, select: false }, 'the baseline is the loaded selection');
+  assert.deepEqual(snapshot(), { all: false, select: true }, 'the click is still the selection (saved as "select")');
+
+  // The other way round.
+  loaded = loadedPair();
+  all.checked = true;
+  assert.deepEqual(capture(loaded, new Set([all])), { all: false, select: true });
+  assert.deepEqual(snapshot(), { all: true, select: false });
 });

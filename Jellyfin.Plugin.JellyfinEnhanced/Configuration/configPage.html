@@ -4267,18 +4267,22 @@
                 const isToggle = el => el.type === 'checkbox' || el.type === 'radio';
                 const read = el => isToggle(el) ? el.checked : el.value;
                 const write = (el, value) => { if (isToggle(el)) el.checked = value; else el.value = value; };
+                // Checking a radio unchecks the rest of its group: write the checked ones last.
+                const writeAll = (pairs) => pairs.filter(([, value]) => value !== true).concat(pairs.filter(([, value]) => value === true))
+                    .forEach(([el, value]) => write(el, value));
                 const editedRadios = new Set(Array.from(edited).filter(el => el.type === 'radio').map(el => el.name));
+                // Every current value is read before anything is written (a write to one radio
+                // changes the others in its group).
                 const swapped = [];
                 loaded.forEach((value, el) => {
                     const touched = edited.has(el) || (el.type === 'radio' && editedRadios.has(el.name));
-                    if (!touched || !el.isConnected || read(el) === value) return;
-                    swapped.push([el, read(el)]);
-                    write(el, value);
+                    if (touched && el.isConnected && read(el) !== value) swapped.push([el, value, read(el)]);
                 });
+                writeAll(swapped.map(([el, value]) => [el, value]));
                 try {
                     return jeCaptureSavedState();
                 } finally {
-                    swapped.forEach(([el, value]) => write(el, value));
+                    writeAll(swapped.map(([el, , current]) => [el, current]));
                 }
             }
 

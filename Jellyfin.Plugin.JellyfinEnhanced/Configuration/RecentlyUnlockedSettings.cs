@@ -83,15 +83,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
-        /// <summary>Whether a value is one the lock on a key enforced before it was lifted.</summary>
-        /// <param name="key">A canonical registry key.</param>
-        /// <param name="value">The posted value.</param>
-        /// <returns>True when the key was unlocked in this process, is not locked again, and one of its locks enforced the value.</returns>
-        public static bool WasEnforced(string key, object? value)
+        /// <summary>
+        /// Copies what is recorded now. The plugin takes the copy with every configuration it puts
+        /// in effect (<see cref="JellyfinEnhanced.ConfigurationSnapshot"/>), so a write checks the
+        /// locks and the stale-tab guard against the same admin save, never a relock recorded in
+        /// between.
+        /// </summary>
+        /// <returns>An unchanging copy of the unlocked keys and the values their locks enforced.</returns>
+        public static Snapshot Capture()
         {
             lock (Sync)
             {
-                return Enforced.TryGetValue(key, out var values) && values.Exists(enforced => Equals(enforced, value));
+                return new Snapshot(Enforced.ToDictionary(pair => pair.Key, pair => pair.Value.ToArray(), StringComparer.Ordinal));
             }
         }
 
@@ -123,6 +126,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 values.Add(value);
             }
+        }
+
+        /// <summary>The unlocked keys and the values their locks enforced, as recorded at one moment.</summary>
+        public sealed class Snapshot
+        {
+            private readonly Dictionary<string, object?[]> _enforced;
+
+            internal Snapshot(Dictionary<string, object?[]> enforced) => _enforced = enforced;
+
+            /// <summary>Whether a value is one the lock on a key enforced before it was lifted.</summary>
+            /// <param name="key">A canonical registry key.</param>
+            /// <param name="value">The posted value.</param>
+            /// <returns>True when the key was unlocked in this process, was not locked again, and one of its locks enforced the value.</returns>
+            public bool WasEnforced(string key, object? value)
+                => _enforced.TryGetValue(key, out var values) && Array.Exists(values, enforced => Equals(enforced, value));
         }
     }
 }

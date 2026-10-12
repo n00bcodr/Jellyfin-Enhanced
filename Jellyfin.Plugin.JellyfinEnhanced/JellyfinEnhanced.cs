@@ -150,7 +150,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         /// <summary>A saved configuration and the <see cref="ConfigEpoch"/> that belongs to it.</summary>
         /// <param name="Configuration">The configuration object.</param>
         /// <param name="Epoch">The epoch issued when it became the configuration.</param>
-        public sealed record ConfigurationSnapshot(PluginConfiguration Configuration, string Epoch);
+        /// <param name="Unlocked">What <see cref="RecentlyUnlockedSettings"/> recorded once the same save took effect.</param>
+        public sealed record ConfigurationSnapshot(PluginConfiguration Configuration, string Epoch, RecentlyUnlockedSettings.Snapshot Unlocked);
 
         private volatile ConfigurationSnapshot? _configurationSnapshot;
 
@@ -168,7 +169,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 if (snapshot != null) return snapshot;
                 lock (AnalyticsCredentialLock)
                 {
-                    return _configurationSnapshot ??= new ConfigurationSnapshot(Configuration, NewConfigEpoch());
+                    return _configurationSnapshot ??= new ConfigurationSnapshot(Configuration, NewConfigEpoch(), RecentlyUnlockedSettings.Capture());
                 }
             }
         }
@@ -349,7 +350,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 finally
                 {
                     // The new epoch is issued with the configuration it belongs to, in one step.
-                    _configurationSnapshot = new ConfigurationSnapshot(Configuration!, NewConfigEpoch());
+                    _configurationSnapshot = new ConfigurationSnapshot(Configuration!, NewConfigEpoch(), RecentlyUnlockedSettings.Capture());
                 }
             }
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);

@@ -164,9 +164,11 @@ function setupLanguage(t, { settingsStatus, failPost = false }) {
 for (const settingsStatus of ['unavailable', 'loading']) {
   test(`a display-language change while settings are ${settingsStatus} saves nothing and reports no success`, async t => {
     const h = setupLanguage(t, { settingsStatus });
+    h.window.localStorage.setItem('JE_lockedLanguage_user-a', '{"language":"fr","previous":null,"previousSeeded":null}');
     await h.change('de');
     assert.deepEqual(h.posts, []);
     assert.equal(h.window.localStorage.getItem('user-a-language'), null);
+    assert.notEqual(h.window.localStorage.getItem('JE_lockedLanguage_user-a'), null, 'a refused change keeps the lock record');
     assert.deepEqual(h.toasts, ['panel_settings_unavailable']);
     assert.deepEqual(h.reloads, []);
     assert.equal(h.select.value, '', 'the selector goes back to the language in use');
@@ -176,9 +178,13 @@ for (const settingsStatus of ['unavailable', 'loading']) {
 
 test('a display-language change with settings loaded saves, switches and reloads', async t => {
   const h = setupLanguage(t, { settingsStatus: 'ok' });
+  // A record left by a lock whose end this tab never heard of: the pick ends it, so the next
+  // load cannot put the language from before the lock back over this one.
+  h.window.localStorage.setItem('JE_lockedLanguage_user-a', JSON.stringify({ language: 'de', previous: 'it', previousSeeded: 'fr' }));
   await h.change('de');
   assert.deepEqual(h.posts, ['/JellyfinEnhanced/user-settings/user-a/settings.json']);
   assert.equal(h.window.localStorage.getItem('user-a-language'), 'de');
+  assert.equal(h.window.localStorage.getItem('JE_lockedLanguage_user-a'), null);
   assert.deepEqual(h.toasts, ['toast_language_changed']);
   assert.deepEqual(h.reloads, [1500]);
 });

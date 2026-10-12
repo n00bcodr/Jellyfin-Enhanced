@@ -261,6 +261,21 @@ test('an unlock keeps a language picked in jellyfin-web after the lock, and a re
   assert.equal(h.window.localStorage.getItem('JE_lockedLanguage_user-a'), null);
 });
 
+test('a lock on the language the user picked in jellyfin-web does not make it the settings\' language', async t => {
+  // Following Spanish, French picked in jellyfin-web; the admin locks French. The lock replaces
+  // nothing, so after the unlock French stays, as it would without the lock.
+  const data = payload({ UserSettings: { Settings: { DisplayLanguage: 'fr' }, SettingsMeta: { Schema: 2, Locked: ['DisplayLanguage'], Following: ['DisplayLanguage'] }, SettingsStatus: 'ok' } });
+  const h = setup(t, { data, storage: { 'user-a-language': 'fr', 'JE_seededLanguage_user-a': 'es' } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr');
+  assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), 'es');
+  assert.equal(h.window.localStorage.getItem('JE_lockedLanguage_user-a'), null);
+  h.plugin.userConfig.settingsMeta = { following: ['displayLanguage'] };
+  h.plugin.currentSettings.displayLanguage = 'es';
+  h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: ['displayLanguage'], rejected: [], meta: true } }));
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr');
+});
+
 test('a full localStorage does not stop the boot when the language record cannot be written', async t => {
   const data = payload({ UserSettings: { Settings: { DisplayLanguage: 'de' }, SettingsMeta: { Schema: 2 }, SettingsStatus: 'ok' } });
   const h = setup(t, { data, storage: { 'user-a-language': 'de' } });

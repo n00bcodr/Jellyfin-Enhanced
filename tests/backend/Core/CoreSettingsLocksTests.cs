@@ -283,6 +283,27 @@ public class CoreSettingsLocksTests : IDisposable
         Assert.Equal("remaining", endpoints.OnDisk().Value<string>("WatchProgressMode"));
     }
 
+    [Fact]
+    public void ARelockAfterTheLegacyPostTookTheConfigurationStillRefusesTheStaleValue()
+    {
+        using var endpoints = WithChoices();
+        endpoints.Save(c => c.LockedUserSettings = ["AutoPipEnabled"]);
+        endpoints.Save(c => c.LockedUserSettings = []);
+
+        // The legacy POST takes the configuration (unlocked), then an admin relocks before it gets the file lock.
+        var taken = endpoints.Plugin.Plugin.CurrentConfiguration;
+        endpoints.Save(c => c.LockedUserSettings = ["AutoPipEnabled"]);
+        Assert.False(RecentlyUnlockedSettings.Capture().WasEnforced("AutoPipEnabled", false), "the relock cleared the live record");
+        Assert.True(taken.Unlocked.WasEnforced("AutoPipEnabled", false));
+
+        // Checked against the record of the same save, the stale tab's value is still refused (either serial order keeps the choice).
+        var stored = new UserSettings { AutoPipEnabled = true };
+        var result = UserSettingsWriter.ApplyDocument(stored, taken.Configuration, taken.Unlocked, Json("{\"AutoPipEnabled\":false}"), byOwner: true, DateTime.UtcNow);
+        Assert.Equal([new SettingsRejection("AutoPipEnabled", "stale")], result.Rejected);
+        Assert.False(result.Changed);
+        Assert.True(stored.AutoPipEnabled);
+    }
+
     // ---- admin registry route
 
     [Fact]

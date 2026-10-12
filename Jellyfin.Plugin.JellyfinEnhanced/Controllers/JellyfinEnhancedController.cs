@@ -5146,7 +5146,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                var config = JellyfinEnhanced.Instance?.Configuration;
+                // The configuration and the stale-tab guard's record of the same admin save: a relock
+                // landing before the file lock cannot pair the old config's unlock with the new record.
+                var snapshot = JellyfinEnhanced.Instance?.CurrentConfiguration;
+                var config = snapshot?.Configuration;
+                var unlocked = snapshot?.Unlocked ?? RecentlyUnlockedSettings.Capture();
                 UserSettingsWriteResult result;
                 // Read, apply and save under the per-file lock, like every other settings.json
                 // writer (first-access seed, reset-all, /patch), so none of them interleaves with this one.
@@ -5158,7 +5162,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         return SettingsUnavailable();
                     }
 
-                    result = UserSettingsWriter.ApplyDocument(stored, config, userConfiguration, IsSettingsOwner(authorizedUserId), DateTime.UtcNow);
+                    result = UserSettingsWriter.ApplyDocument(stored, config, unlocked, userConfiguration, IsSettingsOwner(authorizedUserId), DateTime.UtcNow);
                     if (result.Changed)
                     {
                         _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", stored);
