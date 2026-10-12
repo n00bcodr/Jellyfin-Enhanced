@@ -49,7 +49,7 @@ Add `?meta=true` to get `{ "Settings": { … }, "Meta": { … } }`. `Meta` descr
 | Field | Meaning |
 |---|---|
 | `Schema` | Always `2` for now |
-| `Revision` | First 12 hex digits of the SHA-256 of the stored file. Changes on every save |
+| `Revision` | First 12 hex digits of the SHA-256 of the stored file. Changes whenever the stored file changes; a save that changes nothing keeps it |
 | `ConfigEpoch` | Changes whenever an administrator saves the plugin settings (and on server start) |
 | `Following` | Keys that use the server default and change when the administrator changes it |
 | `Chosen` | Keys the user set themselves |
@@ -78,7 +78,7 @@ A key in neither `Following` nor `Chosen` holds a value saved before these state
 }
 ```
 
-The signed-in `GET public-config` also carries `UserSettingDefaults`: the server default of every per-user setting, by `settings.json` key. Anonymous callers do not get it.
+The signed-in `GET public-config` also carries `UserSettingDefaults`: the server defaults of the on/off, number and fixed-choice settings, by `settings.json` key. Free-form text settings such as the display language and the preferred audio language are left out, and so is a default outside a setting's fixed choices. Clients that need every default read `Meta.Defaults` from `GET settings.json?meta=true`. Anonymous callers do not get it.
 
 ## Change settings
 
@@ -142,7 +142,7 @@ Other answers: `409` when `IfRevision` is stale (with the current `Revision`, `S
 
 - Only setting keys present in the body count (matched ignoring case). Absent keys stay as they are. `IsAdmin` and unknown keys are ignored.
 - A value equal to the current one changes nothing, so posting back what you read is harmless.
-- Refused keys are listed in `Rejected`: `locked`; `following` (a following key only changes through the patch route, so an old page cannot pin today's default); `stale` (the value a lock enforced, posted after the administrator unlocked it by a page loaded while it was locked, so the user's own choice survives); `invalid`.
+- Refused keys are listed in `Rejected`: `locked`; `following` (a following key only changes through the patch route, so an old page cannot pin today's default); `stale` (a value a lock on the key enforced since the server started, posted after the administrator unlocked it by a page loaded while it was locked, so the user's own choice survives; such a value can then only be chosen through the patch route until the server restarts); `invalid`.
 - Any other value is stored as the user's choice.
 
 The answer is `{ "success": true, "file": "settings.json", "Rejected": [ … ] }`. `400` for a body that is not an object, `413` over 64 KB, `503` when the stored file cannot be read.
@@ -191,11 +191,11 @@ Locks are part of the plugin configuration: `LockedUserSettings` is an array of 
 |---|---|
 | `Keys` | Required. Setting keys; in the two follow modes each must have a server default (`400` otherwise) |
 | `UserIds` | `null` or absent for everyone (Jellyfin users and existing settings folders), or up to 10,000 ids. Ids that are neither are skipped as `unknown` and never created |
-| `Mode` | `FollowIfUnchanged`: a setting starts following the default only where it is still an untouched copy of it, so nobody sees a change. `FollowAll`: every selected setting follows, so values change for users who picked something else. `Overwrite`: the old reset; writes your current values (users stop following) and also resets the selected users' hidden-content settings and Spoiler Guard preferences. Hidden items, spoiler lists and bookmarks are never touched |
+| `Mode` | Required. `FollowIfUnchanged`: a setting starts following the default only where it is still an untouched copy of it, so nobody sees a change. `FollowAll`: every selected setting follows, so values change for users who picked something else. `Overwrite`: the old reset; writes your current values (users stop following) and also resets the selected users' hidden-content settings and Spoiler Guard preferences. Hidden items, spoiler lists and bookmarks are never touched |
 | `DryRun` | Default `true`: a preview that changes nothing on disk |
 | `ConfigEpoch` | Required for a real run: the `ConfigEpoch` the preview returned. `409` if the plugin settings were saved since |
 
-The answer is the same for a preview and a real run: `DryRun`, `ConfigEpoch`, `Mode`, `Keys`, `Users`, `Updated`, `Unchanged`, `KeysChanged`, `VisibleChanges`, `KeptChoices` (users who keep their own value for some settings), `Skipped` (`Id`, `Name`, `Reason`: `unknown`, `no-settings`, `corrupt` or `oversized`; left untouched), `Failed` (`Id`, `Name`, `Document`: `Settings`, `HiddenContent` or `SpoilerGuard`, `Reason`), `PerKey` (`Changed`, `Visible`, `Kept`), `PerUser` (`Changed`, `Visible`, `Kept`, `Documents`) and, for a run that changed something, `UndoId`. `UndoUnavailable: true` means the changes were made but the undo record could not be saved. `413` for a body over 64 KB.
+The answer is the same for a preview and a real run: `DryRun`, `ConfigEpoch`, `Mode`, `Keys`, `Users`, `Updated`, `Unchanged`, `KeysChanged`, `VisibleChanges`, `KeptChoices` (users who keep their own value for some settings), `Skipped` (`Id`, `Name`, `Reason`: `unknown`, `no-settings`, `corrupt` or `oversized`; their `settings.json` is left untouched; in `Overwrite` mode the hidden-content settings and Spoiler Guard preferences of a skipped user who has a settings folder are still reset, reported in `PerUser.Documents` or `Failed`), `Failed` (`Id`, `Name`, `Document`: `Settings`, `HiddenContent` or `SpoilerGuard`, `Reason`), `PerKey` (`Changed`, `Visible`, `Kept`), `PerUser` (`Changed`, `Visible`, `Kept`, `Documents`) and, for a run that changed something, `UndoId`. `UndoUnavailable: true` means the changes were made but the undo record could not be saved. `413` for a body over 64 KB.
 
 === "cURL"
 

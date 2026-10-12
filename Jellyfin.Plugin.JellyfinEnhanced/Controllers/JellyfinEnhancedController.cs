@@ -5571,12 +5571,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var currentEpoch = snapshot!.Epoch;
             if (!dryRun && !string.Equals(configEpoch, currentEpoch, StringComparison.Ordinal))
             {
-                return StatusCode(409, new System.Text.Json.Nodes.JsonObject
-                {
-                    ["success"] = false,
-                    ["message"] = "The plugin settings were saved since this preview. Preview again before applying.",
-                    ["ConfigEpoch"] = currentEpoch,
-                });
+                return StaleApplyEpoch(currentEpoch);
             }
 
             var operations = SettingsOperations();
@@ -5604,7 +5599,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var operationId = UserConfigurationManager.NewOperationId();
-            var (outcomes, recorded, undoUnavailable) = operations.Run(config, keys, mode, targets, dryRun, operationId, DateTime.UtcNow);
+            // Checked again once the run holds the bulk-operation gate: another run may have held it
+            // while the admin saved the configuration, and this one would then apply the old one.
+            var (outcomes, recorded, undoUnavailable, refused) = operations.Run(config, keys, mode, targets, dryRun, operationId, DateTime.UtcNow,
+                stillCurrent: () => string.Equals(JellyfinEnhanced.Instance?.CurrentConfiguration.Epoch, currentEpoch, StringComparison.Ordinal));
+            if (refused)
+            {
+                return StaleApplyEpoch(JellyfinEnhanced.Instance?.CurrentConfiguration.Epoch ?? currentEpoch);
+            }
+
             if (!dryRun)
             {
                 var changedUsers = outcomes.Count(o => o.Changes.Count > 0 || o.DocumentChanges.Count > 0);
@@ -5617,6 +5620,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             body["UndoUnavailable"] = undoUnavailable;
             return Ok(body);
         }
+
+        /// <summary>The 409 for a real apply whose preview's ConfigEpoch is no longer current.</summary>
+        /// <param name="currentEpoch">The epoch of the configuration now in effect.</param>
+        /// <returns>The refusal, with the current epoch.</returns>
+        private ObjectResult StaleApplyEpoch(string currentEpoch) => StatusCode(409, new System.Text.Json.Nodes.JsonObject
+        {
+            ["success"] = false,
+            ["message"] = "The plugin settings were saved since this preview. Preview again before applying.",
+            ["ConfigEpoch"] = currentEpoch,
+        });
 
         /// <summary>
         /// Undoes an "Apply defaults to users" run (or a reset-all) by its UndoId, compare-and-swap:
@@ -9009,7 +9022,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var liveNames = LiveUserNamesById();
             var targets = userIds.Select(id => new UserSettingsTarget(id, liveNames.TryGetValue(id, out var name) ? name : null, liveNames.ContainsKey(id), true)).ToList();
             var operationId = UserConfigurationManager.NewOperationId();
-            var (outcomes, recorded, _) = SettingsOperations().Run(defaultConfig, UserSettingsRegistry.All, UserSettingsApplyMode.Overwrite, targets, dryRun: false, operationId, DateTime.UtcNow, resetPanelTab: true);
+            var (outcomes, recorded, _, _) = SettingsOperations().Run(defaultConfig, UserSettingsRegistry.All, UserSettingsApplyMode.Overwrite, targets, dryRun: false, operationId, DateTime.UtcNow, resetPanelTab: true);
             foreach (var outcome in outcomes)
             {
                 var userId = outcome.User.Id;

@@ -1248,29 +1248,38 @@
     }
 
     /**
-     * Seeds the admin's default display language into the per-user
-     * `${userId}-language` key — only when the user has no language set yet,
-     * so a user's own choice is never overwritten.
+     * Puts the display language into the per-user `${userId}-language` key the
+     * translations read. The admin's default is seeded only when the user has no
+     * language set yet, so a user's own choice is never overwritten; but while an
+     * administrator locks the language, or the user follows the server default
+     * (settings Meta), the resolved setting is the user's language and replaces
+     * the stored one. "Auto" (empty) never replaces a stored language.
      * @param {string} userId
+     * @returns {boolean} True when a locked or followed language replaced the
+     *   stored one (the translations already loaded are then in another language).
      */
     function seedDisplayLanguage(userId) {
-        if (!userId) return;
+        if (!userId) return false;
         const languageKey = `${userId}-language`;
-        // Only seed the admin's default language if the user has no language set yet.
-        // This prevents overwriting the user's own language choice on every page load.
-        if (localStorage.getItem(languageKey) === null) {
-            const desiredLanguage = (JE.currentSettings?.displayLanguage || '').trim();
-            if (desiredLanguage) {
-                const normalizeLangCode = (code) => {
-                    if (!code) return '';
-                    const parts = code.split('-');
-                    if (parts.length === 1) return parts[0].toLowerCase();
-                    if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
-                    return code;
-                };
-                localStorage.setItem(languageKey, normalizeLangCode(desiredLanguage));
-            }
+        const normalizeLangCode = (code) => {
+            if (!code) return '';
+            const parts = code.split('-');
+            if (parts.length === 1) return parts[0].toLowerCase();
+            if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
+            return code;
+        };
+        const desiredLanguage = normalizeLangCode((JE.currentSettings?.displayLanguage || '').trim());
+        if (!desiredLanguage) return false;
+        const stored = localStorage.getItem(languageKey);
+        if (stored === null) {
+            localStorage.setItem(languageKey, desiredLanguage);
+            return false;
         }
+        const following = JE.settingsMeta?.following;
+        const fromServer = JE.settings?.isLocked?.('displayLanguage') === true || (Array.isArray(following) && following.includes('displayLanguage'));
+        if (!fromServer || normalizeLangCode(stored) === desiredLanguage) return false;
+        localStorage.setItem(languageKey, desiredLanguage);
+        return true;
     }
 
     /**
@@ -1522,7 +1531,18 @@
                  return;
             }
 
-            seedDisplayLanguage(userId);
+            if (seedDisplayLanguage(userId)) {
+                // The administrator's (locked or followed) language replaced the one the translations were loaded for.
+                JE.translations = await loadTranslations() || {};
+                JE.t = window.JellyfinEnhanced.t;
+            }
+            // A lock or a new server default that arrives later applies from the next page load.
+            document.addEventListener('je:settings-changed', (event) => {
+                const detail = /** @type {CustomEvent} */ (event).detail || {};
+                if (detail.meta || (Array.isArray(detail.keys) && detail.keys.includes('displayLanguage'))) {
+                    seedDisplayLanguage(ApiClient.getCurrentUserId());
+                }
+            });
 
             // Stage 5: Initialize theme system first
             if (typeof JE.themer?.init === 'function') {

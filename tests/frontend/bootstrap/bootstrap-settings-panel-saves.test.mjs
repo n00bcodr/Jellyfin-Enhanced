@@ -26,7 +26,7 @@ const colourHtml = `<input type="color" id="customSubtitleTextColorPicker" value
   <input type="color" id="customSubtitleBgColorPicker" value="#000000"><input type="range" id="customSubtitleBgAlpha" min="0" max="255" value="0">
   <div id="subtitleColorPreview"></div><input type="checkbox" id="autoPauseToggle">`;
 
-function setupSettings(t, { fail = false } = {}) {
+function setupSettings(t, { fail = false, patch = false } = {}) {
   const posts = [], toasts = [], closeCallbacks = [];
   const timers = manualTimers();
   // JE.session (core/session.js): the epoch moves on every user switch.
@@ -40,6 +40,11 @@ function setupSettings(t, { fail = false } = {}) {
     } } });
   t.after(() => h.close());
   h.load('enhanced/config.js'); h.JE.currentSettings = h.JE.loadSettings();
+  if (patch) {
+    // A server document to save against: only keys it has are sent.
+    h.JE.serverCapabilities = ['settingsPatch'];
+    h.JE.userConfig.settings = { customSubtitleTextColor: '#FFFFFFFF', customSubtitleBgColor: '#00000000', usingCustomColors: false };
+  }
   h.load('enhanced/settingspanel/ui-panel-settings.js');
   // Only the colour pickers and one toggle exist; the wiring skips absent controls except these ids.
   for (const id of ['autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle', 'randomButtonToggle',
@@ -119,6 +124,23 @@ test('a pending colour save is flushed when the page is hidden or unloaded, unti
   h.window.dispatchEvent(new h.window.Event('pagehide'));
   h.document.dispatchEvent(new h.window.Event('visibilitychange')); await settle();
   assert.equal(h.posts.length, 2, 'the page listeners go away with the panel');
+});
+
+test('with key-level saves, a colour flushed on pagehide is sent at once, not after the merge window', async t => {
+  const h = setupSettings(t, { patch: true });
+  h.fire('customSubtitleTextColorPicker', 'input', '#00ff00');
+  // The transport's own pagehide flush runs first (config.js loads first) and finds nothing yet.
+  h.window.dispatchEvent(new h.window.Event('pagehide')); await settle();
+  assert.equal(h.posts.length, 1, 'sent before the page goes away');
+  assert.equal(h.posts[0].Set.CustomSubtitleTextColor, '#00ff00FF');
+  assert.equal(h.timers.pending.size, 0, 'no merge-window timer left behind');
+
+  // Hidden (not unloaded) also sends at once.
+  h.fire('customSubtitleTextColorPicker', 'input', '#0000ff');
+  Object.defineProperty(h.document, 'visibilityState', { configurable: true, value: 'hidden' });
+  h.document.dispatchEvent(new h.window.Event('visibilitychange')); await settle();
+  assert.equal(h.posts.length, 2);
+  assert.equal(h.posts[1].Set.CustomSubtitleTextColor, '#0000ffFF');
 });
 
 test('a colour save scheduled before a user switch is dropped, not written to the incoming user', async t => {

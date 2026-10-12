@@ -541,6 +541,41 @@ public class CoreSettingsApplyDefaultsTests : IDisposable
     }
 
     [Fact]
+    public void AnAdminSaveAfterTheEpochCheckBeforeTheRunStartsIsStillRefused()
+    {
+        using var server = new Server();
+        var casey = Person("casey");
+        server.Write(casey.Id, new UserSettings { AutoPipEnabled = true });
+        var epoch = server.Epoch;
+
+        // The route checks the epoch, then lists the users and waits for the run gate (another bulk
+        // operation may hold it). The admin saves the configuration in between.
+        var saved = false;
+        Func<IEnumerable<User>> users = () =>
+        {
+            if (!saved)
+            {
+                saved = true;
+                server.Save(c => c.ToastDuration += 1);
+            }
+
+            return [casey];
+        };
+#if NET9_0
+        server.Users.SetupGet(x => x.Users).Returns(users);
+#else
+        server.Users.Setup(x => x.GetUsers()).Returns(() => users().ToList());
+#endif
+        var answer = server.Apply("Overwrite", ["AutoPipEnabled"], dryRun: false, epoch: epoch);
+        Assert.True(saved);
+        Assert.Equal(409, Status(answer));
+        Assert.NotEqual(epoch, server.Epoch);
+        Assert.Equal(server.Epoch, answer.Value<string>("ConfigEpoch"));
+        Assert.True(server.Stored(casey.Id).AutoPipEnabled, "nothing was overwritten with the replaced configuration");
+        Assert.Empty(server.Stored(casey.Id).Meta?.Ops ?? new Dictionary<string, string>());
+    }
+
+    [Fact]
     public void EveryAdminRouteRefusesNonAdmins()
     {
         using var server = new Server();

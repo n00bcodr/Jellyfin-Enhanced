@@ -4238,15 +4238,37 @@
                     .join('\n');
             }
 
-            /** Call once the form reflects a known-saved state. */
-            function jeMarkSaved() {
-                _jeSavedSnapshot = jeSnapshotFormState('');
-                _jeSavedValues = jeDraftableValues();
-                _jeSavedShortcuts = JSON.stringify(shortcutOverrides);
-                _jeSavedMdblist = jeMdblistSourcesValue();
-                _jeSavedCatOrder = JSON.stringify(jeQualityCatOrder());
-                _jeSavedTagStyles = jeTagStylesValue();
-                _jeSavedUndraftable = jeUndraftableState('');
+            /**
+             * The form as it is now, in the shape jeMarkSaved records (lock edits as none: a
+             * saved state has none). saveConfig takes it when it builds the config to save.
+             */
+            function jeCaptureSavedState() {
+                return {
+                    snapshot: jeSnapshotFormState(''),
+                    values: jeDraftableValues(),
+                    shortcuts: JSON.stringify(shortcutOverrides),
+                    mdblist: jeMdblistSourcesValue(),
+                    catOrder: JSON.stringify(jeQualityCatOrder()),
+                    tagStyles: jeTagStylesValue(),
+                    undraftable: jeUndraftableState('')
+                };
+            }
+
+            /**
+             * Call once the form reflects a known-saved state.
+             * @param {object} [saved] The state that was saved (jeCaptureSavedState when the save
+             *   was built); without it, the form as it is now. Edits made while a save is in
+             *   flight are then still unsaved edits.
+             */
+            function jeMarkSaved(saved) {
+                const state = saved || jeCaptureSavedState();
+                _jeSavedSnapshot = state.snapshot;
+                _jeSavedValues = state.values;
+                _jeSavedShortcuts = state.shortcuts;
+                _jeSavedMdblist = state.mdblist;
+                _jeSavedCatOrder = state.catOrder;
+                _jeSavedTagStyles = state.tagStyles;
+                _jeSavedUndraftable = state.undraftable;
                 jeUpdateDirtyIndicator();
             }
 
@@ -7979,6 +8001,8 @@
 
             try {
                 const config = await buildConfigFromForm();
+                // What is being saved: an edit made while the save is in flight stays unsaved.
+                const savedState = jeCaptureSavedState();
                 const result = await ApiClient.updatePluginConfiguration(pluginId, config);
                 // After JE config is persisted, sync any managed Custom Tabs entries.
                 // We surface non-OK results to the admin via Dashboard.alert so a
@@ -8041,8 +8065,9 @@
                 if (savedPolicy && typeof savedPolicy.markSaved === 'function') { // no-op unless a save took its locks from the table
                     savedPolicy.markSaved(config.LockedUserSettings);
                 }
-                // The form now is the just-saved state, so re-snapshot immediately.
-                jeMarkSaved();
+                // The form as it was when the save was built is the saved state; later edits stay dirty
+                // (a draft of them is stored again when the admin leaves with them).
+                jeMarkSaved(savedState);
                 jeDiscardDraft();
                 if (syncResult && syncResult.ok === false) {
                     try {

@@ -353,7 +353,7 @@ If styling does not apply, check which subtitle track is playing. Choosing a tex
 **Turning it off**
 
 - **For yourself:** in the Jellyfin Enhanced panel → Settings, enable **Disable Custom Subtitle Styles**, then reload the page. Jellyfin Enhanced then leaves subtitles alone and your Jellyfin **User Preferences** → **Subtitles** settings apply unchanged. Jellyfin Enhanced never changes those saved settings. It only styles the subtitles while a video plays.
-- **For all users:** in the plugin settings, enable **Disable Custom Subtitle Styles by default**, save, then use **Apply defaults to users…** in Quick Actions (preview first, with undo). The default only applies when a user's settings are first created, so users who already have saved settings keep their own value until you apply it to them, or [lock it](enhanced-settings.md#user-settings-policy) for everyone.
+- **For all users:** in the plugin settings, enable **Disable Custom Subtitle Styles by default**, save, then use **Apply defaults to users…** in Quick Actions: select **Disable Custom Subtitle Styles** and choose **Follow my defaults for everyone selected** or **Overwrite with my current values** (preview first, with undo). Or [lock it](enhanced-settings.md#user-settings-policy) for everyone. A changed default reaches new users and existing users whose setting follows your default; other users keep their saved value until you apply defaults to them or lock the setting.
 
 ---
 

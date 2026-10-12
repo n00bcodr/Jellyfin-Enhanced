@@ -91,6 +91,7 @@ function buildPanel(t, serverOptions, { capabilities = ['settingsPatch'], failPa
       icon: () => '', IconName: new Proxy({}, { get: (target, name) => String(name) }), icons: { wrapEmoji: value => value },
       subtitlePresets: presets, fontSizePresets: presets, fontFamilyPresets: presets, subtitleTextEffectPresets: presets,
       getSubtitleTextShadow: () => 'none', decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alphaValue: 255 }),
+      getSubtitleColors: () => ({ text: '#FFFFFFFF', bg: '#00000000' }),
       internals: { enhancedUi: { GITHUB_REPO: 'owner/repo' } } },
     apiClient: {
       ajax: async (request) => {
@@ -193,6 +194,18 @@ test('"Use server default" sends a Follow operation, shows the default and runs 
   await h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
   await h.flush();
   assert.equal(h.requests.length, 1);
+});
+
+test('"Use server default" on a preset row redraws it from the default (je:setting-sync)', async t => {
+  const h = buildPanel(t, { values: { SelectedStylePresetIndex: 0 }, defaults: { SelectedStylePresetIndex: 2 }, chosen: ['SelectedStylePresetIndex'] });
+  const row = [...h.root.querySelectorAll('[data-setting-key]')].find(el => el.dataset.settingKey === 'selectedStylePresetIndex');
+  const synced = [];
+  row.addEventListener('je:setting-sync', () => synced.push(h.JE.currentSettings.selectedStylePresetIndex));
+  h.notesOf('#subtitle-style-presets-container')[0].querySelector('button').click();
+  await h.flush();
+  assert.deepEqual(h.requests.map(r => r.body), [{ Set: {}, Follow: ['SelectedStylePresetIndex'] }]);
+  assert.equal(h.JE.currentSettings.selectedStylePresetIndex, 2);
+  assert.ok(synced.length >= 1 && synced.every(value => value === 2), 'the row redraws with the default it now follows');
 });
 
 test('a failed "Use server default" leaves the row as it was and says so', async t => {

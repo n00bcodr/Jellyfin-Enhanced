@@ -253,6 +253,7 @@ function buildTemplate(t, translate = translateAll) {
     icon: () => '', IconName: new Proxy({}, { get: (target, name) => String(name) }), icons: { wrapEmoji: value => value },
     subtitlePresets: presets, fontSizePresets: presets, fontFamilyPresets: presets, subtitleTextEffectPresets: presets,
     getSubtitleTextShadow: () => 'none', decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alphaValue: 255 }),
+    getSubtitleColors: () => ({ text: '#FFFFFFFF', bg: '#00000000' }),
     internals: { enhancedUi: { GITHUB_REPO: 'owner/repo' } } }
   });
   t.after(() => h.close());

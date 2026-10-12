@@ -258,13 +258,44 @@
     /**
      * Sends the user's open batch now (after the earlier requests, in order).
      * @param {object} state Sync state.
+     * @param {boolean} [keepalive] The page is being hidden or unloaded: send it so that the
+     *   browser finishes the request after the page is gone (see postPatch).
      */
-    function sendBatch(state) {
+    function sendBatch(state, keepalive) {
         if (state.timer) { clearTimeout(state.timer); state.timer = null; }
         const batch = state.batch;
         if (!batch) return;
         state.batch = null;
-        state.chain = state.chain.then(() => postBatch(state, batch)).catch(() => {});
+        state.chain = state.chain.then(() => postBatch(state, batch, keepalive === true)).catch(() => {});
+    }
+
+    /**
+     * Posts a /patch body. While the page is being hidden or unloaded it goes out as a keepalive
+     * fetch, which the browser completes after the page is gone (the request ApiClient.ajax makes
+     * is cancelled with the page), signed like ApiClient's own requests; otherwise, or when the
+     * client cannot sign it, through ApiClient.ajax.
+     * @param {string} userId The user whose settings are saved.
+     * @param {string} body The JSON body.
+     * @param {boolean} keepalive Whether the page is going away.
+     * @returns {Promise<object>} The answer; rejects with an error carrying `status` on failure.
+     */
+    async function postPatch(userId, body, keepalive) {
+        const url = ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/settings.json/patch`);
+        if (keepalive && typeof fetch === 'function' && typeof ApiClient.setRequestHeaders === 'function') {
+            const headers = { 'Content-Type': 'application/json', accept: 'application/json' };
+            ApiClient.setRequestHeaders(headers);
+            let answer;
+            try {
+                answer = await fetch(url, { method: 'POST', headers, body, keepalive: true, credentials: 'same-origin' });
+            } catch (e) {
+                // Unloaded before the answer: the browser still delivers the request, so nothing to report.
+                if (_pageUnloading) throw Object.assign(new Error('The page was unloaded before the settings save was answered'), { unanswered: true });
+                throw e;
+            }
+            if (!answer.ok) throw Object.assign(new Error(`Settings save failed: ${answer.status}`), { status: answer.status });
+            return answer.json();
+        }
+        return ApiClient.ajax({ type: 'POST', url, data: body, contentType: 'application/json', dataType: 'json' });
     }
 
     /**
@@ -284,9 +315,10 @@
      * and settles its callers.
      * @param {object} state Sync state.
      * @param {{set: object, seqs: object, waiters: Array}} batch The merged deltas and their callers.
+     * @param {boolean} [keepalive] The page is being hidden or unloaded (see postPatch).
      * @returns {Promise<void>}
      */
-    async function postBatch(state, batch) {
+    async function postBatch(state, batch, keepalive = false) {
         const fail = (error) => {
             // The page keeps showing these values: the next refresh puts the server's back.
             for (const [key, value] of Object.entries(batch.set)) {
@@ -309,15 +341,9 @@
         const generation = state.generation;
         let response;
         try {
-            response = await ApiClient.ajax({
-                type: 'POST',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${state.userId}/settings.json/patch`),
-                data: JSON.stringify(batch.follow.length
-                    ? { Set: recase(batch.set, true), Follow: batch.follow.map(key => key.charAt(0).toUpperCase() + key.slice(1)) }
-                    : { Set: recase(batch.set, true) }),
-                contentType: 'application/json',
-                dataType: 'json'
-            });
+            response = await postPatch(state.userId, JSON.stringify(batch.follow.length
+                ? { Set: recase(batch.set, true), Follow: batch.follow.map(key => key.charAt(0).toUpperCase() + key.slice(1)) }
+                : { Set: recase(batch.set, true) }), keepalive);
         } catch (e) {
             if (e?.status === 404 || e?.status === 405) {
                 // The server was rolled back under this tab: use the whole-document route from now on.
@@ -549,8 +575,14 @@
         return { changed, stale };
     }
 
+    // A batch still waiting for its window would be lost with the page: send it now, as a
+    // request the browser finishes after the page is gone.
+    const flushAllBatches = () => Object.values(_sync).forEach(state => sendBatch(state, true));
+
     JE.internals = JE.internals || {};
-    JE.internals.settingsSync = { applyRefresh, refreshMark, hasFailedEdits };
+    // flush: sends every batch still waiting for its window now, for a caller saving while the page
+    // is hidden or unloaded (after this module's own pagehide flush already ran).
+    JE.internals.settingsSync = { applyRefresh, refreshMark, hasFailedEdits, flush: flushAllBatches };
 
     /**
      * Makes settings follow the server default again ("Use server default"): a Follow operation in
@@ -574,8 +606,10 @@
         return queuePatch(state, {}, Array.from(new Set(names)));
     };
 
-    // A batch still waiting for its window would be lost with the page: send it now.
-    const flushAllBatches = () => Object.values(_sync).forEach(sendBatch);
+    // Set from pagehide until the page is shown again (back/forward cache): see postPatch.
+    let _pageUnloading = false;
+    window.addEventListener('pagehide', () => { _pageUnloading = true; });
+    window.addEventListener('pageshow', () => { _pageUnloading = false; });
     window.addEventListener('pagehide', flushAllBatches);
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') flushAllBatches();
@@ -643,6 +677,11 @@
             }
             await postLegacy(fileName, settings, userId);
         } catch (e) {
+            if (e?.unanswered) {
+                // Sent as the page was unloaded (see postPatch): not a failure the user can act on.
+                if (throwOnError) throw e;
+                return;
+            }
             if (notifyOnError) toastSaveFailed();
             if (throwOnError) throw e;
             console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, e);

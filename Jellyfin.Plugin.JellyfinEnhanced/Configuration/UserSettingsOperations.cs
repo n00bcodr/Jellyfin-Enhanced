@@ -241,25 +241,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <param name="operationId">The operation id stamped on every change.</param>
         /// <param name="utcNow">The time of the run.</param>
         /// <param name="resetPanelTab">Also reset the panel tab, as the old reset did (legacy reset-all only).</param>
-        /// <returns>One outcome per user, in the order given; whether an undo record was written; and
-        /// whether a real run changed something but its undo record could not be saved.</returns>
-        public (List<UserSettingsOutcome> Outcomes, bool Recorded, bool UndoUnavailable) Run(PluginConfiguration config, IReadOnlyList<UserSettingDescriptor> keys, UserSettingsApplyMode mode, IEnumerable<UserSettingsTarget> users, bool dryRun, string operationId, DateTime utcNow, bool resetPanelTab = false)
+        /// <param name="stillCurrent">For a real run: checked once the run holds the gate that keeps
+        /// bulk operations apart; when it returns false nothing is changed and the run is refused
+        /// (the configuration it was given was replaced while it waited).</param>
+        /// <returns>One outcome per user, in the order given (none when refused); whether an undo
+        /// record was written; whether a real run changed something but its undo record could not be
+        /// saved; and whether the run was refused by <paramref name="stillCurrent"/>.</returns>
+        public (List<UserSettingsOutcome> Outcomes, bool Recorded, bool UndoUnavailable, bool Refused) Run(PluginConfiguration config, IReadOnlyList<UserSettingDescriptor> keys, UserSettingsApplyMode mode, IEnumerable<UserSettingsTarget> users, bool dryRun, string operationId, DateTime utcNow, bool resetPanelTab = false, Func<bool>? stillCurrent = null)
         {
             ArgumentNullException.ThrowIfNull(config);
             var outcomes = new List<UserSettingsOutcome>();
             if (dryRun)
             {
                 foreach (var user in users) outcomes.Add(RunForUser(config, keys, mode, user, dryRun: true, operationId, utcNow, resetPanelTab));
-                return (outcomes, false, false);
+                return (outcomes, false, false, false);
             }
 
             lock (RunGate)
             {
+                if (stillCurrent != null && !stillCurrent())
+                {
+                    return (outcomes, false, false, true);
+                }
+
                 foreach (var user in users) outcomes.Add(RunForUser(config, keys, mode, user, dryRun: false, operationId, utcNow, resetPanelTab));
                 var changed = outcomes.Where(o => o.Changes.Count > 0 || o.DocumentChanges.Count > 0).ToList();
                 if (changed.Count == 0)
                 {
-                    return (outcomes, false, false);
+                    return (outcomes, false, false, false);
                 }
 
                 var record = new UserSettingsOperationRecord
@@ -273,12 +282,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 try
                 {
                     _manager.SaveOperationRecord(operationId, record, KeepRecords);
-                    return (outcomes, true, false);
+                    return (outcomes, true, false, false);
                 }
                 catch (Exception ex)
                 {
                     _logger.Error($"Could not save the undo record for user settings operation {operationId}; its changes to {changed.Count} users cannot be undone: {ex.Message}");
-                    return (outcomes, false, true);
+                    return (outcomes, false, true, false);
                 }
             }
         }

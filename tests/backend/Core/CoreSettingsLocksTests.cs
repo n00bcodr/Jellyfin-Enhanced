@@ -249,13 +249,13 @@ public class CoreSettingsLocksTests : IDisposable
         Assert.Empty(Rejections(endpoints.Post("{\"AutoPipEnabled\":true}")));
         Assert.True(endpoints.OnDisk().Value<bool>("AutoPipEnabled"));
 
-        // Locking the key again forgets it.
+        // Locking the key again: it is no longer reported as unlocked.
         endpoints.Save(c => c.LockedUserSettings = ["AutoPipEnabled", "QualityTagsEnabled"]);
         Assert.Empty(RecentlyUnlockedSettings.Keys);
     }
 
     [Fact]
-    public void EveryValueALockEnforcedDuringItsLockPeriodIsStaleAfterTheUnlock()
+    public void EveryValueALockEnforcedIsStaleAfterTheUnlockAcrossLockPeriods()
     {
         using var endpoints = new Endpoints();
         endpoints.Save(c => { c.WatchProgressDefaultMode = "percentage"; c.LockedUserSettings = ["WatchProgressMode"]; });
@@ -274,12 +274,13 @@ public class CoreSettingsLocksTests : IDisposable
         Assert.Equal(new Dictionary<string, string> { ["WatchProgressMode"] = "stale" }, Rejections(endpoints.Post(secondTab.ToString())));
         Assert.Equal("remaining", endpoints.OnDisk().Value<string>("WatchProgressMode"));
 
-        // Locking again starts a new lock period: only what that one enforces is stale after the next unlock.
+        // Locking again keeps what the earlier locks enforced: after the next unlock both tabs are still stale.
         endpoints.Save(c => c.LockedUserSettings = ["WatchProgressMode"]);
+        Assert.Empty(RecentlyUnlockedSettings.Keys);
         endpoints.Save(c => c.LockedUserSettings = []);
         Assert.Equal(new Dictionary<string, string> { ["WatchProgressMode"] = "stale" }, Rejections(endpoints.Post(secondTab.ToString())));
-        Assert.Empty(Rejections(endpoints.Post(firstTab.ToString())));
-        Assert.Equal("percentage", endpoints.OnDisk().Value<string>("WatchProgressMode"));
+        Assert.Equal(new Dictionary<string, string> { ["WatchProgressMode"] = "stale" }, Rejections(endpoints.Post(firstTab.ToString())));
+        Assert.Equal("remaining", endpoints.OnDisk().Value<string>("WatchProgressMode"));
     }
 
     // ---- admin registry route

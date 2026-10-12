@@ -31,12 +31,13 @@ const camel = object => Object.fromEntries(Object.entries(object).map(([key, val
  * config.js on its own, signed in as user-a with a loaded settings document. `respond(request)`
  * answers each request (default: the patch applied to the server copy, all keys accepted).
  */
-function setup(t, { capabilities = ['settingsPatch'], document = served(), respond, pluginConfig = { ResolutionTagOrder: 4 } } = {}) {
+function setup(t, { capabilities = ['settingsPatch'], document = served(), respond, pluginConfig = { ResolutionTagOrder: 4 }, fetch, apiClient = {} } = {}) {
   const requests = [], toasts = [], events = [];
   const timers = manualTimers();
   let userId = 'user-a';
   let server = { ...document };
   const h = createHarness({
+    fetch,
     globals: { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout },
     JE: { pluginConfig, serverCapabilities: capabilities, userConfig: { settings: camel(document), settingsStatus: 'ok' },
       t: key => key, toast: message => toasts.push(message),
@@ -55,7 +56,8 @@ function setup(t, { capabilities = ['settingsPatch'], document = served(), respo
         }
         server = { ...entry.body };
         return undefined;
-      }
+      },
+      ...apiClient
     }
   });
   t.after(() => h.close());
@@ -292,6 +294,55 @@ test('leaving the page sends a waiting batch at once', async t => {
   h.document.dispatchEvent(new h.window.Event('visibilitychange'));
   await hidden;
   assert.equal(h.requests.length, 2);
+});
+
+test('a batch sent as the page goes away is a signed keepalive request, and its answer is still taken', async t => {
+  const sent = [];
+  const h = setup(t, {
+    apiClient: { setRequestHeaders: headers => { headers.Authorization = 'MediaBrowser Token="t"'; } },
+    fetch: async (url, init) => {
+      sent.push({ url: new URL(url).pathname, init: { ...init, body: JSON.parse(init.body) } });
+      return { ok: true, status: 200, json: async () => ({ success: true, Rejected: [], Settings: served({ AutoPipEnabled: true }), Meta: { Chosen: ['AutoPipEnabled'] } }) };
+    }
+  });
+  h.JE.currentSettings.autoPipEnabled = true;
+  const saved = h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  h.window.dispatchEvent(new h.window.Event('pagehide'));
+  await saved;
+  assert.equal(h.requests.length, 0, 'not through ApiClient.ajax, whose request the browser cancels with the page');
+  assert.deepEqual(sent.map(r => [r.url, r.init.method, r.init.keepalive, r.init.headers.Authorization, r.init.body]),
+    [['/JellyfinEnhanced/user-settings/user-a/settings.json/patch', 'POST', true, 'MediaBrowser Token="t"', { Set: { AutoPipEnabled: true } }]]);
+  assert.equal(h.JE.userConfig.settings.autoPipEnabled, true, 'the answer is the new baseline');
+
+  // An ordinary save (the window ran out) still uses ApiClient.ajax.
+  h.JE.currentSettings.autoPauseEnabled = false;
+  const later = h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  h.timers.runAll();
+  await later;
+  assert.equal(h.requests.length, 1);
+  assert.equal(sent.length, 1);
+});
+
+test('a keepalive save cut off by the unload is not reported as failed', async t => {
+  const h = setup(t, {
+    apiClient: { setRequestHeaders: () => {} },
+    fetch: async () => { throw new TypeError('Failed to fetch'); }
+  });
+  h.JE.currentSettings.autoPipEnabled = true;
+  const saved = h.JE.saveUserSettings('settings.json', h.JE.currentSettings, { notifyOnError: true });
+  h.window.dispatchEvent(new h.window.Event('pagehide'));
+  await saved; // resolves: no console error (the harness fails on one), no toast
+  assert.deepEqual(h.toasts, []);
+
+  // Back from the back/forward cache, a failure while merely hidden is reported again.
+  h.window.dispatchEvent(new h.window.Event('pageshow'));
+  h.expectConsoleError(/Failed to save settings\.json/);
+  h.JE.currentSettings.autoPauseEnabled = false;
+  const hidden = h.JE.saveUserSettings('settings.json', h.JE.currentSettings, { notifyOnError: true });
+  Object.defineProperty(h.document, 'visibilityState', { configurable: true, value: 'hidden' });
+  h.document.dispatchEvent(new h.window.Event('visibilitychange'));
+  await hidden;
+  assert.equal(h.toasts.length, 1);
 });
 
 test('edits waiting when the user switches are dropped, not sent for the next user', async t => {

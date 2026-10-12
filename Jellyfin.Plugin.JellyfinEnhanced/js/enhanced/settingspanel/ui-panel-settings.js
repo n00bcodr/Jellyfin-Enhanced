@@ -183,7 +183,7 @@
         const qualitySubGroup = document.getElementById('qualityTagsSubToggles');
         const qualitySubExpander = document.getElementById('qualityTagsSubToggleExpander');
         if (qualityMasterToggle && qualitySubWrap) {
-            qualityMasterToggle.addEventListener('change', () => {
+            const showQualitySubWrap = () => {
                 qualitySubWrap.style.display = qualityMasterToggle.checked ? 'block' : 'none';
                 // Collapse the category list when the feature is turned off so it
                 // returns collapsed the next time the user enables it
@@ -191,7 +191,10 @@
                     qualitySubGroup.style.display = 'none';
                     qualitySubExpander.setAttribute('aria-expanded', 'false');
                 }
-            });
+            };
+            qualityMasterToggle.addEventListener('change', showQualitySubWrap);
+            // A value shown without a change event (a lock, another device): see ui-panel-provenance.js.
+            qualityMasterToggle.closest('[data-setting-key]')?.addEventListener('je:setting-sync', showQualitySubWrap);
         }
         // Expand or collapse the 6 category rows when the user clicks the chevron.
         // The chevron rotation is driven by CSS via the aria-expanded attribute.
@@ -396,13 +399,15 @@
         const ratingSubGroup = document.getElementById('ratingTagsSubToggles');
         const ratingSubExpander = document.getElementById('ratingTagsSubToggleExpander');
         if (ratingMasterToggle && ratingSubWrap) {
-            ratingMasterToggle.addEventListener('change', () => {
+            const showRatingSubWrap = () => {
                 ratingSubWrap.style.display = ratingMasterToggle.checked ? 'block' : 'none';
                 if (!ratingMasterToggle.checked && ratingSubGroup && ratingSubExpander) {
                     ratingSubGroup.style.display = 'none';
                     ratingSubExpander.setAttribute('aria-expanded', 'false');
                 }
-            });
+            };
+            ratingMasterToggle.addEventListener('change', showRatingSubWrap);
+            ratingMasterToggle.closest('[data-setting-key]')?.addEventListener('je:setting-sync', showRatingSubWrap);
         }
         if (ratingSubExpander && ratingSubGroup) {
             ratingSubExpander.addEventListener('click', () => {
@@ -556,13 +561,18 @@
         const COLOUR_SAVE_DELAY_MS = 300;
         let colourSaveTimer = null;
         let colourSaveEpoch = 0;
-        /** Saves the colours now if a save is pending for the user who made the change. */
-        const flushColourSave = () => {
+        /**
+         * Saves the colours now if a save is pending for the user who made the change.
+         * @param {boolean} [sendNow] Also send the save at once instead of after the settings
+         *   merge window (the page is being hidden or unloaded and its timers may never run).
+         */
+        const flushColourSave = (sendNow) => {
             if (!colourSaveTimer) return;
             clearTimeout(colourSaveTimer);
             colourSaveTimer = null;
             if (JE.session && !JE.session.isCurrent(colourSaveEpoch)) return;
             JE.saveUserSettings('settings.json', JE.currentSettings, PANEL_SAVE_OPTIONS);
+            if (sendNow === true) JE.internals.settingsSync?.flush?.();
         };
         /** (Re)starts the delay before the pending colour save. */
         const scheduleColourSave = () => {
@@ -570,15 +580,17 @@
             colourSaveEpoch = JE.session ? JE.session.getEpoch() : 0;
             colourSaveTimer = setTimeout(flushColourSave, COLOUR_SAVE_DELAY_MS);
         };
-        /** Flushes when the tab is hidden (navigation, reload, app switch). */
+        /** Flushes and sends at once when the page is unloaded. */
+        const flushColourSaveOnPagehide = () => flushColourSave(true);
+        /** Flushes and sends at once when the tab is hidden (navigation, reload, app switch). */
         const flushColourSaveWhenHidden = () => {
-            if (document.visibilityState === 'hidden') flushColourSave();
+            if (document.visibilityState === 'hidden') flushColourSave(true);
         };
         if (typeof ctx.onPanelClose === 'function') {
-            window.addEventListener('pagehide', flushColourSave);
+            window.addEventListener('pagehide', flushColourSaveOnPagehide);
             document.addEventListener('visibilitychange', flushColourSaveWhenHidden);
             ctx.onPanelClose(() => {
-                window.removeEventListener('pagehide', flushColourSave);
+                window.removeEventListener('pagehide', flushColourSaveOnPagehide);
                 document.removeEventListener('visibilitychange', flushColourSaveWhenHidden);
                 flushColourSave();
             });
@@ -587,8 +599,35 @@
         [customTextColorPicker, customTextAlpha, customBgColorPicker, customBgAlpha].forEach((control) => {
             if (!control) return;
             control.addEventListener('input', updateCustomSubtitleColors);
-            control.addEventListener('change', flushColourSave);
+            control.addEventListener('change', () => flushColourSave());
         });
+
+        // A style shown without a click (a lock, a followed server default, another device) can
+        // bring other colours (JE.getSubtitleColors): show them in the pickers and previews and on
+        // a playing video, without saving them.
+        const showEffectiveSubtitleColors = () => {
+            if (colourSaveTimer) return; // a colour edit not saved yet stays on screen
+            const { text, bg } = JE.getSubtitleColors();
+            if (customTextColorPicker && customTextAlpha) {
+                const decoded = JE.decodeSubtitleColor(text, { fallbackSwatch: '#FFFFFF', fallbackAlphaValue: 255 });
+                customTextColorPicker.value = decoded.swatch;
+                customTextAlpha.value = decoded.alphaValue;
+            }
+            if (customBgColorPicker && customBgAlpha) {
+                const decoded = JE.decodeSubtitleColor(bg, { fallbackSwatch: '#000000', fallbackAlphaValue: 0 });
+                customBgColorPicker.value = decoded.swatch;
+                customBgAlpha.value = decoded.alphaValue;
+            }
+            ['subtitleColorPreview', 'subtitlePositionPreview'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.style.color = text;
+                el.style.backgroundColor = bg;
+            });
+            syncPreviewTextShadow(bg);
+            JE.applySavedStylesWhenReady();
+        };
+        document.getElementById('subtitle-style-presets-container')?.closest('[data-setting-key]')?.addEventListener('je:setting-sync', showEffectiveSubtitleColors);
 
         // --- Subtitle position drag grid ---
         const posGrid = document.getElementById('subtitlePositionGrid');
@@ -845,9 +884,8 @@
                         const fontFamilyIndex = JE.currentSettings.selectedFontFamilyPresetIndex ?? 0;
                         const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
 
-                        // Use saved custom colors
-                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
-                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
+                        // The colours in effect
+                        const { text: textColor, bg: bgColor } = JE.getSubtitleColors();
                         const textShadow = JE.getSubtitleTextShadow(bgColor);
 
                         updatePositionPreviewFont(selectedPreset, JE.fontFamilyPresets[fontFamilyIndex]);
@@ -858,9 +896,8 @@
                         const fontSizeIndex = JE.currentSettings.selectedFontSizePresetIndex ?? 2;
                         const fontSize = JE.fontSizePresets[fontSizeIndex].size;
 
-                        // Use saved custom colors
-                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
-                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
+                        // The colours in effect
+                        const { text: textColor, bg: bgColor } = JE.getSubtitleColors();
                         const textShadow = JE.getSubtitleTextShadow(bgColor);
 
                         updatePositionPreviewFont(JE.fontSizePresets[fontSizeIndex], selectedPreset);
@@ -873,9 +910,8 @@
                         const fontSize = JE.fontSizePresets[fontSizeIndex].size;
                         const fontFamily = JE.fontFamilyPresets[fontFamilyIndex].family;
 
-                        // Use saved custom colors
-                        const textColor = JE.currentSettings.customSubtitleTextColor || '#FFFFFFFF';
-                        const bgColor = JE.currentSettings.customSubtitleBgColor || '#00000000';
+                        // The colours in effect
+                        const { text: textColor, bg: bgColor } = JE.getSubtitleColors();
 
                         internal.syncSubtitlePreviewTextShadow?.(bgColor);
                         JE.applySubtitleStyles(textColor, bgColor, fontSize, fontFamily, JE.getSubtitleTextShadow(bgColor, presetIndex));

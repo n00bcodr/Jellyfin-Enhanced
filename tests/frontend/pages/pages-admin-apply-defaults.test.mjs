@@ -154,7 +154,7 @@ test('"Make follow default" follows one key for one user with the overview epoch
   h.page.querySelector('.je-save-dock').classList.add('je-dirty');
   row.nextElementSibling.querySelector('.je-policy-follow-btn').click();
   await h.settle();
-  assert.match(row.nextElementSibling.querySelector('.je-policy-users-note').textContent, /Save your changes first/);
+  assert.match(row.nextElementSibling.querySelector('.je-policy-users-message').textContent, /Save your changes first/);
   assert.equal(h.requests.filter(r => r.path.endsWith('/apply')).length, 0);
 
   h.page.querySelector('.je-save-dock').classList.remove('je-dirty');
@@ -302,7 +302,7 @@ test('"Make follow default" reports a user the run skipped, failed or did not ne
   row.querySelector('.je-policy-users-toggle').click();
   await h.settle();
   const list = row.nextElementSibling;
-  const note = list.querySelector('.je-policy-users-note');
+  const note = list.querySelector('.je-policy-users-message');
   const expected = [
     /^bob: not changed, settings file is corrupt, left untouched\.$/,
     /^bob: not changed \(the file could not be read or written\)\.$/,
@@ -317,8 +317,66 @@ test('"Make follow default" reports a user the run skipped, failed or did not ne
     assert.match(note.textContent, message);
     assert.equal(button.disabled, false);
     assert.equal(list.querySelector('tbody tr td:nth-of-type(2)').textContent, 'Their own choice', 'the state is not shown as following');
-    assert.equal(note.querySelector('.je-apply-undo'), null);
+    assert.equal(list.querySelector('.je-apply-undo'), null);
   }
+});
+
+test('each "Make follow default" keeps its own Undo: a later follow, a message or closing the list does not remove it', async t => {
+  const bob = 'b'.repeat(32);
+  const alice = 'a'.repeat(32);
+  let undoId = 0;
+  const h = setup(t, {
+    dismissed: true,
+    apply: body => applyAnswer(body, { Skipped: [], Failed: [], UndoId: '20261012000000000-abcdef1' + (++undoId),
+      PerUser: [{ Id: body.UserIds[0], Name: body.UserIds[0] === bob ? 'bob' : 'alice', Changed: ['AutoPipEnabled'], Visible: [], Kept: [], Documents: [] }] }),
+    perUser: () => ({ Key: 'AutoPipEnabled', Default: false, Locked: false, Users: [
+      { UserId: bob, Name: 'bob', Live: true, Orphan: false, Value: true, State: 'Chosen', SameAsDefault: false },
+      { UserId: alice, Name: 'alice', Live: true, Orphan: false, Value: true, State: 'Chosen', SameAsDefault: false }
+    ] })
+  });
+  await h.policy.decorate(h.page);
+  await h.openDetails();
+  // The table is rendered again further down: always the current row.
+  const row = { get nextElementSibling() { return h.document.querySelector('#jePolicyRow-AutoPipEnabled').nextElementSibling; },
+    querySelector: selector => h.document.querySelector('#jePolicyRow-AutoPipEnabled').querySelector(selector) };
+  const toggle = () => row.querySelector('.je-policy-users-toggle');
+  toggle().click();
+  await h.settle();
+  const followButton = name => [...row.nextElementSibling.querySelectorAll('tbody tr')].find(tr => tr.firstElementChild.textContent === name).querySelector('.je-policy-follow-btn');
+  followButton('bob').click();
+  await h.settle();
+  followButton('alice').click();
+  await h.settle();
+  const lines = () => [...row.nextElementSibling.querySelectorAll('.je-policy-users-note .je-policy-follow-line')];
+  assert.deepEqual(lines().map(line => line.firstChild.textContent), ['bob now follows your default for Auto Picture-in-Picture on tab switch. ', 'alice now follows your default for Auto Picture-in-Picture on tab switch. ']);
+  assert.equal(lines().filter(line => line.querySelector('.je-apply-undo')).length, 2);
+
+  // A refused follow says so in the message line; the Undo buttons stay.
+  h.page.querySelector('.je-save-dock').classList.add('je-dirty');
+  followButton('bob').click();
+  await h.settle();
+  assert.match(row.nextElementSibling.querySelector('.je-policy-users-message').textContent, /Save your changes first/);
+  assert.equal(lines().filter(line => line.querySelector('.je-apply-undo')).length, 2);
+  h.page.querySelector('.je-save-dock').classList.remove('je-dirty');
+
+  // Closed and opened again, and after the table is rendered again: still there.
+  toggle().click();
+  await h.settle();
+  toggle().click();
+  await h.settle();
+  assert.equal(lines().length, 2);
+  await h.policy.decorate(h.page);
+  await h.openDetails();
+  toggle().click();
+  await h.settle();
+  assert.equal(lines().length, 2);
+
+  // Bob's Undo undoes bob's run.
+  lines()[0].querySelector('.je-apply-undo').click();
+  await h.settle();
+  assert.ok(h.requests.some(r => r.path === '/JellyfinEnhanced/admin/user-settings/undo/20261012000000000-abcdef11'));
+  assert.match(lines()[0].textContent, /Undone: 40 restored/);
+  assert.ok(lines()[1].querySelector('.je-apply-undo'), 'alice keeps hers');
 });
 
 test('the dialog previews the saved settings, applies with the preview\'s epoch, and undoes', async t => {
@@ -367,6 +425,37 @@ test('the dialog previews the saved settings, applies with the preview\'s epoch,
 
   // Escape closes the dialog.
   h.dialog().closest('.je-apply-backdrop').dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(h.dialog(), null);
+});
+
+test('while a real run is in flight the dialog cannot be closed, so its result and Undo are shown', async t => {
+  const gate = deferred();
+  const h = setup(t, {
+    dismissed: true,
+    apply: async (body) => {
+      if (!body.DryRun) await gate.promise;
+      return applyAnswer(body);
+    }
+  });
+  await h.policy.decorate(h.page);
+  h.policy.openApplyDialog({ mode: 'FollowAll' });
+  await h.settle();
+  h.button('Preview').click();
+  await h.settle();
+  h.button('Apply').click();
+  await h.settle();
+  assert.equal(h.button('Close').disabled, true);
+  h.button('Close').click();
+  h.dialog().closest('.je-apply-backdrop').dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(h.dialog(), 'still open while the run is in flight');
+
+  gate.resolve();
+  await h.settle();
+  const summary = h.dialog().querySelector('.je-apply-summary');
+  assert.match(summary.textContent, /^2 users now follow your defaults/);
+  assert.ok(summary.querySelector('.je-apply-undo'));
+  assert.equal(h.button('Close').disabled, false);
+  h.button('Close').click();
   assert.equal(h.dialog(), null);
 });
 

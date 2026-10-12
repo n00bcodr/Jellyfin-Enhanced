@@ -64,7 +64,7 @@ Your administrator sets the server default for most settings. Under a setting, t
 
 An administrator can lock a setting so that every user gets the server default. A locked setting is shown greyed out with the value in effect and the note **Set by your administrator.** If your own value was different, the note adds **Your choice (On) comes back if this is unlocked.** Settings that also change poster images in native TV and phone apps say so on a second line. Locks apply to administrators' own panels too.
 
-The lock also reaches outside the panel: the watch-progress chip on item pages shows the locked mode and can't be switched, and opening the reviews section is not remembered.
+The lock also reaches outside the panel: the watch-progress chip on item pages shows the locked mode and can't be switched, and opening the reviews section is not remembered. A locked display language (or one that follows the server default) becomes the language of this browser from the next page load. A locked subtitle style (or one that follows the server default) uses that style's colours, unless you picked your own text and background colours.
 
 ### When settings can't be loaded
 
@@ -118,7 +118,7 @@ Many settings on the plugin page are **user defaults**: the value each user star
 
 ### Apply defaults to users…
 
-**Apply defaults to users…** (in the policy section, and in **Overview** → Quick Actions) replaces "Overwrite everyone's personal settings". It always uses your *saved* settings, so it is disabled until you save pending changes.
+**Apply defaults to users…** (in the policy section, and in **Overview** → Quick Actions) replaces "Overwrite everyone's personal settings". It always uses your *saved* settings, so **Preview** and **Apply** in the dialog stay disabled until you save pending changes.
 
 ![Apply defaults to users dialog with a preview](../images/apply-defaults-to-users.png)
 

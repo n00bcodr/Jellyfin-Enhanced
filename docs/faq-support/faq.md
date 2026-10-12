@@ -401,7 +401,7 @@ See [Customizable Subtitles](../enhanced/enhanced-features.md#customizable-subti
 
 ### How do I turn off subtitle styling and use Jellyfin's own?
 
-Enable **Disable Custom Subtitle Styles** in the Jellyfin Enhanced panel → Settings and reload the page. Your Jellyfin **User Preferences** → **Subtitles** settings then apply unchanged. To do it for every user, enable **Disable Custom Subtitle Styles by default** in the plugin settings, save, then use **Apply defaults to users…** in Quick Actions (choose the setting and **Follow my defaults for everyone selected** or **Overwrite with my current values**; you see a preview first and can undo), or lock it in the [User settings policy](../enhanced/enhanced-settings.md#user-settings-policy). The default alone only applies to users who have no saved settings yet.
+Enable **Disable Custom Subtitle Styles** in the Jellyfin Enhanced panel → Settings and reload the page. Your Jellyfin **User Preferences** → **Subtitles** settings then apply unchanged. To do it for every user, enable **Disable Custom Subtitle Styles by default** in the plugin settings, save, then use **Apply defaults to users…** in Quick Actions (choose the setting and **Follow my defaults for everyone selected** or **Overwrite with my current values**; you see a preview first and can undo), or lock it in the [User settings policy](../enhanced/enhanced-settings.md#user-settings-policy). A changed default alone reaches new users and existing users whose setting follows your default; other users keep their saved value until you apply defaults to them or lock the setting.
 
 ### Can I change tag positions?
 

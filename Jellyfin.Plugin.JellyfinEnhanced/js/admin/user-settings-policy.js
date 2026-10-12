@@ -40,7 +40,8 @@
         submitted: null,     // { changes, locks }: the edit counter and the list when applyLocks() last built a save
         registry: [],        // every registry entry with an admin default (the dialog's settings)
         overview: null,      // promise of the last overview answer, dropped after every change
-        dialog: null         // the open "Apply defaults to users" dialog's state
+        dialog: null,        // the open "Apply defaults to users" dialog's state
+        followNotes: new Map() // key -> the per-user list's follow lines (with their Undo), kept while the page stays
     };
 
     const api = {
@@ -348,6 +349,7 @@
         const body = page.querySelector('#jeUserSettingsPolicyTable tbody');
         if (!body) throw new Error('policy table missing');
         const previous = state.page === page ? state.byKey : new Map();
+        if (state.page !== page) state.followNotes = new Map();
         state.page = page;
         state.registry = registry.filter(entry => entry && typeof entry.Key === 'string');
         state.entries = state.registry.filter(entry => entry.Lockable === true);
@@ -799,14 +801,14 @@
         const answer = await request('GET', OVERVIEW_PATH + '/' + encodeURIComponent(item.entry.Key));
         if (!listRow.isConnected || listRow.dataset.jeLoad !== load) return;
         if (answer.status !== 200 || !answer.body || !Array.isArray(answer.body.Users)) {
-            const note = cell.querySelector('.je-policy-users-note');
-            if (!note) {
+            const message = cell.querySelector('.je-policy-users-message');
+            if (!message) {
                 cell.textContent = 'The users could not be loaded.';
+                const kept = state.followNotes.get(item.entry.Key);
+                if (kept && kept.childNodes.length) cell.appendChild(kept);
                 return;
             }
-            const line = document.createElement('div');
-            line.textContent = 'The list could not be refreshed: close it and open it again.';
-            note.appendChild(line);
+            message.textContent = 'The list could not be refreshed: close it and open it again.';
             return;
         }
         renderUserList(page, cell, item, answer.body);
@@ -828,14 +830,18 @@
 
     /**
      * Renders one setting's users: name, value and state, with "Make follow default" where the user
-     * has something else (values and names via textContent only). A re-render keeps the list's note.
+     * has something else (values and names via textContent only). Below the table: a line for each
+     * follow made from this list, with its own Undo, kept across re-renders and when the list is
+     * closed and opened again or the table is rendered again (state.followNotes); and a message
+     * line that later messages replace.
      * @param {Element} page The admin page.
      * @param {Element} cell The list cell.
      * @param {object} item The policy row's state.
      * @param {object} data The overview/{key} answer.
      */
     function renderUserList(page, cell, item, data) {
-        let note = cell.querySelector('.je-policy-users-note');
+        let note = state.followNotes.get(item.entry.Key) || null;
+        let message = cell.querySelector('.je-policy-users-message');
         cell.textContent = '';
         const table = document.createElement('table');
         table.className = 'je-policy-users-table';
@@ -880,12 +886,18 @@
         });
         table.appendChild(body);
         cell.appendChild(table);
+        if (!message) {
+            message = document.createElement('div');
+            message.className = 'je-policy-users-message';
+            message.setAttribute('role', 'status');
+        }
         if (!note) {
             note = document.createElement('div');
             note.className = 'je-policy-users-note';
             note.setAttribute('role', 'status');
+            state.followNotes.set(item.entry.Key, note);
         }
-        cell.appendChild(note);
+        cell.append(message, note);
     }
 
     /**
@@ -901,10 +913,12 @@
      */
     async function followForUser(page, cell, item, user, button, defaultValue) {
         const note = cell.querySelector('.je-policy-users-note');
+        const message = cell.querySelector('.je-policy-users-message');
         if (pageIsDirty(page)) {
-            note.textContent = 'Save your changes first: this uses your saved defaults.';
+            message.textContent = 'Save your changes first: this uses your saved defaults.';
             return;
         }
+        message.textContent = '';
         button.disabled = true;
         const overview = await loadOverview();
         const answer = await request('POST', APPLY_PATH, {
@@ -912,13 +926,13 @@
             ConfigEpoch: overview && overview.ConfigEpoch
         });
         if (answer.status === 409) {
-            note.textContent = 'Your settings were saved since this list was loaded. Close the list and open it again.';
+            message.textContent = 'Your settings were saved since this list was loaded. Close the list and open it again.';
             state.overview = null;
             return;
         }
         if (answer.status !== 200 || !answer.body) {
             button.disabled = false;
-            note.textContent = 'That did not work. Check the server log.';
+            message.textContent = 'That did not work. Check the server log.';
             return;
         }
         const result = answer.body;
@@ -928,15 +942,19 @@
             button.disabled = false;
             const skipped = (result.Skipped || []).find(sameUser);
             const failed = (result.Failed || []).find(sameUser);
-            note.textContent = skipped ? userLabel(user) + ': not changed, ' + (SKIP_TEXT[skipped.Reason] || String(skipped.Reason)) + '.'
+            message.textContent = skipped ? userLabel(user) + ': not changed, ' + (SKIP_TEXT[skipped.Reason] || String(skipped.Reason)) + '.'
                 : failed ? userLabel(user) + ': not changed (' + (FAIL_TEXT[failed.Reason] || String(failed.Reason)) + ').'
                     : 'Nothing changed for ' + userLabel(user) + ': this setting changed since the list was loaded. Close the list and open it again.';
             overviewChanged();
             return;
         }
-        note.textContent = userLabel(user) + ' now follows your default for ' + item.name + '. ';
-        if (result.UndoId) note.appendChild(undoButton(result.UndoId, note));
-        else if (result.UndoUnavailable) note.appendChild(document.createTextNode('This cannot be undone: the undo record could not be saved. Check the server log.'));
+        // One line per follow, each with its own Undo: a later follow does not take an earlier one's away.
+        const line = document.createElement('div');
+        line.className = 'je-policy-follow-line';
+        line.textContent = userLabel(user) + ' now follows your default for ' + item.name + '. ';
+        if (result.UndoId) line.appendChild(undoButton(result.UndoId, line));
+        else if (result.UndoUnavailable) line.appendChild(document.createTextNode('This cannot be undone: the undo record could not be saved. Check the server log.'));
+        note.appendChild(line);
         // Until the list is reloaded (overviewChanged), the row shows the default it now follows.
         const userRow = button.closest('tr');
         userRow.querySelector('td:nth-of-type(1)').textContent = describeValue(item.control, defaultValue);
@@ -1215,7 +1233,7 @@
         dialog.append(title, intro, dirty, settingsSet, usersSet, modeSet, summary, buttons);
         page.appendChild(backdrop);
 
-        const dialogState = { backdrop, opener, preview: null, busy: false, timer: 0, signature: '' };
+        const dialogState = { backdrop, opener, preview: null, busy: false, applying: false, timer: 0, signature: '' };
         state.dialog = dialogState;
 
         /** @returns {{Keys: string[], UserIds: (string[]|null), Mode: string}} The current selection. */
@@ -1251,6 +1269,8 @@
             const empty = current.Keys.length === 0 || (current.UserIds !== null && current.UserIds.length === 0);
             previewButton.disabled = dialogState.busy || isDirty || empty;
             applyButton.disabled = dialogState.busy || isDirty || empty || !dialogState.preview;
+            // A real run cannot be cancelled: the dialog stays until it reports the result and its Undo.
+            closeButton.disabled = dialogState.applying;
         }
 
         previewButton.addEventListener('click', runPreview);
@@ -1259,7 +1279,7 @@
         backdrop.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') {
                 event.preventDefault();
-                closeApplyDialog();
+                if (!dialogState.applying) closeApplyDialog();
             } else if (event.key === 'Tab') {
                 const focusable = Array.from(dialog.querySelectorAll('button, input, summary')).filter(element => !element.disabled && element.offsetParent !== null);
                 if (!focusable.length) return;
@@ -1312,12 +1332,18 @@
                 return updateButtons();
             }
             dialogState.busy = true;
+            dialogState.applying = true;
             summary.textContent = 'Applying…';
             updateButtons();
             const answer = await request('POST', APPLY_PATH, Object.assign({ DryRun: false, ConfigEpoch: preview.ConfigEpoch }, JSON.parse(dialogState.signature)));
             dialogState.busy = false;
+            dialogState.applying = false;
             dialogState.preview = null;
-            if (state.dialog !== dialogState) return;
+            if (state.dialog !== dialogState) {
+                // Closed some other way (the page went away): the counts still have to catch up.
+                if (answer.status === 200) overviewChanged();
+                return;
+            }
             if (answer.status === 409) {
                 summary.textContent = 'Your settings were saved since the preview. Preview again before applying.';
                 return updateButtons();

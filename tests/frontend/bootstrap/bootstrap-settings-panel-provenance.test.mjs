@@ -33,6 +33,7 @@ function buildPanel(t, { meta = {}, settings = {}, t: tr = translate } = {}) {
       icon: () => '', IconName: new Proxy({}, { get: (target, name) => String(name) }), icons: { wrapEmoji: value => value },
       subtitlePresets: presets, fontSizePresets: presets, fontFamilyPresets: presets, subtitleTextEffectPresets: presets,
       getSubtitleTextShadow: () => 'none', decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alphaValue: 255 }),
+      getSubtitleColors: () => ({ text: '#FFFFFFFF', bg: '#00000000' }),
       internals: { enhancedUi: { GITHUB_REPO: 'owner/repo' } } }
   });
   t.after(() => h.close());
@@ -47,6 +48,9 @@ function buildPanel(t, { meta = {}, settings = {}, t: tr = translate } = {}) {
   const keyed = key => [...root.querySelectorAll('[data-setting-key]')].filter(el => el.dataset.settingKey === key);
   return { ...h, root, decorate, keyed, close: () => closers.forEach(fn => fn()) };
 }
+
+/** The subtitle colours in effect, as a plain object. */
+const plainColors = h => ({ ...h.JE.getSubtitleColors() });
 
 /** Controls a keyed element owns (not those of a nested keyed element). */
 const ownControls = element => element.matches('input, select, textarea, button') ? [element]
@@ -170,6 +174,59 @@ test('a lock that arrives on an open panel moves preset and position selections 
   assert.deepEqual(pressed(), ['true', 'false', 'true', 'false']);
   assert.equal(h.root.querySelector('#autoPipToggle').checked, true);
   assert.equal(h.root.querySelector('#autoPipToggle').disabled, false);
+});
+
+test('a lock that switches quality or rating tags on or off on an open panel shows or hides their sub-section', t => {
+  const h = buildPanel(t, { settings: { qualityTagsEnabled: true, ratingTagsEnabled: false } });
+  h.load('enhanced/settingspanel/ui-panel-settings.js');
+  h.JE.saveUserSettings = async () => {};
+  h.JE.internals.enhancedUi.wireSettingsListeners({ createToast: () => '', resetAutoCloseTimer() {} });
+  h.decorate();
+  const shown = () => ['#qualityTagsSubWrap', '#ratingTagsSubWrap'].map(id => h.root.querySelector(id).style.display);
+  assert.deepEqual(shown(), ['block', 'none']);
+  const answer = (settings, locked) => {
+    Object.assign(h.JE.currentSettings, settings);
+    h.JE.userConfig.settingsMeta = { locked };
+    h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: [], rejected: [], meta: true } }));
+  };
+  answer({ qualityTagsEnabled: false, ratingTagsEnabled: true }, ['qualityTagsEnabled', 'ratingTagsEnabled']);
+  assert.deepEqual(shown(), ['none', 'block']);
+  answer({ qualityTagsEnabled: true, ratingTagsEnabled: false }, []);
+  assert.deepEqual(shown(), ['block', 'none']);
+});
+
+test('a locked or followed subtitle style applies its preset\'s colours, unless the user picked custom colours', t => {
+  const h = buildPanel(t, { settings: { selectedStylePresetIndex: 0, customSubtitleTextColor: '#FFFFFFFF', customSubtitleBgColor: '#00000000', usingCustomColors: false } });
+  h.load('enhanced/player/subtitles.js'); // the real presets and JE.getSubtitleColors
+  h.load('enhanced/settingspanel/ui-panel-settings.js');
+  h.JE.saveUserSettings = async () => { throw new Error('nothing is saved'); };
+  h.window.ApiClient.ajax = async () => ({ Items: [] });
+  h.JE.internals.enhancedUi.wireSettingsListeners({ createToast: () => '', resetAutoCloseTimer() {} });
+  h.JE.internals.enhancedUi.wireMiscSettingsControls({ help: h.root, primaryAccentColor: 'rgb(1, 2, 3)', resetAutoCloseTimer() {} });
+  h.decorate();
+  const preview = () => h.root.querySelector('#subtitleColorPreview').style.backgroundColor;
+  const answer = (settings, meta) => {
+    Object.assign(h.JE.currentSettings, settings);
+    h.JE.userConfig.settingsMeta = meta;
+    h.document.dispatchEvent(new h.window.CustomEvent('je:settings-changed', { detail: { keys: ['selectedStylePresetIndex'], rejected: [], meta: true } }));
+  };
+  assert.deepEqual(plainColors(h), { text: '#FFFFFFFF', bg: '#00000000' });
+
+  // Locked to "Netflix Style": its colours, in the preview and the pickers too.
+  answer({ selectedStylePresetIndex: 2 }, { locked: ['selectedStylePresetIndex'] });
+  assert.deepEqual(plainColors(h), { text: '#FFFFFFFF', bg: '#000000B2' });
+  assert.match(preview(), /^rgba\(0, 0, 0, 0\.69/);
+  assert.equal(h.root.querySelector('#customSubtitleBgAlpha').value, '178');
+  // Unlocked: the user's own colours again.
+  answer({ selectedStylePresetIndex: 0 }, { locked: [] });
+  assert.deepEqual(plainColors(h), { text: '#FFFFFFFF', bg: '#00000000' });
+  assert.match(preview(), /^rgba\(0, 0, 0, 0\)$/);
+  // Following the server default ("Cinema Yellow") works the same way.
+  answer({ selectedStylePresetIndex: 3 }, { following: ['selectedStylePresetIndex'] });
+  assert.deepEqual(plainColors(h), { text: '#FFFF00FF', bg: '#000000B2' });
+  // Custom colours stay the user's.
+  h.JE.currentSettings.usingCustomColors = true;
+  assert.deepEqual(plainColors(h), { text: '#FFFFFFFF', bg: '#00000000' });
 });
 
 test('the tag order rows follow a lock and an unlock on an open panel, so a reorder after the unlock keeps the user\'s order', t => {

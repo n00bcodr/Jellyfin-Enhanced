@@ -626,7 +626,7 @@ The sections above document Bookmarks, Reviews, Seerr, and Admin Hidden Content 
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `bootstrap` | Everything the web client needs at start for the signed-in user in one request: version, configs, the user's documents, `Capabilities` and the settings `SettingsMeta` (see [Settings API](settings-api.md#check-what-the-server-supports)) |
-| GET | `script` |
+| GET | `script` | The injected client `<script>` bundle |
 | GET | `js/{**path}` | Individual JS module files |
 | GET | `Configuration/configPage.css` | Admin config page stylesheet |
 | GET | `version` | Plugin version |

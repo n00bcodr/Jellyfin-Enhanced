@@ -5,8 +5,9 @@ using System.Linq;
 namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 {
     /// <summary>
-    /// The keys an administrator unlocked while this process ran, each with every value its lock
-    /// enforced during that lock period (the admin default can change while a key stays locked).
+    /// The keys an administrator unlocked while this process ran, each with every value a lock on
+    /// it enforced (the admin default can change while a key stays locked, and a key can be locked
+    /// and unlocked more than once).
     /// A browser tab that loaded while a key was locked still holds one of those values and an
     /// older bundle posts it back with every whole-document save; the legacy POST refuses such a
     /// value when it differs from the user's stored choice (reason "stale"), so the unlock gives
@@ -17,17 +18,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     {
         private static readonly object Sync = new();
 
-        // Locked keys: the values each lock enforced in its current lock period, as seen by config saves.
+        // Locked keys: the values their locks enforced so far, as seen by config saves.
         private static readonly Dictionary<string, List<object?>> WhileLocked = new(StringComparer.Ordinal);
 
-        // Unlocked keys: the values their last lock period enforced.
+        // Unlocked keys: the values their locks enforced.
         private static readonly Dictionary<string, List<object?>> Enforced = new(StringComparer.Ordinal);
 
         /// <summary>
         /// Records the effect of an admin config save: a key that stays locked adds the value the
-        /// new configuration enforces to its lock period, a key unlocked is remembered with every
-        /// value its lock period enforced, and a key locked again starts a new lock period and is
-        /// forgotten as unlocked.
+        /// new configuration enforces, a key unlocked is remembered with every value its locks
+        /// enforced, and a key locked again is no longer reported as unlocked but keeps the values
+        /// of its earlier locks (a tab loaded under any of them can still post one back after the
+        /// next unlock).
         /// </summary>
         /// <param name="before">The configuration being replaced, or null on first load.</param>
         /// <param name="after">The configuration now in effect.</param>
@@ -43,16 +45,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 foreach (var key in nowLocked)
                 {
-                    Enforced.Remove(key);
+                    // A key locked again carries the values of its earlier locks into this one.
+                    Enforced.Remove(key, out var earlier);
                     if (!UserSettingsRegistry.TryGet(key, out var descriptor))
                     {
                         continue;
                     }
 
-                    // A key that was not locked before starts a new lock period.
                     if (!wasLocked.Contains(key, StringComparer.Ordinal) || !WhileLocked.TryGetValue(key, out var values))
                     {
-                        values = new List<object?>();
+                        values = earlier ?? new List<object?>();
                         WhileLocked[key] = values;
                     }
 
@@ -84,7 +86,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Whether a value is one the lock on a key enforced before it was lifted.</summary>
         /// <param name="key">A canonical registry key.</param>
         /// <param name="value">The posted value.</param>
-        /// <returns>True when the key was unlocked in this process, is not locked again, and its last lock period enforced the value.</returns>
+        /// <returns>True when the key was unlocked in this process, is not locked again, and one of its locks enforced the value.</returns>
         public static bool WasEnforced(string key, object? value)
         {
             lock (Sync)
