@@ -347,7 +347,7 @@ test('the dialog previews the saved settings, applies with the preview\'s epoch,
   assert.equal(preview.UserIds, null);
   assert.deepEqual([...preview.Keys].sort(), [...adminKeys].sort());
   const summary = h.dialog().querySelector('.je-apply-summary');
-  assert.match(summary.textContent, /^40 settings start following your defaults for 2 users · 0 visible changes · 1 user keeps their own choice/);
+  assert.match(summary.textContent, /^2 users will follow your defaults for 40 settings in all · 0 visible changes · 1 user keeps their own value for some settings/);
   assert.match(summary.textContent, /1 user hasn't used Jellyfin Enhanced yet/);
   assert.match(summary.textContent, /: skipped, settings file is corrupt, left untouched/);
   assert.match(summary.textContent, /Folder with no Jellyfin user \(f+\): hidden-content settings not changed \(the file could not be read or written\)/);
@@ -358,7 +358,7 @@ test('the dialog previews the saved settings, applies with the preview\'s epoch,
   await h.settle();
   const run = h.requests.filter(r => r.path.endsWith('/apply'))[1].body;
   assert.deepEqual(run, { ...preview, DryRun: false, ConfigEpoch: 'epoch-1' });
-  assert.match(summary.textContent, /^40 settings started following your defaults for 2 users/);
+  assert.match(summary.textContent, /^2 users now follow your defaults for 40 settings in all · 0 visible changes/);
   assert.equal(h.button('Apply').disabled, true, 'a run needs a new preview');
   summary.querySelector('.je-apply-undo').click();
   await h.settle();
@@ -381,7 +381,7 @@ test('changing the selection after a preview, or a stale epoch, needs a new prev
   await h.settle();
   h.button('Preview').click();
   await h.settle();
-  assert.match(h.dialog().querySelector('.je-apply-summary').textContent, /^2 users would be updated · 40 settings overwritten/);
+  assert.match(h.dialog().querySelector('.je-apply-summary').textContent, /^2 users will be updated: 40 settings overwritten in all · 0 visible changes/);
   assert.equal(h.button('Apply').disabled, false);
 
   // Untick one group: the preview no longer matches.
@@ -410,6 +410,31 @@ test('changing the selection after a preview, or a stale epoch, needs a new prev
   await h.settle();
   assert.match(h.dialog().querySelector('.je-apply-summary').textContent, /saved since the preview\. Preview again/);
   assert.equal(h.button('Apply').disabled, true);
+});
+
+test('the result line counts users first and calls the setting count a total only for several users', async t => {
+  const answers = [];
+  const h = setup(t, { dismissed: true, apply: body => applyAnswer(body, answers.shift() || {}) });
+  await h.policy.decorate(h.page);
+  h.policy.openApplyDialog({ mode: 'FollowIfUnchanged' });
+  await h.settle();
+  const summary = () => h.dialog().querySelector('.je-apply-summary strong').textContent;
+  const preview = async (overrides) => {
+    answers.push(overrides);
+    h.button('Preview').click();
+    await h.settle();
+    return summary();
+  };
+
+  assert.equal(await preview({ Updated: 1, KeysChanged: 3, VisibleChanges: 0, KeptChoices: 0 }), '1 user will follow your defaults for 3 settings · 0 visible changes');
+  answers.push({ Updated: 1, KeysChanged: 3, VisibleChanges: 0, KeptChoices: 0 });
+  h.button('Apply').click();
+  await h.settle();
+  assert.equal(summary(), '1 user now follows your defaults for 3 settings · 0 visible changes');
+  assert.equal(await preview({ Updated: 2, KeysChanged: 107, VisibleChanges: 0, KeptChoices: 2 }),
+    '2 users will follow your defaults for 107 settings in all · 0 visible changes · 2 users keep their own values for some settings');
+  assert.equal(await preview({ Updated: 0, KeysChanged: 0, VisibleChanges: 0, KeptChoices: 1 }), 'Nothing to change: 1 user keeps their own value for some settings.');
+  assert.equal(await preview({ Updated: 0, KeysChanged: 0, VisibleChanges: 0, KeptChoices: 0 }), 'Nothing to change.');
 });
 
 test('the upgrade card shows while some users still have copies, previews FollowIfUnchanged, and can be dismissed for good', async t => {

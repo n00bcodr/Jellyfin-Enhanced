@@ -1371,16 +1371,18 @@
         const kept = Number(result.KeptChoices) || 0;
         const documents = (result.PerUser || []).filter(user => (user.Documents || []).length).length;
         const head = document.createElement('strong');
+        // Users first: the setting count adds up every user's settings, so with several users it is a total.
+        const inAll = updated > 1 ? ' in all' : '';
+        const keptText = kept ? ' · ' + plural(kept, 'user') + (kept === 1 ? ' keeps their own value' : ' keep their own values') + ' for some settings' : '';
         let text;
         if (result.Mode === 'Overwrite') {
-            text = plural(updated, 'user') + (isPreview ? ' would be' : '') + ' updated · ' + plural(keys, 'setting') + ' overwritten · ' + plural(visible, 'visible change')
+            text = plural(updated, 'user') + (isPreview ? ' will be updated' : ' updated') + ': ' + plural(keys, 'setting') + ' overwritten' + inAll + ' · ' + plural(visible, 'visible change')
                 + (documents ? ' · hidden-content or Spoiler Guard preferences reset for ' + plural(documents, 'user') : '');
         } else {
-            text = plural(keys, 'setting') + ' ' + (isPreview ? 'start' : 'started') + ' following your defaults for ' + plural(updated, 'user') + ' · '
-                + plural(visible, 'visible change') + (kept ? ' · ' + plural(kept, 'user') + ' keep' + (kept === 1 ? 's' : '') + ' their own choice' : '');
+            text = plural(updated, 'user') + (isPreview ? ' will follow' : (updated === 1 ? ' now follows' : ' now follow')) + ' your defaults for ' + plural(keys, 'setting') + inAll + ' · '
+                + plural(visible, 'visible change') + keptText;
         }
-        if (!isPreview && !updated) text = 'Nothing needed changing.';
-        if (isPreview && !updated) text = 'Nothing to change: ' + text + '.';
+        if (!updated) text = (isPreview ? 'Nothing to change' : 'Nothing needed changing') + (keptText ? ': ' + keptText.slice(3) : '') + '.';
         head.textContent = text;
         target.appendChild(head);
         if (!isPreview && result.UndoUnavailable) {
