@@ -663,7 +663,7 @@
      * @param {object} settings The whole document to save.
      * @param {{throwOnError?: boolean, notifyOnError?: boolean}} [options] throwOnError: reject
      *   (without logging) when nothing was saved, so a caller can roll back its own optimistic
-     *   change. notifyOnError: when the server request fails, also show a "couldn't save" toast
+     *   change; when the server refused keys, the error's `rejected` lists them ({key, reason}). notifyOnError: when the server request fails, also show a "couldn't save" toast
      *   (the control is not reverted; the next refresh shows the stored value). Refusals while
      *   the settings are loading or unavailable are not toasted: the panel shows those itself.
      * @returns {Promise<void>}
@@ -702,7 +702,11 @@
                 if (!Object.keys(delta).length) return; // nothing differs from the server or a pending edit
                 const { rejected } = await queuePatch(state, delta);
                 if (rejected.length && throwOnError) {
-                    throw new Error(`The server did not accept: ${rejected.map(r => `${r.key} (${r.reason})`).join(', ')}`);
+                    const refused = new Error(`The server did not accept: ${rejected.map(r => `${r.key} (${r.reason})`).join(', ')}`);
+                    // The answer's Meta (a lock it reports) is not applied when a fresh document
+                    // was taken meanwhile, so callers read the reasons from here.
+                    refused.rejected = rejected;
+                    throw refused;
                 }
                 return;
             }

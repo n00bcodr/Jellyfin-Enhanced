@@ -163,7 +163,7 @@ function setupLanguage(t, { settingsStatus, failPost = false, capabilities, patc
   t.after(() => h.close());
   h.load('enhanced/config.js');
   h.JE.currentSettings = h.JE.loadSettings();
-  h.JE.internals = { enhancedUi: {} };
+  h.JE.internals = { ...h.JE.internals, enhancedUi: {} };
   h.load('enhanced/settingspanel/ui-panel-language.js');
   h.JE.internals.enhancedUi.wireLanguageControls({ resetAutoCloseTimer() {} });
   const select = h.document.getElementById('displayLanguageSelect');
@@ -230,6 +230,36 @@ test('a display-language change refused because the language was locked meanwhil
   assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), null, 'the refused pick is not recorded as the settings\' language');
   assert.equal(h.JE.currentSettings.displayLanguage, 'fr');
   assert.equal(h.select.value, 'fr', 'the selector shows the locked language');
+  assert.deepEqual(h.reloads, [], 'no reload for a change that did not happen');
+  assert.ok(!h.toasts.includes('toast_language_changed'));
+});
+
+test('a display-language change refused for a lock whose Meta the answer could not bring stores nothing and does not reload', async t => {
+  // A focus-check refresh fetched before the administrator locked the language lands while the
+  // patch is in flight, so the answer's Meta (the lock) is not applied: only its rejection says why.
+  let h;
+  h = setupLanguage(t, {
+    settingsStatus: 'ok',
+    capabilities: ['settingsPatch'],
+    patch: body => {
+      h.JE.internals.settingsSync.applyRefresh({ settings: { displayLanguage: '' }, settingsStatus: 'ok', settingsMeta: {} });
+      return { success: true, Revision: 'r2', Applied: [], Rejected: Object.keys(body.Set).map(Key => ({ Key, Reason: 'locked' })),
+        Settings: { DisplayLanguage: 'fr' }, Meta: { Locked: ['DisplayLanguage'] } };
+    }
+  });
+  h.JE.userConfig.settings = { displayLanguage: '' }; // the stored document has the key, so the patch sends it
+  const record = JSON.stringify({ language: 'fr', previous: null, previousSeeded: null });
+  h.window.localStorage.setItem('JE_lockedLanguage_user-a', record);
+  await h.change('de');
+  for (let i = 0; i < 40 && !h.toasts.length; i++) await new Promise(resolve => setTimeout(resolve, 25));
+  for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(h.posts, ['/JellyfinEnhanced/user-settings/user-a/settings.json/patch']);
+  assert.equal(h.JE.settings.isLocked('displayLanguage'), false, 'the answer\'s Meta was not applied');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), null, 'the refused pick is not stored');
+  assert.equal(h.window.localStorage.getItem('JE_seededLanguage_user-a'), null, 'the refused pick is not recorded as the settings\' language');
+  assert.equal(h.window.localStorage.getItem('JE_lockedLanguage_user-a'), record, 'the lock record stays');
+  assert.equal(h.JE.currentSettings.displayLanguage, '');
+  assert.equal(h.select.value, '', 'the selector goes back to the language in use');
   assert.deepEqual(h.reloads, [], 'no reload for a change that did not happen');
   assert.ok(!h.toasts.includes('toast_language_changed'));
 });

@@ -146,6 +146,8 @@
                 // A failed request still switches this device (the language is also kept in
                 // localStorage below), but says it was not saved instead of "Language changed".
                 let saveFailed = false;
+                // The server refused the pick because an administrator locks the language.
+                let lockRefused = false;
                 try {
                     await JE.saveUserSettings('settings.json', JE.currentSettings, { throwOnError: true, notifyOnError: true });
                 } catch (err) {
@@ -158,8 +160,9 @@
                         JE.toast(JE.settings.unavailableText('panel_settings_unavailable'));
                         return;
                     }
+                    lockRefused = Array.isArray(err?.rejected) && err.rejected.some(r => r?.key === 'displayLanguage' && r.reason === 'locked');
                     // A refusal because of a lock that arrived meanwhile is handled below (config.js warns).
-                    if (JE.settings?.isLocked?.('displayLanguage') !== true) {
+                    if (!lockRefused && JE.settings?.isLocked?.('displayLanguage') !== true) {
                         console.error('🪼 Jellyfin Enhanced: Failed to save settings.json:', err);
                     }
                     saveFailed = true;
@@ -172,6 +175,14 @@
                     const lockedLanguage = normalizeLangCode(JE.currentSettings.displayLanguage || '');
                     const shown = Array.from(displayLanguageSelect.options).find(option => option.value.toLowerCase() === lockedLanguage.toLowerCase());
                     displayLanguageSelect.value = shown ? shown.value : appliedLanguage;
+                    return;
+                }
+                // Refused for a lock whose Meta the answer did not bring (a fresh document was taken
+                // while it was in flight; the next focus check brings it): nothing changed, so keep
+                // the language in use and do not store or seed the refused pick.
+                if (lockRefused) {
+                    if (JE.currentSettings.displayLanguage === newLang) JE.currentSettings.displayLanguage = previousLang;
+                    displayLanguageSelect.value = appliedLanguage;
                     return;
                 }
 
