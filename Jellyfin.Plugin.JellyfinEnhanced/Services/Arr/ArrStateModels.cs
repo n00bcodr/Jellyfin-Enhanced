@@ -364,6 +364,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
     /// <summary>One queue row (slim). Status messages are capped (5 × 200 characters).</summary>
     public sealed class ArrQueueEntry
     {
+        /// <summary>The title's arr folder, kept only for server-side library access decisions.</summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public string? TitlePath { get; init; }
         /// <summary>Queue row id.</summary>
         public int Id { get; init; }
 
@@ -481,6 +484,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
     /// <summary>One history record (slim).</summary>
     public sealed class ArrHistoryEntry
     {
+        /// <summary>The title's arr folder, kept only for server-side library access decisions.</summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public string? TitlePath { get; init; }
         /// <summary>History record id.</summary>
         public int Id { get; init; }
 
@@ -548,8 +554,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>Date of the newest record; the next <c>history/since</c> read starts here.</summary>
         public DateTime? Watermark { get; init; }
 
-        /// <summary>When the last full (non-incremental) read happened.</summary>
+        /// <summary>The last complete full read, or the first attempt until one completes; see <see cref="FullReadDue"/>.</summary>
         public DateTimeOffset FullReadAt { get; init; }
+
+        /// <summary>The full read stayed short and must be retried on the next history poll.</summary>
+        public bool FullReadDue { get; init; }
     }
 
     /// <summary>One calendar entry: a Sonarr episode or a Radarr movie with its release dates.</summary>

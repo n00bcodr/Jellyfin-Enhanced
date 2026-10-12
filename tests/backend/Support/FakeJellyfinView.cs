@@ -1,3 +1,4 @@
+using Jellyfin.Data;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 
 namespace JE.Tests;
@@ -24,7 +25,9 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
     public StatusViewer AddUser(bool admin, string policy = "p", bool missing = false, bool parental = false)
     {
         var id = Guid.NewGuid();
-        var viewer = new StatusViewer { UserId = id, IsAdmin = admin, PolicyRevision = policy + (admin ? "A" : "U"), DisplayMissingEpisodes = missing, HasParentalLimit = parental };
+        var user = new Jellyfin.Database.Implementations.Entities.User("viewer", "default", "default") { Id = id };
+        user.SetPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.EnableAllFolders, true);
+        var viewer = new StatusViewer { UserId = id, IsAdmin = admin, PolicyRevision = policy + (admin ? "A" : "U"), DisplayMissingEpisodes = missing, HasParentalLimit = parental, Handle = user };
         Users[id] = viewer;
         return viewer;
     }

@@ -10,6 +10,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
 
@@ -47,15 +48,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly Func<DateTimeOffset> _now;
         private readonly ArrChangeFeed? _feed;
         private readonly TitleAliases _aliases;
+        private readonly ArrInstanceLibraries _libraries;
 
         /// <summary>The service for a Jellyfin installation (DI).</summary>
-        public ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, ArrChangeFeed feed)
-            : this(store, view, requests, null, null, feed)
+        public ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, ArrChangeFeed feed, ArrInstanceLibraries libraries)
+            : this(store, view, requests, null, null, feed, libraries)
         {
         }
 
         /// <summary>A service with explicit configuration, clock and change feed (tests).</summary>
-        internal ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, ArrChangeFeed? feed = null)
+        internal ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, ArrChangeFeed? feed = null, ArrInstanceLibraries? libraries = null)
         {
             _store = store;
             _view = view;
@@ -63,6 +65,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _config = config ?? (() => JellyfinEnhanced.Instance?.Configuration);
             _now = now ?? (() => DateTimeOffset.UtcNow);
             _feed = feed;
+            _libraries = libraries ?? new ArrInstanceLibraries(store, () => Array.Empty<JfLibraryRoot>(), _now);
             _aliases = new TitleAliases(store, requests as SeerrRequestReadModel);
         }
 
@@ -90,7 +93,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (_view.Resolve(id, viewer) is { Key: not null } item) items.Add(item);
             }
             var titleKeys = keys.Where(k => !k.Season.HasValue).Distinct().ToList();
-            var gather = await GatherAsync(items.Select(i => i.Key!.Title).Concat(titleKeys), loadEpisodes: null, peekEpisodes: items.Where(i => i.Kind is "season" or "episode").Select(i => i.Key!.Title), cancellationToken).ConfigureAwait(false);
+            var gather = await GatherAsync(viewer, items.Select(i => i.Key!.Title).Concat(titleKeys), loadEpisodes: null, peekEpisodes: items.Where(i => i.Kind is "season" or "episode").Select(i => i.Key!.Title), cancellationToken).ConfigureAwait(false);
 
             var cacheKey = CacheKey(viewer, "batch", string.Join(",", items.Select(i => i.ItemId.ToString("N", CultureInfo.InvariantCulture)).OrderBy(x => x, StringComparer.Ordinal))
                 + "|" + string.Join(",", titleKeys.Select(k => k.ToString()).OrderBy(x => x, StringComparer.Ordinal)), gather.Revision);
@@ -131,10 +134,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 var facts = gather.Facts[key];
                 var copies = CopiesOf(key, viewer);
-                // A viewer with parental limits learns nothing about titles they can't open here
-                // (their rating isn't known until the title is in Jellyfin), unless they asked for it
-                // themselves and Jellyfin has no copy yet. Anyone else who can't open any copy gets
-                // exactly the answer of a title nobody has (the composer sees to it).
+                // Absent titles require an openable destination or the viewer's own request.
+                // Jellyfin copies retain their own content and library visibility decision.
                 if (!MayAskByKey(viewer, key, copies)) continue;
                 statuses.Add(WithLiveKey(key.IsMovie
                     ? StatusComposer.Movie(facts, null, copies, c, detail: false)
@@ -158,7 +159,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
             var title = item.Key.Title;
             var episodes = item.Kind is "series" or "season" or "episode" ? new[] { title } : Array.Empty<TitleKey>();
-            var gather = await GatherAsync(new[] { title }, loadEpisodes: episodes, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
+            var gather = await GatherAsync(viewer, new[] { title }, loadEpisodes: episodes, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
             var cacheKey = CacheKey(viewer, "item", item.ItemId.ToString("N", CultureInfo.InvariantCulture), gather.Revision);
             if (Cache.Get(cacheKey) is { } hit) return hit;
 
@@ -204,7 +205,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 if (_view.Resolve(id, viewer) is not { Key: not null } item) return null;
                 var episodes = item.Kind is "series" or "season" or "episode" ? new[] { item.Key.Title } : Array.Empty<TitleKey>();
-                var gathered = await GatherAsync(new[] { item.Key.Title }, loadEpisodes: null, peekEpisodes: episodes, cancellationToken).ConfigureAwait(false);
+                var gathered = await GatherAsync(viewer, new[] { item.Key.Title }, loadEpisodes: null, peekEpisodes: episodes, cancellationToken).ConfigureAwait(false);
                 return ComposeItem(viewer, item, gathered);
             }
             if (key == null) return null;
@@ -221,7 +222,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         internal async Task<IReadOnlyList<KeyedStatus>> ComposeForAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, IReadOnlyDictionary<TitleKey, RequestScope>? scopes, CancellationToken cancellationToken)
         {
             var titles = keys.Select(k => k.Title).Distinct().ToList();
-            var gather = await GatherAsync(titles, loadEpisodes: null, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
+            var gather = await GatherAsync(viewer, titles, loadEpisodes: null, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
             var result = new List<KeyedStatus>();
             foreach (var title in titles)
             {
@@ -234,8 +235,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// Whether a viewer may follow a title ("Notify me"): exactly when they may read its status by
-        /// key — a Jellyfin copy they can open, or no content limits, or they asked for it themselves
-        /// and Jellyfin has no copy of it yet.
+        /// key, including its destination-library gate and the own-request exception.
         /// </summary>
         internal bool MayFollow(StatusViewer viewer, TitleKey key) => MayAskByKey(viewer, key.Title, CopiesOf(key.Title, viewer));
 
@@ -247,7 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public async Task<StatusBody> ForKeyDetailAsync(StatusViewer viewer, TitleKey key, CancellationToken cancellationToken)
         {
             var title = key.Title;
-            var gather = await GatherAsync(new[] { title }, loadEpisodes: null, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
+            var gather = await GatherAsync(viewer, new[] { title }, loadEpisodes: null, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
             var cacheKey = CacheKey(viewer, "key", title.ToString(), gather.Revision);
             if (Cache.Get(cacheKey) is { } hit) return hit;
             var composed = Compose(viewer, gather, title, detail: true);
@@ -278,7 +278,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             if (key.IsMovie || key.Season is not int season) return await ForKeyDetailAsync(viewer, key, cancellationToken).ConfigureAwait(false);
             var title = key.Title;
-            var gather = await GatherAsync(new[] { title }, loadEpisodes: new[] { title }, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
+            var gather = await GatherAsync(viewer, new[] { title }, loadEpisodes: new[] { title }, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
             var cacheKey = CacheKey(viewer, "scope", key.ToString(), gather.Revision);
             if (Cache.Get(cacheKey) is { } hit) return hit;
             ApplyRequests(gather, viewer);
@@ -334,7 +334,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         internal async Task<StatusBody> ForTitlesAsync(StatusViewer viewer, IReadOnlyList<TitleKey> keys, string route, string what, Func<IReadOnlyList<KeyedStatus>, byte[]> build, CancellationToken cancellationToken, IReadOnlyDictionary<TitleKey, RequestScope>? scopes = null)
         {
             var titles = keys.Select(k => k.Title).Distinct().ToList();
-            var gather = await GatherAsync(titles, loadEpisodes: null, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
+            var gather = await GatherAsync(viewer, titles, loadEpisodes: null, peekEpisodes: null, cancellationToken).ConfigureAwait(false);
             RequestScope? ScopeOf(TitleKey t) => scopes != null && scopes.TryGetValue(t, out var scope) ? scope : null;
             var cacheKey = CacheKey(viewer, route, what + "|" + string.Join(",", titles.Select(t => t + (ScopeOf(t) is { } scope ? "@" + scope : string.Empty))), gather.Revision);
             if (Cache.Get(cacheKey) is { } hit) return hit;
@@ -437,14 +437,77 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>
-        /// Whether a viewer may ask about a title by key: always, except a viewer with parental limits
-        /// and no Jellyfin copy they can open. Such a viewer may still follow a title they asked for
-        /// themselves while Jellyfin has no copy at all (its rating isn't known yet); once Jellyfin
-        /// has it and hides it from them, their limits have judged it, and their own request no
-        /// longer lets them see it.
+        /// Whether a viewer may ask about a title by key: a visible Jellyfin copy, or an absent
+        /// title with an openable arr destination and no parental limits. Unresolved destinations
+        /// require every library. Their own request grants access only while Jellyfin has no copy.
         /// </summary>
         private bool MayAskByKey(StatusViewer viewer, TitleKey key, IReadOnlyList<JfCopy> copies)
-            => viewer.IsAdmin || !viewer.HasParentalLimit || copies.Any(x => x.Visible) || (copies.Count == 0 && _requests.AskedBy(key, viewer.UserId));
+        {
+            if (viewer.IsAdmin || copies.Any(x => x.Visible)) return true;
+            if (copies.Count > 0) return !viewer.HasParentalLimit;
+            if (AskedBy(key, viewer)) return true;
+            if (viewer.HasParentalLimit) return false;
+            var holders = _store.Instances(key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr)
+                .SelectMany(i => PathsOf(i, key).Select(path => (Instance: i, Path: path))).ToList();
+            return holders.Count > 0 ? holders.Any(c => MayUseCopy(viewer, new CopyAccess(true, false, false), c.Instance, c.Path))
+                : viewer.Handle is User user && ArrInstanceLibraries.CanOpenEveryLibrary(user, _libraries.Libraries());
+        }
+
+        private bool AskedBy(TitleKey key, StatusViewer viewer)
+            => _aliases.AskedBy(key, viewer.UserId, _requests);
+
+        private IEnumerable<string?> PathsOf(ArrConnection instance, TitleKey key)
+        {
+            if (_store.PeekLibrary(instance.Id) is not { } library) yield break;
+            if (key.IsMovie)
+            {
+                foreach (var movie in MoviesOf(library, key)) yield return movie.Path;
+            }
+            else
+            {
+                foreach (var series in SeriesOf(library, key)) yield return series.Path;
+            }
+        }
+
+        private sealed record CopyAccess(bool Absent, bool Visible, bool Asked);
+
+        private CopyAccess AccessOf(TitleKey key, StatusViewer viewer)
+        {
+            var copies = CopiesOf(key, viewer);
+            var absent = copies.Count == 0;
+            return new CopyAccess(absent, copies.Any(c => c.Visible), absent && AskedBy(key, viewer));
+        }
+
+        private bool MayUseCopy(StatusViewer viewer, CopyAccess access, ArrConnection instance, string? path)
+        {
+            if (viewer.IsAdmin) return true;
+            if (access.Absent) return _libraries.CanSeeAbsent(viewer, instance, path, access.Asked);
+            var target = _libraries.Resolve(instance, path);
+            // A visible Jellyfin title already grants access to its arr facts. Only a resolved
+            // destination can distinguish an inaccessible quality copy from that visible title.
+            if (access.Visible && !target.Resolved) return true;
+            return viewer.Handle is User user && ArrInstanceLibraries.CanOpen(user, target, _libraries.Libraries());
+        }
+
+        private IEnumerable<ArrMovieEntry> MoviesOf(ArrLibrarySnapshot library, TitleKey key)
+            => FindMovie(library, key) is { } exact ? new[] { exact }
+                : _aliases.Of(key).Where(k => k.IsMovie).Select(k => FindMovie(library, k)).OfType<ArrMovieEntry>().DistinctBy(m => m.Id);
+
+        private IEnumerable<ArrSeriesEntry> SeriesOf(ArrLibrarySnapshot library, TitleKey key)
+            => FindSeries(library, key) is { } exact ? new[] { exact }
+                : _aliases.Of(key).Where(k => !k.IsMovie).Select(k => FindSeries(library, k)).OfType<ArrSeriesEntry>().DistinctBy(s => s.Id);
+
+        private static ArrMovieEntry? FindMovie(ArrLibrarySnapshot library, TitleKey key)
+            => key.Provider == "tmdb" && key.NumericId is int id ? library.MovieByTmdb(id) : key.Provider == "imdb" ? library.MovieByImdb(key.Id) : null;
+
+        private static ArrSeriesEntry? FindSeries(ArrLibrarySnapshot library, TitleKey key)
+            => key.Provider switch
+            {
+                "tvdb" when key.NumericId is int id => library.SeriesByTvdb(id),
+                "tmdb" when key.NumericId is int id => library.SeriesByTmdb(id),
+                "imdb" => library.SeriesByImdb(key.Id),
+                _ => null,
+            };
 
         /// <summary>The request facts in use (the Seerr read model, or none).</summary>
         internal IArrRequestFacts Requests => _requests;
@@ -531,6 +594,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 factsRevision,
                 _view.Revision.ToString(CultureInfo.InvariantCulture),
                 _requests.Revision.ToString(CultureInfo.InvariantCulture),
+                _libraries.Revision,
                 (config?.ArrHouseholdContactName ?? string.Empty) + "#" + (config?.ArrStatusLookingHours ?? 24).ToString(CultureInfo.InvariantCulture)
                     + "#" + (HandoffGrace(config)?.TotalMinutes.ToString(CultureInfo.InvariantCulture) ?? "-") + "#" + HandoffEpoch(viewer, config),
                 bucket.ToString(CultureInfo.InvariantCulture));
@@ -569,11 +633,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// needed; episodes of the series in <paramref name="loadEpisodes"/>, or only those already in
         /// memory for <paramref name="peekEpisodes"/>) and builds the facts plus their revision.
         /// </summary>
-        private async Task<Gathered> GatherAsync(IEnumerable<TitleKey> titles, IEnumerable<TitleKey>? loadEpisodes, IEnumerable<TitleKey>? peekEpisodes, CancellationToken ct)
+        private async Task<Gathered> GatherAsync(StatusViewer viewer, IEnumerable<TitleKey> titles, IEnumerable<TitleKey>? loadEpisodes, IEnumerable<TitleKey>? peekEpisodes, CancellationToken ct)
         {
             var result = new Gathered();
             var distinct = titles.Distinct().ToList();
             foreach (var t in distinct) result.Facts[t] = new TitleFacts(t);
+            var access = new Dictionary<TitleKey, CopyAccess>();
             var revision = new StringBuilder();
             var kinds = new List<ArrKind>();
             if (distinct.Any(t => t.IsMovie)) kinds.Add(ArrKind.Radarr);
@@ -627,53 +692,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         }
                         facts.Checked.Add(instance);
                         if (library.Error != null) facts.Stale.Add(instance);
+                        // Library reads above also populate aliases; decide access after they finish,
+                        // once per title, even when several instances hold that title.
+                        if (!access.TryGetValue(title, out var copyAccess))
+                            access[title] = copyAccess = AccessOf(title, viewer);
                         if (kind == ArrKind.Radarr)
                         {
-                            var movie = title.Provider == "tmdb" && title.NumericId is int tmdb ? library.Value.MovieByTmdb(tmdb) : library.Value.MovieByImdb(title.Id);
-                            if (movie == null) continue;
-                            if (movie.TmdbId is > 0 and var canonical) NoteLiveKey(revision, facts, TitleKey.ForMovie(canonical.ToString(CultureInfo.InvariantCulture), null));
-                            facts.Copies.Add(new ArrCopyFacts(instance)
+                            foreach (var movie in MoviesOf(library.Value, title))
                             {
-                                Movie = movie,
-                                LibraryLoadedAt = library.LoadedAt?.UtcDateTime,
-                                LeftQueue = (m, e) => _store.LeftQueueAt(instance, m, e)?.UtcDateTime,
-                                Queue = QueueRowsOf(queueIndex, missed, movie.Id, movie: true),
-                                History = historyIndex?[movie.Id].ToList() ?? new List<ArrHistoryEntry>(),
-                                Seen = seen,
-                                QueueLoadedAt = queueLoadedAt,
-                                QueueStale = queueStale || missed.Any(r => r.MovieId == movie.Id),
-                                QueueUnknown = unknown || missedState.Expired.Any(r => r.MovieId == movie.Id),
-                            });
+                                if (!MayUseCopy(viewer, copyAccess, instance, movie.Path)) continue;
+                                if (movie.TmdbId is > 0 and var canonical) NoteLiveKey(revision, facts, TitleKey.ForMovie(canonical.ToString(CultureInfo.InvariantCulture), null));
+                                facts.Copies.Add(new ArrCopyFacts(instance)
+                                {
+                                    Movie = movie,
+                                    LibraryLoadedAt = library.LoadedAt?.UtcDateTime,
+                                    LeftQueue = (m, e) => _store.LeftQueueAt(instance, m, e)?.UtcDateTime,
+                                    Queue = QueueRowsOf(queueIndex, missed, movie.Id, movie: true),
+                                    History = historyIndex?[movie.Id].ToList() ?? new List<ArrHistoryEntry>(),
+                                    Seen = seen,
+                                    QueueLoadedAt = queueLoadedAt,
+                                    QueueStale = queueStale || missed.Any(r => r.MovieId == movie.Id),
+                                    QueueUnknown = unknown || missedState.Expired.Any(r => r.MovieId == movie.Id),
+                                });
+                            }
                         }
                         else
                         {
-                            var series = title.Provider switch
+                            foreach (var series in SeriesOf(library.Value, title))
                             {
-                                "tvdb" when title.NumericId is int tvdb => library.Value.SeriesByTvdb(tvdb),
-                                "tmdb" when title.NumericId is int tmdb => library.Value.SeriesByTmdb(tmdb),
-                                "imdb" => library.Value.SeriesByImdb(title.Id),
-                                _ => null,
-                            };
-                            if (series == null) continue;
-                            if (series.TvdbId is > 0 and var canonical) NoteLiveKey(revision, facts, TitleKey.ForSeries(canonical.ToString(CultureInfo.InvariantCulture), null, null));
-                            ArrSnapshotRead<ArrEpisodesSnapshot>? episodes = null;
-                            if (load.Contains(title)) episodes = await _store.GetEpisodesAsync(instance, series.Id, ct).ConfigureAwait(false);
-                            else if (peek.Contains(title)) episodes = _store.PeekEpisodes(instance, series.Id);
-                            if (episodes != null) revision.Append('e').Append(series.Id).Append(':').Append(Stamp(episodes.LoadedAt)).Append(';');
-                            facts.Copies.Add(new ArrCopyFacts(instance)
-                            {
-                                Series = series,
-                                Queue = QueueRowsOf(queueIndex, missed, series.Id, movie: false),
-                                History = historyIndex?[series.Id].ToList() ?? new List<ArrHistoryEntry>(),
-                                Episodes = episodes?.Value,
-                                LibraryLoadedAt = library.LoadedAt?.UtcDateTime,
-                                EpisodesLoadedAt = episodes?.LoadedAt?.UtcDateTime,
-                                LeftQueue = (m, e) => _store.LeftQueueAt(instance, m, e)?.UtcDateTime,
-                                Seen = seen,
-                                QueueLoadedAt = queueLoadedAt,
-                                QueueStale = queueStale || missed.Any(r => r.SeriesId == series.Id),
-                                QueueUnknown = unknown || missedState.Expired.Any(r => r.SeriesId == series.Id),
-                            });
+                                if (!MayUseCopy(viewer, copyAccess, instance, series.Path)) continue;
+                                if (series.TvdbId is > 0 and var canonical) NoteLiveKey(revision, facts, TitleKey.ForSeries(canonical.ToString(CultureInfo.InvariantCulture), null, null));
+                                ArrSnapshotRead<ArrEpisodesSnapshot>? episodes = null;
+                                if (load.Contains(title)) episodes = await _store.GetEpisodesAsync(instance, series.Id, ct).ConfigureAwait(false);
+                                else if (peek.Contains(title)) episodes = _store.PeekEpisodes(instance, series.Id);
+                                if (episodes != null) revision.Append('e').Append(series.Id).Append(':').Append(Stamp(episodes.LoadedAt)).Append(';');
+                                facts.Copies.Add(new ArrCopyFacts(instance)
+                                {
+                                    Series = series,
+                                    Queue = QueueRowsOf(queueIndex, missed, series.Id, movie: false),
+                                    History = historyIndex?[series.Id].ToList() ?? new List<ArrHistoryEntry>(),
+                                    Episodes = episodes?.Value,
+                                    LibraryLoadedAt = library.LoadedAt?.UtcDateTime,
+                                    EpisodesLoadedAt = episodes?.LoadedAt?.UtcDateTime,
+                                    LeftQueue = (m, e) => _store.LeftQueueAt(instance, m, e)?.UtcDateTime,
+                                    Seen = seen,
+                                    QueueLoadedAt = queueLoadedAt,
+                                    QueueStale = queueStale || missed.Any(r => r.SeriesId == series.Id),
+                                    QueueUnknown = unknown || missedState.Expired.Any(r => r.SeriesId == series.Id),
+                                });
+                            }
                         }
                     }
                 }

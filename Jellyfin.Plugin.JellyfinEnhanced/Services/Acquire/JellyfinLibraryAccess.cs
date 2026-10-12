@@ -138,7 +138,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <inheritdoc />
         public IReadOnlyList<JfLibraryRoot> Libraries()
-            => _libraryManager.GetVirtualFolders()
+            => ReadLibraries(_libraryManager);
+
+        /// <summary>The library locations used by path and access decisions.</summary>
+        internal static IReadOnlyList<JfLibraryRoot> ReadLibraries(ILibraryManager libraryManager)
+            => libraryManager.GetVirtualFolders()
                 .Select(v => new JfLibraryRoot
                 {
                     Id = v.ItemId ?? string.Empty,

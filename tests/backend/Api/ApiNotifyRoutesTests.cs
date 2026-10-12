@@ -301,6 +301,36 @@ public class ApiNotifyRoutesTests
         Assert.Equal(2, rig.Pushes.Count);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EpisodeFileIdsStayServerOnlyInVisibleAndHiddenInboxRows(bool hidden)
+    {
+        const string show = "tv:tvdb:371980";
+        var series = Guid.NewGuid();
+        using var rig = await IntegrationNotificationsTests.Started(r =>
+        {
+            r.Request(1, 95396, r.Emma, type: "tv", tvdb: 371980, seasons: new[] { 2 });
+            r.View.AddCopy(TitleKey.Parse(show)!, new JfCopy { ItemId = series, DateCreated = r.Arr.Now.UtcDateTime.AddDays(-30) });
+            r.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, DateCreated = r.Arr.Now.UtcDateTime.AddDays(-30) });
+        });
+        var files = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        for (var i = 0; i < 2; i++) rig.View.AddEpisode(series, new JfEpisode { ItemId = files[i], Season = 2, Episode = i + 1, DateCreated = rig.Arr.Now.UtcDateTime });
+        await rig.Step(show);
+        rig.Arr.Now += TimeSpan.FromMinutes(11);
+        await rig.Step(show);
+        var stored = Assert.Single(rig.Inbox(rig.Emma));
+        Assert.Contains("episodeItems", stored.Payload, StringComparison.Ordinal);
+        foreach (var file in files) Assert.Contains(file.ToString(), stored.Payload, StringComparison.Ordinal);
+        if (hidden) rig.View.CopiesByKey[show][0] = (rig.View.CopiesByKey[show][0].Copy, new HashSet<Guid> { rig.Admin.UserId });
+        var reply = Of(Controller(rig, rig.Emma).GetInbox(null, null));
+        var parameters = Assert.Single(reply.Json.GetProperty("items").EnumerateArray()).GetProperty("params");
+        Assert.Equal("2", parameters.GetProperty("count").GetString());
+        Assert.Equal("many", parameters.GetProperty("mode").GetString());
+        Assert.False(parameters.TryGetProperty("episodeItems", out _));
+        foreach (var file in files) Assert.DoesNotContain(file.ToString(), reply.Body, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task TheInboxStopsNamingATitleTheUserCanNoLongerOpen()
     {

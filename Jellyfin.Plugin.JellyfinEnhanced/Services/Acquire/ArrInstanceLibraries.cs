@@ -46,18 +46,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     }
 
     /// <summary>
-    /// Resolves an arr instance's title folders to Jellyfin libraries, for deciding who may see a
-    /// title Jellyfin doesn't have yet (the Calendar's upcoming releases) and for the path doctor:
-    /// <list type="number">
-    /// <item><description>the instance's linked libraries, when it has any;</description></item>
-    /// <item><description>otherwise, when one of the instance's path mappings applies to the title
-    /// folder (the longest one), the folder as Jellyfin sees it through that mapping and the library
-    /// whose folder holds it (the deepest wins);</description></item>
-    /// <item><description>with no mapping, the arr's own path, but only when the root folders of
-    /// this instance and of every other usable instance are known and none of the others has the
-    /// title's root folder (this instance's longest root that contains it) unmapped too (two Docker
-    /// arrs both saying "/movies" mean two different disks); unresolved otherwise.</description></item>
-    /// </list>
+    /// Resolves an arr instance's title folder through its longest path mapping and the deepest
+    /// Jellyfin library that holds it. With no mapping, an unambiguous shared-disk path can resolve
+    /// only when every usable instance's root folders are known and no other unmapped instance
+    /// shares the title's root. A resolved destination is constrained to the instance's linked
+    /// libraries when configured; otherwise those linked libraries are the fallback, then unresolved.
     /// Answers come from memory only (the system snapshots' root folders, the registry and
     /// Jellyfin's library list), are decided against the registry entry and snapshots of the very
     /// read they are cached under, and are dropped as soon as any of them changes; Jellyfin's
@@ -71,7 +64,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private const int MaxCacheEntries = 20_000;
 
         private readonly ArrStateStore _store;
-        private readonly IJellyfinLibraryAccess _library;
+        private readonly Func<IReadOnlyList<JfLibraryRoot>> _library;
         private readonly Func<DateTimeOffset> _now;
         private readonly object _gate = new();
         private volatile LibraryRead? _libraries;
@@ -85,9 +78,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Creates the resolver with a clock (tests).</summary>
         internal ArrInstanceLibraries(ArrStateStore store, IJellyfinLibraryAccess library, Func<DateTimeOffset>? now)
+            : this(store, library.Libraries, now)
+        {
+        }
+
+        internal ArrInstanceLibraries(ArrStateStore store, Func<IReadOnlyList<JfLibraryRoot>> libraries, Func<DateTimeOffset>? now)
         {
             _store = store;
-            _library = library;
+            _library = libraries;
             _now = now ?? (() => DateTimeOffset.UtcNow);
         }
 
@@ -102,17 +100,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // libraries), not the caller's copy, which may be older.
             var current = state.Registry.FirstOrDefault(i => string.Equals(i.Id, instance.Id, StringComparison.OrdinalIgnoreCase));
             if (current == null) return new ArrLibraryTarget(null, null, ArrLibraryProblem.NoInstance);
-            var linked = Linked(current);
-            if (linked.Count > 0) return new ArrLibraryTarget(linked, "linked", null);
-            if (string.IsNullOrWhiteSpace(arrPath)) return new ArrLibraryTarget(null, null, ArrLibraryProblem.NoPath);
-
-            var key = (current.Id, BridgePaths.Norm(arrPath));
+            var key = (current.Id, BridgePaths.Norm(arrPath ?? string.Empty));
             if (state.Cache.TryGetValue(key, out var hit)) return hit;
-            var target = Decide(current, key.Item2, state);
+            var linked = Linked(current);
+            var target = string.IsNullOrWhiteSpace(arrPath) ? new ArrLibraryTarget(null, null, ArrLibraryProblem.NoPath) : Decide(current, key.Item2, state);
+            if (!target.Resolved || (linked.Count > 0 && !target.Libraries!.Any(linked.Contains)))
+                target = linked.Count > 0 ? new ArrLibraryTarget(linked, "linked", null) : new ArrLibraryTarget(null, null, target.Problem ?? ArrLibraryProblem.NotInLibrary);
             if (state.Cache.Count > MaxCacheEntries) state.Cache.Clear();
             // Into the cache of the read it was decided from: once the inputs change, nobody reads it.
             state.Cache[key] = target;
             return target;
+        }
+
+        /// <summary>A title's library from its indexed folder, or the folder included in queue/history before the index is warm.</summary>
+        internal ArrLibraryTarget ResolveTitle(ArrConnection instance, TitleKey key)
+        {
+            var library = _store.PeekLibrary(instance.Id);
+            var path = key.IsMovie ? library?.MovieByTmdb(key.NumericId ?? 0)?.Path : library?.SeriesByTvdb(key.NumericId ?? 0)?.Path;
+            path ??= _store.PeekQueue(instance.Id)?.Records.FirstOrDefault(r => (key.IsMovie ? r.TmdbId : r.TvdbId) == key.NumericId)?.TitlePath;
+            path ??= _store.PeekHistory(instance.Id)?.Records.FirstOrDefault(r => (key.IsMovie ? r.TmdbId : r.TvdbId) == key.NumericId)?.TitlePath;
+            return Resolve(instance, path);
         }
 
         /// <summary>
@@ -133,6 +140,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return false;
         }
 
+        /// <summary>True when the user can open a resolved target, or every library for an unresolved target.</summary>
+        public static bool CanOpen(User user, ArrLibraryTarget target, IReadOnlyList<JfLibraryRoot>? knownLibraries = null)
+            => target.Libraries is { Count: > 0 } libraries ? CanOpen(user, libraries) : CanOpenEveryLibrary(user, knownLibraries);
+
+        /// <summary>True when library access is unrestricted, including blocked folders.</summary>
+        public static bool CanOpenEveryLibrary(User user, IReadOnlyList<JfLibraryRoot>? knownLibraries = null)
+        {
+            if (user.GetPreferenceValues<Guid>(PreferenceKind.BlockedMediaFolders).Length > 0) return false;
+            if (user.HasPermission(PermissionKind.EnableAllFolders)) return true;
+            return knownLibraries is { Count: > 0 } && knownLibraries.All(l => Guid.TryParse(l.Id, out var id) && id != Guid.Empty && CanOpen(user, new[] { id }));
+        }
+
+        /// <summary>Whether an absent title's copy may contribute status for this viewer, including their own request.</summary>
+        internal bool CanSeeAbsent(StatusViewer viewer, ArrConnection instance, string? path, bool asked)
+            => viewer.IsAdmin || asked || (!viewer.HasParentalLimit && viewer.Handle is User user && CanOpen(user, Resolve(instance, path), Libraries()));
+
+        /// <summary>A token that changes with mappings, linked libraries, roots and Jellyfin library locations.</summary>
+        internal string Revision => CurrentState().Revision;
+
         private static List<Guid> Linked(ArrConnection instance)
         {
             var ids = new List<Guid>();
@@ -145,6 +171,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         private static ArrLibraryTarget Decide(ArrConnection instance, string path, State state)
         {
+            if (!BridgePaths.Safe(path)) return new ArrLibraryTarget(null, null, ArrLibraryProblem.NotInLibrary);
             var (mapped, mapping) = BridgePaths.Map(path, Mappings(instance));
             if (mapping == null)
             {
@@ -225,6 +252,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
             public Stamp Stamp { get; }
 
+            public string Revision { get; } = Guid.NewGuid().ToString("N");
+
             public IReadOnlyList<JfLibraryRoot> Libraries { get; }
 
             public IReadOnlyList<ArrConnection> Registry { get; }
@@ -252,7 +281,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             IReadOnlyList<JfLibraryRoot> libraries;
             try
             {
-                libraries = _library.Libraries();
+                libraries = _library();
             }
             catch (Exception)
             {

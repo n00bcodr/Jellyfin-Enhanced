@@ -1,4 +1,8 @@
 using System.Text.Json;
+using Jellyfin.Data;
+using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify;
@@ -25,6 +29,145 @@ namespace JE.Tests;
 public class IntegrationNotifyHardeningTests
 {
     private const string Dune = "movie:tmdb:693134";
+
+    [Fact]
+    public async Task EpisodeDeliveriesStoredWithoutFileIdsKeepTheirParentVisibilityCheck()
+    {
+        using var rig = await Started();
+        rig.Phones(rig.Emma);
+        var series = Guid.NewGuid();
+        rig.View.AddCopy(TitleKey.Parse("tv:tvdb:371980")!, new JfCopy { ItemId = series });
+        var id = rig.NotifyStore.Add(rig.Emma.UserId, "older-episode-batch", NotifyKind.Episodes, "tv:tvdb:371980", series.ToString("N"),
+            new Dictionary<string, string> { ["title"] = "Severance", ["mode"] = "many", ["count"] = "2", ["seasons"] = "2" },
+            new[] { (NotifyChannel.Ntfy, rig.Arr.Now) }, rig.Arr.Now);
+        Assert.NotNull(id);
+        await rig.Dispatcher.RunOnceAsync(default);
+        Assert.Equal("Severance: 2 new episodes ready", (string?)Assert.Single(rig.Pushes).Body["title"]);
+        Assert.Equal(("sent", 1), Deliveries(rig, rig.Emma).Select(d => (d.Status, d.Attempts)).Single());
+    }
+
+    [Fact]
+    public async Task ASeriesKnownOnlyByTmdbUsesItsSeerrAliasToFindTheSonarrDownload()
+    {
+        const string tmdb = "tv:tmdb:95396";
+        var series = Guid.NewGuid();
+        using var rig = await Started(r =>
+        {
+            r.Request(1, 95396, r.Emma, type: "tv", tvdb: 371980);
+            r.View.AddItem(new JfItemRef { ItemId = series, Kind = "series", Key = TitleKey.Parse(tmdb) });
+            r.View.AddCopy(TitleKey.Parse(tmdb)!, new JfCopy { ItemId = series });
+            var row = FakeArr.SonarrQueueRow(51, "episode", 2, 1, "Severance", 371980, tmdb: null);
+            row["seriesId"] = 5;
+            row["series"]!["id"] = 5;
+            r.Sonarr.Queue.Add(row);
+            r.Sonarr.Series[0]["seasons"] = System.Text.Json.Nodes.JsonNode.Parse("[{\"seasonNumber\":2,\"monitored\":true,\"statistics\":{\"totalEpisodeCount\":1}}]");
+            var episode = FakeArr.Episode(51, "2020-01-01T00:00:00Z", tvdb: 371980, episode: 1, season: 2);
+            episode["seriesId"] = 5;
+            r.Sonarr.Episodes.Add(episode);
+        });
+        foreach (var body in new[] {
+            await rig.Status.ForBatchAsync(rig.Emma, new[] { series }, Array.Empty<TitleKey>(), default),
+            await rig.Status.ForItemAsync(rig.Emma, series, default) })
+        {
+            var status = JsonDocument.Parse(body.Json).RootElement.GetProperty("items")[0];
+            Assert.Equal(tmdb, status.GetProperty("key").GetString());
+            Assert.Equal("tv:tvdb:371980", status.GetProperty("liveKey").GetString());
+            Assert.True(status.GetProperty("stage").GetString() == "downloading", System.Text.Encoding.UTF8.GetString(body.Json));
+            Assert.Equal(75, status.GetProperty("progress").GetProperty("percent").GetInt32());
+        }
+        rig.View.CopiesByKey.Clear();
+        var user = (Jellyfin.Database.Implementations.Entities.User)rig.Sam.Handle!;
+        user.SetPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.EnableAllFolders, false);
+        var rows = ArrRegistryMigration.Parse(rig.Config.SonarrInstances)!;
+        rows[0].LinkedLibraryIds = [Guid.NewGuid().ToString("N")];
+        rig.Config.SonarrInstances = ArrRegistryMigration.Serialize(rows);
+        var hidden = await rig.Status.ForBatchAsync(rig.Sam, Array.Empty<Guid>(), new[] { TitleKey.Parse(tmdb)! }, default);
+        Assert.Empty(JsonDocument.Parse(hidden.Json).RootElement.GetProperty("items").EnumerateArray());
+        Assert.False(rig.Status.MayFollow(rig.Sam, TitleKey.Parse(tmdb)!));
+    }
+
+    [Fact]
+    public async Task FollowingAnAbsentTitleInAHiddenLibraryIsRefusedUntilItIsTheViewersOwnRequest()
+    {
+        using var rig = await Started();
+        var user = (Jellyfin.Database.Implementations.Entities.User)rig.Sam.Handle!;
+        user.SetPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.EnableAllFolders, false);
+        var rows = ArrRegistryMigration.Parse(rig.Config.RadarrInstances)!;
+        rows[0].LinkedLibraryIds = [Guid.NewGuid().ToString("N")];
+        rig.Config.RadarrInstances = ArrRegistryMigration.Serialize(rows);
+        await rig.Status.ForBatchAsync(rig.Sam, Array.Empty<Guid>(), new[] { TitleKey.Parse(Dune)! }, default);
+        var controller = new NotifyController(rig.Service, rig.Dispatcher, new NtfySender(rig.Ntfy), new EmailSender(rig.Mail), rig.Users)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
+            Config = () => rig.Config,
+            Now = () => rig.Arr.Now,
+        };
+        controller.HttpContext.User = TestCallers.Principal(rig.Sam.UserId, admin: false);
+        var refused = Assert.IsType<ObjectResult>(await controller.PutFollow(new FollowRequest { Key = Dune, On = true }, default));
+        Assert.Equal(403, refused.StatusCode);
+        Assert.Equal("not_allowed", JsonSerializer.SerializeToElement(refused.Value).GetProperty("code").GetString());
+        Assert.Empty(rig.NotifyStore.Follows(rig.Sam.UserId));
+        rig.Request(1, 693134, rig.Sam);
+        await rig.Requests.RefreshAsync(default);
+        Assert.IsType<OkObjectResult>(await controller.PutFollow(new FollowRequest { Key = Dune, On = true }, default));
+        Assert.Single(rig.NotifyStore.Follows(rig.Sam.UserId));
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(2, false)]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    public async Task EpisodeDeliveriesHeldByQuietHoursRecheckEveryFileAndRenderOnlyVisibleNumbers(int visibleCount, bool seasonPack)
+    {
+        const string show = "tv:tvdb:371980";
+        var series = Guid.NewGuid();
+        using var rig = await Started(r =>
+        {
+            r.Request(1, 95396, r.Emma, type: "tv", tvdb: 371980, seasons: new[] { 2 });
+            r.View.AddCopy(TitleKey.Parse(show)!, new JfCopy { ItemId = series, DateCreated = r.Arr.Now.UtcDateTime.AddDays(-30) });
+            r.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, DateCreated = r.Arr.Now.UtcDateTime.AddDays(-30) });
+            r.View.AddSeason(series, new JfSeason { ItemId = Guid.NewGuid(), Season = 2 });
+            if (seasonPack) r.Sonarr.Series[0]["seasons"] = System.Text.Json.Nodes.JsonNode.Parse("[{\"seasonNumber\":2,\"monitored\":true,\"statistics\":{\"totalEpisodeCount\":2}}]");
+        });
+        rig.Phones(rig.Emma);
+        QuietAllDay(rig, rig.Emma);
+        var files = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        for (var i = 0; i < 2; i++) rig.View.AddEpisode(series, new JfEpisode { ItemId = files[i], Season = 2, Episode = i + 1, DateCreated = rig.Arr.Now.UtcDateTime });
+        await rig.Step(show);
+        rig.Arr.Now += TimeSpan.FromMinutes(11);
+        await rig.Step(show);
+        Assert.Equal(seasonPack ? "season" : "many", Params(Assert.Single(rig.Inbox(rig.Emma)).Payload)["mode"]);
+        Assert.Equal(2, Deliveries(rig, rig.Emma).Count(d => d.Status == "pending"));
+        var episodes = rig.View.EpisodesBySeries[series];
+        for (var i = visibleCount; i < 2; i++)
+        {
+            var index = episodes.FindIndex(e => e.Episode.ItemId == files[i]);
+            episodes[index] = (episodes[index].Episode, new HashSet<Guid> { rig.Admin.UserId });
+        }
+        Assert.NotNull(rig.View.Resolve(series, rig.Emma));
+        QuietAllDay(rig, rig.Emma, on: false);
+        rig.Arr.Now += TimeSpan.FromDays(1);
+        await rig.Dispatcher.RunOnceAsync(default);
+        rig.Arr.Now += TimeSpan.FromHours(8);
+        await rig.Dispatcher.RunOnceAsync(default);
+        if (visibleCount == 0)
+        {
+            Assert.Empty(rig.Pushes);
+            Assert.Empty(rig.Mail.Sent);
+            Assert.All(Deliveries(rig, rig.Emma), d => Assert.Equal(("suppressed", 0), (d.Status, d.Attempts)));
+        }
+        else
+        {
+            var push = Assert.Single(rig.Pushes).Body;
+            Assert.Single(rig.Mail.Sent);
+            Assert.Equal(visibleCount == 1 ? "Severance: episode 1 is ready" : "Severance: 2 new episodes ready", (string?)push["title"]);
+            Assert.Equal(visibleCount == 1 ? "Season 2, episode 1." : "Season 2.", (string?)push["message"]);
+            if (visibleCount == 1) Assert.Contains(files[0].ToString("N"), (string?)push["click"]);
+            Assert.All(Deliveries(rig, rig.Emma), d => Assert.Equal(("sent", 1), (d.Status, d.Attempts)));
+        }
+    }
 
     [Fact]
     public async Task ACombinedFileWithMoreThanFiftyEpisodesIsFullyBatchedOnceAcrossARestart()

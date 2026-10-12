@@ -1198,6 +1198,7 @@ public class ApiArrRequestsHubTests
         using var rig = await Ready();
         var kid = new User("kid", "default", "default") { Id = rig.Kid.UserId, MaxParentalRatingScore = 10 };
         var emma = new User("emma", "default", "default") { Id = rig.Emma.UserId };
+        emma.SetPermission(PermissionKind.EnableAllFolders, true);
         var users = new Mock<IUserManager>();
         users.Setup(m => m.GetUserById(kid.Id)).Returns(kid);
         users.Setup(m => m.GetUserById(emma.Id)).Returns(emma);
@@ -1258,6 +1259,7 @@ public class ApiArrRequestsHubTests
         // Seerr knows, which they can read by key ("asked by someone in your household"); not
         // about titles nobody asked for, nor arr changes of instances.
         var member = new User("member", "default", "default") { Id = Guid.NewGuid() };
+        member.SetPermission(PermissionKind.EnableAllFolders, true);
         users.Setup(m => m.GetUserById(member.Id)).Returns(member);
         facts.Setup(f => f.RequestedLately(It.Is<TitleKey>(k => k.ToString() == "movie:tmdb:5"))).Returns(true);
         Assert.Equal(new[] { "movie:tmdb:5" }, audience.Visible(member.Id, false, changes.Skip(2).ToList()));

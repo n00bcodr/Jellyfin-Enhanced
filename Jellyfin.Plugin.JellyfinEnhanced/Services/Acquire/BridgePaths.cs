@@ -47,6 +47,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return p;
         }
 
+        /// <summary>True when a path contains no relative navigation segments.</summary>
+        public static bool Safe(string path) => !Norm(path).Split('/').Any(s => s is "." or "..");
+
         /// <summary>
         /// True for a Windows path (a drive letter or a UNC share, normalised): Windows file systems
         /// ignore case, so "d:/media/movies" and "D:/Media/Movies" are the same folder.
@@ -66,6 +69,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var p = Norm(path);
             var f = Norm(folder);
+            if (!Safe(p) || !Safe(f)) return false;
             if (f == "/") return p.StartsWith('/');
             var comparison = Comparison(p, f);
             return string.Equals(p, f, comparison) || p.StartsWith(f + "/", comparison);
@@ -103,7 +107,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             ArrPathMapping? best = null;
             foreach (var m in mappings)
             {
-                if (string.IsNullOrWhiteSpace(m.ArrPath) || string.IsNullOrWhiteSpace(m.JellyfinPath)) continue;
+                if (string.IsNullOrWhiteSpace(m.ArrPath) || string.IsNullOrWhiteSpace(m.JellyfinPath) || !Safe(m.JellyfinPath)) continue;
                 if (!IsUnder(path, m.ArrPath)) continue;
                 if (best == null || Norm(m.ArrPath).Length > Norm(best.ArrPath).Length) best = m;
             }

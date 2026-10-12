@@ -147,16 +147,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 ? new[] { ("includeSeries", "true"), ("includeEpisode", "true") }
                 : new[] { ("includeMovie", "true") };
 
-            var incremental = previous != null
+            var incremental = previous != null && !previous.FullReadDue
                 && previous.Watermark is DateTime mark
                 && now - previous.FullReadAt < HistoryFullResync
                 && now.UtcDateTime - mark < TimeSpan.FromDays(7);
             if (!incremental)
             {
                 var query = Query(include.Concat(new[] { ("sortKey", "date"), ("sortDirection", "descending") }).ToArray());
-                var pages = await client.GetAllPagesAsync<ArrWireHistoryRecord>("history", query, pageSize: 250, maxRecords: HistoryFullRead, cancellationToken: ct, idOf: r => r.Id).ConfigureAwait(false);
-                if (!pages.Ok) return ArrResult<ArrHistorySnapshot>.Failure(pages.Error!);
-                return ArrResult<ArrHistorySnapshot>.Success(BuildHistory(pages.Value!.Records.Select(ToHistoryEntry), null, now));
+                ArrPagedList<ArrWireHistoryRecord>? read = null;
+                for (var attempt = 0; attempt < 2 && (read == null || read.Short); attempt++)
+                {
+                    var pages = await client.GetAllPagesAsync<ArrWireHistoryRecord>("history", query, pageSize: 250, maxRecords: HistoryFullRead, cancellationToken: ct, idOf: r => r.Id).ConfigureAwait(false);
+                    if (!pages.Ok) return ArrResult<ArrHistorySnapshot>.Failure(pages.Error!);
+                    read = pages.Value!;
+                }
+                // A short read cannot replace knowledge of older events or advance the full-read
+                // clock. With no ring yet, keep what was read but leave a full read due next poll.
+                return ArrResult<ArrHistorySnapshot>.Success(BuildHistory(read!.Records.Select(ToHistoryEntry), read.Short ? previous : null, read.Short ? previous?.FullReadAt ?? now : now, fullReadDue: read.Short));
             }
 
             // The arrs answer only records strictly after "date", and their dates have whole seconds:
@@ -171,7 +178,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         }
 
         /// <summary>Merges new records into the ring (dedup by id, newest first, capped).</summary>
-        internal static ArrHistorySnapshot BuildHistory(IEnumerable<ArrHistoryEntry> incoming, ArrHistorySnapshot? previous, DateTimeOffset fullReadAt)
+        internal static ArrHistorySnapshot BuildHistory(IEnumerable<ArrHistoryEntry> incoming, ArrHistorySnapshot? previous, DateTimeOffset fullReadAt, bool fullReadDue = false)
         {
             var byId = new Dictionary<int, ArrHistoryEntry>();
             foreach (var r in incoming) byId[r.Id] = r;
@@ -190,6 +197,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 Records = records,
                 Watermark = records.Any(r => r.Date.HasValue) ? watermark : previous?.Watermark,
                 FullReadAt = fullReadAt,
+                FullReadDue = fullReadDue,
             };
         }
 
@@ -391,6 +399,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             }
             return new ArrQueueEntry
             {
+                TitlePath = r.Series?.Path ?? r.Movie?.Path,
                 Id = r.Id,
                 DownloadId = r.DownloadId,
                 Status = Intern(r.Status),
@@ -424,6 +433,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         internal static ArrHistoryEntry ToHistoryEntry(ArrWireHistoryRecord r) => new()
         {
+            TitlePath = r.Series?.Path ?? r.Movie?.Path,
             Id = r.Id,
             EventType = Intern(r.EventType),
             Date = r.Date is DateTime d ? (d.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(d, DateTimeKind.Utc) : d.ToUniversalTime()) : null,

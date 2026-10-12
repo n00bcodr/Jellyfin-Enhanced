@@ -27,6 +27,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _requests = requests;
         }
 
+        /// <summary>True when the supplied facts, or the shared request model, say this user asked for the title or an alias.</summary>
+        internal bool AskedBy(TitleKey key, Guid user, IArrRequestFacts? facts = null)
+            => (facts ?? _requests) is { } requests && new[] { key.Title }.Concat(Of(key)).Any(k => requests.AskedBy(k, user));
+
         /// <summary>
         /// The title's other keys (never <paramref name="key"/> itself; same kind only): from the arr
         /// libraries in memory and Seerr's requests, following links through either source until

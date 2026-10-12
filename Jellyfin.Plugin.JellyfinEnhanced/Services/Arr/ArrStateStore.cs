@@ -809,7 +809,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// Queue rows the last complete read over more than one page lacked and that no later read
         /// has shown leaving yet: a row moving between pages while they were read is missed, so it
         /// counts as gone only once the next complete read lacks it too (see
-        /// <see cref="OnQueueRefreshed"/>). Until then statuses keep showing its last queue state
+        /// <see cref="OnQueueRefreshed"/>), or a published partial read omitted. Until then statuses keep showing its last queue state
         /// (still downloading), not "looking" — and not "almost ready", which only a real departure
         /// earns. Empty when there are none still inside their serving limit.
         /// </summary>
@@ -894,12 +894,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             var before = state.QueueSuspects;
             if (partial)
             {
-                // Rows this read holds are in the published snapshot (and the baseline) again.
-                if (before != null && before.Keys.Any(rows.ContainsKey))
+                // Missing baseline rows remain status knowledge, with their original sighting age.
+                // Newly retained rows have no complete-read miss yet. Existing suspects keep
+                // the evidence already established by complete reads; this read adds none.
+                var kept = (before ?? new Dictionary<string, QueueSuspect>(StringComparer.Ordinal))
+                    .Where(kv => !rows.ContainsKey(kv.Key))
+                    .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+                foreach (var (key, row) in previousRows ?? new Dictionary<string, QueueKnownRow>(StringComparer.Ordinal))
                 {
-                    var kept = before.Where(kv => !rows.ContainsKey(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
-                    state.QueueSuspects = kept.Count > 0 ? kept : null;
+                    if (!rows.ContainsKey(key)) kept.TryAdd(key, new QueueSuspect(row.Row, true, row.SeenAt));
                 }
+                state.QueueSuspects = kept.Count > 0 ? kept : null;
             }
             else
             {
@@ -975,7 +980,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         private static int? TitleOf(ArrQueueEntry row) => row.MovieId ?? row.SeriesId;
 
-        /// <summary>A row a complete paged read missed: its last queue state, and whether a read that was not published showed it since.</summary>
+        /// <summary>A retained queue row and its sighting age; SeenSince means the next paged miss cannot confirm departure.</summary>
         private sealed record QueueSuspect(ArrQueueEntry Row, bool SeenSince, DateTimeOffset SeenAt);
 
         /// <summary>A baseline row and the last publication that actually saw it.</summary>

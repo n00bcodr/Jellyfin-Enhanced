@@ -461,14 +461,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// "since" is when JE first saw its earliest problem row; without clocks: now, never the grab time).
         /// <paramref name="actionable"/> false (a queue too old to act on): no actions are offered.
         /// </summary>
-        internal static List<QueueGroup> Group(ArrConnection instance, ArrQueueSnapshot? queue, ArrLibrarySnapshot? library, Func<ArrQueueEntry, ArrQueueSeen?>? seen = null, bool actionable = true)
+        internal static List<QueueGroup> Group(ArrConnection instance, ArrQueueSnapshot? queue, ArrLibrarySnapshot? library, Func<ArrQueueEntry, ArrQueueSeen?>? seen = null, bool actionable = true, IReadOnlyList<ArrQueueEntry>? retained = null)
         {
             var result = new List<QueueGroup>();
             if (queue == null) return result;
-            foreach (var rows in queue.Records.GroupBy(r => string.IsNullOrEmpty(r.DownloadId) ? "row:" + r.Id.ToString(CultureInfo.InvariantCulture) : r.DownloadId!))
+            var currentIds = queue.Records.Select(r => r.Id).ToHashSet();
+            var missing = (retained ?? Array.Empty<ArrQueueEntry>()).Where(r => !currentIds.Contains(r.Id)).ToList();
+            var missingIds = missing.Select(r => r.Id).ToHashSet();
+            foreach (var rows in queue.Records.Concat(missing).GroupBy(r => string.IsNullOrEmpty(r.DownloadId) ? "row:" + r.Id.ToString(CultureInfo.InvariantCulture) : r.DownloadId!))
             {
                 var list = rows.ToList();
                 var first = list[0];
+                var statusOnly = list.Any(r => missingIds.Contains(r.Id));
                 var size = list.Sum(r => r.Size ?? 0);
                 var left = list.Sum(r => r.SizeLeft ?? 0);
                 // A season pack repeats the same size on every episode row: count the download once.
@@ -524,7 +528,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     Percent = size > 0 ? (int)Math.Clamp(Math.Floor((size - left) * 100 / size), 0, 100) : null,
                     Size = size > 0 ? size : null,
                     SizeLeft = size > 0 ? left : null,
-                    Eta = list.Select(r => r.EstimatedCompletionTime).Where(d => d.HasValue).DefaultIfEmpty(null).Max(),
+                    Eta = statusOnly ? null : list.Select(r => r.EstimatedCompletionTime).Where(d => d.HasValue).DefaultIfEmpty(null).Max(),
                     Client = first.DownloadClient,
                     Quality = first.Quality,
                     Protocol = first.Protocol,
@@ -534,7 +538,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     AttentionSince = problem == null || seen == null ? null
                         : list.Select(r => seen(r)?.AttentionSince).Where(d => d.HasValue).DefaultIfEmpty(null).Min(),
                     Problem = problem,
-                    Actions = actionable ? actions : Array.Empty<string>(),
+                    Actions = actionable && !statusOnly ? actions : Array.Empty<string>(),
                 });
             }
             return result.OrderBy(g => g.Problem == null ? 1 : 0).ThenBy(g => g.Added ?? DateTime.MaxValue).ToList();

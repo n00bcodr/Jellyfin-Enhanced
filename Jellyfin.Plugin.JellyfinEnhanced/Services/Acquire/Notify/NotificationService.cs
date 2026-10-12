@@ -962,6 +962,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var seasons = episodes.Select(x => x.S).Distinct().OrderBy(s => s).ToList();
             p["count"] = episodes.Count.ToString(CultureInfo.InvariantCulture);
             p["seasons"] = string.Join(", ", seasons);
+            p["episodeItems"] = JsonSerializer.Serialize(episodes.Select(x => new NotifyEpisode(Guid.Parse(x.I!), x.S, x.E)));
             if (only4k) p["variant"] = "4k";
             if (episodes.Count == 1)
             {

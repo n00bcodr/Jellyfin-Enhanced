@@ -361,7 +361,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var instance in Usable())
             {
                 var read = await ReadAsync(instance, cancellationToken).ConfigureAwait(false);
-                var groups = NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value, row => _store.QueueSeen(instance, row));
+                var groups = NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value, row => _store.QueueSeen(instance, row), retained: read.Queue.Expired ? null : _store.MissedQueueRows(instance));
                 downloading += groups.Count;
                 var live = Live(instance, read.History.Value);
                 cards.Add(Card(instance, read, groups, live, config));
@@ -404,7 +404,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var instance in Usable())
             {
                 var read = background ? await BackgroundReadAsync(instance, cancellationToken).ConfigureAwait(false) : await ReadAsync(instance, cancellationToken).ConfigureAwait(false);
-                facts.Add(Facts(instance, read, NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value, row => _store.QueueSeen(instance, row)), Live(instance, read.History.Value)));
+                facts.Add(Facts(instance, read, NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value, row => _store.QueueSeen(instance, row), retained: read.Queue.Expired ? null : _store.MissedQueueRows(instance)), Live(instance, read.History.Value)));
             }
             return Derive(now, config, facts);
         }
@@ -445,7 +445,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 var read = await ReadAsync(instance, cancellationToken).ConfigureAwait(false);
                 // A queue that can't be read any more is listed as last read, with no actions on it.
-                var groups = NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value, row => _store.QueueSeen(instance, row), actionable: !read.Queue.Expired);
+                var groups = NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value, row => _store.QueueSeen(instance, row), actionable: !read.Queue.Expired, retained: read.Queue.Expired ? null : _store.MissedQueueRows(instance));
                 truncated |= read.Queue.Value?.Truncated == true;
                 queue.AddRange(groups);
                 cards.Add(Card(instance, read, groups, Live(instance, read.History.Value), config));
@@ -476,7 +476,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var instance in Usable())
             {
                 var read = await ReadAsync(instance, cancellationToken).ConfigureAwait(false);
-                var groups = NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value, row => _store.QueueSeen(instance, row));
+                var groups = NeedsAttention.Group(instance, read.Queue.Value, read.Library.Value, row => _store.QueueSeen(instance, row), retained: read.Queue.Expired ? null : _store.MissedQueueRows(instance));
                 var system = read.System.Value;
                 list.Add(new AdminSystemInstance
                 {

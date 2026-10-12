@@ -355,7 +355,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 bool InScope(int? season, int? episode)
                     => (key.Season is not int s || season == s) && (key.Episode is not int e || episode == e);
                 // An expired queue says nothing about now: no rows, no downloads to act on.
-                var records = queue.Expired ? null : queue.Value?.Records;
+                var retained = queue.Expired ? Array.Empty<ArrQueueEntry>() : _store.MissedQueueRows(instance);
+                IReadOnlyList<ArrQueueEntry>? records = queue.Expired ? null : queue.Value?.Records.Concat(retained).DistinctBy(r => r.Id).ToList();
                 var scoped = (records ?? Array.Empty<ArrQueueEntry>())
                     .Where(r => (key.IsMovie ? r.MovieId : r.SeriesId) == arrId && InScope(r.SeasonNumber, r.EpisodeNumber))
                     .ToList();
@@ -363,7 +364,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 // episodes count: removing it removes them too).
                 var scopedIds = new HashSet<int>(scoped.Select(r => r.Id));
                 var allDownloads = JellyfinBridge.Phase2(_config()) && scoped.Count > 0
-                    ? NeedsAttention.Group(instance, queue.Value, library.Value, row => _store.QueueSeen(instance, row)).Where(g => g.ArrId == arrId && g.Ids.Any(scopedIds.Contains)).ToList()
+                    ? NeedsAttention.Group(instance, queue.Value, library.Value, row => _store.QueueSeen(instance, row), retained: retained).Where(g => g.ArrId == arrId && g.Ids.Any(scopedIds.Contains)).ToList()
                     : new List<QueueGroup>();
                 var downloads = allDownloads.Take(20).ToList();
                 var rows = scoped

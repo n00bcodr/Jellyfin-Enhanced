@@ -100,6 +100,7 @@ public class ApiArrStatusTests
             View.AddItem(new JfItemRef { ItemId = Sintel, Kind = "movie", Key = sintelKey, Path = "/media/movies/Sintel (2010)/Sintel (2010) Bluray-1080p.mkv", DateCreated = Arr.Now.UtcDateTime.AddDays(-30) });
             View.AddCopy(sintelKey, new JfCopy { ItemId = Sintel, Path = "/media/movies/Sintel (2010)/Sintel (2010) Bluray-1080p.mkv", LibraryName = "Movies", DateCreated = Arr.Now.UtcDateTime.AddDays(-30) });
             View.AddItem(new JfItemRef { ItemId = Firefly, Kind = "series", Key = fireflyKey });
+            View.AddCopy(fireflyKey, new JfCopy { ItemId = Firefly, Path = "/media/tv/Firefly", LibraryName = "TV" });
             View.AddItem(new JfItemRef { ItemId = Season1, Kind = "season", Key = fireflyKey.WithSeason(1), SeriesId = Firefly, Season = 1 });
             View.AddItem(new JfItemRef { ItemId = Episode1, Kind = "episode", Key = fireflyKey.WithEpisode(1, 1), SeriesId = Firefly, Season = 1, Episode = 1 });
             View.AddItem(new JfItemRef { ItemId = Episode3, Kind = "episode", Key = fireflyKey.WithEpisode(1, 3), SeriesId = Firefly, Season = 1, Episode = 3, Virtual = true });

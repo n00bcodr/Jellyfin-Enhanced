@@ -43,9 +43,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
     /// <item><description>it is in Jellyfin and they can open it there (library access, parental
     /// rating and tags, as Jellyfin decides for that user); or</description></item>
     /// <item><description>it is not in Jellyfin at all (still on its way), they have no content
-    /// limit (rating, blocked or allowed tags, unrated items, blocked folders), and they can open
-    /// a library the arr instance is linked to (an instance with no linked libraries is open to
-    /// all). A change that names no instance (Jellyfin's own library adds and removes) is checked
+    /// limit (rating, blocked or allowed tags, unrated items), and they can open the library
+    /// resolved from the title folder or the instance's linked libraries. Unresolved destinations
+    /// require every library. A change that names no instance (Jellyfin's own library adds and removes) is checked
     /// against the instances that hold the title; none holding it means no (but see the request
     /// rule below); or</description></item>
     /// <item><description>it is not in Jellyfin at all and they asked for it themselves (the
@@ -83,6 +83,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         private readonly Acquire.TitleAliases _aliases;
         private readonly IArrJellyfinView _view;
         private readonly IArrRequestFacts? _requests;
+        private readonly ArrInstanceLibraries _libraries;
         private readonly Func<DateTimeOffset> _now;
         private readonly ConcurrentDictionary<(Guid User, string Key, string? Instance), (Verdict Verdict, DateTimeOffset At, string Stamp)> _cache = new();
         private readonly ConcurrentDictionary<(Guid User, int Tvdb), (SeriesCopies Copies, DateTimeOffset At, string Stamp)> _series = new();
@@ -90,16 +91,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         private volatile AliasInputs? _registryStamp;
 
         // The snapshots and their token are published together for concurrent route reads.
-        private sealed record AliasInputs(IReadOnlyList<ArrConnection> Instances, ArrLibrarySnapshot?[] Libraries, string Stamp);
+        private sealed record AliasInputs(IReadOnlyList<ArrConnection> Instances, object?[] Snapshots, string Stamp);
 
         /// <summary>Creates the filter (DI).</summary>
-        public ArrFeedAudience(ILibraryManager libraryManager, IUserManager userManager, ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests)
-            : this(libraryManager, userManager, store, null, view, requests)
+        public ArrFeedAudience(ILibraryManager libraryManager, IUserManager userManager, ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, ArrInstanceLibraries libraries)
+            : this(libraryManager, userManager, store, null, view, requests, libraries)
         {
         }
 
         /// <summary>Creates the filter with a clock, its own Jellyfin view and request facts (tests).</summary>
-        internal ArrFeedAudience(ILibraryManager libraryManager, IUserManager userManager, ArrStateStore store, Func<DateTimeOffset>? now = null, IArrJellyfinView? view = null, IArrRequestFacts? requests = null)
+        internal ArrFeedAudience(ILibraryManager libraryManager, IUserManager userManager, ArrStateStore store, Func<DateTimeOffset>? now = null, IArrJellyfinView? view = null, IArrRequestFacts? requests = null, ArrInstanceLibraries? libraries = null)
         {
             _libraryManager = libraryManager;
             _userManager = userManager;
@@ -108,6 +109,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             _view = view ?? new ArrJellyfinView(libraryManager, userManager);
             _requests = requests;
             _now = now ?? (() => DateTimeOffset.UtcNow);
+            _libraries = libraries ?? new ArrInstanceLibraries(store, () => JellyfinLibraryAccess.ReadLibraries(libraryManager), _now);
         }
 
         // A title key's answer before the caller's own proof of asking: Absent = not in Jellyfin and
@@ -184,6 +186,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             var stamp = (_view.Viewer(userId)?.PolicyRevision ?? string.Empty)
                 + "|" + _view.Revision.ToString(CultureInfo.InvariantCulture)
                 + "|" + RegistryStamp()
+                + "|" + _libraries.Revision
                 + "|" + (_requests?.Revision ?? 0).ToString(CultureInfo.InvariantCulture);
             var visible = own;
             foreach (var change in changes)
@@ -212,12 +215,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         private string RegistryStamp()
         {
             var all = _store.Registry.All();
-            var libraries = all.Select(i => _store.PeekLibrary(i.Id)).ToArray();
+            var snapshots = all.SelectMany(i => new object?[] { _store.PeekLibrary(i.Id), _store.PeekQueue(i.Id), _store.PeekHistory(i.Id) }).ToArray();
             var known = _registryStamp;
-            if (known != null && ReferenceEquals(known.Instances, all) && known.Libraries.Length == libraries.Length
-                && known.Libraries.Zip(libraries).All(p => ReferenceEquals(p.First, p.Second))) return known.Stamp;
+            if (known != null && ReferenceEquals(known.Instances, all) && known.Snapshots.Length == snapshots.Length
+                && known.Snapshots.Zip(snapshots).All(p => ReferenceEquals(p.First, p.Second))) return known.Stamp;
             var stamp = Guid.NewGuid().ToString("N");
-            _registryStamp = new AliasInputs(all, libraries, stamp);
+            _registryStamp = new AliasInputs(all, snapshots, stamp);
             return stamp;
         }
 
@@ -275,8 +278,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             // A title only Seerr knows (no arr holds it yet): its request changes (approved, declined)
             // reach every member without content limits, who can already read its status by key
             // ("Asked by someone in your household").
-            if (instanceId == null && instances.Count == 0) return _requests != null && keys.Any(_requests.RequestedLately) ? Verdict.Visible : Verdict.Absent;
-            return instances.Any(i => CanOpenLinkedLibrary(user, i)) ? Verdict.Visible : Verdict.Absent;
+            if (instanceId == null && instances.Count == 0) return ArrInstanceLibraries.CanOpenEveryLibrary(user, _libraries.Libraries()) && _requests != null && keys.Any(_requests.RequestedLately) ? Verdict.Visible : Verdict.Absent;
+            return instances.Any(i => _store.Registry.Get(i) is { } instance &&
+                ArrInstanceLibraries.CanOpen(user, _libraries.ResolveTitle(instance, title), _libraries.Libraries())) ? Verdict.Visible : Verdict.Absent;
         }
 
         // A season or episode of a series the user may hear about: the item itself when Jellyfin
@@ -373,7 +377,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                 .ToList();
 
         // No content limit of any kind (as Jellyfin's own "has content restrictions", minus folder
-        // access, which the linked libraries decide). Titles not in Jellyfin have no rating or tags
+        // access, which the shared destination resolver decides). Titles not in Jellyfin have no rating or tags
         // to check, so a user with any such limit hears only about titles Jellyfin can check.
         /// <summary>
         /// True when titles Jellyfin doesn't have yet may be hidden from <paramref name="user"/> for
@@ -387,17 +391,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             => user.MaxParentalRatingScore == null
                && NoneSet(user.GetPreference(PreferenceKind.BlockedTags))
                && NoneSet(user.GetPreference(PreferenceKind.AllowedTags))
-               && NoneSet(user.GetPreference(PreferenceKind.BlockedMediaFolders))
                && user.GetPreferenceValues<UnratedItem>(PreferenceKind.BlockUnratedItems).Length == 0;
 
         private static bool NoneSet(string[]? values) => (values ?? Array.Empty<string>()).All(string.IsNullOrWhiteSpace);
 
-        private bool CanOpenLinkedLibrary(User user, string instanceId)
-        {
-            var linked = _store.Registry.Get(instanceId)?.LinkedLibraryIds;
-            if (linked == null || linked.Count == 0 || user.HasPermission(PermissionKind.EnableAllFolders)) return true;
-            var enabled = user.GetPreferenceValues<Guid>(PreferenceKind.EnabledFolders);
-            return linked.Any(l => Guid.TryParse(l, out var g) && enabled.Contains(g));
-        }
     }
 }

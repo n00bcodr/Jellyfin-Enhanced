@@ -20,7 +20,7 @@ namespace JE.Tests;
 /// <summary>
 /// Who sees which Calendar rows: an upcoming title Jellyfin doesn't have yet is shown to a user who
 /// isn't an administrator only when they may open the library its instance lands it in (linked
-/// libraries first, else the folder through the path mappings; a folder no library holds, or a root
+/// libraries after resolving the mapped folder, constrained to linked libraries; a folder no library holds, or a root
 /// two instances share unmapped, is hidden); one Jellyfin has is Jellyfin's own check. Row ids are
 /// unique per instance and source. The favourites/watched route reads data only for items the
 /// caller can open.
@@ -92,7 +92,261 @@ public class IntegrationCalendarAccessTests
     private static Guid Id(JfLibraryRoot library) => Guid.Parse(library.Id);
 
     [Fact]
-    public async Task LinkedLibrariesWinThenTheLongestMappingAndTheDeepestLibrary()
+    public async Task AVisibleSeriesKeepsUnresolvedDownloadsAndChecksCopyAccessOncePerGather()
+    {
+        using var rig = new ResolverRig();
+        var sonarr = rig.Add("sonarr.lan", "Sonarr");
+        rig.Configure(_ => [], null, Enumerable.Range(1, 4).Select(i => ("TV" + i, ArrKind.Sonarr, "http://sonarr.lan:8989")).ToArray());
+        sonarr.Series.Add(FakeArr.SeriesRow(1, 100, "Show"));
+        sonarr.Queue.Add(FakeArr.SonarrQueueRow(1, "download", 1, 2));
+        var view = new FakeJellyfinView();
+        var viewer = view.AddUser(admin: false);
+        var user = (User)viewer.Handle!;
+        user.SetPermission(PermissionKind.EnableAllFolders, false);
+        user.SetPreference(PreferenceKind.EnabledFolders, [rig.Tv.Id]);
+        var key = TitleKey.Parse("tv:tvdb:100")!;
+        var item = Guid.NewGuid();
+        view.AddItem(new JfItemRef { ItemId = item, Kind = "series", Key = key });
+        view.AddCopy(key, new JfCopy { ItemId = item, Path = "/media/tv/Show" }, viewer.UserId);
+        var requests = new Mock<IArrRequestFacts>();
+        var status = new ArrStatusService(rig.Store, view, requests.Object, () => rig.Arr.Plugin.Plugin.Configuration, () => rig.Arr.Now, libraries: rig.Resolver);
+        var body = await status.ForBatchAsync(viewer, new[] { item }, Array.Empty<TitleKey>(), default);
+        var row = Assert.Single(JsonDocument.Parse(body.Json).RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal("downloading", row.GetProperty("stage").GetString());
+        Assert.True(row.TryGetProperty("progress", out _));
+        Assert.Single(view.CopyQueries);
+        requests.Verify(r => r.AskedBy(It.IsAny<TitleKey>(), It.IsAny<Guid>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AVisibleMovieKeepsItsStandardDownloadAndOmitsAResolvedHidden4kCopy()
+    {
+        using var rig = new ResolverRig();
+        var standard = rig.Add("radarr.lan", "Radarr");
+        var uhd = rig.Add("radarr4k.lan", "Radarr");
+        rig.Configure(name => new[] { ("/data", name == "Standard" ? "/media/tv" : "/media/movies") }, null,
+            ("Standard", ArrKind.Radarr, "http://radarr.lan:7878"), ("UHD", ArrKind.Radarr, "http://radarr4k.lan:7878"));
+        var config = rig.Arr.Plugin.Plugin.Configuration;
+        var instances = ArrRegistryMigration.Parse(config.RadarrInstances)!;
+        instances.Single(i => i.Name == "UHD").Role = "4k";
+        config.RadarrInstances = ArrRegistryMigration.Serialize(instances);
+        standard.Movies.Add(FakeArr.Movie(1, 42, "Title", hasFile: true, path: "/data/Title"));
+        uhd.Movies.Add(FakeArr.Movie(1, 42, "Title", hasFile: false, path: "/data/Title"));
+        var stdRow = FakeArr.RadarrQueueRow(1, 42, "Title");
+        stdRow["sizeleft"] = 500.0;
+        standard.Queue.Add(stdRow);
+        var uhdRow = FakeArr.RadarrQueueRow(1, 42, "Title");
+        uhdRow["sizeleft"] = 1500.0;
+        uhd.Queue.Add(uhdRow);
+        var view = new FakeJellyfinView();
+        var viewer = view.AddUser(admin: false);
+        var user = (User)viewer.Handle!;
+        user.SetPermission(PermissionKind.EnableAllFolders, false);
+        user.SetPreference(PreferenceKind.EnabledFolders, [rig.Tv.Id]);
+        var key = TitleKey.Parse("movie:tmdb:42")!;
+        view.AddCopy(key, new JfCopy { ItemId = Guid.NewGuid(), Path = "/media/tv/Title" }, viewer.UserId);
+        var status = new ArrStatusService(rig.Store, view, new NoRequestFacts(), () => config, () => rig.Arr.Now, libraries: rig.Resolver);
+        var body = await status.ForBatchAsync(viewer, Array.Empty<Guid>(), new[] { key }, default);
+        var row = Assert.Single(JsonDocument.Parse(body.Json).RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal("ready", row.GetProperty("stage").GetString());
+        Assert.Equal(75, row.GetProperty("progress").GetProperty("percent").GetInt32());
+        // Family rendering independently hides unfinished 4K variants. Check the composer's input
+        // as well, so a destination-gate regression cannot be masked by that rendering rule.
+        var gather = (Task)typeof(ArrStatusService).GetMethod("GatherAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(status, new object?[] { viewer, new[] { key }, null, null, CancellationToken.None })!;
+        await gather;
+        var gathered = gather.GetType().GetProperty("Result")!.GetValue(gather)!;
+        var gatheredFacts = (Dictionary<TitleKey, TitleFacts>)gathered.GetType().GetProperty("Facts")!.GetValue(gathered)!;
+        Assert.Equal("Standard", Assert.Single(gatheredFacts[key].Copies).Instance.Name);
+        await status.ForTitlesAsync(viewer, new[] { key }, "hidden4k", "scope", rows =>
+        {
+            var fourK = Assert.Single(rows).Status;
+            Assert.NotEqual(StatusStage.Downloading, fourK.Stage);
+            Assert.Null(fourK.Progress);
+            return JsonSerializer.SerializeToUtf8Bytes(new { });
+        }, default, new Dictionary<TitleKey, ArrStatusService.RequestScope> { [key] = new([], true, null) });
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task TitlesWithOnlyHiddenJellyfinCopiesKeepTheGenericAnswer(bool movie, bool resolved)
+    {
+        using var rig = new ResolverRig();
+        var host = rig.Add("arr.lan", movie ? "Radarr" : "Sonarr");
+        rig.Configure(_ => [], _ => resolved ? [rig.Tv.Id] : [], ("Arr", movie ? ArrKind.Radarr : ArrKind.Sonarr, "http://arr.lan:8989"));
+        if (movie)
+        {
+            host.Movies.Add(FakeArr.Movie(1, 42, "Title", hasFile: true));
+            host.Queue.Add(FakeArr.RadarrQueueRow(1, 42, "Title"));
+        }
+        else
+        {
+            host.Series.Add(FakeArr.SeriesRow(1, 42, "Title"));
+            host.Queue.Add(FakeArr.SonarrQueueRow(1, "download", 1, 2));
+        }
+        var view = new FakeJellyfinView();
+        var viewer = view.AddUser(admin: false);
+        var user = (User)viewer.Handle!;
+        user.SetPermission(PermissionKind.EnableAllFolders, false);
+        user.SetPreference(PreferenceKind.EnabledFolders, [rig.Tv.Id]);
+        var key = TitleKey.Parse(movie ? "movie:tmdb:42" : "tv:tvdb:42")!;
+        view.AddCopy(key, new JfCopy { ItemId = Guid.NewGuid(), Path = "/hidden/Title" }, Guid.NewGuid());
+        var status = new ArrStatusService(rig.Store, view, new NoRequestFacts(), () => rig.Arr.Plugin.Plugin.Configuration, () => rig.Arr.Now, libraries: rig.Resolver);
+        var body = await status.ForBatchAsync(viewer, Array.Empty<Guid>(), new[] { key }, default);
+        var row = Assert.Single(JsonDocument.Parse(body.Json).RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal("notHere", row.GetProperty("stage").GetString());
+        Assert.Equal("not_in_arr", row.GetProperty("reason").GetProperty("code").GetString());
+        Assert.False(row.TryGetProperty("progress", out _));
+    }
+
+    [Fact]
+    public async Task StatusOmitsHiddenVariantsAndInvalidatesItsCacheWhenDestinationsChange()
+    {
+        using var rig = new ResolverRig();
+        var standard = rig.Add("radarr.lan", "Radarr");
+        var uhd = rig.Add("radarr4k.lan", "Radarr");
+        rig.Configure(name => new[] { ("/data", name == "Standard" ? "/media/tv" : "/media/movies") },
+            _ => new[] { rig.Tv.Id, rig.Movies.Id },
+            ("Standard", ArrKind.Radarr, "http://radarr.lan:7878"), ("UHD", ArrKind.Radarr, "http://radarr4k.lan:7878"));
+        standard.Movies.Add(FakeArr.Movie(1, 42, "Title", hasFile: false, path: "/data/Title"));
+        uhd.Movies.Add(FakeArr.Movie(1, 42, "Title", hasFile: false, path: "/data/Title"));
+        var stdQueue = FakeArr.RadarrQueueRow(1, 42, "Title");
+        stdQueue["sizeleft"] = 500.0; // 75%
+        standard.Queue.Add(stdQueue);
+        var uhdQueue = FakeArr.RadarrQueueRow(1, 42, "Title");
+        uhdQueue["sizeleft"] = 1500.0; // 25%
+        uhd.Queue.Add(uhdQueue);
+        var view = new FakeJellyfinView();
+        var viewer = view.AddUser(admin: false);
+        var user = (User)viewer.Handle!;
+        user.SetPermission(PermissionKind.EnableAllFolders, false);
+        user.SetPreference(PreferenceKind.EnabledFolders, [rig.Tv.Id]);
+        var key = TitleKey.Parse("movie:tmdb:42")!;
+        var status = new ArrStatusService(rig.Store, view, new NoRequestFacts(), () => rig.Arr.Plugin.Plugin.Configuration, () => rig.Arr.Now, libraries: rig.Resolver);
+        async Task<JsonElement> Read(StatusViewer who)
+        {
+            var body = await status.ForBatchAsync(who, Array.Empty<Guid>(), new[] { key }, default);
+            return JsonDocument.Parse(body.Json).RootElement.GetProperty("items").Clone();
+        }
+        Assert.Equal(75, Assert.Single((await Read(viewer)).EnumerateArray()).GetProperty("progress").GetProperty("percent").GetInt32());
+        var other = new StatusViewer { UserId = viewer.UserId, Handle = user, PolicyRevision = "movies" };
+        user.SetPreference(PreferenceKind.EnabledFolders, [rig.Movies.Id]);
+        Assert.Equal(25, Assert.Single((await Read(other)).EnumerateArray()).GetProperty("progress").GetProperty("percent").GetInt32());
+        // Both libraries linked, but mappings narrow the copy. Changing the mapping must fence the cached body.
+        var config = rig.Arr.Plugin.Plugin.Configuration;
+        var rows = ArrRegistryMigration.Parse(config.RadarrInstances)!;
+        rows.Single(r => r.Name == "UHD").PathMappings = [new() { ArrPath = "/data", JellyfinPath = "/media/tv" }];
+        config.RadarrInstances = ArrRegistryMigration.Serialize(rows);
+        Assert.Empty((await Read(other)).EnumerateArray());
+        // Changing linked libraries also invalidates it: the mapping now falls outside the constraint.
+        rows.Single(r => r.Name == "UHD").LinkedLibraryIds = [rig.Movies.Id];
+        config.RadarrInstances = ArrRegistryMigration.Serialize(rows);
+        Assert.Equal(25, Assert.Single((await Read(other)).EnumerateArray()).GetProperty("progress").GetProperty("percent").GetInt32());
+        rows.Single(r => r.Name == "UHD").LinkedLibraryIds = [];
+        rows.Single(r => r.Name == "UHD").PathMappings = [new() { ArrPath = "/data", JellyfinPath = "/media/movies" }];
+        config.RadarrInstances = ArrRegistryMigration.Serialize(rows);
+        Assert.Single((await Read(other)).EnumerateArray());
+        var index = rig.Library.Libs.FindIndex(l => l.Id == rig.Movies.Id);
+        rig.Library.Libs[index] = new JfLibraryRoot { Id = rig.Movies.Id, Name = "Movies", CollectionType = "movies", Locations = ["/elsewhere"] };
+        rig.Arr.Now += ArrInstanceLibraries.LibrariesTtl + TimeSpan.FromSeconds(1);
+        Assert.Empty((await Read(other)).EnumerateArray());
+    }
+
+    [Fact]
+    public async Task AnOwnRequestKeepsAnUnresolvedCalendarTitleVisible()
+    {
+        using var rig = new CalendarRig();
+        using var seerr = new FakeSeerr();
+        var config = rig.R.Arr.Plugin.Plugin.Configuration;
+        config.ArrIntegrationEnabled = true;
+        config.ArrPhase1Enabled = true;
+        config.JellyseerrEnabled = true;
+        config.JellyseerrUrls = FakeSeerr.Url;
+        config.JellyseerrApiKey = FakeSeerr.Key;
+        seerr.Requests.Add(FakeSeerr.Request(1, "movie", 438631, 2, rig.Member.Id, rig.R.Arr.Now.UtcDateTime));
+        using var requests = new SeerrRequestReadModel(seerr.Transport, new ArrChangeFeed(), null, () => config, () => rig.R.Arr.Now);
+        Assert.True(await requests.RefreshAsync(default));
+        rig.Aliases = new TitleAliases(rig.R.Store, requests);
+        Assert.Contains(await rig.Events(TestCallers.Principal(rig.Member.Id, admin: false)), e => e.Title == "Dune");
+    }
+
+    [Theory]
+    [InlineData("linked")]
+    [InlineData("mapped")]
+    [InlineData("unresolved")]
+    public async Task AbsentTitlesUseTheSameLibraryGateForStatusFollowsQueueFeedAndCalendar(string destination)
+    {
+        using var rig = new CalendarRig();
+        var config = rig.R.Arr.Plugin.Plugin.Configuration;
+        config.DownloadsPageEnabled = true;
+        config.ArrIntegrationEnabled = true;
+        config.ArrPhase1Enabled = true;
+        var rows = ArrRegistryMigration.Parse(config.RadarrInstances)!;
+        if (destination == "linked") rows[0].LinkedLibraryIds = [rig.R.Movies.Id];
+        if (destination == "mapped") rows[0].PathMappings = [new() { ArrPath = "/data/movies", JellyfinPath = "/media/movies" }];
+        config.RadarrInstances = ArrRegistryMigration.Serialize(rows);
+        var movie = FakeArr.Movie(7, 438631, "Dune", hasFile: false);
+        rig.Radarr.Movies.Add(movie);
+        var queue = FakeArr.RadarrQueueRow(7, 438631, "Dune");
+        queue["movie"]!["path"] = movie["path"]!.DeepClone();
+        rig.Radarr.Queue.Add(queue);
+        var key = TitleKey.Parse("movie:tmdb:438631")!;
+        var view = new FakeJellyfinView();
+        var member = new StatusViewer { UserId = rig.Member.Id, Handle = rig.Member, PolicyRevision = "member" };
+        var allUser = rig.Callers.Register(Guid.NewGuid(), admin: false);
+        allUser.SetPermission(PermissionKind.EnableAllFolders, true);
+        var all = new StatusViewer { UserId = allUser.Id, Handle = allUser, PolicyRevision = "all" };
+        var facts = new Mock<IArrRequestFacts>();
+        var audience = new ArrFeedAudience(rig.Library.Object, rig.Callers.Users.Object, rig.R.Store, () => rig.R.Arr.Now, view, facts.Object, rig.R.Resolver);
+        var status = new ArrStatusService(rig.R.Store, view, facts.Object, () => config, () => rig.R.Arr.Now, libraries: rig.R.Resolver);
+        var instance = rig.R.Arr.Instance("Movies");
+        var change = new ArrFeedChange(key.ToString(), 1, instance.Id);
+        var controller = ApiAssetTests.Controller(rig.R.Arr.Plugin.Core, rig.R.Arr.Transport, rig.R.Store, rig.R.Arr.Factory, rig.Database, rig.Callers.Users.Object, rig.Library.Object, rig.UserData.Object, rig.R.Resolver, audience);
+        controller.HttpContext.User = TestCallers.Principal(member.UserId, admin: false);
+        // No library index yet: queue-embedded title folders must make the same mapping decision.
+        var queueBody = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await controller.GetDownloadQueue()).Value);
+        Assert.Empty(queueBody.GetProperty("items").EnumerateArray());
+        Assert.Empty(audience.Visible(member.UserId, false, new[] { change }));
+        async Task<JsonElement> Status(StatusViewer viewer)
+        {
+            var body = await status.ForBatchAsync(viewer, Array.Empty<Guid>(), new[] { key }, default);
+            return JsonDocument.Parse(body.Json).RootElement.GetProperty("items").Clone();
+        }
+        Assert.Empty((await Status(member)).EnumerateArray());
+        Assert.False(status.MayFollow(member, key));
+        Assert.DoesNotContain(await rig.Events(TestCallers.Principal(member.UserId, admin: false)), e => e.Title == "Dune");
+        Assert.Equal("downloading", Assert.Single((await Status(all)).EnumerateArray()).GetProperty("stage").GetString());
+        Assert.True(status.MayFollow(all, key));
+        Assert.Contains(key.ToString(), audience.Visible(all.UserId, false, new[] { change }));
+        Assert.Contains(await rig.Events(TestCallers.Principal(all.UserId, admin: false)), e => e.Title == "Dune");
+        var admin = view.AddUser(admin: true);
+        Assert.Equal("downloading", Assert.Single((await Status(admin)).EnumerateArray()).GetProperty("stage").GetString());
+        facts.Setup(f => f.AskedBy(It.IsAny<TitleKey>(), member.UserId)).Returns(true);
+        facts.Setup(f => f.AskedLatelyBy(It.IsAny<TitleKey>(), member.UserId)).Returns(true);
+        facts.SetupGet(f => f.Revision).Returns(1);
+        Assert.Equal("downloading", Assert.Single((await Status(member)).EnumerateArray()).GetProperty("stage").GetString());
+        Assert.True(status.MayFollow(member, key));
+        Assert.Contains(key.ToString(), audience.Visible(member.UserId, false, new[] { change }));
+    }
+
+    [Theory]
+    [InlineData("/data/tv/../movies/Title")]
+    [InlineData("/data/tv/./Title")]
+    [InlineData("D:\\TV\\..\\Movies\\Title")]
+    public void RelativeNavigationSegmentsNeverMapIntoAnOpenLibrary(string path)
+    {
+        using var rig = new ResolverRig();
+        rig.Add("sonarr.lan", "Sonarr");
+        rig.Configure(_ => new[] { ("/data/tv", "/media/tv"), ("D:/TV", "/media/tv") }, null, ("TV", ArrKind.Sonarr, "http://sonarr.lan:8989"));
+        Assert.False(rig.Resolve("TV", path).Resolved);
+        Assert.False(BridgePaths.IsUnder(path, path.StartsWith('D') ? "D:/TV" : "/data/tv"));
+    }
+
+    [Fact]
+    public async Task MappedFoldersNarrowLinkedLibrariesThenFallBackToThem()
     {
         using var rig = new ResolverRig();
         rig.Add("sonarr.lan", "Sonarr", "/data/tv");
@@ -104,7 +358,7 @@ public class IntegrationCalendarAccessTests
                 "TV 2" => new[] { ("/data/tv", "/media/tv/kids") },                       // the same arr path, another disk
                 _ => new[] { ("/data/movies", "/media/movies") },
             },
-            name => name == "Movies" ? new[] { rig.Kids.Id } : Array.Empty<string>(),
+            name => name == "Movies" ? new[] { rig.Kids.Id, rig.Movies.Id } : Array.Empty<string>(),
             ("TV", ArrKind.Sonarr, "http://sonarr.lan:8989"), ("TV 2", ArrKind.Sonarr, "http://sonarr2.lan:8989"), ("Movies", ArrKind.Radarr, "http://radarr.lan:7878"));
         await rig.Roots();
 
@@ -113,10 +367,13 @@ public class IntegrationCalendarAccessTests
         Assert.Equal("mapped", tv.Via);
         // Two instances with the same root but their own mappings land in their own libraries (the deepest folder wins).
         Assert.Equal(new[] { Id(rig.Kids) }, rig.Resolve("TV 2", "/data/tv/Show B").Libraries);
-        // Linked libraries beat the folder (which would say Movies).
+        // A mapped folder narrows multiple linked libraries to the one it actually lands in.
         var movie = rig.Resolve("Movies", "/data/movies/Dune (2021)");
-        Assert.Equal(new[] { Id(rig.Kids) }, movie.Libraries);
-        Assert.Equal("linked", movie.Via);
+        Assert.Equal(new[] { Id(rig.Movies) }, movie.Libraries);
+        Assert.Equal("mapped", movie.Via);
+        var fallback = rig.Resolve("Movies", "/outside/Dune");
+        Assert.Equal(new[] { Id(rig.Kids), Id(rig.Movies) }, fallback.Libraries);
+        Assert.Equal("linked", fallback.Via);
         Assert.Equal(ArrLibraryProblem.NoPath, rig.Resolve("TV", " ").Problem);
         Assert.Equal(ArrLibraryProblem.NotInLibrary, rig.Resolve("TV", "/data/other/Show").Problem);
     }
@@ -214,7 +471,7 @@ public class IntegrationCalendarAccessTests
         // Nothing decided from the old copy was kept for later callers.
         Assert.Equal(new[] { Id(rig.Tv) }, rig.Resolve("TV", "/data/tv/Show B").Libraries);
         Assert.Equal(new[] { Id(rig.Tv) }, rig.Resolver.Resolve(stale, "/data/tv/Show A").Libraries);
-        // Linked libraries set later win for the old copy too.
+        // A mapping outside the linked libraries falls back to those libraries for the old copy too.
         rows = JsonNode.Parse(c.SonarrInstances)!.AsArray();
         rows[0]!["LinkedLibraryIds"] = new JsonArray(JsonValue.Create(rig.Movies.Id));
         c.SonarrInstances = rows.ToJsonString();
@@ -413,8 +670,8 @@ public class IntegrationCalendarAccessTests
         await rig.R.Warmed();                                               // Dune's unmapped folder started the root-folder reads
         var calls = rig.R.Arr.CallCount();
         // All libraries (and a rating limit, which can't judge titles Jellyfin doesn't have yet): the
-        // resolved ones; never the unresolved one.
-        Assert.Equal(new[] { "Show A", "Show B" }, Titles(await rig.Events(TestCallers.Principal(rig.Kid.Id, admin: false))));
+        // unresolved ones as well, because every library is open.
+        Assert.Equal(new[] { "Dune", "Show A", "Show B" }, Titles(await rig.Events(TestCallers.Principal(rig.Kid.Id, admin: false))));
         // A folder blocked for them hides it whatever else they may open.
         rig.Kid.SetPreference(PreferenceKind.BlockedMediaFolders, [rig.R.Kids.Id]);
         Assert.Equal(new[] { "Show A" }, Titles(await rig.Events(TestCallers.Principal(rig.Kid.Id, admin: false))));
@@ -634,7 +891,7 @@ public class IntegrationCalendarAccessTests
         // root folders can't be read (its disk space call fails), so whether "/data/tv" is TV 2's
         // disk too can't be told: TV's upcoming episode, whose calendar read works, stays hidden.
         using var rig = new ResolverRig();
-        rig.Library.AddLibrary("Same path", "tvshows", "/data/tv");
+        var samePath = rig.Library.AddLibrary("Same path", "tvshows", "/data/tv");
         var tv = rig.Add("sonarr.lan", "Sonarr", "/data/tv");
         var tv2 = rig.Add("sonarr2.lan", "Sonarr", "/data/other");
         rig.Configure(_ => Array.Empty<(string, string)>(), null, ("TV", ArrKind.Sonarr, "http://sonarr.lan:8989"), ("TV 2", ArrKind.Sonarr, "http://sonarr2.lan:8989"));
@@ -646,7 +903,8 @@ public class IntegrationCalendarAccessTests
         tv2.Before = (path, _) => broken && path.EndsWith("/diskspace", StringComparison.Ordinal) ? Task.FromException(new HttpRequestException("down")) : Task.CompletedTask;
         var callers = new TestCallers();
         var member = callers.Register(Guid.NewGuid(), admin: false, "member");
-        member.SetPermission(PermissionKind.EnableAllFolders, true);
+        member.SetPermission(PermissionKind.EnableAllFolders, false);
+        member.SetPreference(PreferenceKind.EnabledFolders, [samePath.Id, rig.Tv.Id]);
         var database = new IntegrationCalendarTests.CalendarDatabase();
         async Task<List<ArrItem>> Events()
         {
@@ -680,7 +938,7 @@ public class IntegrationCalendarAccessTests
         // TV is mapped into the TV library; Movies has no mapping and Jellyfin's "Same path" library
         // is its own root (/data/movies), so its titles need every instance's root folders.
         using var rig = new ResolverRig();
-        rig.Library.AddLibrary("Same path", "movies", "/data/movies");
+        var samePath = rig.Library.AddLibrary("Same path", "movies", "/data/movies");
         var tv = rig.Add("sonarr.lan", "Sonarr", "/data/tv");
         rig.Add("radarr.lan", "Radarr", "/data/movies");
         rig.Configure(name => name == "TV" ? new[] { ("/data/tv", "/media/tv") } : Array.Empty<(string, string)>(), null,
@@ -691,7 +949,8 @@ public class IntegrationCalendarAccessTests
         tv.Calendar.Add(FakeArr.Episode(42, "2026-10-20T20:00:00Z", "Show A", tvdb: 501));
         var callers = new TestCallers();
         var member = callers.Register(Guid.NewGuid(), admin: false, "member");
-        member.SetPermission(PermissionKind.EnableAllFolders, true);
+        member.SetPermission(PermissionKind.EnableAllFolders, false);
+        member.SetPreference(PreferenceKind.EnabledFolders, [samePath.Id, rig.Tv.Id]);
         var admin = callers.Register(Guid.NewGuid(), admin: true, "admin");
         var database = new IntegrationCalendarTests.CalendarDatabase();
         async Task<List<ArrItem>> Events(User caller)
@@ -721,7 +980,8 @@ public class IntegrationCalendarAccessTests
         // An unmapped movie of a cold instance (no system snapshot yet; its reads hang): the
         // calendar answers at once without it and starts one background read ...
         using var fresh = new ResolverRig();
-        fresh.Library.AddLibrary("Same path", "movies", "/data/movies");
+        var freshPath = fresh.Library.AddLibrary("Same path", "movies", "/data/movies");
+        member.SetPreference(PreferenceKind.EnabledFolders, [freshPath.Id, fresh.Tv.Id]);
         var tv2 = fresh.Add("sonarr.lan", "Sonarr", "/data/tv");
         var movies2 = fresh.Add("radarr.lan", "Radarr", "/data/movies");
         fresh.Configure(name => name == "TV" ? new[] { ("/data/tv", "/media/tv") } : Array.Empty<(string, string)>(), null,

@@ -10239,8 +10239,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// Older items can't make the window, so their records are never decided. Returned in the
         /// ring's order. Keys left out only for want of proof of asking go into <paramref name="absent"/> when given.
         /// </summary>
-        private IReadOnlyList<Services.Arr.ArrHistoryEntry> ArrHistoryForAudience(Services.Arr.ArrConnection instance, IReadOnlyList<Services.Arr.ArrHistoryEntry> records, IReadOnlySet<(int TmdbId, string MediaType)>? askedProof, ICollection<string>? absent = null)
+        private IReadOnlyList<Services.Arr.ArrHistoryEntry> ArrHistoryForAudience(Services.Arr.ArrConnection instance, IReadOnlyList<Services.Arr.ArrHistoryEntry> records, HashSet<(int TmdbId, string MediaType)>? allowedRequests, IReadOnlySet<(int TmdbId, string MediaType)>? askedProof, ICollection<string>? absent = null)
         {
+            records = FilterByAllowedRequests(records, allowedRequests, _ => instance.Kind == Services.Arr.ArrKind.Sonarr ? nameof(ArrType.Sonarr) : nameof(ArrType.Radarr), r => r.TmdbId);
             static (int? Tmdb, int? Tvdb, int? Season, int? Episode) Ids(Services.Arr.ArrHistoryEntry r) => (r.TmdbId, r.TvdbId, r.SeasonNumber, r.EpisodeNumber);
             var sonarr = instance.Kind == Services.Arr.ArrKind.Sonarr;
             // The item a record belongs to, as ArrLegacyViews.HistoryItems groups them.
@@ -10339,7 +10340,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var rows = new List<Services.Arr.ArrLegacyQueueItem>();
                 for (int i = 0; i < instances.Count; i++)
                 {
-                    if (reads[i].Value is not { } queue) continue;
+                    if (reads[i].Expired || reads[i].Value is not { } queue) continue;
                     var records = isAdmin ? queue.Records : ArrAudienceFilter(instances[i], queue.Records, r => (r.TmdbId, r.TvdbId, r.SeasonNumber, r.EpisodeNumber), proof, absent);
                     rows.AddRange(Services.Arr.ArrLegacyViews.QueueItems(instances[i], new Services.Arr.ArrQueueSnapshot { Records = records, TotalRecords = queue.TotalRecords, Truncated = queue.Truncated }));
                 }
@@ -10420,8 +10421,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // Per record, before a season pack's episodes are grouped: an episode the
                     // caller can't see leaves the pack's count too. Only as much of the ring as
                     // the window can show is decided.
-                    var records = isAdmin ? history.Records : ArrHistoryForAudience(instances[i], history.Records, proof, absent);
-                    rows.AddRange(Services.Arr.ArrLegacyViews.HistoryItems(instances[i], new Services.Arr.ArrHistorySnapshot { Records = records, Watermark = history.Watermark, FullReadAt = history.FullReadAt }));
+                    var records = isAdmin ? history.Records : ArrHistoryForAudience(instances[i], history.Records, allowedRequests, proof, absent);
+                    rows.AddRange(Services.Arr.ArrLegacyViews.HistoryItems(instances[i], new Services.Arr.ArrHistorySnapshot { Records = records, Watermark = history.Watermark, FullReadAt = history.FullReadAt, FullReadDue = history.FullReadDue }));
                 }
                 return rows;
             }
@@ -11201,9 +11202,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // collection, matched to Jellyfin when Jellyfin has them.
                 if (evt.Source == nameof(ArrType.Shoko)) return true;
                 if (_instanceLibraries == null || evt.InstanceId == null || !instancesById.TryGetValue(evt.InstanceId, out var instance)) return false;
+                var key = Services.Acquire.TitleAliases.FromProviderIds(instance.Kind == Services.Arr.ArrKind.Radarr, evt.TmdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture), evt.TvdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture), null).FirstOrDefault();
+                if (key != null && _titleAliases?.AskedBy(key, calendarUser.Id) == true) return true;
                 var target = _instanceLibraries.Resolve(instance, evt.ArrPath);
                 rootsConsulted |= target.Via == "same_path" || target.Problem is Services.Acquire.ArrLibraryProblem.RootsUnknown or Services.Acquire.ArrLibraryProblem.SharedRoot or Services.Acquire.ArrLibraryProblem.NotInLibrary;
-                return target.Libraries is { Count: > 0 } libraries && Services.Acquire.ArrInstanceLibraries.CanOpen(calendarUser, libraries);
+                return Services.Acquire.ArrInstanceLibraries.CanOpen(calendarUser, target, _instanceLibraries.Libraries());
             }
 
             // Deduplicate events across instances. Tie-break priority:

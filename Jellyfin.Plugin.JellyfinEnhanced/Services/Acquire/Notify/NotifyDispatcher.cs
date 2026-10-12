@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -196,7 +197,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
             // Held back by quiet hours, a batch window or retries: whether the recipient may still get it
             // is decided now, not when it was queued.
-            if (Suppression(delivery, prefs) is { } reason)
+            var payload = new Dictionary<string, string>(Payload(delivery.Payload));
+            if (Suppression(delivery, prefs, payload, out var itemId) is { } reason)
             {
                 _store.Suppress(delivery.Id, reason, delivery.Generation);
                 return;
@@ -208,9 +210,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 _store.Suppress(delivery.Id, off, delivery.Generation);
                 return;
             }
-            var payload = Payload(delivery.Payload);
             var message = NotifyTexts.Render(delivery.Kind, payload, prefs.HideTitles);
-            var link = ExternalLink(config, delivery.ItemId, delivery.Kind);
+            var link = ExternalLink(config, itemId, delivery.Kind);
             var result = delivery.Channel == NotifyChannel.Ntfy
                 ? await _ntfy.SendAsync(config.ArrNtfyServerUrl, config.GetSecret(nameof(PluginConfiguration.ArrNtfyToken)), prefs.NtfyTopic!, message, link, Tags(delivery.Kind), Priority(delivery.Kind), cancellationToken).ConfigureAwait(false)
                 : await _email.SendAsync(config, prefs.EmailAddress!, message, link, SettingsLink(config), cancellationToken).ConfigureAwait(false);
@@ -234,8 +235,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// longer an administrator or switched those alerts off; a Ready or new-episodes alert for a
         /// title the recipient can no longer open (library access or parental limits changed).
         /// </summary>
-        private string? Suppression(DueDelivery delivery, NotifyPrefs prefs)
+        private string? Suppression(DueDelivery delivery, NotifyPrefs prefs, Dictionary<string, string> payload, out string? itemId)
         {
+            itemId = delivery.ItemId;
             var kindOff = delivery.Kind switch
             {
                 NotifyKind.Ready => !prefs.Ready,
@@ -253,6 +255,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
             if (_view == null || delivery.Kind is not (NotifyKind.Ready or NotifyKind.Episodes)) return null;
             if (_view.Viewer(delivery.UserId) is not { } viewer) return "The recipient no longer exists or is disabled.";
+            // Older notifications have no episodeItems and retain their parent-item check. New
+            // batches carry each number's actual file, including combined files and the variant.
+            if (delivery.Kind == NotifyKind.Episodes && payload.TryGetValue("episodeItems", out var json))
+            {
+                List<NotifyEpisode>? episodes;
+                try { episodes = JsonSerializer.Deserialize<List<NotifyEpisode>>(json, PayloadJson); }
+                catch (JsonException) { episodes = null; }
+                var visible = episodes?.Where(e => e.ItemId != Guid.Empty && _view.Resolve(e.ItemId, viewer) != null)
+                    .DistinctBy(e => (e.Season, e.Episode)).OrderBy(e => e.Season).ThenBy(e => e.Episode).ToList();
+                if (visible is not { Count: > 0 }) return "The recipient can no longer open these episodes.";
+                var seasons = visible.Select(e => e.Season).Distinct().ToList();
+                payload["count"] = visible.Count.ToString(CultureInfo.InvariantCulture);
+                payload["seasons"] = string.Join(", ", seasons);
+                if (visible.Count == 1)
+                {
+                    payload["mode"] = "single";
+                    payload["season"] = visible[0].Season.ToString(CultureInfo.InvariantCulture);
+                    payload["episode"] = visible[0].Episode.ToString(CultureInfo.InvariantCulture);
+                    itemId = visible[0].ItemId.ToString("N", CultureInfo.InvariantCulture);
+                }
+                else if (visible.Count != episodes!.Count)
+                {
+                    // The whole season is no longer visible: don't announce it as complete.
+                    payload["mode"] = "many";
+                    payload.Remove("season");
+                    payload.Remove("episode");
+                }
+            }
             if (Guid.TryParse(delivery.ItemId, out var item) && item != Guid.Empty)
             {
                 return _view.Resolve(item, viewer) == null ? "The recipient can no longer open this title." : null;

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 
 namespace JE.Tests;
@@ -28,6 +29,133 @@ public class IntegrationArrStateTests
             await Task.Delay(10);
         }
         throw new TimeoutException("refreshes did not finish");
+    }
+
+    [Fact]
+    public async Task PersistentShortReadsRetainAnOmittedDownloadUntilItsOriginalSightingExpires()
+    {
+        var (arr, sonarr, store, tv) = await QueueOf(501);
+        using var lifetime = arr;
+        sonarr.Series.Add(FakeArr.SeriesRow(1, 100, "Show"));
+        sonarr.Episodes.Add(FakeArr.Episode(501, "2020-01-01T00:00:00Z", tvdb: 100, episode: 501));
+        var lastSeen = arr.Now;
+        var view = new FakeJellyfinView();
+        var admin = view.AddUser(admin: true);
+        var episode = Guid.NewGuid();
+        view.AddItem(new JfItemRef { ItemId = episode, Kind = "episode", Key = TitleKey.Parse("tv:tvdb:100:s1:e501"), Season = 1, Episode = 501, Virtual = true });
+        var status = new ArrStatusService(store, view, new NoRequestFacts(), () => arr.Plugin.Plugin.Configuration, () => arr.Now);
+        async Task<JsonElement> Item()
+        {
+            var body = await status.ForItemAsync(admin, episode, default);
+            return JsonDocument.Parse(body.Json).RootElement.GetProperty("items")[0].Clone();
+        }
+        Assert.Equal("downloading", (await Item()).GetProperty("stage").GetString());
+        sonarr.Queue.RemoveAt(500); // The incomplete response persistently omits this still-active row.
+        sonarr.ReportedTotal = (path, count) => path == "/api/v3/queue" ? 501 : count;
+        arr.Now = lastSeen + ArrStateStore.QueueKeepHeld + TimeSpan.FromSeconds(1);
+        await Refresh(arr, store, tv);
+        Assert.True(store.PeekQueue(tv.Id)!.Incomplete);
+        var held = await Item();
+        Assert.Equal("downloading", held.GetProperty("stage").GetString());
+        Assert.False(held.GetProperty("progress").TryGetProperty("etaSeconds", out _));
+        var group = Assert.Single(NeedsAttention.Group(tv, store.PeekQueue(tv.Id), store.PeekLibrary(tv.Id), retained: store.MissedQueueRows(tv)), g => g.Ids.Contains(501));
+        Assert.Equal("downloading", group.Status);
+        Assert.Empty(group.Actions);
+        Assert.Null(group.Eta);
+        Assert.Null(store.LeftQueueAt(tv, null, 501));
+        arr.Now = lastSeen + TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(1);
+        await Refresh(arr, store, tv);
+        var unknown = await Item();
+        Assert.Equal("service_down", unknown.GetProperty("reason").GetProperty("code").GetString());
+        Assert.False(unknown.TryGetProperty("progress", out _));
+        Assert.DoesNotContain(NeedsAttention.Group(tv, store.PeekQueue(tv.Id), null, retained: store.MissedQueueRows(tv)), g => g.Ids.Contains(501));
+        Assert.Null(store.LeftQueueAt(tv, null, 501));
+        // Complete paged reads resume without the row: the partial read was not a first miss.
+        sonarr.ReportedTotal = null;
+        sonarr.Queue.Add(FakeArr.SonarrQueueRow(502, "dl502", 1, 502));
+        await Refresh(arr, store, tv);
+        Assert.True(store.PeekQueue(tv.Id)!.Paged);
+        Assert.False(store.PeekQueue(tv.Id)!.Incomplete);
+        Assert.Null(store.LeftQueueAt(tv, null, 501));
+        await Refresh(arr, store, tv);
+        Assert.NotNull(store.LeftQueueAt(tv, null, 501));
+
+        // A miss already established by a complete read still counts across a partial read.
+        var (otherArr, otherSonarr, otherStore, otherTv) = await QueueOf(1001);
+        using var otherLifetime = otherArr;
+        otherSonarr.Queue.RemoveAll(r => (int)r["id"]! == 501);
+        await Refresh(otherArr, otherStore, otherTv);
+        Assert.Contains(otherStore.MissedQueueRows(otherTv), r => r.Id == 501);
+        Assert.Null(otherStore.LeftQueueAt(otherTv, null, 501));
+        otherSonarr.ReportedTotal = (path, count) => path == "/api/v3/queue" ? 1001 : count;
+        otherArr.Now += ArrStateStore.QueueKeepHeld + TimeSpan.FromSeconds(1);
+        await Refresh(otherArr, otherStore, otherTv);
+        Assert.True(otherStore.PeekQueue(otherTv.Id)!.Incomplete);
+        Assert.Null(otherStore.LeftQueueAt(otherTv, null, 501));
+        otherSonarr.ReportedTotal = null;
+        await Refresh(otherArr, otherStore, otherTv);
+        Assert.NotNull(otherStore.LeftQueueAt(otherTv, null, 501));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnExpiredRetainedEpisodeCannotOverrideAJellyfinFileOrAFinishedImport(bool inJellyfin)
+    {
+        var (arr, sonarr, store, tv) = await QueueOf(501);
+        using var lifetime = arr;
+        sonarr.Series.Add(FakeArr.SeriesRow(1, 100, "Show"));
+        var episode = FakeArr.Episode(501, "2020-01-01T00:00:00Z", tvdb: 100, episode: 501);
+        episode["hasFile"] = true;
+        sonarr.Episodes.Add(episode);
+        var view = new FakeJellyfinView();
+        var viewer = view.AddUser(admin: true);
+        var item = Guid.NewGuid();
+        view.AddItem(new JfItemRef { ItemId = item, Kind = "episode", Key = TitleKey.Parse("tv:tvdb:100:s1:e501"), Season = 1, Episode = 501, Virtual = !inJellyfin });
+        var status = new ArrStatusService(store, view, new NoRequestFacts(), () => arr.Plugin.Plugin.Configuration, () => arr.Now);
+        await status.ForItemAsync(viewer, item, default);
+        sonarr.Queue.RemoveAt(500);
+        sonarr.ReportedTotal = (path, count) => path == "/api/v3/queue" ? 501 : count;
+        arr.Now += TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(1);
+        await Refresh(arr, store, tv);
+        Assert.Contains(store.MissedQueueState(tv).Expired, r => r.Id == 501);
+        var body = await status.ForItemAsync(viewer, item, default);
+        var row = Assert.Single(JsonDocument.Parse(body.Json).RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(inJellyfin ? "ready" : "almostReady", row.GetProperty("stage").GetString());
+        Assert.Equal(inJellyfin ? "ready" : "library_pending", row.GetProperty("reason").GetProperty("code").GetString());
+        Assert.False(row.TryGetProperty("progress", out _));
+        Assert.Null(store.LeftQueueAt(tv, null, 501));
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task ShortFullHistoryReadsRetryThenPreserveTheRingAndLeaveAFullReadDue(bool recovers, bool seeded)
+    {
+        using var arr = Rig(out var radarr, out _);
+        var now = arr.Now;
+        for (var id = 1; id <= 3; id++) radarr.History.Add(FakeArr.HistoryRow(id, "downloadFolderImported", now.UtcDateTime.AddMinutes(-id), "dl" + id, id, "Movie"));
+        var previous = seeded ? ArrStateLoaders.BuildHistory(new[] { new ArrHistoryEntry { Id = 99, Date = now.UtcDateTime.AddDays(-1) } }, null, now.AddHours(-2)) : null;
+        var attempts = 0;
+        radarr.BeforePage = (path, page) => { if (path == "/api/v3/history" && page == 1) attempts++; };
+        radarr.ReportedTotal = (path, count) => path == "/api/v3/history" && (!recovers || attempts == 1) ? count + 1 : count;
+        var client = arr.Factory.For(arr.Instance("Movies").Id).Value!;
+        var result = await ArrStateLoaders.LoadHistoryAsync(client, previous, now, default);
+        Assert.True(result.Ok);
+        Assert.Equal(2, attempts);
+        var history = result.Value!;
+        Assert.Equal(recovers ? now : previous?.FullReadAt ?? now, history.FullReadAt);
+        Assert.Equal(!recovers, history.FullReadDue);
+        Assert.DoesNotContain("0001-01-01", JsonSerializer.Serialize(history), StringComparison.Ordinal);
+        Assert.Equal(!recovers && seeded, history.Records.Any(r => r.Id == 99));
+        radarr.ReportedTotal = null;
+        var next = await ArrStateLoaders.LoadHistoryAsync(client, history, now.AddSeconds(30), default);
+        Assert.True(next.Ok);
+        Assert.Equal(recovers ? 2 : 3, attempts);
+        Assert.Equal(recovers ? now : now.AddSeconds(30), next.Value!.FullReadAt);
+        Assert.False(next.Value.FullReadDue);
+        Assert.DoesNotContain(next.Value.Records, r => r.Id == 99);
     }
 
     [Fact]

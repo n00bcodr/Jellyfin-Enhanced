@@ -173,6 +173,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
     /// <remarks><paramref name="Generation"/>: the database generation the row was read under (a restore makes its id meaningless).</remarks>
     internal sealed record DueDelivery(long Id, long NotificationId, Guid UserId, string Channel, int Attempts, string Kind, string? TitleKey, string? ItemId, string Payload, DateTimeOffset CreatedAt, long Generation = 0);
 
+    /// <summary>An episode number and its visible file at batch flush, rechecked at delivery.</summary>
+    internal sealed record NotifyEpisode(Guid ItemId, int Season, int Episode);
+
     /// <summary>A failed delivery as administrators see it.</summary>
     public sealed class DeliveryFailure
     {

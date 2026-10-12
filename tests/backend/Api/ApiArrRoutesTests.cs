@@ -96,6 +96,53 @@ public class ApiArrRoutesTests
     private static JsonElement Json(IActionResult result) => JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(result).Value);
 
     [Fact]
+    public async Task ExpiredQueueRowsAreHiddenWhileStaleRowsAndPastHistoryRemainWithErrors()
+    {
+        using var rig = new Rig();
+        rig.Radarr.Queue.Add(FakeArr.RadarrQueueRow(1, 45745, "Sintel"));
+        rig.Radarr.History.Add(FakeArr.HistoryRow(1, "downloadFolderImported", rig.Arr.Now.UtcDateTime.AddHours(-1), "dl", 45745, "Sintel"));
+        var controller = rig.Controller(admin: false);
+        Assert.Single(Json(await controller.GetDownloadQueue()).GetProperty("items").EnumerateArray());
+        Assert.Single(Json(await controller.GetDownloadHistory()).GetProperty("items").EnumerateArray());
+        rig.Radarr.FailWith = 503;
+        rig.Arr.Now += TimeSpan.FromMinutes(9);
+        await rig.Store.RefreshForEventAsync(rig.Arr.Instance("Movies").Id, ArrSnapshotKind.Queue, force: true);
+        var stale = Json(await controller.GetDownloadQueue());
+        Assert.Equal(50, Assert.Single(stale.GetProperty("items").EnumerateArray()).GetProperty("progress").GetDouble());
+        Assert.Single(stale.GetProperty("errors").EnumerateArray());
+        rig.Arr.Now += TimeSpan.FromMinutes(22);
+        var expired = Json(await controller.GetDownloadQueue());
+        Assert.Empty(expired.GetProperty("items").EnumerateArray());
+        Assert.Single(expired.GetProperty("errors").EnumerateArray());
+        await rig.Store.RefreshForEventAsync(rig.Arr.Instance("Movies").Id, ArrSnapshotKind.History, force: true);
+        Assert.Single(Json(await controller.GetDownloadHistory()).GetProperty("items").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task TheHistoryRouteFiltersRequestsBeforeVisibleImportsFillItsWindow()
+    {
+        using var rig = new Rig();
+        using var seerr = new FakeSeerr();
+        var config = rig.Arr.Plugin.Plugin.Configuration;
+        config.DownloadsFilterByUserRequests = true;
+        config.JellyseerrEnabled = true;
+        config.JellyseerrUrls = FakeSeerr.Url;
+        config.JellyseerrApiKey = FakeSeerr.Key;
+        var cache = (System.Collections.IDictionary)typeof(JellyfinEnhancedController).GetField("_userIdCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
+        cache[rig.Member.ToString()] = ("7", DateTime.UtcNow);
+        try
+        {
+            seerr.Requests.Add(FakeSeerr.Request(1, "movie", 45745, 2, rig.Member, DateTime.UtcNow.AddDays(-1)));
+            for (var i = 1; i <= 299; i++) rig.Radarr.History.Add(FakeArr.HistoryRow(i, "downloadFolderImported", rig.Arr.Now.UtcDateTime.AddMinutes(-i), "dl" + i, 9000 + i, "Theirs"));
+            rig.Radarr.History.Add(FakeArr.HistoryRow(300, "downloadFolderImported", rig.Arr.Now.UtcDateTime.AddDays(-1), "mine", 45745, "Sintel"));
+            var response = Json(await rig.Controller(admin: false, first: seerr.Transport).GetDownloadHistory());
+            Assert.Equal("Sintel", Assert.Single(response.GetProperty("items").EnumerateArray()).GetProperty("title").GetString());
+            Assert.Equal(1, response.GetProperty("totalPages").GetInt32());
+        }
+        finally { cache.Remove(rig.Member.ToString()); }
+    }
+
+    [Fact]
     public async Task TheQueueRouteReturnsEveryRowAndReportsAFailingInstanceWithDetailOnlyForAdmins()
     {
         using var rig = new Rig();
@@ -448,6 +495,7 @@ public class ApiArrRoutesTests
         var callers = new TestCallers();
         using var rig = new Rig();
         var member = callers.Register(rig.Member, admin: false);
+        member.SetPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.EnableAllFolders, true);
         var kidId = Guid.NewGuid();
         var kid = callers.Register(kidId, admin: false);
         kid.MaxParentalRatingScore = 10;
@@ -657,7 +705,7 @@ public class ApiArrRoutesTests
         c.ArrIntegrationEnabled = false;
         c.ArrPhase1Enabled = false;
         var callers = new TestCallers();
-        callers.Register(rig.Member, admin: false);                     // every library, no limits
+        callers.Register(rig.Member, admin: false).SetPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.EnableAllFolders, true); // every library, no limits
         var kidId = Guid.NewGuid();
         callers.Register(kidId, admin: false).MaxParentalRatingScore = 10;
         var readModel = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.SeerrRequestReadModel(seerr.Transport, new ArrChangeFeed(), null, () => c, () => rig.Arr.Now);
@@ -752,17 +800,17 @@ public class ApiArrRoutesTests
             rig.Radarr.History.Add(FakeArr.HistoryRow(11, "downloadFolderImported", rig.Arr.Now.UtcDateTime.AddMinutes(-30), null, 3, "T3"));
             rig.Arr.Now = rig.Arr.Now.AddMinutes(1);
             await Task.WhenAll(rig.Store.Tick());
-            Assert.Equal(new[] { "T1", "T3" }, Titles(await As(someId).GetDownloadQueue()));   // unlinked instance: open to them
+            Assert.Equal(new[] { "T1", "T3" }, Titles(await As(someId).GetDownloadQueue()));   // unresolved: their cached Seerr identity proves their own request
             Assert.Equal(new[] { "T1", "T3" }, Titles(await As(someId).GetDownloadHistory()));
-            Assert.Equal(0, Reads());
+            Assert.Equal(1, Reads());
 
-            // An absent title waits on the kid's proof: one read, then shared by the next poll and
+            // The kid also needs proof: one read for that user, then shared by the next poll and
             // the history inside the poll interval.
             Assert.Equal(new[] { "T1", "T3" }, Titles(await As(kidId).GetDownloadQueue()));
-            Assert.Equal(1, Reads());
+            Assert.Equal(2, Reads());
             Assert.Equal(new[] { "T1", "T3" }, Titles(await As(kidId).GetDownloadQueue()));
             Assert.Equal(new[] { "T1", "T3" }, Titles(await As(kidId).GetDownloadHistory()));
-            Assert.Equal(1, Reads());
+            Assert.Equal(2, Reads());
         }
         finally
         {

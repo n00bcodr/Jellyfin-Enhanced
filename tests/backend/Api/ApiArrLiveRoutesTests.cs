@@ -495,15 +495,15 @@ public class ApiArrLiveRoutesTests
         Assert.Equal(inJellyfinOnly, audience.Visible(blockedFolder.Id, false, changes));
         // A user who can't open the library "Movies" is linked to: its absent titles stay hidden,
         // also when the change came from Jellyfin (no instance) and only "Movies" holds the title.
-        Assert.Equal(new[] { "movie:tmdb:1", "tv:tvdb:4:s1:e2", "tv:tvdb:40:s1:e1", "tv:tvdb:40:s2:e1" }, audience.Visible(limited.Id, false, changes));
+        Assert.Equal(inJellyfinOnly, audience.Visible(limited.Id, false, changes));
         Assert.Empty(audience.Visible(limited.Id, false, new List<ArrFeedChange> { new("movie:tmdb:5", 5, instance) }));
-        // A key that changed in both Radarrs within one read: "Movies 4K" (open to all) lets it through.
+        // A key changed in two Radarrs: the unlinked, unresolved 4K copy does not bypass library restrictions.
         var feed = new ArrChangeFeed();
         feed.Bump(new[] { "movie:tmdb:5" }, instance4k);
         feed.Bump(new[] { "movie:tmdb:5" }, instance);
         var both = feed.Read(feed.Epoch, 0).Changes;
         Assert.Equal(instance, Assert.Single(both).InstanceId);
-        Assert.Equal(new[] { "movie:tmdb:5" }, audience.Visible(limited.Id, false, both));
+        Assert.Empty(audience.Visible(limited.Id, false, both));
 
         // The same audience (its answers are cached) follows a policy change at once, both ways.
         limited.SetPreference(PreferenceKind.EnabledFolders, [libA.ToString("N")]);
@@ -511,10 +511,10 @@ public class ApiArrLiveRoutesTests
         Assert.Single(audience.Visible(limited.Id, false, new List<ArrFeedChange> { new("movie:tmdb:3", 3, null) }));
         limited.SetPreference(PreferenceKind.EnabledFolders, [Guid.NewGuid().ToString("N")]);
         Assert.Empty(audience.Visible(limited.Id, false, new List<ArrFeedChange> { new("movie:tmdb:5", 5, instance) }));
-        // ... and a change of the libraries an instance is linked to ("Movies" now open to all).
+        // ... and removing linked libraries makes an unresolved instance visible only to users with every library.
         rows[0].LinkedLibraryIds = [];
         config.RadarrInstances = ArrRegistryMigration.Serialize(rows);
-        Assert.Single(audience.Visible(limited.Id, false, new List<ArrFeedChange> { new("movie:tmdb:5", 5, instance) }));
+        Assert.Empty(audience.Visible(limited.Id, false, new List<ArrFeedChange> { new("movie:tmdb:5", 5, instance) }));
         Assert.Empty(audience.Visible(Guid.NewGuid(), false, changes));   // unknown user
 
         // Answers are cached while nothing they depend on changes ...

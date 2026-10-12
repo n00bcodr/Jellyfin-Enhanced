@@ -344,6 +344,39 @@ public class ApiArrAdminHubTests
         Assert.Equal(new[] { ArrTitleKey.AdminOps }, audience.Visible(rig.AdminUser.UserId, true, change));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TheManageDrawerNeverOffersQueueActionsForRetainedRowsOrMixedDownloads(bool mixed)
+    {
+        using var rig = new Rig();
+        for (var id = 100; id < 598; id++)
+        {
+            var row = FakeArr.SonarrQueueRow(id, "other" + id, 1, id);
+            row["seriesId"] = 2;
+            rig.Sonarr.Queue.Add(row);
+        }
+        await rig.Warm();
+        var tv = rig.Instance("SonarrZ");
+        rig.Sonarr.Queue.RemoveAll(r => (int)r["id"]! == 12 || (!mixed && (int)r["id"]! is 11 or 13));
+        rig.Sonarr.ReportedTotal = (path, count) => path == "/api/v3/queue" ? 501 : count;
+        rig.Arr.Now += ArrStateStore.QueueKeepHeld + TimeSpan.FromSeconds(1);
+        await rig.Store.RefreshForEventAsync(tv.Id, ArrSnapshotKind.Queue, force: true);
+        Assert.True(rig.Store.PeekQueue(tv.Id)!.Incomplete);
+        Assert.Contains(rig.Store.MissedQueueRows(tv), r => r.Id == 12);
+        var drawer = await rig.Manage.OverviewAsync(rig.AdminUser, TitleKey.Parse("tv:tvdb:391153:s2:e2")!, null, default);
+        var instance = Assert.Single(drawer.Instances, i => i.Name == "SonarrZ");
+        var download = Assert.Single(instance.Downloads);
+        Assert.Equal("pack", download.DownloadId);
+        Assert.Equal(3, download.Episodes);
+        Assert.Empty(download.Actions);
+        Assert.Null(download.Eta);
+        // The row ages out of the drawer too, even though this incomplete snapshot is newer.
+        rig.Arr.Now += TimeSpan.FromMinutes(8);
+        drawer = await rig.Manage.OverviewAsync(rig.AdminUser, TitleKey.Parse("tv:tvdb:391153:s2:e2")!, null, default);
+        Assert.Empty(drawer.Instances.Single(i => i.Name == "SonarrZ").Downloads);
+    }
+
     [Fact]
     public async Task TheManageDrawerGetsTheTitlesWholeDownloadsWithTheirActionsWithPhaseTwoOn()
     {

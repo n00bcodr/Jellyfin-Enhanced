@@ -69,7 +69,11 @@ each Sonarr/Radarr and reads Seerr's request list in the background; browsers on
 Sonarr/Radarr stops answering, what it was downloading is no longer shown as if it were live: after 10 minutes
 (30 for its history) its titles read "Taking longer than usual" (administrators: "Can't be read") until it answers
 again (a series whose missing episodes all depend on it too), and the Requests page says download details can't
-be checked right now. A failed read that isn't that old yet drops the time left at once. When a page can't refresh, it
+be checked right now. A failed read that isn't that old yet drops the time left at once. A persistently incomplete queue
+read retains omitted downloads for status and Needs attention, without ETA or actions, until ten minutes
+from the last read that actually saw them; then their status becomes unknown. Incomplete reads never
+prove that a download departed. The legacy Downloads list omits rows from an expired queue and keeps
+the instance's error toast; its history still shows past events. When a page can't refresh, it
 keeps what it showed with "Couldn't refresh · showing what we had at 14:05 · Retry" and tries again on its own.
 
 Copies are matched to Sonarr/Radarr by every id the title is known by (a series Jellyfin knows only by its TMDB
@@ -234,6 +238,11 @@ e-mail server that doesn't answer is given up on after 30 seconds for that try, 
 Switching notifications off holds what is queued until they are back on; switching phone alerts or e-mail off (or a
 person switching theirs off) drops what was queued for that channel. Pointing Jellyfin Enhanced at another Seerr
 server starts its request list afresh: the requests already on it are not announced as new, approved or declined.
+
+Episode batches also recheck every stored episode file when a quiet-hours or retry hold ends:
+no visible episodes suppresses the delivery without retries; a partially visible batch announces only
+the remaining count and seasons, never a whole season that is no longer all visible. Deliveries saved
+before episode files were recorded continue using the parent item's visibility check.
 
 ## ARR Links
 
@@ -559,9 +568,22 @@ Direct URL: `/web/index.html#!/jellyfinenhanced/downloads`
 **Who sees which downloads:** administrators see the whole queue and history. Everyone else sees a
 download only for a title they could open in Jellyfin (their library access and parental limits apply,
 down to single episodes of a season pack). A title that isn't in Jellyfin yet shows when they can open a
-library its Sonarr/Radarr instance is linked to (an instance without linked libraries counts as open), or,
-for users with parental limits, only when they asked for it in Seerr (this also works with "Requests &
+destination library resolved from its title folder through path mappings (the longest mapping and
+deepest library win, constrained to the instance's linked libraries when configured), falling back to
+those linked libraries if the folder cannot resolve. An unresolved destination requires access to every
+library; an unlinked instance does not grant access by itself. Blocked folders take precedence over
+all-library or enabled-folder permissions. Status-by-key, follows, the change feed, Downloads and the
+Calendar use this destination rule. For a title the viewer can already open in Jellyfin, status keeps
+copies whose destination is unresolved, and omits copies resolved into libraries they cannot open,
+including another quality variant. A requester's own absent title remains accessible through their Seerr
+request; once Jellyfin has the title, its visibility decision applies. For status and downloads, viewers
+with parental limits see absent titles only when they asked for them in Seerr (this also works with "Requests &
 downloads (new)" off: their Seerr requests are then read only when such a title is in the queue or
 history, at most about twice a minute, and a slow Seerr never holds up the page; saving the Seerr settings
-drops what was read). With **Filter Downloads by User Requests** on, they additionally see only what they
-requested in Seerr.
+drops what was read). Calendar retains its existing treatment of parental limits for upcoming titles,
+whose rating Jellyfin cannot yet judge. With **Filter Downloads by User Requests** on, they additionally see only what they
+requested in Seerr. That filter runs before the newest 200 history items are selected, so newer imports
+of other people's titles cannot crowd out their own. A short hourly history read is retried once;
+if still short it merges into the existing ring and leaves the full read due for the next poll.
+A cold short read keeps a real timestamp and a separate retry flag. Episode file ids used to recheck
+delayed notifications remain on the server; inbox rows and browser toasts receive only display parameters.

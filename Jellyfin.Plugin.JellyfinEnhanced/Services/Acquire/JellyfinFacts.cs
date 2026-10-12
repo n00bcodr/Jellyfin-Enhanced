@@ -25,7 +25,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Fingerprint of role, library access, parental settings and display options.</summary>
         public string PolicyRevision { get; init; } = string.Empty;
 
-        /// <summary>The Jellyfin user object (opaque outside <see cref="ArrJellyfinView"/>).</summary>
+        /// <summary>The Jellyfin user object, used only for server-side item and destination access checks.</summary>
         internal object? Handle { get; init; }
     }
 

@@ -194,6 +194,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // A Ready / new-episodes row for an item the caller can no longer open (library
                     // access or parental limits changed since): kept, but without what names the title.
                     var hidden = r.Kind is NotifyKind.Ready or NotifyKind.Episodes && Guid.TryParse(r.ItemId, out var item) && (viewer == null || view.Resolve(item, viewer) == null);
+                    // Episode file ids are retained only for server-side delivery checks.
+                    var parameters = NotifyDispatcher.Payload(r.Payload).Where(p => p.Key != "episodeItems")
+                        .ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
                     return new InboxItem
                     {
                         Id = r.Id,
@@ -202,7 +205,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         ItemId = hidden ? null : r.ItemId,
                         CreatedAt = r.At,
                         Read = r.Read,
-                        Params = hidden ? WithoutTitle(NotifyDispatcher.Payload(r.Payload)) : NotifyDispatcher.Payload(r.Payload),
+                        Params = hidden ? WithoutTitle(parameters) : parameters,
                         Link = NotifyDispatcher.InAppLink(hidden ? null : r.ItemId, r.Kind),
                     };
                 }).ToList(),
