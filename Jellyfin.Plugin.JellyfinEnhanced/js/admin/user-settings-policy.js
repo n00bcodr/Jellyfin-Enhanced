@@ -643,12 +643,13 @@
         return promise;
     }
 
-    /** Forgets the overview and reloads whatever shows it (counts, upgrade card). */
+    /** Forgets the overview and reloads whatever shows it (counts, open per-user lists, upgrade card). */
     function overviewChanged() {
         state.overview = null;
         const page = state.page;
         if (!page || !page.isConnected) return;
         if (isDetailsOpen(page)) showCounts(page);
+        refreshUserLists(page);
         showUpgradeCard(page);
     }
 
@@ -752,24 +753,60 @@
         listRow.appendChild(cell);
         row.insertAdjacentElement('afterend', listRow);
         toggle.setAttribute('aria-expanded', 'true');
+        await loadUserList(page, listRow, item);
+    }
+
+    /**
+     * Loads one setting's users into a list row. Only the latest load of a row renders; a reload
+     * that fails keeps the rows shown and says so in the list's note.
+     * @param {Element} page The admin page.
+     * @param {Element} listRow The list row.
+     * @param {object} item The policy row's state.
+     */
+    async function loadUserList(page, listRow, item) {
+        const cell = listRow.firstElementChild;
+        const load = String((Number(listRow.dataset.jeLoad) || 0) + 1);
+        listRow.dataset.jeLoad = load;
         const answer = await request('GET', OVERVIEW_PATH + '/' + encodeURIComponent(item.entry.Key));
-        if (!listRow.isConnected) return;
+        if (!listRow.isConnected || listRow.dataset.jeLoad !== load) return;
         if (answer.status !== 200 || !answer.body || !Array.isArray(answer.body.Users)) {
-            cell.textContent = 'The users could not be loaded.';
+            const note = cell.querySelector('.je-policy-users-note');
+            if (!note) {
+                cell.textContent = 'The users could not be loaded.';
+                return;
+            }
+            const line = document.createElement('div');
+            line.textContent = 'The list could not be refreshed: close it and open it again.';
+            note.appendChild(line);
             return;
         }
         renderUserList(page, cell, item, answer.body);
     }
 
     /**
+     * Reloads every open per-user list on the page (after a follow, an apply or an undo changed
+     * users), keeping each list's note and its Undo button.
+     * @param {Element} page The admin page.
+     */
+    function refreshUserLists(page) {
+        page.querySelectorAll('tr.je-policy-users').forEach((listRow) => {
+            const row = listRow.previousElementSibling;
+            const key = row && row.id && row.id.indexOf(ROW_ID_PREFIX) === 0 ? row.id.slice(ROW_ID_PREFIX.length) : null;
+            const item = key ? state.byKey.get(key) : null;
+            if (item && listRow.firstElementChild) loadUserList(page, listRow, item);
+        });
+    }
+
+    /**
      * Renders one setting's users: name, value and state, with "Make follow default" where the user
-     * has something else (values and names via textContent only).
+     * has something else (values and names via textContent only). A re-render keeps the list's note.
      * @param {Element} page The admin page.
      * @param {Element} cell The list cell.
      * @param {object} item The policy row's state.
      * @param {object} data The overview/{key} answer.
      */
     function renderUserList(page, cell, item, data) {
+        let note = cell.querySelector('.je-policy-users-note');
         cell.textContent = '';
         const table = document.createElement('table');
         table.className = 'je-policy-users-table';
@@ -806,7 +843,7 @@
                 follow.type = 'button';
                 follow.className = 'emby-button raised je-policy-follow-btn';
                 follow.textContent = 'Make follow default';
-                follow.addEventListener('click', () => followForUser(page, cell, item, user, follow));
+                follow.addEventListener('click', () => followForUser(page, cell, item, user, follow, data.Default));
                 action.appendChild(follow);
             }
             tr.append(name, value, stateCell, action);
@@ -814,9 +851,11 @@
         });
         table.appendChild(body);
         cell.appendChild(table);
-        const note = document.createElement('div');
-        note.className = 'je-policy-users-note';
-        note.setAttribute('role', 'status');
+        if (!note) {
+            note = document.createElement('div');
+            note.className = 'je-policy-users-note';
+            note.setAttribute('role', 'status');
+        }
         cell.appendChild(note);
     }
 
@@ -829,8 +868,9 @@
      * @param {object} item The policy row's state.
      * @param {object} user The user entry.
      * @param {HTMLButtonElement} button The clicked button.
+     * @param {*} defaultValue The server default the list was loaded with.
      */
-    async function followForUser(page, cell, item, user, button) {
+    async function followForUser(page, cell, item, user, button, defaultValue) {
         const note = cell.querySelector('.je-policy-users-note');
         if (pageIsDirty(page)) {
             note.textContent = 'Save your changes first: this uses your saved defaults.';
@@ -868,7 +908,10 @@
         note.textContent = userLabel(user) + ' now follows your default for ' + item.name + '. ';
         if (result.UndoId) note.appendChild(undoButton(result.UndoId, note));
         else if (result.UndoUnavailable) note.appendChild(document.createTextNode('This cannot be undone: the undo record could not be saved. Check the server log.'));
-        button.closest('tr').querySelector('td:nth-of-type(2)').textContent = STATE_TEXT.Following;
+        // Until the list is reloaded (overviewChanged), the row shows the default it now follows.
+        const userRow = button.closest('tr');
+        userRow.querySelector('td:nth-of-type(1)').textContent = describeValue(item.control, defaultValue);
+        userRow.querySelector('td:nth-of-type(2)').textContent = STATE_TEXT.Following;
         button.remove();
         overviewChanged();
     }

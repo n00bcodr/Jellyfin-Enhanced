@@ -170,6 +170,56 @@ test('"Make follow default" follows one key for one user with the overview epoch
   assert.match(note.textContent, /Undone: 40 restored, 2 changed since and kept as they are\./);
 });
 
+test('after "Make follow default" and its undo, the open list shows each user\'s value and state again', async t => {
+  const bob = 'b'.repeat(32);
+  let bobFollows = false;
+  let gate = null;
+  const h = setup(t, {
+    dismissed: true,
+    apply: body => { bobFollows = true; return applyAnswer(body, { Skipped: [], Failed: [], PerUser: [{ Id: bob, Name: 'bob', Changed: ['AutoPipEnabled'], Visible: ['AutoPipEnabled'], Kept: [], Documents: [] }] }); },
+    undo: () => { bobFollows = false; return { success: true, Restored: 1, Kept: 0, FailedUsers: 0, Pending: false, PerUser: [] }; },
+    perUser: async () => {
+      if (gate) await gate.promise;
+      return {
+        Key: 'AutoPipEnabled', Default: false, Locked: false, Users: [
+          bobFollows
+            ? { UserId: bob, Name: 'bob', Live: true, Orphan: false, Value: false, State: 'Following', SameAsDefault: true }
+            : { UserId: bob, Name: 'bob', Live: true, Orphan: false, Value: true, State: 'Chosen', SameAsDefault: false },
+          { UserId: 'a'.repeat(32), Name: 'alice', Live: true, Orphan: false, Value: true, State: 'Chosen', SameAsDefault: false }
+        ]
+      };
+    }
+  });
+  await h.policy.decorate(h.page);
+  await h.openDetails();
+  const row = h.document.querySelector('#jePolicyRow-AutoPipEnabled');
+  row.querySelector('.je-policy-users-toggle').click();
+  await h.settle();
+  const list = row.nextElementSibling;
+  const rows = () => [...list.querySelectorAll('.je-policy-users-table > tbody > tr')].map(tr => [...tr.children].map(cell => cell.textContent));
+  assert.deepEqual(rows(), [['bob', 'On', 'Their own choice', 'Make follow default'], ['alice', 'On', 'Their own choice', 'Make follow default']]);
+
+  // While the list reloads, bob's row already shows the default he now follows, not his old value.
+  gate = deferred();
+  list.querySelector('.je-policy-follow-btn').click();
+  await h.settle();
+  assert.deepEqual(rows()[0], ['bob', 'Off', 'Follows your default', '']);
+  gate.resolve();
+  gate = null;
+  await h.settle();
+  assert.deepEqual(rows(), [['alice', 'On', 'Their own choice', 'Make follow default'], ['bob', 'Off', 'Follows your default', '']]);
+  const note = list.querySelector('.je-policy-users-note');
+  assert.match(note.textContent, /^bob now follows your default/);
+
+  // The undo restores bob's own choice: the list shows it again, with the button, and keeps the note.
+  note.querySelector('.je-apply-undo').click();
+  await h.settle();
+  assert.deepEqual(rows(), [['bob', 'On', 'Their own choice', 'Make follow default'], ['alice', 'On', 'Their own choice', 'Make follow default']]);
+  assert.equal(list.querySelector('.je-policy-users-note'), note);
+  assert.match(note.textContent, /Undone: 1 restored\./);
+  assert.equal(h.paths().filter(p => p === '/overview/AutoPipEnabled').length, 3);
+});
+
 test('"Make follow default" reports a user the run skipped, failed or did not need to change, and keeps the button', async t => {
   const bob = 'b'.repeat(32);
   const answers = [

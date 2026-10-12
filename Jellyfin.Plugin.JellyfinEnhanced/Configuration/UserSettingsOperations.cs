@@ -379,29 +379,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 return;
             }
 
-            if (!section.CreateIfMissing && !_manager.UserConfigurationExists(outcome.User.Id, section.File))
-            {
-                outcome.Documents[section.Name] = UserSettingsOutcome.None;
-                return;
-            }
-
             try
             {
+                int changed;
                 JToken? before = null;
                 string? beforeOp = null;
-                var changed = _manager.RmwUserConfiguration<TDocument>(outcome.User.Id, section.File, current =>
+                lock (_manager.GetUserFileLock(outcome.User.Id, section.File))
                 {
-                    before = JToken.FromObject(section.Read(current));
-                    beforeOp = section.GetStamp(current);
-                    if (JToken.DeepEquals(before, targetToken))
+                    // Decide "no file" and "cannot be reached" as the preview does: the strict read below
+                    // treats a path it cannot look up (a directory in its place, no search permission on
+                    // the user directory) as no file.
+                    var status = _manager.PeekUserConfiguration<TDocument>(outcome.User.Id, section.File, 0, out _, out _);
+                    if (status == UserDocumentPeekStatus.Missing && !section.CreateIfMissing)
                     {
-                        return 0;
+                        outcome.Documents[section.Name] = UserSettingsOutcome.None;
+                        return;
                     }
 
-                    section.Write(current, targetToken.ToObject<TSection>()!);
-                    section.SetStamp(current, operationId);
-                    return 1;
-                });
+                    if (status == UserDocumentPeekStatus.Unavailable)
+                    {
+                        outcome.Documents[section.Name] = UserSettingsOutcome.Unavailable;
+                        return;
+                    }
+
+                    changed = _manager.RmwUserConfiguration<TDocument>(outcome.User.Id, section.File, current =>
+                    {
+                        before = JToken.FromObject(section.Read(current));
+                        beforeOp = section.GetStamp(current);
+                        if (JToken.DeepEquals(before, targetToken))
+                        {
+                            return 0;
+                        }
+
+                        section.Write(current, targetToken.ToObject<TSection>()!);
+                        section.SetStamp(current, operationId);
+                        return 1;
+                    });
+                }
+
                 outcome.Documents[section.Name] = changed > 0 ? UserSettingsOutcome.Changed : UserSettingsOutcome.Unchanged;
                 if (changed > 0)
                 {

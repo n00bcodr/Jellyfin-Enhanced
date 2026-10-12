@@ -199,6 +199,9 @@ public class CoreSettingsApplyDefaultsTests : IDisposable
         using var server = new Server();
         var (copy, chooser, _, _, _) = Population(server);
         server.Manager.SaveUserConfiguration(copy.Id.ToString("N"), SpoilerFile, new UserSpoilerBlur { Prefs = new SpoilerBlurUserPrefs { HideCast = false } });
+        // Documents that cannot be read now (a directory in their place) are reported alike by both.
+        Directory.CreateDirectory(Path.Combine(server.Dir(chooser.Id), SpoilerFile));
+        Directory.CreateDirectory(Path.Combine(server.Dir(chooser.Id), "hidden-content.json"));
         var keys = mode == "Overwrite" ? AllKeys() : AdminKeys();
 
         var preview = server.Apply(mode, keys, dryRun: true);
@@ -218,6 +221,12 @@ public class CoreSettingsApplyDefaultsTests : IDisposable
         var again = server.Apply(mode, keys, dryRun: true);
         Assert.Equal(0, again.Value<int>("KeysChanged"));
         Assert.Equal(JTokenType.Null, server.Apply(mode, keys, dryRun: false)["UndoId"]!.Type);
+        if (mode == "Overwrite")
+        {
+            var caseyFailed = ((JArray)run["Failed"]!).Where(f => f.Value<string>("Name") == "casey").Select(f => f.Value<string>("Document") + ":" + f.Value<string>("Reason")).Order().ToArray();
+            Assert.Equal(["HiddenContent:unavailable", "SpoilerGuard:unavailable"], caseyFailed);
+        }
+
         if (mode == "FollowIfUnchanged")
         {
             Assert.Equal(["AutoPauseEnabled"], Strings(((JArray)run["PerUser"]!).Single(u => u.Value<string>("Name") == "blair")["Kept"]));
